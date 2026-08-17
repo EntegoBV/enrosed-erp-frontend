@@ -35,17 +35,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number" [subtitle]="customerName()" [showBack]="true" [showBell]="false">
+      <!-- Only PDF up top. Sending lives in the bottom bar alone: the same
+           action twice on one screen means one of them is the wrong one. -->
+      <app-page-header [title]="data.order.number" [subtitle]="customerName()"
+                       [showBack]="true" [showBell]="false"
+                       [titleEditable]="true"
+                       (titleChange)="patch({ number: $event })">
         <button class="btn btn--sm" type="button" (click)="openPdfSheet()">PDF</button>
-        @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
-          <button class="btn btn--primary btn--sm" type="button"
-                  [disabled]="busy()" (click)="reopen()">Heropenen</button>
-        } @else {
-          <button class="btn btn--primary btn--sm" type="button"
-                  [disabled]="sending()" (click)="openSend()">
-            {{ data.order.sentAt ? 'Opnieuw sturen' : 'Versturen' }}
-          </button>
-        }
       </app-page-header>
 
       <div class="content content--with-action-bar">
@@ -173,12 +169,6 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 </select>
               </div>
               <div class="field">
-                <label for="so-number">Offertenummer</label>
-                <input class="input" id="so-number" [ngModel]="data.order.number"
-                       (ngModelChange)="patch({ number: $event })" />
-                <span class="hint">Wordt automatisch gegeven; aanpassen mag zolang het nummer nog vrij is.</span>
-              </div>
-              <div class="field">
                 <label for="so-date">Datum</label>
                 <app-date-field fieldId="so-date" [value]="data.order.orderDate"
                                 (valueChange)="patch({ orderDate: $event })" />
@@ -295,8 +285,11 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                       <label [attr.for]="'q-' + line.productId">Aantal</label>
                       <input class="input input--sm num right" [id]="'q-' + line.productId"
                              type="number" min="0" step="1" inputmode="numeric"
-                             [ngModel]="line.quantity"
-                             (ngModelChange)="setLine(line.productId, { quantity: +$event })" />
+                             [ngModel]="lineDraft()[line.productId] ?? line.quantity"
+                             (ngModelChange)="setLineQuantity(line.productId, +$event)" />
+                      @if (linePending()[line.productId]; as to) {
+                        <span class="hint warn-text">Wordt zo <b>{{ to | num }}</b></span>
+                      }
                     </div>
                     <div class="field">
                       <label [attr.for]="'p-' + line.productId">Stukprijs</label>
@@ -783,6 +776,57 @@ export class SalesEditor {
     return this.view()?.order.lines.find((l) => l.productId === productId)?.deliveryWeek ?? '';
   }
 
+  /** Quantity being typed per line; shown until the deferred save lands. */
+  readonly lineDraft = signal<Record<number, number>>({});
+  /** Announced carton correction per line: visible immediately, applied later. */
+  readonly linePending = signal<Record<number, number>>({});
+  private readonly lineTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Line quantities follow the same contract as the pickers: the notice is
+   * immediate, the correction is not. Saving on every keystroke made the
+   * server round instantly, which put "6" in the field while someone was
+   * still typing "640". A round quantity saves after a short pause; an
+   * off-carton one gets the full two seconds to finish typing.
+   */
+  setLineQuantity(productId: number, raw: number): void {
+    const wanted = Math.max(0, raw || 0);
+    this.lineDraft.update((map) => ({ ...map, [productId]: wanted }));
+
+    const per = this.piecesPerCarton(productId);
+    const snapped = Math.ceil(wanted / per) * per;
+    const offCarton = snapped !== wanted && wanted > 0;
+    this.linePending.update((map) => {
+      const next = { ...map };
+      if (offCarton) next[productId] = snapped;
+      else delete next[productId];
+      return next;
+    });
+
+    clearTimeout(this.lineTimers.get(productId));
+    this.lineTimers.set(productId, setTimeout(() => {
+      this.lineDraft.update((map) => {
+        const next = { ...map };
+        delete next[productId];
+        return next;
+      });
+      this.linePending.update((map) => {
+        const next = { ...map };
+        delete next[productId];
+        return next;
+      });
+      /* The server rounds sales quantities on save; this is the guarantee
+         behind the courtesy above. */
+      this.setLine(productId, { quantity: wanted });
+    }, offCarton ? 2000 : 400));
+  }
+
+  private piecesPerCarton(productId: number): number {
+    const per = this.products().find((product) => product.id === productId)
+      ?.carton.piecesPerCarton;
+    return Math.max(1, per ?? 1);
+  }
+
   setLine(productId: number,
           changes: { quantity?: number; unitPriceEur?: number; manualDiscountPct?: number;
                      deliveryWeek?: string }): void {
@@ -982,7 +1026,7 @@ export class SalesEditor {
         confirmLabel: thenEdit ? 'Overnemen en bijsturen' : 'Overnemen',
       },
       async () => {
-        this.view.set(await this.sales.approveRevision(revision.id, 'Verkoop', 'Akkoord.'));
+        this.view.set(await this.sales.approveRevision(revision.id, 'Verkoop', ''));
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
         /* De teller op de tab en het belletje moeten dit meteen kwijt zijn. */
         void this.work.refresh();
@@ -1008,7 +1052,7 @@ export class SalesEditor {
         confirmLabel: 'Afwijzen', danger: true,
       },
       async () => {
-        this.view.set(await this.sales.rejectRevision(revision.id, 'Verkoop', 'Niet akkoord.'));
+        this.view.set(await this.sales.rejectRevision(revision.id, 'Verkoop', ''));
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
         void this.work.refresh();
         this.ui.toast('Voorstel afgewezen');

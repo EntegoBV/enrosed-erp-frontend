@@ -28,7 +28,10 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
             EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe],
   template: `
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number" [subtitle]="supplierName()" [showBack]="true" [showBell]="false">
+      <app-page-header [title]="data.order.number" [subtitle]="supplierName()"
+                       [showBack]="true" [showBell]="false"
+                       [titleEditable]="true"
+                       (titleChange)="patch({ number: $event })">
         <button class="btn btn--sm" type="button" (click)="downloadPdf()">PDF</button>
         <button class="btn btn--sm hide-mobile" type="button" (click)="duplicate()">Kopiëren</button>
         <button class="btn btn--sm hide-mobile" type="button" (click)="apply()">
@@ -40,12 +43,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
         <div class="card">
           <div class="card__head"><h2>Order</h2></div>
           <div class="card__body"><div class="form-grid">
-              <div class="field">
-                <label for="po-number">Ordernummer</label>
-                <input class="input" id="po-number" [ngModel]="data.order.number"
-                       (ngModelChange)="patch({ number: $event })" />
-                <span class="hint">Aanpassen mag zolang het nummer nog vrij is.</span>
-              </div>
             <div class="field"><label for="po-date">Datum</label>
               <app-date-field fieldId="po-date" [value]="data.order.orderDate"
                               (valueChange)="patch({ orderDate: $event })" /></div>
