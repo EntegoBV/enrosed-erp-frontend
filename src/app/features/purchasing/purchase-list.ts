@@ -25,7 +25,7 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
         <div>
           Inkoop gaat per container. Hier wordt de <b>kostprijs per stuk</b> berekend: EXW in
           USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de
-          kosten vanaf Rotterdam.
+          kosten vanaf de aankomsthaven.
         </div>
       </div>
 

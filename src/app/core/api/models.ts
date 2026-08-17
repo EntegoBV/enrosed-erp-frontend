@@ -187,6 +187,8 @@ export interface PurchaseOrder {
   allocOrigin: Allocation;
   allocDestination: Allocation;
   allocExtra: Allocation;
+  /** Port of arrival (Rotterdam, Amsterdam, ...); drives the cost labels. */
+  destinationPort: string;
   notes: string;
   lines: PurchaseOrderLine[];
 }
@@ -414,6 +416,8 @@ export interface CompanyProfile {
   iban: string;
   bic: string;
   documentFooter: string;
+  /** General terms; editable here, publicly readable at /voorwaarden. */
+  termsAndConditions: string | null;
 }
 
 /** Eén stap in het leven van een offerte. */

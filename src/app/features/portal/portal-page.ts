@@ -264,7 +264,10 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
             </div>
           }
 
-          <p class="tiny muted center mt-24">Enrosed · {{ t('portalFooter') }}</p>
+          <p class="tiny muted center mt-24">
+            Enrosed · {{ t('portalFooter') }} ·
+            <a href="/voorwaarden" target="_blank" rel="noopener">{{ t('portalTerms') }}</a>
+          </p>
         </div>
       } @else {
         <div class="content"><div class="empty">

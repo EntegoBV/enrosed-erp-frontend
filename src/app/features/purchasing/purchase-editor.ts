@@ -4,8 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { saveBlob } from '../../core/api/download';
+import { DESTINATION_PORTS, countryName } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
-import { Allocation, Product, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
+import { Allocation, Product, PurchaseOrder, PurchaseOrderView, Supplier } from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -17,8 +18,8 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
  * Kostprijscalculatie van een container.
  *
  * De volgorde op het scherm volgt de weg van de goederen: goederen, lokale
- * kosten China en zeevracht vormen samen de douanewaarde, daarover het
- * invoerrecht van de HS-code, en pas daarna de kosten vanaf Rotterdam.
+ * origin costs and sea freight form the customs value, duty per HS code is
+ * levied on that, and only then do the costs from the port of arrival join.
  */
 @Component({
   selector: 'app-purchase-editor',
@@ -90,7 +91,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                          [ngModel]="data.order.freightUsd"
                          (ngModelChange)="patch({ freightUsd: +$event })" />
                   <span class="input-affix__suffix">USD</span></div></div>
-              <div class="field"><label for="c-origin">Lokale kosten China <span class="opt"></span></label>
+              <div class="field"><label for="c-origin">Lokale kosten {{ originLabel() }} <span class="opt"></span></label>
                 <div class="input-affix">
                   <input class="input num right" id="c-origin" type="number" step="50"
                          [ngModel]="data.order.originCosts"
@@ -105,7 +106,13 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                 <span class="hint">
                   Fabriek → haven, exportdocumenten. <b>Telt mee in de douanewaarde.</b>
                 </span></div>
-              <div class="field"><label for="c-dest">Lokale kosten Rotterdam</label>
+              <div class="field"><label for="c-port">Aankomsthaven</label>
+                <select class="select" id="c-port" [ngModel]="data.order.destinationPort"
+                        (ngModelChange)="patch({ destinationPort: $event })">
+                  @for (port of ports; track port) { <option [value]="port">{{ port }}</option> }
+                </select></div>
+              <div class="field"><label for="c-dest">
+                  Lokale kosten tot {{ data.order.destinationPort || 'Rotterdam' }}</label>
                 <div class="input-affix">
                   <input class="input num right" id="c-dest" type="number" step="25"
                          [ngModel]="data.order.destinationCostsEur"
@@ -176,7 +183,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                   <div class="stat-row stat-row--muted"><span>Goederen</span>
                     <span class="num">{{ line.goodsEur | eur }}</span></div>
                   @if (line.originEur) {
-                    <div class="stat-row stat-row--muted"><span>Lokale kosten China</span>
+                    <div class="stat-row stat-row--muted"><span>Lokale kosten {{ originLabel() }}</span>
                       <span class="num">{{ line.originEur | eur }}</span></div>
                   }
                   <div class="stat-row stat-row--muted"><span>Zeevracht</span>
@@ -189,7 +196,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                     <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
                       <span class="tiny">({{ line.dutySource }})</span></span>
                     <span class="num">{{ line.dutyEur | eur }}</span></div>
-                  <div class="stat-row stat-row--muted"><span>Lokale kosten Rotterdam</span>
+                  <div class="stat-row stat-row--muted"><span>Lokale kosten tot {{ view()?.order?.destinationPort || 'Rotterdam' }}</span>
                     <span class="num">{{ line.destinationEur | eur }}</span></div>
                   <div class="stat-row" style="border-top:1px solid var(--line);
                        margin-top:4px;padding-top:8px;font-weight:680">
@@ -216,7 +223,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
               <span class="num">{{ data.costing.totals.goodsUsd | cur: 'USD' }} →
                 {{ data.costing.totals.goodsEur | eur }}</span></div>
             @if (data.costing.totals.originEur) {
-              <div class="stat-row"><span>Lokale kosten China</span>
+              <div class="stat-row"><span>Lokale kosten {{ originLabel() }}</span>
                 <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
             }
             <div class="stat-row"><span>Zeevracht</span>
@@ -227,7 +234,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                 <span class="tiny muted">gemiddeld
                   {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
               <span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-            <div class="stat-row"><span>Lokale kosten Rotterdam</span>
+            <div class="stat-row"><span>Lokale kosten tot {{ view()?.order?.destinationPort || 'Rotterdam' }}</span>
               <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
             @if (data.costing.totals.extraRevenueEur) {
               <div class="stat-row"><span>Extra gewenste opbrengst</span>
@@ -276,6 +283,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
           heading="Product toevoegen aan de container"
           [products]="available()"
           [priceOf]="exwPriceOf"
+          [enforceCartons]="false"
           (picked)="addLine($event)"
           (cancelled)="picking.set(false)"
         />
@@ -284,6 +292,17 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
   `,
 })
 export class PurchaseEditor {
+  readonly ports = DESTINATION_PORTS;
+
+  /**
+   * Where the origin costs are incurred, named after the supplier's country.
+   * "Local costs China" was hardcoded once, but not every supplier is Chinese.
+   */
+  readonly originLabel = computed(() => {
+    const code = this.supplier()?.country;
+    return code ? countryName(code) : 'oorsprong';
+  });
+
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
   private readonly router = inject(Router);
@@ -294,15 +313,16 @@ export class PurchaseEditor {
 
   readonly allocationKeys = [
     { field: 'allocFreight' as const, label: 'Zeevracht' },
-    { field: 'allocOrigin' as const, label: 'Lokale kosten China' },
-    { field: 'allocDestination' as const, label: 'Lokale kosten Rotterdam' },
+    { field: 'allocOrigin' as const, label: 'Lokale kosten oorsprong' },
+    { field: 'allocDestination' as const, label: 'Lokale kosten bestemming' },
     { field: 'allocExtra' as const, label: 'Extra opbrengst' },
   ];
 
   readonly view = signal<PurchaseOrderView | null>(null);
   readonly adjustments = signal<PurchaseOrderView['adjustments']>([]);
   readonly products = signal<Product[]>([]);
-  readonly supplierNameSignal = signal('');
+  /** The order's supplier; drives the header and the origin-cost label. */
+  readonly supplier = signal<Supplier | null>(null);
 
   readonly picking = signal(false);
 
@@ -319,11 +339,10 @@ export class PurchaseEditor {
     const [products, suppliers] = await Promise.all([
       this.catalog.products(view.order.supplierId), this.sourcing.suppliers()]);
     this.products.set(products);
-    this.supplierNameSignal.set(
-      suppliers.find((s) => s.id === view.order.supplierId)?.name ?? 'Onbekend');
+    this.supplier.set(suppliers.find((s) => s.id === view.order.supplierId) ?? null);
   }
 
-  supplierName(): string { return this.supplierNameSignal(); }
+  supplierName(): string { return this.supplier()?.name ?? 'Onbekend'; }
 
   readonly available = computed(() => {
     const used = new Set((this.view()?.order.lines ?? []).map((line) => line.productId));
@@ -339,9 +358,12 @@ export class PurchaseEditor {
     this.view.set(result);
     this.adjustments.set(result.adjustments ?? []);
     if (result.adjustments?.length) {
+      /* Warning only: purchasing never rounds. A supplier can ship a sample of
+         three pieces, and silently inflating an order costs real money. */
       const first = result.adjustments[0];
       this.ui.toast(
-        `${first.requested} → ${first.adjusted} stuks (volle dozen van ${first.piecesPerCarton})`);
+        `Let op: ${first.requested} stuks is geen volle doos (${first.piecesPerCarton}/doos)`,
+        'err');
     }
     /* Voorraadstanden kunnen net geboekt zijn; catalogus opnieuw ophalen. */
     this.products.set(await this.catalog.products(order.supplierId));

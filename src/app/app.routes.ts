@@ -11,6 +11,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/login/login-page').then((m) => m.LoginPage),
   },
   {
+    path: 'voorwaarden',
+    loadComponent: () => import('./features/terms/terms-page').then((m) => m.TermsPage),
+  },
+  {
     path: 'offerte/:token',
     loadComponent: () => import('./features/portal/portal-page').then((m) => m.PortalPage),
   },

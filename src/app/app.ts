@@ -130,7 +130,8 @@ export class App {
   /** Aanmeldpagina en klantportaal krijgen geen navigatie. */
   readonly bare = computed(() => {
     const url = this.url();
-    return url.startsWith('/login') || url.startsWith('/offerte');
+    return url.startsWith('/login') || url.startsWith('/offerte')
+        || url.startsWith('/voorwaarden');
   });
 
   logout(): void {

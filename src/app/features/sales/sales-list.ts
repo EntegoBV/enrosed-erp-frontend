@@ -63,11 +63,12 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
             <a class="list-item" [routerLink]="['/sales', row.order.id]">
               <div class="list-item__body">
                 <div class="list-item__title">{{ customerName(row) }}</div>
-                <div class="list-item__meta">
+                <!-- No country chip: it repeats what the customer name already
+                     implies and pushed the date into "18/0...". -->
+                <div class="list-item__meta list-item__meta--wrap">
                   {{ row.order.number }} · {{ row.order.orderDate | dateNl }}
                 </div>
-                <div class="list-item__meta">
-                  <span class="flag">{{ row.order.countryCode || '—' }}</span>
+                <div class="list-item__meta list-item__meta--wrap">
                   {{ row.priced.totals.pieces | num }} st ·
                   {{ row.priced.totals.palletsStrict }} pallet(s)
                   @if (privacy.showPurchase() && row.priced.totals.marginPct) {

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, computed, input, output, signal } from '@angular/core';
+import { CartonQuantity } from './carton-quantity';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../core/api/auth-image';
 import { Product } from '../core/api/models';
@@ -17,9 +18,6 @@ import { EurPipe, NumPipe } from './pipes';
  * volle doos, met de correctie zichtbaar onder het veld — dan is het geen
  * verrassing achteraf.
  */
-/** Zo lang blijft een ingetikt aantal staan voor het naar een volle doos springt. */
-const SNAP_DELAY_MS = 2000;
-
 @Component({
   selector: 'app-product-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -68,15 +66,20 @@ const SNAP_DELAY_MS = 2000;
                 min="0"
                 step="1"
                 inputmode="numeric"
-                [ngModel]="quantity()"
-                (ngModelChange)="setQuantity(+$event)"
+                [ngModel]="carton.value()"
+                (ngModelChange)="carton.set(+$event)"
               />
-              @if (pending(); as note) {
+              @if (carton.pending(); as note) {
                 <span class="hint warn-text">
-                  Wordt zo <b>{{ note.to | num }}</b> — er gaan er
-                  {{ product.carton.piecesPerCarton }} in een doos.
+                  @if (enforceCartons()) {
+                    Wordt zo <b>{{ note.to | num }}</b> — er gaan er
+                    {{ product.carton.piecesPerCarton }} in een doos.
+                  } @else {
+                    Geen volle doos — er gaan er {{ product.carton.piecesPerCarton }} in
+                    een doos. Bij inkoop mag dat, bijvoorbeeld voor stalen.
+                  }
                 </span>
-              } @else if (adjusted(); as note) {
+              } @else if (carton.applied(); as note) {
                 <span class="hint warn-text">
                   Bijgesteld van {{ note.from | num }} naar <b>{{ note.to | num }}</b>.
                 </span>
@@ -90,7 +93,7 @@ const SNAP_DELAY_MS = 2000;
                 <span class="alert__icon">!</span>
                 <div>
                   <b>Onvoldoende voorraad.</b>
-                  Er ligt {{ product.stockQuantity | num }} van de {{ quantity() | num }} stuks.
+                  Er ligt {{ product.stockQuantity | num }} van de {{ carton.value() | num }} stuks.
                   Deze regel kan pas mee zodra er een container binnen is — spreek de
                   levertermijn af met de klant.
                 </div>
@@ -135,7 +138,7 @@ const SNAP_DELAY_MS = 2000;
         <button
           class="btn btn--primary"
           type="button"
-          [disabled]="!chosen() || rounded() <= 0"
+          [disabled]="!chosen() || carton.value() <= 0"
           (click)="confirm()"
         >
           Toevoegen
@@ -184,22 +187,27 @@ const SNAP_DELAY_MS = 2000;
 export class ProductPicker implements OnDestroy {
   readonly heading = input('Product toevoegen');
   readonly products = input.required<Product[]>();
-  /** Prijs die getoond wordt; laat de aanroeper bepalen welke dat is. */
+  /** The price to display; the caller decides which one that is. */
   readonly priceOf = input<(product: Product) => number>((product) =>
     product.fixedSalesPriceEur ?? 0);
+  /**
+   * Whether quantities snap to full cartons.
+   *
+   * Sales orders must (half a carton breaks volume, pallets and freight
+   * further down). Purchasing only warns: a supplier can perfectly well ship
+   * a three-piece sample, and silently inflating an order to a supplier costs
+   * real money.
+   */
+  readonly enforceCartons = input(true);
 
   readonly picked = output<{ product: Product; quantity: number }>();
   readonly cancelled = output<void>();
 
   readonly query = signal('');
   readonly chosen = signal<Product | null>(null);
-  readonly quantity = signal(0);
-  /** Wat er zonet is bijgesteld, om het onder het veld te melden. */
-  readonly adjusted = signal<{ from: number; to: number } | null>(null);
-  /** Wat er straks bijgesteld wordt; meteen zichtbaar, nog niet toegepast. */
-  readonly pending = signal<{ from: number; to: number } | null>(null);
-
-  private snapTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly carton = new CartonQuantity(
+    () => this.chosen()?.carton.piecesPerCarton ?? 1,
+    () => this.enforceCartons());
 
   readonly matches = computed(() => {
     const needle = this.query().toLowerCase().trim();
@@ -218,48 +226,14 @@ export class ProductPicker implements OnDestroy {
       .slice(0, 50);
   });
 
-  /**
-   * Zet het aantal op een volle doos, maar pas nadat je klaar bent met typen.
-   *
-   * Meteen bijstellen tijdens het tikken maakt het veld onbruikbaar: je typt "2"
-   * van "240" en het springt al naar 6. Daarom wordt er twee seconden gewacht
-   * nadat de laatste toets is losgelaten. De melding eronder verschijnt wel
-   * direct, zodat je ziet wat er gaat gebeuren voor het gebeurt.
-   */
-  setQuantity(value: number): void {
-    const wanted = Math.max(0, value || 0);
-    this.quantity.set(wanted);
-
-    const product = this.chosen();
-    if (!product) return;
-
-    const per = Math.max(1, product.carton.piecesPerCarton ?? 1);
-    const snapped = Math.ceil(wanted / per) * per;
-
-    /* Vooraankondiging: meteen zichtbaar, nog niet toegepast. */
-    this.pending.set(snapped !== wanted && wanted > 0 ? { from: wanted, to: snapped } : null);
-    this.adjusted.set(null);
-
-    clearTimeout(this.snapTimer);
-    if (snapped === wanted || wanted <= 0) return;
-
-    this.snapTimer = setTimeout(() => {
-      /* Alleen bijstellen als er intussen niets anders is ingetikt. */
-      if (this.quantity() !== wanted) return;
-      this.quantity.set(snapped);
-      this.pending.set(null);
-      this.adjusted.set({ from: wanted, to: snapped });
-    }, SNAP_DELAY_MS);
-  }
-
   ngOnDestroy(): void {
-    clearTimeout(this.snapTimer);
+    this.carton.destroy();
   }
 
-  /** Genoeg op voorraad voor wat er gevraagd wordt? */
+  /** Enough stock for what is being asked? */
   readonly hasEnoughStock = computed(() => {
     const product = this.chosen();
-    return product ? product.stockQuantity >= this.quantity() : true;
+    return product ? product.stockQuantity >= this.carton.value() : true;
   });
 
   /** Grof niveau voor de stip: leeg, krap of ruim. */
@@ -278,28 +252,16 @@ export class ProductPicker implements OnDestroy {
     const product = this.chosen();
     if (!product) return 0;
     const per = Math.max(1, product.carton.piecesPerCarton ?? 1);
-    return Math.ceil(Math.max(0, this.quantity()) / per);
+    return Math.ceil(Math.max(0, this.carton.value()) / per);
   });
-
-  /** Aantal opgeschoven naar een volle doos. */
-  readonly rounded = computed(() => {
-    const product = this.chosen();
-    if (!product) return 0;
-    return this.cartons() * Math.max(1, product.carton.piecesPerCarton ?? 1);
-  });
-
-  readonly willRound = computed(() => this.rounded() !== this.quantity() && this.quantity() > 0);
 
   price(product: Product): number {
     return this.priceOf()(product);
   }
 
   choose(product: Product): void {
-    clearTimeout(this.snapTimer);
     this.chosen.set(product);
-    this.adjusted.set(null);
-    this.pending.set(null);
-    this.quantity.set((product.carton.piecesPerCarton ?? 1) * 10);
+    this.carton.reset((product.carton.piecesPerCarton ?? 1) * 10);
   }
 
   clear(): void {
@@ -309,10 +271,7 @@ export class ProductPicker implements OnDestroy {
 
   confirm(): void {
     const product = this.chosen();
-    if (!product || this.quantity() <= 0) return;
-    /* Loopt de wachttijd nog? Dan hier alsnog afronden - er mag nooit een
-       half gevulde doos de order op. */
-    clearTimeout(this.snapTimer);
-    this.picked.emit({ product, quantity: this.rounded() });
+    if (!product || this.carton.value() <= 0) return;
+    this.picked.emit({ product, quantity: this.carton.finalValue() });
   }
 }

@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
 import { Sheet, Ui } from '../../shared/ui';
 
 function blank(): Country {
@@ -62,12 +63,16 @@ function blank(): Country {
                  (closed)="editing.set(false)">
         <div body><div class="form-grid">
           @if (isNew()) {
-            <div class="field"><label for="k-code">Landcode (ISO)</label>
-              <input class="input" id="k-code" maxlength="2" [ngModel]="draft().code"
-                     (ngModelChange)="patch({ code: $event.toUpperCase() })" /></div>
-            <div class="field"><label for="k-name">Naam</label>
-              <input class="input" id="k-name" [ngModel]="draft().name"
-                     (ngModelChange)="patch({ name: $event })" /></div>
+            <!-- One pick fills both code and name; nobody should have to know
+                 that Ireland is IE. -->
+            <div class="field span-2"><label class="req" for="k-code">Land</label>
+              <select class="select" id="k-code" [ngModel]="draft().code"
+                      (ngModelChange)="pickCountry($event)">
+                <option value="" disabled>Kies een land…</option>
+                @for (option of isoCountries; track option.code) {
+                  <option [value]="option.code">{{ option.name }} ({{ option.code }})</option>
+                }
+              </select></div>
           }
           <div class="field"><label for="k-min">Minimum orderwaarde</label>
             <div class="input-affix">
@@ -134,6 +139,13 @@ function blank(): Country {
   `,
 })
 export class CountryList {
+  readonly isoCountries = ISO_COUNTRIES;
+
+  /** Filling code and name together keeps them consistent by construction. */
+  pickCountry(code: string): void {
+    this.patch({ code, name: countryName(code) });
+  }
+
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
 

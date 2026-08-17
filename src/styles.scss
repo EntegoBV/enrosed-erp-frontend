@@ -699,6 +699,25 @@ a { color: var(--rose); }
 }
 @keyframes fade { from { opacity: 0; } }
 
+/* Pages ease in rather than pop: a 4px rise over 180ms is enough to feel
+   deliberate without ever making anyone wait for it. */
+.content { animation: page-enter 0.18s ease; }
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+}
+
+/* Pressed feedback on every button; transform is GPU-cheap. */
+.btn { transition: transform 0.08s ease, background 0.15s ease; }
+.btn:active { transform: scale(0.98); }
+
+/* Anyone who asked their OS for less motion gets exactly that. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .sheet {
   background: var(--surface);
   width: 100%;
@@ -1113,7 +1132,9 @@ table.data tfoot td {
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
-  max-width: 46%;
+  /* Badges size themselves; capping the column squeezed the date into "18/0...". */
+  max-width: 42%;
+  flex: none;
 }
 
 .badge--todo {

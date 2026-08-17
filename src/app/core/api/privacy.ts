@@ -2,25 +2,22 @@ import { Injectable, computed, effect, signal } from '@angular/core';
 
 const STORAGE_KEY = 'enrosed.showPurchase';
 
-/** Klas op <html> die de app rozerood kleurt zodra de inkoopcijfers zichtbaar zijn. */
+/** Class on <html> that paints the app red while purchase figures are visible. */
 const THEME_CLASS = 'theme-internal';
 
 /**
- * Of inkoopcijfers zichtbaar zijn.
+ * Whether purchase figures (cost, margin) are visible.
  *
- * Kostprijs en marge horen niet op het scherm wanneer er een klant meekijkt —
- * op een beurs staat hij letterlijk naast je. Eén schakelaar die overal geldt,
- * niet per scherm: anders zet je hem op de ene pagina uit en staat hij op de
- * volgende weer aan.
+ * One switch that applies everywhere, not per screen: otherwise you hide them
+ * on one page and they are back on the next.
  *
- * De stand blijft bewaard in localStorage zodat hij een navigatie of een
- * herlaadbeurt overleeft. Standaard staat hij **uit**: liever een keer te veel
- * moeten aanzetten dan een keer te veel getoond.
+ * The default is **visible** — red theme. This is our own working tool, and
+ * margins are what we work with all day. Double-tapping the logo hides them
+ * and turns the whole app green: that is the customer-safe mode for when
+ * someone is standing next to you at a fair. The colour is readable from the
+ * other side of a booth, which an inverted logo never was.
  *
- * Staat hij aan, dan wordt de hele app rozerood in plaats van groen. Dat is met
- * één blik van de andere kant van een beursstand te zien - duidelijker dan een
- * omgekeerd logo, en je hoeft er niet voor op het scherm te turen. Rood is hier
- * een waarschuwing dat er cijfers staan die niemand hoort te zien.
+ * The state survives navigation and reloads via localStorage.
  */
 @Injectable({ providedIn: 'root' })
 export class Privacy {
@@ -29,14 +26,14 @@ export class Privacy {
   readonly showPurchase = computed(() => this.visible());
 
   constructor() {
-    /* De klas staat op <html> en niet op de app zelf, zodat ook overlays en
-       vensters die buiten de component-boom hangen meekleuren. */
+    /* The class lives on <html>, not on the app component, so overlays that
+       sit outside the component tree change colour too. */
     effect(() => {
       const on = this.visible();
       try {
         document.documentElement.classList.toggle(THEME_CLASS, on);
       } catch {
-        /* geen DOM (server-side render): dan valt er niets te kleuren */
+        /* No DOM (server-side render): nothing to paint. */
       }
     });
   }
@@ -50,15 +47,18 @@ export class Privacy {
     try {
       localStorage.setItem(STORAGE_KEY, String(value));
     } catch {
-      /* privémodus: dan geldt de stand alleen voor deze sessie */
+      /* Private browsing: the state then only lasts for this session. */
     }
   }
 
   private restore(): boolean {
     try {
-      return localStorage.getItem(STORAGE_KEY) === 'true';
+      /* No stored preference means visible: red is the normal working mode,
+         green is deliberately chosen when a customer can watch. */
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored === null ? true : stored === 'true';
     } catch {
-      return false;
+      return true;
     }
   }
 }

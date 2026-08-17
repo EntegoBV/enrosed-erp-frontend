@@ -1,20 +1,27 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, OnDestroy, computed, input, output, signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PortalCatalogItem } from '../../core/api/models';
 import { Sheet } from '../../shared/ui';
-import { EurPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe } from '../../shared/pipes';
+import { CartonQuantity } from '../../shared/carton-quantity';
 
 /**
- * Artikel bijbestellen vanuit het klantportaal.
+ * Adding an item from the customer portal.
  *
- * Dezelfde vorm als intern: zoeken in plaats van een lange lijst waar de klant
- * doorheen moet scrollen. Wat er niet ligt is meteen zichtbaar, want dat
- * bepaalt of hij vandaag geleverd krijgt of moet wachten.
+ * Same shape as our internal picker: search instead of a long list to scroll
+ * through. Stock status is visible up front, because it decides whether the
+ * customer gets delivery now or has to wait.
+ *
+ * Quantities behave exactly like on our side: the rounding notice appears
+ * immediately, the field snaps to a full carton two seconds after the last
+ * keystroke. A customer typing "240" passes through "2" too.
  */
 @Component({
   selector: 'app-portal-product-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, EurPipe],
+  imports: [FormsModule, Sheet, EurPipe, NumPipe],
   template: `
     <app-sheet [title]="t()('portalAddItem')" (closed)="cancelled.emit()">
       <div body>
@@ -40,12 +47,24 @@ import { EurPipe } from '../../shared/pipes';
             <div class="field mt-12" style="margin-bottom:0">
               <label class="req" for="portal-qty">{{ t()('quantity') }}</label>
               <input class="input num right" id="portal-qty" type="number" min="0" step="1"
-                     inputmode="numeric" [ngModel]="quantity()"
-                     (ngModelChange)="quantity.set(+$event)" />
-              <span class="hint">
-                {{ t()('portalPerBox') }}: {{ item.piecesPerCarton }}
-                {{ t()('portalPieces') }}.
-              </span>
+                     inputmode="numeric" [ngModel]="carton.value()"
+                     (ngModelChange)="carton.set(+$event)" />
+              @if (carton.pending(); as note) {
+                <span class="hint warn-text">
+                  {{ t()('portalRoundingNotice') }} <b>{{ note.to | num }}</b>
+                  ({{ item.piecesPerCarton }} {{ t()('portalPerBox') }})
+                </span>
+              } @else if (carton.applied(); as note) {
+                <span class="hint warn-text">
+                  {{ note.from | num }} → <b>{{ note.to | num }}</b>
+                  ({{ item.piecesPerCarton }} {{ t()('portalPerBox') }})
+                </span>
+              } @else {
+                <span class="hint">
+                  {{ t()('portalPerBox') }}: {{ item.piecesPerCarton }}
+                  {{ t()('portalPieces') }}.
+                </span>
+              }
             </div>
 
             @if (!item.inStock) {
@@ -88,7 +107,7 @@ import { EurPipe } from '../../shared/pipes';
         <button class="btn" type="button"
                 (click)="cancelled.emit()">{{ t()('portalCancel') }}</button>
         <button class="btn btn--primary" type="button"
-                [disabled]="!chosen() || quantity() <= 0" (click)="confirm()">
+                [disabled]="!chosen() || carton.value() <= 0" (click)="confirm()">
           {{ t()('portalAdd') }}
         </button>
       </div>
@@ -112,13 +131,13 @@ import { EurPipe } from '../../shared/pipes';
     }
   `,
 })
-export class PortalProductPicker {
+export class PortalProductPicker implements OnDestroy {
   readonly items = input.required<PortalCatalogItem[]>();
   /**
-   * De vertaalde teksten, doorgegeven vanuit het portaal.
+   * Translated texts, handed down from the portal page.
    *
-   * Als functie in plaats van als map, zodat de sjabloon er net zo uitziet als
-   * in portal-page: {{ t()('sleutel') }}.
+   * A function rather than a map, so the template reads the same as in
+   * portal-page: {{ t()('key') }}.
    */
   readonly t = input.required<(key: string) => string>();
   readonly picked = output<{ item: PortalCatalogItem; quantity: number }>();
@@ -126,7 +145,8 @@ export class PortalProductPicker {
 
   readonly query = signal('');
   readonly chosen = signal<PortalCatalogItem | null>(null);
-  readonly quantity = signal(0);
+  readonly carton = new CartonQuantity(
+    () => this.chosen()?.piecesPerCarton ?? 1, /* snap: */ () => true);
 
   readonly matches = computed(() => {
     const needle = this.query().toLowerCase().trim();
@@ -139,13 +159,16 @@ export class PortalProductPicker {
 
   choose(item: PortalCatalogItem): void {
     this.chosen.set(item);
-    this.quantity.set(item.piecesPerCarton * 10);
+    this.carton.reset(item.piecesPerCarton * 10);
   }
 
   confirm(): void {
     const item = this.chosen();
-    if (!item || this.quantity() <= 0) return;
-    const per = Math.max(1, item.piecesPerCarton);
-    this.picked.emit({ item, quantity: Math.ceil(this.quantity() / per) * per });
+    if (!item || this.carton.value() <= 0) return;
+    this.picked.emit({ item, quantity: this.carton.finalValue() });
+  }
+
+  ngOnDestroy(): void {
+    this.carton.destroy();
   }
 }

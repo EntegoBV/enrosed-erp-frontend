@@ -102,6 +102,18 @@ import { Ui } from '../../shared/ui';
                           placeholder="Op al onze offertes zijn onze algemene voorwaarden van toepassing."></textarea>
               </div>
             </div>
+            <div class="field span-2 mt-8">
+              <label for="co-terms">Algemene voorwaarden</label>
+              <textarea class="textarea" id="co-terms" rows="14" style="min-height:260px"
+                        [ngModel]="profile.termsAndConditions"
+                        (ngModelChange)="patchCompany({ termsAndConditions: $event })"></textarea>
+              <span class="hint">
+                Er staat een voorstel klaar voor een Belgische groothandel — laat het nakijken
+                door je boekhouder of jurist en pas gerust aan. Klanten lezen dit op
+                <a href="/voorwaarden" target="_blank" rel="noopener">/voorwaarden</a>;
+                de offerte-PDF en het klantportaal verwijzen ernaar.
+              </span>
+            </div>
             <button class="btn btn--primary btn--block mt-8" type="button"
                     [disabled]="savingCompany()" (click)="saveCompany()">
               {{ savingCompany() ? 'Bezig…' : 'Bedrijfsgegevens opslaan' }}
@@ -164,7 +176,7 @@ import { Ui } from '../../shared/ui';
           }
           <p class="small muted">
             Het invoerrecht geldt over de <b>douanewaarde</b>: goederen + lokale kosten China +
-            zeevracht. De kosten vanaf Rotterdam vallen erbuiten.
+            zeevracht. De kosten vanaf de aankomsthaven vallen erbuiten.
           </p>
         </div>
       </div>

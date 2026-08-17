@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
 import { Sheet, Ui } from '../../shared/ui';
 
 function blank(): Supplier {
@@ -30,7 +31,7 @@ function blank(): Supplier {
                   (click)="open(supplier)">
             <div class="list-item__body">
               <div class="list-item__title">{{ supplier.name }}</div>
-              <div class="list-item__meta">{{ supplier.city }}, {{ supplier.country }} ·
+              <div class="list-item__meta">{{ supplier.city }}, {{ name(supplier.country) }} ·
                 {{ supplier.contact }}</div>
               <div class="list-item__meta">levertijd {{ supplier.leadTimeDays }} dagen ·
                 {{ supplier.portOfLoading }}</div>
@@ -62,9 +63,13 @@ function blank(): Supplier {
             <div class="field"><label for="s-city">Stad</label>
               <input class="input" id="s-city" [ngModel]="draft().city"
                      (ngModelChange)="patch({ city: $event })" /></div>
-            <div class="field"><label for="s-country">Land (ISO)</label>
-              <input class="input" id="s-country" maxlength="2" [ngModel]="draft().country"
-                     (ngModelChange)="patch({ country: $event.toUpperCase() })" /></div>
+            <div class="field"><label for="s-country">Land</label>
+              <select class="select" id="s-country" [ngModel]="draft().country"
+                      (ngModelChange)="patch({ country: $event })">
+                @for (option of isoCountries; track option.code) {
+                  <option [value]="option.code">{{ option.name }}</option>
+                }
+              </select></div>
             <div class="field"><label for="s-contact">Contactpersoon</label>
               <input class="input" id="s-contact" [ngModel]="draft().contact"
                      (ngModelChange)="patch({ contact: $event })" /></div>
@@ -111,6 +116,8 @@ function blank(): Supplier {
   `,
 })
 export class SupplierList {
+  readonly isoCountries = ISO_COUNTRIES;
+  readonly name = countryName;
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
 
