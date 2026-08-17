@@ -1,0 +1,1145 @@
+/* ==========================================================================
+   Enrosed — design system
+   Mobile first: alle basisregels gelden voor telefoon, media queries voegen
+   pas vanaf 700px (tablet) en 1024px (desktop) iets toe.
+   ========================================================================== */
+
+:root {
+  --ink: #1a1614;
+  --ink-2: #4a423e;
+  --muted: #8a807a;
+  --muted-2: #a9a099;
+  --line: #e9e3de;
+  --line-strong: #d8d0c9;
+  --bg: #f7f4f1;
+  --surface: #ffffff;
+  --surface-2: #fcfaf8;
+
+  /*
+   * De accentkleur staat op groen zolang de inkoopcijfers verborgen zijn - de
+   * stand waarin je veilig een scherm kan laten zien. Zodra ze zichtbaar zijn
+   * wordt alles rozerood (zie .theme-internal): rood waarschuwt dat er
+   * kostprijzen en marges op het scherm staan.
+   */
+  --rose: #1f7a4d;
+  --rose-dark: #145c39;
+  --rose-mid: #3f9e6d;
+  --rose-soft: #e9f5ee;
+  --rose-line: #cbe6d7;
+
+  --gold: #a8853f;
+  --gold-soft: #fbf4e6;
+
+  --ok: #1b7a4c;
+  --ok-soft: #e8f5ee;
+  --warn: #a85e10;
+  --warn-soft: #fdf3e4;
+  --danger: #b4342a;
+  --danger-soft: #fbedeb;
+
+  --blue: #1f5f8b;
+  --blue-soft: #e9f2f8;
+
+  /* Het logo hoeft normaal niet omgekleurd te worden. */
+  --logo-filter: none;
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
+
+  --sh-1: 0 1px 2px rgb(26 22 20 / 6%), 0 1px 3px rgb(26 22 20 / 4%);
+  --sh-2: 0 2px 6px rgb(26 22 20 / 6%), 0 10px 24px rgb(26 22 20 / 8%);
+  --sh-3: 0 -4px 24px rgb(26 22 20 / 12%);
+
+  --tabbar-h: 58px;
+  --appbar-h: 56px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+h1, h2, h3, h4, p, figure, dl, dd { margin: 0; }
+img { display: block; max-width: 100%; }
+button { font: inherit; color: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+/*
+ * Rozerood thema zodra de inkoopcijfers zichtbaar zijn.
+ *
+ * Van de andere kant van een beursstand zie je met één blik dat er kostprijzen
+ * en marges op het scherm staan - dat is duidelijker dan een omgekeerd logo en
+ * je hoeft er niet voor op het scherm te turen. Rood is hier een waarschuwing,
+ * groen de veilige stand: precies andersom als je aan "goedgekeurd" denkt, maar
+ * het gaat hier niet om goed of fout, het gaat om wie er meekijkt.
+ *
+ * De klas staat op <html> (zie Privacy), dus overlays en vensters buiten de
+ * component-boom kleuren mee.
+ */
+.theme-internal {
+  --rose: #b01f3f;
+  --rose-dark: #8a1730;
+  --rose-mid: #d14a67;
+  --rose-soft: #fbecef;
+  --rose-line: #f0d2d9;
+
+  /* Het logo is zwarte inkt; deze filter maakt er hetzelfde rozerood van. */
+  --logo-filter: invert(19%) sepia(72%) saturate(3011%) hue-rotate(334deg) brightness(93%) contrast(93%);
+}
+
+a { color: var(--rose); }
+
+/* ------------------------------------------------------------- utilities */
+.num { font-variant-numeric: tabular-nums; }
+.right { text-align: right; }
+.center { text-align: center; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.tiny { font-size: 11.5px; }
+.strong { font-weight: 650; }
+.nowrap { white-space: nowrap; }
+.mono { font-family: var(--mono); }
+.ok-text { color: var(--ok); }
+.warn-text { color: var(--warn); }
+.danger-text { color: var(--danger); }
+.rose-text { color: var(--rose); }
+.grow { flex: 1; }
+.row { display: flex; align-items: center; gap: 10px; }
+.col { display: flex; flex-direction: column; gap: 10px; }
+.wrap { flex-wrap: wrap; }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+/* dubbele klasse voor extra specificiteit, anders wint .btn's display */
+.hide-mobile.hide-mobile { display: none; }
+
+/* ============================================================== app shell */
+
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- bovenbalk --- */
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: var(--appbar-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.appbar__back {
+  border: 0;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  padding: 8px 6px;
+  margin-left: -6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--ink-2);
+  min-width: 40px;
+}
+.appbar__back:active { background: var(--surface-2); }
+
+.appbar__titles { min-width: 0; flex: 1; }
+.appbar__title {
+  font-size: 17px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appbar__sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appbar__actions { display: flex; gap: 6px; align-items: center; }
+
+/* --- inhoud --- */
+.content {
+  flex: 1;
+  padding: 14px 12px calc(var(--tabbar-h) + var(--safe-b) + 24px);
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* --- onderbalk (mobiel) --- */
+.tabbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 40;
+  height: calc(var(--tabbar-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  display: flex;
+  background: rgb(255 255 255 / 92%);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+}
+
+.tabbar__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 6px 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+.tabbar__icon { font-size: 19px; line-height: 1; }
+.tabbar__item.active { color: var(--rose); }
+
+/* --- zijbalk (desktop) --- */
+.sidebar { display: none; }
+
+@media (min-width: 1024px) {
+  .shell { flex-direction: row; }
+
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 232px;
+    flex: 0 0 232px;
+    background: #17120f;
+    color: #efe9e4;
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+  }
+
+  .sidebar__brand {
+    padding: 22px 20px 18px;
+    border-bottom: 1px solid rgb(255 255 255 / 8%);
+  }
+  .sidebar__mark {
+    font-family: Georgia, serif;
+    font-size: 22px;
+    letter-spacing: 0.06em;
+    color: #fff;
+  }
+  .sidebar__mark span { color: var(--rose-mid); }
+  .sidebar__sub {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #9a8f88;
+    margin-top: 3px;
+  }
+
+  .sidebar__nav { padding: 12px; flex: 1; overflow-y: auto; }
+  .sidebar__label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #7c716a;
+    padding: 12px 10px 6px;
+  }
+  .sidebar__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    margin-bottom: 2px;
+    border-radius: var(--r-sm);
+    color: #cdc4be;
+    text-decoration: none;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .sidebar__link:hover { background: rgb(255 255 255 / 6%); color: #fff; }
+  .sidebar__link.active { background: var(--rose); color: #fff; }
+  .sidebar__icon { width: 18px; text-align: center; opacity: 0.85; }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .tabbar { display: none; }
+  .content { padding: 22px 26px 60px; }
+  .appbar { padding: 0 26px; height: 62px; }
+  .appbar__back { display: none; }
+  .hide-mobile.hide-mobile { display: revert; }
+  .hide-desktop.hide-desktop { display: none; }
+}
+
+/* ================================================================= cards */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--sh-1);
+  overflow: hidden;
+}
+.card + .card { margin-top: 12px; }
+
+.card__head {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.card__head h2 { font-size: 14px; font-weight: 680; }
+.card__head .spacer { flex: 1; }
+.card__body { padding: 14px; }
+.card__body--flush { padding: 0; }
+
+.section-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin: 22px 0 8px;
+}
+.section-title:first-child { margin-top: 4px; }
+
+/* ---------------------------------------------------------- lijst-items */
+
+.list { display: flex; flex-direction: column; }
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  text-decoration: none;
+  color: inherit;
+  min-height: 58px;
+  -webkit-tap-highlight-color: transparent;
+}
+.list-item:last-child { border-bottom: 0; }
+.list-item:active { background: var(--surface-2); }
+.list-item__body { min-width: 0; flex: 1; }
+.list-item__title {
+  font-size: 14.5px;
+  font-weight: 620;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item__meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* De levertermijn is een zin, geen label: die mag over twee regels lopen in
+   plaats van afgekapt te worden. */
+.list-item__meta--wrap { overflow: visible; text-overflow: clip; white-space: normal; }
+.list-item__end { text-align: right; flex: none; }
+.list-item__chev { color: var(--muted-2); font-size: 18px; flex: none; }
+
+.thumb {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, #f4efeb, #eae3dd);
+}
+.thumb--lg { width: 64px; height: 64px; }
+.thumb--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-2);
+  font-size: 18px;
+}
+
+/* ================================================================ knoppen */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 9px 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: translateY(0.5px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn--primary {
+  background: var(--rose);
+  border-color: var(--rose);
+  color: #fff;
+}
+.btn--primary:active { background: var(--rose-dark); }
+.btn--ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
+.btn--danger { color: var(--danger); border-color: var(--line-strong); }
+.btn--danger:active { background: var(--danger-soft); }
+.btn--sm { min-height: 34px; padding: 5px 11px; font-size: 13px; }
+.btn--block { width: 100%; }
+.btn--icon { min-height: 40px; min-width: 40px; padding: 6px; }
+
+/* Zwevende actieknop op mobiel */
+.fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
+  z-index: 35;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 26px;
+  background: var(--rose);
+  color: #fff;
+  border: 0;
+  font-size: 15px;
+  font-weight: 650;
+  box-shadow: 0 6px 20px rgb(176 31 63 / 35%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+@media (min-width: 1024px) {
+  .fab { display: none; }
+}
+
+/* ================================================================= badges */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 650;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge--neutral { background: #f1ede9; color: var(--ink-2); border-color: var(--line); }
+.badge--ok { background: var(--ok-soft); color: var(--ok); border-color: #c6e5d5; }
+.badge--warn { background: var(--warn-soft); color: var(--warn); border-color: #f0dcbc; }
+.badge--danger { background: var(--danger-soft); color: var(--danger); border-color: #efcdc9; }
+.badge--rose { background: var(--rose-soft); color: var(--rose-dark); border-color: var(--rose-line); }
+.badge--gold { background: var(--gold-soft); color: var(--gold); border-color: #efe0bf; }
+.badge--blue { background: var(--blue-soft); color: var(--blue); border-color: #cfe2ee; }
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1ede9;
+  border: 1px solid var(--line);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip.active { background: var(--rose); border-color: var(--rose); color: #fff; }
+
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+
+/* ================================================================= velden */
+
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.field > label { font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
+.field .hint { font-size: 12px; color: var(--muted); }
+
+.input, .select, .textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  /* 16px voorkomt dat iOS inzoomt bij focus */
+  font-size: 16px;
+}
+.input:focus, .select:focus, .textarea:focus {
+  outline: none;
+  border-color: var(--rose-mid);
+  box-shadow: 0 0 0 3px rgb(209 74 103 / 14%);
+}
+.textarea { min-height: 76px; resize: vertical; }
+.select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238A807A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 30px;
+}
+.input--sm { min-height: 38px; padding: 6px 9px; font-size: 15px; }
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.field-row--3 { grid-template-columns: repeat(3, 1fr); }
+.field-row .field { margin-bottom: 0; }
+
+.input-affix {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.input-affix .input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.input-affix__suffix {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-left: 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.search-bar { margin-bottom: 12px; }
+
+@media (min-width: 700px) {
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 14px;
+  }
+  .form-grid .span-2 { grid-column: 1 / -1; }
+}
+
+/* ============================================================ stat-rijen */
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 14px;
+}
+.stat-row > span:first-child { color: var(--ink-2); }
+.stat-row--sub {
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  padding-top: 11px;
+  font-weight: 650;
+}
+.stat-row--total {
+  border-top: 2px solid var(--line-strong);
+  margin-top: 8px;
+  padding-top: 12px;
+  font-size: 19px;
+  font-weight: 720;
+}
+.stat-row--muted { color: var(--muted); font-size: 12.5px; padding: 4px 0; }
+.stat-row--discount > span:last-child { color: var(--ok); }
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+@media (min-width: 700px) {
+  .kpis { grid-template-columns: repeat(4, 1fr); }
+}
+
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 13px 14px;
+  box-shadow: var(--sh-1);
+}
+.kpi__label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.kpi__value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 5px;
+}
+.kpi__meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.kpi--dark {
+  background: linear-gradient(160deg, #1f1815, #2c211c);
+  border-color: #2c211c;
+  color: #f5f0ec;
+}
+.kpi--dark .kpi__label,
+.kpi--dark .kpi__meta { color: #ac9f97; }
+
+/* ================================================================ meters */
+
+.meter__track {
+  height: 8px;
+  border-radius: 20px;
+  background: #ede7e2;
+  overflow: hidden;
+}
+.meter__fill {
+  height: 100%;
+  border-radius: 20px;
+  background: var(--rose);
+  transition: width 0.25s ease;
+}
+.meter__fill--ok { background: var(--ok); }
+.meter__fill--warn { background: var(--warn); }
+.meter__labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+/* =============================================================== alerts */
+
+.alert {
+  display: flex;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid;
+}
+.alert__icon { flex: none; font-weight: 700; }
+.alert--danger { background: var(--danger-soft); border-color: #efcdc9; color: #83261e; }
+.alert--ok { background: var(--ok-soft); border-color: #c6e5d5; color: #14603b; }
+.alert--warn { background: var(--warn-soft); border-color: #f0dcbc; color: #7c450b; }
+.alert--info { background: var(--surface-2); border-color: var(--line); color: var(--ink-2); }
+.alert + .alert { margin-top: 8px; }
+
+/* ================================================== bottom sheet / dialog */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgb(26 22 20 / 45%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fade 0.15s ease;
+}
+@keyframes fade { from { opacity: 0; } }
+
+.sheet {
+  background: var(--surface);
+  width: 100%;
+  max-height: 92dvh;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  display: flex;
+  flex-direction: column;
+  animation: slide-up 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  padding-bottom: var(--safe-b);
+}
+@keyframes slide-up { from { transform: translateY(100%); } }
+
+.sheet__grab {
+  width: 38px;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--line-strong);
+  margin: 8px auto 0;
+  flex: none;
+}
+.sheet__head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.sheet__head h2 { font-size: 16px; font-weight: 680; flex: 1; }
+.sheet__close {
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.sheet__body { padding: 16px; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+.sheet__foot {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  background: var(--surface-2);
+  flex: none;
+}
+.sheet__foot .btn { flex: 1; }
+.sheet__foot .btn--icon { flex: none; }
+
+@media (min-width: 700px) {
+  .overlay { align-items: center; padding: 24px; }
+  .sheet {
+    max-width: 620px;
+    border-radius: var(--r-lg);
+    max-height: 88dvh;
+    animation: pop 0.16s ease;
+    padding-bottom: 0;
+  }
+  .sheet--wide { max-width: 940px; }
+  .sheet__grab { display: none; }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px); } }
+  .sheet__foot { justify-content: flex-end; }
+  .sheet__foot .btn { flex: none; }
+  .sheet__foot .spacer { flex: 1; }
+}
+
+/* ============================================== onderaan vastgezette balk */
+
+.action-bar {
+  position: fixed;
+  inset: auto 0 calc(var(--tabbar-h) + var(--safe-b)) 0;
+  z-index: 25;
+  background: rgb(255 255 255 / 96%);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: var(--sh-3);
+}
+.action-bar__total { flex: 1; min-width: 0; }
+.action-bar__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 700; }
+.action-bar__value { font-size: 19px; font-weight: 720; letter-spacing: -0.02em; }
+
+/* Op desktop blijft de actiebalk staan, maar dan naast de zijbalk in plaats van
+   over de volle breedte. Hem daar verbergen was fout: de hoofdactie van een
+   pagina — PDF maken, versturen — stond dan nergens. */
+@media (min-width: 1024px) {
+  .action-bar {
+    left: 232px;
+    bottom: 0;
+    padding: 12px 26px;
+  }
+  .action-bar__value { font-size: 20px; }
+}
+
+/* ================================================================ tabellen */
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+table.data th {
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+table.data td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+table.data tbody tr:last-child td { border-bottom: 0; }
+table.data tfoot td {
+  padding: 11px 12px;
+  border-top: 2px solid var(--line-strong);
+  font-weight: 680;
+  background: var(--surface-2);
+}
+
+/* ========================================================== lege toestand */
+
+.empty {
+  padding: 44px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.empty__icon { font-size: 30px; opacity: 0.3; margin-bottom: 10px; }
+.empty__title { font-size: 15px; font-weight: 650; color: var(--ink-2); margin-bottom: 4px; }
+.empty__text { font-size: 13.5px; max-width: 340px; margin: 0 auto 18px; }
+
+/* ================================================================= toasts */
+
+.toasts {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: #221b17;
+  color: #f3eeea;
+  padding: 12px 16px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  box-shadow: var(--sh-2);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  animation: slide-up 0.18s ease;
+}
+.toast__dot { width: 7px; height: 7px; border-radius: 50%; background: #57c089; flex: none; }
+.toast--err .toast__dot { background: #e0796c; }
+
+@media (min-width: 1024px) {
+  .toasts { left: auto; right: 20px; bottom: 20px; width: 320px; }
+}
+
+/* ============================================================ afdrukken */
+
+@media print {
+  .appbar, .tabbar, .sidebar, .fab, .action-bar, .no-print { display: none !important; }
+  .content { padding: 0; max-width: none; }
+  body { background: #fff; }
+  .card { border: 0; box-shadow: none; }
+  .overlay { position: static; background: none; padding: 0; }
+  .sheet { max-width: none; max-height: none; box-shadow: none; }
+  .sheet__head, .sheet__foot, .sheet__grab { display: none; }
+  .sheet__body { padding: 0; overflow: visible; }
+}
+
+/* ------------------------------------------------------- zijbalk-voettekst */
+@media (min-width: 1024px) {
+  .sidebar__foot {
+    padding: 12px 16px 18px;
+    border-top: 1px solid rgb(255 255 255 / 8%);
+  }
+  .sidebar__user {
+    font-size: 12px;
+    color: #cdc4be;
+    margin-bottom: 6px;
+  }
+  .sidebar__logout {
+    background: transparent;
+    border: 1px solid rgb(255 255 255 / 18%);
+    color: #cdc4be;
+    border-radius: var(--r-sm);
+    padding: 6px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .sidebar__logout:hover { background: rgb(255 255 255 / 8%); color: #fff; }
+}
+
+/* Aanmeldpagina en klantportaal: geen navigatie, dus ook geen ruimte ervoor. */
+.shell--bare .content { padding-bottom: 40px; }
+
+/* Pagina's met een vaste actiebalk laten er ruimte voor, ook op desktop. */
+.content--with-action-bar { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 96px); }
+@media (min-width: 1024px) {
+  .content--with-action-bar { padding-bottom: 110px; }
+}
+
+/* ------------------------------------------------- verplicht en optioneel */
+
+/* Verplichte velden krijgen een rode ster, optionele een grijs label. Zo hoef je
+   niet te raden welk veld je mag overslaan. */
+.req::after {
+  content: ' *';
+  color: var(--rose);
+  font-weight: 700;
+}
+
+.opt::after {
+  content: ' optioneel';
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted-2);
+  text-transform: none;
+}
+
+.legend {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.legend b { color: var(--rose); }
+
+/* Knop in de bovenbalk om inkoopcijfers te tonen of te verbergen. */
+.privacy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.privacy-btn--on { background: var(--warn-soft); border-color: #f0dcbc; color: var(--warn); }
+
+/* Blok met interne cijfers; visueel apart zodat je meteen ziet wat niet
+   voor de klant bedoeld is. */
+.internal {
+  background: var(--warn-soft);
+  border: 1px dashed #e8d3ae;
+  border-radius: var(--r-sm);
+  padding: 9px 12px;
+}
+.internal__tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--warn);
+  margin-bottom: 4px;
+}
+
+/* Woordmerk in de mobiele bovenbalk: donker op licht. */
+.appbar__brand {
+  --brand-ink: #1a1614;
+  --brand-sub: #8a807a;
+  /* Lichte balk: het zwarte logo blijft zoals het is. */
+  --brand-logo-filter: none;
+  --brand-logo-filter-inverted: invert(1);
+  margin-right: 4px;
+}
+/* Geen achtergrondvlak meer achter het logo: de groene kleur van het thema
+   zegt al dat de inkoopcijfers zichtbaar zijn, en een donker vlak maakte het
+   logo juist slechter leesbaar. */
+
+/* Voorraadstip, ook buiten de productkiezer. */
+.stock-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+  /* Meestal een flex-kind, maar soms staat de stip gewoon in een zin; dan moet
+     ze op de tekstregel uitlijnen in plaats van op de onderkant te hangen. */
+  vertical-align: middle;
+  margin-right: 2px;
+  background: var(--muted-2);
+}
+.stock-dot--none { background: var(--danger); }
+.stock-dot--low { background: var(--warn); }
+.stock-dot--ok { background: var(--ok); }
+
+/*
+ * Knoppen in het klantportaal.
+ *
+ * Tekenen is groen: dat is de stap waar we hem naartoe willen, en groen leest
+ * als "ga door". Afwijzen krijgt geen rood maar een rustige rand - een rode knop
+ * naast een handtekening ziet eruit als een waarschuwing en dat schrikt af.
+ */
+.btn--accept {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #fff;
+}
+.btn--accept:active { background: #145c39; }
+.btn--quiet { color: var(--muted); }
+
+/* Telbolletje op de tab Verkoop en in de zijbalk. */
+.tabbar__icon { position: relative; display: inline-block; }
+.tabbar__count {
+  position: absolute;
+  top: -5px;
+  left: 11px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--rose);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+.sidebar__count {
+  margin-left: auto;
+  min-width: 19px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--rose);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Het statusblok is tegelijk de knop naar de geschiedenis. */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.status-bar:active { background: var(--surface-2); }
+.status-bar__toggle {
+  color: var(--muted-2);
+  font-size: 13px;
+  transition: transform 0.15s;
+}
+.status-bar__toggle--open { transform: rotate(180deg); }
+
+/* Tijdlijn: één kolom met stippen, werkt op elke breedte. Geen tabel, want die
+   moet je op een telefoon zijwaarts scrollen. */
+.step {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0 8px 2px;
+  position: relative;
+}
+.step + .step { border-top: 1px solid var(--line); }
+.step__dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--muted-2);
+  flex: none;
+}
+/* Wat van de klant kwam krijgt de accentkleur; onze eigen stappen blijven grijs.
+   Zo zie je in één blik wie er aan zet was. */
+.step--customer .step__dot { background: var(--rose); }
+.step__body { min-width: 0; }
+.step__title { font-size: 13.5px; font-weight: 600; }
+.step__meta { font-size: 11.5px; color: var(--muted); }
+.step__detail {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 3px;
+  white-space: pre-line;
+}
+
+/* Vlaggetje "wij zijn aan zet". Bewust de accentkleur en niet rood: het is
+   werk, geen fout, en rood verliest zijn betekenis als het overal staat. */
+/* De vlaggetjes onder elkaar in plaats van naast elkaar: naast elkaar duwden
+   ze de klantnaam weg, en die wil je juist als eerste lezen. */
+.list-item__end--stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  max-width: 46%;
+}
+
+.badge--todo {
+  background: var(--rose-soft);
+  color: var(--rose-dark);
+  border: 1px solid var(--rose-line);
+  margin-top: 4px;
+}
+
+.delivery__edit {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -2px -4px 0 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.delivery__edit:active { background: var(--surface); }
+
+.delivery {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
