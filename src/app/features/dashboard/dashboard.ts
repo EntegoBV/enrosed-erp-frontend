@@ -8,6 +8,7 @@ import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from '../sales/quote-status';
+import { containerLabel } from '../../core/api/geo';
 
 @Component({
   selector: 'app-dashboard',
@@ -107,7 +108,7 @@ import { STATUS_LABEL, statusClass } from '../sales/quote-status';
               <div class="list-item__body">
                 <div class="list-item__title">{{ row.order.number }}</div>
                 <div class="list-item__meta">
-                  {{ row.order.containerType }} ·
+                  {{ containerLabel(row.order.containerType) }} ·
                   {{ row.costing.totals.cartons | num }} kartons
                 </div>
               </div>
@@ -129,6 +130,8 @@ import { STATUS_LABEL, statusClass } from '../sales/quote-status';
   `,
 })
 export class Dashboard {
+  readonly containerLabel = containerLabel;
+
   private readonly sales = inject(SalesApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);

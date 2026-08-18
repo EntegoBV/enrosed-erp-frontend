@@ -298,12 +298,35 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div class="field">
               <label for="p-price">Vaste verkoopprijs <span class="opt"></span></label>
               <div class="input-affix">
+                <!-- The landed cost sits in the box as placeholder: the number
+                     you price against belongs where your eyes already are. -->
                 <input class="input num right" id="p-price" type="number" min="0" step="0.01"
                        inputmode="decimal" [ngModel]="draft().fixedSalesPriceEur"
+                       [placeholder]="draft().landedCostEur
+                         ? 'kostprijs ' + (draft().landedCostEur | eur: 2) : ''"
                        (ngModelChange)="patch({ fixedSalesPriceEur: num($event) })" />
                 <span class="input-affix__suffix">EUR</span>
               </div>
-              <span class="hint">Leeg = kostprijs + opslag</span>
+              @if (draft().landedCostEur; as landed) {
+                @if (draft().fixedSalesPriceEur; as fixed) {
+                  <span class="hint"
+                        [class.warn-text]="fixed < landed">
+                    Kostprijs incl. rechten {{ landed | eur: 2 }} —
+                    @if (fixed < landed) {
+                      deze prijs ligt <b>onder kostprijs</b>
+                    } @else {
+                      marge {{ fixed - landed | eur: 2 }}
+                      ({{ (fixed - landed) / landed * 100 | num }} %)
+                    }
+                  </span>
+                } @else {
+                  <span class="hint">
+                    Kostprijs incl. rechten {{ landed | eur: 2 }} · leeg = kostprijs + opslag
+                  </span>
+                }
+              } @else {
+                <span class="hint">Leeg = kostprijs + opslag</span>
+              }
             </div>
           </div>
           <div class="stat-row stat-row--muted">

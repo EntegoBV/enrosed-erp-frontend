@@ -67,9 +67,16 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             @if (data.order.signedByName) {
               <span class="small ok-text">· getekend door {{ data.order.signedByName }}</span>
             }
+            @if (!historyOpen() && lastEvent(); as last) {
+              <!-- A bare "Concept" badge says nothing; the latest step does. -->
+              <span class="small muted">· {{ last.summary }}</span>
+            }
             <span class="spacer"></span>
-            <span class="status-bar__toggle" [class.status-bar__toggle--open]="historyOpen()">
-              ▾
+            <span class="status-bar__more">
+              Geschiedenis
+              <span class="status-bar__toggle" [class.status-bar__toggle--open]="historyOpen()">
+                ▾
+              </span>
             </span>
           </button>
 
@@ -702,6 +709,7 @@ export class SalesEditor {
     ]);
     this.view.set(view);
     this.revisions.set(revisions);
+    void this.loadHistory(orderId);
   }
 
   readonly pendingRevision = computed(
@@ -944,21 +952,20 @@ export class SalesEditor {
     });
   }
 
-  /**
-   * Klapt de geschiedenis open, en haalt ze de eerste keer op.
-   *
-   * Pas ophalen bij het openen: de meeste keren dat je een offerte opent wil je
-   * de regels aanpassen, niet teruglezen wat er gebeurd is.
-   */
-  async toggleHistory(): Promise<void> {
-    const opening = !this.historyOpen();
-    this.historyOpen.set(opening);
-    if (!opening) return;
+  /** The most recent step, shown next to the status badge. */
+  readonly lastEvent = computed(() => {
+    const events = this.history();
+    return events.length ? events[events.length - 1] : null;
+  });
 
-    const data = this.view();
-    if (!data) return;
+  toggleHistory(): void {
+    this.historyOpen.set(!this.historyOpen());
+  }
+
+  /** History loads with the order: the status bar shows its last step. */
+  private async loadHistory(orderId: number): Promise<void> {
     try {
-      this.history.set(await this.sales.history(data.order.id));
+      this.history.set(await this.sales.history(orderId));
     } catch {
       this.history.set([]);
     }

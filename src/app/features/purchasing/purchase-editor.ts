@@ -32,16 +32,9 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="true"
                        (titleChange)="patch({ number: $event })">
+        <!-- Only PDF up top; every action that changes the order lives at the
+             bottom, in the reading order you finish the screen in. -->
         <button class="btn btn--sm" type="button" (click)="downloadPdf()">PDF</button>
-        @if (nextStep(); as step) {
-          <button class="btn btn--primary btn--sm" type="button" (click)="advanceStatus()">
-            {{ step.action }}
-          </button>
-        }
-        <button class="btn btn--sm hide-mobile" type="button" (click)="duplicate()">Kopiëren</button>
-        <button class="btn btn--sm hide-mobile" type="button" (click)="apply()">
-          Kostprijzen toepassen
-        </button>
       </app-page-header>
 
       <div class="content">
@@ -298,8 +291,17 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
           </div>
         </div>
 
-        <button class="btn btn--primary btn--block mt-16" type="button" (click)="apply()">
+        @if (nextStep(); as step) {
+          <button class="btn btn--primary btn--block mt-16" type="button"
+                  (click)="advanceStatus()">
+            {{ step.action }}
+          </button>
+        }
+        <button class="btn btn--block mt-8" type="button" (click)="apply()">
           Kostprijzen toepassen op producten
+        </button>
+        <button class="btn btn--block mt-8" type="button" (click)="duplicate()">
+          Kopiëren als variant
         </button>
         <button class="btn btn--danger btn--block mt-8" type="button" (click)="remove()">
           Calculatie verwijderen

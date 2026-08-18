@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { WorkQueue } from '../core/api/work-queue';
 import { AppNotification } from '../core/api/models';
 import { Sheet } from './ui';
+import { Icon } from './icon';
 
 /**
  * Het belletje rechtsboven: wat er op ons ligt te wachten.
@@ -16,13 +17,13 @@ import { Sheet } from './ui';
 @Component({
   selector: 'app-notification-bell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet],
+  imports: [Sheet, Icon],
   template: `
     <button class="bell" type="button" (click)="open()"
             [attr.aria-label]="count() > 0
               ? count() + ' zaken vragen je aandacht'
               : 'Meldingen'">
-      <span class="bell__icon">◉</span>
+      <app-icon class="bell__icon" name="bell" [size]="20" />
       @if (count(); as n) {
         <span class="bell__badge">{{ n > 9 ? '9+' : n }}</span>
       }

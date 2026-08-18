@@ -43,11 +43,13 @@
   /* Het logo hoeft normaal niet omgekleurd te worden. */
   --logo-filter: none;
 
-  --r-sm: 8px;
-  --r: 12px;
-  --r-lg: 18px;
+  /* iOS-flavoured chrome: generous corners, depth from soft shadow instead
+     of hard borders. */
+  --r-sm: 12px;
+  --r: 16px;
+  --r-lg: 24px;
 
-  --sh-1: 0 1px 2px rgb(26 22 20 / 6%), 0 1px 3px rgb(26 22 20 / 4%);
+  --sh-1: 0 1px 2px rgb(26 22 20 / 5%), 0 6px 20px rgb(26 22 20 / 6%);
   --sh-2: 0 2px 6px rgb(26 22 20 / 6%), 0 10px 24px rgb(26 22 20 / 8%);
   --sh-3: 0 -4px 24px rgb(26 22 20 / 12%);
 
@@ -148,6 +150,8 @@ a { color: var(--rose); }
   height: var(--appbar-h);
   display: flex;
   align-items: center;
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
   gap: 10px;
   padding: 0 12px;
   background: var(--surface);
@@ -189,23 +193,29 @@ a { color: var(--rose); }
 /* --- inhoud --- */
 .content {
   flex: 1;
-  padding: 14px 12px calc(var(--tabbar-h) + var(--safe-b) + 24px);
+  padding: 14px 12px calc(var(--tabbar-h) + var(--safe-b) + 38px);
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
 }
 
 /* --- onderbalk (mobiel) --- */
+/* Floating pill, the way iOS 26 docks its tab bars: it hovers over the
+   content instead of fencing it off, and the blur keeps context visible. */
 .tabbar {
   position: fixed;
-  inset: auto 0 0 0;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--safe-b) + 10px);
   z-index: 40;
-  height: calc(var(--tabbar-h) + var(--safe-b));
-  padding-bottom: var(--safe-b);
+  height: var(--tabbar-h);
   display: flex;
-  background: rgb(255 255 255 / 92%);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--line);
+  background: rgb(255 255 255 / 78%);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid rgb(255 255 255 / 60%);
+  border-radius: 30px;
+  box-shadow: 0 8px 30px rgb(26 22 20 / 14%);
 }
 
 .tabbar__item {
@@ -223,8 +233,10 @@ a { color: var(--rose); }
   padding: 6px 2px;
   -webkit-tap-highlight-color: transparent;
 }
-.tabbar__icon { font-size: 19px; line-height: 1; }
+.tabbar__icon { line-height: 0; }
 .tabbar__item.active { color: var(--rose); }
+.tabbar__item.active .tabbar__icon { transform: translateY(-1px); }
+.tabbar__item .tabbar__icon { transition: transform 0.15s ease; }
 
 /* --- zijbalk (desktop) --- */
 .sidebar { display: none; }
@@ -284,8 +296,8 @@ a { color: var(--rose); }
     font-weight: 500;
   }
   .sidebar__link:hover { background: rgb(255 255 255 / 6%); color: #fff; }
-  .sidebar__link.active { background: var(--rose); color: #fff; }
-  .sidebar__icon { width: 18px; text-align: center; opacity: 0.85; }
+  .sidebar__link.active { background: var(--rose); color: #fff; border-radius: 999px; }
+  .sidebar__icon { width: 18px; display: inline-flex; justify-content: center; opacity: 0.85; }
 
   .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .tabbar { display: none; }
@@ -300,7 +312,7 @@ a { color: var(--rose); }
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid rgb(255 255 255 / 70%);
   border-radius: var(--r);
   box-shadow: var(--sh-1);
   overflow: hidden;
@@ -393,9 +405,9 @@ a { color: var(--rose); }
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 42px;
-  padding: 9px 16px;
-  border-radius: var(--r-sm);
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--ink);
@@ -426,7 +438,7 @@ a { color: var(--rose); }
 .fab {
   position: fixed;
   right: 16px;
-  bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
+  bottom: calc(var(--tabbar-h) + var(--safe-b) + 28px);
   z-index: 35;
   min-height: 52px;
   padding: 0 20px;
@@ -516,13 +528,14 @@ a { color: var(--rose); }
 
 .input, .select, .textarea {
   width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
+  min-height: 46px;
+  padding: 11px 14px;
+  border: 1px solid rgb(26 22 20 / 10%);
   border-radius: var(--r-sm);
   background: var(--surface);
-  /* 16px voorkomt dat iOS inzoomt bij focus */
+  /* 16px keeps iOS from zooming in on focus. */
   font-size: 16px;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .input:focus, .select:focus, .textarea:focus {
   outline: none;
@@ -789,11 +802,12 @@ a { color: var(--rose); }
 
 .action-bar {
   position: fixed;
-  inset: auto 0 calc(var(--tabbar-h) + var(--safe-b)) 0;
+  inset: auto 0 calc(var(--tabbar-h) + var(--safe-b) + 14px) 0;
   z-index: 25;
-  background: rgb(255 255 255 / 96%);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--line);
+  background: rgb(255 255 255 / 88%);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border-top: 1px solid rgb(26 22 20 / 6%);
   padding: 10px 12px;
   display: flex;
   align-items: center;
@@ -1129,6 +1143,14 @@ table.data tfoot td {
   cursor: pointer;
 }
 .status-bar:active { background: var(--surface-2); }
+.status-bar__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  flex: none;
+}
 .status-bar__toggle {
   color: var(--muted-2);
   font-size: 13px;

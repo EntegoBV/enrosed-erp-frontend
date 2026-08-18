@@ -6,6 +6,7 @@ import { Auth } from './core/api/auth';
 import { WorkQueue } from './core/api/work-queue';
 import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
+import { Icon } from './shared/icon';
 
 /**
  * App-shell.
@@ -17,7 +18,7 @@ import { BrandMark } from './shared/brand-mark';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon],
   template: `
     <div class="shell" [class.shell--bare]="bare()">
       @if (!bare()) {
@@ -28,40 +29,40 @@ import { BrandMark } from './shared/brand-mark';
           <nav class="sidebar__nav">
             <div class="sidebar__label">Overzicht</div>
             <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active">
-              <span class="sidebar__icon">◧</span> Dashboard
+              <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
             </a>
 
             <div class="sidebar__label">Verkoop</div>
             <a class="sidebar__link" routerLink="/sales" routerLinkActive="active">
-              <span class="sidebar__icon">▤</span> Verkooporders
+              <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkooporders
             </a>
             <a class="sidebar__link" routerLink="/revisions" routerLinkActive="active">
-              <span class="sidebar__icon">⇄</span> Wijzigingen
+              <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Wijzigingen
               @if (openWork(); as n) { <span class="sidebar__count">{{ n }}</span> }
             </a>
             <a class="sidebar__link" routerLink="/customers" routerLinkActive="active">
-              <span class="sidebar__icon">◔</span> Klanten
+              <app-icon class="sidebar__icon" name="customers" [size]="18" /> Klanten
             </a>
 
             <div class="sidebar__label">Inkoop</div>
             <a class="sidebar__link" routerLink="/purchasing" routerLinkActive="active">
-              <span class="sidebar__icon">▩</span> Inkooporders
+              <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkooporders
             </a>
             <a class="sidebar__link" routerLink="/suppliers" routerLinkActive="active">
-              <span class="sidebar__icon">⚓</span> Leveranciers
+              <app-icon class="sidebar__icon" name="suppliers" [size]="18" /> Leveranciers
             </a>
 
             <div class="sidebar__label">Catalogus</div>
             <a class="sidebar__link" routerLink="/products" routerLinkActive="active">
-              <span class="sidebar__icon">◈</span> Producten
+              <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
             </a>
 
             <div class="sidebar__label">Configuratie</div>
             <a class="sidebar__link" routerLink="/countries" routerLinkActive="active">
-              <span class="sidebar__icon">⊞</span> Landen &amp; vracht
+              <app-icon class="sidebar__icon" name="countries" [size]="18" /> Landen &amp; vracht
             </a>
             <a class="sidebar__link" routerLink="/settings" routerLinkActive="active">
-              <span class="sidebar__icon">⚙</span> Instellingen
+              <app-icon class="sidebar__icon" name="settings" [size]="18" /> Instellingen
             </a>
           </nav>
 
@@ -79,24 +80,24 @@ import { BrandMark } from './shared/brand-mark';
       @if (!bare()) {
         <nav class="tabbar">
           <a class="tabbar__item" routerLink="/dashboard" routerLinkActive="active">
-            <span class="tabbar__icon">◧</span> Home
+            <span class="tabbar__icon"><app-icon name="home" /></span> Home
           </a>
           <a class="tabbar__item" routerLink="/sales" routerLinkActive="active">
             <span class="tabbar__icon">
-              ▤
+              <app-icon name="sales" />
               @if (openWork(); as n) {
                 <span class="tabbar__count">{{ n > 9 ? '9+' : n }}</span>
               }
             </span> Verkoop
           </a>
           <a class="tabbar__item" routerLink="/purchasing" routerLinkActive="active">
-            <span class="tabbar__icon">▩</span> Inkoop
+            <span class="tabbar__icon"><app-icon name="purchase" /></span> Inkoop
           </a>
           <a class="tabbar__item" routerLink="/products" routerLinkActive="active">
-            <span class="tabbar__icon">◈</span> Producten
+            <span class="tabbar__icon"><app-icon name="products" /></span> Producten
           </a>
           <a class="tabbar__item" routerLink="/more" routerLinkActive="active">
-            <span class="tabbar__icon">☰</span> Meer
+            <span class="tabbar__icon"><app-icon name="more" /></span> Meer
           </a>
         </nav>
       }
