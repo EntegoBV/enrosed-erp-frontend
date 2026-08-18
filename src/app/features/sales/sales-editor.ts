@@ -460,14 +460,12 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 pallet(s), elk product apart. Zelf indelen kan ook — fragiel glas bovenaan,
                 dozen van één klant samen — en dan telt de vracht jouw indeling.
               </p>
-              <div class="row" style="gap:8px">
-                <button class="btn btn--block" type="button" (click)="autoLayout()">
-                  Start van de berekening
-                </button>
-                <button class="btn btn--block btn--quiet" type="button" (click)="addPallet()">
-                  Start leeg
-                </button>
-              </div>
+              <button class="btn btn--primary btn--block" type="button" (click)="autoLayout()">
+                Start van de berekening
+              </button>
+              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="addPallet()">
+                Start leeg
+              </button>
             } @else {
               @if (data.priced.totals.unassignedCartons > 0) {
                 <div class="pallet-warn">
@@ -486,9 +484,24 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     <input class="pallet__label" [value]="pallet.label"
                            placeholder="Pallet {{ $index + 1 }}"
                            (change)="renamePallet($index, $any($event.target).value)" />
-                    <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
                     <button class="pallet__tool" type="button" (click)="removePallet($index)"
                             aria-label="Pallet verwijderen">✕</button>
+                  </div>
+                  <div class="pallet__sub">
+                    <select class="pallet__type"
+                            (change)="setPalletType($index, $any($event.target).value)">
+                      @for (option of palletTypes; track option) {
+                        <option [value]="option" [selected]="palletType(pallet) === option">
+                          {{ option }}
+                        </option>
+                      }
+                      @if (!palletTypes.includes(palletType(pallet))) {
+                        <option [value]="palletType(pallet)" selected>{{ palletType(pallet) }}</option>
+                      }
+                      <option value="__other__">Anders…</option>
+                    </select>
+                    <span class="spacer"></span>
+                    <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
                   </div>
                   @for (item of pallet.items; track item.productId) {
                     <div class="pallet__item">
@@ -515,12 +528,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   }
                 </div>
               }
-              <div class="row" style="gap:8px">
-                <button class="btn btn--block" type="button" (click)="addPallet()">+ Pallet</button>
-                <button class="btn btn--block btn--quiet" type="button" (click)="clearPallets()">
-                  Terug naar automatisch
-                </button>
-              </div>
+              <button class="btn btn--block" type="button" (click)="addPallet()">+ Pallet</button>
+              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="clearPallets()">
+                Terug naar automatisch
+              </button>
             }
           </div>
           </div></div>
@@ -1304,6 +1315,24 @@ export class SalesEditor {
         .filter((line) => line.remaining > 0);
   }
 
+  /** The road-freight standards; anything else goes through "Anders…". */
+  readonly palletTypes = ['Europallet', 'Blokpallet 100×120', 'Halve pallet 60×80'];
+
+  palletType(pallet: OrderPallet): string {
+    return pallet.type || 'Europallet';
+  }
+
+  setPalletType(index: number, value: string): void {
+    if (value === '__other__') {
+      const custom = window.prompt('Soort pallet');
+      if (!custom || !custom.trim()) return;
+      value = custom.trim();
+    }
+    const pallets = this.clonePallets();
+    pallets[index] = { ...pallets[index], type: value };
+    this.patchPallets(pallets);
+  }
+
   private patchPallets(pallets: OrderPallet[]): void {
     this.patch({ pallets });
   }
@@ -1324,7 +1353,8 @@ export class SalesEditor {
       let left = line.cartons;
       while (left > 0) {
         const take = Math.min(per, left);
-        pallets.push({ id: null, label: '', items: [{ productId: line.productId, cartons: take }] });
+        pallets.push({ id: null, label: '', type: 'Europallet',
+            items: [{ productId: line.productId, cartons: take }] });
         left -= take;
       }
     }
@@ -1333,7 +1363,7 @@ export class SalesEditor {
 
   addPallet(): void {
     const pallets = this.clonePallets();
-    pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, items: [] });
+    pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet', items: [] });
     this.patchPallets(pallets);
   }
 

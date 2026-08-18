@@ -101,19 +101,23 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
           </div>
           <div class="collapse" [class.collapse--open]="sectionOpen('costs')"><div class="collapse__inner">
           <div class="card__body">
-            <div class="form-grid">
-              <div class="field"><label for="r-cny">Koers RMB → USD</label>
+            <!-- The three rates share one row: they belong together and
+                 each is only a handful of digits. -->
+            <div class="rate-row">
+              <div class="field"><label for="r-cny">RMB→USD</label>
                 <input class="input num right" id="r-cny" type="number" step="0.0001"
                        [ngModel]="data.order.cnyToUsd"
                        (ngModelChange)="patch({ cnyToUsd: +$event })" /></div>
-              <div class="field"><label for="r-goods">Koers USD → EUR (goederen)</label>
+              <div class="field"><label for="r-goods">USD→EUR goed.</label>
                 <input class="input num right" id="r-goods" type="number" step="0.0001"
                        [ngModel]="data.order.usdToEurGoods"
                        (ngModelChange)="patch({ usdToEurGoods: +$event })" /></div>
-              <div class="field"><label for="r-transport">Koers USD → EUR (transport)</label>
+              <div class="field"><label for="r-transport">USD→EUR transp.</label>
                 <input class="input num right" id="r-transport" type="number" step="0.0001"
                        [ngModel]="data.order.usdToEurTransport"
                        (ngModelChange)="patch({ usdToEurTransport: +$event })" /></div>
+            </div>
+            <div class="form-grid">
               <div class="field"><label class="req" for="c-freight">Zeevracht tot bestemmingshaven</label>
                 <div class="input-affix">
                   <input class="input num right" id="c-freight" type="number" step="50"

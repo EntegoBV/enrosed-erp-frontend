@@ -90,6 +90,24 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
           </div>
         </div>
 
+        <div class="card mt-12">
+          <div class="card__head"><h2>Gegevens</h2></div>
+          <div class="card__body">
+            <div class="stat-row"><span>Leverancier</span><span>{{ supplierName() }}</span></div>
+            <div class="stat-row"><span>Datum</span><span>{{ data.order.orderDate }}</span></div>
+            <div class="stat-row"><span>Container</span><span>{{ data.order.containerType }}</span></div>
+            <div class="stat-row"><span>Aankomsthaven</span>
+              <span>{{ data.order.destinationPort || '—' }}</span></div>
+            @if (showMoney()) {
+              <div class="stat-row"><span>Koers USD → EUR</span>
+                <span class="num">{{ data.order.usdToEurGoods | num: 4 }}</span></div>
+            }
+            @if (data.order.notes) {
+              <div class="stat-row"><span>Notitie</span><span>{{ data.order.notes }}</span></div>
+            }
+          </div>
+        </div>
+
         @if (showMoney()) {
           <div class="card mt-12 internal-block">
             <div class="card__head"><h2>Kostenopbouw</h2></div>
@@ -145,23 +163,6 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
           </div>
         }
 
-        <div class="card mt-12 mb-24">
-          <div class="card__head"><h2>Gegevens</h2></div>
-          <div class="card__body">
-            <div class="stat-row"><span>Leverancier</span><span>{{ supplierName() }}</span></div>
-            <div class="stat-row"><span>Datum</span><span>{{ data.order.orderDate }}</span></div>
-            <div class="stat-row"><span>Container</span><span>{{ data.order.containerType }}</span></div>
-            <div class="stat-row"><span>Aankomsthaven</span>
-              <span>{{ data.order.destinationPort || '—' }}</span></div>
-            @if (showMoney()) {
-              <div class="stat-row"><span>Koers USD → EUR</span>
-                <span class="num">{{ data.order.usdToEurGoods | num: 4 }}</span></div>
-            }
-            @if (data.order.notes) {
-              <div class="stat-row"><span>Notitie</span><span>{{ data.order.notes }}</span></div>
-            }
-          </div>
-        </div>
       </div>
     } @else {
       <app-page-header title="Inkoop" [showBack]="true" [showBell]="false" />

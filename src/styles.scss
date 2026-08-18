@@ -1371,3 +1371,24 @@ table.data tfoot td {
 a.kpi { text-decoration: none; color: inherit; display: block; }
 a.kpi .kpi__label, a.kpi .kpi__value, a.kpi .kpi__meta { text-decoration: none; }
 a.kpi--dark { color: #fff; }
+
+/* Three exchange rates on one row; the numbers are short enough. */
+.rate-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+  margin-bottom: 12px;
+}
+.rate-row .field { margin: 0; }
+.rate-row label { font-size: 11px; white-space: nowrap; }
+
+.pallet__sub {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.pallet__type {
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+  font: inherit; font-size: 12.5px; padding: 5px 8px;
+  max-width: 200px;
+}

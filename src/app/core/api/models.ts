@@ -264,6 +264,8 @@ export interface SalesOrderLine {
 export interface OrderPallet {
   id: number | null;
   label: string;
+  /** Pallet type; "Europallet" unless another was picked. Informational. */
+  type: string;
   items: { productId: number; cartons: number }[];
 }
 
