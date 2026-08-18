@@ -118,7 +118,7 @@ import { DateNlPipe } from '../../shared/pipes';
                       }
                     </span>
                     <span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
-                  <div class="stat-row"><span>Kosten na aankomst</span>
+                  <div class="stat-row"><span>Aankomst → magazijn</span>
                     <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
                   @if (line.extraRevenueEur) {
                     <div class="stat-row"><span>Extra opbrengst</span>
@@ -156,27 +156,43 @@ import { DateNlPipe } from '../../shared/pipes';
           <div class="card mt-12 internal-block">
             <div class="card__head"><h2>Kostenopbouw</h2></div>
             <div class="card__body">
+              <div class="cost-section">Tot de EU-grens</div>
               <div class="stat-row"><span>Goederen</span>
                 <span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
-              <div class="stat-row"><span>Lokale kosten China</span>
-                <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
+              @if (data.costing.totals.originEur) {
+                <div class="stat-row"><span>Lokale kosten China</span>
+                  <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
+              }
               <div class="stat-row"><span>Zeevracht</span>
                 <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
-              <div class="stat-row"><span>Douanewaarde</span>
+              <div class="stat-row stat-row--sub"><span>Douanewaarde</span>
                 <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
+
+              <div class="cost-section">Invoer</div>
               <div class="stat-row"><span>Invoerrechten
-                  ({{ data.costing.totals.effectiveDutyPct | pct: 1 }})</span>
+                  <span class="tiny muted">gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
                 <span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-              <div class="stat-row"><span>{{ data.order.destinationPort || 'Bestemming' }} → magazijn</span>
+
+              <div class="cost-section">Na aankomst</div>
+              <div class="stat-row"><span>{{ data.order.destinationPort || 'Haven' }} → magazijn
+                  <span class="tiny muted">trucking en afhandeling</span></span>
                 <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
               @if (data.costing.totals.extraRevenueEur) {
                 <div class="stat-row"><span>Extra opbrengst</span>
                   <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
               }
-              <div class="stat-row stat-row--total"><span>Totaal geland</span>
-                <span class="num">{{ data.costing.totals.totalEur | eur }}</span></div>
-              <div class="stat-row"><span>Gemiddeld per stuk</span>
-                <span class="num">{{ data.costing.totals.averageUnitEur | eur }}</span></div>
+
+              <div class="cost-hero">
+                <div>
+                  <div class="cost-hero__label">Totaal geland</div>
+                  <div class="cost-hero__value">{{ data.costing.totals.totalEur | eur }}</div>
+                </div>
+                <div class="cost-hero__unit">
+                  <div class="cost-hero__label">Per stuk</div>
+                  <div class="cost-hero__value cost-hero__value--rose">
+                    {{ data.costing.totals.averageUnitEur | eur: 4 }}</div>
+                </div>
+              </div>
             </div>
           </div>
         }

@@ -290,36 +290,53 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
         </div>
 
         <div class="card">
-          <div class="card__head"><h2>Totaal container</h2></div>
+          <div class="card__head"><h2>Totaal container</h2>
+            <span class="spacer"></span>
+            <span class="muted small">{{ data.costing.totals.pieces | num }} st ·
+              {{ data.costing.totals.cartons | num }} dozen</span>
+          </div>
           <div class="card__body">
-            <div class="stat-row"><span>Goederen</span>
-              <span class="num">{{ data.costing.totals.goodsUsd | cur: 'USD' }} →
-                {{ data.costing.totals.goodsEur | eur }}</span></div>
+            <!-- The build-up reads as the journey of the goods: up to the
+                 border, the border itself, and this side of it. Micro
+                 section labels replace the old wall of look-alike rows. -->
+            <div class="cost-section">Tot de EU-grens</div>
+            <div class="stat-row"><span>Goederen
+                <span class="tiny muted">{{ data.costing.totals.goodsUsd | cur: 'USD' }}</span></span>
+              <span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
             @if (data.costing.totals.originEur) {
               <div class="stat-row"><span>Lokale kosten {{ originLabel() }}</span>
                 <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
             }
             <div class="stat-row"><span>Zeevracht</span>
               <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
-            <div class="stat-row stat-row--sub"><span>Douanewaarde aan de EU-grens</span>
+            <div class="stat-row stat-row--sub"><span>Douanewaarde</span>
               <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
+
+            <div class="cost-section">Invoer</div>
             <div class="stat-row"><span>Invoerrechten
-                <span class="tiny muted">gemiddeld
-                  {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
+                <span class="tiny muted">gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
               <span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-            <div class="stat-row"><span>Lokale kosten {{ view()?.order?.destinationPort || 'Rotterdam' }} → magazijn</span>
+
+            <div class="cost-section">Na aankomst</div>
+            <div class="stat-row"><span>{{ view()?.order?.destinationPort || 'Haven' }} → magazijn
+                <span class="tiny muted">trucking en afhandeling</span></span>
               <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
             @if (data.costing.totals.extraRevenueEur) {
               <div class="stat-row"><span>Extra gewenste opbrengst</span>
                 <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
             }
-            <div class="stat-row stat-row--total"><span>Totaal</span>
-              <span class="num">{{ data.costing.totals.totalEur | eur }}</span></div>
-            <div class="stat-row stat-row--muted">
-              <span>{{ data.costing.totals.pieces | num }} stuks ·
-                {{ data.costing.totals.cartons | num }} kartons</span>
-              <span class="num">gemiddeld
-                {{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</span></div>
+
+            <div class="cost-hero">
+              <div>
+                <div class="cost-hero__label">Totaal geland</div>
+                <div class="cost-hero__value">{{ data.costing.totals.totalEur | eur }}</div>
+              </div>
+              <div class="cost-hero__unit">
+                <div class="cost-hero__label">Per stuk</div>
+                <div class="cost-hero__value cost-hero__value--rose">
+                  {{ data.costing.totals.averageUnitEur | eur: 4 }}</div>
+              </div>
+            </div>
 
             @if (data.costing.containerFill; as fill) {
               <div class="mt-16">
