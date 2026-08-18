@@ -25,7 +25,9 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
       <!-- Wat op ons wacht staat bovenaan, niet weggestopt onder Meer: dit is de
            lijst die je bijhoudt, niet iets wat je gaat opzoeken. -->
       @if (openWork().length) {
-        <div class="card" style="border-color:var(--rose-line)">
+        <!-- The card appears and disappears; without its own bottom margin it
+             lands right on top of the search bar. -->
+        <div class="card" style="border-color:var(--rose-line);margin-bottom:14px">
           <div class="card__head">
             <h2>Wacht op ons</h2>
             <span class="spacer"></span>

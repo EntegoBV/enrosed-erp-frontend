@@ -420,6 +420,8 @@ export interface CompanyProfile {
   iban: string;
   bic: string;
   documentFooter: string;
+  /** English footer; non-Dutch documents use this one, falling back to Dutch. */
+  documentFooterEn: string | null;
   /** General terms; editable here, publicly readable at /voorwaarden. */
   termsAndConditions: string | null;
   termsAndConditionsEn: string | null;

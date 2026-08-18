@@ -100,10 +100,20 @@ import { messageOf } from '../../core/api/errors';
                        (ngModelChange)="patchCompany({ bic: $event })" />
               </div>
               <div class="field span-2">
-                <label for="co-foot">Voettekst op documenten <span class="opt"></span></label>
+                <label for="co-foot">Voettekst op documenten (NL) <span class="opt"></span></label>
                 <textarea class="textarea" id="co-foot" [ngModel]="profile.documentFooter"
                           (ngModelChange)="patchCompany({ documentFooter: $event })"
                           placeholder="Op al onze offertes zijn onze algemene voorwaarden van toepassing."></textarea>
+              </div>
+              <div class="field span-2">
+                <label for="co-foot-en">Voettekst op documenten (EN) <span class="opt"></span></label>
+                <textarea class="textarea" id="co-foot-en" [ngModel]="profile.documentFooterEn"
+                          (ngModelChange)="patchCompany({ documentFooterEn: $event })"
+                          placeholder="All our quotations are subject to our general terms and conditions."></textarea>
+                <span class="hint">
+                  Documenten in een andere taal dan Nederlands gebruiken deze; leeg = de
+                  Nederlandse tekst.
+                </span>
               </div>
             </div>
             <div class="span-2 mt-8">
