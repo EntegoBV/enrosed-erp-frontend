@@ -76,7 +76,20 @@ export const routes: Routes = [
       import('./features/products/catalog-export').then((m) => m.CatalogExport),
   },
   {
+    /* Vóór :id, anders zou "new" als productnummer gelezen worden. */
+    path: 'products/new',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/products/product-editor').then((m) => m.ProductEditor),
+  },
+  {
     path: 'products/:id',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/products/product-view').then((m) => m.ProductView),
+  },
+  {
+    path: 'products/:id/edit',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/products/product-editor').then((m) => m.ProductEditor),
