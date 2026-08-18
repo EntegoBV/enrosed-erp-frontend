@@ -29,11 +29,6 @@ import { Ui } from '../../shared/ui';
         <div class="card__head"><h2>Opmaak</h2></div>
         <div class="card__body">
           <div class="field">
-            <label for="cat-title">Titel <span class="opt"></span></label>
-            <input class="input" id="cat-title" [ngModel]="title()"
-                   (ngModelChange)="title.set($event)" placeholder="Productcatalogus" />
-          </div>
-          <div class="field">
             <label for="cat-lang">Taal</label>
             <select class="select" id="cat-lang" [ngModel]="language()"
                     (ngModelChange)="language.set($event)">
@@ -186,7 +181,8 @@ export class CatalogExport {
         productIds: [...this.selected()],
         includePrices: this.includePrices(),
         includePhotos: this.includePhotos(),
-        title: this.title(),
+        /* The title is universal and follows the chosen language. */
+        title: '',
         intro: this.intro(),
         language: this.language(),
       });

@@ -266,7 +266,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
 
           <p class="tiny muted center mt-24">
             Enrosed · {{ t('portalFooter') }} ·
-            <a href="/voorwaarden" target="_blank" rel="noopener">{{ t('portalTerms') }}</a>
+            <a [href]="termsUrl()" target="_blank" rel="noopener">{{ t('portalTerms') }}</a>
           </p>
         </div>
       } @else {
@@ -584,6 +584,11 @@ export class PortalPage {
     } catch {
       /* de offerte blijft staan zoals ze stond */
     }
+  }
+
+  /** Dutch customers read the Dutch terms; everyone else gets English. */
+  termsUrl(): string {
+    return this.language() === 'NL' ? '/voorwaarden' : '/voorwaarden?lang=en';
   }
 
   /** Dezelfde vertaalfunctie om door te geven aan een kindcomponent. */

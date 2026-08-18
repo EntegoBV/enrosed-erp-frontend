@@ -170,6 +170,8 @@ export interface PurchaseOrderLine {
 export interface PurchaseOrder {
   id: number;
   number: string;
+  /** Nickname next to the number, e.g. "voor Frans". */
+  alias: string | null;
   supplierId: number;
   orderDate: string;
   status: 'CONCEPT' | 'BESTELD' | 'ONDERWEG' | 'ONTVANGEN';
@@ -420,6 +422,9 @@ export interface CompanyProfile {
   documentFooter: string;
   /** General terms; editable here, publicly readable at /voorwaarden. */
   termsAndConditions: string | null;
+  termsAndConditionsEn: string | null;
+  privacyPolicy: string | null;
+  privacyPolicyEn: string | null;
 }
 
 /** Eén stap in het leven van een offerte. */

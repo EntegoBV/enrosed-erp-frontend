@@ -93,7 +93,7 @@ import { BrandMark } from './shared/brand-mark';
             <span class="tabbar__icon">▩</span> Inkoop
           </a>
           <a class="tabbar__item" routerLink="/products" routerLinkActive="active">
-            <span class="tabbar__icon">◈</span> Catalogus
+            <span class="tabbar__icon">◈</span> Producten
           </a>
           <a class="tabbar__item" routerLink="/more" routerLinkActive="active">
             <span class="tabbar__icon">☰</span> Meer

@@ -544,7 +544,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     [disabled]="sending()" (click)="openSend()">
               {{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen naar de klant' }}
             </button>
-            <button class="btn btn--block mt-8" type="button" (click)="downloadPdf()">
+            <button class="btn btn--block mt-8" type="button" (click)="openPdfSheet()">
               PDF downloaden
             </button>
             @if (data.order.portalToken) {

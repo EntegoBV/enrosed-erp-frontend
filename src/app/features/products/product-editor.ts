@@ -10,6 +10,7 @@ import { Privacy } from '../../core/api/privacy';
 import { Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
+import { STANDARD_COLOURS } from '../../core/api/geo';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -79,16 +80,22 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
             <div class="field span-2">
               <label for="p-colour">Kleur <span class="opt"></span></label>
-              <input class="input" id="p-colour" [ngModel]="draft().colour"
-                     (ngModelChange)="patch({ colour: $event })"
-                     placeholder="Rood, Roze, Wit…" list="colourList" />
-              <datalist id="colourList">
-                @for (option of colourSuggestions; track option) {
-                  <option [value]="option"></option>
+              <select class="select" id="p-colour" [ngModel]="colourChoice()"
+                      (ngModelChange)="pickColour($event)">
+                <option value="">Geen kleur</option>
+                @for (option of standardColours; track option) {
+                  <option [value]="option">{{ option }}</option>
                 }
-              </datalist>
+                <option value="__other__">Anders…</option>
+              </select>
+              @if (customColour()) {
+                <input class="input mt-8" aria-label="Eigen kleur"
+                       placeholder="Eigen kleur…" [ngModel]="draft().colour"
+                       (ngModelChange)="patch({ colour: $event })" />
+              }
               <span class="hint">
-                Alleen een sleutel zoals kleur. De <b>afmeting</b> hoort hieronder, niet hier.
+                Kleuren uit de lijst worden op offertes en in de catalogus
+                <b>automatisch vertaald</b>; een eigen kleur vertaal je via het CSV-bestand.
               </span>
             </div>
           </div>
@@ -367,7 +374,27 @@ export class ProductEditor {
   readonly supplier = input<string>('');
   readonly returnTo = input<string>('');
 
-  readonly colourSuggestions = ['Rood', 'Roze', 'Wit', 'Blauw', 'Zwart', 'Gemengd'];
+  readonly standardColours = STANDARD_COLOURS;
+  /** True while a colour outside the standard list is being typed. */
+  readonly customColour = signal(false);
+
+  /** What the select should show for the current draft colour. */
+  colourChoice(): string {
+    if (this.customColour()) return '__other__';
+    const colour = this.draft().colour ?? '';
+    if (!colour) return '';
+    return (this.standardColours as readonly string[]).includes(colour) ? colour : '__other__';
+  }
+
+  pickColour(choice: string): void {
+    if (choice === '__other__') {
+      /* Keep whatever was there; the free-entry field takes over. */
+      this.customColour.set(true);
+      return;
+    }
+    this.customColour.set(false);
+    this.patch({ colour: choice });
+  }
 
   readonly draft = signal<Product>(blankProduct(null, 'USD'));
   readonly suppliers = signal<Supplier[]>([]);

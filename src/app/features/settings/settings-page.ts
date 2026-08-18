@@ -106,17 +106,51 @@ import { messageOf } from '../../core/api/errors';
                           placeholder="Op al onze offertes zijn onze algemene voorwaarden van toepassing."></textarea>
               </div>
             </div>
-            <div class="field span-2 mt-8">
-              <label for="co-terms">Algemene voorwaarden</label>
-              <textarea class="textarea" id="co-terms" rows="14" style="min-height:260px"
-                        [ngModel]="profile.termsAndConditions"
-                        (ngModelChange)="patchCompany({ termsAndConditions: $event })"></textarea>
-              <span class="hint">
-                Er staat een voorstel klaar voor een Belgische groothandel — laat het nakijken
-                door je boekhouder of jurist en pas gerust aan. Klanten lezen dit op
+            <div class="span-2 mt-8">
+              <div class="section-title" style="margin-top:0">Juridische teksten</div>
+              <p class="small muted" style="margin-bottom:8px">
+                Voorwaarden en privacyverklaring staan klaar als voorstel voor Enrosed BV —
+                laat ze nakijken door je boekhouder of jurist. Klanten lezen ze op
                 <a href="/voorwaarden" target="_blank" rel="noopener">/voorwaarden</a>;
-                de offerte-PDF en het klantportaal verwijzen ernaar.
-              </span>
+                documenten in een andere taal dan Nederlands verwijzen naar de
+                <b>Engelse</b> versie. Leeg laten betekent: gebruik het ingebouwde voorstel.
+              </p>
+              <details style="margin-bottom:8px">
+                <summary class="small strong" style="cursor:pointer">
+                  Algemene voorwaarden (NL)
+                </summary>
+                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
+                          [ngModel]="profile.termsAndConditions"
+                          (ngModelChange)="patchCompany({ termsAndConditions: $event })"
+                          [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
+              </details>
+              <details style="margin-bottom:8px">
+                <summary class="small strong" style="cursor:pointer">
+                  Terms and conditions (EN)
+                </summary>
+                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
+                          [ngModel]="profile.termsAndConditionsEn"
+                          (ngModelChange)="patchCompany({ termsAndConditionsEn: $event })"
+                          [placeholder]="'Empty = built-in draft'"></textarea>
+              </details>
+              <details style="margin-bottom:8px">
+                <summary class="small strong" style="cursor:pointer">
+                  Privacyverklaring (NL)
+                </summary>
+                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
+                          [ngModel]="profile.privacyPolicy"
+                          (ngModelChange)="patchCompany({ privacyPolicy: $event })"
+                          [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
+              </details>
+              <details>
+                <summary class="small strong" style="cursor:pointer">
+                  Privacy statement (EN)
+                </summary>
+                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
+                          [ngModel]="profile.privacyPolicyEn"
+                          (ngModelChange)="patchCompany({ privacyPolicyEn: $event })"
+                          [placeholder]="'Empty = built-in draft'"></textarea>
+              </details>
             </div>
             <button class="btn btn--primary btn--block mt-8" type="button"
                     [disabled]="savingCompany()" (click)="saveCompany()">

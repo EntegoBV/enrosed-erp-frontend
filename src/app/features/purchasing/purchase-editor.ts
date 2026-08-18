@@ -48,6 +48,13 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
         <div class="card">
           <div class="card__head"><h2>Order</h2></div>
           <div class="card__body"><div class="form-grid">
+            <div class="field"><label for="po-alias">Alias <span class="opt"></span></label>
+              <input class="input" id="po-alias" [ngModel]="data.order.alias"
+                     (ngModelChange)="patch({ alias: $event })"
+                     placeholder="Bijv. voor Frans, variant -5%…" />
+              <span class="hint">
+                Vrije naam naast het nummer, om varianten snel terug te vinden.
+              </span></div>
             <div class="field"><label for="po-date">Datum</label>
               <app-date-field fieldId="po-date" [value]="data.order.orderDate"
                               (valueChange)="patch({ orderDate: $event })" /></div>

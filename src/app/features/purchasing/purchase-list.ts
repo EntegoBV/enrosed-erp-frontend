@@ -35,7 +35,12 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
           <a class="list-item" [routerLink]="['/purchasing', row.order.id]">
             <div class="list-item__body">
               <div class="list-item__title">
-                {{ row.order.number }} — {{ supplierName(row.order.supplierId) }}
+                @if (row.order.alias) {
+                  {{ row.order.alias }}
+                  <span class="muted small">· {{ row.order.number }}</span>
+                } @else {
+                  {{ row.order.number }} — {{ supplierName(row.order.supplierId) }}
+                }
               </div>
               <div class="list-item__meta">
                 {{ row.order.orderDate | dateNl }} · {{ containerLabel(row.order.containerType) }} ·

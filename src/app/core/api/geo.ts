@@ -110,3 +110,16 @@ export function containerLabel(value: string | null | undefined): string {
   if (!value) return '';
   return CONTAINER_TYPES.find((type) => type.value === value)?.label ?? value;
 }
+
+/**
+ * Standard product colours, stored in Dutch.
+ *
+ * These names translate automatically on quotes and catalogues through the
+ * backend dictionary. A colour typed outside this list stays possible, but
+ * then translation runs through the CSV file like any other product text.
+ */
+export const STANDARD_COLOURS = [
+  'Rood', 'Roze', 'Fuchsia', 'Bordeaux', 'Wit', 'Ivoor', 'Champagne',
+  'Geel', 'Oranje', 'Groen', 'Blauw', 'Paars', 'Lila',
+  'Zwart', 'Grijs', 'Zilver', 'Goud', 'Gemengd',
+] as const;

@@ -69,7 +69,7 @@ import { STATUS_LABEL, statusClass } from '../sales/quote-status';
       <div class="row wrap">
         <a class="btn btn--primary" routerLink="/sales">+ Verkooporder</a>
         <a class="btn" routerLink="/purchasing">+ Inkoopcalculatie</a>
-        <a class="btn" routerLink="/products">Catalogus</a>
+        <a class="btn" routerLink="/products">Producten</a>
       </div>
 
       <div class="section-title">Recente verkooporders</div>

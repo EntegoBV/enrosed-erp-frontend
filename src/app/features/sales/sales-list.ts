@@ -50,6 +50,12 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
         </div>
       }
 
+      <div class="search-bar">
+        <input class="input" type="search" inputmode="search"
+               placeholder="Zoek op klant of nummer…"
+               [ngModel]="query()" (ngModelChange)="query.set($event)" />
+      </div>
+
       <div class="chips">
         @for (option of filters; track option.value) {
           <button class="chip" type="button" [class.active]="filter() === option.value"
@@ -263,9 +269,19 @@ export class SalesList {
     }
   }
 
+  readonly query = signal('');
+
   readonly rows = computed(() => {
     const status = this.filter();
-    return this.all().filter((row) => !status || row.order.status === status);
+    const needle = this.query().toLowerCase().trim();
+    return this.all().filter((row) => {
+      if (status && row.order.status !== status) return false;
+      if (!needle) return true;
+      /* Customer and number are how anyone refers to an order out loud. */
+      return (this.customerName(row) + ' ' + row.order.number)
+        .toLowerCase()
+        .includes(needle);
+    });
   });
 
   customerName(row: SalesOrderView): string {
