@@ -169,7 +169,9 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
 
         <div class="card">
           <div class="card__head"><h2>Producten</h2><span class="spacer"></span>
-            <button class="btn btn--sm" type="button" (click)="openPicker()">+ Toevoegen</button>
+            @if (data.costing.lines.length) {
+              <button class="btn btn--sm" type="button" (click)="openPicker()">+ Toevoegen</button>
+            }
           </div>
           <div class="card__body card__body--flush"><div class="list">
             @for (line of data.costing.lines; track line.productId) {

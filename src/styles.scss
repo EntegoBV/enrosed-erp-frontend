@@ -146,16 +146,29 @@ a { color: var(--rose); }
 .appbar {
   position: sticky;
   top: 0;
-  z-index: 30;
+  /* Above the tab bar and the FAB: the notification sheet renders inside
+     this bar, and a lower bar would trap that sheet underneath them. */
+  z-index: 60;
   height: var(--appbar-h);
   display: flex;
   align-items: center;
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
   gap: 10px;
   padding: 0 12px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  /* Translucent so the pseudo-element blur below shows through. */
+  background: rgb(255 255 255 / 80%);
+  border-bottom: 1px solid rgb(26 22 20 / 6%);
+}
+
+/* Blur behind the bar, not on it: a backdrop-filter on the bar itself makes
+   it the containing block for position:fixed, which pinned the notification
+   sheet to the bar instead of the screen. */
+.appbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
 }
 
 .appbar__back {
@@ -214,7 +227,7 @@ a { color: var(--rose); }
   backdrop-filter: blur(20px) saturate(1.6);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
   border: 1px solid rgb(255 255 255 / 60%);
-  border-radius: 30px;
+  border-radius: 20px;
   box-shadow: 0 8px 30px rgb(26 22 20 / 14%);
 }
 
@@ -802,13 +815,17 @@ a { color: var(--rose); }
 
 .action-bar {
   position: fixed;
-  inset: auto 0 calc(var(--tabbar-h) + var(--safe-b) + 14px) 0;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--tabbar-h) + var(--safe-b) + 18px);
   z-index: 25;
   background: rgb(255 255 255 / 88%);
   backdrop-filter: blur(18px) saturate(1.5);
   -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  border-top: 1px solid rgb(26 22 20 / 6%);
-  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 60%);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgb(26 22 20 / 12%);
+  padding: 10px 14px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -823,8 +840,9 @@ a { color: var(--rose); }
    pagina — PDF maken, versturen — stond dan nergens. */
 @media (min-width: 1024px) {
   .action-bar {
-    left: 232px;
-    bottom: 0;
+    left: 244px;
+    right: 12px;
+    bottom: 12px;
     padding: 12px 26px;
   }
   .action-bar__value { font-size: 20px; }
@@ -947,7 +965,7 @@ table.data tfoot td {
 .shell--bare .content { padding-bottom: 40px; }
 
 /* Pagina's met een vaste actiebalk laten er ruimte voor, ook op desktop. */
-.content--with-action-bar { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 96px); }
+.content--with-action-bar { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
 @media (min-width: 1024px) {
   .content--with-action-bar { padding-bottom: 110px; }
 }

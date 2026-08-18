@@ -120,21 +120,22 @@ import { Icon } from './icon';
       text-align: center;
     }
 
+    /* Plain full-width rows. The old negative-margin trick made rows wider
+       than the sheet, pushing part of the message out of view on phones. */
     .note {
       display: flex;
       align-items: flex-start;
       gap: 10px;
       width: 100%;
-      padding: 11px 16px;
-      margin: 0 -16px;
-      width: calc(100% + 32px);
+      padding: 11px 12px;
+      margin-bottom: 6px;
       border: 0;
-      border-bottom: 1px solid var(--line);
-      background: transparent;
+      border-radius: var(--r-sm);
+      background: var(--surface-2);
       text-align: left;
       cursor: pointer;
     }
-    .note:active { background: var(--surface-2); }
+    .note:active { background: var(--line); }
     .note--action { background: var(--rose-soft); }
     .note__icon { font-size: 13px; color: var(--muted); margin-top: 2px; flex: none; }
     .note__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
