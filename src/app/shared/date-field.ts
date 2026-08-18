@@ -30,12 +30,12 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
         (blur)="onCommit($any($event.target))"
         (keydown.enter)="onCommit($any($event.target))"
       />
-      <!-- De echte kiezer: onzichtbaar, enkel om de kalender op te roepen. -->
+      <span class="datefield__btn" aria-hidden="true">▤</span>
+      <!-- De echte kiezer ligt onzichtbaar ÓVER de knop: op iOS opent alleen
+           een rechtstreekse tik op het veld zelf de kalender. -->
       <input #picker class="datefield__native" type="date" [value]="value() ?? ''"
-             (change)="onPick($any($event.target).value)" tabindex="-1" aria-hidden="true" />
-      <button class="datefield__btn" type="button" (click)="openPicker()" aria-label="Kalender openen">
-        ▤
-      </button>
+             (click)="openPicker()" (change)="onPick($any($event.target).value)"
+             aria-label="Kalender openen" />
     </div>
   `,
   styles: `
@@ -47,25 +47,26 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
       right: 4px;
       width: 34px;
       height: 34px;
-      border: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       border-radius: var(--r-sm);
-      background: transparent;
       color: var(--muted);
       font-size: 15px;
-      cursor: pointer;
     }
-    .datefield__btn:active { background: var(--surface-2); }
-    /* Niet display:none - showPicker() werkt niet op een verborgen veld. */
     .datefield__native {
       position: absolute;
-      right: 10px;
-      width: 1px;
-      height: 1px;
+      right: 4px;
+      width: 34px;
+      height: 34px;
       opacity: 0;
-      pointer-events: none;
+      cursor: pointer;
       border: 0;
       padding: 0;
+      /* 16px voorkomt dat iOS inzoomt zodra het veld focus krijgt. */
+      font-size: 16px;
     }
+    .datefield__native:active + .datefield__btn { background: var(--surface-2); }
   `,
 })
 export class DateField {
@@ -105,13 +106,12 @@ export class DateField {
   }
 
   openPicker(): void {
-    const input = this.picker().nativeElement;
-    /* showPicker() bestaat niet overal; dan valt het terug op focussen. */
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-    } else {
-      input.focus();
-      input.click();
+    /* Desktopbrowsers openen de kalender pas met showPicker(); iOS doet het
+       zelf zodra de tik het veld raakt en kan hier een fout gooien. */
+    try {
+      this.picker().nativeElement.showPicker?.();
+    } catch {
+      /* De tik zelf heeft de kiezer dan al geopend. */
     }
   }
 }

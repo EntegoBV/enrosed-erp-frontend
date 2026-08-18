@@ -17,27 +17,32 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="weekfield">
-      <button class="weekfield__pick" type="button" [id]="fieldId()" (click)="openPicker()">
-        @if (label(); as text) {
-          <span class="weekfield__label">{{ text }}</span>
-        } @else {
-          <span class="weekfield__label weekfield__label--empty">Kies een week…</span>
-        }
-        <span class="weekfield__icon">▤</span>
-      </button>
+      <div class="weekfield__pickwrap">
+        <span class="weekfield__pick" [id]="fieldId()">
+          @if (label(); as text) {
+            <span class="weekfield__label">{{ text }}</span>
+          } @else {
+            <span class="weekfield__label weekfield__label--empty">Kies een week…</span>
+          }
+          <span class="weekfield__icon">▤</span>
+        </span>
+        <!-- De echte kiezer ligt onzichtbaar over de hele knop: op iOS opent
+             alleen een rechtstreekse tik op het veld zelf de kalender. -->
+        <input #picker class="weekfield__native" type="date" [value]="anchor()"
+               (click)="openPicker()" (change)="onPick($any($event.target).value)"
+               aria-label="Leverweek kiezen" />
+      </div>
       @if (value()) {
         <button class="weekfield__clear" type="button" (click)="clear()">Wissen</button>
       }
-      <!-- De echte kiezer: onzichtbaar, enkel om de kalender op te roepen. -->
-      <input #picker class="weekfield__native" type="date" [value]="anchor()"
-             (change)="onPick($any($event.target).value)" tabindex="-1" aria-hidden="true" />
     </div>
     @if (range(); as span) {
       <span class="hint">{{ span }}</span>
     }
   `,
   styles: `
-    .weekfield { display: flex; align-items: center; gap: 8px; position: relative; }
+    .weekfield { display: flex; align-items: center; gap: 8px; }
+    .weekfield__pickwrap { position: relative; flex: 1; display: flex; }
     .weekfield__pick {
       flex: 1;
       display: flex;
@@ -68,15 +73,17 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
     }
     .weekfield__native {
       position: absolute;
-      left: 12px;
-      bottom: 0;
-      width: 1px;
-      height: 1px;
+      inset: 0;
+      width: 100%;
+      height: 100%;
       opacity: 0;
-      pointer-events: none;
+      cursor: pointer;
       border: 0;
       padding: 0;
+      /* 16px voorkomt dat iOS inzoomt zodra het veld focus krijgt. */
+      font-size: 16px;
     }
+    .weekfield__native:active ~ .weekfield__pick { background: var(--surface-2); }
   `,
 })
 export class WeekField {
@@ -119,12 +126,12 @@ export class WeekField {
   }
 
   openPicker(): void {
-    const input = this.picker().nativeElement;
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-    } else {
-      input.focus();
-      input.click();
+    /* Desktopbrowsers openen de kalender pas met showPicker(); iOS doet het
+       zelf zodra de tik het veld raakt en kan hier een fout gooien. */
+    try {
+      this.picker().nativeElement.showPicker?.();
+    } catch {
+      /* De tik zelf heeft de kiezer dan al geopend. */
     }
   }
 }
