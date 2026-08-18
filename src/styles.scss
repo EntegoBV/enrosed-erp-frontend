@@ -1425,3 +1425,28 @@ a.kpi--dark { color: #fff; }
 }
 .per-toggle button.on { background: var(--surface); color: var(--ink);
   box-shadow: 0 1px 2px rgb(26 22 20 / 10%); }
+
+/* Pallet item wraps on narrow screens: name first, controls underneath. */
+.pallet__item { flex-wrap: wrap; }
+.pallet__item-name { flex-basis: 100%; white-space: normal; }
+.pallet__item .pallet__cartons { margin-left: auto; }
+.pallet__height {
+  width: 68px; text-align: right;
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  padding: 5px 8px; font: inherit; font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hairline progress toward the minimum order value, on the floating bar. */
+.action-bar__meter {
+  position: absolute; top: 0; left: 20px; right: 20px; height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  overflow: hidden;
+}
+.action-bar__meter-fill {
+  height: 100%; border-radius: inherit;
+  background: var(--warn, #a85e10);
+  transition: width 0.4s ease, background 0.3s ease;
+}
+.action-bar__meter-fill--ok { background: var(--ok, #2e7d4f); }

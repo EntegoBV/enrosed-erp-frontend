@@ -455,6 +455,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             <span class="card__summary" style="flex:none">{{ palletSummary() }}</span>
           </div>
           <div class="card__body">
+            @if (data.order.pallets.length) {
+              <div class="row" style="margin-bottom:10px">
+                <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
+                  {{ layoutStatus() }}
+                </span>
+              </div>
+            }
             @if (data.priced.totals.unassignedCartons > 0) {
               <div class="pallet-warn">
                 {{ data.priced.totals.unassignedCartons }} dozen staan nog op geen pallet —
@@ -632,6 +639,15 @@ import { STATUS_LABEL, statusClass } from './quote-status';
       </div>
 
       <div class="action-bar">
+        <!-- Minimum order value as a hairline on the bar itself: green when
+             met, amber while short. No extra height - the bar stays a bar. -->
+        @if (data.priced.validation.minOrderValue > 0) {
+          <div class="action-bar__meter">
+            <div class="action-bar__meter-fill"
+                 [class.action-bar__meter-fill--ok]="data.priced.validation.meetsMinimum"
+                 [style.width.%]="minimumPercent()"></div>
+          </div>
+        }
         <div class="action-bar__total">
           <div class="action-bar__label">
             Totaal · {{ palletCountLabel(data.priced.totals) }}
@@ -680,6 +696,11 @@ import { STATUS_LABEL, statusClass } from './quote-status';
       @if (palletSheet()) {
       <app-sheet title="Pallets" (closed)="palletSheet.set(false)">
         <div body>
+          <!-- Help up front: this sheet is used twice a season, not daily. -->
+          <p class="tiny muted" style="margin:0 0 12px">
+            Verdeel de dozen per product over de pallets. Aantal aanpassen verplaatst
+            dozen, 0 haalt het product van de pallet. De vracht telt jouw pallets.
+          </p>
           @if (view(); as data) {
             @if (!data.order.pallets.length) {
               <p class="small muted" style="margin-top:0">
@@ -700,6 +721,15 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   de vracht telt alleen de pallets hieronder.
                 </div>
               }
+              <div class="row" style="margin-bottom:10px;gap:8px">
+                <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
+                  {{ layoutStatus() }}
+                </span>
+                <span class="spacer"></span>
+                <button class="btn btn--sm" type="button" (click)="autoLayout()">
+                  Herbereken
+                </button>
+              </div>
               @for (pallet of data.order.pallets; track $index) {
                 <div class="pallet">
                   <div class="pallet__head">
@@ -727,6 +757,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                       }
                       <option value="__other__">Anders…</option>
                     </select>
+                    <input class="pallet__height" type="number" min="0" inputmode="numeric"
+                           placeholder="hoogte" [value]="pallet.heightCm ?? ''"
+                           (change)="setPalletHeight($index, $any($event.target).value)" />
+                    <span class="tiny muted">cm</span>
                     <span class="spacer"></span>
                     <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
                   </div>
@@ -1352,6 +1386,35 @@ export class SalesEditor {
     return pallet.type || 'Europallet';
   }
 
+  /** Does the manual layout still match the order's cartons exactly? */
+  layoutOk(): boolean {
+    const data = this.view();
+    if (!data) return true;
+    return data.priced.totals.unassignedCartons === 0 && !this.overassigned();
+  }
+
+  private overassigned(): boolean {
+    const data = this.view();
+    if (!data) return false;
+    return data.priced.lines.some((line) =>
+        this.assignedFor(line.productId) > line.cartons);
+  }
+
+  layoutStatus(): string {
+    const data = this.view();
+    if (!data) return '';
+    if (this.overassigned()) return 'meer toegewezen dan besteld';
+    const loose = data.priced.totals.unassignedCartons;
+    return loose > 0 ? `${loose} dozen niet toegewezen` : 'indeling compleet';
+  }
+
+  setPalletHeight(index: number, raw: string): void {
+    const pallets = this.clonePallets();
+    const value = raw === '' ? null : Math.max(0, Math.round(+raw));
+    pallets[index] = { ...pallets[index], heightCm: value };
+    this.patchPallets(pallets);
+  }
+
   setPalletType(index: number, value: string): void {
     if (value === '__other__') {
       const custom = window.prompt('Soort pallet');
@@ -1383,7 +1446,7 @@ export class SalesEditor {
       let left = line.cartons;
       while (left > 0) {
         const take = Math.min(per, left);
-        pallets.push({ id: null, label: '', type: 'Europallet',
+        pallets.push({ id: null, label: '', type: 'Europallet', heightCm: null,
             items: [{ productId: line.productId, cartons: take }] });
         left -= take;
       }
@@ -1393,7 +1456,7 @@ export class SalesEditor {
 
   addPallet(): void {
     const pallets = this.clonePallets();
-    pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet', items: [] });
+    pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet', heightCm: null, items: [] });
     this.patchPallets(pallets);
   }
 

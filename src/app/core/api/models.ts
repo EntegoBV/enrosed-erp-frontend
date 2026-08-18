@@ -266,6 +266,8 @@ export interface OrderPallet {
   label: string;
   /** Pallet type; "Europallet" unless another was picked. Informational. */
   type: string;
+  /** Stacked height in cm; the transporter asks for it on every booking. */
+  heightCm: number | null;
   items: { productId: number; cartons: number }[];
 }
 

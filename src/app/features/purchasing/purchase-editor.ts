@@ -253,8 +253,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                               (click)="perPiece.set(true)">Per stuk</button>
                     </div>
                   </div>
-                  <div class="stat-row stat-row--muted"><span>Goederen</span>
-                    <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
                   @if (line.originEur) {
                     <div class="stat-row stat-row--muted"><span>Lokale kosten {{ originLabel() }}</span>
                       <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
@@ -273,8 +271,9 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                     <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row" style="border-top:1px solid var(--line);
                        margin-top:4px;padding-top:8px;font-weight:680">
-                    <span>Kostprijs per stuk</span>
-                    <span class="num rose-text">{{ line.landedUnitEur | eur: 4 }}</span></div>
+                    <span>{{ perPiece() ? 'Kostprijs per stuk' : 'Totaal regel' }}</span>
+                    <span class="num rose-text">{{ perPiece() ? (line.landedUnitEur | eur: 4)
+                        : (line.totalEur | eur) }}</span></div>
                 </div>
               </div>
             } @empty {
