@@ -554,7 +554,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                  destination outside the usual rates, or a customer arranging
                  pickup, is unknown at drafting time. -->
             <div class="stat-row">
-              <span>Vracht ({{ palletCountLabel(data.priced.totals) }})</span>
+              <span>Vracht ({{ palletCountLabel(data.priced.totals) }})
+                <button class="linklike" type="button"
+                        (click)="freightOpen.set(!freightOpen())">aanpassen</button>
+              </span>
               <span class="num">
                 @if (data.order.freight === 'TE_BEPALEN') {
                   <span class="danger-text">nog te bepalen</span>
@@ -563,11 +566,8 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 }
               </span></div>
 
-            <details style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
-              <summary class="small strong" style="cursor:pointer">
-                Vracht aanpassen <span class="opt"></span>
-              </summary>
-              <div style="margin-top:10px">
+            @if (freightOpen()) {
+              <div class="freight-edit">
                 <label class="row" style="gap:8px;cursor:pointer">
                   <input type="checkbox"
                          [checked]="data.order.freight === 'TE_BEPALEN'"
@@ -576,8 +576,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 </label>
                 <span class="hint">
                   De klant ziet dan "nog te bepalen" in plaats van een bedrag, en leest dat
-                  wij het laten weten. Er telt niets mee in het totaal — een bedrag verzinnen
-                  en later corrigeren is erger, want de klant rekent op wat er stond.
+                  wij het laten weten. Er telt niets mee in het totaal.
                 </span>
 
                 @if (data.order.freight !== 'TE_BEPALEN') {
@@ -594,7 +593,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   </div>
                 }
               </div>
-            </details>
+            }
             <div class="stat-row"><span>Administratie</span>
               <span class="num">{{ data.priced.totals.handling | eur }}</span></div>
             <div class="stat-row stat-row--total"><span>Totaal</span>
@@ -820,6 +819,9 @@ export class SalesEditor {
   readonly sendSheet = signal(false);
   readonly sendMessage = signal('');
   readonly sending = signal(false);
+  /** The freight tweak panel, folded away until asked for. */
+  readonly freightOpen = signal(false);
+
   /** Is an action running that should block the buttons? */
   readonly busy = signal(false);
   /** Which line has its delivery-term block folded open. */

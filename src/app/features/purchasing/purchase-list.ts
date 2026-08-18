@@ -10,6 +10,10 @@ import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
+const PURCHASE_STATUS_LABEL: Record<string, string> = {
+  CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen',
+};
+
 @Component({
   selector: 'app-purchase-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -51,7 +55,7 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
             </div>
             <div class="list-item__end">
               <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
-              <span class="badge badge--neutral">{{ row.order.status }}</span>
+              <span class="badge badge--neutral">{{ statusLabel(row.order.status) }}</span>
             </div>
             <span class="list-item__chev">›</span>
           </a>
@@ -109,6 +113,10 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
   `,
 })
 export class PurchaseList {
+  statusLabel(status: string): string {
+    return PURCHASE_STATUS_LABEL[status] ?? status;
+  }
+
   readonly containerLabel = containerLabel;
 
   private readonly sourcing = inject(SourcingApi);

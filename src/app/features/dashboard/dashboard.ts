@@ -11,6 +11,10 @@ import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from '../sales/quote-status';
 import { containerLabel } from '../../core/api/geo';
 
+const PURCHASE_STATUS_LABEL: Record<string, string> = {
+  CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen',
+};
+
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -131,7 +135,7 @@ import { containerLabel } from '../../core/api/geo';
                 @if (privacy.showPurchase()) {
                   <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
                 }
-                <div class="tiny muted">{{ row.order.status }}</div>
+                <div class="tiny muted">{{ purchaseStatusLabel(row.order.status) }}</div>
               </div>
               <span class="list-item__chev">›</span>
             </a>
@@ -145,6 +149,10 @@ import { containerLabel } from '../../core/api/geo';
   `,
 })
 export class Dashboard {
+  purchaseStatusLabel(status: string): string {
+    return PURCHASE_STATUS_LABEL[status] ?? status;
+  }
+
   readonly containerLabel = containerLabel;
 
   /** Warm at nine in the morning, calm at eleven at night. */

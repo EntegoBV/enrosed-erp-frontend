@@ -10,6 +10,8 @@ import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Product, PurchaseOrderView } from '../../core/api/models';
+import { containerLabel } from '../../core/api/geo';
+import { DateNlPipe } from '../../shared/pipes';
 
 /**
  * Look first, edit second - the purchasing counterpart of the product view.
@@ -26,7 +28,7 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, EurPipe, NumPipe, PctPipe],
+  imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -66,7 +68,8 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
           </div>
           <div class="card__body card__body--flush">
             @for (line of data.costing.lines; track line.productId) {
-              <div class="pv-line">
+              <button class="pv-line" type="button" [disabled]="!showMoney()"
+                      (click)="toggleLine(line.productId)">
                 @if (photoOf(line.productId); as url) {
                   <img class="pv-line__photo" [appAuthSrc]="url" alt="" />
                 } @else {
@@ -84,8 +87,41 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
                     <div class="num">{{ unitCost(line) | eur }}</div>
                     <div class="tiny muted">per stuk</div>
                   </div>
+                  <span class="card__chev" [class.card__chev--open]="openLine() === line.productId">›</span>
                 }
-              </div>
+              </button>
+              @if (showMoney() && openLine() === line.productId) {
+                <!-- The same build-up as the container total, but for this
+                     line alone - the answer to "why does this piece land
+                     at that price". -->
+                <div class="pv-detail">
+                  <div class="stat-row"><span>Goederen</span>
+                    <span class="num">{{ line.goodsEur | eur }}</span></div>
+                  <div class="stat-row"><span>Lokale kosten China</span>
+                    <span class="num">{{ line.originEur | eur }}</span></div>
+                  <div class="stat-row"><span>Zeevracht</span>
+                    <span class="num">{{ line.freightEur | eur }}</span></div>
+                  <div class="stat-row"><span>Douanewaarde</span>
+                    <span class="num">{{ line.customsValueEur | eur }}</span></div>
+                  <div class="stat-row">
+                    <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
+                      @if (line.dutySource) {
+                        <span class="tiny muted">({{ line.dutySource }})</span>
+                      }
+                    </span>
+                    <span class="num">{{ line.dutyEur | eur }}</span></div>
+                  <div class="stat-row"><span>Kosten na aankomst</span>
+                    <span class="num">{{ line.destinationEur | eur }}</span></div>
+                  @if (line.extraRevenueEur) {
+                    <div class="stat-row"><span>Extra opbrengst</span>
+                      <span class="num">{{ line.extraRevenueEur | eur }}</span></div>
+                  }
+                  <div class="stat-row stat-row--total"><span>Totaal regel</span>
+                    <span class="num">{{ line.totalEur | eur }}</span></div>
+                  <div class="stat-row"><span>Per stuk geland</span>
+                    <span class="num">{{ line.landedUnitEur | eur }}</span></div>
+                </div>
+              }
             }
           </div>
         </div>
@@ -94,8 +130,8 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
           <div class="card__head"><h2>Gegevens</h2></div>
           <div class="card__body">
             <div class="stat-row"><span>Leverancier</span><span>{{ supplierName() }}</span></div>
-            <div class="stat-row"><span>Datum</span><span>{{ data.order.orderDate }}</span></div>
-            <div class="stat-row"><span>Container</span><span>{{ data.order.containerType }}</span></div>
+            <div class="stat-row"><span>Datum</span><span>{{ data.order.orderDate | dateNl }}</span></div>
+            <div class="stat-row"><span>Container</span><span>{{ containerLabel(data.order.containerType) }}</span></div>
             <div class="stat-row"><span>Aankomsthaven</span>
               <span>{{ data.order.destinationPort || '—' }}</span></div>
             @if (showMoney()) {
@@ -177,8 +213,18 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
       display: flex; align-items: center; gap: 12px;
       padding: 10px 16px;
       border-bottom: 1px solid var(--line);
+      width: 100%; border-left: 0; border-right: 0; border-top: 0;
+      background: none; font: inherit; text-align: left; color: inherit;
+      cursor: pointer;
     }
+    .pv-line:disabled { cursor: default; }
     .pv-line:last-child { border-bottom: 0; }
+    .pv-detail {
+      padding: 6px 16px 12px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--line);
+      animation: rise 0.2s ease;
+    }
     .pv-line__photo {
       width: 46px; height: 46px; border-radius: 10px; object-fit: cover;
       border: 1px solid var(--line); background: var(--surface-2); flex: none;
@@ -203,6 +249,8 @@ import { Product, PurchaseOrderView } from '../../core/api/models';
   `,
 })
 export class PurchaseView {
+  readonly containerLabel = containerLabel;
+
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
   private readonly route = inject(ActivatedRoute);
@@ -221,6 +269,13 @@ export class PurchaseView {
   ];
 
   readonly showMoney = computed(() => this.privacy.showPurchase());
+
+  /** Which product line shows its cost build-up; null is all folded. */
+  readonly openLine = signal<number | null>(null);
+
+  toggleLine(productId: number): void {
+    this.openLine.set(this.openLine() === productId ? null : productId);
+  }
 
   constructor() {
     const id = +(this.route.snapshot.paramMap.get('id') ?? 0);
