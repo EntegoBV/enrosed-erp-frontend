@@ -117,7 +117,6 @@ a { color: var(--rose); }
 .small { font-size: 13px; }
 .tiny { font-size: 11.5px; }
 .strong { font-weight: 650; }
-.nowrap { white-space: nowrap; }
 .mono { font-family: var(--mono); }
 .ok-text { color: var(--ok); }
 .warn-text { color: var(--warn); }
@@ -125,7 +124,6 @@ a { color: var(--rose); }
 .rose-text { color: var(--rose); }
 .grow { flex: 1; }
 .row { display: flex; align-items: center; gap: 10px; }
-.col { display: flex; flex-direction: column; gap: 10px; }
 .wrap { flex-wrap: wrap; }
 .mt-8 { margin-top: 8px; }
 .mt-12 { margin-top: 12px; }
@@ -273,20 +271,6 @@ a { color: var(--rose); }
     padding: 22px 20px 18px;
     border-bottom: 1px solid rgb(255 255 255 / 8%);
   }
-  .sidebar__mark {
-    font-family: Georgia, serif;
-    font-size: 22px;
-    letter-spacing: 0.06em;
-    color: #fff;
-  }
-  .sidebar__mark span { color: var(--rose-mid); }
-  .sidebar__sub {
-    font-size: 10px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: #9a8f88;
-    margin-top: 3px;
-  }
 
   .sidebar__nav { padding: 12px; flex: 1; overflow-y: auto; }
   .sidebar__label {
@@ -402,7 +386,6 @@ a { color: var(--rose); }
   border: 1px solid var(--line);
   background: linear-gradient(160deg, #f4efeb, #eae3dd);
 }
-.thumb--lg { width: 64px; height: 64px; }
 .thumb--placeholder {
   display: flex;
   align-items: center;
@@ -440,12 +423,10 @@ a { color: var(--rose); }
   color: #fff;
 }
 .btn--primary:active { background: var(--rose-dark); }
-.btn--ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
 .btn--danger { color: var(--danger); border-color: var(--line-strong); }
 .btn--danger:active { background: var(--danger-soft); }
 .btn--sm { min-height: 34px; padding: 5px 11px; font-size: 13px; }
 .btn--block { width: 100%; }
-.btn--icon { min-height: 40px; min-width: 40px; padding: 6px; }
 
 /* Zwevende actieknop op mobiel */
 .fab {
@@ -570,7 +551,6 @@ a { color: var(--rose); }
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.field-row--3 { grid-template-columns: repeat(3, 1fr); }
 .field-row .field { margin-bottom: 0; }
 
 .input-affix {
@@ -792,7 +772,6 @@ a { color: var(--rose); }
   flex: none;
 }
 .sheet__foot .btn { flex: 1; }
-.sheet__foot .btn--icon { flex: none; }
 
 @media (min-width: 700px) {
   .overlay { align-items: center; padding: 24px; }
@@ -850,7 +829,6 @@ a { color: var(--rose); }
 
 /* ================================================================ tabellen */
 
-.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 table.data {
   width: 100%;
@@ -928,7 +906,7 @@ table.data tfoot td {
 /* ============================================================ afdrukken */
 
 @media print {
-  .appbar, .tabbar, .sidebar, .fab, .action-bar, .no-print { display: none !important; }
+  .appbar, .tabbar, .sidebar, .fab, .action-bar { display: none !important; }
   .content { padding: 0; max-width: none; }
   body { background: #fff; }
   .card { border: 0; box-shadow: none; }
@@ -997,21 +975,6 @@ table.data tfoot td {
 .legend b { color: var(--rose); }
 
 /* Knop in de bovenbalk om inkoopcijfers te tonen of te verbergen. */
-.privacy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  border-radius: var(--r-sm);
-  padding: 6px 10px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink-2);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.privacy-btn--on { background: var(--warn-soft); border-color: #f0dcbc; color: var(--warn); }
 
 /* Blok met interne cijfers; visueel apart zodat je meteen ziet wat niet
    voor de klant bedoeld is. */

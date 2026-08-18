@@ -117,5 +117,3 @@ export class WeekNlPipe implements PipeTransform {
   }
 }
 
-export const FORMAT_PIPES = [EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe,
-                             DateTimeNlPipe, WeekNlPipe] as const;
