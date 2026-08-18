@@ -137,10 +137,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
           </div>
         </div>
 
-        <div class="mt-16">
-          <a class="btn btn--primary btn--block"
-             [routerLink]="['/products', product.id, 'edit']">Product bewerken</a>
-        </div>
       </div>
     }
   `,
