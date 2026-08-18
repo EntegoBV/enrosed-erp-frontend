@@ -123,3 +123,18 @@ export const STANDARD_COLOURS = [
   'Geel', 'Oranje', 'Groen', 'Blauw', 'Paars', 'Lila',
   'Zwart', 'Grijs', 'Zilver', 'Goud', 'Gemengd',
 ] as const;
+
+/**
+ * Standard payment terms, stored in Dutch.
+ *
+ * These translate automatically on quotes through the backend dictionary;
+ * a term typed outside this list stays possible and passes through as-is.
+ */
+export const STANDARD_PAYMENT_TERMS = [
+  'Vooruitbetaling',
+  '50% voorschot / 50% bij levering',
+  'Bij levering',
+  '14 dagen netto',
+  '30 dagen netto',
+  '60 dagen netto',
+] as const;

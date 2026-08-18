@@ -269,6 +269,8 @@ export interface SalesOrder {
   validUntil: string;
   status: QuoteStatus;
   incoterm: string;
+  /** Order-specific payment terms; null means the customer's default. */
+  paymentTerms: string | null;
   notes: string;
   markupMode: MarkupMode;
   orderMarkupPct: number;

@@ -14,6 +14,7 @@ import { DateField } from '../../shared/date-field';
 import { WeekField } from '../../shared/week-field';
 import { Privacy } from '../../core/api/privacy';
 import { messageOf } from '../../core/api/errors';
+import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { WorkQueue } from '../../core/api/work-queue';
 import { Sheet, Ui } from '../../shared/ui';
 import {
@@ -126,14 +127,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   </span>
                 </div>
               }
-              <div class="row wrap mt-12" style="gap:8px">
-                <button class="btn btn--primary" type="button" (click)="approve(revision, true)">
-                  Wijzigen
-                </button>
-                <button class="btn" type="button" (click)="approve(revision, false)">
-                  Overnemen
-                </button>
-                <button class="btn" type="button" (click)="reject(revision)">Afwijzen</button>
+              <div class="mt-12">
+                <button class="btn btn--primary btn--block" type="button"
+                        (click)="approve(revision, true)">Wijzigen</button>
+                <button class="btn btn--block mt-8" type="button"
+                        (click)="approve(revision, false)">Overnemen</button>
+                <button class="btn btn--block btn--quiet mt-8" type="button"
+                        (click)="reject(revision)">Afwijzen</button>
               </div>
               <span class="hint">
                 <b>Wijzigen</b> zet hun aantallen op de order en laat je daarna zelf nog
@@ -174,6 +174,25 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     <option [ngValue]="term">{{ term }}</option>
                   }
                 </select>
+              </div>
+              <div class="field">
+                <label for="so-pay">Betaalvoorwaarden <span class="opt"></span></label>
+                <select class="select" id="so-pay" [ngModel]="paymentChoice()"
+                        (ngModelChange)="pickPaymentTerms($event)">
+                  <option value="">Van de klant</option>
+                  @for (term of paymentTermsList; track term) {
+                    <option [value]="term">{{ term }}</option>
+                  }
+                  <option value="__other__">Anders…</option>
+                </select>
+                @if (customPaymentTerms()) {
+                  <input class="input mt-8" aria-label="Eigen betaalvoorwaarden"
+                         placeholder="Eigen voorwaarden…" [ngModel]="data.order.paymentTerms"
+                         (ngModelChange)="patch({ paymentTerms: $event })" />
+                }
+                <span class="hint">
+                  Leeg = de voorwaarden van de klant. Uit de lijst wordt vertaald op de offerte.
+                </span>
               </div>
               <div class="field">
                 <label for="so-date">Datum</label>
@@ -658,6 +677,26 @@ export class SalesEditor {
 
   readonly id = input<string>('');
 
+  readonly paymentTermsList = STANDARD_PAYMENT_TERMS;
+  /** True while terms outside the standard list are being typed. */
+  readonly customPaymentTerms = signal(false);
+
+  paymentChoice(): string {
+    if (this.customPaymentTerms()) return '__other__';
+    const terms = this.view()?.order.paymentTerms ?? '';
+    if (!terms) return '';
+    return (this.paymentTermsList as readonly string[]).includes(terms) ? terms : '__other__';
+  }
+
+  pickPaymentTerms(choice: string): void {
+    if (choice === '__other__') {
+      this.customPaymentTerms.set(true);
+      return;
+    }
+    this.customPaymentTerms.set(false);
+    this.patch({ paymentTerms: choice || null });
+  }
+
   readonly incoterms = ['EXW', 'FOB', 'CIF', 'DAP', 'DDP'];
 
   readonly view = signal<SalesOrderView | null>(null);
@@ -953,10 +992,7 @@ export class SalesEditor {
   }
 
   /** The most recent step, shown next to the status badge. */
-  readonly lastEvent = computed(() => {
-    const events = this.history();
-    return events.length ? events[events.length - 1] : null;
-  });
+  readonly lastEvent = computed(() => this.history()[0] ?? null);
 
   toggleHistory(): void {
     this.historyOpen.set(!this.historyOpen());

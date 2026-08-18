@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES } from '../../core/api/models';
+import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { PageHeader } from '../../shared/page-header';
 import { Sheet, Ui } from '../../shared/ui';
 
@@ -106,8 +107,21 @@ function blank(countryCode: string): Customer {
                 @for (term of incoterms; track term) { <option [value]="term">{{ term }}</option> }
               </select></div>
             <div class="field span-2"><label for="c-terms">Betaalvoorwaarden</label>
-              <input class="input" id="c-terms" [ngModel]="draft().paymentTerms"
-                     (ngModelChange)="patch({ paymentTerms: $event })" /></div>
+              <select class="select" id="c-terms" [ngModel]="paymentChoice()"
+                      (ngModelChange)="pickPaymentTerms($event)">
+                @for (term of paymentTerms; track term) {
+                  <option [value]="term">{{ term }}</option>
+                }
+                <option value="__other__">Anders…</option>
+              </select>
+              @if (customPaymentTerms()) {
+                <input class="input mt-8" aria-label="Eigen betaalvoorwaarden"
+                       placeholder="Eigen voorwaarden…" [ngModel]="draft().paymentTerms"
+                       (ngModelChange)="patch({ paymentTerms: $event })" />
+              }
+              <span class="hint">
+                Voorwaarden uit de lijst worden op offertes automatisch vertaald.
+              </span></div>
             <div class="field span-2"><label for="c-notes">Notities <span class="opt"></span></label>
               <textarea class="textarea" id="c-notes" [ngModel]="draft().notes"
                         (ngModelChange)="patch({ notes: $event })"></textarea></div>
@@ -126,6 +140,25 @@ function blank(countryCode: string): Customer {
   `,
 })
 export class CustomerList {
+  readonly paymentTerms = STANDARD_PAYMENT_TERMS;
+  /** True while terms outside the standard list are being typed. */
+  readonly customPaymentTerms = signal(false);
+
+  paymentChoice(): string {
+    if (this.customPaymentTerms()) return '__other__';
+    const terms = this.draft().paymentTerms ?? '';
+    return (this.paymentTerms as readonly string[]).includes(terms) ? terms : '__other__';
+  }
+
+  pickPaymentTerms(choice: string): void {
+    if (choice === '__other__') {
+      this.customPaymentTerms.set(true);
+      return;
+    }
+    this.customPaymentTerms.set(false);
+    this.patch({ paymentTerms: choice });
+  }
+
   private readonly sales = inject(SalesApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
