@@ -43,13 +43,13 @@ export class SourcingApi {
       this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}`), order));
   }
 
-  /** De calculatie als PDF; met of zonder de gewenste extra opbrengst als regel. */
+  /** The calculation as a PDF; with or without the extra revenue as a line. */
   purchasePdf(id: number, showRevenue: boolean): Promise<Blob> {
     return firstValueFrom(this.http.get(
       api(`/api/purchase-orders/${id}/pdf?showRevenue=${showRevenue}`), { responseType: 'blob' }));
   }
 
-  /** Kopieert de calculatie om er snel een variant van door te rekenen. */
+  /** Copies the calculation to price a variant quickly. */
   duplicatePurchaseOrder(id: number): Promise<PurchaseOrderView> {
     return firstValueFrom(this.http.post<PurchaseOrderView>(
       api(`/api/purchase-orders/${id}/duplicate`), {}));

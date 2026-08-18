@@ -8,14 +8,14 @@ import { DateNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe } from '../../shared/
 import { LANGUAGES, LanguageCode } from '../../core/api/models';
 
 /**
- * De offerte zoals de klant hem ziet.
+ * The quote as the customer sees it.
  *
- * Geen aanmelding: de link uit de mail bevat het token. Geen kostprijs, geen
- * marge - de server stuurt hier een eigen weergave, geen versie van ons scherm
- * met velden verborgen.
+ * No login: the link in the mail carries the token. No cost price, no
+ * margin - the server sends its own view here, not our screen with fields
+ * hidden.
  *
- * De klant kan tekenen, afwijzen, of aantallen voorstellen. Dat laatste wijzigt
- * de offerte niet: het is een voorstel dat bij de verkoper terechtkomt.
+ * The customer can sign, reject, or propose quantities. The last one does
+ * not change the quote: it is a proposal that lands with the seller.
  */
 @Component({
   selector: 'app-portal-page',
@@ -27,10 +27,10 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
       <header class="portal__bar">
         <img class="portal__logo" src="logo.png" alt="Enrosed" />
 
-        <!-- De klant kan zelf een andere taal kiezen. Zijn keuze geldt alleen voor
-             dit scherm; de volgende offerte vertrekt in de taal die op zijn fiche
-             staat. Wie in Frankrijk zit maar liever Engels leest hoeft daarvoor
-             niet te bellen. -->
+        <!-- The customer can pick another language. Their pick only applies
+             to this screen; the next quote leaves in the language on their
+             file. Whoever sits in France but prefers English should not have
+             to call us for that. -->
         <div class="portal__lang">
           <span class="portal__globe" aria-hidden="true">◍</span>
           <select class="portal__select" [ngModel]="language()"
@@ -164,8 +164,9 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
                             {{ t('portalDeliveryInWeek') }}
                             {{ line.deliveryWeek | weekNl }}</span>
                         } @else {
-                          <!-- Oranje, niet rood: het is een openstaand punt, geen fout,
-                               en rood schrikt af op het scherm waar iemand moet tekenen. -->
+                          <!-- Orange, not red: it is an open item, not an error,
+                               and red frightens on the screen where someone
+                               is asked to sign. -->
                           <span class="warn-text"><span class="stock-dot stock-dot--low"></span>
                             {{ t('portalTermToBeDetermined') }}</span>
                         }
@@ -240,9 +241,9 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
               <div class="card__head"><h2>{{ t('portalWhatNext') }}</h2></div>
               <div class="card__body">
                 @if (proposalPending()) {
-                  <!-- Zolang zijn voorstel bij ons ligt heeft tekenen geen zin: hij
-                       zou tekenen voor de offerte zoals ze wás. Intrekken is de weg
-                       terug, en dat is zelf een stap in de geschiedenis. -->
+                  <!-- While their proposal is with us, signing is pointless:
+                       they would sign the quote as it WAS. Withdrawing is the
+                       way back, and that is itself a step in the history. -->
                   <div class="alert alert--warn" style="margin-bottom:12px">
                     <span class="alert__icon">⇄</span>
                     <div>
@@ -276,7 +277,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
       }
     </div>
 
-    <!-- ======================================================= tekenen -->
+    <!-- ======================================================= signing -->
     @if (signSheet()) {
       <app-sheet [title]="t('portalSignTitle')" (closed)="signSheet.set(false)">
         <div body>
@@ -301,7 +302,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
       </app-sheet>
     }
 
-    <!-- ================================================== wijzigingen -->
+    <!-- ====================================================== changes -->
     @if (proposalSheet()) {
       <app-sheet [title]="t('portalPropose')" (closed)="proposalSheet.set(false)">
         <div body>
@@ -418,8 +419,8 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
       justify-content: center;
       position: relative;
     }
-    /* De taalkiezer staat rechts en blijft klein: het is een uitweg voor wie hem
-       nodig heeft, geen kernfunctie van dit scherm. */
+    /* The language picker sits right and stays small: an exit for whoever
+       needs it, not a core function of this screen. */
     .portal__lang {
       position: absolute;
       right: 12px;
@@ -439,15 +440,15 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
       cursor: pointer;
     }
     .portal__select option { color: #1a1614; }
-    /* Het logo is zeer breed (ongeveer 6:1). Vaste hoogte met width:auto houdt
-       de verhouding intact; zonder max-width duwt het op smalle schermen de balk
-       uit elkaar. */
+    /* The logo is very wide (roughly 6:1). Fixed height with width:auto
+       keeps the ratio; without max-width it pushes the bar apart on narrow
+       screens. */
     .portal__logo {
       height: 26px;
       width: auto;
       max-width: min(220px, 70vw);
       object-fit: contain;
-      /* Zwarte inkt op transparant, dus op de donkere balk omkeren. */
+      /* Black ink on transparent, so invert on the dark bar. */
       filter: invert(1);
     }
     .portal .content { padding-bottom: 60px; }
@@ -471,10 +472,10 @@ export class PortalPage {
   readonly proposalLines = signal<{
     productId: number; description: string; quantity: number; piecesPerCarton: number;
   }[]>([]);
-  /** Aantallen die zo naar een volle doos springen; meteen zichtbaar, nog niet toegepast. */
+  /** Quantities about to snap to a full carton; visible now, not yet applied. */
   readonly pendingRound = signal<Record<number, number>>({});
   private roundTimers = new Map<number, ReturnType<typeof setTimeout>>();
-  /** Producten die nog niet op de offerte staan en die de klant erbij kan zetten. */
+  /** Products not on the quote yet that the customer can add. */
   readonly catalog = signal<PortalCatalogItem[]>([]);
   readonly additions = signal<Map<number, { description: string; quantity: number }>>(new Map());
   readonly proposeBy = signal('');
@@ -493,7 +494,7 @@ export class PortalPage {
 
   private async load(token: string): Promise<void> {
     try {
-      /* Koos deze klant hier eerder een taal, dan begint hij daar weer in. */
+      /* When this customer picked a language here before, they start in it again. */
       const chosen = this.storedLanguage(token);
       const quote = await this.sales.portalQuote(token, chosen ?? undefined);
       this.quote.set(quote);
@@ -508,45 +509,46 @@ export class PortalPage {
   readonly pdfUrl = computed(() => this.sales.portalPdfUrl(this.token()));
 
   /**
-   * Hebben wij de levertermijn ingevuld die de klant miste? Dat komt van de
-   * backend: die weet met welke stand de offerte vertrokken is. Het uit de
-   * regels afleiden ging mis zodra wij zelf een termijn nalieten.
+   * Did we fill in the delivery term the customer was missing? That comes
+   * from the backend: it knows what state the quote left in. Deriving it
+   * from the lines went wrong the moment we omitted a term ourselves.
    */
   readonly deliveryTermsJustAdded = computed(() => {
     const quote = this.quote();
     return !!quote && quote.deliveryTerms === 'AANGEVULD' && quote.canRespond;
   });
 
-  /** Wacht de klant nog op een termijn van ons? */
+  /** Is the customer still waiting on a term from us? */
   readonly deliveryTermsPending = computed(() => {
     const quote = this.quote();
     return !!quote && quote.deliveryTerms === 'TE_BEPALEN' && quote.canRespond;
   });
 
   /**
-   * Een tekst in de taal van de klant.
+   * A text in the customer's language.
    *
-   * De teksten komen van de server mee met de offerte, niet uit een bundel hier:
-   * zo staan de offerte, de PDF, de mail en dit scherm gegarandeerd in dezelfde
-   * woorden en hoeft een nieuwe taal maar op één plaats toegevoegd te worden.
+   * The texts travel with the quote from the server, not from a bundle
+   * here: that way the quote, the PDF, the mail and this screen are
+   * guaranteed to use the same words, and a new language only needs adding
+   * in one place.
    *
-   * Ontbreekt er iets - bijvoorbeeld doordat de server nog een oudere versie
-   * draait - dan verschijnt de sleutel zelf. Dat is lelijk maar zichtbaar, en
-   * dus beter dan een leeg vak in een document dat naar een klant gaat.
+   * When something is missing - say the server still runs an older version -
+   * the key itself appears. Ugly but visible, and therefore better than an
+   * empty box in a document going to a customer.
    */
   t(key: string): string {
     return this.quote()?.text?.[key] ?? key;
   }
 
-  /** Ligt er een voorstel van deze klant bij ons? */
+  /** Is a proposal from this customer with us? */
   readonly proposalPending = computed(() =>
     this.quote()?.proposals.some((p) => p.status === 'IN_AFWACHTING') ?? false);
 
   /**
-   * De klant trekt zijn voorstel weer in.
+   * The customer withdraws their proposal.
    *
-   * Het voorstel blijft in de geschiedenis staan; alleen ligt de offerte weer bij
-   * hem. Wissen zou betekenen dat niemand later nog kan zien wat er gevraagd was.
+   * The proposal stays in the history; the quote simply lies with them
+   * again. Deleting would mean nobody can later see what was asked.
    */
   async withdraw(): Promise<void> {
     await this.run(() => this.sales.portalWithdraw(this.token()), this.t('portalWithdrawn'));
@@ -554,7 +556,7 @@ export class PortalPage {
 
   readonly languages = LANGUAGES;
 
-  /** De taal waarin dit scherm staat; die van de klant tenzij hij zelf koos. */
+  /** The language this screen is in; the customer's unless they picked one. */
   readonly language = signal<LanguageCode>('NL');
 
   private storedLanguage(token: string): LanguageCode | null {
@@ -566,23 +568,23 @@ export class PortalPage {
   }
 
   /**
-   * De klant kiest een andere taal.
+   * The customer picks another language.
    *
-   * De keuze blijft in dit toestel bewaard zodat hij bij een volgend bezoek niet
-   * opnieuw hoeft te kiezen. Op de klantfiche verandert er niets: dat is een
-   * afspraak tussen ons en hem, geen instelling van zijn browser.
+   * The pick is kept on this device so they need not choose again next
+   * visit. Nothing changes on the customer file: that is an agreement
+   * between us and them, not a browser setting.
    */
   async setLanguage(code: LanguageCode): Promise<void> {
     this.language.set(code);
     try {
       localStorage.setItem('enrosed.portalLanguage.' + this.token(), code);
     } catch {
-      /* privémodus: dan geldt de keuze alleen voor dit bezoek */
+      /* private mode: then the pick only lasts this visit */
     }
     try {
       this.quote.set(await this.sales.portalQuote(this.token(), code));
     } catch {
-      /* de offerte blijft staan zoals ze stond */
+      /* the quote stays exactly as it was */
     }
   }
 
@@ -591,7 +593,7 @@ export class PortalPage {
     return this.language() === 'NL' ? '/voorwaarden' : '/voorwaarden?lang=en';
   }
 
-  /** Dezelfde vertaalfunctie om door te geven aan een kindcomponent. */
+  /** The same translate function, to hand down to a child component. */
   readonly translate = (key: string): string => this.t(key);
 
   statusLabel(quote: PortalQuote): string {
@@ -603,10 +605,10 @@ export class PortalPage {
     }
   }
 
-  /** Wacht de klant nog op een vrachtbedrag van ons? */
+  /** Is the customer still waiting on a freight amount from us? */
   readonly freightPending = computed(() => this.quote()?.freight === 'TE_BEPALEN');
 
-  /** Hebben wij de vracht ingevuld die de klant miste? */
+  /** Did we fill in the freight the customer was missing? */
   readonly freightJustAdded = computed(() => {
     const quote = this.quote();
     return !!quote && quote.freight === 'AANGEVULD' && quote.canRespond;
@@ -633,20 +635,20 @@ export class PortalPage {
     this.proposalSheet.set(true);
   }
 
-  /** Wat er nog niet op de offerte staat. */
+  /** What is not on the quote yet. */
   readonly extraItems = computed(() => {
     const onQuote = new Set((this.quote()?.lines ?? []).map((line) => line.productId));
     return this.catalog().filter((item) => !onQuote.has(item.productId));
   });
 
-  /** Zit er iets zonder voorraad in wat de klant erbij wil? */
+  /** Anything without stock in what the customer wants added? */
   readonly hasOutOfStockAddition = computed(() => {
     const catalog = this.catalog();
     return [...this.additions().keys()].some(
       (productId) => catalog.find((item) => item.productId === productId)?.inStock === false);
   });
 
-  /** Wat de klant erbij gezet heeft, als lijst voor het overzicht. */
+  /** What the customer added, as a list for the summary. */
   readonly additionList = computed(() =>
     [...this.additions()].map(([productId, value]) => ({ productId, ...value })));
 
@@ -669,14 +671,15 @@ export class PortalPage {
   }
 
   /**
-   * Aantal van de klant, afgerond op een volle doos.
+   * The customer's quantity, rounded to a full carton.
    *
-   * Dezelfde afspraak als op onze eigen schermen: de melding verschijnt meteen,
-   * het veld springt pas na twee seconden. Wie 240 intikt is na de eerste toets
-   * bij "2", en een veld dat dan al bijstelt is onbruikbaar.
+   * The same contract as on our own screens: the notice appears at once,
+   * the field only snaps after two seconds. Whoever types 240 is at "2"
+   * after the first key, and a field that already corrects then is
+   * unusable.
    *
-   * De server rondt nog een keer af bij het opslaan. Dit scherm is de
-   * beleefdheid; die controle is de garantie.
+   * The server rounds once more on save. This screen is the courtesy;
+   * that check is the guarantee.
    */
   setProposal(productId: number, quantity: number): void {
     const wanted = Math.max(0, quantity || 0);
@@ -697,7 +700,7 @@ export class PortalPage {
     if (snapped === wanted || wanted <= 0) return;
 
     this.roundTimers.set(productId, setTimeout(() => {
-      /* Alleen bijstellen als er intussen niets anders is ingetikt. */
+      /* Only adjust when nothing else was typed in the meantime. */
       const current = this.proposalLines().find((l) => l.productId === productId);
       if (!current || current.quantity !== wanted) return;
       this.proposalLines.update((lines) =>
@@ -721,7 +724,7 @@ export class PortalPage {
   }
 
   async propose(): Promise<void> {
-    /* Bestaande regels én wat de klant erbij wil, in één voorstel. */
+    /* Existing lines AND what the customer wants added, in one proposal. */
     const lines = [
       ...this.proposalLines().map((line) => ({
         productId: line.productId,

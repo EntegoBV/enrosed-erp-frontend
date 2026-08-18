@@ -5,7 +5,7 @@ import { QuoteRevision, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { DateNlPipe, NumPipe } from '../../shared/pipes';
 
-/** Wijzigingsvoorstellen van klanten die op onze beoordeling wachten. */
+/** Customer change proposals awaiting our review. */
 @Component({
   selector: 'app-revision-list',
   changeDetection: ChangeDetectionStrategy.OnPush,

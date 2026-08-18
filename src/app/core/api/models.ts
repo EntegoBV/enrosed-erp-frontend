@@ -1,8 +1,8 @@
 /**
- * De vormen die over de lijn gaan.
+ * The shapes that go over the wire.
  *
- * Ze volgen de DTO's van de backend; wat daar berekend wordt, wordt hier niet
- * nog eens overgedaan. De frontend toont, de server rekent.
+ * They follow the backend's DTOs; what is calculated there is not redone
+ * here. The frontend shows, the server calculates.
  */
 
 export type Currency = 'EUR' | 'USD' | 'CNY';
@@ -45,9 +45,9 @@ export interface Product {
   id: number | null;
   sku: string | null;
   name: string;
-  /** Afmeting van het product zelf - los van de variant en van de omdoos. */
+  /** Dimensions of the product itself - apart from variant and outer carton. */
   dimensions: Dimensions;
-  /** Kleur van het artikel; eerste van wat later productopties kan worden. */
+  /** Colour of the article; first of what may become product options. */
   colour: string | null;
   categoryId: number | null;
   supplierId: number | null;
@@ -63,7 +63,7 @@ export interface Product {
   landedCostSource: string | null;
   markupPct: number | null;
   fixedSalesPriceEur: number | null;
-  /** Voorraad in stuks; groeit bij een ontvangen inkooporder. */
+  /** Stock in pieces; grows when a purchase order is received. */
   stockQuantity: number;
   photos: PhotoDto[];
   describedAs?: string;
@@ -101,7 +101,7 @@ export interface Supplier {
   notes: string;
 }
 
-/** De talen waarin wij naar een klant communiceren. */
+/** The languages we communicate to a customer in. */
 export type LanguageCode = 'NL' | 'FR' | 'EN' | 'DE' | 'ES' | 'PL' | 'PT' | 'TR';
 
 export const LANGUAGES: { code: LanguageCode; label: string }[] = [
@@ -123,7 +123,7 @@ export interface Customer {
   phone: string;
   vatNumber: string;
   countryCode: string;
-  /** Taal waarin deze klant zijn offerte, mail en klantportaal krijgt. */
+  /** Language this customer gets their quote, mail and portal in. */
   language: LanguageCode;
   address: string;
   postalCode: string;
@@ -143,7 +143,7 @@ export interface Country {
   handling: number;
   vatRatePct: number;
   transitDays: number;
-  /** Lidstaat van de EU? Bepaalt het BTW-regime. */
+  /** EU member state? Determines the VAT regime. */
   euMember: boolean;
 }
 
@@ -154,7 +154,7 @@ export interface DiscountTier {
   percent: number;
 }
 
-/* ---------------------------------------------------------------- inkoop */
+/* ------------------------------------------------------------ purchasing */
 
 export interface PurchaseOrderLine {
   id: number | null;
@@ -180,10 +180,10 @@ export interface PurchaseOrder {
   usdToEurGoods: number;
   usdToEurTransport: number;
   freightUsd: number;
-  /** Fabriek tot Chinese haven - telt mee in de douanewaarde. */
+  /** Factory to Chinese port - counts towards the customs value. */
   originCosts: number;
   originCurrency: Currency;
-  /** Vanaf de loshaven - valt buiten de douanewaarde. */
+  /** From the port of discharge - outside the customs value. */
   destinationCostsEur: number;
   defaultDutyRatePct: number;
   extraRevenueEur: number;
@@ -233,7 +233,7 @@ export interface LandedCost {
   } | null;
 }
 
-/** Wat de server bijstelde om op volle dozen uit te komen. */
+/** What the server adjusted to land on full cartons. */
 export interface CartonAdjustment {
   productId: number;
   productName: string;
@@ -248,7 +248,7 @@ export interface PurchaseOrderView {
   adjustments: CartonAdjustment[];
 }
 
-/* --------------------------------------------------------------- verkoop */
+/* ----------------------------------------------------------------- sales */
 
 export interface SalesOrderLine {
   id: number | null;
@@ -274,24 +274,24 @@ export interface SalesOrder {
   notes: string;
   markupMode: MarkupMode;
   orderMarkupPct: number;
-  /** Losse extra korting, bv. een beurskorting. Optioneel. */
+  /** Loose extra discount, e.g. a fair discount. Optional. */
   extraDiscountPct: number | null;
   extraDiscountLabel: string | null;
   portalToken: string | null;
   sentAt: string | null;
   viewedAt: string | null;
-  /** Hoe vaak de klant de offerte geopend heeft. */
+  /** How many times the customer opened the quote. */
   viewCount: number;
   decidedAt: string | null;
   signedByName: string | null;
   customerMessage: string | null;
-  /** Notities voor onszelf; komen nooit op het klantdocument. */
+  /** Notes for ourselves; never on the customer document. */
   internalNotes: string | null;
-  /** Stand van de levertermijnen; stuurt wat de klant bovenaan zijn offerte leest. */
+  /** Delivery-terms state; drives what the customer reads atop their quote. */
   deliveryTerms?: 'VOLLEDIG' | 'TE_BEPALEN' | 'AANGEVULD';
-  /** Stand van de vracht; TE_BEPALEN laat het bedrag als open post vertrekken. */
+  /** Freight state; TE_BEPALEN lets the amount leave as an open item. */
   freight?: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD';
-  /** Eigen vrachtbedrag in plaats van het landtarief; leeg betekent: reken het tarief. */
+  /** Own freight amount instead of the country rate; empty means: charge the rate. */
   manualFreightEur: number | null;
   lines: SalesOrderLine[];
 }
@@ -384,7 +384,7 @@ export interface PortalLine {
   quantity: number;
   cartons: number;
   pallets: number;
-  /** Doosinhoud, om aantallen op volle dozen af te ronden. */
+  /** Carton content, for rounding quantities to full cartons. */
   piecesPerCarton: number;
   unitPrice: number;
   discountPct: number;
@@ -394,7 +394,7 @@ export interface PortalLine {
   deliveryWeek: string | null;
 }
 
-/** Product dat de klant zelf kan bijbestellen. */
+/** Product the customer can add themselves. */
 export interface PortalCatalogItem {
   productId: number;
   sku: string;
@@ -402,11 +402,11 @@ export interface PortalCatalogItem {
   photoUrl: string | null;
   piecesPerCarton: number;
   unitPrice: number;
-  /** Leverbaar uit voorraad, of moeten we het eerst bestellen? */
+  /** Available from stock, or do we have to order it first? */
   inStock: boolean;
 }
 
-/** Onze eigen bedrijfsgegevens; komen op offertes, facturen en de catalogus. */
+/** Our own company details; appear on quotes, invoices and the catalogue. */
 export interface CompanyProfile {
   name: string;
   legalName: string;
@@ -431,14 +431,14 @@ export interface CompanyProfile {
   privacyPolicyEn: string | null;
 }
 
-/** Eén stap in het leven van een offerte. */
+/** One step in the life of a quote. */
 export interface QuoteEvent {
   id: number;
   salesOrderId: number;
   type: string;
   at: string;
   actor: string | null;
-  /** Kwam het van de klantkant? Bepaalt de kleur in het scherm. */
+  /** Did it come from the customer side? Drives the colour on screen. */
   byCustomer: boolean;
   summary: string;
   detail: string | null;
@@ -452,7 +452,7 @@ export interface CsvImportResult {
   problems: string[];
 }
 
-/** Melding voor het belletje rechtsboven. */
+/** Notification for the bell in the top right. */
 export interface AppNotification {
   kind: 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL' | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN';
   orderId: number | null;
@@ -460,14 +460,14 @@ export interface AppNotification {
   customer: string | null;
   title: string;
   detail: string;
-  /** Moeten wij iets doen, of is dit alleen nieuws? */
+  /** Do we need to act, or is this just news? */
   actionNeeded: boolean;
   at: string | null;
 }
 
 export interface NotificationFeed {
   items: AppNotification[];
-  /** Alleen wat wij moeten doen; dat is het cijfer op het belletje. */
+  /** Only what we must act on; that is the number on the bell. */
   actionCount: number;
 }
 
@@ -495,14 +495,14 @@ export interface PortalQuote {
   proposals: { status: string; proposedAt: string; message: string | null;
                responseMessage: string | null }[];
   /**
-   * Stand van de levertermijnen. AANGEVULD betekent dat wij de termijn die de
-   * klant miste hebben ingevuld en de offerte opnieuw verstuurd hebben.
+   * Delivery-terms state. AANGEVULD means we filled in the term the
+   * customer was missing and sent the quote again.
    */
   deliveryTerms: 'VOLLEDIG' | 'TE_BEPALEN' | 'AANGEVULD';
-  /** Stand van de vracht; TE_BEPALEN betekent dat het bedrag nog moet komen. */
+  /** Freight state; TE_BEPALEN means the amount is still to come. */
   freight: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD';
-  /** Taal van de klant, zodat het portaal in zijn taal opent. */
+  /** The customer's language, so the portal opens in it. */
   language: LanguageCode;
-  /** De vertaalde teksten voor dit portaal, van de server. */
+  /** The translated texts for this portal, from the server. */
   text: Record<string, string>;
 }

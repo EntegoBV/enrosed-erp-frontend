@@ -9,11 +9,11 @@ import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 
 /**
- * Catalogus samenstellen en als PDF meegeven.
+ * Composing a catalogue and handing it over as a PDF.
  *
- * Je kiest zelf wat erin gaat: een klant die alleen glaswerk koopt heeft niets
- * aan tien pagina's acryl. Prijzen zijn optioneel — zonder prijzen is het een
- * productblad dat je aan iedereen kan geven.
+ * You pick what goes in: a customer who only buys glassware has no use for
+ * ten pages of acrylic. Prices are optional — without prices it is a
+ * product sheet you can give to anyone.
  */
 @Component({
   selector: 'app-catalog-export',

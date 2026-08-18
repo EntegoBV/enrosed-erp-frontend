@@ -6,13 +6,13 @@ import { Sheet } from './ui';
 import { Icon } from './icon';
 
 /**
- * Het belletje rechtsboven: wat er op ons ligt te wachten.
+ * The bell top right: what is waiting on us.
  *
- * Het cijfer telt alleen wat wij moeten doen — een levertermijn invullen, een
- * vrachtbedrag bepalen, een voorstel beoordelen. Dat een klant zijn offerte
- * geopend heeft is nuttig om te weten maar geen taak, en zou het cijfer laten
- * oplopen tot het niets meer betekent. Die meldingen staan wel in de lijst,
- * onder een eigen kop.
+ * The number only counts what we must do — fill in a delivery term, set a
+ * freight amount, review a proposal. That a customer opened their quote is
+ * useful to know but no task, and would inflate the number until it means
+ * nothing. Those notifications do appear in the list, under their own
+ * heading.
  */
 @Component({
   selector: 'app-notification-bell',
@@ -103,7 +103,7 @@ import { Icon } from './icon';
       flex: none;
     }
     .bell:active { background: var(--surface-2); }
-    /* Het cijfer telt taken, niet gebeurtenissen; vandaar de accentkleur. */
+    /* The number counts tasks, not events; hence the accent colour. */
     .bell__badge {
       position: absolute;
       top: 1px;
@@ -143,8 +143,8 @@ import { Icon } from './icon';
     .note__meta { font-size: 11.5px; color: var(--muted); }
     .note__detail { font-size: 12.5px; color: var(--muted); }
     .note__chev { color: var(--muted-2); font-size: 17px; flex: none; }
-    /* Wegklikken zit náást de melding, niet erin: aantikken mag je naar de order
-       brengen, niet per ongeluk iets laten verdwijnen. */
+    /* Dismissing sits NEXT TO the notification, not inside it: tapping may
+       take you to the order, not accidentally make something vanish. */
     .note__dismiss {
       color: var(--muted-2);
       font-size: 12px;

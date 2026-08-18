@@ -1,16 +1,15 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model, viewChild } from '@angular/core';
 
 /**
- * Datumveld in Belgische vorm: 25/05/2026.
+ * Date field in Belgian form: 25/05/2026.
  *
- * Een gewone <input type="date"> toont de datum in de taal van de browser, niet
- * in die van de pagina. Op een toestel dat op Engels staat lees je dan
- * 05/25/2026 — precies de verwarring die je bij een offerte niet wil. Daarom
- * een tekstveld dat altijd dd/mm/jjjj toont, met daarnaast de echte
- * datumkiezer voor wie liever een kalender aanklikt.
+ * A plain <input type="date"> shows the date in the browser's language, not
+ * the page's. On a device set to English that reads 05/25/2026 — exactly
+ * the confusion a quote cannot afford. Hence a text field that always shows
+ * dd/mm/yyyy, with the real date picker next to it for whoever prefers
+ * tapping a calendar.
  *
- * De waarde blijft naar buiten toe gewoon ISO (jjjj-mm-dd), zoals de backend
- * ze verwacht.
+ * The outward value stays plain ISO (yyyy-mm-dd), as the backend expects.
  */
 @Component({
   selector: 'app-date-field',
@@ -31,8 +30,8 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
         (keydown.enter)="onCommit($any($event.target))"
       />
       <span class="datefield__btn" aria-hidden="true">▤</span>
-      <!-- De echte kiezer ligt onzichtbaar ÓVER de knop: op iOS opent alleen
-           een rechtstreekse tik op het veld zelf de kalender. -->
+      <!-- The real picker lies invisibly OVER the button: on iOS only a
+           direct tap on the field itself opens the calendar. -->
       <input #picker class="datefield__native" type="date" [value]="value() ?? ''"
              (click)="openPicker()" (change)="onPick($any($event.target).value)"
              aria-label="Kalender openen" />
@@ -41,7 +40,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
   styles: `
     .datefield { position: relative; display: flex; align-items: center; }
     .datefield__text { padding-right: 42px; font-variant-numeric: tabular-nums; }
-    /* De kalenderknop staat over het veld; het veld zelf blijft volle breedte. */
+    /* The calendar button overlays the field; the field stays full width. */
     .datefield__btn {
       position: absolute;
       right: 4px;
@@ -63,7 +62,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
       cursor: pointer;
       border: 0;
       padding: 0;
-      /* 16px voorkomt dat iOS inzoomt zodra het veld focus krijgt. */
+      /* 16px stops iOS from zooming in the moment the field gains focus. */
       font-size: 16px;
     }
     .datefield__native:active + .datefield__btn { background: var(--surface-2); }
@@ -76,7 +75,7 @@ export class DateField {
 
   private readonly picker = viewChild.required<ElementRef<HTMLInputElement>>('picker');
 
-  /** Wat er in het tekstveld staat terwijl er getypt wordt. */
+  /** What the text field holds while typing is going on. */
   private typed: string | null = null;
 
   readonly display = computed(() => toBelgian(this.value()));
@@ -85,14 +84,14 @@ export class DateField {
     this.typed = raw;
   }
 
-  /** Bij verlaten of enter: lezen wat er staat, en pas dan de waarde zetten. */
+  /** On blur or enter: read what is there, and only then set the value. */
   onCommit(field: HTMLInputElement): void {
     const raw = this.typed ?? field.value;
     this.typed = null;
 
     const iso = toIso(raw);
     if (iso === null) {
-      /* Onleesbaar? Zet terug wat het was, dan gaat er geen datum verloren. */
+      /* Unreadable? Put back what it was, so no date gets lost. */
       field.value = this.display();
       return;
     }
@@ -106,17 +105,17 @@ export class DateField {
   }
 
   openPicker(): void {
-    /* Desktopbrowsers openen de kalender pas met showPicker(); iOS doet het
-       zelf zodra de tik het veld raakt en kan hier een fout gooien. */
+    /* Desktop browsers only open the calendar via showPicker(); iOS does it
+       itself the moment the tap hits the field, and may throw here. */
     try {
       this.picker().nativeElement.showPicker?.();
     } catch {
-      /* De tik zelf heeft de kiezer dan al geopend. */
+      /* The tap itself has opened the picker by then. */
     }
   }
 }
 
-/** jjjj-mm-dd naar dd/mm/jjjj. */
+/** yyyy-mm-dd to dd/mm/yyyy. */
 function toBelgian(iso: string | null | undefined): string {
   if (!iso) return '';
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
@@ -124,10 +123,10 @@ function toBelgian(iso: string | null | undefined): string {
 }
 
 /**
- * Wat de gebruiker intikt naar ISO, of null als het niets voorstelt.
+ * What the user types, to ISO - or null when it amounts to nothing.
  *
- * Ruim opgevat: 25/05/2026, 1-3-2027, 25.5.26 en 25052026 komen allemaal aan.
- * Leeg mag ook - een datum is niet altijd verplicht.
+ * Interpreted generously: 25/05/2026, 1-3-2027, 25.5.26 and 25052026 all
+ * arrive. Empty is fine too - a date is not always required.
  */
 function toIso(raw: string): string | null {
   const text = raw.trim();
@@ -139,7 +138,7 @@ function toIso(raw: string): string | null {
 
   const parts = text.split(/[^\d]+/).filter(Boolean);
   if (parts.length === 3) {
-    /* Met scheidingstekens mogen dag en maand ook uit één cijfer bestaan. */
+    /* With separators, day and month may be single digits too. */
     [day, month, year] = parts.map(Number);
   } else {
     const digits = text.replace(/\D/g, '');
@@ -149,12 +148,12 @@ function toIso(raw: string): string | null {
     year = +digits.slice(4, 8);
   }
 
-  /* Twee cijfers voor het jaar lezen we als deze eeuw; offertes gaan niet over 1926. */
+  /* Two-digit years read as this century; quotes are not about 1926. */
   if (year < 100) year += 2000;
 
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
 
-  /* Laatste controle op bestaan: 31/02 mag er niet door. */
+  /* Final existence check: 31/02 must not get through. */
   const date = new Date(Date.UTC(year, month - 1, day));
   if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
 

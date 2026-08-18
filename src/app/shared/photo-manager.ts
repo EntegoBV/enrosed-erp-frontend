@@ -6,14 +6,14 @@ import { PhotoDto, Product } from '../core/api/models';
 import { Ui } from './ui';
 
 /**
- * Fotoreeks van een product.
+ * A product's photo series.
  *
- * Er is geen maximum en er wordt niets herschaald: het bestand gaat zoals het
- * is naar de server en komt zo ook weer terug. Dat is het verschil tussen een
- * foto die je kan hergebruiken voor drukwerk of een webshop, en een foto die
- * alleen nog in deze app bruikbaar is.
+ * No maximum and no rescaling: the file goes to the server as it is and
+ * comes back the same. That is the difference between a photo reusable for
+ * print or a webshop, and one only usable inside this app.
  *
- * De eerste foto is de hoofdfoto en verschijnt in lijsten en op orderregels.
+ * The first photo is the primary one and appears in lists and on order
+ * lines.
  */
 @Component({
   selector: 'app-photo-manager',

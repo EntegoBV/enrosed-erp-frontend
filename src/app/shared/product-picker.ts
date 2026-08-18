@@ -7,16 +7,16 @@ import { Sheet } from './ui';
 import { EurPipe, NumPipe } from './pipes';
 
 /**
- * Product kiezen met een zoekveld in plaats van een keuzelijst.
+ * Picking a product with a search field instead of a dropdown.
  *
- * Een dropdown met tientallen artikelen is op een telefoon onwerkbaar: je
- * scrolt door een lijst die je niet kan doorzoeken en de namen worden
- * afgekapt. Hier tik je een paar letters, een SKU of een barcode en zie je
- * meteen de foto, de doosinhoud en de voorraad erbij.
+ * A dropdown of dozens of articles is unworkable on a phone: you scroll a
+ * list you cannot search and the names get clipped. Here you type a few
+ * letters, a SKU or a barcode and see the photo, the carton content and
+ * the stock right away.
  *
- * Het aantal wordt in stuks ingevuld en meteen naar boven afgerond op een
- * volle doos, met de correctie zichtbaar onder het veld — dan is het geen
- * verrassing achteraf.
+ * The quantity is entered in pieces and rounded up to a full carton at
+ * once, with the correction visible under the field — no surprise
+ * afterwards.
  */
 @Component({
   selector: 'app-product-picker',
@@ -166,8 +166,8 @@ import { EurPipe, NumPipe } from './pipes';
     .picker-item__title { font-size: 14.5px; font-weight: 620; }
     .picker-item__meta { font-size: 12px; color: var(--muted); }
     .picker-item__end { font-weight: 650; font-variant-numeric: tabular-nums; }
-    /* Voorraadstip: rood leeg, oranje krap, groen ruim. Kleur alleen is niet
-       genoeg, dus er staat altijd een tekst naast. */
+    /* Stock dot: red empty, orange tight, green ample. Colour alone is not
+       enough, so a text always sits next to it. */
     .stock-dot {
       width: 8px; height: 8px; border-radius: 50%;
       display: inline-block; flex: none;
@@ -239,7 +239,7 @@ export class ProductPicker implements OnDestroy {
   /** Grof niveau voor de stip: leeg, krap of ruim. */
   stockLevel(product: Product): 'none' | 'low' | 'ok' {
     if (product.stockQuantity <= 0) return 'none';
-    /* Minder dan tien dozen noemen we krap; daaronder ben je er snel doorheen. */
+    /* Under ten cartons we call tight; below that you run out fast. */
     return product.stockQuantity < (product.carton.piecesPerCarton ?? 1) * 10 ? 'low' : 'ok';
   }
 

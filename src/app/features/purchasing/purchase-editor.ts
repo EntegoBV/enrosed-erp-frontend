@@ -15,11 +15,11 @@ import { Ui } from '../../shared/ui';
 import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 
 /**
- * Kostprijscalculatie van een container.
+ * Landed-cost calculation of a container.
  *
- * De volgorde op het scherm volgt de weg van de goederen: goederen, lokale
- * origin costs and sea freight form the customs value, duty per HS code is
- * levied on that, and only then do the costs from the port of arrival join.
+ * The screen order follows the road of the goods: goods, local origin costs
+ * and sea freight form the customs value, duty per HS code is levied on
+ * that, and only then do the costs from the port of arrival join.
  */
 @Component({
   selector: 'app-purchase-editor',
@@ -484,7 +484,7 @@ export class PurchaseEditor {
         `Let op: ${first.requested} stuks is geen volle doos (${first.piecesPerCarton}/doos)`,
         'err');
     }
-    /* Voorraadstanden kunnen net geboekt zijn; catalogus opnieuw ophalen. */
+    /* Stock levels may have just been booked; refetch the catalogue. */
     this.products.set(await this.catalog.products(order.supplierId));
   }
 
@@ -510,15 +510,15 @@ export class PurchaseEditor {
     this.setLine(productId, { quantity });
   }
 
-  /** De bestelregel achter een calculatieregel, met de ruwe invoer. */
+  /** The order line behind a calculation line, with the raw input. */
   orderLine(productId: number): PurchaseOrderLine | undefined {
     return this.view()?.order.lines.find((line) => line.productId === productId);
   }
 
   /**
-   * Prijs op de beurs of aan de fabriekstafel afgesproken? Dan hier invullen,
-   * in de munt waarin ze genoemd werd. Leegmaken geeft de regel terug aan de
-   * prijs die op het product zelf staat.
+   * Price agreed at the fair or the factory table? Enter it here, in the
+   * currency it was named in. Clearing hands the line back to the price on
+   * the product itself.
    */
   setExwPrice(productId: number, raw: unknown): void {
     const empty = raw === null || raw === undefined || raw === '';
@@ -555,7 +555,7 @@ export class PurchaseEditor {
     this.picking.set(true);
   }
 
-  /** In de inkoopkiezer toont de prijs de EXW-prijs van de leverancier. */
+  /** In the purchase picker the price shows the supplier's EXW price. */
   readonly exwPriceOf = (product: Product): number => product.exwPrice ?? 0;
 
   addLine(choice: { product: Product; quantity: number }): void {
@@ -581,15 +581,15 @@ export class PurchaseEditor {
   }
 
   /**
-   * De calculatie als PDF.
+   * The calculation as a PDF.
    *
-   * Wat erop komt volgt de dubbelklikschakelaar: staan de inkoopcijfers op het
-   * scherm, dan staat de gewenste extra opbrengst ook op het blad. Staan ze
-   * verborgen, dan verdwijnt die regel maar blijft ze in het totaal verrekend -
-   * dat blad kan je een klant laten zien.
+   * What goes on it follows the double-tap switch: with the purchase
+   * figures on screen, the desired extra revenue is on the sheet too.
+   * Hidden, that line disappears but stays folded into the total - that
+   * sheet you can show a customer.
    *
-   * Bewust dezelfde schakelaar en geen tweede vinkje: anders dek je het scherm
-   * af en print je alsnog het verkeerde blad.
+   * Deliberately the same switch and no second checkbox: otherwise you
+   * cover the screen and still print the wrong sheet.
    */
   async downloadPdf(): Promise<void> {
     const data = this.view();
@@ -606,7 +606,7 @@ export class PurchaseEditor {
     }
   }
 
-  /** Kopieert de calculatie om er snel een variant van door te rekenen. */
+  /** Copies the calculation to price a variant quickly. */
   async duplicate(): Promise<void> {
     const data = this.view();
     if (!data) return;

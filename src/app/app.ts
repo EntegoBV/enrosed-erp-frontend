@@ -9,11 +9,11 @@ import { BrandMark } from './shared/brand-mark';
 import { Icon } from './shared/icon';
 
 /**
- * App-shell.
+ * App shell.
  *
- * Telefoon krijgt een tabbalk onderaan, desktop een zijbalk. Op de
- * aanmeldpagina en in het klantportaal verdwijnt de navigatie: dat zijn geen
- * schermen van ons personeel.
+ * Phone gets a tab bar at the bottom, desktop a sidebar. On the login page
+ * and in the customer portal the navigation disappears: those are not staff
+ * screens.
  */
 @Component({
   selector: 'app-root',
@@ -112,10 +112,10 @@ export class App {
   private readonly work = inject(WorkQueue);
 
   /**
-   * Hoeveel offertes op ons wachten; het bolletje op de tab Verkoop.
+   * How many quotes wait on us; the dot on the Verkoop tab.
    *
-   * Dezelfde bron als het belletje rechtsboven, zodat de twee cijfers niet uit
-   * elkaar lopen.
+   * The same source as the bell top right, so the two numbers cannot drift
+   * apart.
    */
   readonly openWork = this.work.actionCount;
 

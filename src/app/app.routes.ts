@@ -4,8 +4,8 @@ import { authGuard } from './core/api/auth.guard';
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
 
-  /* Aanmelden en het klantportaal staan buiten de bewaking:
-     de klant heeft geen account, alleen een token in de link. */
+  /* Login and the customer portal live outside the guard:
+     the customer has no account, only a token in the link. */
   {
     path: 'login',
     loadComponent: () => import('./features/login/login-page').then((m) => m.LoginPage),
@@ -19,7 +19,7 @@ export const routes: Routes = [
     loadComponent: () => import('./features/portal/portal-page').then((m) => m.PortalPage),
   },
 
-  /* Alles hieronder vereist een aanmelding. */
+  /* Everything below requires a login. */
   {
     path: 'dashboard',
     canActivate: [authGuard],

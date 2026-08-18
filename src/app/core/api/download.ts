@@ -1,4 +1,4 @@
-/** Biedt een blob als bestand aan de gebruiker aan. */
+/** Offers a blob to the user as a file. */
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

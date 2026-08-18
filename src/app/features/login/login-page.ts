@@ -58,7 +58,7 @@ import { Auth } from '../../core/api/auth';
       padding: 28px 22px 24px;
       box-shadow: 0 20px 60px rgb(0 0 0 / 35%);
     }
-    /* De kaart is licht, dus het zwarte logo mag blijven zoals het is. */
+    /* The card is light, so the black logo can stay as it is. */
     .login__logo {
       display: block;
       height: 30px;

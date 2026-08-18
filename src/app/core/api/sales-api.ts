@@ -93,19 +93,19 @@ export class SalesApi {
 
   /* ----------------------------------------------------------- offertes */
 
-  /** Maakt de PDF, mailt hem naar de klant en zet de offerte op verzonden. */
+  /** Builds the PDF, mails it to the customer and marks the quote sent. */
   sendQuote(id: number, message: string): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/send`), { message }));
   }
 
-  /** Zet een afgewezen of verlopen offerte terug op concept. */
+  /** Puts a rejected or expired quote back on concept. */
   reopenQuote(id: number): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/reopen`), {}));
   }
 
-  /** @param language laat leeg voor de taal van de klant. */
+  /** @param language leave empty for the customer's language. */
   quotePdf(id: number, language?: string): Promise<Blob> {
     const query = language ? `?language=${language}` : '';
     return firstValueFrom(
@@ -140,27 +140,27 @@ export class SalesApi {
       api(`/api/sales-orders/revisions/${revisionId}/reject`), { handledBy, message }));
   }
 
-  /** De geschiedenis van een offerte, oudste stap eerst. */
+  /** The history of a quote, oldest step first. */
   history(id: number): Promise<QuoteEvent[]> {
     return firstValueFrom(this.http.get<QuoteEvent[]>(api(`/api/sales-orders/${id}/history`)));
   }
 
   /* ---------------------------------------------------------- meldingen */
 
-  /** Wat er op ons ligt te wachten, voor het belletje rechtsboven. */
+  /** What is waiting on us, for the bell in the top right. */
   notifications(): Promise<NotificationFeed> {
     return firstValueFrom(this.http.get<NotificationFeed>(api('/api/notifications')));
   }
 
   /* ------------------------------------------------------------ portaal */
 
-  /** @param language taal die de klant zelf koos; leeg voor de zijne. */
+  /** @param language language the customer picked; empty for their own. */
   portalQuote(token: string, language?: string): Promise<PortalQuote> {
     const query = language ? `?language=${language}` : '';
     return firstValueFrom(this.http.get<PortalQuote>(api(`/api/portal/${token}${query}`)));
   }
 
-  /** Producten die de klant kan bijbestellen, met de prijs die deze order hanteert. */
+  /** Products the customer can add, with the price this order charges. */
   portalCatalog(token: string): Promise<PortalCatalogItem[]> {
     return firstValueFrom(
       this.http.get<PortalCatalogItem[]>(api(`/api/portal/${token}/products`)));
@@ -184,7 +184,7 @@ export class SalesApi {
       this.http.post<PortalQuote>(api(`/api/portal/${token}/reject`), { message }));
   }
 
-  /** De klant trekt zijn wijzigingsvoorstel weer in. */
+  /** The customer withdraws their change proposal. */
   portalWithdraw(token: string): Promise<PortalQuote> {
     return firstValueFrom(
       this.http.post<PortalQuote>(api(`/api/portal/${token}/withdraw`), {}));

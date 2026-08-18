@@ -1,6 +1,6 @@
 /**
- * Kleine UI-bouwstenen: bottom sheet, bevestigingsdialoog en toasts.
- * Bewust zonder externe UI-bibliotheek zodat de opmaak volledig van ons is.
+ * Small UI building blocks: bottom sheet, confirm dialog and toasts.
+ * Deliberately without an external UI library, so the look is fully ours.
  */
 
 import {

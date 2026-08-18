@@ -2,12 +2,12 @@ import { Directive, ElementRef, OnDestroy, effect, inject, input } from '@angula
 import { CatalogApi } from './catalog-api';
 
 /**
- * Toont een foto die achter de aanmelding zit.
+ * Shows a photo that sits behind the login.
  *
- * Een gewone src op een img-tag kan geen Authorization-header meesturen, dus
- * halen we de bytes op met de HttpClient en maken er een blob-URL van. Die
- * wordt weer vrijgegeven zodra het element verdwijnt, anders lekt het geheugen
- * bij het doorbladeren van een lange lijst.
+ * A plain src on an img tag cannot send an Authorization header, so we
+ * fetch the bytes with the HttpClient and make a blob URL. It is released
+ * when the element disappears, or memory leaks while paging through a
+ * long list.
  */
 @Directive({ selector: 'img[appAuthSrc]' })
 export class AuthImage implements OnDestroy {

@@ -203,7 +203,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
       </div>
 
-      <!-- ============================================ inkoop -->
+      <!-- ======================================== purchasing -->
       @if (privacy.showPurchase()) {
       <div class="card">
         <div class="card__head"><h2>Inkoop</h2>
@@ -269,7 +269,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
       }
 
-      <!-- ============================================ verkoop -->
+      <!-- ============================================= sales -->
       <div class="card">
         <div class="card__head"><h2>Verkoop</h2></div>
         <div class="card__body">
@@ -490,7 +490,7 @@ export class ProductEditor {
     }
   }
 
-  /** Laat de server het controlecijfer nakijken — één plek waar die regel staat. */
+  /** Lets the server verify the check digit — one place where that rule lives. */
   async check(value: string, which: 'inner' | 'outer'): Promise<void> {
     const target = which === 'inner' ? this.innerCheck : this.outerCheck;
     if (!value) { target.set(null); return; }
@@ -502,7 +502,7 @@ export class ProductEditor {
     this.copying.set(true);
   }
 
-  /** Maakt de kopie en springt er meteen naartoe, klaar om aan te passen. */
+  /** Makes the copy and jumps straight to it, ready to adjust. */
   async copy(): Promise<void> {
     const source = this.draft();
     if (!this.copyColour().trim()) {

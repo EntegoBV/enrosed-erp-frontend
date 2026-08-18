@@ -6,11 +6,11 @@ import { Auth } from './auth';
 import { API_BASE } from './api.config';
 
 /**
- * Zet de aanmeldsleutel op elke oproep naar onze eigen API en stuurt terug naar
- * de aanmeldpagina zodra de server hem afwijst.
+ * Attaches the login key to every call to our own API and returns to the
+ * login page the moment the server rejects it.
  *
- * Het portaal blijft er buiten: dat is de klantkant en die heeft geen account,
- * alleen een token in de link.
+ * The portal stays out of it: that is the customer side, which has no
+ * account - only a token in the link.
  */
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const auth = inject(Auth);

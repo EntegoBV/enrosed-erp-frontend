@@ -23,11 +23,11 @@ import {
 import { STATUS_LABEL, statusClass } from './quote-status';
 
 /**
- * Verkooporder en offerte.
+ * Sales order and quote.
  *
- * De server rekent; dit scherm toont en bewerkt. Na elke wijziging komt het
- * doorgerekende resultaat terug, dus er staat hier geen tweede rekenmotor die
- * uit de pas kan lopen met de eerste.
+ * The server calculates; this screen shows and edits. After every change
+ * the priced result comes back, so there is no second calculation engine
+ * here to drift from the first.
  */
 @Component({
   selector: 'app-sales-editor',
@@ -46,11 +46,11 @@ import { STATUS_LABEL, statusClass } from './quote-status';
       </app-page-header>
 
       <div class="content content--with-action-bar">
-        <!-- ==================================== status en geschiedenis -->
+        <!-- ======================================= status and history -->
         <div class="card">
-          <!-- Het statusblok is zelf de knop naar de geschiedenis: dat is waar je
-               kijkt als je je afvraagt hoe deze offerte hier gekomen is, en het
-               scheelt een knop op een scherm dat er al veel heeft. -->
+          <!-- The status block is itself the button to the history: that is
+               where you look when wondering how this quote got here, and it
+               saves a button on a screen that already has plenty. -->
           <button class="status-bar" type="button" (click)="toggleHistory()"
                   [attr.aria-expanded]="historyOpen()">
             <span class="badge" [class]="'badge--' + cls(data.order.status)">
@@ -224,7 +224,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </div>
         </div>
 
-        <!-- ==================================== prijsopbouw -->
+        <!-- ==================================== price build-up -->
         <div class="card">
           <div class="card__head"><h2>Prijsopbouw</h2></div>
           <div class="card__body">
@@ -280,7 +280,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </div>
         </div>
 
-        <!-- ==================================== regels -->
+        <!-- ==================================== lines -->
         <div class="card" id="order-lines">
           <div class="card__head">
             <h2>Regels</h2><span class="spacer"></span>
@@ -333,9 +333,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     </div>
                   </div>
 
-                  <!-- Levering: uit voorraad rekent de server een datum vanaf de
-                       eerstvolgende werkdag plus de transittijd van het land. Ligt er
-                       te weinig, dan vul je zelf een leverweek in. Nooit verplicht. -->
+                  <!-- Delivery: from stock the server counts a date from the
+                       next working day plus the country's transit time. When
+                       stock is short, you pick a delivery week yourself.
+                       Never mandatory. -->
                   <div class="delivery">
                     <div class="row" style="gap:6px;align-items:flex-start">
                       <span class="stock-dot" style="margin-top:5px"
@@ -355,8 +356,8 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                           </span>
                         }
                       </span>
-                      <!-- Ook een groene regel moet je kunnen bijstellen: de berekende
-                           datum is een schatting, geen belofte. -->
+                      <!-- A green line must be adjustable too: the calculated
+                           date is an estimate, not a promise. -->
                       <button class="delivery__edit" type="button"
                               [attr.aria-label]="'Levertermijn wijzigen'"
                               [attr.aria-expanded]="editingDelivery() === line.productId"
@@ -426,7 +427,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </div>
         </div>
 
-        <!-- ==================================== totalen -->
+        <!-- ==================================== totals -->
         <div class="card">
           <div class="card__head"><h2>Totaal</h2></div>
           <div class="card__body">
@@ -439,9 +440,9 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               <span class="num">− {{ data.priced.totals.orderDiscountAmount | eur }}</span></div>
             <div class="stat-row stat-row--sub"><span>Goederenwaarde</span>
               <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span></div>
-            <!-- Vracht kan een open post zijn, net als de levertermijn: bij een
-                 bestemming buiten de gewone tarieven of een klant die zelf laat
-                 ophalen weet je het bij het opmaken nog niet. -->
+            <!-- Freight can be an open item, just like the delivery term: a
+                 destination outside the usual rates, or a customer arranging
+                 pickup, is unknown at drafting time. -->
             <div class="stat-row">
               <span>Vracht ({{ data.priced.totals.palletsStrict }} pallet)</span>
               <span class="num">
@@ -562,7 +563,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </div>
         }
 
-        <!-- ==================================== offerte versturen -->
+        <!-- ==================================== sending the quote -->
         <div class="card">
           <div class="card__head"><h2>Offerte</h2></div>
           <div class="card__body">
@@ -709,16 +710,16 @@ export class SalesEditor {
   readonly sendSheet = signal(false);
   readonly sendMessage = signal('');
   readonly sending = signal(false);
-  /** Loopt er een actie die de knoppen moet blokkeren? */
+  /** Is an action running that should block the buttons? */
   readonly busy = signal(false);
-  /** Welke regel heeft zijn levertermijnblok opengeklapt. */
+  /** Which line has its delivery-term block folded open. */
   readonly editingDelivery = signal<number | null>(null);
   readonly historyOpen = signal(false);
   readonly pdfSheet = signal(false);
   readonly pdfLanguage = signal<LanguageCode>('NL');
   readonly languages = LANGUAGES;
 
-  /** De taal die bij deze klant hoort; het vertrekpunt van de keuzelijst. */
+  /** The language belonging to this customer; the pick-list's starting point. */
   readonly customerLanguage = computed<LanguageCode>(() => {
     const id = this.view()?.order.customerId;
     return this.customers().find((c) => c.id === id)?.language ?? 'NL';
@@ -783,7 +784,7 @@ export class SalesEditor {
     return this.view()?.order.lines.find((l) => l.productId === productId)?.quantity ?? 0;
   }
 
-  /* ---------------------------------------------------------- muteren */
+  /* --------------------------------------------------------- mutating */
 
   private async save(order: SalesOrder): Promise<void> {
     try {
@@ -811,7 +812,7 @@ export class SalesEditor {
   setMarkupMode(mode: MarkupMode): void {
     const data = this.view();
     if (!data || data.order.markupMode === mode) return;
-    /* Handmatige prijzen wissen, anders komt de nieuwe opslag er niet door. */
+    /* Clear manual prices, or the new markup cannot get through. */
     void this.save({
       ...data.order,
       markupMode: mode,
@@ -899,7 +900,7 @@ export class SalesEditor {
     this.picking.set(true);
   }
 
-  /** Prijs die de kiezer toont: wat déze order voor dat product zou rekenen. */
+  /** Price the picker shows: what THIS order would charge for that product. */
   readonly priceOf = (product: Product): number => {
     if (product.fixedSalesPriceEur) return product.fixedSalesPriceEur;
     const order = this.view()?.order;
@@ -931,7 +932,7 @@ export class SalesEditor {
     });
   }
 
-  /* ---------------------------------------------------------- offerte */
+  /* ------------------------------------------------------------ quote */
 
   openSend(): void {
     this.sendMessage.set('');
@@ -955,11 +956,11 @@ export class SalesEditor {
   }
 
   /**
-   * Zet een afgewezen offerte terug op concept.
+   * Puts a rejected quote back on concept.
    *
-   * Een "nee" is zelden het einde: meestal was het te duur of kwam de
-   * levertermijn niet uit. Dan wil je dezelfde offerte bijsturen en opnieuw
-   * sturen in plaats van alles over te typen.
+   * A "no" is rarely the end: usually it was too expensive or the delivery
+   * date did not suit. Then you want to adjust that same quote and resend
+   * instead of retyping everything.
    */
   async reopen(): Promise<void> {
     const data = this.view();
@@ -976,11 +977,11 @@ export class SalesEditor {
   }
 
   /**
-   * Zet de vracht op "nog te bepalen" of terug.
+   * Sets the freight to "to be determined" or back.
    *
-   * Bij het terugzetten springt de stand niet naar BEREKEND maar naar
-   * AANGEVULD wanneer de offerte al met een open post vertrokken is: de klant
-   * wacht dan op dat bedrag en hoort te lezen dat het er nu staat.
+   * On the way back the state jumps to AANGEVULD, not BEREKEND, when the
+   * quote already left with an open item: the customer is waiting on that
+   * amount and should read that it is now there.
    */
   setFreightPending(pending: boolean): void {
     const data = this.view();
@@ -1007,18 +1008,18 @@ export class SalesEditor {
     }
   }
 
-  /** Klapt het levertermijnblok van een regel open of dicht. */
+  /** Folds a line's delivery-term block open or closed. */
   toggleDelivery(productId: number): void {
     this.editingDelivery.set(this.editingDelivery() === productId ? null : productId);
   }
 
   /**
-   * Opent het PDF-venster met de taal van de klant al gekozen.
+   * Opens the PDF sheet with the customer's language preselected.
    *
-   * Die staat voorgeselecteerd omdat dat in negen van de tien gevallen klopt -
-   * versturen gebruikt hem sowieso. De keuzelijst staat er voor de tiende keer:
-   * even een Engelse versie voor iemand die ze intern moet doorgeven, zonder
-   * daarvoor de taal op de klantfiche te wijzigen.
+   * Preselected because nine times out of ten it is right - sending uses it
+   * anyway. The pick-list is there for the tenth: a quick English copy for
+   * someone passing it around internally, without touching the language on
+   * the customer file.
    */
   openPdfSheet(): void {
     this.pdfLanguage.set(this.customerLanguage());
@@ -1046,16 +1047,16 @@ export class SalesEditor {
     this.ui.toast('Klantlink gekopieerd');
   }
 
-  /* ------------------------------------------------------ wijzigingen */
+  /* ---------------------------------------------------------- changes */
 
   /**
-   * Neemt het voorstel van de klant over.
+   * Adopts the customer's proposal.
    *
-   * In beide gevallen komen zijn aantallen op de order en valt de offerte terug
-   * op concept. Het verschil zit in wat je daarna doet: bij *Wijzigen* rolt het
-   * scherm door naar de regels zodat je meteen kan bijsturen, bij *Overnemen*
-   * blijft het staan zoals de klant het vroeg. Twee knoppen in plaats van één,
-   * want "akkoord" en "akkoord mits" zijn twee verschillende antwoorden.
+   * Either way their quantities land on the order and the quote falls back
+   * to concept. The difference is what you do next: *Wijzigen* scrolls the
+   * screen to the lines so you can adjust right away, *Overnemen* leaves it
+   * as the customer asked. Two buttons instead of one, because "agreed" and
+   * "agreed provided that" are two different answers.
    */
   approve(revision: QuoteRevision, thenEdit: boolean): void {
     this.ui.confirm(
@@ -1071,13 +1072,13 @@ export class SalesEditor {
       async () => {
         this.view.set(await this.sales.approveRevision(revision.id, 'Verkoop', ''));
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
-        /* De teller op de tab en het belletje moeten dit meteen kwijt zijn. */
+        /* The tab counter and the bell must drop this immediately. */
         void this.work.refresh();
         this.ui.toast(thenEdit ? 'Overgenomen — pas gerust nog aan' : 'Voorstel overgenomen');
 
         if (thenEdit) {
-          /* Naar de regels scrollen: dat is waar je nu iets wil doen, en op een
-             telefoon staan die anders een scherm lager. */
+          /* Scroll to the lines: that is where you want to act now, and on
+             a phone they sit a screen lower otherwise. */
           setTimeout(() => {
             document.getElementById('order-lines')
               ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

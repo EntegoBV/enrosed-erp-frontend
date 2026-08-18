@@ -22,8 +22,8 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
     </app-page-header>
 
     <div class="content">
-      <!-- Wat op ons wacht staat bovenaan, niet weggestopt onder Meer: dit is de
-           lijst die je bijhoudt, niet iets wat je gaat opzoeken. -->
+      <!-- What waits on us sits at the top, not tucked under Meer: this is
+           the list you keep up with, not something you go look up. -->
       @if (openWork().length) {
         <!-- The card appears and disappears; without its own bottom margin it
              lands right on top of the search bar. -->
@@ -220,7 +220,7 @@ export class SalesList {
   readonly languages = LANGUAGES;
   readonly countries = signal<Country[]>([]);
 
-  /* Klant snel toevoegen zonder het scherm te verlaten. */
+  /* Add a customer quickly without leaving the screen. */
   readonly addingCustomer = signal(false);
   readonly busy = signal(false);
   readonly newCustomer = signal<Customer>(blankCustomer('BE'));
@@ -250,7 +250,7 @@ export class SalesList {
     this.newCustomer.update((customer) => ({ ...customer, ...changes }));
   }
 
-  /** Slaat de nieuwe klant op en selecteert hem meteen voor deze order. */
+  /** Saves the new customer and selects them for this order right away. */
   async saveNewCustomer(): Promise<void> {
     if (!this.newCustomer().company.trim()) {
       this.ui.toast('Bedrijfsnaam is verplicht', 'err');
@@ -293,7 +293,7 @@ export class SalesList {
   label = (status: QuoteStatus) => STATUS_LABEL[status];
   cls = statusClass;
 
-  /** Wat er op ons ligt te wachten; dezelfde bron als het belletje en het bolletje. */
+  /** What is waiting on us; the same source as the bell and the dot. */
   readonly openWork = this.work.actions;
 
   workIcon(kind: string): string {
@@ -304,11 +304,11 @@ export class SalesList {
       default: return '◉';
     }
   }
-  /** Wat wij nog met deze offerte moeten doen, of niets. */
+  /** What we still must do with this quote, or nothing. */
   todo = actionNeeded;
 
   startNew(): void {
-    /* Geen klanten? Dan meteen het toevoegformulier, in plaats van wegsturen. */
+    /* No customers? Then straight to the add form, instead of sending away. */
     this.addingCustomer.set(!this.customers().length);
     if (this.addingCustomer()) this.startAddCustomer();
     this.picking.set(true);

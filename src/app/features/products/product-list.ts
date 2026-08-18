@@ -138,7 +138,7 @@ export class ProductList {
     return `${trim(lengthCm)} × ${trim(widthCm)} × ${trim(heightCm)} cm`;
   }
 
-  /** De server rekent de catalogusprijs pas op een order; hier tonen we de opslag. */
+  /** The server only prices the catalogue on an order; here we show the markup. */
   salesPrice(product: Product): number {
     if (product.fixedSalesPriceEur) return product.fixedSalesPriceEur;
     const cost = product.landedCostEur ?? 0;

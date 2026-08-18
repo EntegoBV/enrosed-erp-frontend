@@ -1,7 +1,7 @@
 /* ==========================================================================
    Enrosed — design system
-   Mobile first: alle basisregels gelden voor telefoon, media queries voegen
-   pas vanaf 700px (tablet) en 1024px (desktop) iets toe.
+   Mobile first: every base rule targets the phone; media queries only add
+   things from 700px (tablet) and 1024px (desktop) up.
    ========================================================================== */
 
 :root {
@@ -16,10 +16,10 @@
   --surface-2: #fcfaf8;
 
   /*
-   * De accentkleur staat op groen zolang de inkoopcijfers verborgen zijn - de
-   * stand waarin je veilig een scherm kan laten zien. Zodra ze zichtbaar zijn
-   * wordt alles rozerood (zie .theme-internal): rood waarschuwt dat er
-   * kostprijzen en marges op het scherm staan.
+   * The accent colour is green while the purchase figures are hidden - the
+   * state in which a screen is safe to show. Once visible, everything turns
+   * rose red (see .theme-internal): red warns that cost prices and margins
+   * are on screen.
    */
   --rose: #1f7a4d;
   --rose-dark: #145c39;
@@ -40,7 +40,7 @@
   --blue: #1f5f8b;
   --blue-soft: #e9f2f8;
 
-  /* Het logo hoeft normaal niet omgekleurd te worden. */
+  /* The logo normally needs no recolouring. */
   --logo-filter: none;
 
   /* iOS-flavoured chrome: generous corners, depth from soft shadow instead
@@ -85,16 +85,16 @@ img { display: block; max-width: 100%; }
 button { font: inherit; color: inherit; }
 input, select, textarea { font: inherit; color: inherit; }
 /*
- * Rozerood thema zodra de inkoopcijfers zichtbaar zijn.
+ * Rose-red theme once the purchase figures are visible.
  *
- * Van de andere kant van een beursstand zie je met één blik dat er kostprijzen
- * en marges op het scherm staan - dat is duidelijker dan een omgekeerd logo en
- * je hoeft er niet voor op het scherm te turen. Rood is hier een waarschuwing,
- * groen de veilige stand: precies andersom als je aan "goedgekeurd" denkt, maar
- * het gaat hier niet om goed of fout, het gaat om wie er meekijkt.
+ * From the other side of a fair stand, one glance says cost prices and
+ * margins are on screen - clearer than an inverted logo, and no squinting
+ * required. Red is the warning here, green the safe state: the reverse of
+ * "approved" thinking, but this is not about right or wrong - it is about
+ * who is watching.
  *
- * De klas staat op <html> (zie Privacy), dus overlays en vensters buiten de
- * component-boom kleuren mee.
+ * The class sits on <html> (see Privacy), so overlays and sheets outside
+ * the component tree colour along.
  */
 .theme-internal {
   --rose: #b01f3f;
@@ -103,7 +103,7 @@ input, select, textarea { font: inherit; color: inherit; }
   --rose-soft: #fbecef;
   --rose-line: #f0d2d9;
 
-  /* Het logo is zwarte inkt; deze filter maakt er hetzelfde rozerood van. */
+  /* The logo is black ink; this filter turns it that same rose red. */
   --logo-filter: invert(19%) sepia(72%) saturate(3011%) hue-rotate(334deg) brightness(93%) contrast(93%);
 }
 
@@ -129,7 +129,7 @@ a { color: var(--rose); }
 .mt-12 { margin-top: 12px; }
 .mt-16 { margin-top: 16px; }
 .mt-24 { margin-top: 24px; }
-/* dubbele klasse voor extra specificiteit, anders wint .btn's display */
+/* doubled class for extra specificity, or .btn's display wins */
 .hide-mobile.hide-mobile { display: none; }
 
 /* ============================================================== app shell */
@@ -371,8 +371,8 @@ a { color: var(--rose); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* De levertermijn is een zin, geen label: die mag over twee regels lopen in
-   plaats van afgekapt te worden. */
+/* The delivery term is a sentence, not a label: it may run over two lines
+   instead of being clipped. */
 .list-item__meta--wrap { overflow: visible; text-overflow: clip; white-space: normal; }
 .list-item__end { text-align: right; flex: none; }
 .list-item__chev { color: var(--muted-2); font-size: 18px; flex: none; }
@@ -428,7 +428,7 @@ a { color: var(--rose); }
 .btn--sm { min-height: 34px; padding: 5px 11px; font-size: 13px; }
 .btn--block { width: 100%; }
 
-/* Zwevende actieknop op mobiel */
+/* Floating action button on mobile */
 .fab {
   position: fixed;
   right: 16px;
@@ -814,9 +814,9 @@ a { color: var(--rose); }
 .action-bar__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 700; }
 .action-bar__value { font-size: 19px; font-weight: 720; letter-spacing: -0.02em; }
 
-/* Op desktop blijft de actiebalk staan, maar dan naast de zijbalk in plaats van
-   over de volle breedte. Hem daar verbergen was fout: de hoofdactie van een
-   pagina — PDF maken, versturen — stond dan nergens. */
+/* On desktop the action bar stays, but next to the sidebar instead of full
+   width. Hiding it there was a mistake: the page's main action — build the
+   PDF, send — then existed nowhere. */
 @media (min-width: 1024px) {
   .action-bar {
     left: 244px;
@@ -939,10 +939,10 @@ table.data tfoot td {
   .sidebar__logout:hover { background: rgb(255 255 255 / 8%); color: #fff; }
 }
 
-/* Aanmeldpagina en klantportaal: geen navigatie, dus ook geen ruimte ervoor. */
+/* Login page and customer portal: no navigation, so no room reserved for it. */
 .shell--bare .content { padding-bottom: 40px; }
 
-/* Pagina's met een vaste actiebalk laten er ruimte voor, ook op desktop. */
+/* Pages with a fixed action bar leave room for it, on desktop too. */
 .content--with-action-bar { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
 @media (min-width: 1024px) {
   .content--with-action-bar { padding-bottom: 110px; }
@@ -950,8 +950,8 @@ table.data tfoot td {
 
 /* ------------------------------------------------- verplicht en optioneel */
 
-/* Verplichte velden krijgen een rode ster, optionele een grijs label. Zo hoef je
-   niet te raden welk veld je mag overslaan. */
+/* Required fields get a red star, optional ones a grey label. No guessing
+   which field may be skipped. */
 .req::after {
   content: ' *';
   color: var(--rose);
@@ -974,10 +974,10 @@ table.data tfoot td {
 }
 .legend b { color: var(--rose); }
 
-/* Knop in de bovenbalk om inkoopcijfers te tonen of te verbergen. */
+/* Top-bar button to show or hide the purchase figures. */
 
-/* Blok met interne cijfers; visueel apart zodat je meteen ziet wat niet
-   voor de klant bedoeld is. */
+/* Block of internal figures; visually apart so you see at once what is
+   not meant for the customer. */
 .internal {
   background: var(--warn-soft);
   border: 1px dashed #e8d3ae;
@@ -993,28 +993,28 @@ table.data tfoot td {
   margin-bottom: 4px;
 }
 
-/* Woordmerk in de mobiele bovenbalk: donker op licht. */
+/* Wordmark in the mobile top bar: dark on light. */
 .appbar__brand {
   --brand-ink: #1a1614;
   --brand-sub: #8a807a;
-  /* Lichte balk: het zwarte logo blijft zoals het is. */
+  /* Light bar: the black logo stays as it is. */
   --brand-logo-filter: none;
   --brand-logo-filter-inverted: invert(1);
   margin-right: 4px;
 }
-/* Geen achtergrondvlak meer achter het logo: de groene kleur van het thema
-   zegt al dat de inkoopcijfers zichtbaar zijn, en een donker vlak maakte het
-   logo juist slechter leesbaar. */
+/* No background plate behind the logo anymore: the theme's green already
+   says the purchase figures are visible, and a dark plate actually made
+   the logo harder to read. */
 
-/* Voorraadstip, ook buiten de productkiezer. */
+/* Stock dot, outside the product picker too. */
 .stock-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   display: inline-block;
   flex: none;
-  /* Meestal een flex-kind, maar soms staat de stip gewoon in een zin; dan moet
-     ze op de tekstregel uitlijnen in plaats van op de onderkant te hangen. */
+  /* Usually a flex child, but sometimes the dot sits in a sentence; then
+     it must align to the text line instead of hanging at the bottom. */
   vertical-align: middle;
   margin-right: 2px;
   background: var(--muted-2);
@@ -1024,11 +1024,11 @@ table.data tfoot td {
 .stock-dot--ok { background: var(--ok); }
 
 /*
- * Knoppen in het klantportaal.
+ * Buttons in the customer portal.
  *
- * Tekenen is groen: dat is de stap waar we hem naartoe willen, en groen leest
- * als "ga door". Afwijzen krijgt geen rood maar een rustige rand - een rode knop
- * naast een handtekening ziet eruit als een waarschuwing en dat schrikt af.
+ * Signing is green: that is the step we want them to take, and green reads
+ * as "go ahead". Rejecting gets no red but a quiet border - a red button
+ * next to a signature looks like a warning, and that frightens.
  */
 .btn--accept {
   background: var(--ok);
@@ -1081,7 +1081,7 @@ table.data tfoot td {
 }
 .stepper__line--done { background: var(--ok); }
 
-/* Telbolletje op de tab Verkoop en in de zijbalk. */
+/* Counter dot on the Verkoop tab and in the sidebar. */
 .tabbar__icon { position: relative; display: inline-block; }
 .tabbar__count {
   position: absolute;
@@ -1110,7 +1110,7 @@ table.data tfoot td {
   text-align: center;
 }
 
-/* Het statusblok is tegelijk de knop naar de geschiedenis. */
+/* The status block doubles as the button to the history. */
 .status-bar {
   display: flex;
   align-items: center;
@@ -1139,8 +1139,8 @@ table.data tfoot td {
 }
 .status-bar__toggle--open { transform: rotate(180deg); }
 
-/* Tijdlijn: één kolom met stippen, werkt op elke breedte. Geen tabel, want die
-   moet je op een telefoon zijwaarts scrollen. */
+/* Timeline: one column of dots, works at any width. No table - those need
+   sideways scrolling on a phone. */
 .step {
   display: flex;
   gap: 10px;
@@ -1156,8 +1156,8 @@ table.data tfoot td {
   background: var(--muted-2);
   flex: none;
 }
-/* Wat van de klant kwam krijgt de accentkleur; onze eigen stappen blijven grijs.
-   Zo zie je in één blik wie er aan zet was. */
+/* What came from the customer gets the accent colour; our own steps stay
+   grey. One glance shows whose move it was. */
 .step--customer .step__dot { background: var(--rose); }
 .step__body { min-width: 0; }
 .step__title { font-size: 13.5px; font-weight: 600; }
@@ -1169,10 +1169,10 @@ table.data tfoot td {
   white-space: pre-line;
 }
 
-/* Vlaggetje "wij zijn aan zet". Bewust de accentkleur en niet rood: het is
-   werk, geen fout, en rood verliest zijn betekenis als het overal staat. */
-/* De vlaggetjes onder elkaar in plaats van naast elkaar: naast elkaar duwden
-   ze de klantnaam weg, en die wil je juist als eerste lezen. */
+/* "Our move" flag. Deliberately the accent colour and not red: it is work,
+   not an error, and red loses its meaning when it is everywhere. */
+/* The flags stacked instead of side by side: side by side they pushed the
+   customer name away, and that is the first thing you want to read. */
 .list-item__end--stacked {
   display: flex;
   flex-direction: column;

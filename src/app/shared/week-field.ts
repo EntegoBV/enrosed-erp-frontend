@@ -1,16 +1,16 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model, viewChild } from '@angular/core';
 
 /**
- * Leverweek kiezen met een kalender.
+ * Picking a delivery week with a calendar.
  *
- * <input type="week"> lijkt de voor de hand liggende keuze, maar Safari en
- * Firefox kennen die niet en tonen dan een kaal tekstvak zonder kalender. Op
- * een telefoon is dat net het geval. Daarom kiest men hier een dag in een
- * gewone datumkiezer en rekenen wij de ISO-week uit; eronder staat welke week
- * dat is en van wanneer tot wanneer ze loopt.
+ * <input type="week"> looks like the obvious choice, but Safari and Firefox
+ * do not know it and show a bare text box without a calendar - on a phone,
+ * exactly the case that matters. So you pick a day in a plain date picker
+ * and we derive the ISO week; below it says which week that is and from
+ * when to when it runs.
  *
- * De waarde blijft naar buiten toe de ISO-weeknotatie (2026-W42), zoals de
- * backend en de offerte ze gebruiken.
+ * The outward value stays the ISO week notation (2026-W42), as the backend
+ * and the quote use it.
  */
 @Component({
   selector: 'app-week-field',
@@ -26,8 +26,8 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
           }
           <span class="weekfield__icon">▤</span>
         </span>
-        <!-- De echte kiezer ligt onzichtbaar over de hele knop: op iOS opent
-             alleen een rechtstreekse tik op het veld zelf de kalender. -->
+        <!-- The real picker lies invisibly over the whole button: on iOS
+             only a direct tap on the field itself opens the calendar. -->
         <input #picker class="weekfield__native" type="date" [value]="anchor()"
                (click)="openPicker()" (change)="onPick($any($event.target).value)"
                aria-label="Leverweek kiezen" />
@@ -80,20 +80,20 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, model,
       cursor: pointer;
       border: 0;
       padding: 0;
-      /* 16px voorkomt dat iOS inzoomt zodra het veld focus krijgt. */
+      /* 16px stops iOS from zooming in the moment the field gains focus. */
       font-size: 16px;
     }
     .weekfield__native:active ~ .weekfield__pick { background: var(--surface-2); }
   `,
 })
 export class WeekField {
-  /** ISO-week, bijvoorbeeld 2026-W42. Leeg mag: de leverweek is niet verplicht. */
+  /** ISO week, for instance 2026-W42. Empty is fine: the week is optional. */
   readonly value = model<string>('');
   readonly fieldId = input<string>('');
 
   private readonly picker = viewChild.required<ElementRef<HTMLInputElement>>('picker');
 
-  /** De maandag van de gekozen week; die staat open als de kalender verschijnt. */
+  /** The Monday of the chosen week; it is preselected when the calendar opens. */
   readonly anchor = computed(() => {
     const monday = mondayOf(this.value());
     return monday ? toIso(monday) : '';
@@ -126,12 +126,12 @@ export class WeekField {
   }
 
   openPicker(): void {
-    /* Desktopbrowsers openen de kalender pas met showPicker(); iOS doet het
-       zelf zodra de tik het veld raakt en kan hier een fout gooien. */
+    /* Desktop browsers only open the calendar via showPicker(); iOS does it
+       itself the moment the tap hits the field, and may throw here. */
     try {
       this.picker().nativeElement.showPicker?.();
     } catch {
-      /* De tik zelf heeft de kiezer dan al geopend. */
+      /* The tap itself has opened the picker by then. */
     }
   }
 }
@@ -144,10 +144,10 @@ function parseWeek(value: string | null | undefined): { year: number; week: numb
 }
 
 /**
- * De maandag van een ISO-week.
+ * The Monday of an ISO week.
  *
- * ISO-week 1 is de week met de eerste donderdag van het jaar. Vandaar de omweg
- * via 4 januari: die dag zit altijd in week 1.
+ * ISO week 1 is the week holding the year's first Thursday. Hence the
+ * detour via January 4th: that day always sits in week 1.
  */
 function mondayOf(value: string | null | undefined): Date | null {
   const parsed = parseWeek(value);
@@ -160,9 +160,9 @@ function mondayOf(value: string | null | undefined): Date | null {
   return monday;
 }
 
-/** De ISO-week waar een dag in valt, als 2026-W42. */
+/** The ISO week a day falls in, as 2026-W42. */
 function isoWeekOf(date: Date): string {
-  /* Naar de donderdag van die week: het jaar van die donderdag is het weekjaar. */
+  /* To that week's Thursday: that Thursday's year is the week year. */
   const thursday = new Date(date);
   thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
 

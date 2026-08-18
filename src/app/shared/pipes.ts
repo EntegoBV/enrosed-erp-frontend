@@ -74,7 +74,7 @@ export class DateNlPipe implements PipeTransform {
   }
 }
 
-/** Datum met tijd, voor een geschiedenis: 17/08/2026 14:32. */
+/** Date with time, for a history: 17/08/2026 14:32. */
 @Pipe({ name: 'dateTimeNl' })
 export class DateTimeNlPipe implements PipeTransform {
   transform(value: string | null | undefined): string {
@@ -89,10 +89,10 @@ export class DateTimeNlPipe implements PipeTransform {
 }
 
 /**
- * ISO-week leesbaar maken: 2026-W42 wordt "week 42 (12/10 - 18/10/2026)".
+ * Making an ISO week readable: 2026-W42 becomes "week 42 (12/10 - 18/10/2026)".
  *
- * De klant moet niet zelf gaan opzoeken wanneer week 42 valt, en intern
- * voorkomt het misverstanden rond het jaareinde.
+ * The customer should not have to look up when week 42 falls, and
+ * internally it prevents year-end misunderstandings.
  */
 @Pipe({ name: 'weekNl' })
 export class WeekNlPipe implements PipeTransform {

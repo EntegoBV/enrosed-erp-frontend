@@ -27,7 +27,7 @@ export class CatalogApi {
     return firstValueFrom(this.http.put<Product>(api(`/api/products/${id}`), product));
   }
 
-  /** Kopieert een product, meestal om dezelfde stijl in een andere kleur te zetten. */
+  /** Copies a product, usually to make the same style in another colour. */
   duplicateProduct(id: number, colour: string): Promise<Product> {
     return firstValueFrom(
       this.http.post<Product>(api(`/api/products/${id}/duplicate`), { colour }));
@@ -62,12 +62,12 @@ export class CatalogApi {
       this.http.put<Product>(api(`/api/products/${productId}/photos/order`), photoIds));
   }
 
-  /** Haalt de bytes op; de aanroeper maakt er een blob-URL of een download van. */
+  /** Fetches the bytes; the caller makes a blob URL or a download of them. */
   photoBlob(url: string): Promise<Blob> {
     return firstValueFrom(this.http.get(api(url), { responseType: 'blob' }));
   }
 
-  /** Catalogus als PDF, met een zelfgekozen selectie. */
+  /** The catalogue as a PDF, with a hand-picked selection. */
   /** Master-data CSV for bulk editing (HS codes, sizes, cartons, prices). */
   productsCsv(): Promise<Blob> {
     return firstValueFrom(this.http.get(api('/api/products/csv'), { responseType: 'blob' }));

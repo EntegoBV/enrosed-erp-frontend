@@ -9,15 +9,15 @@ import { Privacy } from '../../core/api/privacy';
 import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 
 /**
- * Eerst kijken, dan pas bewerken.
+ * Look first, edit second.
  *
- * Een tik op een product in de catalogus toont deze compacte kaartweergave:
- * alle gegevens leesbaar bij elkaar, zonder invoervelden die per ongeluk iets
- * wijzigen. Wie echt iets wil aanpassen gaat via de knop Bewerken naar het
- * bestaande bewerkscherm.
+ * Tapping a product in the catalogue shows this compact card view: all data
+ * readable together, without input fields that change something by
+ * accident. Whoever really wants to edit goes through the Bewerken button
+ * to the existing edit screen.
  *
- * De inkoop- en margecijfers volgen de privacyschakelaar: in de groene
- * (klantveilige) stand verdwijnt de hele inkoopkaart.
+ * The purchase and margin figures follow the privacy switch: in the green
+ * (customer-safe) state the whole purchasing card disappears.
  */
 @Component({
   selector: 'app-product-view',
@@ -169,7 +169,7 @@ export class ProductView {
   readonly categoryName = computed(() =>
     this.categories().find((c) => c.id === this.product()?.categoryId)?.name ?? '');
 
-  /** Zonder vaste prijs geldt kostprijs + opslag, net zoals op de offerte. */
+  /** Without a fixed price, cost plus markup applies - just like the quote. */
   readonly salesPrice = computed(() => {
     const product = this.product();
     if (!product?.landedCostEur || product.markupPct === null) return null;

@@ -2,13 +2,13 @@ import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core
 import { Privacy } from '../core/api/privacy';
 
 /**
- * Het Enrosed-logo, tevens de verborgen schakelaar voor inkoopcijfers.
+ * The Enrosed logo, doubling as the hidden switch for purchase figures.
  *
- * Dubbelklikken of dubbeltikken zet kostprijs en marge aan of uit. Bewust geen
- * zichtbare knop: op een beurs staat de klant naast je, en een knop met
- * "inkoop verbergen" verraadt precies dat er iets te verbergen valt. Het logo
- * krijgt een lichte achtergrond zolang de cijfers zichtbaar zijn, zodat je met
- * een blik ziet hoe het staat zonder dat het iemand anders opvalt.
+ * Double-click or double-tap toggles cost price and margin. Deliberately no
+ * visible button: at a fair the customer stands next to you, and a button
+ * saying "hide purchasing" betrays exactly that there is something to
+ * hide. The logo takes a light tint while the figures are visible, so one
+ * glance tells you the state without anyone else noticing.
  */
 @Component({
   selector: 'app-brand-mark',
@@ -41,7 +41,7 @@ import { Privacy } from '../core/api/privacy';
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
-      /* Zonder dit maakt iOS van een dubbeltik een zoom in plaats van een schakel. */
+      /* Without this, iOS turns a double-tap into a zoom instead of a toggle. */
       touch-action: manipulation;
       -webkit-touch-callout: none;
       padding: 4px 8px;
@@ -49,8 +49,8 @@ import { Privacy } from '../core/api/privacy';
       border-radius: 6px;
       transition: background 0.15s;
     }
-    /* Het logo is zeer breed (ongeveer 6:1); een vaste hoogte met width:auto
-       houdt de verhouding intact in plaats van het uit te rekken. */
+    /* The logo is very wide (roughly 6:1); a fixed height with width:auto
+       keeps the ratio instead of stretching it. */
     .brand-mark__logo {
       height: 26px;
       width: auto;
@@ -58,9 +58,9 @@ import { Privacy } from '../core/api/privacy';
       object-fit: contain;
       object-position: left center;
     }
-    /* Het logo is zwarte inkt op transparant. Op een donkere balk moet het
-       omgekeerd worden, op de lichte koptekst juist niet - anders is het wit
-       op crème en zie je niets meer. */
+    /* The logo is black ink on transparent. On a dark bar it must be
+       inverted, on the light header it must not - or it is white on cream
+       and you see nothing. */
     .brand-mark--on-dark .brand-mark__logo { filter: invert(1); }
     .brand-mark--small .brand-mark__logo { height: 19px; }
     .brand-mark__sub {
@@ -71,12 +71,13 @@ import { Privacy } from '../core/api/privacy';
       margin-top: 3px;
     }
 
-    /* Zodra de inkoopcijfers zichtbaar zijn wordt het logo rozerood, net als de
-       rest van het thema. Geen achtergrondvlak: een kleur lees je van verder weg
-       dan een vlak, en het vlak maakte het logo juist slechter leesbaar. */
+    /* Once the purchase figures are visible the logo turns rose red, like
+       the rest of the theme. No background plate: a colour reads from
+       further away than a plate, and the plate made the logo harder to
+       read. */
     .brand-mark--inverted .brand-mark__logo { filter: var(--logo-filter); }
     .brand-mark--inverted.brand-mark--on-dark .brand-mark__logo {
-      /* Op de donkere balk eerst omkeren, dan pas kleuren. */
+      /* On the dark bar: invert first, colour after. */
       filter: invert(1) var(--logo-filter);
     }
     .brand-mark--inverted .brand-mark__sub { color: var(--rose); }
@@ -86,22 +87,22 @@ export class BrandMark {
   readonly privacy = inject(Privacy);
   readonly subtitle = input('');
   readonly small = input(false);
-  /** Staat het merk op een donkere ondergrond, zoals de zijbalk? */
+  /** Does the mark sit on a dark background, like the sidebar? */
   readonly onDark = input(false);
 
   private lastTap = 0;
 
   /**
-   * Dubbeltik op een touchscreen.
+   * Double-tap on a touchscreen.
    *
-   * Browsers sturen daar geen betrouwbare dblclick voor, dus wordt de tijd
-   * tussen twee tikken zelf gemeten. 400 ms is ruim genoeg om er twee te halen
-   * en kort genoeg om niet per ongeluk te schakelen bij twee losse tikken.
+   * Browsers send no reliable dblclick for it, so the time between two taps
+   * is measured by hand. 400 ms is wide enough to manage two and short
+   * enough not to toggle by accident on two separate taps.
    */
   onTouch(event: Event): void {
     const now = Date.now();
     if (now - this.lastTap < 400) {
-      /* Voorkomt dat de tik daarna ook nog als klik doorkomt. */
+      /* Stops the tap from arriving again as a click. */
       event.preventDefault();
       this.privacy.toggle();
       this.lastTap = 0;

@@ -6,12 +6,12 @@ import { api } from './api.config';
 const STORAGE_KEY = 'enrosed.auth';
 
 /**
- * Aanmelding.
+ * Login.
  *
- * De backend gebruikt HTTP Basic, dus de client bewaart de sleutel en zet hem
- * op elke oproep. Hij staat in sessionStorage en niet in localStorage: bij het
- * sluiten van het tabblad is de sessie voorbij, wat op een gedeelde
- * beurscomputer het verschil maakt.
+ * The backend uses HTTP Basic, so the client keeps the key and attaches it
+ * to every call. It lives in sessionStorage, not localStorage: closing the
+ * tab ends the session, which makes the difference on a shared fair
+ * computer.
  */
 @Injectable({ providedIn: 'root' })
 export class Auth {
@@ -29,8 +29,8 @@ export class Auth {
   }
 
   /**
-   * Probeert aan te melden. De gegevens worden pas bewaard nadat de server ze
-   * heeft goedgekeurd, zodat er nooit een verkeerde sleutel blijft plakken.
+   * Attempts to sign in. Credentials are only stored after the server
+   * approves them, so a wrong key never sticks around.
    */
   async login(username: string, password: string): Promise<void> {
     const encoded = btoa(`${username}:${password}`);
