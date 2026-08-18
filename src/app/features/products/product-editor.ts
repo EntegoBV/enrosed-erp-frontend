@@ -115,6 +115,16 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
             <span class="hint">Het artikel zelf, los van de doos waarin het verscheept wordt.</span>
           </div>
+
+          <div class="field">
+            <label for="p-inner">Barcode (stuk) <span class="opt"></span></label>
+            <input class="input mono" id="p-inner" inputmode="numeric"
+                   [ngModel]="draft().barcodeInner" placeholder="EAN-13"
+                   (ngModelChange)="patch({ barcodeInner: $event }); check($event, 'inner')" />
+            @if (innerCheck(); as result) {
+              <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
+            }
+          </div>
         </div>
       </div>
 
@@ -137,37 +147,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               (changed)="draft.set($event)"
             />
           }
-        </div>
-      </div>
-
-      <!-- ============================================ barcodes -->
-      <div class="card">
-        <div class="card__head">
-          <h2>Barcodes</h2><span class="spacer"></span>
-          <span class="badge badge--neutral">beide optioneel</span>
-        </div>
-        <div class="card__body">
-          <div class="form-grid">
-            <div class="field">
-              <label for="p-inner">Binnenbarcode (stuk)</label>
-              <input class="input mono" id="p-inner" inputmode="numeric"
-                     [ngModel]="draft().barcodeInner" placeholder="EAN-13"
-                     (ngModelChange)="patch({ barcodeInner: $event }); check($event, 'inner')" />
-              @if (innerCheck(); as result) {
-                <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
-              }
-            </div>
-            <div class="field">
-              <label for="p-outer">Omdoosbarcode</label>
-              <input class="input mono" id="p-outer" inputmode="numeric"
-                     [ngModel]="draft().barcodeOuter" placeholder="EAN-13 of ITF-14"
-                     (ngModelChange)="patch({ barcodeOuter: $event }); check($event, 'outer')" />
-              @if (outerCheck(); as result) {
-                <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
-              }
-            </div>
-          </div>
-          <p class="small muted">Beide mogen leeg blijven.</p>
         </div>
       </div>
 
@@ -204,6 +183,15 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                        (ngModelChange)="patchCarton({ weightKg: num($event) })" />
                 <span class="input-affix__suffix">kg</span>
               </div>
+            </div>
+            <div class="field">
+              <label for="p-outer">Omdoosbarcode <span class="opt"></span></label>
+              <input class="input mono" id="p-outer" inputmode="numeric"
+                     [ngModel]="draft().barcodeOuter" placeholder="EAN-13 of ITF-14"
+                     (ngModelChange)="patch({ barcodeOuter: $event }); check($event, 'outer')" />
+              @if (outerCheck(); as result) {
+                <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
+              }
             </div>
           </div>
           <div class="alert alert--info mt-8">

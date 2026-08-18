@@ -55,6 +55,8 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
               <span>{{ product.colour || '—' }}</span></div>
             <div class="stat-row"><span>Afmeting</span>
               <span class="num">{{ size(product.dimensions) }}</span></div>
+            <div class="stat-row"><span>Barcode (stuk)</span>
+              <span class="num">{{ product.barcodeInner || '—' }}</span></div>
             <div class="stat-row"><span>Voorraad</span>
               <span class="num" [class.warn-text]="product.stockQuantity <= 0">
                 {{ product.stockQuantity | num }} stuks</span></div>
@@ -76,8 +78,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
               <div class="stat-row"><span>Volume per karton</span>
                 <span class="num">{{ product.cartonCbm | cbm }}</span></div>
             }
-            <div class="stat-row"><span>Binnenbarcode</span>
-              <span class="num">{{ product.barcodeInner || '—' }}</span></div>
             <div class="stat-row"><span>Omdoosbarcode</span>
               <span class="num">{{ product.barcodeOuter || '—' }}</span></div>
           </div>
