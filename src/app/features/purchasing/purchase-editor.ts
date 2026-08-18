@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { saveBlob } from '../../core/api/download';
-import { DESTINATION_PORTS, countryName } from '../../core/api/geo';
+import { CONTAINER_TYPES, DESTINATION_PORTS, containerLabel, countryName } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import { Allocation, Product, PurchaseOrder, PurchaseOrderView, Supplier } from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
@@ -33,6 +33,11 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                        [titleEditable]="true"
                        (titleChange)="patch({ number: $event })">
         <button class="btn btn--sm" type="button" (click)="downloadPdf()">PDF</button>
+        @if (nextStep(); as step) {
+          <button class="btn btn--primary btn--sm" type="button" (click)="advanceStatus()">
+            {{ step.action }}
+          </button>
+        }
         <button class="btn btn--sm hide-mobile" type="button" (click)="duplicate()">Kopiëren</button>
         <button class="btn btn--sm hide-mobile" type="button" (click)="apply()">
           Kostprijzen toepassen
@@ -46,19 +51,31 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
             <div class="field"><label for="po-date">Datum</label>
               <app-date-field fieldId="po-date" [value]="data.order.orderDate"
                               (valueChange)="patch({ orderDate: $event })" /></div>
-            <div class="field"><label for="po-status">Status</label>
-              <select class="select" id="po-status" [ngModel]="data.order.status"
-                      (ngModelChange)="patch({ status: $event })">
-                <option value="CONCEPT">Concept</option><option value="BESTELD">Besteld</option>
-                <option value="ONDERWEG">Onderweg</option><option value="ONTVANGEN">Ontvangen</option>
-              </select></div>
+            <div class="field span-2"><label>Status</label>
+              <!-- A container's life is a one-way street: ordered, sailing,
+                   received. A stepper says where it stands; the button in the
+                   header moves it forward. No dropdown, because "put a received
+                   container back to concept" is not an edit, it is an incident. -->
+              <div class="stepper">
+                @for (step of statusSteps; track step.value; let last = $last) {
+                  <div class="stepper__step"
+                       [class.stepper__step--done]="stepIndex(data.order.status) > $index"
+                       [class.stepper__step--now]="data.order.status === step.value">
+                    <span class="stepper__dot">
+                      @if (stepIndex(data.order.status) > $index) { ✓ } @else { {{ $index + 1 }} }
+                    </span>
+                    <span class="stepper__label">{{ step.label }}</span>
+                  </div>
+                  @if (!last) { <span class="stepper__line"
+                       [class.stepper__line--done]="stepIndex(data.order.status) > $index"></span> }
+                }
+              </div></div>
             <div class="field"><label for="po-container">Container</label>
               <select class="select" id="po-container" [ngModel]="data.order.containerType"
                       (ngModelChange)="patch({ containerType: $event })">
-                <option value="20GP">20' Standard — 28 m³</option>
-                <option value="40GP">40' Standard — 58 m³</option>
-                <option value="40HQ">40' High Cube — 68 m³</option>
-                <option value="LCL">Groepage</option>
+                @for (type of containerTypes; track type.value) {
+                  <option [value]="type.value">{{ type.label }}</option>
+                }
               </select></div>
             <div class="field"><label for="po-notes">Notitie <span class="opt"></span></label>
               <input class="input" id="po-notes" [ngModel]="data.order.notes"
@@ -173,6 +190,13 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                   <input class="input input--sm num right" [id]="'qty-' + line.productId"
                          type="number" min="0" step="1" [ngModel]="line.quantity"
                          (ngModelChange)="setQuantity(line.productId, +$event)" />
+                  @if (shortShipped(line.productId); as ordered) {
+                    <!-- Containers regularly arrive short; the order remembers
+                         what was agreed so the difference stays explainable. -->
+                    <span class="hint warn-text">
+                      Besteld {{ ordered | num }} → nu {{ line.quantity | num }}
+                    </span>
+                  }
                 </div>
 
                 <div style="background:var(--surface-2);border:1px solid var(--line);
@@ -258,7 +282,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                 @if (fill.overflowCbm > 0) {
                   <div class="alert alert--danger mt-12">
                     <span class="alert__icon">!</span>
-                    <div>Past niet in één {{ data.order.containerType }}:
+                    <div>Past niet in één {{ containerLabel(data.order.containerType) }}:
                       <b>{{ fill.overflowCbm | cbm }} te veel</b>.</div>
                   </div>
                 }
@@ -289,6 +313,71 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
   `,
 })
 export class PurchaseEditor {
+  readonly containerTypes = CONTAINER_TYPES;
+  readonly containerLabel = containerLabel;
+
+  /** The one-way street a container travels. */
+  readonly statusSteps = [
+    { value: 'CONCEPT' as const, label: 'Concept', action: 'Bestellen' },
+    { value: 'BESTELD' as const, label: 'Besteld', action: 'Container onderweg' },
+    { value: 'ONDERWEG' as const, label: 'Onderweg', action: 'Container ontvangen' },
+    { value: 'ONTVANGEN' as const, label: 'Ontvangen', action: '' },
+  ];
+
+  /**
+   * The ordered quantity when it no longer matches the line, or null.
+   * The costing rows the template renders do not carry the snapshot; the
+   * raw order lines do.
+   */
+  shortShipped(productId: number): number | null {
+    const line = this.view()?.order.lines.find((l) => l.productId === productId);
+    if (!line || line.orderedQuantity === null || line.orderedQuantity === undefined) return null;
+    return line.orderedQuantity !== line.quantity ? line.orderedQuantity : null;
+  }
+
+  stepIndex(status: string): number {
+    return this.statusSteps.findIndex((step) => step.value === status);
+  }
+
+  /** The transition the header button offers, or null when the road ends. */
+  nextStep(): { action: string; to: string } | null {
+    const index = this.stepIndex(this.view()?.order.status ?? 'CONCEPT');
+    if (index < 0 || index >= this.statusSteps.length - 1) return null;
+    return {
+      action: this.statusSteps[index].action,
+      to: this.statusSteps[index + 1].value,
+    };
+  }
+
+  /**
+   * Moves the container one step forward.
+   *
+   * Ordering snapshots the agreed quantities (the backend does that);
+   * receiving books the stock, so that one asks first. Adjust short-shipped
+   * lines before pressing receive - the order keeps "ordered X" next to
+   * every changed line.
+   */
+  advanceStatus(): void {
+    const data = this.view();
+    const step = this.nextStep();
+    if (!data || !step) return;
+
+    if (step.to === 'ONTVANGEN') {
+      this.ui.confirm(
+        {
+          title: 'Container ontvangen',
+          message: 'De voorraad wordt bijgeboekt met de aantallen zoals ze nu op de order '
+            + 'staan. Minder ontvangen dan besteld? Pas de aantallen eerst aan; de order '
+            + 'onthoudt wat er besteld was.',
+          confirmLabel: 'Ontvangen en bijboeken',
+        },
+        () => this.save({ ...data.order, status: 'ONTVANGEN' }),
+      );
+      return;
+    }
+    void this.save({ ...data.order, status: step.to as PurchaseOrder['status'] });
+  }
+
   readonly ports = DESTINATION_PORTS;
 
   /**
@@ -418,7 +507,9 @@ export class PurchaseEditor {
       ...data.order,
       lines: [...data.order.lines, {
         id: null, productId: choice.product.id!, quantity: choice.quantity,
-        exwPrice: null, exwCurrency: null, extraUnitCost: null }],
+        exwPrice: null, exwCurrency: null, extraUnitCost: null,
+        /* Added after ordering means nothing was agreed for it yet. */
+        orderedQuantity: null }],
     });
   }
 

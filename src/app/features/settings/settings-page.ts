@@ -2,9 +2,13 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
-import { Category, CompanyProfile, DiscountTier, HsCode } from '../../core/api/models';
+import {
+  Category, CompanyProfile, CsvImportResult, DiscountTier, HsCode,
+} from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
+import { saveBlob } from '../../core/api/download';
+import { messageOf } from '../../core/api/errors';
 
 /** Categorieën, douanetarieven en kortingsstaffels. */
 @Component({
@@ -122,6 +126,59 @@ import { Ui } from '../../shared/ui';
         </div>
       </div>
 
+      <!-- ======================================= catalogus als CSV -->
+      <div class="card">
+        <div class="card__head"><h2>Catalogus als CSV</h2></div>
+        <div class="card__body">
+          <p class="small muted" style="margin-bottom:12px">
+            Bulk-bewerken in een rekenblad: exporteer, pas aan, laad terug in. Rijen worden
+            herkend aan de <b>SKU</b>; een lege cel laat het veld ongemoeid, en onbekende
+            SKU's worden gemeld in plaats van stil aangemaakt.
+          </p>
+
+          <div class="section-title" style="margin-top:0">Productgegevens</div>
+          <p class="small muted" style="margin-bottom:8px">
+            HS-codes, afmetingen, dozen, barcodes en prijzen — alles behalve voorraad en
+            vertalingen.
+          </p>
+          <div class="row wrap" style="gap:8px">
+            <button class="btn" type="button" (click)="exportProducts()">Exporteren</button>
+            <button class="btn" type="button" (click)="productsFile.click()">Importeren…</button>
+            <input #productsFile type="file" accept=".csv,text/csv" style="display:none"
+                   (change)="importProducts($any($event.target).files)" />
+          </div>
+
+          <div class="section-title">Vertalingen</div>
+          <p class="small muted" style="margin-bottom:8px">
+            Naam, beschrijving en kleur, één rij per product per taal. Wat gelijk blijft aan
+            de basistekst telt niet als vertaling.
+          </p>
+          <div class="row wrap" style="gap:8px">
+            <button class="btn" type="button" (click)="exportTranslations()">Exporteren</button>
+            <button class="btn" type="button" (click)="translationsFile.click()">Importeren…</button>
+            <input #translationsFile type="file" accept=".csv,text/csv" style="display:none"
+                   (change)="importTranslations($any($event.target).files)" />
+          </div>
+
+          @if (csvResult(); as result) {
+            <div class="alert mt-12" [class.alert--ok]="!result.problems.length"
+                 [class.alert--warn]="result.problems.length > 0">
+              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
+              <div>
+                <b>{{ result.updatedProducts }} product(en) bijgewerkt.</b>
+                @if (result.problems.length) {
+                  <div class="small" style="margin-top:4px">
+                    @for (problem of result.problems; track $index) {
+                      <div>· {{ problem }}</div>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+
       <!-- ======================================= categorieen -->
       <div class="card">
         <div class="card__head"><h2>Productcategorieën</h2><span class="spacer"></span>
@@ -131,14 +188,22 @@ import { Ui } from '../../shared/ui';
             Vaste lijst. Producten kiezen hieruit in plaats van vrije tekst.
           </p>
           @for (category of categories(); track category.id) {
-            <div class="row" style="margin-bottom:8px">
-              <input class="input input--sm mono" style="max-width:120px" aria-label="Code"
-                     [ngModel]="category.code"
-                     (ngModelChange)="saveCategory(category, { code: $event })" />
-              <input class="input input--sm" aria-label="Naam" [ngModel]="category.name"
-                     (ngModelChange)="saveCategory(category, { name: $event })" />
-              <button class="btn btn--sm btn--danger" type="button"
-                      (click)="removeCategory(category)">✕</button>
+            <div style="margin-bottom:10px">
+              <div class="row" style="margin-bottom:4px">
+                <input class="input input--sm mono" style="max-width:120px" aria-label="Code"
+                       [ngModel]="category.code"
+                       (ngModelChange)="saveCategory(category, { code: $event })" />
+                <input class="input input--sm" aria-label="Naam" [ngModel]="category.name"
+                       (ngModelChange)="saveCategory(category, { name: $event })" />
+                <button class="btn btn--sm btn--danger" type="button"
+                        (click)="removeCategory(category)">✕</button>
+              </div>
+              <!-- The description opens the category's chapter in the fair
+                   catalogue; one selling sentence is enough. -->
+              <input class="input input--sm" aria-label="Beschrijving"
+                     placeholder="Beschrijving voor in de catalogus…"
+                     [ngModel]="category.description"
+                     (ngModelChange)="saveCategory(category, { description: $event })" />
             </div>
           }
         </div>
@@ -211,6 +276,36 @@ import { Ui } from '../../shared/ui';
   `,
 })
 export class SettingsPage {
+  /** Outcome of the last CSV import; problems are listed, never swallowed. */
+  readonly csvResult = signal<CsvImportResult | null>(null);
+
+  async exportProducts(): Promise<void> {
+    saveBlob(await this.catalog.productsCsv(), 'enrosed-producten.csv');
+  }
+
+  async exportTranslations(): Promise<void> {
+    saveBlob(await this.catalog.translationsCsv(), 'enrosed-vertalingen.csv');
+  }
+
+  async importProducts(files: FileList | null): Promise<void> {
+    await this.runImport(files, (file) => this.catalog.importProductsCsv(file));
+  }
+
+  async importTranslations(files: FileList | null): Promise<void> {
+    await this.runImport(files, (file) => this.catalog.importTranslationsCsv(file));
+  }
+
+  private async runImport(files: FileList | null,
+                          upload: (file: File) => Promise<CsvImportResult>): Promise<void> {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      this.csvResult.set(await upload(file));
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Importeren mislukt'), 'err');
+    }
+  }
+
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);

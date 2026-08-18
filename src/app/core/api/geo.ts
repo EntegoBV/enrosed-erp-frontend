@@ -90,3 +90,23 @@ export const DESTINATION_PORTS = [
   'Bremerhaven',
   'Le Havre',
 ] as const;
+
+/**
+ * Container types as the API names them, with human labels.
+ *
+ * The select previously used shipping codes ("40HQ") while the API speaks
+ * enum names ("FORTY_HQ") - no option ever matched, so the dropdown sat
+ * empty. One list, keyed by what the API actually sends.
+ */
+export const CONTAINER_TYPES = [
+  { value: 'TWENTY_GP', label: "20' Standard — 28 m³" },
+  { value: 'FORTY_GP', label: "40' Standard — 58 m³" },
+  { value: 'FORTY_HQ', label: "40' High Cube — 68 m³" },
+  { value: 'LCL', label: 'Groepage (LCL)' },
+] as const;
+
+/** Label for a container enum name; falls back to the raw value. */
+export function containerLabel(value: string | null | undefined): string {
+  if (!value) return '';
+  return CONTAINER_TYPES.find((type) => type.value === value)?.label ?? value;
+}

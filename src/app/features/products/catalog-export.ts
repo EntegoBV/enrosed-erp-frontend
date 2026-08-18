@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { saveBlob } from '../../core/api/download';
+import { LANGUAGES, LanguageCode } from '../../core/api/models';
 import { Category, Product } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
@@ -31,6 +32,16 @@ import { Ui } from '../../shared/ui';
             <label for="cat-title">Titel <span class="opt"></span></label>
             <input class="input" id="cat-title" [ngModel]="title()"
                    (ngModelChange)="title.set($event)" placeholder="Productcatalogus" />
+          </div>
+          <div class="field">
+            <label for="cat-lang">Taal</label>
+            <select class="select" id="cat-lang" [ngModel]="language()"
+                    (ngModelChange)="language.set($event)">
+              @for (option of languages; track option.code) {
+                <option [value]="option.code">{{ option.label }}</option>
+              }
+            </select>
+            <span class="hint">Productnamen volgen de vertalingen uit het CSV-bestand.</span>
           </div>
           <div class="field">
             <label for="cat-intro">Inleiding <span class="opt"></span></label>
@@ -113,6 +124,9 @@ import { Ui } from '../../shared/ui';
   `,
 })
 export class CatalogExport {
+  readonly languages = LANGUAGES;
+  readonly language = signal<LanguageCode>('NL');
+
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
 
@@ -174,6 +188,7 @@ export class CatalogExport {
         includePhotos: this.includePhotos(),
         title: this.title(),
         intro: this.intro(),
+        language: this.language(),
       });
       saveBlob(blob, 'enrosed-catalogus.pdf');
       this.ui.toast('Catalogus gedownload');

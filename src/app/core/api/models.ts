@@ -163,6 +163,8 @@ export interface PurchaseOrderLine {
   exwPrice: number | null;
   exwCurrency: Currency | null;
   extraUnitCost: number | null;
+  /** Quantity as placed with the supplier; null for lines added afterwards. */
+  orderedQuantity: number | null;
 }
 
 export interface PurchaseOrder {
@@ -431,6 +433,14 @@ export interface QuoteEvent {
   byCustomer: boolean;
   summary: string;
   detail: string | null;
+}
+
+/** What a CSV import did, problem by problem. */
+export interface CsvImportResult {
+  updatedProducts: number;
+  /** Only the translation import reports this; absent on the bulk import. */
+  updatedRows?: number;
+  problems: string[];
 }
 
 /** Melding voor het belletje rechtsboven. */

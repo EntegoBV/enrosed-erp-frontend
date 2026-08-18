@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { containerLabel } from '../../core/api/geo';
 import { Privacy } from '../../core/api/privacy';
 import { Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -37,7 +38,7 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 {{ row.order.number }} — {{ supplierName(row.order.supplierId) }}
               </div>
               <div class="list-item__meta">
-                {{ row.order.orderDate | dateNl }} · {{ row.order.containerType }} ·
+                {{ row.order.orderDate | dateNl }} · {{ containerLabel(row.order.containerType) }} ·
                 {{ row.costing.totals.cartons | num }} kartons ·
                 {{ row.costing.totals.cbm | cbm }}
               </div>
@@ -98,6 +99,8 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
   `,
 })
 export class PurchaseList {
+  readonly containerLabel = containerLabel;
+
   private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
