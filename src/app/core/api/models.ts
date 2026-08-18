@@ -156,6 +156,14 @@ export interface DiscountTier {
 
 /* ------------------------------------------------------------ purchasing */
 
+/** One forwarder quote on a China -> Rotterdam route; feeds the dashboard. */
+export interface FreightRate {
+  id: number | null;
+  route: string;
+  quotedOn: string;
+  usdPerContainer: number;
+}
+
 export interface PurchaseOrderLine {
   id: number | null;
   productId: number;

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
-import { LandedCost, PurchaseOrder, PurchaseOrderView, Supplier } from './models';
+import { FreightRate, LandedCost, PurchaseOrder, PurchaseOrderView, Supplier } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class SourcingApi {
@@ -63,4 +63,20 @@ export class SourcingApi {
   applyLandedCosts(id: number): Promise<LandedCost> {
     return firstValueFrom(this.http.post<LandedCost>(api(`/api/purchase-orders/${id}/apply`), {}));
   }
+  /* ---- freight-rate log (dashboard market card) ---- */
+
+  freightRates(): Promise<FreightRate[]> {
+    return firstValueFrom(this.http.get<FreightRate[]>(api('/api/freight-rates')));
+  }
+
+  addFreightRate(route: string, usdPerContainer: number,
+                 quotedOn: string | null = null): Promise<FreightRate> {
+    return firstValueFrom(this.http.post<FreightRate>(api('/api/freight-rates'),
+        { id: null, route, quotedOn, usdPerContainer }));
+  }
+
+  deleteFreightRate(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/freight-rates/${id}`)));
+  }
+
 }

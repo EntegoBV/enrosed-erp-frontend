@@ -211,6 +211,14 @@ export interface ProductDraft {
               </div>
             }
           </div>
+          @if (allowCreate()) {
+            <!-- Always reachable, not only when the search comes up empty:
+                 you should not have to type to discover it. -->
+            <button class="btn btn--block btn--quiet mt-8" type="button"
+                    (click)="startCreate()">
+              + Nieuw product aanmaken
+            </button>
+          }
         }
       </div>
 

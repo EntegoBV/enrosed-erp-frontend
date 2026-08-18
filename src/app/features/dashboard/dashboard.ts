@@ -1,10 +1,15 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Skeleton } from '../../shared/skeleton';
+import { Sparkline } from '../../shared/sparkline';
+import { Icon } from '../../shared/icon';
+import { Sheet } from '../../shared/ui';
+import { FormsModule } from '@angular/forms';
+import { Fx } from '../../core/api/fx';
 import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { PurchaseOrderView, QuoteRevision, SalesOrderView } from '../../core/api/models';
+import { FreightRate, PurchaseOrderView, QuoteRevision, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
@@ -18,7 +23,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, PageHeader, EurPipe, NumPipe, PctPipe],
+  imports: [Skeleton, Sparkline, Icon, Sheet, FormsModule, RouterLink, PageHeader, EurPipe, NumPipe, PctPipe],
   template: `
     <app-page-header [title]="greeting()" [subtitle]="today()">
     </app-page-header>
@@ -92,6 +97,89 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         <a class="btn" routerLink="/products">Producten</a>
       </div>
 
+      <div class="section-title">Markt</div>
+      @if (fx.series(); as rates) {
+        <div class="card">
+          <div class="card__head"><h2>Wisselkoersen</h2>
+            <span class="spacer"></span>
+            <span class="tiny muted">ECB · {{ rates.asOf }}</span>
+          </div>
+          <div class="card__body">
+            <!-- Tap flips the pair: sometimes you think in "what does one
+                 dollar cost", sometimes in "what does my euro buy". -->
+            <button class="market-row market-row--btn" type="button"
+                    (click)="flipUsd.set(!flipUsd())">
+              <div>
+                <div class="market-row__label">{{ flipUsd() ? 'USD → EUR' : 'EUR → USD' }}
+                  <app-icon name="exchange" [size]="12" /></div>
+                <div class="market-row__value num">
+                  {{ fxValue(rates.latestUsd, flipUsd()) | num: 4 }}</div>
+              </div>
+              <app-sparkline class="market-row__spark" [values]="fxSeries(rates.usd, flipUsd())" />
+              <span class="badge" [class]="fxPct(rates.usd, flipUsd()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                {{ fxPct(rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates.usd, flipUsd()) | num: 1 }}%
+              </span>
+            </button>
+            <button class="market-row market-row--btn" type="button"
+                    (click)="flipCny.set(!flipCny())">
+              <div>
+                <div class="market-row__label">{{ flipCny() ? 'CNY → EUR' : 'EUR → CNY' }}
+                  <app-icon name="exchange" [size]="12" /></div>
+                <div class="market-row__value num">
+                  {{ fxValue(rates.latestCny, flipCny()) | num: 4 }}</div>
+              </div>
+              <app-sparkline class="market-row__spark" [values]="fxSeries(rates.cny, flipCny())" />
+              <span class="badge" [class]="fxPct(rates.cny, flipCny()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                {{ fxPct(rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates.cny, flipCny()) | num: 1 }}%
+              </span>
+            </button>
+            <!-- What the movement MEANS for this business, not just the
+                 number: purchasing pays in dollars and yuan. -->
+            <p class="market-hint">{{ fxHint(rates) }}</p>
+          </div>
+        </div>
+      } @else if (!fx.failed()) {
+        <app-skeleton kind="card" [rows]="1" />
+      }
+
+      <div class="card mt-12">
+        <div class="card__head"><h2>Containervracht</h2>
+          <span class="spacer"></span>
+          <button class="btn btn--sm" type="button" (click)="rateSheet.set(true)">+ Tarief</button>
+        </div>
+        <div class="card__body">
+          @if (wciSeries().length) {
+            <button class="market-row market-row--btn" type="button"
+                    (click)="openHistory('WCI SHA-RTM', 'Shanghai → Rotterdam', '$')">
+              <div>
+                <div class="market-row__label">Shanghai → Rotterdam</div>
+                <div class="market-row__value num">$ {{ wciLatest() | num: 0 }}</div>
+                <div class="tiny muted">Drewry WCI · wekelijks · per 40ft</div>
+              </div>
+              <app-sparkline class="market-row__spark" [values]="wciSeries()" />
+            </button>
+          }
+          @for (route of ownRoutes; track route.code) {
+            <button class="market-row market-row--btn" type="button"
+                    [disabled]="!latestFor(route.code)"
+                    (click)="openHistory(route.code, route.label + ' → Rotterdam', '$')">
+              <div>
+                <div class="market-row__label">{{ route.label }} → Rotterdam</div>
+                @if (latestFor(route.code); as latest) {
+                  <div class="market-row__value num">$ {{ latest.usdPerContainer | num: 0 }}</div>
+                  <div class="tiny muted">eigen notering · {{ latest.quotedOn }}</div>
+                } @else {
+                  <div class="tiny muted">nog geen notering — noteer wat je forwarder vraagt</div>
+                }
+              </div>
+              @if (seriesFor(route.code).length > 1) {
+                <app-sparkline class="market-row__spark" [values]="seriesFor(route.code)" />
+              }
+            </button>
+          }
+        </div>
+      </div>
+
       <div class="section-title">Recente verkooporders</div>
       <div class="card">
         <div class="list">
@@ -146,9 +234,172 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         </div>
       </div>
     </div>
+
+    @if (rateSheet()) {
+      <app-sheet title="Vrachttarief noteren" (closed)="rateSheet.set(false)">
+        <div body>
+          <div class="field">
+            <label for="fr-route">Route</label>
+            <select class="select" id="fr-route" [ngModel]="newRoute()"
+                    (ngModelChange)="newRoute.set($event)">
+              @for (route of ownRoutes; track route.code) {
+                <option [value]="route.code">{{ route.label }} → Rotterdam</option>
+              }
+            </select>
+          </div>
+          <div class="field">
+            <label class="req" for="fr-usd">USD per 40ft-container</label>
+            <input class="input num right" id="fr-usd" type="number" min="0" step="50"
+                   inputmode="decimal" [ngModel]="newRate()"
+                   (ngModelChange)="newRate.set(+$event)" />
+            <span class="hint">Wat de forwarder offreert; de grafiek bouwt zichzelf op.</span>
+          </div>
+          <div class="field">
+            <label for="fr-date">Datum <span class="opt"></span></label>
+            <input class="input" id="fr-date" type="date" [ngModel]="newDate()"
+                   (ngModelChange)="newDate.set($event)" />
+            <span class="hint">Laat op vandaag staan, of noteer een oudere offerte om de
+              historiek aan te vullen.</span>
+          </div>
+        </div>
+        <div foot style="display:contents">
+          <button class="btn" type="button" (click)="rateSheet.set(false)">Annuleren</button>
+          <button class="btn btn--primary" type="button" [disabled]="!newRate()"
+                  (click)="saveRate()">Bewaren</button>
+        </div>
+      </app-sheet>
+    }
+
+    @if (historyRoute(); as history) {
+      <app-sheet [title]="history.label" (closed)="historyRoute.set(null)">
+        <div body>
+          @for (rate of historyFor(history.code); track rate.id) {
+            <div class="market-row">
+              <div>
+                <div class="market-row__value num" style="font-size:15px">
+                  {{ history.unit }}{{ rate.usdPerContainer | num: history.unit ? 0 : 1 }}
+                  @if (!history.unit) { <span class="tiny muted">ptn</span> }
+                </div>
+                <div class="tiny muted">{{ rate.quotedOn }}</div>
+              </div>
+              <button class="pallet__tool" type="button" aria-label="Verwijderen"
+                      (click)="deleteRate(rate)">✕</button>
+            </div>
+          } @empty {
+            <div class="empty"><div class="empty__title">Nog geen historiek</div></div>
+          }
+        </div>
+        <div foot style="display:contents">
+          <button class="btn btn--primary btn--block" type="button"
+                  (click)="historyRoute.set(null)">Sluiten</button>
+        </div>
+      </app-sheet>
+    }
   `,
 })
 export class Dashboard {
+
+  readonly fx = inject(Fx);
+
+  /* ---- freight-rate log --------------------------------------------- */
+
+  readonly ownRoutes = [
+    { code: 'NINGBO', label: 'Ningbo' },
+    { code: 'GUANGZHOU', label: 'Guangzhou' },
+    { code: 'SHENZHEN', label: 'Shenzhen' },
+  ];
+  readonly freightRates = signal<FreightRate[]>([]);
+  readonly rateSheet = signal(false);
+  readonly newRoute = signal('NINGBO');
+  readonly newRate = signal(0);
+  readonly newDate = signal(new Date().toISOString().slice(0, 10));
+
+  /* Flipped = "what does one dollar/yuan cost" instead of "what does my
+     euro buy". */
+  readonly flipUsd = signal(false);
+  readonly flipCny = signal(false);
+
+  readonly historyRoute = signal<{ code: string; label: string; unit: string } | null>(null);
+
+  fxValue(rate: number, flipped: boolean): number {
+    return flipped ? 1 / rate : rate;
+  }
+
+  fxSeries(series: number[], flipped: boolean): number[] {
+    return flipped ? series.map((value) => 1 / value) : series;
+  }
+
+  fxPct(series: number[], flipped: boolean): number {
+    const values = this.fxSeries(series, flipped);
+    return ((values[values.length - 1] - values[0]) / values[0]) * 100;
+  }
+
+  openHistory(code: string, label: string, unit: string): void {
+    this.historyRoute.set({ code, label, unit });
+  }
+
+  /** Newest first: the question is what it costs now and how it got there. */
+  historyFor(code: string): FreightRate[] {
+    return this.freightRates()
+        .filter((rate) => rate.route === code)
+        .slice()
+        .reverse();
+  }
+
+  async deleteRate(rate: FreightRate): Promise<void> {
+    if (rate.id == null) return;
+    await this.sourcing.deleteFreightRate(rate.id);
+    this.freightRates.set(await this.sourcing.freightRates());
+  }
+
+  readonly wciSeries = computed(() => this.freightRates()
+      .filter((rate) => rate.route === 'WCI SHA-RTM')
+      .map((rate) => rate.usdPerContainer));
+
+  wciLatest(): number {
+    const series = this.wciSeries();
+    return series[series.length - 1] ?? 0;
+  }
+
+  seriesFor(route: string): number[] {
+    return this.freightRates()
+        .filter((rate) => rate.route === route)
+        .map((rate) => rate.usdPerContainer);
+  }
+
+  latestFor(route: string): FreightRate | null {
+    const rates = this.freightRates().filter((rate) => rate.route === route);
+    return rates[rates.length - 1] ?? null;
+  }
+
+  async saveRate(): Promise<void> {
+    await this.sourcing.addFreightRate(this.newRoute(), this.newRate(),
+        this.newDate() || null);
+    this.freightRates.set(await this.sourcing.freightRates());
+    this.rateSheet.set(false);
+    this.newRate.set(0);
+    this.newDate.set(new Date().toISOString().slice(0, 10));
+  }
+
+  /**
+   * What the currency move means at the buying desk, in one sentence.
+   *
+   * The euro-dollar rate decides what Chinese purchasing costs: suppliers
+   * quote USD or CNY, and the yuan shadows the dollar closely enough that
+   * one story covers both.
+   */
+  fxHint(rates: { usdChangePct: number; cnyChangePct: number }): string {
+    const pct = Math.abs(rates.usdChangePct).toFixed(1).replace('.', ',');
+    if (rates.usdChangePct >= 1) {
+      return `De euro koopt ${pct}% meer dollar dan een maand geleden — ` +
+          `inkopen in USD én in China (yuan volgt de dollar) is nu goedkoper.`;
+    }
+    if (rates.usdChangePct <= -1) {
+      return `De dollar werd ${pct}% duurder tegenover de euro — ` +
+          `Chinese inkoop kost nu meer euro's dan een maand geleden.`;
+    }
+    return 'De koersen bewogen amper de afgelopen maand — geen effect op de inkoopprijs.';
+  }
   purchaseStatusLabel(status: string): string {
     return PURCHASE_STATUS_LABEL[status] ?? status;
   }
@@ -185,6 +436,13 @@ export class Dashboard {
   }
 
   private async load(): Promise<void> {
+    /* Market data loads independently: a slow external feed must never
+       hold up the work overview. */
+    void this.fx.load();
+    void this.sourcing.freightRates()
+        .then((rates) => this.freightRates.set(rates))
+        .catch(() => undefined);
+
     const [orders, purchases, revisions, products] = await Promise.all([
       this.sales.orders(), this.sourcing.purchaseOrders(),
       this.sales.pendingRevisions(), this.catalog.products(),

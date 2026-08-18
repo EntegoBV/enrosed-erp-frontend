@@ -481,6 +481,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
         <div class="card">
           <div class="card__head"><h2>Totaal</h2></div>
           <div class="card__body">
+            <div class="cost-section">Goederen</div>
             <div class="stat-row"><span>Bruto goederen</span>
               <span class="num">{{ data.priced.totals.gross | eur }}</span></div>
             <div class="stat-row stat-row--discount"><span>Kortingen op regels</span>
@@ -493,6 +494,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             <!-- Freight can be an open item, just like the delivery term: a
                  destination outside the usual rates, or a customer arranging
                  pickup, is unknown at drafting time. -->
+            <div class="cost-section">Verzending</div>
             <div class="stat-row">
               <span>Vracht ({{ palletCountLabel(data.priced.totals) }})
                 <button class="linklike" type="button"
@@ -536,19 +538,26 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             }
             <div class="stat-row"><span>Administratie</span>
               <span class="num">{{ data.priced.totals.handling | eur }}</span></div>
-            <div class="stat-row stat-row--total"><span>Totaal</span>
-              <span class="num">{{ data.priced.totals.total | eur }}</span></div>
-            @if (data.priced.totals.vatLegalMention) {
-              <div class="stat-row stat-row--muted">
-                <span>BTW — {{ vatLabel(data.priced.totals.vatTreatment) }}</span>
-                <span class="num">{{ 0 | eur }}</span></div>
-            } @else {
-              <div class="stat-row stat-row--muted">
-                <span>BTW {{ data.priced.totals.vatRatePct | pct: 1 }}</span>
+            @if (!data.priced.totals.vatLegalMention) {
+              <div class="cost-section">BTW</div>
+              <div class="stat-row"><span>BTW {{ data.priced.totals.vatRatePct | pct: 1 }}</span>
                 <span class="num">{{ data.priced.totals.vatAmount | eur }}</span></div>
-              <div class="stat-row stat-row--muted"><span>Totaal incl. BTW</span>
-                <span class="num">{{ data.priced.totals.totalInclVat | eur }}</span></div>
             }
+
+            <div class="cost-hero">
+              <div>
+                <div class="cost-hero__label">Totaal</div>
+                <div class="cost-hero__value">{{ data.priced.totals.total | eur }}</div>
+              </div>
+              <div class="cost-hero__unit">
+                <div class="cost-hero__label">
+                  {{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'Incl. BTW' }}
+                </div>
+                <div class="cost-hero__value cost-hero__value--rose">
+                  {{ (data.priced.totals.vatLegalMention ? data.priced.totals.total
+                      : data.priced.totals.totalInclVat) | eur }}</div>
+              </div>
+            </div>
 
             @if (data.priced.totals.vatLegalMention) {
               <div class="alert alert--info mt-12">
@@ -683,6 +692,17 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 wat je hier kiest.
               </span>
             </div>
+
+            <!-- The packing slip travels with the goods: pallets when they
+                 are laid out, plain lines otherwise. Never a requirement. -->
+            <button class="btn btn--block btn--stacked mt-8" type="button"
+                    (click)="downloadPackingSlip()">
+              <span>Pakbon downloaden</span>
+              <span class="btn__sub">
+                {{ view()?.order?.pallets?.length
+                    ? 'per pallet, met type en hoogte' : 'per product; pallets zijn niet verplicht' }}
+              </span>
+            </button>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="pdfSheet.set(false)">Annuleren</button>
@@ -738,9 +758,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     <button class="pallet__tool" type="button"
                             [disabled]="$index === data.order.pallets.length - 1"
                             (click)="movePallet($index, 1)" aria-label="Omlaag">↓</button>
-                    <input class="pallet__label" [value]="pallet.label"
+                    <input class="pallet__label" #palletName [value]="pallet.label"
                            placeholder="Pallet {{ $index + 1 }}"
                            (change)="renamePallet($index, $any($event.target).value)" />
+                    <!-- The pencil says the name is typable; the bare input
+                         did not. -->
+                    <button class="pallet__tool" type="button" (click)="palletName.focus()"
+                            aria-label="Naam wijzigen">✎</button>
                     <button class="pallet__tool" type="button" (click)="removePallet($index)"
                             aria-label="Pallet verwijderen">✕</button>
                   </div>
@@ -764,13 +788,23 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     <span class="spacer"></span>
                     <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
                   </div>
+                  @if (!pallet.items.length) {
+                    <div class="pallet__empty">Nog leeg — kies hieronder een product.</div>
+                  }
                   @for (item of pallet.items; track item.productId) {
                     <div class="pallet__item">
                       <span class="pallet__item-name">{{ productLabel(item.productId) }}</span>
-                      <input class="pallet__cartons" type="number" min="0" inputmode="numeric"
-                             [value]="item.cartons"
-                             (change)="setItemCartons($index, item.productId, +$any($event.target).value)" />
-                      <span class="tiny muted">dozen</span>
+                      <div class="pallet__step">
+                        <button class="pallet__step-btn" type="button" aria-label="Doos eraf"
+                                (click)="setItemCartons($index, item.productId, item.cartons - 1)">−</button>
+                        <input class="pallet__step-input" type="number" min="0" inputmode="numeric"
+                               [value]="item.cartons"
+                               (change)="setItemCartons($index, item.productId, +$any($event.target).value)" />
+                        <button class="pallet__step-btn" type="button" aria-label="Doos erbij"
+                                [disabled]="remainingFor(item.productId) <= 0"
+                                (click)="setItemCartons($index, item.productId, item.cartons + 1)">+</button>
+                      </div>
+                      <span class="pallet__item-unit">dozen</span>
                     </div>
                   }
                   @if (assignable($index).length) {
@@ -960,18 +994,29 @@ export class SalesEditor {
 
   /* --------------------------------------------------------- mutating */
 
-  private async save(order: SalesOrder): Promise<void> {
-    try {
-      this.view.set(await this.sales.updateOrder(order.id, order));
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
-    }
+  /*
+   * Saves run strictly one after another. Two quick taps used to race:
+   * the later PUT could be built from a stale order and its response
+   * resurrect old state - pallet lists came back shuffled. Every queued
+   * change is applied onto the freshest order at the moment its turn
+   * comes.
+   */
+  private saveQueue: Promise<void> = Promise.resolve();
+
+  private enqueue(make: (order: SalesOrder) => SalesOrder): void {
+    this.saveQueue = this.saveQueue.then(async () => {
+      const data = this.view();
+      if (!data) return;
+      try {
+        this.view.set(await this.sales.updateOrder(data.order.id, make(data.order)));
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
+      }
+    });
   }
 
   patch(changes: Partial<SalesOrder>): void {
-    const data = this.view();
-    if (!data) return;
-    void this.save({ ...data.order, ...changes });
+    this.enqueue((order) => ({ ...order, ...changes }));
   }
 
   setCustomer(customerId: number): void {
@@ -987,11 +1032,11 @@ export class SalesEditor {
     const data = this.view();
     if (!data || data.order.markupMode === mode) return;
     /* Clear manual prices, or the new markup cannot get through. */
-    void this.save({
-      ...data.order,
+    this.enqueue((order) => ({
+      ...order,
       markupMode: mode,
-      lines: data.order.lines.map((line) => ({ ...line, unitPriceEur: null })),
-    });
+      lines: order.lines.map((line) => ({ ...line, unitPriceEur: null })),
+    }));
   }
 
   weekOf(productId: number): string {
@@ -1052,22 +1097,18 @@ export class SalesEditor {
   setLine(productId: number,
           changes: { quantity?: number; unitPriceEur?: number; manualDiscountPct?: number;
                      deliveryWeek?: string }): void {
-    const data = this.view();
-    if (!data) return;
-    void this.save({
-      ...data.order,
-      lines: data.order.lines.map((line) =>
+    this.enqueue((order) => ({
+      ...order,
+      lines: order.lines.map((line) =>
         line.productId === productId ? { ...line, ...changes } : line),
-    });
+    }));
   }
 
   removeLine(productId: number): void {
-    const data = this.view();
-    if (!data) return;
-    void this.save({
-      ...data.order,
-      lines: data.order.lines.filter((line) => line.productId !== productId),
-    });
+    this.enqueue((order) => ({
+      ...order,
+      lines: order.lines.filter((line) => line.productId !== productId),
+    }));
   }
 
   openPicker(): void {
@@ -1095,15 +1136,13 @@ export class SalesEditor {
   }
 
   addLine(choice: { product: Product; quantity: number }): void {
-    const data = this.view();
-    if (!data) return;
     this.picking.set(false);
-    void this.save({
-      ...data.order,
-      lines: [...data.order.lines,
+    this.enqueue((order) => ({
+      ...order,
+      lines: [...order.lines,
               { id: null, productId: choice.product.id!, quantity: choice.quantity,
                 unitPriceEur: null, manualDiscountPct: null, deliveryWeek: null }],
-    });
+    }));
   }
 
   /* ------------------------------------------------------------ quote */
@@ -1198,6 +1237,15 @@ export class SalesEditor {
   openPdfSheet(): void {
     this.pdfLanguage.set(this.customerLanguage());
     this.pdfSheet.set(true);
+  }
+
+  async downloadPackingSlip(): Promise<void> {
+    const data = this.view();
+    if (!data) return;
+    const blob = await this.sales.packingSlip(data.order.id);
+    saveBlob(blob, `${data.order.number}-pakbon.pdf`);
+    this.pdfSheet.set(false);
+    this.ui.toast('Pakbon gedownload — zonder prijzen, voor magazijn en transport');
   }
 
   async downloadPdf(): Promise<void> {
@@ -1363,6 +1411,12 @@ export class SalesEditor {
         .reduce((sum, item) => sum + item.cartons, 0);
   }
 
+  /** Cartons of this product not yet on any pallet. */
+  remainingFor(productId: number): number {
+    const line = this.view()?.priced.lines.find((l) => l.productId === productId);
+    return line ? line.cartons - this.assignedFor(productId) : 0;
+  }
+
   /** Lines with cartons left to place, excluding ones already on this pallet. */
   assignable(palletIndex: number): { productId: number; description: string; remaining: number }[] {
     const data = this.view();
@@ -1409,10 +1463,11 @@ export class SalesEditor {
   }
 
   setPalletHeight(index: number, raw: string): void {
-    const pallets = this.clonePallets();
     const value = raw === '' ? null : Math.max(0, Math.round(+raw));
-    pallets[index] = { ...pallets[index], heightCm: value };
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      if (pallets[index]) pallets[index] = { ...pallets[index], heightCm: value };
+      return pallets;
+    });
   }
 
   setPalletType(index: number, value: string): void {
@@ -1421,92 +1476,108 @@ export class SalesEditor {
       if (!custom || !custom.trim()) return;
       value = custom.trim();
     }
-    const pallets = this.clonePallets();
-    pallets[index] = { ...pallets[index], type: value };
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      if (pallets[index]) pallets[index] = { ...pallets[index], type: value };
+      return pallets;
+    });
   }
 
-  private patchPallets(pallets: OrderPallet[]): void {
-    this.patch({ pallets });
-  }
-
-  private clonePallets(): OrderPallet[] {
-    return (this.view()?.order.pallets ?? []).map((pallet) => ({
-      ...pallet, items: pallet.items.map((item) => ({ ...item })),
+  /*
+   * Every pallet mutation clones and edits INSIDE the save queue's
+   * builder. Cloning at click time captured a stale list: three quick
+   * taps on "remove" all removed the same pallet from the same copy.
+   */
+  private mutatePallets(mutate: (pallets: OrderPallet[]) => OrderPallet[]): void {
+    this.enqueue((order) => ({
+      ...order,
+      pallets: mutate(order.pallets.map((pallet) => ({
+        ...pallet, items: pallet.items.map((item) => ({ ...item })),
+      }))),
     }));
   }
 
   /** Starts from the calculator's strict stacking, ready to rearrange. */
   autoLayout(): void {
-    const data = this.view();
-    if (!data) return;
-    const pallets: OrderPallet[] = [];
-    for (const line of data.priced.lines) {
-      const per = Math.max(1, line.cartonsPerPallet);
-      let left = line.cartons;
-      while (left > 0) {
-        const take = Math.min(per, left);
-        pallets.push({ id: null, label: '', type: 'Europallet', heightCm: null,
-            items: [{ productId: line.productId, cartons: take }] });
-        left -= take;
+    this.enqueue((order) => {
+      const lines = this.view()?.priced.lines ?? [];
+      const pallets: OrderPallet[] = [];
+      for (const line of lines) {
+        const per = Math.max(1, line.cartonsPerPallet);
+        let left = line.cartons;
+        while (left > 0) {
+          const take = Math.min(per, left);
+          pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet',
+              heightCm: null, items: [{ productId: line.productId, cartons: take }] });
+          left -= take;
+        }
       }
-    }
-    this.patchPallets(pallets.map((pallet, index) => ({ ...pallet, label: `Pallet ${index + 1}` })));
+      return { ...order, pallets };
+    });
   }
 
   addPallet(): void {
-    const pallets = this.clonePallets();
-    pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet', heightCm: null, items: [] });
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet',
+          heightCm: null, items: [] });
+      return pallets;
+    });
   }
 
   removePallet(index: number): void {
-    const pallets = this.clonePallets();
-    pallets.splice(index, 1);
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      pallets.splice(index, 1);
+      return pallets;
+    });
   }
 
   movePallet(index: number, direction: number): void {
-    const pallets = this.clonePallets();
-    const target = index + direction;
-    if (target < 0 || target >= pallets.length) return;
-    [pallets[index], pallets[target]] = [pallets[target], pallets[index]];
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      const target = index + direction;
+      if (target < 0 || target >= pallets.length) return pallets;
+      [pallets[index], pallets[target]] = [pallets[target], pallets[index]];
+      return pallets;
+    });
   }
 
   renamePallet(index: number, label: string): void {
-    const pallets = this.clonePallets();
-    pallets[index] = { ...pallets[index], label: label.trim() };
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      if (pallets[index]) pallets[index] = { ...pallets[index], label: label.trim() };
+      return pallets;
+    });
   }
 
   /** New product on a pallet starts with everything that is still loose. */
   addItem(palletIndex: number, productId: number): void {
     if (!productId) return;
-    const line = this.view()?.priced.lines.find((l) => l.productId === productId);
-    if (!line) return;
-    const remaining = line.cartons - this.assignedFor(productId);
-    if (remaining <= 0) return;
-    const pallets = this.clonePallets();
-    pallets[palletIndex].items.push({ productId, cartons: remaining });
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      const line = this.view()?.priced.lines.find((l) => l.productId === productId);
+      const assigned = pallets.flatMap((pallet) => pallet.items)
+          .filter((item) => item.productId === productId)
+          .reduce((sum, item) => sum + item.cartons, 0);
+      const remaining = line ? line.cartons - assigned : 0;
+      if (remaining > 0 && pallets[palletIndex]) {
+        pallets[palletIndex].items.push({ productId, cartons: remaining });
+      }
+      return pallets;
+    });
   }
 
   setItemCartons(palletIndex: number, productId: number, cartons: number): void {
-    const pallets = this.clonePallets();
-    const items = pallets[palletIndex].items;
-    const index = items.findIndex((item) => item.productId === productId);
-    if (index < 0) return;
-    if (!cartons || cartons <= 0) {
-      items.splice(index, 1);
-    } else {
-      items[index] = { ...items[index], cartons: Math.floor(cartons) };
-    }
-    this.patchPallets(pallets);
+    this.mutatePallets((pallets) => {
+      const items = pallets[palletIndex]?.items ?? [];
+      const index = items.findIndex((item) => item.productId === productId);
+      if (index < 0) return pallets;
+      if (!cartons || cartons <= 0) {
+        items.splice(index, 1);
+      } else {
+        items[index] = { ...items[index], cartons: Math.floor(cartons) };
+      }
+      return pallets;
+    });
   }
 
   clearPallets(): void {
-    this.patchPallets([]);
+    this.patch({ pallets: [] });
   }
 
 }

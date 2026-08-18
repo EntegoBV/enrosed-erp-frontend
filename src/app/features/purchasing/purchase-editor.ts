@@ -492,11 +492,11 @@ export class PurchaseEditor {
             + 'onthoudt wat er besteld was.',
           confirmLabel: 'Ontvangen en bijboeken',
         },
-        () => this.save({ ...data.order, status: 'ONTVANGEN' }),
+        () => { this.enqueue((order) => ({ ...order, status: 'ONTVANGEN' })); },
       );
       return;
     }
-    void this.save({ ...data.order, status: step.to as PurchaseOrder['status'] });
+    this.enqueue((order) => ({ ...order, status: step.to as PurchaseOrder['status'] }));
   }
 
   readonly ports = DESTINATION_PORTS;
@@ -560,6 +560,18 @@ export class PurchaseEditor {
     return order[field] as Allocation;
   }
 
+  /* Saves run strictly in sequence; see the sales editor for the race
+     this prevents. Each queued change is applied onto the freshest order. */
+  private saveQueue: Promise<void> = Promise.resolve();
+
+  private enqueue(make: (order: PurchaseOrder) => PurchaseOrder): void {
+    this.saveQueue = this.saveQueue.then(async () => {
+      const data = this.view();
+      if (!data) return;
+      await this.save(make(data.order));
+    });
+  }
+
   private async save(order: PurchaseOrder): Promise<void> {
     const result = await this.sourcing.updatePurchaseOrder(order.id, order);
     this.view.set(result);
@@ -585,9 +597,7 @@ export class PurchaseEditor {
   }
 
   patch(changes: Partial<PurchaseOrder>): void {
-    const data = this.view();
-    if (!data) return;
-    void this.save({ ...data.order, ...changes });
+    this.enqueue((order) => ({ ...order, ...changes }));
   }
 
   setAllocation(field: keyof PurchaseOrder, value: Allocation): void {
@@ -621,22 +631,18 @@ export class PurchaseEditor {
   }
 
   private setLine(productId: number, patch: Partial<PurchaseOrderLine>): void {
-    const data = this.view();
-    if (!data) return;
-    void this.save({
-      ...data.order,
-      lines: data.order.lines.map((line) =>
+    this.enqueue((order) => ({
+      ...order,
+      lines: order.lines.map((line) =>
         line.productId === productId ? { ...line, ...patch } : line),
-    });
+    }));
   }
 
   removeLine(productId: number): void {
-    const data = this.view();
-    if (!data) return;
-    void this.save({
-      ...data.order,
-      lines: data.order.lines.filter((line) => line.productId !== productId),
-    });
+    this.enqueue((order) => ({
+      ...order,
+      lines: order.lines.filter((line) => line.productId !== productId),
+    }));
   }
 
   openPicker(): void {
@@ -675,17 +681,15 @@ export class PurchaseEditor {
   }
 
   addLine(choice: { product: Product; quantity: number }): void {
-    const data = this.view();
-    if (!data) return;
     this.picking.set(false);
-    void this.save({
-      ...data.order,
-      lines: [...data.order.lines, {
+    this.enqueue((order) => ({
+      ...order,
+      lines: [...order.lines, {
         id: null, productId: choice.product.id!, quantity: choice.quantity,
         exwPrice: null, exwCurrency: null, extraUnitCost: null,
         /* Added after ordering means nothing was agreed for it yet. */
         orderedQuantity: null }],
-    });
+    }));
   }
 
   newProduct(): void {

@@ -112,6 +112,12 @@ export class SalesApi {
       this.http.get(api(`/api/sales-orders/${id}/pdf${query}`), { responseType: 'blob' }));
   }
 
+  /** The packing slip: pallets when laid out by hand, plain lines otherwise. */
+  packingSlip(id: number): Promise<Blob> {
+    return firstValueFrom(this.http.get(
+      api(`/api/sales-orders/${id}/packing-slip`), { responseType: 'blob' }));
+  }
+
   portalToken(id: number): Promise<{ token?: string; status?: string }> {
     return firstValueFrom(
       this.http.get<{ token?: string; status?: string }>(

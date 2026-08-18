@@ -1285,7 +1285,7 @@ table.data tfoot td {
 }
 @keyframes pallet-in { from { opacity: 0; transform: translateY(4px); } }
 .pallet__head {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 2px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
 }
@@ -1296,6 +1296,9 @@ table.data tfoot td {
   padding: 4px 2px;
 }
 .pallet__label:focus { outline: none; border-bottom: 1px dashed var(--accent); }
+.pallet__empty {
+  padding: 8px 12px; font-size: 12.5px; color: var(--muted);
+}
 .pallet__count { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .pallet__tool {
   border: 0; background: transparent; color: var(--muted);
@@ -1426,10 +1429,34 @@ a.kpi--dark { color: #fff; }
 .per-toggle button.on { background: var(--surface); color: var(--ink);
   box-shadow: 0 1px 2px rgb(26 22 20 / 10%); }
 
-/* Pallet item wraps on narrow screens: name first, controls underneath. */
-.pallet__item { flex-wrap: wrap; }
-.pallet__item-name { flex-basis: 100%; white-space: normal; }
-.pallet__item .pallet__cartons { margin-left: auto; }
+/* Pallet item: name left, stepper right, one aligned baseline. */
+.pallet__item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+}
+.pallet__item-name { white-space: normal; line-height: 1.35; }
+.pallet__item-unit { font-size: 11.5px; color: var(--muted); }
+.pallet__step {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  overflow: hidden; background: var(--surface);
+}
+.pallet__step-btn {
+  border: 0; background: transparent; color: var(--ink);
+  width: 34px; font-size: 16px; cursor: pointer;
+}
+.pallet__step-btn:active { background: var(--surface-2); }
+.pallet__step-btn:disabled { opacity: 0.3; }
+.pallet__step-input {
+  width: 46px; text-align: center; border: 0;
+  border-inline: 1px solid var(--line);
+  font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.pallet__step-input::-webkit-outer-spin-button,
+.pallet__step-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .pallet__height {
   width: 68px; text-align: right;
   border: 1px solid var(--line-strong); border-radius: 8px;
@@ -1486,3 +1513,34 @@ a.kpi--dark { color: #fff; }
   font-variant-numeric: tabular-nums; margin-top: 2px;
 }
 .cost-hero__value--rose { color: var(--accent); }
+
+/* ------------------------------------------------------- market cards */
+.market-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.market-row:last-of-type { border-bottom: 0; }
+.market-row > div:first-child { flex: 1; min-width: 0; }
+.market-row__label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+}
+.market-row__value { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+.market-row__spark { color: var(--accent); flex: none; }
+.market-hint {
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  font-size: 12.5px; color: var(--ink-2, var(--ink));
+}
+
+/* Market rows double as buttons (flip a pair, open history). */
+button.market-row {
+  width: 100%; border-inline: 0; border-top: 0;
+  background: none; font: inherit; text-align: left; color: inherit;
+  cursor: pointer;
+}
+button.market-row:disabled { cursor: default; }
+.market-row__label app-icon { vertical-align: -2px; color: var(--muted); margin-left: 2px; }
