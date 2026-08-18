@@ -551,8 +551,8 @@ export class PurchaseEditor {
       const blob = await this.sourcing.purchasePdf(data.order.id, internal);
       saveBlob(blob, `${data.order.number}${internal ? '' : '-klantweergave'}.pdf`);
       this.ui.toast(internal
-        ? 'PDF met de extra opbrengst erop'
-        : 'PDF zonder de extra opbrengst — het totaal klopt wel');
+        ? 'Interne PDF gedownload — extra opbrengst als aparte regel'
+        : 'Klantweergave gedownload — extra opbrengst zit in de stukprijs');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'PDF maken mislukt'), 'err');
     }
@@ -571,11 +571,22 @@ export class PurchaseEditor {
     }
   }
 
-  async apply(): Promise<void> {
+  apply(): void {
     const data = this.view();
     if (!data) return;
-    await this.sourcing.applyLandedCosts(data.order.id);
-    this.ui.toast('Kostprijzen bijgewerkt in de catalogus');
+    this.ui.confirm(
+      {
+        title: 'Kostprijzen toepassen',
+        message: 'De berekende kostprijs per stuk wordt op de producten in de catalogus '
+          + 'gezet en overschrijft wat daar staat. Alle marges op verkooporders rekenen '
+          + 'vanaf dan met deze cijfers.',
+        confirmLabel: 'Toepassen',
+      },
+      async () => {
+        await this.sourcing.applyLandedCosts(data.order.id);
+        this.ui.toast('Kostprijzen bijgewerkt in de catalogus');
+      },
+    );
   }
 
   remove(): void {
