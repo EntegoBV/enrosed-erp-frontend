@@ -18,6 +18,17 @@ import { EurPipe, NumPipe } from './pipes';
  * once, with the correction visible under the field — no surprise
  * afterwards.
  */
+/** Everything the quick-create form measures; the parent builds the product. */
+export interface ProductDraft {
+  name: string;
+  lengthCm: number | null; widthCm: number | null; heightCm: number | null;
+  cartonLengthCm: number | null; cartonWidthCm: number | null; cartonHeightCm: number | null;
+  piecesPerCarton: number;
+  weightKg: number | null;
+  exwPrice: number;
+  exwCurrency: string;
+}
+
 @Component({
   selector: 'app-product-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -25,6 +36,7 @@ import { EurPipe, NumPipe } from './pipes';
   template: `
     <app-sheet [title]="heading()" (closed)="cancelled.emit()">
       <div body>
+        @if (!createMode()) {
         <div class="search-bar">
           <input
             class="input"
@@ -35,8 +47,69 @@ import { EurPipe, NumPipe } from './pipes';
             (ngModelChange)="query.set($event)"
           />
         </div>
+        }
 
-        @if (chosen(); as product) {
+        @if (createMode()) {
+          <!-- Measure the article in your hand and go: everything the
+               calculation needs, nothing it does not. Optional fields can
+               stay empty and be completed later on the product. -->
+          <div class="field">
+            <label class="req" for="qc-name">Naam</label>
+            <input class="input" id="qc-name" [ngModel]="draftName()"
+                   (ngModelChange)="draftName.set($event)" />
+          </div>
+          <div class="field">
+            <label for="qc-size">Afmeting product (l × b × h cm) <span class="opt"></span></label>
+            <div class="dims-row" id="qc-size">
+              <input class="input num right" type="number" min="0" placeholder="l"
+                     [ngModel]="draftL()" (ngModelChange)="draftL.set($event)" />
+              <input class="input num right" type="number" min="0" placeholder="b"
+                     [ngModel]="draftW()" (ngModelChange)="draftW.set($event)" />
+              <input class="input num right" type="number" min="0" placeholder="h"
+                     [ngModel]="draftH()" (ngModelChange)="draftH.set($event)" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="qc-carton">Omdoos (l × b × h cm) <span class="opt"></span></label>
+            <div class="dims-row" id="qc-carton">
+              <input class="input num right" type="number" min="0" placeholder="l"
+                     [ngModel]="draftCL()" (ngModelChange)="draftCL.set($event)" />
+              <input class="input num right" type="number" min="0" placeholder="b"
+                     [ngModel]="draftCW()" (ngModelChange)="draftCW.set($event)" />
+              <input class="input num right" type="number" min="0" placeholder="h"
+                     [ngModel]="draftCH()" (ngModelChange)="draftCH.set($event)" />
+            </div>
+            <span class="hint">De omdoos bepaalt het volume in de container.</span>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label class="req" for="qc-per">Stuks per doos</label>
+              <input class="input num right" id="qc-per" type="number" min="1"
+                     [ngModel]="draftPer()" (ngModelChange)="draftPer.set($event)" />
+            </div>
+            <div class="field">
+              <label for="qc-weight">Gewicht/doos kg <span class="opt"></span></label>
+              <input class="input num right" id="qc-weight" type="number" min="0" step="0.1"
+                     [ngModel]="draftWeight()" (ngModelChange)="draftWeight.set($event)" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label class="req" for="qc-exw">EXW-prijs per stuk</label>
+              <input class="input num right" id="qc-exw" type="number" min="0" step="0.01"
+                     [ngModel]="draftExw()" (ngModelChange)="draftExw.set($event)" />
+            </div>
+            <div class="field">
+              <label for="qc-cur">Munt</label>
+              <select class="select" id="qc-cur" [ngModel]="draftCurrency()"
+                      (ngModelChange)="draftCurrency.set($event)">
+                <option value="USD">USD</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+          </div>
+        } @else if (chosen(); as product) {
           <div class="picker-chosen">
             <div class="row">
               @if (product.photos.length) {
@@ -131,7 +204,7 @@ import { EurPipe, NumPipe } from './pipes';
                   <!-- Straight from the gap to a new product: at a fair the
                        article in your hand often is not in the system yet. -->
                   <button class="btn btn--primary mt-8" type="button"
-                          (click)="create.emit(query().trim())">
+                          (click)="startCreate()">
                     + „{{ query().trim() }}" aanmaken en toevoegen
                   </button>
                 }
@@ -142,6 +215,12 @@ import { EurPipe, NumPipe } from './pipes';
       </div>
 
       <div foot style="display:contents">
+        @if (createMode()) {
+          <button class="btn" type="button" (click)="createMode.set(false)">Terug</button>
+          <button class="btn btn--primary" type="button"
+                  [disabled]="!draftName().trim() || draftPer() < 1"
+                  (click)="submitCreate()">Aanmaken en toevoegen</button>
+        } @else {
         <button class="btn" type="button" (click)="cancelled.emit()">Annuleren</button>
         <button
           class="btn btn--primary"
@@ -151,10 +230,12 @@ import { EurPipe, NumPipe } from './pipes';
         >
           Toevoegen
         </button>
+        }
       </div>
     </app-sheet>
   `,
   styles: `
+    .dims-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
     .picker-list { display: flex; flex-direction: column; margin: 0 -16px; }
     .picker-item {
       display: flex;
@@ -212,7 +293,44 @@ export class ProductPicker implements OnDestroy {
   readonly cancelled = output<void>();
   /** When on, an empty search offers creating the product right there. */
   readonly allowCreate = input(false);
-  readonly create = output<string>();
+  /** Default currency for a quick-created product (the supplier's). */
+  readonly createCurrency = input('USD');
+  readonly create = output<ProductDraft>();
+
+  /* Quick-create: measure the article in your hand, fill it in here, and
+     it lands on the order without leaving the sheet. */
+  readonly createMode = signal(false);
+  readonly draftName = signal('');
+  readonly draftL = signal<number | null>(null);
+  readonly draftW = signal<number | null>(null);
+  readonly draftH = signal<number | null>(null);
+  readonly draftCL = signal<number | null>(null);
+  readonly draftCW = signal<number | null>(null);
+  readonly draftCH = signal<number | null>(null);
+  readonly draftPer = signal(1);
+  readonly draftWeight = signal<number | null>(null);
+  readonly draftExw = signal(0);
+  readonly draftCurrency = signal('USD');
+
+  startCreate(): void {
+    this.draftName.set(this.query().trim());
+    this.draftCurrency.set(this.createCurrency());
+    this.createMode.set(true);
+  }
+
+  submitCreate(): void {
+    this.create.emit({
+      name: this.draftName().trim(),
+      lengthCm: this.draftL(), widthCm: this.draftW(), heightCm: this.draftH(),
+      cartonLengthCm: this.draftCL(), cartonWidthCm: this.draftCW(),
+      cartonHeightCm: this.draftCH(),
+      piecesPerCarton: Math.max(1, Math.round(this.draftPer() || 1)),
+      weightKg: this.draftWeight(),
+      exwPrice: this.draftExw() || 0,
+      exwCurrency: this.draftCurrency(),
+    });
+    this.createMode.set(false);
+  }
 
   readonly query = signal('');
   readonly chosen = signal<Product | null>(null);

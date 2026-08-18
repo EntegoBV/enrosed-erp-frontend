@@ -9,6 +9,7 @@ import { messageOf } from '../../core/api/errors';
 import { Allocation, Currency, Product, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, Supplier } from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
 import { PageHeader } from '../../shared/page-header';
+import { ProductDraft } from '../../shared/product-picker';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Ui } from '../../shared/ui';
@@ -368,6 +369,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
           (picked)="addLine($event)"
           (cancelled)="picking.set(false)"
           [allowCreate]="true"
+          [createCurrency]="supplier()?.currency ?? 'USD'"
           (create)="quickCreate($event)"
         />
       }
@@ -628,27 +630,31 @@ export class PurchaseEditor {
   readonly exwPriceOf = (product: Product): number => product.exwPrice ?? 0;
 
   /**
-   * Creates a bare product under this supplier and puts it on the order
-   * in one go. Only the name is known; everything else - carton, sizes,
-   * prices - can be completed later on the product itself.
+   * Creates a product from the measurements typed in the picker and puts
+   * it on the order in one go - measure the article in your hand, done.
+   * Photos, barcodes and translations can follow later on the product.
    */
-  async quickCreate(name: string): Promise<void> {
+  async quickCreate(draft: ProductDraft): Promise<void> {
     const data = this.view();
     if (!data) return;
     const created = await this.catalog.createProduct({
-      id: null, sku: null, name, dimensions: null, colour: '',
-      description: '', categoryId: null, supplierId: data.order.supplierId,
-      active: true,
+      id: null, sku: null, name: draft.name,
+      dimensions: { lengthCm: draft.lengthCm, widthCm: draft.widthCm,
+          heightCm: draft.heightCm },
+      colour: '', description: '', categoryId: null,
+      supplierId: data.order.supplierId, active: true,
       barcodeInner: '', barcodeOuter: '', hsCode: '',
-      carton: { lengthCm: null, widthCm: null, heightCm: null, piecesPerCarton: 1, weightKg: null },
-      exwPrice: 0, exwCurrency: this.supplier()?.currency ?? 'USD', extraUnitCost: 0,
+      carton: { lengthCm: draft.cartonLengthCm, widthCm: draft.cartonWidthCm,
+          heightCm: draft.cartonHeightCm,
+          piecesPerCarton: draft.piecesPerCarton, weightKg: draft.weightKg },
+      exwPrice: draft.exwPrice, exwCurrency: draft.exwCurrency, extraUnitCost: 0,
       landedCostEur: null, landedCostSource: null,
       markupPct: 45, fixedSalesPriceEur: null,
       stockQuantity: 0, photos: [],
     } as unknown as Product);
     this.products.set(await this.catalog.products(data.order.supplierId));
-    this.addLine({ product: created, quantity: created.carton.piecesPerCarton ?? 1 });
-    this.ui.toast(`${name} aangemaakt — vul de details later aan op het product`);
+    this.addLine({ product: created, quantity: draft.piecesPerCarton });
+    this.ui.toast(`${draft.name} aangemaakt en op de order gezet`);
   }
 
   addLine(choice: { product: Product; quantity: number }): void {
