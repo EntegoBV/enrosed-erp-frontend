@@ -1407,3 +1407,21 @@ a.kpi--dark { color: #fff; }
   margin: 4px 0 10px;
   animation: rise 0.2s ease;
 }
+
+/* Two-line button: action on top, consequence underneath. */
+.btn--stacked { flex-direction: column; gap: 1px; padding-block: 9px; }
+.btn__sub { font-size: 11px; font-weight: 500; opacity: 0.75; letter-spacing: 0; }
+
+/* Tiny two-way toggle on cost panels: totals or per piece. */
+.per-toggle {
+  display: inline-flex; gap: 2px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px;
+}
+.per-toggle button {
+  border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 11.5px; font-weight: 650;
+  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+}
+.per-toggle button.on { background: var(--surface); color: var(--ink);
+  box-shadow: 0 1px 2px rgb(26 22 20 / 10%); }

@@ -245,24 +245,32 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
 
                 <div style="background:var(--surface-2);border:1px solid var(--line);
                             border-radius:var(--r-sm);padding:10px 12px">
+                  <div class="row" style="justify-content:flex-end;margin-bottom:4px">
+                    <div class="per-toggle">
+                      <button type="button" [class.on]="!perPiece()"
+                              (click)="perPiece.set(false)">Totaal</button>
+                      <button type="button" [class.on]="perPiece()"
+                              (click)="perPiece.set(true)">Per stuk</button>
+                    </div>
+                  </div>
                   <div class="stat-row stat-row--muted"><span>Goederen</span>
-                    <span class="num">{{ line.goodsEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
                   @if (line.originEur) {
                     <div class="stat-row stat-row--muted"><span>Lokale kosten {{ originLabel() }}</span>
-                      <span class="num">{{ line.originEur | eur }}</span></div>
+                      <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
                   }
                   <div class="stat-row stat-row--muted"><span>Zeevracht</span>
-                    <span class="num">{{ line.freightEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row stat-row--muted"
                        style="border-top:1px dashed var(--line-strong);padding-top:6px">
                     <span>Douanewaarde</span>
-                    <span class="num">{{ line.customsValueEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row stat-row--muted">
                     <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
                       <span class="tiny">({{ line.dutySource }})</span></span>
-                    <span class="num">{{ line.dutyEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row stat-row--muted"><span>Lokale kosten {{ view()?.order?.destinationPort || 'Rotterdam' }} → magazijn</span>
-                    <span class="num">{{ line.destinationEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row" style="border-top:1px solid var(--line);
                        margin-top:4px;padding-top:8px;font-weight:680">
                     <span>Kostprijs per stuk</span>
@@ -360,12 +368,25 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
           [enforceCartons]="false"
           (picked)="addLine($event)"
           (cancelled)="picking.set(false)"
+          [allowCreate]="true"
+          (create)="quickCreate($event)"
         />
       }
     }
   `,
 })
 export class PurchaseEditor {
+  /** Cost breakdowns as totals or per piece; one switch for all lines. */
+  readonly perPiece = signal(false);
+
+  /** Every line amount through one gate, so the toggle cannot miss one. */
+  /** Two decimals for totals, four for per-piece - tiny numbers need them. */
+  readonly decimals = computed(() => this.perPiece() ? 4 : 2);
+
+  amt(value: number, line: { quantity: number }): number {
+    return this.perPiece() && line.quantity > 0 ? value / line.quantity : value;
+  }
+
   /** Which cards are folded open; the products are the heart of the screen. */
   readonly openSections = signal(new Set<string>());
 
@@ -396,10 +417,12 @@ export class PurchaseEditor {
   readonly containerLabel = containerLabel;
 
   /** The one-way street a container travels. */
+  /* Three visible steps: "onderweg" added a tap without adding
+     information - the stock only moves on receipt anyway. Orders still
+     in ONDERWEG from before simply show as Besteld. */
   readonly statusSteps = [
     { value: 'CONCEPT' as const, label: 'Concept', action: 'Bestellen' },
-    { value: 'BESTELD' as const, label: 'Besteld', action: 'Container onderweg' },
-    { value: 'ONDERWEG' as const, label: 'Onderweg', action: 'Container ontvangen' },
+    { value: 'BESTELD' as const, label: 'Besteld', action: 'Container ontvangen' },
     { value: 'ONTVANGEN' as const, label: 'Ontvangen', action: '' },
   ];
 
@@ -415,6 +438,7 @@ export class PurchaseEditor {
   }
 
   stepIndex(status: string): number {
+    if (status === 'ONDERWEG') status = 'BESTELD';
     return this.statusSteps.findIndex((step) => step.value === status);
   }
 
@@ -603,6 +627,30 @@ export class PurchaseEditor {
 
   /** In the purchase picker the price shows the supplier's EXW price. */
   readonly exwPriceOf = (product: Product): number => product.exwPrice ?? 0;
+
+  /**
+   * Creates a bare product under this supplier and puts it on the order
+   * in one go. Only the name is known; everything else - carton, sizes,
+   * prices - can be completed later on the product itself.
+   */
+  async quickCreate(name: string): Promise<void> {
+    const data = this.view();
+    if (!data) return;
+    const created = await this.catalog.createProduct({
+      id: null, sku: null, name, dimensions: null, colour: '',
+      description: '', categoryId: null, supplierId: data.order.supplierId,
+      active: true,
+      barcodeInner: '', barcodeOuter: '', hsCode: '',
+      carton: { lengthCm: null, widthCm: null, heightCm: null, piecesPerCarton: 1, weightKg: null },
+      exwPrice: 0, exwCurrency: this.supplier()?.currency ?? 'USD', extraUnitCost: 0,
+      landedCostEur: null, landedCostSource: null,
+      markupPct: 45, fixedSalesPriceEur: null,
+      stockQuantity: 0, photos: [],
+    } as unknown as Product);
+    this.products.set(await this.catalog.products(data.order.supplierId));
+    this.addLine({ product: created, quantity: created.carton.piecesPerCarton ?? 1 });
+    this.ui.toast(`${name} aangemaakt — vul de details later aan op het product`);
+  }
 
   addLine(choice: { product: Product; quantity: number }): void {
     const data = this.view();

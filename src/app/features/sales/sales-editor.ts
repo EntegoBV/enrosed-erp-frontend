@@ -128,17 +128,22 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 </div>
               }
               <div class="mt-12">
-                <button class="btn btn--primary btn--block" type="button"
-                        (click)="approve(revision, true)">Wijzigen</button>
-                <button class="btn btn--block mt-8" type="button"
-                        (click)="approve(revision, false)">Overnemen</button>
+                <!-- The explanation lives inside each button: no paragraph to
+                     misalign, and the choice explains itself at the point of
+                     tapping. -->
+                <button class="btn btn--primary btn--block btn--stacked" type="button"
+                        (click)="approve(revision, true)">
+                  <span>Wijzigen</span>
+                  <span class="btn__sub">overnemen en zelf nog bijsturen</span>
+                </button>
+                <button class="btn btn--block btn--stacked mt-8" type="button"
+                        (click)="approve(revision, false)">
+                  <span>Overnemen</span>
+                  <span class="btn__sub">precies zoals de klant vroeg</span>
+                </button>
                 <button class="btn btn--block btn--quiet mt-8" type="button"
                         (click)="reject(revision)">Afwijzen</button>
               </div>
-              <span class="hint">
-                <b>Wijzigen</b> zet hun aantallen op de order en laat je daarna zelf nog
-                bijsturen. <b>Overnemen</b> neemt ze ongewijzigd over.
-              </span>
             </div>
           </div>
         }
@@ -445,96 +450,24 @@ import { STATUS_LABEL, statusClass } from './quote-status';
 
         <!-- ==================================== pallets -->
         <div class="card">
-          <div class="card__head card__head--toggle" (click)="toggle('pallets')">
-            <h2>Pallets</h2>
-            @if (!isOpen('pallets')) {
-              <span class="card__summary">{{ palletSummary() }}</span>
-            } @else { <span class="spacer"></span> }
-            <span class="card__chev" [class.card__chev--open]="isOpen('pallets')">›</span>
+          <div class="card__head"><h2>Pallets</h2>
+            <span class="spacer"></span>
+            <span class="card__summary" style="flex:none">{{ palletSummary() }}</span>
           </div>
-          <div class="collapse" [class.collapse--open]="isOpen('pallets')"><div class="collapse__inner">
           <div class="card__body">
-            @if (!data.order.pallets.length) {
-              <p class="small muted" style="margin-top:0">
-                De rekenmodule stapelt automatisch: {{ data.priced.totals.palletsStrict }}
-                pallet(s), elk product apart. Zelf indelen kan ook — fragiel glas bovenaan,
-                dozen van één klant samen — en dan telt de vracht jouw indeling.
-              </p>
-              <button class="btn btn--primary btn--block" type="button" (click)="autoLayout()">
-                Start van de berekening
-              </button>
-              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="addPallet()">
-                Start leeg
-              </button>
-            } @else {
-              @if (data.priced.totals.unassignedCartons > 0) {
-                <div class="pallet-warn">
-                  {{ data.priced.totals.unassignedCartons }} dozen staan nog op geen pallet —
-                  de vracht telt alleen de pallets hieronder.
-                </div>
-              }
-              @for (pallet of data.order.pallets; track $index) {
-                <div class="pallet">
-                  <div class="pallet__head">
-                    <button class="pallet__tool" type="button" [disabled]="$index === 0"
-                            (click)="movePallet($index, -1)" aria-label="Omhoog">↑</button>
-                    <button class="pallet__tool" type="button"
-                            [disabled]="$index === data.order.pallets.length - 1"
-                            (click)="movePallet($index, 1)" aria-label="Omlaag">↓</button>
-                    <input class="pallet__label" [value]="pallet.label"
-                           placeholder="Pallet {{ $index + 1 }}"
-                           (change)="renamePallet($index, $any($event.target).value)" />
-                    <button class="pallet__tool" type="button" (click)="removePallet($index)"
-                            aria-label="Pallet verwijderen">✕</button>
-                  </div>
-                  <div class="pallet__sub">
-                    <select class="pallet__type"
-                            (change)="setPalletType($index, $any($event.target).value)">
-                      @for (option of palletTypes; track option) {
-                        <option [value]="option" [selected]="palletType(pallet) === option">
-                          {{ option }}
-                        </option>
-                      }
-                      @if (!palletTypes.includes(palletType(pallet))) {
-                        <option [value]="palletType(pallet)" selected>{{ palletType(pallet) }}</option>
-                      }
-                      <option value="__other__">Anders…</option>
-                    </select>
-                    <span class="spacer"></span>
-                    <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
-                  </div>
-                  @for (item of pallet.items; track item.productId) {
-                    <div class="pallet__item">
-                      <span class="pallet__item-name">{{ productLabel(item.productId) }}</span>
-                      <input class="pallet__cartons" type="number" min="0" inputmode="numeric"
-                             [value]="item.cartons"
-                             (change)="setItemCartons($index, item.productId, +$any($event.target).value)" />
-                      <span class="tiny muted">dozen</span>
-                    </div>
-                  }
-                  @if (assignable($index).length) {
-                    <div class="pallet__add">
-                      <select class="select"
-                              (change)="addItem($index, +$any($event.target).value);
-                                        $any($event.target).selectedIndex = 0">
-                        <option value="" selected disabled>+ Product op deze pallet…</option>
-                        @for (option of assignable($index); track option.productId) {
-                          <option [value]="option.productId">
-                            {{ option.description }} — nog {{ option.remaining }} dozen
-                          </option>
-                        }
-                      </select>
-                    </div>
-                  }
-                </div>
-              }
-              <button class="btn btn--block" type="button" (click)="addPallet()">+ Pallet</button>
-              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="clearPallets()">
-                Terug naar automatisch
-              </button>
+            @if (data.priced.totals.unassignedCartons > 0) {
+              <div class="pallet-warn">
+                {{ data.priced.totals.unassignedCartons }} dozen staan nog op geen pallet —
+                de vracht telt alleen jouw pallets.
+              </div>
             }
+            <!-- Managing happens in a full-height sheet: rearranging pallets
+                 halfway down a long form kept scrolling out of view on a
+                 phone. -->
+            <button class="btn btn--block" type="button" (click)="palletSheet.set(true)">
+              {{ data.order.pallets.length ? 'Indeling beheren' : 'Zelf pallets indelen' }}
+            </button>
           </div>
-          </div></div>
         </div>
 
         <!-- ==================================== totals -->
@@ -744,7 +677,99 @@ import { STATUS_LABEL, statusClass } from './quote-status';
         </app-sheet>
       }
 
-      @if (picking()) {
+      @if (palletSheet()) {
+      <app-sheet title="Pallets" (closed)="palletSheet.set(false)">
+        <div body>
+          @if (view(); as data) {
+            @if (!data.order.pallets.length) {
+              <p class="small muted" style="margin-top:0">
+                De rekenmodule stapelt automatisch: {{ data.priced.totals.palletsStrict }}
+                pallet(s), elk product apart. Zelf indelen kan ook — fragiel glas bovenaan,
+                dozen van één klant samen — en dan telt de vracht jouw indeling.
+              </p>
+              <button class="btn btn--primary btn--block" type="button" (click)="autoLayout()">
+                Start van de berekening
+              </button>
+              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="addPallet()">
+                Start leeg
+              </button>
+            } @else {
+              @if (data.priced.totals.unassignedCartons > 0) {
+                <div class="pallet-warn">
+                  {{ data.priced.totals.unassignedCartons }} dozen staan nog op geen pallet —
+                  de vracht telt alleen de pallets hieronder.
+                </div>
+              }
+              @for (pallet of data.order.pallets; track $index) {
+                <div class="pallet">
+                  <div class="pallet__head">
+                    <button class="pallet__tool" type="button" [disabled]="$index === 0"
+                            (click)="movePallet($index, -1)" aria-label="Omhoog">↑</button>
+                    <button class="pallet__tool" type="button"
+                            [disabled]="$index === data.order.pallets.length - 1"
+                            (click)="movePallet($index, 1)" aria-label="Omlaag">↓</button>
+                    <input class="pallet__label" [value]="pallet.label"
+                           placeholder="Pallet {{ $index + 1 }}"
+                           (change)="renamePallet($index, $any($event.target).value)" />
+                    <button class="pallet__tool" type="button" (click)="removePallet($index)"
+                            aria-label="Pallet verwijderen">✕</button>
+                  </div>
+                  <div class="pallet__sub">
+                    <select class="pallet__type"
+                            (change)="setPalletType($index, $any($event.target).value)">
+                      @for (option of palletTypes; track option) {
+                        <option [value]="option" [selected]="palletType(pallet) === option">
+                          {{ option }}
+                        </option>
+                      }
+                      @if (!palletTypes.includes(palletType(pallet))) {
+                        <option [value]="palletType(pallet)" selected>{{ palletType(pallet) }}</option>
+                      }
+                      <option value="__other__">Anders…</option>
+                    </select>
+                    <span class="spacer"></span>
+                    <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
+                  </div>
+                  @for (item of pallet.items; track item.productId) {
+                    <div class="pallet__item">
+                      <span class="pallet__item-name">{{ productLabel(item.productId) }}</span>
+                      <input class="pallet__cartons" type="number" min="0" inputmode="numeric"
+                             [value]="item.cartons"
+                             (change)="setItemCartons($index, item.productId, +$any($event.target).value)" />
+                      <span class="tiny muted">dozen</span>
+                    </div>
+                  }
+                  @if (assignable($index).length) {
+                    <div class="pallet__add">
+                      <select class="select"
+                              (change)="addItem($index, +$any($event.target).value);
+                                        $any($event.target).selectedIndex = 0">
+                        <option value="" selected disabled>+ Product op deze pallet…</option>
+                        @for (option of assignable($index); track option.productId) {
+                          <option [value]="option.productId">
+                            {{ option.description }} — nog {{ option.remaining }} dozen
+                          </option>
+                        }
+                      </select>
+                    </div>
+                  }
+                </div>
+              }
+              <button class="btn btn--block" type="button" (click)="addPallet()">+ Pallet</button>
+              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="clearPallets()">
+                Terug naar automatisch
+              </button>
+            }
+          }
+        </div>
+        <div foot style="display:contents">
+          <button class="btn btn--primary btn--block" type="button"
+                  (click)="palletSheet.set(false)">Klaar</button>
+        </div>
+      </app-sheet>
+    }
+
+    @if (picking()) {
         <app-product-picker
           heading="Product toevoegen"
           [products]="available()"
@@ -821,6 +846,9 @@ export class SalesEditor {
   readonly sending = signal(false);
   /** The freight tweak panel, folded away until asked for. */
   readonly freightOpen = signal(false);
+
+  /** Pallet management opens as a sheet: full height, scrollable, phone-first. */
+  readonly palletSheet = signal(false);
 
   /** Is an action running that should block the buttons? */
   readonly busy = signal(false);

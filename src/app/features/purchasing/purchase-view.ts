@@ -95,31 +95,39 @@ import { DateNlPipe } from '../../shared/pipes';
                      line alone - the answer to "why does this piece land
                      at that price". -->
                 <div class="pv-detail">
+                  <div class="row" style="justify-content:flex-end;margin:2px 0 4px">
+                    <div class="per-toggle">
+                      <button type="button" [class.on]="!perPiece()"
+                              (click)="perPiece.set(false)">Totaal</button>
+                      <button type="button" [class.on]="perPiece()"
+                              (click)="perPiece.set(true)">Per stuk</button>
+                    </div>
+                  </div>
                   <div class="stat-row"><span>Goederen</span>
-                    <span class="num">{{ line.goodsEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row"><span>Lokale kosten China</span>
-                    <span class="num">{{ line.originEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row"><span>Zeevracht</span>
-                    <span class="num">{{ line.freightEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row"><span>Douanewaarde</span>
-                    <span class="num">{{ line.customsValueEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row">
                     <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
                       @if (line.dutySource) {
                         <span class="tiny muted">({{ line.dutySource }})</span>
                       }
                     </span>
-                    <span class="num">{{ line.dutyEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
                   <div class="stat-row"><span>Kosten na aankomst</span>
-                    <span class="num">{{ line.destinationEur | eur }}</span></div>
+                    <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
                   @if (line.extraRevenueEur) {
                     <div class="stat-row"><span>Extra opbrengst</span>
-                      <span class="num">{{ line.extraRevenueEur | eur }}</span></div>
+                      <span class="num">{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
                   }
-                  <div class="stat-row stat-row--total"><span>Totaal regel</span>
-                    <span class="num">{{ line.totalEur | eur }}</span></div>
-                  <div class="stat-row"><span>Per stuk geland</span>
-                    <span class="num">{{ line.landedUnitEur | eur }}</span></div>
+                  <div class="stat-row stat-row--total">
+                    <span>{{ perPiece() ? 'Per stuk geland' : 'Totaal regel' }}</span>
+                    <span class="num">{{ perPiece() ? (line.landedUnitEur | eur: 4)
+                        : (line.totalEur | eur) }}</span></div>
                 </div>
               }
             }
@@ -264,11 +272,20 @@ export class PurchaseView {
   readonly statusSteps = [
     { value: 'CONCEPT', label: 'Concept' },
     { value: 'BESTELD', label: 'Besteld' },
-    { value: 'ONDERWEG', label: 'Onderweg' },
     { value: 'ONTVANGEN', label: 'Ontvangen' },
   ];
 
   readonly showMoney = computed(() => this.privacy.showPurchase());
+
+  /** Cost breakdown as totals or per piece. */
+  readonly perPiece = signal(false);
+
+  /** Two decimals for totals, four for per-piece - tiny numbers need them. */
+  readonly decimals = computed(() => this.perPiece() ? 4 : 2);
+
+  amt(value: number, line: { quantity: number }): number {
+    return this.perPiece() && line.quantity > 0 ? value / line.quantity : value;
+  }
 
   /** Which product line shows its cost build-up; null is all folded. */
   readonly openLine = signal<number | null>(null);
@@ -301,6 +318,8 @@ export class PurchaseView {
   }
 
   stepIndex(status: string): number {
+    /* Legacy in-transit orders read as Besteld; the step itself is gone. */
+    if (status === 'ONDERWEG') status = 'BESTELD';
     return this.statusSteps.findIndex((step) => step.value === status);
   }
 

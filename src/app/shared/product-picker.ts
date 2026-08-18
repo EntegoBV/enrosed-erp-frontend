@@ -127,6 +127,14 @@ import { EurPipe, NumPipe } from './pipes';
               <div class="empty">
                 <div class="empty__title">Niets gevonden</div>
                 <div class="empty__text">Probeer een deel van de naam, de SKU of een barcode.</div>
+                @if (allowCreate() && query().trim().length >= 2) {
+                  <!-- Straight from the gap to a new product: at a fair the
+                       article in your hand often is not in the system yet. -->
+                  <button class="btn btn--primary mt-8" type="button"
+                          (click)="create.emit(query().trim())">
+                    + „{{ query().trim() }}" aanmaken en toevoegen
+                  </button>
+                }
               </div>
             }
           </div>
@@ -202,6 +210,9 @@ export class ProductPicker implements OnDestroy {
 
   readonly picked = output<{ product: Product; quantity: number }>();
   readonly cancelled = output<void>();
+  /** When on, an empty search offers creating the product right there. */
+  readonly allowCreate = input(false);
+  readonly create = output<string>();
 
   readonly query = signal('');
   readonly chosen = signal<Product | null>(null);
