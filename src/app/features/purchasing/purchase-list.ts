@@ -7,12 +7,13 @@ import { PageHeader } from '../../shared/page-header';
 import { containerLabel } from '../../core/api/geo';
 import { Privacy } from '../../core/api/privacy';
 import { Sheet, Ui } from '../../shared/ui';
+import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
 @Component({
   selector: 'app-purchase-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, FormsModule, PageHeader, Sheet, EurPipe, NumPipe, CbmPipe, DateNlPipe],
+  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, EurPipe, NumPipe, CbmPipe, DateNlPipe],
   template: `
     <app-page-header title="Inkoop" [subtitle]="orders().length + ' containercalculaties'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
@@ -55,15 +56,19 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
             <span class="list-item__chev">›</span>
           </a>
         } @empty {
+          @if (loading()) {
+            <app-skeleton kind="list" [rows]="4" />
+          } @else {
           <div class="empty">
             <div class="empty__icon">▩</div>
-            <div class="empty__title">{{ loading() ? 'Laden…' : 'Nog geen inkooporders' }}</div>
+            <div class="empty__title">Nog geen inkooporders</div>
             @if (!loading()) {
               <button class="btn btn--primary" type="button" (click)="startNew()">
                 Nieuwe calculatie
               </button>
             }
           </div>
+          }
         }
       </div></div>
     </div>
@@ -128,6 +133,10 @@ export class PurchaseList {
     this.suppliers.set(suppliers);
     this.chosen.set(suppliers[0]?.id ?? null);
     this.loading.set(false);
+    if (this.picking() && !suppliers.length) {
+      this.picking.set(false);
+      this.ui.toast('Maak eerst een leverancier aan', 'err');
+    }
   }
 
   supplierName(id: number): string {
@@ -135,7 +144,9 @@ export class PurchaseList {
   }
 
   startNew(): void {
-    if (!this.suppliers().length) {
+    /* Only judge the supplier list once it is actually loaded - an
+       in-flight empty list is not "no suppliers". */
+    if (!this.loading() && !this.suppliers().length) {
       this.ui.toast('Maak eerst een leverancier aan', 'err');
       return;
     }
@@ -148,6 +159,6 @@ export class PurchaseList {
     const view = await this.sourcing.createPurchaseOrder(
       supplierId, this.cnyToUsd(), this.usdToEur(), 10);
     this.picking.set(false);
-    await this.router.navigate(['/purchasing', view.order.id]);
+    await this.router.navigate(['/purchasing', view.order.id, 'edit']);
   }
 }

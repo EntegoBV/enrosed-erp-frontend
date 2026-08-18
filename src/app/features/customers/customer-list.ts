@@ -5,6 +5,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES } from '../../core/api/models';
 import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { PageHeader } from '../../shared/page-header';
+import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 
 function blank(countryCode: string): Customer {
@@ -18,7 +19,7 @@ function blank(countryCode: string): Customer {
 @Component({
   selector: 'app-customer-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, Sheet],
+  imports: [Skeleton, FormsModule, PageHeader, Sheet],
   template: `
     <app-page-header title="Klanten" [subtitle]="filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -47,8 +48,12 @@ function blank(countryCode: string): Customer {
                     (click)="newOrder(customer)">Order</button>
           </div>
         } @empty {
-          <div class="empty"><div class="empty__title">
-            {{ loading() ? 'Laden…' : 'Geen klanten gevonden' }}</div></div>
+          @if (loading()) {
+            <app-skeleton kind="list" [rows]="4" />
+          } @else {
+            <div class="empty"><div class="empty__title">
+              Geen klanten gevonden</div></div>
+          }
         }
       </div></div>
     </div>

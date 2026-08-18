@@ -260,6 +260,13 @@ export interface SalesOrderLine {
   deliveryWeek: string | null;
 }
 
+/** A hand-built pallet: label plus product/carton assignments. */
+export interface OrderPallet {
+  id: number | null;
+  label: string;
+  items: { productId: number; cartons: number }[];
+}
+
 export interface SalesOrder {
   id: number;
   number: string;
@@ -294,6 +301,8 @@ export interface SalesOrder {
   /** Own freight amount instead of the country rate; empty means: charge the rate. */
   manualFreightEur: number | null;
   lines: SalesOrderLine[];
+  /** Hand-built pallet layout; empty means the calculated stacking applies. */
+  pallets: OrderPallet[];
 }
 
 export interface PricedLine {
@@ -333,6 +342,8 @@ export interface PricedOrder {
   lines: PricedLine[];
   totals: {
     pieces: number; cartons: number; palletsStrict: number; palletsOptimised: number;
+    /** Hand-built pallets (0 = calculated stacking) and cartons on no pallet. */
+    palletsManual: number; unassignedCartons: number;
     cbm: number; weightKg: number;
     gross: number; lineDiscountTotal: number; subtotal: number;
     orderDiscountPercent: number; orderDiscountAmount: number;

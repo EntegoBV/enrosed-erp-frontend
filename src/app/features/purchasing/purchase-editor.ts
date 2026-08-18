@@ -39,7 +39,14 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
 
       <div class="content">
         <div class="card">
-          <div class="card__head"><h2>Order</h2></div>
+          <div class="card__head card__head--toggle" (click)="toggleSection('order')">
+            <h2>Order</h2>
+            @if (!sectionOpen('order')) {
+              <span class="card__summary">{{ orderSummary() }}</span>
+            } @else { <span class="spacer"></span> }
+            <span class="card__chev" [class.card__chev--open]="sectionOpen('order')">›</span>
+          </div>
+          <div class="collapse" [class.collapse--open]="sectionOpen('order')"><div class="collapse__inner">
           <div class="card__body"><div class="form-grid">
             <div class="field"><label for="po-alias">Alias <span class="opt"></span></label>
               <input class="input" id="po-alias" [ngModel]="data.order.alias"
@@ -81,10 +88,18 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
               <input class="input" id="po-notes" [ngModel]="data.order.notes"
                      (ngModelChange)="patch({ notes: $event })" /></div>
           </div></div>
+          </div></div>
         </div>
 
         <div class="card">
-          <div class="card__head"><h2>Koersen &amp; kosten</h2></div>
+          <div class="card__head card__head--toggle" (click)="toggleSection('costs')">
+            <h2>Koersen &amp; kosten</h2>
+            @if (!sectionOpen('costs')) {
+              <span class="card__summary">{{ costsSummary() }}</span>
+            } @else { <span class="spacer"></span> }
+            <span class="card__chev" [class.card__chev--open]="sectionOpen('costs')">›</span>
+          </div>
+          <div class="collapse" [class.collapse--open]="sectionOpen('costs')"><div class="collapse__inner">
           <div class="card__body">
             <div class="form-grid">
               <div class="field"><label for="r-cny">Koers RMB → USD</label>
@@ -167,6 +182,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
               </div>
             </details>
           </div>
+          </div></div>
         </div>
 
         <div class="card">
@@ -346,6 +362,32 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
   `,
 })
 export class PurchaseEditor {
+  /** Which cards are folded open; the products are the heart of the screen. */
+  readonly openSections = signal(new Set<string>());
+
+  toggleSection(name: string): void {
+    const next = new Set(this.openSections());
+    if (next.has(name)) { next.delete(name); } else { next.add(name); }
+    this.openSections.set(next);
+  }
+
+  sectionOpen(name: string): boolean {
+    return this.openSections().has(name);
+  }
+
+  orderSummary(): string {
+    const data = this.view();
+    if (!data) return '';
+    return [this.supplierName(), containerLabel(data.order.containerType),
+        data.order.destinationPort].filter(Boolean).join(' · ');
+  }
+
+  costsSummary(): string {
+    const data = this.view();
+    if (!data) return '';
+    return `USD ${data.order.usdToEurGoods} · vracht $${data.order.freightUsd}`;
+  }
+
   readonly containerTypes = CONTAINER_TYPES;
   readonly containerLabel = containerLabel;
 
@@ -613,7 +655,7 @@ export class PurchaseEditor {
     try {
       const copy = await this.sourcing.duplicatePurchaseOrder(data.order.id);
       this.ui.toast('Kopie gemaakt: ' + copy.order.number);
-      await this.router.navigate(['/purchasing', copy.order.id]);
+      await this.router.navigate(['/purchasing', copy.order.id, 'edit']);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Kopiëren mislukt'), 'err');
     }

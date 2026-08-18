@@ -1210,3 +1210,164 @@ table.data tfoot td {
   border-radius: var(--r-sm);
   padding: 8px 10px;
 }
+
+/* ------------------------------------------------------------- skeletons */
+/* One shared shimmer so every placeholder on screen breathes in sync. */
+.skel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent,
+      color-mix(in srgb, var(--surface) 65%, transparent), transparent);
+  animation: skel-shimmer 1.4s infinite;
+}
+@keyframes skel-shimmer {
+  to { transform: translateX(100%); }
+}
+.skel--line { height: 13px; }
+.skel--thin { height: 10px; margin-top: 7px; }
+.skel--dot { width: 40px; height: 40px; border-radius: 12px; flex: none; }
+.skel--chip { width: 64px; height: 22px; border-radius: 999px; flex: none; }
+.skel--card { height: 92px; border-radius: var(--r); margin-bottom: 10px; }
+.skel--stat { height: 108px; border-radius: var(--r); }
+.skel-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+}
+.skel-row__body { flex: 1; min-width: 0; }
+.skel-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; }
+}
+
+/* --------------------------------------------------- collapsible cards */
+/* The grid-rows trick animates to auto height without measuring. */
+.card__head--toggle { cursor: pointer; user-select: none; gap: 8px; }
+.card__head--toggle:active { background: var(--surface-2); }
+.card__summary {
+  font-size: 12.5px; color: var(--muted); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; flex: 1; text-align: right;
+}
+.card__chev {
+  color: var(--muted); font-size: 13px; flex: none;
+  transition: transform 0.25s ease; display: inline-block;
+}
+.card__chev--open { transform: rotate(90deg); }
+.collapse {
+  display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+.collapse--open { grid-template-rows: 1fr; }
+.collapse > .collapse__inner { overflow: hidden; min-height: 0; }
+.collapse--open > .collapse__inner { overflow: visible; }
+
+/* ------------------------------------------------------------- pallets */
+.pallet {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  margin-bottom: 10px;
+  background: var(--surface);
+  animation: pallet-in 0.25s ease;
+}
+@keyframes pallet-in { from { opacity: 0; transform: translateY(4px); } }
+.pallet__head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.pallet__label {
+  flex: 1; min-width: 0;
+  border: 0; background: transparent;
+  font: inherit; font-weight: 700; font-size: 14px; color: var(--ink);
+  padding: 4px 2px;
+}
+.pallet__label:focus { outline: none; border-bottom: 1px dashed var(--accent); }
+.pallet__count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.pallet__tool {
+  border: 0; background: transparent; color: var(--muted);
+  min-width: 32px; min-height: 32px; border-radius: 8px;
+  font-size: 14px; cursor: pointer;
+}
+.pallet__tool:active { background: var(--surface-2); }
+.pallet__tool:disabled { opacity: 0.3; }
+.pallet__item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.pallet__item:last-child { border-bottom: 0; }
+.pallet__item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pallet__cartons {
+  width: 64px; text-align: right;
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  padding: 5px 8px; font: inherit; font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+.pallet__add { padding: 8px 10px; }
+.pallet-warn {
+  background: var(--warn-soft, #fdf3e2);
+  border: 1px solid #f0dcbc;
+  color: var(--warn, #a85e10);
+  border-radius: var(--r-sm);
+  padding: 9px 12px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+/* ------------------------------------------------------ motion language */
+/* One entrance curve for the whole app: content rises softly into place.
+   Route changes recreate .content, so every page gets it for free. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+}
+.content { animation: rise 0.3s ease both; }
+.anim-rise { animation: rise 0.35s ease both; }
+.anim-stagger > * { animation: rise 0.4s ease both; }
+.anim-stagger > *:nth-child(1) { animation-delay: 0.03s; }
+.anim-stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.anim-stagger > *:nth-child(3) { animation-delay: 0.13s; }
+.anim-stagger > *:nth-child(4) { animation-delay: 0.18s; }
+.anim-stagger > *:nth-child(5) { animation-delay: 0.23s; }
+.anim-stagger > *:nth-child(6) { animation-delay: 0.28s; }
+
+.btn { transition: transform 0.12s ease, filter 0.12s ease; }
+.btn:active { transform: scale(0.96); }
+.kpi { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.kpi:active { transform: scale(0.97); }
+@media (hover: hover) {
+  .kpi:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgb(26 22 20 / 8%); }
+  .list-item { transition: background 0.15s ease; }
+  .list-item:hover { background: var(--surface-2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .content, .anim-rise, .anim-stagger > * { animation: none; }
+  .btn, .kpi { transition: none; }
+}
+
+/* Decorative rose watermark on the hero tile: drawn, not loaded. */
+.kpi__rose {
+  position: absolute; right: -14px; bottom: -18px;
+  width: 110px; height: 110px; opacity: 0.14; pointer-events: none;
+}
+.kpi--dark { position: relative; overflow: hidden;
+  background: linear-gradient(135deg, #241a17 0%, #3a2024 55%, #4d222c 100%); }
+
+/* KPI tiles double as links; keep them reading as tiles. */
+a.kpi { text-decoration: none; color: inherit; display: block; }
+a.kpi .kpi__label, a.kpi .kpi__value, a.kpi .kpi__meta { text-decoration: none; }
+a.kpi--dark { color: #fff; }

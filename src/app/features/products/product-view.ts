@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
+import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { Category, Product, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
@@ -22,7 +23,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe],
+  imports: [RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe],
   template: `
     @if (product(); as product) {
       <app-page-header [title]="product.name" [subtitle]="product.sku ?? ''"
@@ -36,9 +37,13 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
         @if (product.photos.length) {
           <div class="view__photos">
             @for (photo of product.photos; track photo.id) {
-              <img class="view__photo" [appAuthSrc]="photo.url" [alt]="product.name" />
+              <button class="view__photo-btn" type="button" (click)="lightbox.set($index)"
+                      [attr.aria-label]="'Foto ' + ($index + 1) + ' vergroten'">
+                <img class="view__photo" [appAuthSrc]="photo.url" [alt]="product.name" />
+              </button>
             }
           </div>
+          <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
         }
 
         <div class="card">
@@ -146,6 +151,11 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
       padding-bottom: 6px; margin-bottom: 16px;
       -webkit-overflow-scrolling: touch;
     }
+    .view__photo-btn {
+      border: 0; padding: 0; background: none; cursor: zoom-in; flex: 0 0 auto;
+      transition: transform 0.15s ease;
+    }
+    .view__photo-btn:active { transform: scale(0.96); }
     .view__photo {
       width: 108px; height: 108px; flex: 0 0 auto;
       object-fit: cover; border-radius: var(--r-sm);
@@ -155,6 +165,9 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
   `,
 })
 export class ProductView {
+  /** Which photo the lightbox shows; -1 is closed. */
+  readonly lightbox = signal(-1);
+
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly route = inject(ActivatedRoute);

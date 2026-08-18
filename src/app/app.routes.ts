@@ -53,10 +53,15 @@ export const routes: Routes = [
       import('./features/purchasing/purchase-list').then((m) => m.PurchaseList),
   },
   {
-    path: 'purchasing/:id',
+    path: 'purchasing/:id/edit',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/purchasing/purchase-editor').then((m) => m.PurchaseEditor),
+  },
+  {
+    path: 'purchasing/:id',
+    loadComponent: () =>
+      import('./features/purchasing/purchase-view').then((m) => m.PurchaseView),
   },
   {
     path: 'suppliers',

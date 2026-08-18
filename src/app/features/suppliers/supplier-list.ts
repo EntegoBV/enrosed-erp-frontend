@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { Skeleton } from '../../shared/skeleton';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Supplier } from '../../core/api/models';
@@ -16,7 +17,7 @@ function blank(): Supplier {
 @Component({
   selector: 'app-supplier-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, Sheet],
+  imports: [Skeleton, FormsModule, PageHeader, Sheet],
   template: `
     <app-page-header title="Leveranciers" [subtitle]="suppliers().length + ' leveranciers'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -44,7 +45,7 @@ function blank(): Supplier {
           </button>
         } @empty {
           <div class="empty"><div class="empty__title">
-            {{ loading() ? 'Laden…' : 'Nog geen leveranciers' }}</div></div>
+            @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Nog geen leveranciers }</div></div>
         }
       </div></div>
     </div>

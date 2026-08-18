@@ -7,13 +7,14 @@ import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { WorkQueue } from '../../core/api/work-queue';
 import { Sheet, Ui } from '../../shared/ui';
+import { Skeleton } from '../../shared/skeleton';
 import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
 
 @Component({
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, FormsModule, PageHeader, Sheet, EurPipe, NumPipe, PctPipe, DateNlPipe],
+  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, EurPipe, NumPipe, PctPipe, DateNlPipe],
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
@@ -96,15 +97,17 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
               <span class="list-item__chev">›</span>
             </a>
           } @empty {
-            <div class="empty">
-              <div class="empty__icon">▤</div>
-              <div class="empty__title">{{ loading() ? 'Laden…' : 'Geen orders' }}</div>
-              @if (!loading()) {
+            @if (loading()) {
+              <app-skeleton kind="list" [rows]="5" />
+            } @else {
+              <div class="empty">
+                <div class="empty__icon">▤</div>
+                <div class="empty__title">Geen orders</div>
                 <button class="btn btn--primary" type="button" (click)="startNew()">
                   Nieuwe order
                 </button>
-              }
-            </div>
+              </div>
+            }
           }
         </div>
       </div>
@@ -115,7 +118,9 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
     @if (picking()) {
       <app-sheet title="Nieuwe verkooporder" (closed)="picking.set(false)">
         <div body>
-          @if (!addingCustomer()) {
+          @if (loading()) {
+            <app-skeleton kind="lines" [rows]="3" />
+          } @else if (!addingCustomer()) {
             <div class="field">
               <label class="req" for="so-customer">Klant</label>
               <select class="select" id="so-customer" [ngModel]="chosen()"
@@ -239,6 +244,12 @@ export class SalesList {
     this.countries.set(countries);
     this.chosen.set(customers[0]?.id ?? null);
     this.loading.set(false);
+    /* The user may already be in the new-order sheet; now the real
+       decision can be made. */
+    if (this.picking() && !customers.length) {
+      this.addingCustomer.set(true);
+      this.startAddCustomer();
+    }
   }
 
   startAddCustomer(): void {
@@ -308,10 +319,13 @@ export class SalesList {
   todo = actionNeeded;
 
   startNew(): void {
-    /* No customers? Then straight to the add form, instead of sending away. */
+    this.picking.set(true);
+    /* While the data is still loading the sheet shows a skeleton; load()
+       makes the no-customers-yet call once it actually knows. Deciding on
+       an empty in-flight list opened the add-customer form by accident. */
+    if (this.loading()) return;
     this.addingCustomer.set(!this.customers().length);
     if (this.addingCustomer()) this.startAddCustomer();
-    this.picking.set(true);
   }
 
   async create(): Promise<void> {

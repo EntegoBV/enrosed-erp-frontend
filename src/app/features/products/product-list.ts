@@ -6,13 +6,14 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Product, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { Skeleton } from '../../shared/skeleton';
 import { Privacy } from '../../core/api/privacy';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NumPipe, PctPipe],
+  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NumPipe, PctPipe],
   template: `
     <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
       <a class="btn btn--sm" routerLink="/catalog-export">Catalogus PDF</a>
@@ -73,15 +74,15 @@ import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
               <span class="list-item__chev">›</span>
             </a>
           } @empty {
-            <div class="empty">
-              <div class="empty__icon">◈</div>
-              <div class="empty__title">
-                {{ loading() ? 'Laden…' : 'Geen producten gevonden' }}
-              </div>
-              @if (!loading()) {
+            @if (loading()) {
+              <app-skeleton kind="list" [rows]="6" />
+            } @else {
+              <div class="empty">
+                <div class="empty__icon">◈</div>
+                <div class="empty__title">Geen producten gevonden</div>
                 <a class="btn btn--primary" routerLink="/products/new">Product toevoegen</a>
-              }
-            </div>
+              </div>
+            }
           }
         </div>
       </div>

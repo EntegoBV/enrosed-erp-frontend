@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
-import {
+import { OrderPallet,
   Country, Customer, LANGUAGES, LanguageCode, MarkupMode, Product, QuoteEvent, QuoteRevision,
   SalesOrder, SalesOrderView,
 } from '../../core/api/models';
@@ -145,7 +145,14 @@ import { STATUS_LABEL, statusClass } from './quote-status';
 
         <!-- ==================================== order -->
         <div class="card">
-          <div class="card__head"><h2>Order</h2></div>
+          <div class="card__head card__head--toggle" (click)="toggle('order')">
+            <h2>Order</h2>
+            @if (!isOpen('order')) {
+              <span class="card__summary">{{ orderSummary() }}</span>
+            } @else { <span class="spacer"></span> }
+            <span class="card__chev" [class.card__chev--open]="isOpen('order')">›</span>
+          </div>
+          <div class="collapse" [class.collapse--open]="isOpen('order')"><div class="collapse__inner">
           <div class="card__body">
             <div class="form-grid">
               <div class="field span-2">
@@ -222,11 +229,19 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               </div>
             </div>
           </div>
+          </div></div>
         </div>
 
         <!-- ==================================== price build-up -->
         <div class="card">
-          <div class="card__head"><h2>Prijsopbouw</h2></div>
+          <div class="card__head card__head--toggle" (click)="toggle('pricing')">
+            <h2>Prijsopbouw</h2>
+            @if (!isOpen('pricing')) {
+              <span class="card__summary">{{ pricingSummary() }}</span>
+            } @else { <span class="spacer"></span> }
+            <span class="card__chev" [class.card__chev--open]="isOpen('pricing')">›</span>
+          </div>
+          <div class="collapse" [class.collapse--open]="isOpen('pricing')"><div class="collapse__inner">
           <div class="card__body">
             <div class="chips" style="margin-bottom:10px">
               <button class="chip" type="button"
@@ -278,6 +293,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               </div>
             </details>
           </div>
+          </div></div>
         </div>
 
         <!-- ==================================== lines -->
@@ -427,6 +443,89 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </div>
         </div>
 
+        <!-- ==================================== pallets -->
+        <div class="card">
+          <div class="card__head card__head--toggle" (click)="toggle('pallets')">
+            <h2>Pallets</h2>
+            @if (!isOpen('pallets')) {
+              <span class="card__summary">{{ palletSummary() }}</span>
+            } @else { <span class="spacer"></span> }
+            <span class="card__chev" [class.card__chev--open]="isOpen('pallets')">›</span>
+          </div>
+          <div class="collapse" [class.collapse--open]="isOpen('pallets')"><div class="collapse__inner">
+          <div class="card__body">
+            @if (!data.order.pallets.length) {
+              <p class="small muted" style="margin-top:0">
+                De rekenmodule stapelt automatisch: {{ data.priced.totals.palletsStrict }}
+                pallet(s), elk product apart. Zelf indelen kan ook — fragiel glas bovenaan,
+                dozen van één klant samen — en dan telt de vracht jouw indeling.
+              </p>
+              <div class="row" style="gap:8px">
+                <button class="btn btn--block" type="button" (click)="autoLayout()">
+                  Start van de berekening
+                </button>
+                <button class="btn btn--block btn--quiet" type="button" (click)="addPallet()">
+                  Start leeg
+                </button>
+              </div>
+            } @else {
+              @if (data.priced.totals.unassignedCartons > 0) {
+                <div class="pallet-warn">
+                  {{ data.priced.totals.unassignedCartons }} dozen staan nog op geen pallet —
+                  de vracht telt alleen de pallets hieronder.
+                </div>
+              }
+              @for (pallet of data.order.pallets; track $index) {
+                <div class="pallet">
+                  <div class="pallet__head">
+                    <button class="pallet__tool" type="button" [disabled]="$index === 0"
+                            (click)="movePallet($index, -1)" aria-label="Omhoog">↑</button>
+                    <button class="pallet__tool" type="button"
+                            [disabled]="$index === data.order.pallets.length - 1"
+                            (click)="movePallet($index, 1)" aria-label="Omlaag">↓</button>
+                    <input class="pallet__label" [value]="pallet.label"
+                           placeholder="Pallet {{ $index + 1 }}"
+                           (change)="renamePallet($index, $any($event.target).value)" />
+                    <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
+                    <button class="pallet__tool" type="button" (click)="removePallet($index)"
+                            aria-label="Pallet verwijderen">✕</button>
+                  </div>
+                  @for (item of pallet.items; track item.productId) {
+                    <div class="pallet__item">
+                      <span class="pallet__item-name">{{ productLabel(item.productId) }}</span>
+                      <input class="pallet__cartons" type="number" min="0" inputmode="numeric"
+                             [value]="item.cartons"
+                             (change)="setItemCartons($index, item.productId, +$any($event.target).value)" />
+                      <span class="tiny muted">dozen</span>
+                    </div>
+                  }
+                  @if (assignable($index).length) {
+                    <div class="pallet__add">
+                      <select class="select"
+                              (change)="addItem($index, +$any($event.target).value);
+                                        $any($event.target).selectedIndex = 0">
+                        <option value="" selected disabled>+ Product op deze pallet…</option>
+                        @for (option of assignable($index); track option.productId) {
+                          <option [value]="option.productId">
+                            {{ option.description }} — nog {{ option.remaining }} dozen
+                          </option>
+                        }
+                      </select>
+                    </div>
+                  }
+                </div>
+              }
+              <div class="row" style="gap:8px">
+                <button class="btn btn--block" type="button" (click)="addPallet()">+ Pallet</button>
+                <button class="btn btn--block btn--quiet" type="button" (click)="clearPallets()">
+                  Terug naar automatisch
+                </button>
+              </div>
+            }
+          </div>
+          </div></div>
+        </div>
+
         <!-- ==================================== totals -->
         <div class="card">
           <div class="card__head"><h2>Totaal</h2></div>
@@ -444,7 +543,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                  destination outside the usual rates, or a customer arranging
                  pickup, is unknown at drafting time. -->
             <div class="stat-row">
-              <span>Vracht ({{ data.priced.totals.palletsStrict }} pallet)</span>
+              <span>Vracht ({{ palletCountLabel(data.priced.totals) }})</span>
               <span class="num">
                 @if (data.order.freight === 'TE_BEPALEN') {
                   <span class="danger-text">nog te bepalen</span>
@@ -592,7 +691,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
       <div class="action-bar">
         <div class="action-bar__total">
           <div class="action-bar__label">
-            Totaal · {{ data.priced.totals.palletsStrict }} pallet(s)
+            Totaal · {{ palletCountLabel(data.priced.totals) }}
             @if (privacy.showPurchase()) { · marge {{ data.priced.totals.marginPct | pct: 0 }} }
           </div>
           <div class="action-bar__value">{{ data.priced.totals.total | eur: 0 }}</div>
@@ -1120,4 +1219,171 @@ export class SalesEditor {
       },
     );
   }
+  /* --------------------------------------------------------- sections */
+
+  /** Which cards are folded open; the lines are the heart, so they start open. */
+  readonly openSections = signal(new Set<string>(['lines']));
+
+  toggle(name: string): void {
+    const next = new Set(this.openSections());
+    if (next.has(name)) { next.delete(name); } else { next.add(name); }
+    this.openSections.set(next);
+  }
+
+  isOpen(name: string): boolean {
+    return this.openSections().has(name);
+  }
+
+  orderSummary(): string {
+    const data = this.view();
+    if (!data) return '';
+    const customer = this.customers().find((c) => c.id === data.order.customerId);
+    const parts = [customer?.company ?? 'Geen klant', data.order.countryCode ?? '',
+        data.order.incoterm ?? ''].filter(Boolean);
+    return parts.join(' · ');
+  }
+
+  pricingSummary(): string {
+    const data = this.view();
+    if (!data) return '';
+    const markup = data.order.markupMode === 'ORDER'
+        ? `${data.order.orderMarkupPct ?? 0}% op ordertotaal` : 'Opslag per product';
+    const extra = data.order.extraDiscountPct
+        ? ` · ${data.order.extraDiscountLabel || 'extra korting'}` : '';
+    return markup + extra;
+  }
+
+  palletSummary(): string {
+    const data = this.view();
+    if (!data) return '';
+    const totals = data.priced.totals;
+    if (!totals.palletsManual) return `automatisch · ${totals.palletsStrict} pallet(s)`;
+    const rest = totals.unassignedCartons > 0
+        ? ` · ${totals.unassignedCartons} dozen los` : '';
+    return `${totals.palletsManual} pallet(s) · handmatig${rest}`;
+  }
+
+  /* ---------------------------------------------------------- pallets */
+
+  palletCountLabel(totals: { palletsManual: number; palletsStrict: number }): string {
+    return totals.palletsManual > 0
+        ? `${totals.palletsManual} pallet(s) · handmatig`
+        : `${totals.palletsStrict} pallet(s)`;
+  }
+
+  palletCartons(pallet: OrderPallet): number {
+    return pallet.items.reduce((sum, item) => sum + item.cartons, 0);
+  }
+
+  productLabel(productId: number): string {
+    return this.view()?.priced.lines
+        .find((line) => line.productId === productId)?.description ?? `#${productId}`;
+  }
+
+  /** Cartons of this product already on any pallet. */
+  private assignedFor(productId: number): number {
+    return (this.view()?.order.pallets ?? [])
+        .flatMap((pallet) => pallet.items)
+        .filter((item) => item.productId === productId)
+        .reduce((sum, item) => sum + item.cartons, 0);
+  }
+
+  /** Lines with cartons left to place, excluding ones already on this pallet. */
+  assignable(palletIndex: number): { productId: number; description: string; remaining: number }[] {
+    const data = this.view();
+    if (!data) return [];
+    const onThisPallet = new Set(
+        data.order.pallets[palletIndex]?.items.map((item) => item.productId) ?? []);
+    return data.priced.lines
+        .filter((line) => !onThisPallet.has(line.productId))
+        .map((line) => ({
+          productId: line.productId,
+          description: line.description,
+          remaining: line.cartons - this.assignedFor(line.productId),
+        }))
+        .filter((line) => line.remaining > 0);
+  }
+
+  private patchPallets(pallets: OrderPallet[]): void {
+    this.patch({ pallets });
+  }
+
+  private clonePallets(): OrderPallet[] {
+    return (this.view()?.order.pallets ?? []).map((pallet) => ({
+      ...pallet, items: pallet.items.map((item) => ({ ...item })),
+    }));
+  }
+
+  /** Starts from the calculator's strict stacking, ready to rearrange. */
+  autoLayout(): void {
+    const data = this.view();
+    if (!data) return;
+    const pallets: OrderPallet[] = [];
+    for (const line of data.priced.lines) {
+      const per = Math.max(1, line.cartonsPerPallet);
+      let left = line.cartons;
+      while (left > 0) {
+        const take = Math.min(per, left);
+        pallets.push({ id: null, label: '', items: [{ productId: line.productId, cartons: take }] });
+        left -= take;
+      }
+    }
+    this.patchPallets(pallets.map((pallet, index) => ({ ...pallet, label: `Pallet ${index + 1}` })));
+  }
+
+  addPallet(): void {
+    const pallets = this.clonePallets();
+    pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, items: [] });
+    this.patchPallets(pallets);
+  }
+
+  removePallet(index: number): void {
+    const pallets = this.clonePallets();
+    pallets.splice(index, 1);
+    this.patchPallets(pallets);
+  }
+
+  movePallet(index: number, direction: number): void {
+    const pallets = this.clonePallets();
+    const target = index + direction;
+    if (target < 0 || target >= pallets.length) return;
+    [pallets[index], pallets[target]] = [pallets[target], pallets[index]];
+    this.patchPallets(pallets);
+  }
+
+  renamePallet(index: number, label: string): void {
+    const pallets = this.clonePallets();
+    pallets[index] = { ...pallets[index], label: label.trim() };
+    this.patchPallets(pallets);
+  }
+
+  /** New product on a pallet starts with everything that is still loose. */
+  addItem(palletIndex: number, productId: number): void {
+    if (!productId) return;
+    const line = this.view()?.priced.lines.find((l) => l.productId === productId);
+    if (!line) return;
+    const remaining = line.cartons - this.assignedFor(productId);
+    if (remaining <= 0) return;
+    const pallets = this.clonePallets();
+    pallets[palletIndex].items.push({ productId, cartons: remaining });
+    this.patchPallets(pallets);
+  }
+
+  setItemCartons(palletIndex: number, productId: number, cartons: number): void {
+    const pallets = this.clonePallets();
+    const items = pallets[palletIndex].items;
+    const index = items.findIndex((item) => item.productId === productId);
+    if (index < 0) return;
+    if (!cartons || cartons <= 0) {
+      items.splice(index, 1);
+    } else {
+      items[index] = { ...items[index], cartons: Math.floor(cartons) };
+    }
+    this.patchPallets(pallets);
+  }
+
+  clearPallets(): void {
+    this.patchPallets([]);
+  }
+
 }

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Skeleton } from '../../shared/skeleton';
 import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -13,18 +14,31 @@ import { containerLabel } from '../../core/api/geo';
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EurPipe, NumPipe, PctPipe],
+  imports: [Skeleton, RouterLink, PageHeader, EurPipe, NumPipe, PctPipe],
   template: `
-    <app-page-header title="Dashboard" subtitle="Verkoop en inkoop in één blik">
+    <app-page-header [title]="greeting()" [subtitle]="today()">
     </app-page-header>
 
-    <div class="content">
+    <!-- Sections stack: future blocks (stock levels, reports, fair
+         planning) slot in as another .section-title + card pair. -->
+    <div class="content anim-stagger">
+      @if (loading()) {
+        <app-skeleton kind="stats" [rows]="4" />
+      } @else {
       <div class="kpis">
-        <div class="kpi kpi--dark">
+        <a class="kpi kpi--dark" routerLink="/sales">
+          <svg class="kpi__rose" viewBox="0 0 24 24" fill="none" stroke="#e8b7c0"
+               stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="3.2" />
+            <path d="M12 11.2V20" />
+            <path d="M12 16.5c-2.6 0-4.5-1.3-4.8-3.4 2.6 0 4.4 1.2 4.8 3.4z" />
+            <path d="M12 16.5c2.6 0 4.5-1.3 4.8-3.4-2.6 0-4.4 1.2-4.8 3.4z" />
+            <path d="M12 8m-1.4 0a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0" />
+          </svg>
           <div class="kpi__label">Open verkoop</div>
           <div class="kpi__value">{{ openValue() | eur: 0 }}</div>
           <div class="kpi__meta">{{ openOrders().length }} order(s)</div>
-        </div>
+        </a>
         @if (privacy.showPurchase()) {
           <div class="kpi">
             <div class="kpi__label">Brutomarge</div>
@@ -48,12 +62,13 @@ import { containerLabel } from '../../core/api/geo';
             <div class="kpi__meta">onderweg</div>
           </div>
         }
-        <div class="kpi">
+        <a class="kpi" routerLink="/products">
           <div class="kpi__label">Catalogus</div>
           <div class="kpi__value">{{ productCount() }}</div>
           <div class="kpi__meta">producten</div>
-        </div>
+        </a>
       </div>
+      }
 
       @if (revisions().length) {
         <a class="alert alert--warn mt-12" routerLink="/revisions"
@@ -95,7 +110,7 @@ import { containerLabel } from '../../core/api/geo';
             </a>
           } @empty {
             <div class="empty"><div class="empty__title">
-              {{ loading() ? 'Laden…' : 'Nog geen verkooporders' }}</div></div>
+              Nog geen verkooporders</div></div>
           }
         </div>
       </div>
@@ -122,7 +137,7 @@ import { containerLabel } from '../../core/api/geo';
             </a>
           } @empty {
             <div class="empty"><div class="empty__title">
-              {{ loading() ? 'Laden…' : 'Nog geen inkooporders' }}</div></div>
+              Nog geen inkooporders</div></div>
           }
         </div>
       </div>
@@ -131,6 +146,20 @@ import { containerLabel } from '../../core/api/geo';
 })
 export class Dashboard {
   readonly containerLabel = containerLabel;
+
+  /** Warm at nine in the morning, calm at eleven at night. */
+  greeting(): string {
+    const hour = new Date().getHours();
+    if (hour < 6) return 'Nog wakker?';
+    if (hour < 12) return 'Goeiemorgen';
+    if (hour < 18) return 'Goeiemiddag';
+    return 'Goeieavond';
+  }
+
+  today(): string {
+    return new Intl.DateTimeFormat('nl-BE',
+        { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+  }
 
   private readonly sales = inject(SalesApi);
   private readonly sourcing = inject(SourcingApi);

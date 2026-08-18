@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Skeleton } from '../../shared/skeleton';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
@@ -18,7 +19,7 @@ import { Ui } from '../../shared/ui';
 @Component({
   selector: 'app-catalog-export',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, AuthImage],
+  imports: [Skeleton, FormsModule, PageHeader, AuthImage],
   template: `
     <app-page-header title="Catalogus exporteren"
                      [subtitle]="selected().size + ' van ' + products().length + ' geselecteerd'"
@@ -99,7 +100,7 @@ import { Ui } from '../../shared/ui';
               </label>
             } @empty {
               <div class="empty"><div class="empty__title">
-                {{ loading() ? 'Laden…' : 'Geen producten' }}</div></div>
+                @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen producten }</div></div>
             }
           </div>
         </div>

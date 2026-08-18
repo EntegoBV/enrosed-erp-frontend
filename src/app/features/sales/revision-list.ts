@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { Skeleton } from '../../shared/skeleton';
 import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { QuoteRevision, SalesOrderView } from '../../core/api/models';
@@ -9,7 +10,7 @@ import { DateNlPipe, NumPipe } from '../../shared/pipes';
 @Component({
   selector: 'app-revision-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, NumPipe, DateNlPipe],
+  imports: [Skeleton, RouterLink, PageHeader, NumPipe, DateNlPipe],
   template: `
     <app-page-header title="Wijzigingen"
                      [subtitle]="revisions().length + ' voorstel(len) in behandeling'" />
@@ -45,7 +46,7 @@ import { DateNlPipe, NumPipe } from '../../shared/pipes';
             <div class="empty">
               <div class="empty__icon">⇄</div>
               <div class="empty__title">
-                {{ loading() ? 'Laden…' : 'Geen openstaande voorstellen' }}
+                @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen openstaande voorstellen }
               </div>
               <div class="empty__text">
                 Zodra een klant een wijziging voorstelt verschijnt die hier.
