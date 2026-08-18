@@ -1544,3 +1544,23 @@ button.market-row {
 }
 button.market-row:disabled { cursor: default; }
 .market-row__label app-icon { vertical-align: -2px; color: var(--muted); margin-left: 2px; }
+
+/* FX rows stack: header line, then a half-year chart with month marks. */
+.market-row--stack { display: block; }
+.market-row__top { display: flex; align-items: center; gap: 10px; }
+.fx-chart { display: block; width: 100%; color: var(--accent); margin-top: 6px; }
+.fx-chart svg { width: 100%; height: 42px; }
+.fx-months {
+  position: relative; height: 26px; margin-top: 2px;
+}
+.fx-months span {
+  position: absolute; top: 0;
+  font-size: 9.5px; color: var(--muted);
+  border-left: 1px solid var(--line-strong);
+  padding-left: 3px; line-height: 13px;
+}
+.fx-months em {
+  display: block; font-style: normal;
+  font-size: 9px; font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
+}

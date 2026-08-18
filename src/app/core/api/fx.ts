@@ -10,7 +10,8 @@ import { Injectable, signal } from '@angular/core';
  * wrong, absent beats stale.
  */
 export interface FxSeries {
-  /** Oldest to newest, roughly the past month of working days. */
+  /** Oldest to newest, roughly the past half year of working days. */
+  dates: string[];
   usd: number[];
   cny: number[];
   latestUsd: number;
@@ -29,7 +30,7 @@ export class Fx {
   async load(): Promise<void> {
     try {
       const from = new Date();
-      from.setDate(from.getDate() - 31);
+      from.setDate(from.getDate() - 182);
       const start = from.toISOString().slice(0, 10);
       const response = await fetch(
         `https://api.frankfurter.dev/v1/${start}..?base=EUR&symbols=USD,CNY`);
@@ -41,15 +42,23 @@ export class Fx {
       const usd = days.map((day) => data.rates[day].USD);
       const cny = days.map((day) => data.rates[day].CNY);
       this.series.set({
+        dates: days,
         usd, cny,
         latestUsd: usd[usd.length - 1],
         latestCny: cny[cny.length - 1],
-        usdChangePct: ((usd[usd.length - 1] - usd[0]) / usd[0]) * 100,
-        cnyChangePct: ((cny[cny.length - 1] - cny[0]) / cny[0]) * 100,
+        /* The hint still reads "vs a month ago": compare against roughly
+           22 working days back, not the start of the half-year window. */
+        usdChangePct: monthChange(usd),
+        cnyChangePct: monthChange(cny),
         asOf: days[days.length - 1],
       });
     } catch {
       this.failed.set(true);
     }
   }
+}
+
+function monthChange(series: number[]): number {
+  const back = Math.max(0, series.length - 23);
+  return ((series[series.length - 1] - series[back]) / series[back]) * 100;
 }

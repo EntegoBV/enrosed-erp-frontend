@@ -90,13 +90,6 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         </a>
       }
 
-      <div class="section-title">Snel starten</div>
-      <div class="row wrap">
-        <a class="btn btn--primary" routerLink="/sales">+ Verkooporder</a>
-        <a class="btn" routerLink="/purchasing">+ Inkoopcalculatie</a>
-        <a class="btn" routerLink="/products">Producten</a>
-      </div>
-
       <div class="section-title">Markt</div>
       @if (fx.series(); as rates) {
         <div class="card">
@@ -107,31 +100,49 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
           <div class="card__body">
             <!-- Tap flips the pair: sometimes you think in "what does one
                  dollar cost", sometimes in "what does my euro buy". -->
-            <button class="market-row market-row--btn" type="button"
+            <!-- Tap flips the pair; the chart spans half a year with month
+                 marks - a bare line said "something moved" but not when. -->
+            <button class="market-row market-row--btn market-row--stack" type="button"
                     (click)="flipUsd.set(!flipUsd())">
-              <div>
+              <div class="market-row__top">
                 <div class="market-row__label">{{ flipUsd() ? 'USD → EUR' : 'EUR → USD' }}
                   <app-icon name="exchange" [size]="12" /></div>
+                <span class="spacer"></span>
                 <div class="market-row__value num">
                   {{ fxValue(rates.latestUsd, flipUsd()) | num: 4 }}</div>
+                <span class="badge" [class]="fxPct(rates.usd, flipUsd()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates.usd, flipUsd()) | num: 1 }}%
+                </span>
               </div>
-              <app-sparkline class="market-row__spark" [values]="fxSeries(rates.usd, flipUsd())" />
-              <span class="badge" [class]="fxPct(rates.usd, flipUsd()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                {{ fxPct(rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates.usd, flipUsd()) | num: 1 }}%
-              </span>
+              <app-sparkline class="fx-chart" [values]="fxSeries(rates.usd, flipUsd())"
+                             [width]="320" [height]="42" />
+              <div class="fx-months">
+                @for (tick of monthTicks(rates.dates, rates.usd, flipUsd()); track tick.pct) {
+                  <span [style.left.%]="tick.pct">{{ tick.label }}
+                    <em>{{ tick.value | num: 2 }}</em></span>
+                }
+              </div>
             </button>
-            <button class="market-row market-row--btn" type="button"
+            <button class="market-row market-row--btn market-row--stack" type="button"
                     (click)="flipCny.set(!flipCny())">
-              <div>
+              <div class="market-row__top">
                 <div class="market-row__label">{{ flipCny() ? 'CNY → EUR' : 'EUR → CNY' }}
                   <app-icon name="exchange" [size]="12" /></div>
+                <span class="spacer"></span>
                 <div class="market-row__value num">
                   {{ fxValue(rates.latestCny, flipCny()) | num: 4 }}</div>
+                <span class="badge" [class]="fxPct(rates.cny, flipCny()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates.cny, flipCny()) | num: 1 }}%
+                </span>
               </div>
-              <app-sparkline class="market-row__spark" [values]="fxSeries(rates.cny, flipCny())" />
-              <span class="badge" [class]="fxPct(rates.cny, flipCny()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                {{ fxPct(rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates.cny, flipCny()) | num: 1 }}%
-              </span>
+              <app-sparkline class="fx-chart" [values]="fxSeries(rates.cny, flipCny())"
+                             [width]="320" [height]="42" />
+              <div class="fx-months">
+                @for (tick of monthTicks(rates.dates, rates.cny, flipCny()); track tick.pct) {
+                  <span [style.left.%]="tick.pct">{{ tick.label }}
+                    <em>{{ tick.value | num: 2 }}</em></span>
+                }
+              </div>
             </button>
             <!-- What the movement MEANS for this business, not just the
                  number: purchasing pays in dollars and yuan. -->
@@ -329,9 +340,37 @@ export class Dashboard {
     return flipped ? series.map((value) => 1 / value) : series;
   }
 
+  /**
+   * Change over the past month (~22 working days), matching the hint's
+   * horizon - the chart tells the half-year story, the number tells what
+   * changed since the last container was priced.
+   */
   fxPct(series: number[], flipped: boolean): number {
-    const values = this.fxSeries(series, flipped);
+    const values = this.fxSeries(series, flipped).slice(-23);
     return ((values[values.length - 1] - values[0]) / values[0]) * 100;
+  }
+
+  /**
+   * Where each month starts in the series, with the rate it opened on -
+   * the mark answers "when" and "at what" in one glance.
+   */
+  monthTicks(dates: string[], series: number[], flipped: boolean)
+      : { pct: number; label: string; value: number }[] {
+    const names = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun',
+        'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+    const values = this.fxSeries(series, flipped);
+    const ticks: { pct: number; label: string; value: number }[] = [];
+    for (let i = 1; i < dates.length; i++) {
+      if (dates[i].slice(5, 7) !== dates[i - 1].slice(5, 7)) {
+        ticks.push({
+          pct: (i / (dates.length - 1)) * 100,
+          label: names[+dates[i].slice(5, 7) - 1],
+          value: values[i],
+        });
+      }
+    }
+    /* The last tick sits too close to the right edge to stay readable. */
+    return ticks.filter((tick) => tick.pct < 90);
   }
 
   openHistory(code: string, label: string, unit: string): void {
@@ -391,14 +430,17 @@ export class Dashboard {
   fxHint(rates: { usdChangePct: number; cnyChangePct: number }): string {
     const pct = Math.abs(rates.usdChangePct).toFixed(1).replace('.', ',');
     if (rates.usdChangePct >= 1) {
-      return `De euro koopt ${pct}% meer dollar dan een maand geleden — ` +
-          `inkopen in USD én in China (yuan volgt de dollar) is nu goedkoper.`;
+      return `Gunstig om in te kopen: dezelfde EXW-prijs in dollar of yuan kost nu ` +
+          `±${pct}% minder euro's dan een maand geleden — en de zeevracht (in USD) ` +
+          `wordt evenveel goedkoper. Zelfde budget, meer product.`;
     }
     if (rates.usdChangePct <= -1) {
-      return `De dollar werd ${pct}% duurder tegenover de euro — ` +
-          `Chinese inkoop kost nu meer euro's dan een maand geleden.`;
+      return `Let op bij inkopen: dezelfde EXW-prijs in dollar of yuan kost nu ` +
+          `±${pct}% meer euro's dan een maand geleden — ook de zeevracht (in USD) ` +
+          `wordt duurder in euro.`;
     }
-    return 'De koersen bewogen amper de afgelopen maand — geen effect op de inkoopprijs.';
+    return `Stabiele koersen: EXW-prijzen in dollar of yuan kosten vandaag ongeveer ` +
+        `evenveel euro's als een maand geleden.`;
   }
   purchaseStatusLabel(status: string): string {
     return PURCHASE_STATUS_LABEL[status] ?? status;
