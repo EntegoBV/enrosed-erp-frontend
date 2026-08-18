@@ -6,7 +6,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { saveBlob } from '../../core/api/download';
 import { CONTAINER_TYPES, DESTINATION_PORTS, containerLabel, countryName } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
-import { Allocation, Product, PurchaseOrder, PurchaseOrderView, Supplier } from '../../core/api/models';
+import { Allocation, Currency, Product, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, Supplier } from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -99,7 +99,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                 <input class="input num right" id="r-transport" type="number" step="0.0001"
                        [ngModel]="data.order.usdToEurTransport"
                        (ngModelChange)="patch({ usdToEurTransport: +$event })" /></div>
-              <div class="field"><label class="req" for="c-freight">Zeevracht tot haven</label>
+              <div class="field"><label class="req" for="c-freight">Zeevracht tot bestemmingshaven</label>
                 <div class="input-affix">
                   <input class="input num right" id="c-freight" type="number" step="50"
                          [ngModel]="data.order.freightUsd"
@@ -126,13 +126,15 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                   @for (port of ports; track port) { <option [value]="port">{{ port }}</option> }
                 </select></div>
               <div class="field"><label for="c-dest">
-                  Lokale kosten tot {{ data.order.destinationPort || 'Rotterdam' }}</label>
+                  Lokale kosten {{ data.order.destinationPort || 'Rotterdam' }} → magazijn</label>
                 <div class="input-affix">
                   <input class="input num right" id="c-dest" type="number" step="25"
                          [ngModel]="data.order.destinationCostsEur"
                          (ngModelChange)="patch({ destinationCostsEur: +$event })" />
                   <span class="input-affix__suffix">EUR</span></div>
-                <span class="hint">Ná de invoer, dus <b>geen invoerrecht</b> over.</span></div>
+                <span class="hint">
+                  Trucking en afhandeling van de haven naar het magazijn.
+                  Ná de invoer, dus <b>geen invoerrecht</b> over.</span></div>
               <div class="field"><label for="c-duty">Invoerrecht zonder HS-code</label>
                 <div class="input-affix">
                   <input class="input num right" id="c-duty" type="number" step="0.5"
@@ -187,18 +189,38 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                           (click)="removeLine(line.productId)">✕</button>
                 </div>
 
-                <div class="field">
-                  <label [attr.for]="'qty-' + line.productId">Aantal stuks</label>
-                  <input class="input input--sm num right" [id]="'qty-' + line.productId"
-                         type="number" min="0" step="1" [ngModel]="line.quantity"
-                         (ngModelChange)="setQuantity(line.productId, +$event)" />
-                  @if (shortShipped(line.productId); as ordered) {
-                    <!-- Containers regularly arrive short; the order remembers
-                         what was agreed so the difference stays explainable. -->
-                    <span class="hint warn-text">
-                      Besteld {{ ordered | num }} → nu {{ line.quantity | num }}
-                    </span>
-                  }
+                <div class="form-grid">
+                  <div class="field">
+                    <label [attr.for]="'qty-' + line.productId">Aantal stuks</label>
+                    <input class="input input--sm num right" [id]="'qty-' + line.productId"
+                           type="number" min="0" step="1" [ngModel]="line.quantity"
+                           (ngModelChange)="setQuantity(line.productId, +$event)" />
+                    @if (shortShipped(line.productId); as ordered) {
+                      <!-- Containers regularly arrive short; the order remembers
+                           what was agreed so the difference stays explainable. -->
+                      <span class="hint warn-text">
+                        Besteld {{ ordered | num }} → nu {{ line.quantity | num }}
+                      </span>
+                    }
+                  </div>
+                  <div class="field">
+                    <label [attr.for]="'exw-' + line.productId">EXW-prijs per stuk</label>
+                    <div class="input-affix">
+                      <input class="input input--sm num right" [id]="'exw-' + line.productId"
+                             type="number" min="0" step="0.01"
+                             [ngModel]="orderLine(line.productId)?.exwPrice"
+                             [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | num: 4) : ''"
+                             (ngModelChange)="setExwPrice(line.productId, $event)" />
+                      <select class="input-affix__suffix" aria-label="Munt EXW-prijs"
+                              style="border-radius:0 var(--r-sm) var(--r-sm) 0"
+                              [ngModel]="orderLine(line.productId)?.exwCurrency ?? 'USD'"
+                              (ngModelChange)="setExwCurrency(line.productId, $event)">
+                        <option value="USD">USD</option><option value="CNY">CNY</option>
+                        <option value="EUR">EUR</option>
+                      </select>
+                    </div>
+                    <span class="hint">Leeg = de prijs van het product zelf.</span>
+                  </div>
                 </div>
 
                 <div style="background:var(--surface-2);border:1px solid var(--line);
@@ -219,7 +241,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                     <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
                       <span class="tiny">({{ line.dutySource }})</span></span>
                     <span class="num">{{ line.dutyEur | eur }}</span></div>
-                  <div class="stat-row stat-row--muted"><span>Lokale kosten tot {{ view()?.order?.destinationPort || 'Rotterdam' }}</span>
+                  <div class="stat-row stat-row--muted"><span>Lokale kosten {{ view()?.order?.destinationPort || 'Rotterdam' }} → magazijn</span>
                     <span class="num">{{ line.destinationEur | eur }}</span></div>
                   <div class="stat-row" style="border-top:1px solid var(--line);
                        margin-top:4px;padding-top:8px;font-weight:680">
@@ -257,7 +279,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                 <span class="tiny muted">gemiddeld
                   {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
               <span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-            <div class="stat-row"><span>Lokale kosten tot {{ view()?.order?.destinationPort || 'Rotterdam' }}</span>
+            <div class="stat-row"><span>Lokale kosten {{ view()?.order?.destinationPort || 'Rotterdam' }} → magazijn</span>
               <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
             @if (data.costing.totals.extraRevenueEur) {
               <div class="stat-row"><span>Extra gewenste opbrengst</span>
@@ -485,12 +507,38 @@ export class PurchaseEditor {
   }
 
   setQuantity(productId: number, quantity: number): void {
+    this.setLine(productId, { quantity });
+  }
+
+  /** De bestelregel achter een calculatieregel, met de ruwe invoer. */
+  orderLine(productId: number): PurchaseOrderLine | undefined {
+    return this.view()?.order.lines.find((line) => line.productId === productId);
+  }
+
+  /**
+   * Prijs op de beurs of aan de fabriekstafel afgesproken? Dan hier invullen,
+   * in de munt waarin ze genoemd werd. Leegmaken geeft de regel terug aan de
+   * prijs die op het product zelf staat.
+   */
+  setExwPrice(productId: number, raw: unknown): void {
+    const empty = raw === null || raw === undefined || raw === '';
+    const line = this.orderLine(productId);
+    this.setLine(productId, empty
+      ? { exwPrice: null, exwCurrency: null }
+      : { exwPrice: +String(raw), exwCurrency: line?.exwCurrency ?? 'USD' });
+  }
+
+  setExwCurrency(productId: number, currency: Currency): void {
+    this.setLine(productId, { exwCurrency: currency });
+  }
+
+  private setLine(productId: number, patch: Partial<PurchaseOrderLine>): void {
     const data = this.view();
     if (!data) return;
     void this.save({
       ...data.order,
       lines: data.order.lines.map((line) =>
-        line.productId === productId ? { ...line, quantity } : line),
+        line.productId === productId ? { ...line, ...patch } : line),
     });
   }
 
