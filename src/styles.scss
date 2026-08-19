@@ -1596,3 +1596,26 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
 
 /* Breathing room between the pallet explainer and its two start options. */
 .pallet-intro { margin: 0 0 16px; line-height: 1.55; }
+
+
+/* ------------------------------------------------ buying-desk analysis */
+.market-analysis {
+  margin-top: 4px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+}
+.market-analysis__verdict {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.market-analysis__lead { font-size: 13px; font-weight: 600; }
+.market-analysis__line {
+  display: flex; gap: 8px;
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-2);
+  padding: 3px 0;
+}
+.market-analysis__dot {
+  flex: none; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent); margin-top: 7px;
+}

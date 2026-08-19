@@ -4,7 +4,7 @@ import { Sparkline } from '../../shared/sparkline';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/ui';
 import { FormsModule } from '@angular/forms';
-import { Fx } from '../../core/api/fx';
+import { Fx, FxSeries } from '../../core/api/fx';
 import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -144,9 +144,45 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 }
               </div>
             </button>
+            <!-- The cross that CNY-quoted EXW prices actually follow: a
+                 weakening yuan against the dollar is a second discount on
+                 top of the euro effect. -->
+            <button class="market-row market-row--btn market-row--stack" type="button"
+                    (click)="flipCross.set(!flipCross())">
+              <div class="market-row__top">
+                <div class="market-row__label">{{ flipCross() ? 'CNY → USD' : 'USD → CNY' }}
+                  <app-icon name="exchange" [size]="12" /></div>
+                <span class="spacer"></span>
+                <div class="market-row__value num">
+                  {{ fxValue(latestCross(rates), flipCross()) | num: 4 }}</div>
+                <span class="badge" [class]="fxPct(crossOf(rates), flipCross()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(crossOf(rates), flipCross()) >= 0 ? '+' : '' }}{{ fxPct(crossOf(rates), flipCross()) | num: 1 }}%
+                </span>
+              </div>
+              <app-sparkline class="fx-chart" [values]="fxSeries(crossOf(rates), flipCross())"
+                             [width]="320" [height]="42" />
+              <div class="fx-months">
+                @for (tick of monthTicks(rates.dates, crossOf(rates), flipCross()); track tick.pct) {
+                  <span [style.left.%]="tick.pct">{{ tick.label }}
+                    <em>{{ tick.value | num: 2 }}</em></span>
+                }
+              </div>
+            </button>
             <!-- What the movement MEANS for this business, not just the
                  number: purchasing pays in dollars and yuan. -->
-            <p class="market-hint">{{ fxHint(rates) }}</p>
+            @if (analysis(rates); as a) {
+              <div class="market-analysis">
+                <div class="market-analysis__verdict">
+                  <span class="badge" [class]="'badge--' + a.tone">{{ a.verdict }}</span>
+                  <span class="market-analysis__lead">{{ a.lead }}</span>
+                </div>
+                @for (line of a.lines; track line) {
+                  <div class="market-analysis__line">
+                    <span class="market-analysis__dot"></span>{{ line }}
+                  </div>
+                }
+              </div>
+            }
           </div>
         </div>
       } @else if (!fx.failed()) {
@@ -427,20 +463,122 @@ export class Dashboard {
    * quote USD or CNY, and the yuan shadows the dollar closely enough that
    * one story covers both.
    */
-  fxHint(rates: { usdChangePct: number; cnyChangePct: number }): string {
-    const pct = Math.abs(rates.usdChangePct).toFixed(1).replace('.', ',');
-    if (rates.usdChangePct >= 1) {
-      return `Gunstig om in te kopen: dezelfde EXW-prijs in dollar of yuan kost nu ` +
-          `±${pct}% minder euro's dan een maand geleden — en de zeevracht (in USD) ` +
-          `wordt evenveel goedkoper. Zelfde budget, meer product.`;
+  readonly flipCross = signal(false);
+
+  /* Derived once per fetched series; the template asks for it often. */
+  private readonly crossCache = new WeakMap<FxSeries, number[]>();
+
+  /** CNY per USD - the cross a Chinese EXW price actually moves with. */
+  crossOf(rates: FxSeries): number[] {
+    let cross = this.crossCache.get(rates);
+    if (!cross) {
+      cross = rates.cny.map((value, i) => value / rates.usd[i]);
+      this.crossCache.set(rates, cross);
     }
-    if (rates.usdChangePct <= -1) {
-      return `Let op bij inkopen: dezelfde EXW-prijs in dollar of yuan kost nu ` +
-          `±${pct}% meer euro's dan een maand geleden — ook de zeevracht (in USD) ` +
-          `wordt duurder in euro.`;
+    return cross;
+  }
+
+  latestCross(rates: FxSeries): number {
+    return rates.latestCny / rates.latestUsd;
+  }
+
+  /**
+   * The buying-desk analysis, computed fresh from the ECB series (and the
+   * freight log when it has data). No external "analyst" API: every signal
+   * here is arithmetic on primary data, so it needs no keys, cannot go
+   * stale behind a paywall, and every sentence can be traced to a number.
+   *
+   * Signals:
+   * - dollar over one month and over the visible half year;
+   * - where today sits in the 6-month range (bottom = dollar at its
+   *   cheapest point, a concrete buying moment);
+   * - the USD/CNY cross (EURCNY / EURUSD): when the yuan weakens against
+   *   the dollar, CNY-quoted EXW prices get an extra discount on top;
+   * - what the month's move means per $10,000 of purchasing;
+   * - the freight trend from the WCI log, because a cheap dollar can be
+   *   eaten by an expensive container.
+   */
+  analysis(rates: FxSeries): {
+    verdict: string; tone: string; lead: string; lines: string[];
+  } | null {
+    const usd = rates.usd;
+    if (usd.length < 30) return null;
+    const pct = (series: number[], back: number) => {
+      const i = Math.max(0, series.length - 1 - back);
+      return ((series[series.length - 1] - series[i]) / series[i]) * 100;
+    };
+    const nl = (value: number, decimals = 1) =>
+        value.toFixed(decimals).replace('.', ',');
+
+    const usdMonth = pct(usd, 22);
+    const usdHalf = pct(usd, usd.length - 1);
+    const min = Math.min(...usd);
+    const max = Math.max(...usd);
+    /* 1 = euro at its strongest (dollar cheapest), 0 = weakest. */
+    const rangePos = max === min ? 0.5 : (usd[usd.length - 1] - min) / (max - min);
+
+    /* Rising = yuan weakening against the dollar. */
+    const crossMonth = pct(this.crossOf(rates), 22);
+
+    const lines: string[] = [];
+    lines.push(`Dollar: ${nl(Math.abs(usdMonth))}% ` +
+        `${usdMonth >= 0 ? 'goedkoper' : 'duurder'} dan een maand geleden, ` +
+        `${nl(Math.abs(usdHalf))}% ${usdHalf >= 0 ? 'goedkoper' : 'duurder'} ` +
+        `dan een half jaar terug.`);
+
+    if (rangePos >= 0.85) {
+      lines.push(`De euro staat op zijn sterkste punt in zes maanden — ` +
+          `dollarinkoop is nu op zijn goedkoopst binnen die periode.`);
+    } else if (rangePos <= 0.15) {
+      lines.push(`De euro staat op zijn zwakste punt in zes maanden — ` +
+          `wie kan wachten, koopt waarschijnlijk beter later.`);
     }
-    return `Stabiele koersen: EXW-prijzen in dollar of yuan kosten vandaag ongeveer ` +
-        `evenveel euro's als een maand geleden.`;
+
+    if (Math.abs(crossMonth) >= 0.4) {
+      lines.push(crossMonth > 0
+          ? `Yuan verzwakt ${nl(crossMonth)}% tegen de dollar — EXW-prijzen in ` +
+            `CNY leveren bovenop het dollareffect extra voordeel op.`
+          : `Yuan verstevigt ${nl(Math.abs(crossMonth))}% tegen de dollar — het ` +
+            `voordeel geldt vooral voor EXW in USD, minder voor CNY.`);
+    }
+
+    const perTenK = Math.abs(usdMonth) * 10000 / 100 /
+        rates.latestUsd;
+    if (Math.abs(usdMonth) >= 0.3) {
+      lines.push(`Per $10.000 aan inkoop scheelt de maandbeweging zo'n ` +
+          `€ ${Math.round(perTenK)}.`);
+    }
+
+    /* Freight from the WCI log, when the scraper or the owner fed it. */
+    const wci = this.seriesFor('WCI SHA-RTM');
+    if (wci.length > 1) {
+      const freight = ((wci[wci.length - 1] - wci[wci.length - 2]) /
+          wci[wci.length - 2]) * 100;
+      if (Math.abs(freight) >= 1) {
+        lines.push(`Zeevracht Shanghai → Rotterdam: ` +
+            `${freight <= 0 ? '−' : '+'}${nl(Math.abs(freight))}% vs de vorige ` +
+            `notering (${'$'}${Math.round(wci[wci.length - 1]).toLocaleString('nl-BE')}/40ft).`);
+      }
+    }
+
+    /* Verdict: strong signals first, then the range as tiebreaker. */
+    let verdict: string;
+    let tone: string;
+    let lead: string;
+    if (usdMonth >= 1 || (usdMonth >= 0.3 && rangePos >= 0.8)) {
+      verdict = 'Gunstig koopmoment';
+      tone = 'ok';
+      lead = 'De euro koopt merkbaar meer dollar dan vorige maand.';
+    } else if (usdMonth <= -1) {
+      verdict = 'Ongunstig';
+      tone = 'warn';
+      lead = 'Dezelfde EXW-prijs kost nu duidelijk meer euro\u2019s dan vorige maand.';
+    } else {
+      verdict = 'Neutraal';
+      tone = 'neutral';
+      lead = 'Geen uitgesproken voor- of nadeel tegenover vorige maand.';
+    }
+    return { verdict, tone, lead, lines };
   }
   purchaseStatusLabel(status: string): string {
     return PURCHASE_STATUS_LABEL[status] ?? status;
