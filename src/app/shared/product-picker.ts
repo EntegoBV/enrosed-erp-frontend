@@ -398,7 +398,9 @@ export class ProductPicker implements OnDestroy {
 
   choose(product: Product): void {
     this.chosen.set(product);
-    this.carton.reset((product.carton.piecesPerCarton ?? 1) * 10);
+    /* One carton as the starting point: at the table you type the real
+       number anyway, and ten boxes preloaded reads as a pushy default. */
+    this.carton.reset(product.carton.piecesPerCarton ?? 1);
   }
 
   clear(): void {

@@ -292,8 +292,8 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <div class="field">
                   <label for="so-extra-label">Omschrijving</label>
                   <input class="input" id="so-extra-label" placeholder="Beurskorting"
-                         [ngModel]="data.order.extraDiscountLabel"
-                         (ngModelChange)="patch({ extraDiscountLabel: $event })" />
+                         [value]="data.order.extraDiscountLabel ?? ''"
+                         (change)="patch({ extraDiscountLabel: $any($event.target).value })" />
                 </div>
               </div>
             </details>
@@ -748,6 +748,9 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <span class="spacer"></span>
                 <button class="btn btn--sm" type="button" (click)="autoLayout()">
                   Herbereken
+                </button>
+                <button class="btn btn--sm btn--quiet" type="button" (click)="emptyPallets()">
+                  Alles legen
                 </button>
               </div>
               @for (pallet of data.order.pallets; track $index) {
@@ -1513,6 +1516,11 @@ export class SalesEditor {
       }
       return { ...order, pallets };
     });
+  }
+
+  /** Keep the pallets, drop everything on them - restack from scratch. */
+  emptyPallets(): void {
+    this.mutatePallets((pallets) => pallets.map((pallet) => ({ ...pallet, items: [] })));
   }
 
   addPallet(): void {

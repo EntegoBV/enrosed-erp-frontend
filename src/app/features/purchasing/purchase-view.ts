@@ -294,7 +294,7 @@ export class PurchaseView {
   readonly showMoney = computed(() => this.privacy.showPurchase());
 
   /** Cost breakdown as totals or per piece. */
-  readonly perPiece = signal(false);
+  readonly perPiece = signal(true);
 
   /** Two decimals for totals, four for per-piece - tiny numbers need them. */
   readonly decimals = computed(() => this.perPiece() ? 4 : 2);

@@ -395,7 +395,9 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
 })
 export class PurchaseEditor {
   /** Cost breakdowns as totals or per piece; one switch for all lines. */
-  readonly perPiece = signal(false);
+  /* Per piece is what the buying conversation is about; totals are the
+     exception you toggle to. */
+  readonly perPiece = signal(true);
 
   /** Every line amount through one gate, so the toggle cannot miss one. */
   /** Two decimals for totals, four for per-piece - tiny numbers need them. */

@@ -37,7 +37,14 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
 
       <div class="card mt-12"><div class="list">
         @for (row of orders(); track row.order.id) {
-          <a class="list-item" [routerLink]="['/purchasing', row.order.id]">
+          <!-- iOS pattern: swipe the row left to reveal delete - no need to
+               open a calculation just to get rid of it. -->
+          <div class="swipe" [class.swipe--open]="swiped() === row.order.id">
+            <a class="list-item swipe__row" [routerLink]="['/purchasing', row.order.id]"
+               (touchstart)="swipeStart($event, row.order.id)"
+               (touchmove)="swipeMove($event, row.order.id)"
+               (touchend)="swipeEnd()"
+               (click)="blockWhenSwiped($event)">
             <div class="list-item__body">
               <div class="list-item__title">
                 @if (row.order.alias) {
@@ -58,7 +65,16 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               <span class="badge badge--neutral">{{ statusLabel(row.order.status) }}</span>
             </div>
             <span class="list-item__chev">›</span>
-          </a>
+            </a>
+            <button class="swipe__delete" type="button" (click)="remove(row.order.id, row.order.number)"
+                    aria-label="Calculatie verwijderen">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+              </svg>
+            </button>
+          </div>
         } @empty {
           @if (loading()) {
             <app-skeleton kind="list" [rows]="4" />
@@ -149,6 +165,52 @@ export class PurchaseList {
 
   supplierName(id: number): string {
     return this.suppliers().find((supplier) => supplier.id === id)?.name ?? 'Onbekend';
+  }
+
+  /** Which row shows its delete button; only one at a time, like iOS. */
+  readonly swiped = signal<number | null>(null);
+  private touchX = 0;
+  private touchY = 0;
+  private swipeHandled = false;
+
+  swipeStart(event: TouchEvent, id: number): void {
+    this.touchX = event.touches[0].clientX;
+    this.touchY = event.touches[0].clientY;
+    this.swipeHandled = false;
+    if (this.swiped() !== null && this.swiped() !== id) this.swiped.set(null);
+  }
+
+  swipeMove(event: TouchEvent, id: number): void {
+    if (this.swipeHandled) return;
+    const dx = event.touches[0].clientX - this.touchX;
+    const dy = event.touches[0].clientY - this.touchY;
+    if (Math.abs(dx) < 24 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    this.swipeHandled = true;
+    this.swiped.set(dx < 0 ? id : null);
+  }
+
+  swipeEnd(): void { /* the decision falls in swipeMove */ }
+
+  /** A tap on a swiped-open row folds it back instead of navigating. */
+  blockWhenSwiped(event: Event): void {
+    if (this.swiped() !== null || this.swipeHandled) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!this.swipeHandled) this.swiped.set(null);
+    }
+  }
+
+  remove(id: number, number: string): void {
+    this.ui.confirm(
+      { title: 'Calculatie verwijderen',
+        message: `Inkooporder <b>${number}</b> verwijderen?`,
+        confirmLabel: 'Verwijderen', danger: true },
+      async () => {
+        await this.sourcing.deletePurchaseOrder(id);
+        this.swiped.set(null);
+        this.orders.set(await this.sourcing.purchaseOrders());
+        this.ui.toast('Calculatie verwijderd');
+      });
   }
 
   startNew(): void {

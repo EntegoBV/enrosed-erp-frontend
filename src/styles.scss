@@ -1564,3 +1564,32 @@ button.market-row:disabled { cursor: default; }
   font-size: 9px; font-variant-numeric: tabular-nums;
   color: color-mix(in srgb, var(--muted) 75%, transparent);
 }
+
+/* ------------------------------------------------ touch behaviour (iOS) */
+/* Double-tap zoom broke steppers and headers; this is an internal tool,
+   pinch-zoom is nobody's workflow here. */
+button, .btn, .pallet__step-btn, .pallet__tool, input, select {
+  touch-action: manipulation;
+}
+.pallet__step-btn, .pallet__tool { user-select: none; -webkit-user-select: none; }
+
+/* Bottom chrome honours the iPhone safe area; buttons under the home
+   indicator did not receive taps. */
+.action-bar { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+.sheet__foot { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+
+/* ------------------------------------------------- swipe-to-delete rows */
+.swipe { position: relative; overflow: hidden; }
+.swipe__row {
+  position: relative; z-index: 1;
+  background: var(--surface);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.swipe--open .swipe__row { transform: translateX(-76px); }
+.swipe__delete {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 76px;
+  border: 0; background: var(--danger, #c0392b); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.swipe__delete:active { filter: brightness(0.9); }
