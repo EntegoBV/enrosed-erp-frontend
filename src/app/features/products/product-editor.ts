@@ -18,7 +18,7 @@ import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { Privacy } from '../../core/api/privacy';
 import { Sheet, Ui } from '../../shared/ui';
-import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS } from '../../core/api/geo';
 
@@ -43,7 +43,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader, PhotoManager, Sheet,
-            EurPipe, NumPipe, PctPipe, CbmPipe],
+            EurPipe, NumPipe, CbmPipe],
   template: `
     <app-page-header
       [title]="isNew() ? 'Nieuw product' : draft().name || 'Product'"
@@ -386,29 +386,51 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <div><h2 id="sales-title">Verkoop</h2><p>Prijsstrategie voor alle kanalen</p></div>
         </div>
         <div class="card__body">
-          <div class="form-grid">
+          <fieldset class="price-method">
+            <legend>Hoe wil je de verkoopprijs bepalen?</legend>
+            <div class="price-method__options" role="group" aria-label="Prijsstrategie">
+              <button type="button"
+                      [class.price-method__active]="priceStrategy() === 'MARKUP'"
+                      [attr.aria-pressed]="priceStrategy() === 'MARKUP'"
+                      (click)="setPriceStrategy('MARKUP')">
+                <b>Kostprijs + opslag</b>
+                <small>Beweegt mee met je kostprijs</small>
+              </button>
+              <button type="button"
+                      [class.price-method__active]="priceStrategy() === 'FIXED'"
+                      [attr.aria-pressed]="priceStrategy() === 'FIXED'"
+                      (click)="setPriceStrategy('FIXED')">
+                <b>Vaste verkoopprijs</b>
+                <small>Blijft hetzelfde bedrag</small>
+              </button>
+            </div>
+          </fieldset>
+
+          @if (priceStrategy() === 'MARKUP') {
             <div class="field">
               <label for="p-markup">Opslag op kostprijs</label>
               <div class="input-affix">
                 <input class="input num right" id="p-markup" type="number" min="0" step="1"
                        inputmode="decimal" [ngModel]="draft().markupPct"
-                       (ngModelChange)="patch({ markupPct: +$event })" />
+                       (ngModelChange)="setMarkup($event)" />
                 <span class="input-affix__suffix">%</span>
               </div>
+              <span class="hint">De verkoopprijs wordt opnieuw berekend als de kostprijs wijzigt.</span>
             </div>
+          } @else {
             <div class="field">
-              <label for="p-price">Vaste verkoopprijs <span class="opt"></span></label>
+              <label class="req" for="p-price">Vaste verkoopprijs per stuk</label>
               <div class="input-affix">
-                <!-- The landed cost sits in the box as placeholder: the number
-                     you price against belongs where your eyes already are. -->
                 <input class="input num right" id="p-price" type="number" min="0" step="0.01"
                        inputmode="decimal" [ngModel]="draft().fixedSalesPriceEur"
                        [placeholder]="draft().landedCostEur
                          ? 'kostprijs ' + (draft().landedCostEur | eur: 2) : ''"
-                       (ngModelChange)="patch({ fixedSalesPriceEur: num($event) })" />
+                       (ngModelChange)="setFixedSalesPrice($event)" />
                 <span class="input-affix__suffix">EUR</span>
               </div>
-              @if (draft().landedCostEur; as landed) {
+              @if ((draft().fixedSalesPriceEur ?? 0) <= 0) {
+                <span class="hint danger-text">Vul een bedrag hoger dan € 0 in.</span>
+              } @else if (draft().landedCostEur; as landed) {
                 @if (draft().fixedSalesPriceEur; as fixed) {
                   <span class="hint"
                         [class.warn-text]="fixed < landed">
@@ -416,30 +438,27 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     @if (fixed < landed) {
                       deze prijs ligt <b>onder kostprijs</b>
                     } @else {
-                      marge {{ fixed - landed | eur: 2 }}
-                      ({{ (fixed - landed) / landed * 100 | num }} %)
+                      marge {{ fixed - landed | eur: 2 }} per stuk
                     }
                   </span>
                 } @else {
-                  <span class="hint">
-                    Kostprijs incl. rechten {{ landed | eur: 2 }} · leeg = kostprijs + opslag
-                  </span>
+                  <span class="hint">Kostprijs incl. rechten {{ landed | eur: 2 }}</span>
                 }
               } @else {
-                <span class="hint">Leeg = kostprijs + opslag</span>
+                <span class="hint">Dit bedrag blijft gelijk als je kostprijs later verandert.</span>
               }
             </div>
-          </div>
+          }
           <div class="price-preview">
             <div>
               <span class="price-preview__label">Catalogusprijs</span>
               <strong class="num">{{ salesPrice() | eur }}</strong>
-              <small>{{ draft().fixedSalesPriceEur ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
+              <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
             </div>
             <div class="price-preview__meta">
               <span>Voorraad <b class="num">{{ draft().stockQuantity | num }}</b></span>
               @if (privacy.showPurchase()) {
-                <span>Marge <b class="num">{{ realisedMargin() | pct: 1 }}</b></span>
+                <span>Marge per stuk <b class="num">{{ unitMargin() | eur }}</b></span>
               }
             </div>
           </div>
@@ -753,6 +772,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       color: #c7bdb7; font-size: 11px; }
     .price-preview__meta b { color: #fff; }
 
+    .price-method { min-width: 0; margin: 0 0 14px; padding: 0; border: 0; }
+    .price-method legend { margin-bottom: 7px; font-weight: 650; }
+    .price-method__options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+      padding: 4px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); }
+    .price-method button { min-width: 0; min-height: 58px; display: flex; flex-direction: column;
+      justify-content: center; gap: 2px; padding: 8px 9px; border: 0; border-radius: 9px;
+      background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+    .price-method button small { font-size: 9.5px; line-height: 1.25; }
+    .price-method .price-method__active { background: var(--surface); color: var(--ink);
+      box-shadow: 0 1px 5px rgb(26 22 20 / 9%); }
+
     .editor-actions { display: grid; gap: 8px; margin-top: 16px; }
     .danger-zone { margin-top: 4px; border: 1px solid var(--line); border-radius: var(--r-sm);
       background: var(--surface); overflow: hidden; }
@@ -841,6 +871,8 @@ export class ProductEditor {
   readonly categories = signal<Category[]>([]);
   readonly hsCodes = signal<HsCode[]>([]);
   readonly saving = signal(false);
+  readonly priceStrategy = signal<'MARKUP' | 'FIXED'>('MARKUP');
+  private readonly lastMarkupPct = signal(45);
   readonly copying = signal(false);
   readonly copyColour = signal('');
   readonly copyCustomColour = signal(false);
@@ -895,7 +927,10 @@ export class ProductEditor {
     effect(() => {
       const routeId = this.id();
       if (routeId && routeId !== 'new') {
-        void this.catalog.product(+routeId).then((product) => this.draft.set(product));
+        void this.catalog.product(+routeId).then((product) => {
+          this.draft.set(product);
+          this.syncPriceStrategy(product);
+        });
       }
     });
   }
@@ -912,6 +947,8 @@ export class ProductEditor {
       const supplierId = this.supplier() ? +this.supplier() : (suppliers[0]?.id ?? null);
       const currency = suppliers.find((s) => s.id === supplierId)?.currency ?? 'USD';
       this.draft.set(blankProduct(supplierId, currency));
+      this.priceStrategy.set('MARKUP');
+      this.lastMarkupPct.set(45);
     }
   }
 
@@ -926,16 +963,13 @@ export class ProductEditor {
 
   readonly salesPrice = computed(() => {
     const product = this.draft();
-    if (product.fixedSalesPriceEur) return product.fixedSalesPriceEur;
+    if (this.priceStrategy() === 'FIXED') return product.fixedSalesPriceEur ?? 0;
     const cost = product.landedCostEur ?? 0;
     return Math.round(cost * (1 + (product.markupPct ?? 0) / 100) * 100) / 100;
   });
 
-  readonly realisedMargin = computed(() => {
-    const price = this.salesPrice();
-    const cost = this.draft().landedCostEur ?? 0;
-    return price > 0 ? ((price - cost) / price) * 100 : 0;
-  });
+  readonly unitMargin = computed(() =>
+    Math.round((this.salesPrice() - (this.draft().landedCostEur ?? 0)) * 100) / 100);
 
   readonly readinessIssues = computed(() => {
     const server = this.draft().publicationIssues ?? [];
@@ -976,6 +1010,52 @@ export class ProductEditor {
 
   patchCarton(changes: Partial<Product['carton']>): void {
     this.draft.update((p) => ({ ...p, carton: { ...p.carton, ...changes } }));
+  }
+
+  setPriceStrategy(strategy: 'MARKUP' | 'FIXED'): void {
+    if (strategy === this.priceStrategy()) return;
+
+    const product = this.draft();
+    if (strategy === 'FIXED') {
+      const currentPrice = this.salesPrice();
+      this.lastMarkupPct.set(product.markupPct ?? 0);
+      this.priceStrategy.set('FIXED');
+      this.patch({
+        markupPct: 0,
+        fixedSalesPriceEur: currentPrice > 0 ? currentPrice : null,
+      });
+      return;
+    }
+
+    const cost = product.landedCostEur ?? 0;
+    const fixedPrice = product.fixedSalesPriceEur ?? 0;
+    const equivalentMarkup = cost > 0 && fixedPrice >= cost
+      ? Math.round(((fixedPrice / cost) - 1) * 10_000) / 100
+      : this.lastMarkupPct();
+    this.lastMarkupPct.set(equivalentMarkup);
+    this.priceStrategy.set('MARKUP');
+    this.patch({ markupPct: equivalentMarkup, fixedSalesPriceEur: null });
+  }
+
+  setMarkup(value: unknown): void {
+    const markupPct = Math.max(0, this.num(value) ?? 0);
+    this.lastMarkupPct.set(markupPct);
+    this.patch({ markupPct, fixedSalesPriceEur: null });
+  }
+
+  setFixedSalesPrice(value: unknown): void {
+    this.patch({ fixedSalesPriceEur: this.num(value), markupPct: 0 });
+  }
+
+  private syncPriceStrategy(product: Product): void {
+    if (product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0) {
+      this.priceStrategy.set('FIXED');
+      if (product.markupPct !== 0) this.patch({ markupPct: 0 });
+      return;
+    }
+    this.priceStrategy.set('MARKUP');
+    this.lastMarkupPct.set(product.markupPct ?? 0);
+    if (product.fixedSalesPriceEur !== null) this.patch({ fixedSalesPriceEur: null });
   }
 
   /** Photo endpoints return a full server product; keep concurrent form edits intact. */
@@ -1097,6 +1177,12 @@ export class ProductEditor {
 
   async save(): Promise<void> {
     if (this.saving() || this.photoUploading()) return;
+    if (this.priceStrategy() === 'FIXED'
+        && (this.draft().fixedSalesPriceEur ?? 0) <= 0) {
+      this.ui.toast('Vul een vaste verkoopprijs hoger dan € 0 in', 'err');
+      this.scrollToSection('sales');
+      return;
+    }
     const wasNew = this.isNew();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saving.set(true);

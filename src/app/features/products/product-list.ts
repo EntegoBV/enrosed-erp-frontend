@@ -7,12 +7,12 @@ import { Category, Product } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Privacy } from '../../core/api/privacy';
-import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe } from '../../shared/pipes';
 
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NumPipe, PctPipe],
+  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NumPipe],
   template: `
     <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
       <a class="btn btn--sm" routerLink="/catalog-export">Catalogus PDF</a>
@@ -109,15 +109,20 @@ import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
                   <span [class.warn-text]="product.stockQuantity <= 0">
                     voorraad {{ product.stockQuantity | num }}
                   </span>
-                  @if (privacy.showPurchase()) {
-                    @if (product.landedCostEur) {
-                      · inkoop {{ product.landedCostEur | eur: 2 }} · opslag
-                      {{ product.markupPct | pct: 0 }}
-                    } @else {
-                      · <span class="warn-text">nog geen kostprijs</span>
-                    }
-                  }
                 </div>
+                @if (privacy.showPurchase()) {
+                  <div class="list-item__pricing" aria-label="Interne prijsinformatie">
+                    <span class="master-chip master-chip--internal">intern</span>
+                    <span>{{ pricingStrategyLabel(product) }}</span>
+                    @if (unitMargin(product); as margin) {
+                      <span class="num" [class.warn-text]="margin.eur < 0">
+                        Marge {{ margin.eur | eur: 2 }}/stuk
+                      </span>
+                    } @else {
+                      <span class="warn-text">Marge niet beschikbaar</span>
+                    }
+                  </div>
+                }
               </div>
               <div class="list-item__end">
                 <div class="strong num">{{ salesPrice(product) | eur }}</div>
@@ -206,11 +211,17 @@ import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
     .list-item__title-row .list-item__title { min-width: 0; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap; }
     .list-item__channels { display: flex; gap: 5px; margin-top: 3px; }
+    .list-item__pricing {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px;
+      margin-top: 4px; color: var(--muted); font-size: 10.5px; line-height: 1.35;
+    }
+    .list-item__pricing > span:not(:first-child) { padding-left: 7px; border-left: 1px solid var(--line); }
     .master-chip { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 18px;
       padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 750;
       letter-spacing: .03em; text-transform: uppercase; }
     .master-chip--live { color: var(--ok); background: var(--ok-soft); }
     .master-chip--warn { color: var(--warn); background: var(--warn-soft); }
+    .master-chip--internal { color: var(--warn); background: var(--warn-soft); }
     .master-chip--muted { color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); }
   `,
 })
@@ -276,11 +287,27 @@ export class ProductList {
     return `${trim(lengthCm)} × ${trim(widthCm)} × ${trim(heightCm)} cm`;
   }
 
-  /** The server only prices the catalogue on an order; here we show the markup. */
+  /** Mirrors the server's active product pricing rule for list previews. */
   salesPrice(product: Product): number {
-    if (product.fixedSalesPriceEur) return product.fixedSalesPriceEur;
+    if (this.hasFixedSalesPrice(product)) return product.fixedSalesPriceEur!;
     const cost = product.landedCostEur ?? 0;
     return Math.round(cost * (1 + (product.markupPct ?? 0) / 100) * 100) / 100;
+  }
+
+  pricingStrategyLabel(product: Product): string {
+    return this.hasFixedSalesPrice(product)
+      ? 'Vaste verkoopprijs'
+      : `${product.markupPct ?? 0} % opslag op kostprijs`;
+  }
+
+  unitMargin(product: Product): { eur: number } | null {
+    const landedCost = product.landedCostEur;
+    if (landedCost === null || landedCost <= 0) return null;
+    return { eur: Math.round((this.salesPrice(product) - landedCost) * 100) / 100 };
+  }
+
+  private hasFixedSalesPrice(product: Product): boolean {
+    return product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0;
   }
 }
 

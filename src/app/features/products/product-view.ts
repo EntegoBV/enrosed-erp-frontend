@@ -84,7 +84,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                   } @else {
                     <strong>—</strong>
                   }
-                  <small>{{ product.fixedSalesPriceEur ? 'vaste prijs' : 'kostprijs + opslag' }}</small>
+                  <small>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kostprijs + opslag' }}</small>
                 </div>
                 <div>
                   <span>Voorraad</span>
@@ -205,11 +205,17 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                   @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
                 </dd></div>
                 <div><dt>Prijsregel</dt><dd>
-                  {{ product.fixedSalesPriceEur ? 'Vaste verkoopprijs' : (product.markupPct | num) + ' % opslag' }}
+                  {{ hasFixedSalesPrice(product)
+                    ? 'Vaste verkoopprijs'
+                    : (product.markupPct | num) + ' % opslag op kostprijs' }}
                 </dd></div>
-                @if (privacy.showPurchase() && margin(); as m) {
-                  <div><dt>Brutomarge per stuk</dt>
-                    <dd class="num" [class.warn-text]="m.eur < 0">{{ m.eur | eur: 2 }} · {{ m.pct | num }} %</dd>
+                @if (privacy.showPurchase()) {
+                  <div><dt>Marge per stuk</dt>
+                    @if (margin(); as value) {
+                      <dd class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }}</dd>
+                    } @else {
+                      <dd class="muted">Niet beschikbaar</dd>
+                    }
                   </div>
                 }
               </dl>
@@ -351,18 +357,20 @@ export class ProductView {
   readonly displayPrice = computed(() => {
     const product = this.product();
     if (!product) return null;
-    if (product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0) {
+    if (this.hasFixedSalesPrice(product)) {
       return product.fixedSalesPriceEur;
     }
-    const calculated = (product.landedCostEur ?? 0) * (1 + (product.markupPct ?? 0) / 100);
+    const landedCost = product.landedCostEur;
+    if (landedCost === null || landedCost <= 0) return null;
+    const calculated = landedCost * (1 + (product.markupPct ?? 0) / 100);
     return Math.round(calculated * 100) / 100;
   });
 
   readonly margin = computed(() => {
     const price = this.displayPrice();
     const landed = this.product()?.landedCostEur;
-    if (!price || !landed) return null;
-    return { eur: price - landed, pct: ((price - landed) / price) * 100 };
+    if (price === null || landed === null || landed === undefined || landed <= 0) return null;
+    return { eur: Math.round((price - landed) * 100) / 100 };
   });
 
   readonly activePhoto = computed(() => {
@@ -388,6 +396,10 @@ export class ProductView {
 
   openActivePhoto(): void {
     this.lightbox.set(this.activePhotoIndex());
+  }
+
+  hasFixedSalesPrice(product: Product): boolean {
+    return product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0;
   }
 
   headerLine(): string {
