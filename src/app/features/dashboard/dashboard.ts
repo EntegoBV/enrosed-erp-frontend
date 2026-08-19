@@ -176,15 +176,19 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                   <span class="badge" [class]="'badge--' + a.tone">{{ a.verdict }}</span>
                   <span class="market-analysis__lead">{{ a.lead }}</span>
                 </div>
-                <!-- Is now a better moment than then? Green = the dollar is
-                     cheaper today than at that point. -->
-                <div class="market-analysis__horizons">
+                <!-- Is now a better moment than then? Three equal tiles,
+                     arrow down = the dollar is cheaper today than then. -->
+                <div class="hgrid">
                   @for (h of a.horizons; track h.label) {
-                    <span class="hchip" [class.hchip--good]="h.pct >= 0"
-                          [class.hchip--bad]="h.pct < 0">
-                      vs {{ h.label }}: {{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
-                      {{ h.pct >= 0 ? 'goedkoper' : 'duurder' }}
-                    </span>
+                    <div class="hgrid__cell">
+                      <span class="hgrid__label">{{ h.label }}</span>
+                      <span class="hgrid__value"
+                            [class.hgrid__value--good]="h.pct >= 0"
+                            [class.hgrid__value--bad]="h.pct < 0">
+                        {{ h.pct >= 0 ? '↓' : '↑' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                      </span>
+                      <span class="hgrid__word">{{ h.pct >= 0 ? 'goedkoper' : 'duurder' }}</span>
+                    </div>
                   }
                 </div>
                 @for (line of a.lines; track line) {
