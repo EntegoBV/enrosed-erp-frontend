@@ -9,268 +9,453 @@ import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
-import { Product, PurchaseOrderView } from '../../core/api/models';
-import { containerLabel } from '../../core/api/geo';
+import { Product, PurchaseOrderView, Supplier } from '../../core/api/models';
+import { containerLabel, countryName } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 
 /**
- * Look first, edit second - the purchasing counterpart of the product view.
+ * Read-only control room for one incoming container.
  *
- * Tapping a purchase order shows this read-only sheet: where the container
- * stands, what is in it and what it lands at per piece, without a single
- * input field to change something by accident. Editing lives behind the
- * Bewerken button.
- *
- * The privacy switch decides how much money is on screen: in the green
- * (customer-safe) state only the products remain - quantities and photos,
- * no costs.
+ * The screen follows the goods instead of the database: progress and capacity
+ * first, then the actual product load, the route and finally the internal
+ * landed-cost explanation. Editing remains an explicit separate action.
  */
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe],
+  imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+            EurPipe, NumPipe, PctPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
                        [subtitle]="data.order.alias || supplierName()"
                        [showBack]="true" [showBell]="false">
-        <button class="btn btn--sm" type="button" (click)="downloadPdf()">PDF</button>
-        <a class="btn btn--primary btn--sm" [routerLink]="['/purchasing', data.order.id, 'edit']">
+        <button class="btn btn--sm" type="button" (click)="downloadPdf()"
+                [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
+          PDF
+        </button>
+        <a class="btn btn--primary btn--sm"
+           [routerLink]="['/purchasing', data.order.id, 'edit']">
           Bewerken
         </a>
       </app-page-header>
 
-      <div class="content anim-rise">
-        <div class="card">
-          <div class="card__body">
-            <div class="stepper">
-              @for (step of statusSteps; track step.value; let last = $last) {
-                <div class="stepper__step"
-                     [class.stepper__step--done]="stepIndex(data.order.status) > $index"
-                     [class.stepper__step--now]="data.order.status === step.value">
-                  <span class="stepper__dot">
-                    @if (stepIndex(data.order.status) > $index) { ✓ } @else { {{ $index + 1 }} }
-                  </span>
-                  <span class="stepper__label">{{ step.label }}</span>
-                </div>
-                @if (!last) { <span class="stepper__line"
-                     [class.stepper__line--done]="stepIndex(data.order.status) > $index"></span> }
-              }
-            </div>
-          </div>
-        </div>
-
-        <div class="card mt-12">
-          <div class="card__head"><h2>Producten</h2>
-            <span class="spacer"></span>
-            <span class="muted small">{{ data.costing.totals.pieces | num }} st ·
-              {{ data.costing.totals.cartons | num }} dozen</span>
-          </div>
-          <div class="card__body card__body--flush">
-            @for (line of data.costing.lines; track line.productId) {
-              <button class="pv-line" type="button" [disabled]="!showMoney()"
-                      (click)="toggleLine(line.productId)">
-                @if (photoOf(line.productId); as url) {
-                  <img class="pv-line__photo" [appAuthSrc]="url" alt="" />
-                } @else {
-                  <div class="pv-line__photo pv-line__photo--empty">◈</div>
-                }
-                <div class="pv-line__body">
-                  <div class="pv-line__name">{{ line.productName }}</div>
-                  <div class="pv-line__meta">
-                    {{ line.quantity | num }} st · {{ line.cartons | num }} dozen ·
-                    {{ line.cbm | cbm }}
-                  </div>
-                </div>
-                @if (showMoney()) {
-                  <div class="pv-line__cost">
-                    <div class="num">{{ unitCost(line) | eur }}</div>
-                    <div class="tiny muted">per stuk</div>
-                  </div>
-                  <span class="card__chev" [class.card__chev--open]="openLine() === line.productId">›</span>
-                }
-              </button>
-              @if (showMoney() && openLine() === line.productId) {
-                <!-- The same build-up as the container total, but for this
-                     line alone - the answer to "why does this piece land
-                     at that price". -->
-                <div class="pv-detail">
-                  <div class="row" style="justify-content:flex-end;margin:2px 0 4px">
-                    <div class="per-toggle">
-                      <button type="button" [class.on]="!perPiece()"
-                              (click)="perPiece.set(false)">Totaal</button>
-                      <button type="button" [class.on]="perPiece()"
-                              (click)="perPiece.set(true)">Per stuk</button>
-                    </div>
-                  </div>
-                  <div class="stat-row"><span>Goederen</span>
-                    <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
-                  <div class="stat-row"><span>Lokale kosten China</span>
-                    <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
-                  <div class="stat-row"><span>Zeevracht</span>
-                    <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
-                  <div class="stat-row"><span>Douanewaarde</span>
-                    <span class="num">{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
-                  <div class="stat-row">
-                    <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
-                      @if (line.dutySource) {
-                        <span class="tiny muted">({{ line.dutySource }})</span>
-                      }
-                    </span>
-                    <span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
-                  <div class="stat-row"><span>Aankomst → magazijn</span>
-                    <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
-                  @if (line.extraRevenueEur) {
-                    <div class="stat-row"><span>Extra opbrengst</span>
-                      <span class="num">{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
-                  }
-                  <div class="stat-row stat-row--total">
-                    <span>{{ perPiece() ? 'Per stuk geland' : 'Totaal regel' }}</span>
-                    <span class="num">{{ perPiece() ? (line.landedUnitEur | eur: 4)
-                        : (line.totalEur | eur) }}</span></div>
-                </div>
-              }
-            }
-          </div>
-        </div>
-
-        <div class="card mt-12">
-          <div class="card__head"><h2>Gegevens</h2></div>
-          <div class="card__body">
-            <div class="stat-row"><span>Leverancier</span><span>{{ supplierName() }}</span></div>
-            <div class="stat-row"><span>Datum</span><span>{{ data.order.orderDate | dateNl }}</span></div>
-            <div class="stat-row"><span>Container</span><span>{{ containerLabel(data.order.containerType) }}</span></div>
-            <div class="stat-row"><span>Aankomsthaven</span>
-              <span>{{ data.order.destinationPort || '—' }}</span></div>
-            @if (showMoney()) {
-              <div class="stat-row"><span>Koers USD → EUR</span>
-                <span class="num">{{ data.order.usdToEurGoods | num: 4 }}</span></div>
-            }
-            @if (data.order.notes) {
-              <div class="stat-row"><span>Notitie</span><span>{{ data.order.notes }}</span></div>
-            }
-          </div>
-        </div>
-
-        @if (showMoney()) {
-          <div class="card mt-12 internal-block">
-            <div class="card__head"><h2>Kostenopbouw</h2></div>
-            <div class="card__body">
-              <div class="cost-section">Tot de EU-grens</div>
-              <div class="stat-row"><span>Goederen</span>
-                <span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
-              @if (data.costing.totals.originEur) {
-                <div class="stat-row"><span>Lokale kosten China</span>
-                  <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
-              }
-              <div class="stat-row"><span>Zeevracht</span>
-                <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
-              <div class="stat-row stat-row--sub"><span>Douanewaarde</span>
-                <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
-
-              <div class="cost-section">Invoer</div>
-              <div class="stat-row"><span>Invoerrechten
-                  <span class="tiny muted">gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
-                <span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-
-              <div class="cost-section">Na aankomst</div>
-              <div class="stat-row"><span>{{ data.order.destinationPort || 'Haven' }} → magazijn
-                  <span class="tiny muted">trucking en afhandeling</span></span>
-                <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
-              @if (data.costing.totals.extraRevenueEur) {
-                <div class="stat-row"><span>Extra opbrengst</span>
-                  <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
-              }
-
-              <div class="cost-hero">
-                <div>
-                  <div class="cost-hero__label">Totaal geland</div>
-                  <div class="cost-hero__value">{{ data.costing.totals.totalEur | eur }}</div>
-                </div>
-                <div class="cost-hero__unit">
-                  <div class="cost-hero__label">Per stuk</div>
-                  <div class="cost-hero__value cost-hero__value--rose">
-                    {{ data.costing.totals.averageUnitEur | eur: 4 }}</div>
-                </div>
-              </div>
+      <div class="content purchase-view-page anim-rise">
+        @if (!showMoney()) {
+          <div class="alert alert--ok privacy-notice" role="status">
+            <span class="alert__icon" aria-hidden="true">✓</span>
+            <div>
+              <b>Klantveilige weergave.</b> Inkoopprijzen, wisselkoersen en
+              kostopbouw zijn verborgen. Aantallen en containervulling blijven zichtbaar.
             </div>
           </div>
         }
+
+        <section class="journey-hero" aria-labelledby="purchase-overview-title">
+          <div class="journey-hero__top">
+            <div class="journey-hero__copy">
+              <span class="eyebrow">Inkomende container</span>
+              <h1 id="purchase-overview-title">{{ supplierName() }}</h1>
+              <p>
+                {{ data.order.orderDate | dateNl }}
+                @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
+              </p>
+            </div>
+            <span class="status-pill" [class.status-pill--done]="data.order.status === 'ONTVANGEN'">
+              <span class="status-pill__dot" aria-hidden="true"></span>
+              {{ statusLabel(data.order.status) }}
+            </span>
+          </div>
+
+          <div class="route-strip" aria-label="Transportroute">
+            <div class="route-stop">
+              <span class="route-stop__dot" aria-hidden="true"></span>
+              <span>
+                <small>Vertrek</small>
+                <strong>{{ loadingPoint() }}</strong>
+              </span>
+            </div>
+            <span class="route-strip__line" aria-hidden="true"></span>
+            <div class="route-stop route-stop--end">
+              <span class="route-stop__dot" aria-hidden="true"></span>
+              <span>
+                <small>Aankomst</small>
+                <strong>{{ data.order.destinationPort || 'Nog te kiezen' }}</strong>
+              </span>
+            </div>
+          </div>
+
+          <div class="stepper journey-stepper" aria-label="Voortgang van de inkooporder">
+            @for (step of statusSteps; track step.value; let last = $last) {
+              <div class="stepper__step"
+                   [class.stepper__step--done]="stepIndex(data.order.status) > $index"
+                   [class.stepper__step--now]="stepIndex(data.order.status) === $index">
+                <span class="stepper__dot" aria-hidden="true">
+                  @if (stepIndex(data.order.status) > $index) { ✓ } @else { {{ $index + 1 }} }
+                </span>
+                <span class="stepper__label">{{ step.label }}</span>
+              </div>
+              @if (!last) {
+                <span class="stepper__line"
+                      [class.stepper__line--done]="stepIndex(data.order.status) > $index"></span>
+              }
+            }
+          </div>
+
+          <div class="overview-facts">
+            <div class="overview-fact">
+              <span>Container</span>
+              <strong>{{ containerLabel(data.order.containerType) }}</strong>
+            </div>
+            <div class="overview-fact">
+              <span>Productregels</span>
+              <strong>{{ data.costing.lines.length }} regels</strong>
+            </div>
+            <div class="overview-fact">
+              <span>Totale lading</span>
+              <strong>{{ data.costing.totals.pieces | num }} st · {{ data.costing.totals.cartons | num }} dozen</strong>
+            </div>
+            <div class="overview-fact">
+              <span>Volume</span>
+              <strong>{{ data.costing.totals.cbm | cbm }}</strong>
+            </div>
+          </div>
+        </section>
 
         @if (data.costing.containerFill; as fill) {
-          <div class="card mt-12">
-            <div class="card__head"><h2>Container</h2>
-              <span class="spacer"></span>
-              <span class="muted small">{{ fill.containerCode }}</span>
-            </div>
-            <div class="card__body">
-              <div class="pv-fill">
-                <div class="pv-fill__bar">
-                  <div class="pv-fill__used" [style.width.%]="fillWidth(fill.fillPercent)"
-                       [class.pv-fill__used--over]="fill.overflowCbm > 0"></div>
-                </div>
-                <div class="small muted mt-8">
-                  {{ fill.usedCbm | cbm }} van {{ fill.capacityCbm | cbm }}
-                  ({{ fill.fillPercent | pct: 0 }})
-                  @if (fill.overflowCbm > 0) {
-                    · <span class="warn-text">{{ fill.overflowCbm | cbm }} te veel</span>
-                  } @else {
-                    · {{ fill.freeCbm | cbm }} vrij
-                  }
-                </div>
+          <section class="card capacity-card" aria-labelledby="container-fill-title">
+            <div class="capacity-card__top">
+              <div>
+                <span class="section-kicker">Capaciteit</span>
+                <h2 id="container-fill-title">Containervulling</h2>
+                <p>{{ fill.containerCode }} · {{ fill.usedCbm | cbm }} van {{ fill.capacityCbm | cbm }}</p>
               </div>
+              <strong class="capacity-card__percentage"
+                      [class.capacity-card__percentage--over]="fill.overflowCbm > 0">
+                {{ fill.fillPercent | pct: 0 }}
+              </strong>
             </div>
-          </div>
+            <div class="meter__track capacity-meter" role="meter"
+                 aria-label="Containervulling" aria-valuemin="0" aria-valuemax="100"
+                 [attr.aria-valuenow]="fill.fillPercent">
+              <div class="meter__fill" [class.meter__fill--warn]="fill.overflowCbm > 0"
+                   [style.width.%]="fillWidth(fill.fillPercent)"></div>
+            </div>
+            <div class="capacity-card__footer">
+              @if (fill.overflowCbm > 0) {
+                <span class="capacity-state capacity-state--danger">
+                  <span aria-hidden="true">!</span> {{ fill.overflowCbm | cbm }} te veel voor één container
+                </span>
+              } @else {
+                <span class="capacity-state capacity-state--ok">
+                  <span aria-hidden="true">✓</span> {{ fill.freeCbm | cbm }} vrije ruimte
+                </span>
+              }
+              <span>{{ data.costing.totals.cartons | num }} dozen geladen</span>
+            </div>
+          </section>
         }
 
+        <div class="view-layout">
+          <main class="view-main">
+            <section class="card products-card" aria-labelledby="purchase-products-title">
+              <div class="section-heading">
+                <span class="section-number" aria-hidden="true">1</span>
+                <span class="section-heading__copy">
+                  <span class="section-kicker">Lading</span>
+                  <h2 id="purchase-products-title">Productregels</h2>
+                  <span>{{ data.costing.totals.pieces | num }} st ·
+                    {{ data.costing.totals.cartons | num }} dozen</span>
+                </span>
+                @if (showMoney() && data.costing.lines.length) {
+                  <div class="per-toggle" role="group" aria-label="Kostopbouw tonen als">
+                    <button type="button" [class.on]="!perPiece()"
+                            [attr.aria-pressed]="!perPiece()"
+                            (click)="perPiece.set(false)">Totaal</button>
+                    <button type="button" [class.on]="perPiece()"
+                            [attr.aria-pressed]="perPiece()"
+                            (click)="perPiece.set(true)">Per stuk</button>
+                  </div>
+                }
+              </div>
+
+              <div class="product-lines">
+                @for (line of data.costing.lines; track line.productId; let lineIndex = $index) {
+                  <article class="purchase-line">
+                    <div class="purchase-line__identity">
+                      @if (photoOf(line.productId); as url) {
+                        <img class="purchase-line__photo" [appAuthSrc]="url" alt="" />
+                      } @else {
+                        <span class="purchase-line__photo purchase-line__photo--empty" aria-hidden="true">◈</span>
+                      }
+                      <span class="purchase-line__copy">
+                        <small>Regel {{ lineIndex + 1 }}</small>
+                        <strong>{{ line.productName }}</strong>
+                        <span>{{ line.quantity | num }} st · {{ line.cartons | num }} dozen</span>
+                      </span>
+                      @if (showMoney()) {
+                        <span class="purchase-line__unit">
+                          <small>Geland per stuk</small>
+                          <strong>{{ line.landedUnitEur | eur: 4 }}</strong>
+                        </span>
+                      }
+                    </div>
+
+                    <div class="line-facts">
+                      <span><small>Aantal</small><strong>{{ line.quantity | num }} st</strong></span>
+                      <span><small>Dozen</small><strong>{{ line.cartons | num }}</strong></span>
+                      <span><small>Volume</small><strong>{{ line.cbm | cbm }}</strong></span>
+                    </div>
+
+                    @if (showMoney()) {
+                      <button class="line-breakdown-toggle" type="button"
+                              [attr.aria-expanded]="openLine() === line.productId"
+                              [attr.aria-controls]="linePanelId(line.productId)"
+                              (click)="toggleLine(line.productId)">
+                        <span>
+                          <small>Kostopbouw</small>
+                          <strong>{{ perPiece() ? 'Per stuk bekijken' : 'Hele regel bekijken' }}</strong>
+                        </span>
+                        <span class="line-breakdown-toggle__total">
+                          {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}
+                        </span>
+                        <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
+                             [class.chevron-open]="openLine() === line.productId">
+                          <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </button>
+                    }
+
+                    @if (showMoney() && openLine() === line.productId) {
+                      <div class="line-breakdown" [id]="linePanelId(line.productId)">
+                        <div class="stat-row"><span>Goederen</span>
+                          <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
+                        @if (line.originEur) {
+                          <div class="stat-row"><span>Lokale kosten {{ originCountry() }}</span>
+                            <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
+                        }
+                        <div class="stat-row"><span>Zeevracht</span>
+                          <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
+                        <div class="stat-row line-breakdown__subtotal"><span>Douanewaarde</span>
+                          <span class="num">{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
+                        <div class="stat-row"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
+                          @if (line.dutySource) { <small>({{ line.dutySource }})</small> }
+                        </span><span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
+                        <div class="stat-row"><span>{{ data.order.destinationPort || 'Haven' }} → magazijn</span>
+                          <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
+                        @if (line.extraRevenueEur) {
+                          <div class="stat-row"><span>Extra opbrengst</span>
+                            <span class="num">{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
+                        }
+                        <div class="stat-row line-breakdown__landed">
+                          <span>{{ perPiece() ? 'Geland per stuk' : 'Totaal regel' }}</span>
+                          <strong class="num">{{ perPiece() ? (line.landedUnitEur | eur: 4)
+                            : (line.totalEur | eur) }}</strong>
+                        </div>
+                      </div>
+                    }
+                  </article>
+                } @empty {
+                  <div class="product-empty">
+                    <span class="product-empty__art" aria-hidden="true">◈</span>
+                    <h3>Nog geen producten geladen</h3>
+                    <p>Voeg producten en aantallen toe om de containervulling en kostprijs te berekenen.</p>
+                    <a class="btn btn--primary"
+                       [routerLink]="['/purchasing', data.order.id, 'edit']">
+                      Producten toevoegen
+                    </a>
+                  </div>
+                }
+              </div>
+            </section>
+
+            <section class="card details-card" aria-labelledby="purchase-details-title">
+              <div class="section-heading">
+                <span class="section-number" aria-hidden="true">2</span>
+                <span class="section-heading__copy">
+                  <span class="section-kicker">Route &amp; afspraak</span>
+                  <h2 id="purchase-details-title">Ordergegevens</h2>
+                  <span>{{ loadingPoint() }} → {{ data.order.destinationPort || 'Nog te kiezen' }}</span>
+                </span>
+              </div>
+              <div class="details-grid">
+                <div class="detail-item">
+                  <span>Leverancier</span>
+                  <strong>{{ supplierName() }}</strong>
+                  @if (supplier()?.contact) { <small>{{ supplier()?.contact }}</small> }
+                </div>
+                <div class="detail-item">
+                  <span>Orderdatum</span>
+                  <strong>{{ data.order.orderDate | dateNl }}</strong>
+                </div>
+                <div class="detail-item">
+                  <span>Vertrek</span>
+                  <strong>{{ loadingPoint() }}</strong>
+                  @if (originCountry()) { <small>{{ originCountry() }}</small> }
+                </div>
+                <div class="detail-item">
+                  <span>Aankomst</span>
+                  <strong>{{ data.order.destinationPort || '—' }}</strong>
+                </div>
+                <div class="detail-item">
+                  <span>Container</span>
+                  <strong>{{ containerLabel(data.order.containerType) }}</strong>
+                </div>
+                @if (showMoney()) {
+                  <div class="detail-item internal-detail">
+                    <span>Koers goederen</span>
+                    <strong class="num">1 USD = {{ data.order.usdToEurGoods | num: 4 }} EUR</strong>
+                    <small>Alleen intern zichtbaar</small>
+                  </div>
+                }
+                @if (data.order.notes) {
+                  <div class="detail-item detail-item--wide">
+                    <span>Notitie</span>
+                    <strong class="detail-note">{{ data.order.notes }}</strong>
+                  </div>
+                }
+              </div>
+            </section>
+          </main>
+
+          <aside class="view-sidebar" aria-label="Samenvatting en acties">
+            @if (showMoney()) {
+              <section class="card cost-card internal-block" aria-labelledby="purchase-cost-title">
+                <div class="cost-card__head">
+                  <div>
+                    <span class="section-kicker">Interne calculatie</span>
+                    <h2 id="purchase-cost-title">Gelande kostprijs</h2>
+                  </div>
+                  <span class="internal-badge">Intern</span>
+                </div>
+
+                <div class="cost-card__body">
+                  <div class="cost-hero">
+                    <div>
+                      <div class="cost-hero__label">Totaal geland</div>
+                      <div class="cost-hero__value">{{ data.costing.totals.totalEur | eur }}</div>
+                    </div>
+                    <div class="cost-hero__unit">
+                      <div class="cost-hero__label">Gemiddeld per stuk</div>
+                      <div class="cost-hero__value cost-hero__value--rose">
+                        {{ data.costing.totals.averageUnitEur | eur: 4 }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cost-stage">
+                    <span class="cost-stage__label">1 · Tot de EU-grens</span>
+                    <div class="stat-row"><span>Goederen
+                      <small>{{ data.costing.totals.goodsUsd | num: 2 }} USD</small>
+                    </span><span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
+                    @if (data.costing.totals.originEur) {
+                      <div class="stat-row"><span>Lokale kosten {{ originCountry() }}</span>
+                        <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
+                    }
+                    <div class="stat-row"><span>Zeevracht</span>
+                      <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
+                    <div class="stat-row cost-stage__subtotal"><span>Douanewaarde</span>
+                      <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
+                  </div>
+
+                  <div class="cost-stage">
+                    <span class="cost-stage__label">2 · Invoer &amp; aankomst</span>
+                    <div class="stat-row"><span>Invoerrechten
+                      <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
+                    </span><span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
+                    <div class="stat-row"><span>{{ data.order.destinationPort || 'Haven' }} → magazijn</span>
+                      <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
+                    @if (data.costing.totals.extraRevenueEur) {
+                      <div class="stat-row"><span>Extra opbrengst</span>
+                        <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
+                    }
+                  </div>
+                </div>
+              </section>
+            } @else {
+              <section class="card safe-card" aria-labelledby="safe-card-title">
+                <span class="safe-card__icon" aria-hidden="true">✓</span>
+                <div>
+                  <h2 id="safe-card-title">Kosten veilig verborgen</h2>
+                  <p>Schakel de interne weergave in om kostprijzen en wisselkoersen te controleren.</p>
+                </div>
+              </section>
+            }
+
+            <section class="card action-card" aria-labelledby="purchase-actions-title">
+              <span class="section-kicker">Volgende actie</span>
+              <h2 id="purchase-actions-title">
+                {{ actionTitle(data.order.status, data.costing.lines.length) }}
+              </h2>
+              <p>{{ actionDescription(data.order.status, data.costing.lines.length) }}</p>
+              <div class="action-card__buttons">
+                <a class="btn btn--primary btn--block"
+                   [routerLink]="['/purchasing', data.order.id, 'edit']">
+                  {{ data.costing.lines.length ? 'Order bewerken' : 'Producten toevoegen' }}
+                </a>
+                <button class="btn btn--block" type="button" (click)="downloadPdf()">
+                  PDF downloaden
+                </button>
+              </div>
+            </section>
+          </aside>
+        </div>
       </div>
     } @else {
       <app-page-header title="Inkoop" [showBack]="true" [showBell]="false" />
-      <div class="content">
+      <div class="content purchase-view-page">
         <app-skeleton kind="card" [rows]="3" />
         <app-skeleton kind="lines" [rows]="4" />
       </div>
     }
   `,
-  styles: `
-    .pv-line {
-      display: flex; align-items: center; gap: 12px;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--line);
-      width: 100%; border-left: 0; border-right: 0; border-top: 0;
-      background: none; font: inherit; text-align: left; color: inherit;
-      cursor: pointer;
-    }
-    .pv-line:disabled { cursor: default; }
-    .pv-line:last-child { border-bottom: 0; }
-    .pv-detail {
-      padding: 6px 16px 12px;
-      background: var(--surface-2);
-      border-bottom: 1px solid var(--line);
-      animation: rise 0.2s ease;
-    }
-    .pv-line__photo {
-      width: 46px; height: 46px; border-radius: 10px; object-fit: cover;
-      border: 1px solid var(--line); background: var(--surface-2); flex: none;
-    }
-    .pv-line__photo--empty {
-      display: flex; align-items: center; justify-content: center;
-      color: var(--muted);
-    }
-    .pv-line__body { flex: 1; min-width: 0; }
-    .pv-line__name { font-weight: 600; font-size: 14px; }
-    .pv-line__meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-    .pv-line__cost { text-align: right; }
-    .pv-fill__bar {
-      height: 10px; border-radius: 999px; background: var(--surface-2);
-      overflow: hidden; border: 1px solid var(--line);
-    }
-    .pv-fill__used {
-      height: 100%; border-radius: inherit; background: var(--accent);
-      transition: width 0.5s ease;
-    }
-    .pv-fill__used--over { background: var(--warn); }
-  `,
+  styles: [`
+    :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}.privacy-notice{margin-bottom:12px}
+
+    .journey-hero{position:relative;margin-bottom:12px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
+    .journey-hero:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--rose)}
+    .journey-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.journey-hero__copy{min-width:0}
+    :is(.eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
+    .journey-hero h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.journey-hero__copy p{color:var(--muted);font-size:12px}
+    .status-pill{display:flex;flex:none;align-items:center;gap:6px;padding:6px 9px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11px;font-weight:720}
+    .status-pill__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.status-pill--done{color:var(--ok)}
+
+    .route-strip{display:flex;align-items:center;gap:7px;margin:15px 0;padding:10px;border:1px solid color-mix(in srgb,var(--line) 74%,transparent);border-radius:14px;background:color-mix(in srgb,var(--surface) 82%,transparent)}
+    .route-stop{display:flex;min-width:0;align-items:center;gap:7px}.route-stop--end{text-align:right}.route-stop__dot{width:9px;height:9px;flex:none;border:2px solid var(--rose);border-radius:50%;background:var(--surface)}
+    .route-stop span:last-child{display:flex;min-width:0;flex-direction:column}.route-stop small{color:var(--muted);font-size:9px;text-transform:uppercase}.route-stop strong{overflow:hidden;max-width:116px;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
+    .route-strip__line{height:1px;min-width:18px;flex:1;background:linear-gradient(90deg,var(--rose-line),var(--rose))}
+    .journey-stepper{margin:0 0 15px}.overview-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
+    .overview-fact{min-width:0;padding:9px 10px;background:var(--surface)}.overview-fact span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.overview-fact strong{display:block;overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
+
+    .capacity-card{margin-bottom:12px;padding:14px;overflow:hidden}.capacity-card__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.capacity-card h2{font-size:16px}.capacity-card__top p{color:var(--muted);font-size:11px}.capacity-card__percentage{color:var(--rose);font-size:25px;line-height:1}.capacity-card__percentage--over{color:var(--danger)}
+    .capacity-meter{height:11px;margin-top:13px}.capacity-card__footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-top:9px;color:var(--muted);font-size:11px}.capacity-state{display:flex;align-items:center;gap:5px;font-weight:680}.capacity-state--ok{color:var(--ok)}.capacity-state--danger{color:var(--danger)}
+  `, `
+    :is(.view-main,.view-sidebar){min-width:0}:is(.view-main,.view-sidebar)>.card+.card{margin-top:12px}.view-sidebar{margin-top:12px}
+    :is(.products-card,.details-card,.cost-card,.action-card){overflow:hidden}.section-heading{display:flex;min-height:76px;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+    .section-number{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760}
+    .section-heading__copy{display:block;min-width:0;flex:1}.section-heading h2{font-size:15px}.section-heading__copy>span:last-child{display:block;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .section-heading .per-toggle{flex:none}.section-heading .per-toggle button{padding-inline:8px;font-size:10px}
+
+    .purchase-line{padding:14px;border-bottom:1px solid var(--line)}.purchase-line:last-child{border:0}.purchase-line__identity{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px}
+    .purchase-line__photo{width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover}.purchase-line__photo--empty{display:grid;place-items:center;color:var(--muted);font-size:20px}
+    .purchase-line__copy{display:flex;min-width:0;flex-direction:column}.purchase-line__copy small{color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase}.purchase-line__copy strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__copy>span{color:var(--muted);font-size:11px}
+    .purchase-line__unit{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;padding:8px 10px;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft)}.purchase-line__unit small{color:var(--rose-dark);font-size:10px}.purchase-line__unit strong{color:var(--rose-dark);font-size:15px}
+    .line-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden}.line-facts>span{display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2)}.line-facts small{color:var(--muted);font-size:8.5px;text-transform:uppercase}.line-facts strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .line-breakdown-toggle{display:flex;width:100%;min-height:48px;align-items:center;gap:8px;margin-top:9px;padding:7px 9px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}.line-breakdown-toggle>span:first-child{display:flex;min-width:0;flex:1;flex-direction:column}.line-breakdown-toggle small{color:var(--muted);font-size:9px}.line-breakdown-toggle strong{font-size:11px}.line-breakdown-toggle__total{color:var(--rose);font-size:12px;font-weight:760}.line-breakdown-toggle svg{flex:none;color:var(--muted);transition:transform .18s}.line-breakdown-toggle svg.chevron-open{transform:rotate(180deg)}
+    .line-breakdown{margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease}.line-breakdown .stat-row{padding:4px 0;font-size:11.5px}.line-breakdown small,.cost-stage small{display:block;color:var(--muted);font-size:9px}.line-breakdown__subtotal{border-top:1px solid var(--line)}.line-breakdown__landed{border-top:1px solid var(--rose-line);color:var(--rose-dark);font-weight:720}
+    .product-empty{padding:34px 18px;text-align:center}.product-empty__art{display:grid;width:64px;height:64px;margin:0 auto 12px;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px}.product-empty h3{font-size:16px}.product-empty p{max-width:360px;margin:4px auto 15px;color:var(--muted);font-size:12px}
+  `, `
+    .details-grid{display:grid;gap:1px;background:var(--line)}.detail-item{display:flex;min-width:0;flex-direction:column;padding:12px 14px;background:var(--surface)}.detail-item>span{color:var(--muted);font-size:9.5px;text-transform:uppercase}.detail-item strong{overflow-wrap:anywhere;font-size:12.5px}.detail-item small{color:var(--muted);font-size:10px}.detail-note{font-weight:500;white-space:pre-wrap}.internal-detail{background:var(--rose-soft)}
+
+    .cost-card{border-color:var(--rose-line)}.cost-card__head{display:flex;min-height:76px;align-items:center;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid var(--rose-line);background:linear-gradient(145deg,var(--surface),var(--rose-soft))}.cost-card h2{font-size:16px}.internal-badge{padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:10px;font-weight:760;text-transform:uppercase}.cost-card__body{padding:14px}.cost-card .cost-hero{margin-top:0}.cost-stage{padding:8px 0}.cost-stage+.cost-stage{border-top:1px solid var(--line)}.cost-stage__label{display:block;margin-bottom:3px;color:var(--rose);font-size:9px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.cost-stage .stat-row{padding:4px 0;font-size:11.5px}.cost-stage__subtotal{border-top:1px solid var(--line);font-weight:680}
+    .safe-card{display:flex;align-items:flex-start;gap:10px;padding:14px}.safe-card__icon{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:760}.safe-card h2{font-size:14px}.safe-card p{color:var(--muted);font-size:11px}
+    .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
+
+    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(4,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr) auto}.purchase-line__unit{grid-column:auto;min-width:150px;flex-direction:column;align-items:flex-end;border:0;background:transparent;padding:0}.purchase-line__unit small{color:var(--muted)}}
+    @media(min-width:700px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
+    @media(min-width:1000px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.72fr);gap:16px}.view-sidebar{margin-top:0}}
+  `],
 })
 export class PurchaseView {
   readonly containerLabel = containerLabel;
@@ -283,7 +468,7 @@ export class PurchaseView {
 
   readonly view = signal<PurchaseOrderView | null>(null);
   private readonly products = signal<Product[]>([]);
-  private readonly suppliers = signal<{ id: number | null; name: string }[]>([]);
+  private readonly suppliers = signal<Supplier[]>([]);
 
   readonly statusSteps = [
     { value: 'CONCEPT', label: 'Concept' },
@@ -299,16 +484,8 @@ export class PurchaseView {
   /** Two decimals for totals, four for per-piece - tiny numbers need them. */
   readonly decimals = computed(() => this.perPiece() ? 4 : 2);
 
-  amt(value: number, line: { quantity: number }): number {
-    return this.perPiece() && line.quantity > 0 ? value / line.quantity : value;
-  }
-
   /** Which product line shows its cost build-up; null is all folded. */
   readonly openLine = signal<number | null>(null);
-
-  toggleLine(productId: number): void {
-    this.openLine.set(this.openLine() === productId ? null : productId);
-  }
 
   constructor() {
     const id = +(this.route.snapshot.paramMap.get('id') ?? 0);
@@ -323,9 +500,34 @@ export class PurchaseView {
     this.suppliers.set(suppliers);
   }
 
-  supplierName(): string {
+  amt(value: number, line: { quantity: number }): number {
+    return this.perPiece() && line.quantity > 0 ? value / line.quantity : value;
+  }
+
+  toggleLine(productId: number): void {
+    this.openLine.set(this.openLine() === productId ? null : productId);
+  }
+
+  linePanelId(productId: number): string {
+    return `purchase-cost-line-${productId}`;
+  }
+
+  supplier(): Supplier | null {
     const id = this.view()?.order.supplierId;
-    return this.suppliers().find((supplier) => supplier.id === id)?.name ?? '';
+    return this.suppliers().find((supplier) => supplier.id === id) ?? null;
+  }
+
+  supplierName(): string {
+    return this.supplier()?.name ?? 'Onbekende leverancier';
+  }
+
+  originCountry(): string {
+    return countryName(this.supplier()?.country);
+  }
+
+  loadingPoint(): string {
+    const supplier = this.supplier();
+    return supplier?.portOfLoading || supplier?.city || this.originCountry() || 'Nog te kiezen';
   }
 
   photoOf(productId: number): string | null {
@@ -339,12 +541,34 @@ export class PurchaseView {
     return this.statusSteps.findIndex((step) => step.value === status);
   }
 
-  fillWidth(percent: number): number {
-    return Math.min(100, percent);
+  statusLabel(status: string): string {
+    if (status === 'ONTVANGEN') return 'Ontvangen';
+    if (status === 'BESTELD' || status === 'ONDERWEG') return 'Besteld';
+    return 'Concept';
   }
 
-  unitCost(line: { landedUnitEur: number }): number {
-    return line.landedUnitEur;
+  actionTitle(status: string, lineCount: number): string {
+    if (!lineCount) return 'Voeg eerst producten toe';
+    if (status === 'ONTVANGEN') return 'Container afgerond';
+    if (status === 'BESTELD' || status === 'ONDERWEG') return 'Klaar voor ontvangst?';
+    return 'Klaar om te bestellen?';
+  }
+
+  actionDescription(status: string, lineCount: number): string {
+    if (!lineCount) {
+      return 'Deze container is nog leeg. Voeg productregels toe voordat je de lading en kosten afrondt.';
+    }
+    if (status === 'ONTVANGEN') {
+      return 'De voorraad is bijgeboekt. Je kunt de calculatie nog controleren of als PDF bewaren.';
+    }
+    if (status === 'BESTELD' || status === 'ONDERWEG') {
+      return 'Controleer de werkelijk ontvangen aantallen voordat je de voorraad bijboekt.';
+    }
+    return 'Controleer lading, containerruimte en kosten voordat je de bestelling vastlegt.';
+  }
+
+  fillWidth(percent: number): number {
+    return Math.min(100, Math.max(0, percent));
   }
 
   async downloadPdf(): Promise<void> {

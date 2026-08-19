@@ -4,9 +4,14 @@
  */
 
 import {
+  AfterViewInit,
   Component,
   Injectable,
   ChangeDetectionStrategy,
+  ElementRef,
+  HostListener,
+  OnDestroy,
+  ViewChild,
   computed,
   input,
   output,
@@ -29,11 +34,13 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="overlay" (click)="onBackdrop($event)">
-      <div class="sheet" [class.sheet--wide]="wide()" role="dialog" aria-modal="true">
+      <div #dialog class="sheet" [class.sheet--wide]="wide()" role="dialog" aria-modal="true"
+           [attr.aria-labelledby]="headingId" tabindex="-1">
         <div class="sheet__grab"></div>
         <div class="sheet__head">
-          <h2>{{ heading() }}</h2>
-          <button class="sheet__close" type="button" aria-label="Sluiten" (click)="closed.emit()">
+          <h2 [id]="headingId">{{ heading() }}</h2>
+          <button class="sheet__close" type="button" [attr.aria-label]="closeLabel()"
+                  (click)="requestClose()">
             &times;
           </button>
         </div>
@@ -47,13 +54,114 @@ import {
     </div>
   `,
 })
-export class Sheet {
+export class Sheet implements AfterViewInit, OnDestroy {
+  private static nextId = 0;
+  private static readonly stack: Sheet[] = [];
+  private static bodyLockCount = 0;
+  private static previousBodyOverflow = '';
+
   readonly heading = input('', { alias: 'title' });
   readonly wide = input(false);
+  readonly closeLabel = input('Sluiten');
   readonly closed = output<void>();
 
+  readonly headingId = `sheet-heading-${++Sheet.nextId}`;
+
+  @ViewChild('dialog', { static: true }) private dialog?: ElementRef<HTMLElement>;
+  private returnFocus: HTMLElement | null = null;
+  private registered = false;
+
+  ngAfterViewInit(): void {
+    this.returnFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement : null;
+    Sheet.stack.push(this);
+    this.registered = true;
+    if (Sheet.bodyLockCount++ === 0) {
+      Sheet.previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+
+    queueMicrotask(() => {
+      const dialog = this.dialog?.nativeElement;
+      if (!dialog || Sheet.stack.at(-1) !== this) return;
+      /* querySelector follows DOM order, not selector order. The close button
+         precedes projected content, so resolve an explicit target separately. */
+      const explicit = dialog.querySelector<HTMLElement>('[autofocus]')
+        ?? dialog.querySelector<HTMLElement>('[data-initial-focus]');
+      const fallback = dialog.querySelector<HTMLElement>(
+        '.sheet__close, .sheet__body input:not([type="hidden"]):not([disabled]), '
+        + '.sheet__body select:not([disabled]), .sheet__body textarea:not([disabled]), '
+        + '.sheet__body button:not([disabled]), .sheet__body a[href]',
+      );
+      const initial = explicit ?? fallback;
+      (initial ?? dialog).focus();
+    });
+  }
+
+  ngOnDestroy(): void {
+    if (this.registered) {
+      const index = Sheet.stack.lastIndexOf(this);
+      if (index >= 0) Sheet.stack.splice(index, 1);
+      if (Sheet.bodyLockCount > 0 && --Sheet.bodyLockCount === 0) {
+        document.body.style.overflow = Sheet.previousBodyOverflow;
+      }
+    }
+    const target = this.returnFocus;
+    queueMicrotask(() => {
+      if (target?.isConnected) target.focus();
+    });
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(event: KeyboardEvent): void {
+    if (Sheet.stack.at(-1) !== this) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.requestClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const focusable = this.focusableElements();
+    if (!focusable.length) {
+      event.preventDefault();
+      this.dialog?.nativeElement.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !this.dialog?.nativeElement.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !this.dialog?.nativeElement.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  requestClose(): void {
+    if (Sheet.stack.at(-1) === this) this.closed.emit();
+  }
+
   onBackdrop(event: MouseEvent): void {
-    if ((event.target as HTMLElement).classList.contains('overlay')) this.closed.emit();
+    if (event.target !== event.currentTarget) return;
+    event.stopPropagation();
+    this.requestClose();
+  }
+
+  private focusableElements(): HTMLElement[] {
+    const dialog = this.dialog?.nativeElement;
+    if (!dialog) return [];
+    const selector = [
+      'a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
+      'select:not([disabled])', 'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',');
+    return Array.from(dialog.querySelectorAll<HTMLElement>(selector)).filter((element) =>
+      element.getAttribute('aria-hidden') !== 'true'
+      && (element.offsetWidth > 0 || element.offsetHeight > 0 || element.getClientRects().length > 0));
   }
 }
 
@@ -85,7 +193,7 @@ export class Ui {
     this.toasts.update((list) => [...list, { id, text, kind }]);
     setTimeout(() => {
       this.toasts.update((list) => list.filter((t) => t.id !== id));
-    }, 2800);
+    }, kind === 'err' ? 7000 : 3800);
   }
 
   confirm(
@@ -122,7 +230,8 @@ export class Ui {
           <p style="font-size:14.5px;line-height:1.55" [innerHTML]="request.message"></p>
         </div>
         <div foot style="display:contents">
-          <button class="btn" type="button" (click)="ui.resolveConfirm(false)">Annuleren</button>
+          <button class="btn" type="button" data-initial-focus
+                  (click)="ui.resolveConfirm(false)">Annuleren</button>
           <button
             class="btn"
             type="button"
@@ -136,16 +245,15 @@ export class Ui {
       </app-sheet>
     }
 
-    @if (toasts().length) {
-      <div class="toasts">
-        @for (toast of toasts(); track toast.id) {
-          <div class="toast" [class.toast--err]="toast.kind === 'err'">
-            <span class="toast__dot"></span>
-            <span>{{ toast.text }}</span>
-          </div>
-        }
-      </div>
-    }
+    <div class="toasts" aria-live="polite" aria-relevant="additions text">
+      @for (toast of toasts(); track toast.id) {
+        <div class="toast" [class.toast--err]="toast.kind === 'err'"
+             [attr.role]="toast.kind === 'err' ? 'alert' : 'status'" aria-atomic="true">
+          <span class="toast__dot"></span>
+          <span>{{ toast.text }}</span>
+        </div>
+      }
+    </div>
   `,
 })
 export class UiHost {

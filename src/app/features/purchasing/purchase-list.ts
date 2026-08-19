@@ -9,6 +9,7 @@ import { Privacy } from '../../core/api/privacy';
 import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { messageOf } from '../../core/api/errors';
 
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen',
@@ -26,14 +27,24 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     </app-page-header>
 
     <div class="content">
-      <div class="alert alert--info">
-        <span class="alert__icon">ℹ</span>
-        <div>
-          Inkoop gaat per container. Hier wordt de <b>kostprijs per stuk</b> berekend: EXW in
-          USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de
-          kosten vanaf de aankomsthaven.
+      @if (privacy.showPurchase()) {
+        <div class="alert alert--info">
+          <span class="alert__icon">ℹ</span>
+          <div>
+            Inkoop gaat per container. Hier wordt de <b>kostprijs per stuk</b> berekend: EXW in
+            USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de
+            kosten vanaf de aankomsthaven.
+          </div>
         </div>
-      </div>
+      } @else {
+        <div class="alert alert--ok">
+          <span class="alert__icon">✓</span>
+          <div>
+            <b>Klantveilige weergave.</b> Alle inkoopbedragen, wisselkoersen en kostprijzen
+            zijn verborgen. Orderstatus, planning, aantallen en containervulling blijven zichtbaar.
+          </div>
+        </div>
+      }
 
       <div class="card mt-12"><div class="list">
         @for (row of orders(); track row.order.id) {
@@ -41,8 +52,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                open a calculation just to get rid of it. -->
           <div class="swipe" [class.swipe--open]="swiped() === row.order.id">
             <a class="list-item swipe__row" [routerLink]="['/purchasing', row.order.id]"
-               (touchstart)="swipeStart($event, row.order.id)"
-               (touchmove)="swipeMove($event, row.order.id)"
+               (touchstart)="row.order.status !== 'ONTVANGEN' && swipeStart($event, row.order.id)"
+               (touchmove)="row.order.status !== 'ONTVANGEN' && swipeMove($event, row.order.id)"
                (touchend)="swipeEnd()"
                (click)="blockWhenSwiped($event)">
             <div class="list-item__body">
@@ -61,19 +72,26 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               </div>
             </div>
             <div class="list-item__end">
-              <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
+              @if (privacy.showPurchase()) {
+                <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
+              }
               <span class="badge badge--neutral">{{ statusLabel(row.order.status) }}</span>
+              @if (!privacy.showPurchase()) {
+                <div class="tiny muted">bedragen verborgen</div>
+              }
             </div>
             <span class="list-item__chev">›</span>
             </a>
-            <button class="swipe__delete" type="button" (click)="remove(row.order.id, row.order.number)"
-                    aria-label="Calculatie verwijderen">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 7h16" /><path d="M9 7V5h6v2" />
-                <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
-              </svg>
-            </button>
+            @if (row.order.status !== 'ONTVANGEN') {
+              <button class="swipe__delete" type="button" (click)="remove(row.order.id, row.order.number)"
+                      aria-label="Calculatie verwijderen">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                  <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+                </svg>
+              </button>
+            }
           </div>
         } @empty {
           @if (loading()) {
@@ -107,18 +125,25 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               }
             </select>
           </div>
-          <div class="field-row">
-            <div class="field"><label for="po-cny">Koers RMB → USD</label>
-              <input class="input num right" id="po-cny" type="number" step="0.0001"
-                     [ngModel]="cnyToUsd()" (ngModelChange)="cnyToUsd.set(+$event)" /></div>
-            <div class="field"><label for="po-usd">Koers USD → EUR</label>
-              <input class="input num right" id="po-usd" type="number" step="0.0001"
-                     [ngModel]="usdToEur()" (ngModelChange)="usdToEur.set(+$event)" /></div>
-          </div>
-          <p class="small muted">
-            De koersen worden op de order vastgeklikt, zodat een oude calculatie niet verandert
-            als de koers beweegt.
-          </p>
+          @if (privacy.showPurchase()) {
+            <div class="field-row">
+              <div class="field"><label for="po-cny">Koers RMB → USD</label>
+                <input class="input num right" id="po-cny" type="number" step="0.0001"
+                       [ngModel]="cnyToUsd()" (ngModelChange)="cnyToUsd.set(+$event)" /></div>
+              <div class="field"><label for="po-usd">Koers USD → EUR</label>
+                <input class="input num right" id="po-usd" type="number" step="0.0001"
+                       [ngModel]="usdToEur()" (ngModelChange)="usdToEur.set(+$event)" /></div>
+            </div>
+            <p class="small muted">
+              De koersen worden op de order vastgeklikt, zodat een oude calculatie niet verandert
+              als de koers beweegt.
+            </p>
+          } @else {
+            <div class="alert alert--ok">
+              <span class="alert__icon">✓</span>
+              <div>De calculatie wordt met de interne standaardkoersen aangemaakt; bedragen blijven verborgen.</div>
+            </div>
+          }
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="picking.set(false)">Annuleren</button>
@@ -209,15 +234,26 @@ export class PurchaseList {
   }
 
   remove(id: number, number: string): void {
+    const row = this.orders().find((candidate) => candidate.order.id === id);
+    if (row?.order.status === 'ONTVANGEN') {
+      this.swiped.set(null);
+      this.ui.toast('Ontvangen inkooporders kunnen niet worden verwijderd', 'err');
+      return;
+    }
     this.ui.confirm(
       { title: 'Calculatie verwijderen',
         message: `Inkooporder <b>${number}</b> verwijderen?`,
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
-        await this.sourcing.deletePurchaseOrder(id);
-        this.swiped.set(null);
-        this.orders.set(await this.sourcing.purchaseOrders());
-        this.ui.toast('Calculatie verwijderd');
+        try {
+          await this.sourcing.deletePurchaseOrder(id);
+          this.swiped.set(null);
+          this.orders.update((orders) =>
+            orders.filter((candidate) => candidate.order.id !== id));
+          this.ui.toast('Calculatie verwijderd');
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+        }
       });
   }
 

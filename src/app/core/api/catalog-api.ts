@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
-import { Category, CsvImportResult, HsCode, Product } from './models';
+import { CatalogImportResult, Category, HsCode, Product } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class CatalogApi {
@@ -67,31 +67,20 @@ export class CatalogApi {
     return firstValueFrom(this.http.get(api(url), { responseType: 'blob' }));
   }
 
+  /** One native Excel workbook with master data and customer-facing translations. */
+  catalogWorkbook(): Promise<Blob> {
+    return firstValueFrom(
+      this.http.get(api('/api/products/workbook'), { responseType: 'blob' }));
+  }
+
+  importCatalogWorkbook(file: File): Promise<CatalogImportResult> {
+    const form = new FormData();
+    form.append('file', file);
+    return firstValueFrom(
+      this.http.post<CatalogImportResult>(api('/api/products/workbook'), form));
+  }
+
   /** The catalogue as a PDF, with a hand-picked selection. */
-  /** Master-data CSV for bulk editing (HS codes, sizes, cartons, prices). */
-  productsCsv(): Promise<Blob> {
-    return firstValueFrom(this.http.get(api('/api/products/csv'), { responseType: 'blob' }));
-  }
-
-  importProductsCsv(file: File): Promise<CsvImportResult> {
-    const form = new FormData();
-    form.append('file', file);
-    return firstValueFrom(this.http.post<CsvImportResult>(api('/api/products/csv'), form));
-  }
-
-  /** Translation CSV: one row per product per language. */
-  translationsCsv(): Promise<Blob> {
-    return firstValueFrom(
-      this.http.get(api('/api/products/translations/csv'), { responseType: 'blob' }));
-  }
-
-  importTranslationsCsv(file: File): Promise<CsvImportResult> {
-    const form = new FormData();
-    form.append('file', file);
-    return firstValueFrom(
-      this.http.post<CsvImportResult>(api('/api/products/translations/csv'), form));
-  }
-
   exportCatalog(request: {
     productIds: number[];
     includePrices: boolean;

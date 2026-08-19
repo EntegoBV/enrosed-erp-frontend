@@ -79,10 +79,12 @@ import { Icon } from './shared/icon';
 
       @if (!bare()) {
         <nav class="tabbar">
-          <a class="tabbar__item" routerLink="/dashboard" routerLinkActive="active">
+          <a class="tabbar__item" routerLink="/dashboard" routerLinkActive="active"
+             [attr.aria-current]="url().startsWith('/dashboard') ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="home" /></span> Home
           </a>
-          <a class="tabbar__item" routerLink="/sales" routerLinkActive="active">
+          <a class="tabbar__item" routerLink="/sales" routerLinkActive="active"
+             [class.active]="salesRoute()" [attr.aria-current]="salesRoute() ? 'page' : null">
             <span class="tabbar__icon">
               <app-icon name="sales" />
               @if (openWork(); as n) {
@@ -90,13 +92,16 @@ import { Icon } from './shared/icon';
               }
             </span> Verkoop
           </a>
-          <a class="tabbar__item" routerLink="/purchasing" routerLinkActive="active">
+          <a class="tabbar__item" routerLink="/purchasing" routerLinkActive="active"
+             [attr.aria-current]="url().startsWith('/purchasing') ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="purchase" /></span> Inkoop
           </a>
-          <a class="tabbar__item" routerLink="/products" routerLinkActive="active">
+          <a class="tabbar__item" routerLink="/products" routerLinkActive="active"
+             [class.active]="catalogRoute()" [attr.aria-current]="catalogRoute() ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="products" /></span> Producten
           </a>
-          <a class="tabbar__item" routerLink="/more" routerLinkActive="active">
+          <a class="tabbar__item" routerLink="/more" routerLinkActive="active"
+             [class.active]="moreRoute()" [attr.aria-current]="moreRoute() ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="more" /></span> Meer
           </a>
         </nav>
@@ -119,7 +124,7 @@ export class App {
    */
   readonly openWork = this.work.actionCount;
 
-  private readonly url = toSignal(
+  readonly url = toSignal(
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd),
       map((event) => event.urlAfterRedirects),
@@ -133,6 +138,22 @@ export class App {
     const url = this.url();
     return url.startsWith('/login') || url.startsWith('/offerte')
         || url.startsWith('/voorwaarden');
+  });
+
+  readonly salesRoute = computed(() => {
+    const url = this.url();
+    return url.startsWith('/sales') || url.startsWith('/revisions');
+  });
+
+  readonly catalogRoute = computed(() => {
+    const url = this.url();
+    return url.startsWith('/products') || url.startsWith('/catalog-export');
+  });
+
+  readonly moreRoute = computed(() => {
+    const url = this.url();
+    return ['/more', '/customers', '/suppliers', '/countries', '/settings', '/voorwaarden']
+      .some((path) => url.startsWith(path));
   });
 
   logout(): void {

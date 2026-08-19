@@ -1,5 +1,15 @@
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  effect,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Location } from '@angular/common';
+import { Title } from '@angular/platform-browser';
 import { BrandMark } from './brand-mark';
 import { NotificationBell } from './notification-bell';
 
@@ -30,22 +40,27 @@ import { NotificationBell } from './notification-bell';
       }
       <div class="appbar__titles">
         @if (editingTitle()) {
-          <input
-            class="appbar__title-input"
-            type="text"
-            [value]="title()"
-            (blur)="commitTitle($any($event.target).value)"
-            (keydown.enter)="commitTitle($any($event.target).value)"
-            (keydown.escape)="editingTitle.set(false)"
-            #titleField
-          />
+          <h1 class="appbar__title">
+            <input
+              class="appbar__title-input"
+              type="text"
+              [value]="title()"
+              [attr.aria-label]="'Titel wijzigen: ' + title()"
+              (blur)="commitTitle($any($event.target).value)"
+              (keydown.enter)="commitTitle($any($event.target).value)"
+              (keydown.escape)="editingTitle.set(false)"
+              #titleField
+            />
+          </h1>
         } @else if (titleEditable()) {
-          <button class="appbar__title appbar__title--editable" type="button"
-                  aria-label="Nummer wijzigen" (click)="startEditing()">
-            {{ title() }} <span class="appbar__pencil">✎</span>
-          </button>
+          <h1 class="appbar__title">
+            <button class="appbar__title-button" type="button"
+                    [attr.aria-label]="'Titel wijzigen: ' + title()" (click)="startEditing()">
+              {{ title() }} <span class="appbar__pencil" aria-hidden="true">✎</span>
+            </button>
+          </h1>
         } @else {
-          <div class="appbar__title">{{ title() }}</div>
+          <h1 class="appbar__title">{{ title() }}</h1>
         }
         @if (subtitle()) {
           <div class="appbar__sub">{{ subtitle() }}</div>
@@ -60,7 +75,18 @@ import { NotificationBell } from './notification-bell';
     </header>
   `,
   styles: `
-    .appbar__title--editable {
+    .appbar__titles {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0;
+    }
+    .appbar__title { line-height: 1.08; }
+    .appbar__sub {
+      margin-top: 1px;
+      line-height: 1.12;
+    }
+    .appbar__title-button {
       border: 0;
       background: transparent;
       padding: 0;
@@ -73,8 +99,16 @@ import { NotificationBell } from './notification-bell';
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      line-height: 1.08;
     }
-    .appbar__pencil { font-size: 12px; color: var(--muted-2); }
+    .appbar__pencil {
+      display: inline-block;
+      margin-left: 3px;
+      color: var(--muted-2);
+      font-size: 16px;
+      line-height: 1;
+      transform: translateY(1px);
+    }
     .appbar__title-input {
       font: inherit;
       font-size: inherit;
@@ -85,7 +119,6 @@ import { NotificationBell } from './notification-bell';
       border-bottom: 2px solid var(--rose);
       background: transparent;
       padding: 0;
-      outline: none;
     }
   `,
 })
@@ -104,17 +137,27 @@ export class PageHeader {
   readonly titleChange = output<string>();
 
   readonly editingTitle = signal(false);
+  private readonly titleField = viewChild<ElementRef<HTMLInputElement>>('titleField');
 
-  constructor(private readonly location: Location) {}
+  constructor(
+    private readonly location: Location,
+    private readonly documentTitle: Title,
+  ) {
+    effect(() => {
+      const pageTitle = this.title().trim();
+      this.documentTitle.setTitle(pageTitle ? `${pageTitle} — Enrosed` : 'Enrosed');
+    });
+    effect(() => {
+      if (!this.editingTitle()) return;
+      const field = this.titleField()?.nativeElement;
+      if (!field) return;
+      field.focus();
+      field.select();
+    });
+  }
 
   startEditing(): void {
     this.editingTitle.set(true);
-    /* The input renders on the next tick; focus it once it exists. */
-    setTimeout(() => {
-      const field = document.querySelector<HTMLInputElement>('.appbar__title-input');
-      field?.focus();
-      field?.select();
-    });
   }
 
   commitTitle(raw: string): void {

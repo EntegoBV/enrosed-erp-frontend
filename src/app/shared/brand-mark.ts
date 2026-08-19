@@ -28,7 +28,7 @@ import { Privacy } from '../core/api/privacy';
       (touchend)="onTouch($event)"
       (keydown.enter)="privacy.toggle()"
     >
-      <img class="brand-mark__logo" src="logo.png" alt="Enrosed" draggable="false" />
+      <img class="brand-mark__logo" src="logo-ui.png" alt="Enrosed" draggable="false" />
       @if (subtitle()) {
         <span class="brand-mark__sub">{{ subtitle() }}</span>
       }

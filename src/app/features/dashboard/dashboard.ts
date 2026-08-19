@@ -74,7 +74,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         <a class="kpi" routerLink="/products">
           <div class="kpi__label">Catalogus</div>
           <div class="kpi__value">{{ productCount() }}</div>
-          <div class="kpi__meta">producten</div>
+          <div class="kpi__meta">
+            @if (catalogAttention()) { {{ catalogAttention() }} met aandacht }
+            @else { productmaster compleet }
+          </div>
         </a>
       </div>
       }
@@ -86,6 +89,17 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
           <div>
             <b>{{ revisions().length }} klant(en)</b> vragen een wijziging op hun offerte.
             Tik om te behandelen.
+          </div>
+        </a>
+      }
+
+      @if (catalogAttention()) {
+        <a class="alert alert--warn mt-12" routerLink="/products"
+           style="text-decoration:none;color:inherit">
+          <span class="alert__icon">◈</span>
+          <div>
+            <b>{{ catalogAttention() }} product(en)</b> missen nog informatie voor website of
+            orderapp. Tik om de productmaster af te werken.
           </div>
         </a>
       }
@@ -207,31 +221,38 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
       <div class="card mt-12">
         <div class="card__head"><h2>Containervracht</h2>
           <span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="rateSheet.set(true)">+ Tarief</button>
+          <button class="btn btn--sm" type="button" (click)="openRateSheet()"
+                  aria-label="Forwarderofferte voor containervracht noteren">+ Tarief</button>
         </div>
         <div class="card__body">
+          <div class="market-hint" style="margin:0 0 8px" role="note">
+            <strong>USD per 40ft-container.</strong> Shanghai is de wekelijkse
+            Drewry-marktbenchmark. De andere routes tonen je exacte forwarderoffertes.
+          </div>
           @if (wciSeries().length) {
             <button class="market-row market-row--btn" type="button"
-                    (click)="openHistory('WCI SHA-RTM', 'Shanghai → Rotterdam', '$')">
+                    aria-label="Historiek van de Drewry-marktbenchmark Shanghai naar Rotterdam bekijken"
+                    (click)="openHistory('WCI SHA-RTM', 'Shanghai → Rotterdam · USD per 40ft', 'USD ')">
               <div>
                 <div class="market-row__label">Shanghai → Rotterdam</div>
-                <div class="market-row__value num">$ {{ wciLatest() | num: 0 }}</div>
-                <div class="tiny muted">Drewry WCI · wekelijks · per 40ft</div>
+                <div class="market-row__value num">USD {{ wciLatest() | num: 0 }}</div>
+                <div class="tiny muted">Drewry WCI · wekelijkse marktbenchmark · 40ft</div>
               </div>
               <app-sparkline class="market-row__spark" [values]="wciSeries()" />
             </button>
           }
           @for (route of ownRoutes; track route.code) {
             <button class="market-row market-row--btn" type="button"
-                    [disabled]="!latestFor(route.code)"
-                    (click)="openHistory(route.code, route.label + ' → Rotterdam', '$')">
+                    [attr.aria-label]="freightRouteAriaLabel(route)"
+                    (click)="openFreightRoute(route)">
               <div>
                 <div class="market-row__label">{{ route.label }} → Rotterdam</div>
                 @if (latestFor(route.code); as latest) {
-                  <div class="market-row__value num">$ {{ latest.usdPerContainer | num: 0 }}</div>
-                  <div class="tiny muted">eigen notering · {{ latest.quotedOn }}</div>
+                  <div class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}</div>
+                  <div class="tiny muted">exacte forwarderofferte · {{ latest.quotedOn }} · 40ft</div>
                 } @else {
-                  <div class="tiny muted">nog geen notering — noteer wat je forwarder vraagt</div>
+                  <div class="tiny muted">Nog geen forwarderofferte</div>
+                  <div class="strong">Tarief noteren <span aria-hidden="true">›</span></div>
                 }
               </div>
               @if (seriesFor(route.code).length > 1) {
@@ -367,8 +388,8 @@ export class Dashboard {
 
   readonly ownRoutes = [
     { code: 'NINGBO', label: 'Ningbo' },
-    { code: 'GUANGZHOU', label: 'Guangzhou' },
-    { code: 'SHENZHEN', label: 'Shenzhen' },
+    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)' },
+    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)' },
   ];
   readonly freightRates = signal<FreightRate[]>([]);
   readonly rateSheet = signal(false);
@@ -426,6 +447,24 @@ export class Dashboard {
 
   openHistory(code: string, label: string, unit: string): void {
     this.historyRoute.set({ code, label, unit });
+  }
+
+  openRateSheet(route?: string): void {
+    if (route) this.newRoute.set(route);
+    this.rateSheet.set(true);
+  }
+
+  openFreightRoute(route: { code: string; label: string }): void {
+    if (this.latestFor(route.code)) {
+      this.openHistory(route.code, `${route.label} → Rotterdam · USD per 40ft`, 'USD ');
+      return;
+    }
+    this.openRateSheet(route.code);
+  }
+
+  freightRouteAriaLabel(route: { code: string; label: string }): string {
+    const action = this.latestFor(route.code) ? 'Historiek bekijken' : 'Tarief noteren';
+    return `${action} voor ${route.label} naar Rotterdam, USD per 40ft-container`;
   }
 
   /** Newest first: the question is what it costs now and how it got there. */
@@ -643,6 +682,7 @@ export class Dashboard {
   readonly purchases = signal<PurchaseOrderView[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly productCount = signal(0);
+  readonly catalogAttention = signal(0);
   readonly loading = signal(true);
 
   constructor() {
@@ -665,6 +705,8 @@ export class Dashboard {
     this.purchases.set(purchases.slice(0, 5));
     this.revisions.set(revisions);
     this.productCount.set(products.length);
+    this.catalogAttention.set(products.filter((product) =>
+      product.active && (product.publicationIssues?.length ?? 0) > 0).length);
     this.loading.set(false);
   }
 

@@ -7,23 +7,17 @@ import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { Category, Product, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
-import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
 /**
- * Look first, edit second.
- *
- * Tapping a product in the catalogue shows this compact card view: all data
- * readable together, without input fields that change something by
- * accident. Whoever really wants to edit goes through the Bewerken button
- * to the existing edit screen.
- *
- * The purchase and margin figures follow the privacy switch: in the green
- * (customer-safe) state the whole purchasing card disappears.
+ * Read-first product master. The page deliberately separates the customer
+ * story (photo, price, availability) from operational data. Editing remains
+ * an explicit action, so a warehouse or sales colleague can safely browse it.
  */
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe],
+  imports: [RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, EurPipe, NumPipe],
   template: `
     @if (product(); as product) {
       <app-page-header [title]="product.name" [subtitle]="headerLine()"
@@ -33,222 +27,312 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
         </a>
       </app-page-header>
 
-      <div class="content">
-        @if (product.photos.length) {
-          <div class="view__photos" [class.view__photos--single]="product.photos.length === 1">
-            @for (photo of product.photos; track photo.id) {
-              <button class="view__photo-btn" type="button" (click)="lightbox.set($index)"
-                      [attr.aria-label]="'Foto ' + ($index + 1) + ' vergroten'">
-                <img class="view__photo" [appAuthSrc]="photo.url" [alt]="product.name" />
-                <span class="view__zoom" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
-                       stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                       stroke-linejoin="round">
-                    <path d="M9 3H3v6" /><path d="M3 3l7 7" />
-                    <path d="M15 21h6v-6" /><path d="M21 21l-7-7" />
-                  </svg>
-                </span>
-              </button>
-            }
-          </div>
-          @if (product.photos.length > 1) {
-            <div class="view__dots">
-              @for (photo of product.photos; track photo.id) {
-                <span class="view__dot"></span>
-              }
-            </div>
-          }
-          <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
-        }
+      <div class="content product-view-page">
+        <div class="product-view-canvas">
+          <section class="product-hero" aria-label="Productoverzicht">
+            <div class="gallery">
+              @if (activePhoto(); as photo) {
+                <button class="gallery__stage" type="button" (click)="openActivePhoto()"
+                        [attr.aria-label]="'Foto ' + (activePhotoIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
+                  <img [appAuthSrc]="photo.url"
+                       [alt]="product.name + ' — foto ' + (activePhotoIndex() + 1)" />
+                  <span class="gallery__count">{{ activePhotoIndex() + 1 }} / {{ product.photos.length }}</span>
+                  <span class="gallery__zoom" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M11 8v6M8 11h6"/>
+                    </svg>
+                  </span>
+                </button>
 
-        @if (!product.active) {
-          <div class="alert alert--warn">Dit product staat inactief.</div>
-        }
-        <div class="spec-grid">
-          <div class="spec">
-            <span class="spec__label">Voorraad</span>
-            <span class="spec__value" [class.warn-text]="product.stockQuantity <= 0">
-              {{ product.stockQuantity | num }}</span>
-            <span class="spec__sub">stuks</span>
-          </div>
-          <div class="spec">
-            <span class="spec__label">Kleur</span>
-            <span class="spec__value">{{ product.colour || '—' }}</span>
-            <span class="spec__sub">{{ categoryName() || ' ' }}</span>
-          </div>
-          <div class="spec">
-            <span class="spec__label">Afmeting</span>
-            <span class="spec__value spec__value--sm num">{{ size(product.dimensions) }}</span>
-            <span class="spec__sub">l × b × h</span>
-          </div>
-          <div class="spec">
-            <span class="spec__label">Barcode stuk</span>
-            <span class="spec__value spec__value--sm num">{{ product.barcodeInner || '—' }}</span>
-            <span class="spec__sub">EAN-13</span>
-          </div>
-          <div class="spec spec--wide">
-            <span class="spec__label">Leverancier</span>
-            <span class="spec__value spec__value--sm">{{ supplierName() || '—' }}</span>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card__head"><h2>Omdoos</h2></div>
-          <div class="card__body">
-            <div class="stat-row"><span>Kartonafmeting</span>
-              <span class="num">{{ size(product.carton) }}</span></div>
-            <div class="stat-row"><span>Stuks per karton</span>
-              <span class="num">{{ product.carton.piecesPerCarton | num }}</span></div>
-            @if (product.carton.weightKg) {
-              <div class="stat-row"><span>Gewicht per karton</span>
-                <span class="num">{{ product.carton.weightKg | num }} kg</span></div>
-            }
-            @if (product.cartonCbm) {
-              <div class="stat-row"><span>Volume per karton</span>
-                <span class="num">{{ product.cartonCbm | cbm }}</span></div>
-            }
-            <div class="stat-row"><span>Omdoosbarcode</span>
-              <span class="num">{{ product.barcodeOuter || '—' }}</span></div>
-          </div>
-        </div>
-
-        @if (privacy.showPurchase()) {
-          <div class="card mt-16">
-            <div class="card__head"><h2>Inkoop</h2></div>
-            <div class="card__body">
-              <div class="stat-row"><span>EXW-prijs</span>
-                <span class="num">
-                  @if (product.exwPrice; as price) {
-                    {{ price | cur: product.exwCurrency }}
-                  } @else { — }
-                </span></div>
-              @if (product.extraUnitCost) {
-                <div class="stat-row"><span>Extra kost per stuk</span>
-                  <span class="num">{{ product.extraUnitCost | eur }}</span></div>
-              }
-              <div class="stat-row"><span>Kostprijs incl. rechten</span>
-                <span class="num">
-                  @if (product.landedCostEur; as landed) {
-                    {{ landed | eur: 2 }}
-                    @if (product.landedCostSource) {
-                      <span class="tiny muted">({{ product.landedCostSource }})</span>
+                @if (product.photos.length > 1) {
+                  <div class="gallery__thumbs" role="group" aria-label="Kies een productfoto">
+                    @for (item of product.photos; track item.id) {
+                      <button type="button" [class.active]="activePhotoIndex() === $index"
+                              [attr.aria-pressed]="activePhotoIndex() === $index"
+                              [attr.aria-label]="'Toon foto ' + ($index + 1)"
+                              (click)="activePhotoIndex.set($index)">
+                        <img [appAuthSrc]="item.url" alt="" />
+                      </button>
                     }
-                  } @else { — }
-                </span></div>
-              <div class="stat-row"><span>HS-code</span>
-                <span class="num">{{ product.hsCode || '—' }}</span></div>
+                  </div>
+                }
+                <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
+              } @else {
+                <div class="gallery__empty">
+                  <span aria-hidden="true">◇</span>
+                  <b>Nog geen productfoto</b>
+                  <small>Voeg in Bewerken een hoofdfoto toe.</small>
+                </div>
+              }
             </div>
-          </div>
-        }
 
-        <div class="card mt-16 mb-24">
-          <div class="card__head"><h2>Verkoop</h2></div>
-          <div class="card__body">
-            <div class="stat-row"><span>Verkoopprijs</span>
-              <span class="num">
-                @if (product.fixedSalesPriceEur; as fixed) {
-                  {{ fixed | eur: 2 }} <span class="tiny muted">(vast)</span>
-                } @else if (salesPrice(); as derived) {
-                  {{ derived | eur: 2 }} <span class="tiny muted">(kostprijs + opslag)</span>
-                } @else { — }
-              </span></div>
-            @if (privacy.showPurchase() && margin(); as m) {
-              <div class="stat-row"><span>Marge</span>
-                <span class="num" [class.warn-text]="m.eur < 0">
-                  {{ m.eur | eur: 2 }} ({{ m.pct | num }} %)</span></div>
+            <div class="hero-summary">
+              <div class="hero-summary__topline">
+                <span class="badge" [class.badge--ok]="product.active"
+                      [class.badge--warn]="!product.active">
+                  {{ product.active ? 'Actief' : 'Inactief' }}
+                </span>
+                @if (categoryName()) { <span class="hero-summary__category">{{ categoryName() }}</span> }
+              </div>
+
+              <div class="hero-summary__price-stock">
+                <div>
+                  <span>Catalogusprijs</span>
+                  @if (displayPrice(); as price) {
+                    <strong class="num">{{ price | eur: 2 }}</strong>
+                  } @else {
+                    <strong>—</strong>
+                  }
+                  <small>{{ product.fixedSalesPriceEur ? 'vaste prijs' : 'kostprijs + opslag' }}</small>
+                </div>
+                <div>
+                  <span>Voorraad</span>
+                  <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
+                    {{ product.stockQuantity | num }}
+                  </strong>
+                  <small>stuks</small>
+                </div>
+              </div>
+
+              <div class="hero-summary__identity">
+                @if (product.colour) { <span><b>Kleur</b>{{ product.colour }}</span> }
+                @if (product.sku) { <span><b>SKU</b><span class="mono">{{ product.sku }}</span></span> }
+              </div>
+
+              @if (product.description) {
+                <p class="product-copy">{{ product.description }}</p>
+              } @else {
+                <p class="product-copy product-copy--empty">Nog geen klantgerichte beschrijving.</p>
+              }
+
+              <div class="publication-strip">
+                <div class="publication-strip__main">
+                  <span>Publicatie</span>
+                  <strong>{{ publicationSummary(product) }}</strong>
+                  @if (product.publicHandle) {
+                    <small class="mono">/{{ product.publicHandle }}</small>
+                  }
+                </div>
+                <div class="publication-strip__states" aria-label="Verkoopkanalen">
+                  <span [class.live]="product.active && product.websiteStatus === 'PUBLISHED'">
+                    Website
+                  </span>
+                  <span [class.live]="product.active && product.orderAppStatus === 'PUBLISHED'">
+                    Orderapp
+                  </span>
+                </div>
+              </div>
+
+              @if (product.publicationIssues?.length) {
+                <div class="publication-alert">
+                  <span aria-hidden="true">!</span>
+                  <div>
+                    <b>{{ product.publicationIssues.length }} punt(en) voor publicatie</b>
+                    <p>{{ product.publicationIssues.join(' · ') }}</p>
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+
+          <div class="details-grid">
+            <section class="info-card" aria-labelledby="product-details-title">
+              <header>
+                <span class="info-card__icon" aria-hidden="true">01</span>
+                <div><h2 id="product-details-title">Productdetails</h2><p>Identificatie van het artikel</p></div>
+              </header>
+              <dl class="detail-list">
+                <div><dt>Leverancier</dt><dd>{{ supplierName() || '—' }}</dd></div>
+                <div><dt>Afmeting</dt><dd class="num">{{ size(product.dimensions) }}</dd></div>
+                <div><dt>Barcode stuk</dt><dd class="mono">{{ product.barcodeInner || '—' }}</dd></div>
+                @if (product.familyKey) {
+                  <div><dt>Productfamilie</dt><dd class="mono">{{ product.familyKey }}</dd></div>
+                }
+              </dl>
+            </section>
+
+            <section class="info-card" aria-labelledby="carton-details-title">
+              <header>
+                <span class="info-card__icon" aria-hidden="true">02</span>
+                <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
+              </header>
+              <dl class="detail-list">
+                <div><dt>Kartonafmeting</dt><dd class="num">{{ size(product.carton) }}</dd></div>
+                <div><dt>Inhoud</dt><dd class="num">{{ product.carton.piecesPerCarton | num }} stuks</dd></div>
+                <div><dt>Gewicht</dt><dd class="num">
+                  {{ product.carton.weightKg ? (product.carton.weightKg | num) + ' kg' : '—' }}
+                </dd></div>
+                <div><dt>Volume</dt><dd class="num">
+                  @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
+                </dd></div>
+                <div><dt>Omdoosbarcode</dt><dd class="mono">{{ product.barcodeOuter || '—' }}</dd></div>
+              </dl>
+            </section>
+
+            @if (privacy.showPurchase()) {
+              <section class="info-card info-card--internal" aria-labelledby="purchase-details-title">
+                <header>
+                  <span class="info-card__icon" aria-hidden="true">03</span>
+                  <div><h2 id="purchase-details-title">Inkoop</h2><p>Alleen intern zichtbaar</p></div>
+                  <span class="badge badge--warn">intern</span>
+                </header>
+                <dl class="detail-list">
+                  <div><dt>EXW-prijs</dt><dd class="num">
+                    @if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }
+                  </dd></div>
+                  <div><dt>Extra kost per stuk</dt><dd class="num">
+                    @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
+                  </dd></div>
+                  <div class="detail-list__emphasis"><dt>Kostprijs incl. rechten</dt><dd class="num">
+                    @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
+                  </dd></div>
+                  @if (product.landedCostSource) {
+                    <div><dt>Bron kostprijs</dt><dd>{{ product.landedCostSource }}</dd></div>
+                  }
+                  <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}</dd></div>
+                </dl>
+              </section>
             }
+
+            <section class="info-card" aria-labelledby="sales-details-title">
+              <header>
+                <span class="info-card__icon" aria-hidden="true">{{ privacy.showPurchase() ? '04' : '03' }}</span>
+                <div><h2 id="sales-details-title">Verkoop</h2><p>Prijs voor catalogus en orderapp</p></div>
+              </header>
+              <dl class="detail-list">
+                <div class="detail-list__emphasis"><dt>Verkoopprijs</dt><dd class="num">
+                  @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
+                </dd></div>
+                <div><dt>Prijsregel</dt><dd>
+                  {{ product.fixedSalesPriceEur ? 'Vaste verkoopprijs' : (product.markupPct | num) + ' % opslag' }}
+                </dd></div>
+                @if (privacy.showPurchase() && margin(); as m) {
+                  <div><dt>Brutomarge per stuk</dt>
+                    <dd class="num" [class.warn-text]="m.eur < 0">{{ m.eur | eur: 2 }} · {{ m.pct | num }} %</dd>
+                  </div>
+                }
+              </dl>
+            </section>
           </div>
         </div>
-
       </div>
     }
   `,
   styles: `
-    /* One big photo at a time, snapped to the centre; swipe for the rest. */
-    .view__photos {
-      display: flex; gap: 12px; overflow-x: auto;
-      scroll-snap-type: x mandatory;
-      padding: 2px calc(50% - min(24vw, 90px)) 6px;
-      margin-bottom: 6px;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-    }
-    .view__photos::-webkit-scrollbar { display: none; }
-    .view__photos--single { justify-content: center; padding-inline: 0; }
-    .view__photo-btn {
-      position: relative;
-      border: 0; padding: 0; background: none; cursor: zoom-in; flex: 0 0 auto;
-      scroll-snap-align: center;
-      transition: transform 0.15s ease;
-    }
-    .view__photo-btn:active { transform: scale(0.98); }
-    .view__photo {
-      width: min(48vw, 180px); height: min(48vw, 180px);
-      object-fit: cover; border-radius: var(--r);
-      border: 1px solid var(--line);
-      background: var(--surface-2);
-      display: block;
-    }
-    .view__zoom {
-      position: absolute; right: 6px; bottom: 6px;
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 26px; height: 26px; border-radius: 50%;
-      background: rgb(20 14 12 / 55%); color: #fff;
-      backdrop-filter: blur(4px); pointer-events: none;
-    }
-    /* Bento tiles: chunky, glanceable, no label-value line soup. */
-    .spec-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-      margin-bottom: 18px;
-    }
-    .spec {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 12px 14px;
-      display: flex; flex-direction: column; gap: 2px;
-      min-width: 0;
-    }
-    .spec--wide { grid-column: 1 / -1; }
-    .spec__label {
-      font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--muted);
-    }
-    .spec__value {
-      font-size: 22px; font-weight: 800; letter-spacing: -0.01em;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .spec__value--sm { font-size: 14.5px; font-weight: 700; }
-    .spec__sub { font-size: 11.5px; color: var(--muted); }
+    .product-view-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 300px); }
+    .product-view-canvas { width: 100%; max-width: 1080px; margin: 0 auto; }
 
-    .view__dots {
-      display: flex; justify-content: center; gap: 6px; margin-bottom: 14px;
+    .product-hero {
+      overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r-lg);
+      background: var(--surface); box-shadow: var(--sh-2);
     }
-    .view__dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: color-mix(in srgb, var(--ink) 22%, transparent);
+    .gallery { min-width: 0; padding: 12px; background: linear-gradient(145deg, #f6f1ed, #eee7e1); }
+    .gallery__stage {
+      position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; padding: 0;
+      border: 1px solid rgb(26 22 20 / 7%); border-radius: 18px; background: #fff;
+      cursor: zoom-in;
+    }
+    .gallery__stage img { width: 100%; height: 100%; object-fit: contain; }
+    .gallery__stage:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
+    .gallery__count, .gallery__zoom {
+      position: absolute; bottom: 10px; display: inline-flex; align-items: center; justify-content: center;
+      background: rgb(25 20 18 / 68%); color: #fff; backdrop-filter: blur(8px);
+    }
+    .gallery__count { left: 10px; min-height: 28px; padding: 4px 9px; border-radius: 999px;
+      font-size: 10.5px; font-weight: 700; }
+    .gallery__zoom { right: 10px; width: 32px; height: 32px; border-radius: 50%; }
+    .gallery__thumbs { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+    .gallery__thumbs button {
+      width: 54px; height: 54px; overflow: hidden; padding: 2px; border: 2px solid transparent;
+      border-radius: 11px; background: rgb(255 255 255 / 68%); cursor: pointer;
+    }
+    .gallery__thumbs button.active { border-color: var(--rose); background: var(--surface); }
+    .gallery__thumbs button:focus-visible { outline: 3px solid var(--rose-line); outline-offset: 2px; }
+    .gallery__thumbs img { width: 100%; height: 100%; border-radius: 7px; object-fit: cover; }
+    .gallery__empty { min-height: 280px; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 4px; border: 1px dashed var(--line-strong); border-radius: 18px;
+      background: rgb(255 255 255 / 55%); color: var(--muted); text-align: center; }
+    .gallery__empty > span { font-size: 38px; line-height: 1; opacity: .55; }
+    .gallery__empty b { color: var(--ink-2); font-size: 13px; }
+    .gallery__empty small { font-size: 11.5px; }
+
+    .hero-summary { min-width: 0; padding: 18px; }
+    .hero-summary__topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .hero-summary__category { overflow: hidden; color: var(--muted); font-size: 11.5px;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .hero-summary__price-stock { display: grid; grid-template-columns: 1.35fr .65fr; gap: 9px; margin-top: 14px; }
+    .hero-summary__price-stock > div { min-width: 0; display: flex; flex-direction: column; padding: 13px;
+      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+    .hero-summary__price-stock span { color: var(--muted); font-size: 10px; font-weight: 700;
+      letter-spacing: .07em; text-transform: uppercase; }
+    .hero-summary__price-stock strong { overflow: hidden; margin-top: 1px; font-size: 22px;
+      line-height: 1.25; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
+    .hero-summary__price-stock small { color: var(--muted); font-size: 10.5px; }
+    .hero-summary__identity { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .hero-summary__identity > span { display: inline-flex; gap: 6px; padding: 5px 9px; border-radius: 999px;
+      background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; }
+    .hero-summary__identity b { color: var(--muted); font-weight: 600; }
+    .product-copy { margin-top: 14px; color: var(--ink-2); font-size: 13.5px; line-height: 1.6;
+      white-space: pre-line; }
+    .product-copy--empty { color: var(--muted); font-style: italic; }
+
+    .publication-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-top: 16px; padding: 12px; border: 1px solid var(--rose-line);
+      border-radius: var(--r-sm); background: var(--rose-soft); }
+    .publication-strip__main { min-width: 0; display: flex; flex-direction: column; }
+    .publication-strip__main > span { color: var(--muted); font-size: 9.5px; font-weight: 750;
+      letter-spacing: .09em; text-transform: uppercase; }
+    .publication-strip__main strong { font-size: 12.5px; }
+    .publication-strip__main small { overflow: hidden; color: var(--muted); font-size: 10px;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .publication-strip__states { flex: 0 0 auto; display: flex; flex-direction: column;
+      align-items: flex-end; gap: 3px; }
+    .publication-strip__states span { color: var(--muted); font-size: 10px; font-weight: 650; }
+    .publication-strip__states span::before { display: inline-block; width: 7px; height: 7px;
+      margin-right: 5px; border-radius: 50%; background: var(--muted-2); content: ''; }
+    .publication-strip__states span.live { color: var(--ok); }
+    .publication-strip__states span.live::before { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+    .publication-alert { display: flex; gap: 9px; margin-top: 9px; padding: 10px 11px;
+      border: 1px solid #eddcb9; border-radius: var(--r-sm); background: var(--warn-soft); }
+    .publication-alert > span { display: grid; flex: 0 0 auto; width: 22px; height: 22px; place-items: center;
+      border-radius: 50%; background: var(--warn); color: #fff; font-size: 12px; font-weight: 800; }
+    .publication-alert b { font-size: 11.5px; }
+    .publication-alert p { margin-top: 1px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+
+    .details-grid { display: grid; gap: 12px; margin-top: 14px; }
+    .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);
+      background: var(--surface); box-shadow: var(--sh-1); }
+    .info-card > header { display: flex; align-items: center; gap: 10px; min-height: 64px;
+      padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .info-card__icon { display: grid; flex: 0 0 auto; width: 32px; height: 32px; place-items: center;
+      border-radius: 10px; background: var(--rose-soft); color: var(--rose); font: 750 9.5px/1 var(--mono); }
+    .info-card header > div { min-width: 0; flex: 1; }
+    .info-card h2 { font-size: 14px; line-height: 1.2; }
+    .info-card header p { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
+    .info-card--internal { border-color: #eddcb9; }
+    .info-card--internal .info-card__icon { background: var(--warn-soft); color: var(--warn); }
+
+    .detail-list { margin: 0; padding: 6px 14px 10px; }
+    .detail-list > div { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+      align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .detail-list > div:last-child { border-bottom: 0; }
+    .detail-list dt { color: var(--muted); font-size: 11.5px; }
+    .detail-list dd { min-width: 0; color: var(--ink-2); font-size: 12.5px; font-weight: 620;
+      overflow-wrap: anywhere; text-align: right; }
+    .detail-list__emphasis dt, .detail-list__emphasis dd { color: var(--ink); font-weight: 750; }
+
+    @media (min-width: 760px) {
+      .product-hero { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); }
+      .gallery { padding: 16px; }
+      .hero-summary { display: flex; flex-direction: column; justify-content: center; padding: 24px; }
+      .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     }
   `,
 })
 export class ProductView {
-  /** Which photo the lightbox shows; -1 is closed. */
   readonly lightbox = signal(-1);
-
-  /** SKU and sales price together under the title - no scrolling for the
-      number people look up most. */
-  headerLine(): string {
-    const product = this.product();
-    if (!product) return '';
-    const price = product.fixedSalesPriceEur ?? this.salesPrice();
-    const formatted = price == null ? null : new Intl.NumberFormat('nl-BE',
-        { style: 'currency', currency: 'EUR' }).format(price);
-    /* Margin only in the internal state - this line is the first thing a
-       customer looking along would read. */
-    const m = this.privacy.showPurchase() ? this.margin() : null;
-    const margin = m ? new Intl.NumberFormat('nl-BE',
-        { style: 'currency', currency: 'EUR' }).format(m.eur) + ' marge' : null;
-    return [product.sku, formatted, margin].filter(Boolean).join(' · ');
-  }
+  readonly activePhotoIndex = signal(0);
 
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
@@ -260,23 +344,32 @@ export class ProductView {
   private readonly suppliers = signal<Supplier[]>([]);
 
   readonly supplierName = computed(() =>
-    this.suppliers().find((s) => s.id === this.product()?.supplierId)?.name ?? '');
+    this.suppliers().find((supplier) => supplier.id === this.product()?.supplierId)?.name ?? '');
   readonly categoryName = computed(() =>
-    this.categories().find((c) => c.id === this.product()?.categoryId)?.name ?? '');
+    this.categories().find((category) => category.id === this.product()?.categoryId)?.name ?? '');
 
-  /** Without a fixed price, cost plus markup applies - just like the quote. */
-  readonly salesPrice = computed(() => {
+  readonly displayPrice = computed(() => {
     const product = this.product();
-    if (!product?.landedCostEur || product.markupPct === null) return null;
-    return product.landedCostEur * (1 + product.markupPct / 100);
+    if (!product) return null;
+    if (product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0) {
+      return product.fixedSalesPriceEur;
+    }
+    const calculated = (product.landedCostEur ?? 0) * (1 + (product.markupPct ?? 0) / 100);
+    return Math.round(calculated * 100) / 100;
   });
 
   readonly margin = computed(() => {
-    const product = this.product();
-    const price = product?.fixedSalesPriceEur ?? this.salesPrice();
-    const landed = product?.landedCostEur;
+    const price = this.displayPrice();
+    const landed = this.product()?.landedCostEur;
     if (!price || !landed) return null;
-    return { eur: price - landed, pct: ((price - landed) / landed) * 100 };
+    return { eur: price - landed, pct: ((price - landed) / price) * 100 };
+  });
+
+  readonly activePhoto = computed(() => {
+    const photos = this.product()?.photos ?? [];
+    if (!photos.length) return null;
+    const index = Math.min(Math.max(this.activePhotoIndex(), 0), photos.length - 1);
+    return photos[index];
   });
 
   constructor() {
@@ -289,7 +382,35 @@ export class ProductView {
       this.product.set(product);
       this.categories.set(categories);
       this.suppliers.set(suppliers);
+      this.activePhotoIndex.set(0);
     });
+  }
+
+  openActivePhoto(): void {
+    this.lightbox.set(this.activePhotoIndex());
+  }
+
+  headerLine(): string {
+    const product = this.product();
+    if (!product) return '';
+    const price = this.displayPrice();
+    const formatted = price == null ? null : new Intl.NumberFormat('nl-BE',
+      { style: 'currency', currency: 'EUR' }).format(price);
+    return [product.sku, formatted].filter(Boolean).join(' · ');
+  }
+
+  publicationSummary(product: Product): string {
+    if (!product.active) return 'Inactief';
+    const live = [
+      product.websiteStatus === 'PUBLISHED' ? 'website' : null,
+      product.orderAppStatus === 'PUBLISHED' ? 'orderapp' : null,
+    ].filter(Boolean);
+    if (live.length) return `Live op ${live.join(' en ')}`;
+    if (product.publicationIssues?.length) return 'Nog niet compleet';
+    if (product.websiteStatus === 'READY' || product.orderAppStatus === 'READY') {
+      return 'Klaar om te publiceren';
+    }
+    return 'Concept';
   }
 
   size(box: { lengthCm: number | null; widthCm: number | null; heightCm: number | null }): string {

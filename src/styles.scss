@@ -26,6 +26,8 @@
   --rose-mid: #3f9e6d;
   --rose-soft: #e9f5ee;
   --rose-line: #cbe6d7;
+  /* Backwards-compatible semantic alias used by newer shared components. */
+  --accent: var(--rose);
 
   --gold: #a8853f;
   --gold-soft: #fbf4e6;
@@ -129,6 +131,9 @@ a { color: var(--rose); }
 .mt-12 { margin-top: 12px; }
 .mt-16 { margin-top: 16px; }
 .mt-24 { margin-top: 24px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-24 { margin-bottom: 24px; }
 /* doubled class for extra specificity, or .btn's display wins */
 .hide-mobile.hide-mobile { display: none; }
 
@@ -139,6 +144,22 @@ a { color: var(--rose); }
   display: flex;
   flex-direction: column;
 }
+
+/* Routed pages must be allowed to shrink on phones too. Without min-width: 0,
+   a long, non-wrapping filter rail can become the page's minimum width and
+   push the whole application beyond the viewport. */
+.main {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A route-level sheet lives inside .main while the mobile tab bar is its
+   sibling. Raise that whole branch only while a dialog is open, otherwise
+   the tab bar's own stacking context can cover the sheet footer. */
+.main:has(.overlay) { position: relative; z-index: 80; }
 
 /* --- bovenbalk --- */
 .appbar {
@@ -296,7 +317,6 @@ a { color: var(--rose); }
   .sidebar__link.active { background: var(--rose); color: #fff; border-radius: 999px; }
   .sidebar__icon { width: 18px; display: inline-flex; justify-content: center; opacity: 0.85; }
 
-  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .tabbar { display: none; }
   .content { padding: 22px 26px 60px; }
   .appbar { padding: 0 26px; height: 62px; }
@@ -490,6 +510,7 @@ a { color: var(--rose); }
 
 .chip {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
@@ -507,12 +528,26 @@ a { color: var(--rose); }
 .chips {
   display: flex;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 4px;
   margin-bottom: 12px;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 .chips::-webkit-scrollbar { display: none; }
+
+/* Search-result filters wrap into complete rows. A clipped last pill looked
+   like a rendering bug and made hidden choices easy to miss on phones. */
+.filter-rail {
+  flex-wrap: wrap;
+  overflow-x: visible;
+  padding: 2px 0 4px;
+}
 
 /* ================================================================= velden */
 
@@ -535,6 +570,10 @@ a { color: var(--rose); }
   outline: none;
   border-color: var(--rose-mid);
   box-shadow: 0 0 0 3px rgb(209 74 103 / 14%);
+}
+.input:focus-visible, .select:focus-visible, .textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--rose-mid) 55%, transparent);
+  outline-offset: 2px;
 }
 .textarea { min-height: 76px; resize: vertical; }
 .select {
@@ -761,6 +800,8 @@ a { color: var(--rose); }
   color: var(--muted);
   cursor: pointer;
   padding: 4px 8px;
+  min-width: 44px;
+  min-height: 44px;
 }
 .sheet__body { padding: 16px; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
 .sheet__foot {
@@ -1566,12 +1607,38 @@ button.market-row:disabled { cursor: default; }
 }
 
 /* ------------------------------------------------ touch behaviour (iOS) */
-/* Double-tap zoom broke steppers and headers; this is an internal tool,
-   pinch-zoom is nobody's workflow here. */
+/* Avoid delayed/double-tap activation while preserving browser pinch zoom. */
 button, .btn, .pallet__step-btn, .pallet__tool, input, select {
   touch-action: manipulation;
 }
 .pallet__step-btn, .pallet__tool { user-select: none; -webkit-user-select: none; }
+
+/* A single, visible keyboard-focus language across the whole application. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--rose-mid) 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* Compact desktop controls stay compact; touch devices get forgiving targets. */
+@media (pointer: coarse) {
+  .btn--sm,
+  .chip,
+  .bell,
+  .appbar__back,
+  .appbar__title-button,
+  .sheet__close,
+  .input--sm,
+  .portal__select,
+  .pallet__tool,
+  .pallet__step-btn,
+  .delivery__edit,
+  .photo__btn,
+  .lightbox__btn,
+  .per-toggle button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
 
 /* Bottom chrome honours the iPhone safe area; buttons under the home
    indicator did not receive taps. */
@@ -1596,6 +1663,11 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
 
 /* Breathing room between the pallet explainer and its two start options. */
 .pallet-intro { margin: 0 0 16px; line-height: 1.55; }
+
+/* The purchase picker stays operational in customer-safe mode, without a
+   misleading or screen-reader-visible cost column. Quick-create is disabled
+   by the parent because that flow contains an EXW input. */
+app-product-picker.customer-safe .picker-item__end { display: none; }
 
 
 /* ------------------------------------------------ buying-desk analysis */

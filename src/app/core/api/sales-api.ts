@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE, api } from './api.config';
 import {
-  CompanyProfile, Country, Customer, DiscountTier, NotificationFeed, PortalCatalogItem,
+  CompanyProfile, Country, Customer, DiscountTier, LanguageCode, NotificationFeed, PortalCatalogItem,
   PortalQuote, QuoteEvent, QuoteRevision, SalesOrder, SalesOrderView,
 } from './models';
 
@@ -80,6 +80,20 @@ export class SalesApi {
 
   updateOrder(id: number, order: SalesOrder): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}`), order));
+  }
+
+  /** Changes only delivery promises; safe after the commercial quote is locked. */
+  updateDeliveryTerms(id: number,
+                      lines: { productId: number; deliveryWeek: string | null }[]): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.put<SalesOrderView>(
+      api(`/api/sales-orders/${id}/delivery-terms`), { lines }));
+  }
+
+  /** Changes only the open freight item; prices and quantities stay locked. */
+  updateFreight(id: number, state: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD',
+                manualFreightEur: number | null): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.put<SalesOrderView>(
+      api(`/api/sales-orders/${id}/freight`), { state, manualFreightEur }));
   }
 
   duplicateOrder(id: number): Promise<SalesOrderView> {
@@ -161,15 +175,22 @@ export class SalesApi {
   /* ------------------------------------------------------------ portaal */
 
   /** @param language language the customer picked; empty for their own. */
-  portalQuote(token: string, language?: string): Promise<PortalQuote> {
-    const query = language ? `?language=${language}` : '';
+  portalQuote(token: string, language?: LanguageCode): Promise<PortalQuote> {
+    const query = language ? `?language=${encodeURIComponent(language)}` : '';
     return firstValueFrom(this.http.get<PortalQuote>(api(`/api/portal/${token}${query}`)));
   }
 
   /** Products the customer can add, with the price this order charges. */
-  portalCatalog(token: string): Promise<PortalCatalogItem[]> {
+  portalCatalog(token: string, language?: LanguageCode): Promise<PortalCatalogItem[]> {
+    const query = language ? `?language=${encodeURIComponent(language)}` : '';
     return firstValueFrom(
-      this.http.get<PortalCatalogItem[]>(api(`/api/portal/${token}/products`)));
+      this.http.get<PortalCatalogItem[]>(api(`/api/portal/${token}/products${query}`)),
+    ).then((items) => items.map((item) => ({
+      ...item,
+      /* The API returns a relative public path. The portal and API have
+         different production origins, so hand the picker an absolute URL. */
+      photoUrl: item.photoUrl ? this.portalPhotoUrl(token, item.productId) : null,
+    })));
   }
 
   portalPhotoUrl(token: string, productId: number): string {

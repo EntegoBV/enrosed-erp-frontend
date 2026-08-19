@@ -116,7 +116,7 @@ export function containerLabel(value: string | null | undefined): string {
  *
  * These names translate automatically on quotes and catalogues through the
  * backend dictionary. A colour typed outside this list stays possible, but
- * then translation runs through the CSV file like any other product text.
+ * then translation runs through the catalogue workbook like any other product text.
  */
 export const STANDARD_COLOURS = [
   'Rood', 'Roze', 'Fuchsia', 'Bordeaux', 'Wit', 'Ivoor', 'Champagne',

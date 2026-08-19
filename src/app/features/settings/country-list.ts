@@ -31,8 +31,13 @@ function blank(): Country {
         </div>
       </div>
 
-      <div class="card mt-12"><div class="list">
-        @for (country of countries(); track country.code) {
+      <div class="search-bar mt-12">
+        <input class="input" type="search" placeholder="Zoek op land of landcode…"
+               [ngModel]="query()" (ngModelChange)="query.set($event)" />
+      </div>
+
+      <div class="card"><div class="list">
+        @for (country of filtered(); track country.code) {
           <button class="list-item" type="button" style="text-align:left;width:100%;border-width:0 0 1px"
                   (click)="open(country)">
             <span class="flag">{{ country.code }}</span>
@@ -51,7 +56,7 @@ function blank(): Country {
             <span class="list-item__chev">›</span>
           </button>
         } @empty {
-          <div class="empty"><div class="empty__title">Laden…</div></div>
+          <div class="empty"><div class="empty__title">Geen landen gevonden</div></div>
         }
       </div></div>
     </div>
@@ -150,6 +155,7 @@ export class CountryList {
   private readonly ui = inject(Ui);
 
   readonly countries = signal<Country[]>([]);
+  readonly query = signal('');
   readonly editing = signal(false);
   readonly isNew = signal(false);
   readonly draft = signal<Country>(blank());
@@ -159,6 +165,12 @@ export class CountryList {
   private async load(): Promise<void> {
     this.countries.set(await this.sales.countries());
   }
+
+  readonly filtered = computed(() => {
+    const needle = this.query().trim().toLowerCase();
+    return this.countries().filter((country) => !needle ||
+      `${country.code} ${country.name}`.toLowerCase().includes(needle));
+  });
 
   readonly example = computed(() => {
     const country = this.draft();

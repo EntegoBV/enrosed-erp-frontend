@@ -23,7 +23,8 @@ import { CartonQuantity } from '../../shared/carton-quantity';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, Sheet, EurPipe, NumPipe],
   template: `
-    <app-sheet [title]="t()('portalAddItem')" (closed)="cancelled.emit()">
+    <app-sheet [title]="t()('portalAddItem')" [closeLabel]="t()('portalCancel')"
+               (closed)="cancelled.emit()">
       <div body>
         <div class="search-bar">
           <input class="input" type="search" inputmode="search"
@@ -34,14 +35,20 @@ import { CartonQuantity } from '../../shared/carton-quantity';
         @if (chosen(); as item) {
           <div class="picker-chosen">
             <div class="row">
+              @if (item.photoUrl) {
+                <img class="picker-photo" [src]="item.photoUrl" alt="" loading="lazy" />
+              } @else {
+                <div class="picker-photo picker-photo--empty" aria-hidden="true">◈</div>
+              }
               <div class="grow">
                 <div class="strong">{{ item.description }}</div>
                 <div class="small muted">
-                  {{ item.unitPrice | eur: 2 }} {{ t()('portalPerPiece') }} ·
+                  {{ item.unitPrice | eur: 2: locale() }} {{ t()('portalPerPiece') }} ·
                   {{ item.piecesPerCarton }} {{ t()('portalPerBox') }}
                 </div>
               </div>
-              <button class="btn btn--sm" type="button" (click)="chosen.set(null)">Wijzig</button>
+              <button class="btn btn--sm" type="button"
+                      (click)="chosen.set(null)">{{ changeLabel() }}</button>
             </div>
 
             <div class="field mt-12" style="margin-bottom:0">
@@ -51,12 +58,12 @@ import { CartonQuantity } from '../../shared/carton-quantity';
                      (ngModelChange)="carton.set(+$event)" />
               @if (carton.pending(); as note) {
                 <span class="hint warn-text">
-                  {{ t()('portalRoundingNotice') }} <b>{{ note.to | num }}</b>
+                  {{ t()('portalRoundingNotice') }} <b>{{ note.to | num: 0: locale() }}</b>
                   ({{ item.piecesPerCarton }} {{ t()('portalPerBox') }})
                 </span>
               } @else if (carton.applied(); as note) {
                 <span class="hint warn-text">
-                  {{ note.from | num }} → <b>{{ note.to | num }}</b>
+                  {{ note.from | num: 0: locale() }} → <b>{{ note.to | num: 0: locale() }}</b>
                   ({{ item.piecesPerCarton }} {{ t()('portalPerBox') }})
                 </span>
               } @else {
@@ -78,6 +85,11 @@ import { CartonQuantity } from '../../shared/carton-quantity';
           <div class="picker-list">
             @for (item of matches(); track item.productId) {
               <button class="picker-item" type="button" (click)="choose(item)">
+                @if (item.photoUrl) {
+                  <img class="picker-photo" [src]="item.photoUrl" alt="" loading="lazy" />
+                } @else {
+                  <div class="picker-photo picker-photo--empty" aria-hidden="true">◈</div>
+                }
                 <div class="picker-item__body">
                   <div class="picker-item__title">{{ item.description }}</div>
                   <div class="picker-item__meta">
@@ -91,12 +103,12 @@ import { CartonQuantity } from '../../shared/carton-quantity';
                       ? t()('portalInStock') : t()('portalTermToBeDetermined') }}</span>
                   </div>
                 </div>
-                <div class="picker-item__end">{{ item.unitPrice | eur: 2 }}</div>
+                <div class="picker-item__end">{{ item.unitPrice | eur: 2: locale() }}</div>
               </button>
             } @empty {
               <div class="empty">
-                <div class="empty__title">Niets gevonden</div>
-                <div class="empty__text">Probeer een deel van de naam of de kleur.</div>
+                <div class="empty__title">{{ emptyTitle() }}</div>
+                <div class="empty__text">{{ emptyText() }}</div>
               </div>
             }
           </div>
@@ -125,6 +137,14 @@ import { CartonQuantity } from '../../shared/carton-quantity';
     .picker-item__title { font-size: 14.5px; font-weight: 620; }
     .picker-item__meta { font-size: 12px; color: var(--muted); }
     .picker-item__end { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .picker-photo {
+      width: 48px; height: 48px; flex: none; object-fit: cover;
+      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
+    }
+    .picker-photo--empty {
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted-2); font-size: 17px;
+    }
     .picker-chosen {
       border: 1px solid var(--line-strong); border-radius: var(--r-sm);
       padding: 12px; background: var(--surface-2);
@@ -140,6 +160,10 @@ export class PortalProductPicker implements OnDestroy {
    * portal-page: {{ t()('key') }}.
    */
   readonly t = input.required<(key: string) => string>();
+  readonly locale = input('nl-BE');
+  readonly changeLabel = input('Wijzig');
+  readonly emptyTitle = input('Niets gevonden');
+  readonly emptyText = input('Probeer een deel van de naam of de kleur.');
   readonly picked = output<{ item: PortalCatalogItem; quantity: number }>();
   readonly cancelled = output<void>();
 

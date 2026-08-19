@@ -53,18 +53,87 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
         </div>
       }
 
-      <div class="search-bar">
-        <input class="input" type="search" inputmode="search"
-               placeholder="Zoek op klant of nummer…"
-               [ngModel]="query()" (ngModelChange)="query.set($event)" />
-      </div>
+      <section class="order-finder" aria-labelledby="order-finder-title">
+        <div class="order-finder__head">
+          <div>
+            <h2 id="order-finder-title">Orders vinden</h2>
+            <p>Zoek op klant of ordernummer, of filter op status.</p>
+          </div>
+          @if (activeFilterCount()) {
+            <button class="filter-reset" type="button" (click)="clearFilters()">
+              Wis filters
+              <span aria-hidden="true">{{ activeFilterCount() }}</span>
+            </button>
+          }
+        </div>
 
-      <div class="chips">
-        @for (option of filters; track option.value) {
-          <button class="chip" type="button" [class.active]="filter() === option.value"
-                  (click)="filter.set(option.value)">{{ option.label }}</button>
-        }
-      </div>
+        <div class="filter-controls">
+          <div class="filter-field">
+            <label for="sales-search">Klant of ordernummer</label>
+            <div class="search-control">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="6.5"></circle>
+                <path d="m16 16 4 4"></path>
+              </svg>
+              <input class="input" id="sales-search" type="search" inputmode="search"
+                     autocomplete="off" placeholder="Bijv. De Vries of SO-1024"
+                     [ngModel]="query()" (ngModelChange)="query.set($event)" />
+              @if (query()) {
+                <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
+                        (click)="query.set('')">×</button>
+              }
+            </div>
+          </div>
+
+          <!-- A native select is easier to scan and never overflows on a phone. -->
+          <div class="filter-field mobile-status">
+            <label for="sales-status">Offertestatus</label>
+            <select class="select" id="sales-status" [ngModel]="filter()"
+                    (ngModelChange)="selectStatus($event)">
+              @for (option of filters; track option.value) {
+                <option [ngValue]="option.value">
+                  {{ option.label }} ({{ statusCount(option.value) }})
+                </option>
+              }
+            </select>
+          </div>
+        </div>
+
+        <!-- Wider screens use a stable grid rather than a rail with a stray
+             last chip on a second line. The pressed state remains explicit. -->
+        <div class="desktop-status" role="group" aria-label="Offertestatus">
+          <div class="desktop-status__label">Offertestatus</div>
+          <div class="status-grid">
+            @for (option of filters; track option.value) {
+              <button class="status-option" type="button"
+                      [class.status-option--active]="filter() === option.value"
+                      [attr.aria-pressed]="filter() === option.value"
+                      (click)="selectStatus(option.value)">
+                <span>{{ option.label }}</span>
+                <span class="status-option__count">{{ statusCount(option.value) }}</span>
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="filter-result" role="status" aria-live="polite">
+          <div class="filter-result__copy">
+            <strong>{{ rows().length }}</strong>
+            {{ rows().length === 1 ? 'order gevonden' : 'orders gevonden' }}
+            @if (rows().length !== all().length) {
+              <span>van {{ all().length }}</span>
+            }
+          </div>
+          <div class="active-filters" aria-label="Actieve filters">
+            @if (filter()) {
+              <span>Status: {{ activeStatusLabel() }}</span>
+            }
+            @if (query().trim(); as term) {
+              <span class="active-filters__query">Zoekterm: “{{ term }}”</span>
+            }
+          </div>
+        </div>
+      </section>
 
       <div class="card">
         <div class="list">
@@ -99,6 +168,15 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
           } @empty {
             @if (loading()) {
               <app-skeleton kind="list" [rows]="5" />
+            } @else if (activeFilterCount()) {
+              <div class="empty">
+                <div class="empty__icon">⌕</div>
+                <div class="empty__title">Geen orders gevonden</div>
+                <p class="muted">Pas de zoekterm of offertestatus aan.</p>
+                <button class="btn" type="button" (click)="clearFilters()">
+                  Filters wissen
+                </button>
+              </div>
             } @else {
               <div class="empty">
                 <div class="empty__icon">▤</div>
@@ -199,6 +277,191 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
       </app-sheet>
     }
   `,
+  styles: `
+    .order-finder {
+      min-width: 0;
+      margin-bottom: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      background: var(--surface);
+      box-shadow: var(--shadow-sm);
+    }
+    .order-finder__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+    .order-finder__head h2 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
+    .order-finder__head p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .filter-reset {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 5px 8px 5px 10px;
+      border: 1px solid var(--rose-line);
+      border-radius: 999px;
+      background: var(--rose-soft);
+      color: var(--rose-dark);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .filter-reset span {
+      display: grid;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--rose);
+      color: white;
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .filter-controls { display: grid; gap: 12px; min-width: 0; }
+    .filter-field { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+    .filter-field > label,
+    .desktop-status__label {
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .search-control { position: relative; min-width: 0; }
+    .search-control > svg {
+      position: absolute;
+      top: 50%;
+      left: 14px;
+      width: 18px;
+      height: 18px;
+      transform: translateY(-50%);
+      fill: none;
+      stroke: var(--muted);
+      stroke-linecap: round;
+      stroke-width: 1.8;
+      pointer-events: none;
+    }
+    .search-control .input { padding-right: 46px; padding-left: 42px; }
+    .search-control .input::-webkit-search-cancel-button { appearance: none; }
+    .search-clear {
+      position: absolute;
+      top: 50%;
+      right: 5px;
+      display: grid;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      transform: translateY(-50%);
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+      font-size: 22px;
+      cursor: pointer;
+    }
+    .search-clear:hover { background: var(--surface-2); color: var(--ink); }
+    .desktop-status { display: none; }
+    .filter-result {
+      display: flex;
+      min-width: 0;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 7px 12px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+    .filter-result__copy strong { color: var(--ink); font-size: 14px; }
+    .filter-result__copy span { color: var(--muted); }
+    .active-filters { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; }
+    .active-filters > span {
+      display: block;
+      max-width: 100%;
+      padding: 3px 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--rose-soft);
+      color: var(--rose-dark);
+      font-size: 11px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .empty p { margin: 5px 0 13px; font-size: 13px; }
+
+    @media (min-width: 620px) {
+      .filter-controls { grid-template-columns: minmax(0, 1.5fr) minmax(190px, .75fr); }
+    }
+
+    @media (min-width: 880px) {
+      .order-finder { padding: 18px; }
+      .filter-controls { grid-template-columns: minmax(320px, 560px); }
+      .mobile-status { display: none; }
+      .desktop-status { display: block; margin-top: 14px; }
+      .desktop-status__label { margin-bottom: 6px; }
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
+      }
+      .status-option {
+        display: flex;
+        min-width: 0;
+        min-height: 40px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-2);
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 650;
+        text-align: left;
+        cursor: pointer;
+      }
+      .status-option:hover { border-color: var(--rose-line); background: var(--rose-soft); }
+      .status-option--active {
+        border-color: var(--rose);
+        background: var(--rose);
+        color: white;
+      }
+      .status-option--active:hover { border-color: var(--rose-dark); background: var(--rose-dark); }
+      .status-option > span:first-child {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .status-option__count {
+        display: grid;
+        flex: 0 0 auto;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 5px;
+        place-items: center;
+        border-radius: 999px;
+        background: rgb(0 0 0 / 6%);
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+      }
+      .status-option--active .status-option__count { background: rgb(255 255 255 / 22%); }
+    }
+  `,
 })
 export class SalesList {
   private readonly sales = inject(SalesApi);
@@ -208,14 +471,18 @@ export class SalesList {
   private readonly work = inject(WorkQueue);
 
   readonly filters: { value: QuoteStatus | ''; label: string }[] = [
-    { value: '', label: 'Alle' },
+    { value: '', label: 'Alle orders' },
     { value: 'CONCEPT', label: 'Concept' },
     { value: 'VERZONDEN', label: 'Verzonden' },
+    { value: 'BEKEKEN', label: 'Bekeken' },
     { value: 'WIJZIGING_GEVRAAGD', label: 'Wijziging gevraagd' },
     { value: 'GEACCEPTEERD', label: 'Geaccepteerd' },
+    { value: 'AFGEWEZEN', label: 'Afgewezen' },
+    { value: 'VERLOPEN', label: 'Verlopen' },
   ];
 
   readonly filter = signal<QuoteStatus | ''>('');
+  readonly query = signal('');
   readonly picking = signal(false);
   readonly chosen = signal<number | null>(null);
   readonly loading = signal(true);
@@ -282,8 +549,6 @@ export class SalesList {
     }
   }
 
-  readonly query = signal('');
-
   readonly rows = computed(() => {
     const status = this.filter();
     const needle = this.query().toLowerCase().trim();
@@ -296,6 +561,25 @@ export class SalesList {
         .includes(needle);
     });
   });
+
+  readonly activeFilterCount = computed(() =>
+    (this.filter() ? 1 : 0) + (this.query().trim() ? 1 : 0));
+
+  readonly activeStatusLabel = computed(() =>
+    this.filters.find((option) => option.value === this.filter())?.label ?? 'Alle orders');
+
+  selectStatus(status: QuoteStatus | ''): void {
+    this.filter.set(status);
+  }
+
+  clearFilters(): void {
+    this.query.set('');
+    this.filter.set('');
+  }
+
+  statusCount(status: QuoteStatus | ''): number {
+    return status ? this.all().filter((row) => row.order.status === status).length : this.all().length;
+  }
 
   customerName(row: SalesOrderView): string {
     return this.customers().find((c) => c.id === row.order.customerId)?.company ?? 'Geen klant';
@@ -335,7 +619,7 @@ export class SalesList {
     const view = await this.sales.createOrder(
       customerId, customer?.countryCode ?? null, customer?.incoterm ?? 'DAP');
     this.picking.set(false);
-    await this.router.navigate(['/sales', view.order.id]);
+    await this.router.navigate(['/sales', view.order.id, 'edit']);
   }
 }
 

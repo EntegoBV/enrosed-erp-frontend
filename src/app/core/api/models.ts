@@ -8,12 +8,13 @@
 export type Currency = 'EUR' | 'USD' | 'CNY';
 export type MarkupMode = 'PRODUCT' | 'ORDER';
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES';
+export type PublicationStatus = 'DRAFT' | 'READY' | 'PUBLISHED';
 
 export type QuoteStatus =
   | 'CONCEPT' | 'VERZONDEN' | 'BEKEKEN' | 'WIJZIGING_GEVRAAGD'
   | 'GEACCEPTEERD' | 'AFGEWEZEN' | 'VERLOPEN';
 
-export type RevisionStatus = 'IN_AFWACHTING' | 'GOEDGEKEURD' | 'AFGEWEZEN';
+export type RevisionStatus = 'IN_AFWACHTING' | 'GOEDGEKEURD' | 'AFGEWEZEN' | 'INGETROKKEN';
 
 export interface Dimensions {
   lengthCm: number | null;
@@ -41,6 +42,13 @@ export interface PhotoDto {
   downloadUrl: string;
 }
 
+export interface ProductText {
+  language: LanguageCode;
+  name: string | null;
+  description: string | null;
+  colour: string | null;
+}
+
 export interface Product {
   id: number | null;
   sku: string | null;
@@ -49,9 +57,17 @@ export interface Product {
   dimensions: Dimensions;
   /** Colour of the article; first of what may become product options. */
   colour: string | null;
+  /** Customer-facing base copy; translated variants live in texts. */
+  description: string | null;
   categoryId: number | null;
   supplierId: number | null;
   active: boolean;
+  /** Optional merchandising parent shared by colour/size SKUs. */
+  familyKey: string | null;
+  /** Stable URL identity used by the website and ordering app. */
+  publicHandle: string | null;
+  websiteStatus: PublicationStatus;
+  orderAppStatus: PublicationStatus;
   barcodeInner: string | null;
   barcodeOuter: string | null;
   hsCode: string | null;
@@ -66,6 +82,9 @@ export interface Product {
   /** Stock in pieces; grows when a purchase order is received. */
   stockQuantity: number;
   photos: PhotoDto[];
+  texts: ProductText[];
+  /** Server-owned blockers that must be resolved before publishing. */
+  publicationIssues: string[];
   describedAs?: string;
   cartonCbm?: number;
   pieceCbm?: number;
@@ -467,11 +486,10 @@ export interface QuoteEvent {
   detail: string | null;
 }
 
-/** What a CSV import did, problem by problem. */
-export interface CsvImportResult {
+/** What the catalogue Excel import did, problem by problem. */
+export interface CatalogImportResult {
   updatedProducts: number;
-  /** Only the translation import reports this; absent on the bulk import. */
-  updatedRows?: number;
+  updatedRows: number;
   problems: string[];
 }
 

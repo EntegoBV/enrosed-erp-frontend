@@ -31,9 +31,14 @@ export const routes: Routes = [
     loadComponent: () => import('./features/sales/sales-list').then((m) => m.SalesList),
   },
   {
-    path: 'sales/:id',
+    path: 'sales/:id/edit',
     canActivate: [authGuard],
     loadComponent: () => import('./features/sales/sales-editor').then((m) => m.SalesEditor),
+  },
+  {
+    path: 'sales/:id',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/sales/sales-view').then((m) => m.SalesView),
   },
   {
     path: 'revisions',
@@ -60,6 +65,7 @@ export const routes: Routes = [
   },
   {
     path: 'purchasing/:id',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/purchasing/purchase-view').then((m) => m.PurchaseView),
   },

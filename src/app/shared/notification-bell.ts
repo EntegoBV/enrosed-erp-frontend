@@ -35,42 +35,42 @@ import { Icon } from './icon';
           @if (actions().length) {
             <div class="section-title" style="margin-top:0">Wij zijn aan zet</div>
             @for (item of actions(); track $index) {
-              <button class="note note--action" type="button" (click)="go(item)">
-                <span class="note__icon">{{ icon(item.kind) }}</span>
-                <span class="note__body">
-                  <span class="note__title">{{ item.title }}</span>
-                  <span class="note__meta">
-                    {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
+              <div class="note-row note-row--action">
+                <button class="note note--action" type="button" (click)="go(item)">
+                  <span class="note__icon">{{ icon(item.kind) }}</span>
+                  <span class="note__body">
+                    <span class="note__title">{{ item.title }}</span>
+                    <span class="note__meta">
+                      {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
+                    </span>
+                    <span class="note__detail">{{ item.detail }}</span>
                   </span>
-                  <span class="note__detail">{{ item.detail }}</span>
-                </span>
-                <span class="note__chev">›</span>
-                <span class="note__dismiss" role="button" tabindex="0"
-                      (click)="dismiss(item, $event)"
-                      (keydown.enter)="dismiss(item, $event)"
-                      aria-label="Melding wegklikken">✕</span>
-              </button>
+                  <span class="note__chev">›</span>
+                </button>
+                <button class="note__dismiss" type="button" (click)="dismiss(item, $event)"
+                        [attr.aria-label]="'Melding wegklikken: ' + item.title">✕</button>
+              </div>
             }
           }
 
           @if (news().length) {
             <div class="section-title">Van de klant</div>
             @for (item of news(); track $index) {
-              <button class="note" type="button" (click)="go(item)">
-                <span class="note__icon">{{ icon(item.kind) }}</span>
-                <span class="note__body">
-                  <span class="note__title">{{ item.title }}</span>
-                  <span class="note__meta">
-                    {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
+              <div class="note-row">
+                <button class="note" type="button" (click)="go(item)">
+                  <span class="note__icon">{{ icon(item.kind) }}</span>
+                  <span class="note__body">
+                    <span class="note__title">{{ item.title }}</span>
+                    <span class="note__meta">
+                      {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
+                    </span>
+                    <span class="note__detail">{{ item.detail }}</span>
                   </span>
-                  <span class="note__detail">{{ item.detail }}</span>
-                </span>
-                <span class="note__chev">›</span>
-                <span class="note__dismiss" role="button" tabindex="0"
-                      (click)="dismiss(item, $event)"
-                      (keydown.enter)="dismiss(item, $event)"
-                      aria-label="Melding wegklikken">✕</span>
-              </button>
+                  <span class="note__chev">›</span>
+                </button>
+                <button class="note__dismiss" type="button" (click)="dismiss(item, $event)"
+                        [attr.aria-label]="'Melding wegklikken: ' + item.title">✕</button>
+              </div>
             }
           }
 
@@ -122,13 +122,14 @@ import { Icon } from './icon';
 
     /* Plain full-width rows. The old negative-margin trick made rows wider
        than the sheet, pushing part of the message out of view on phones. */
+    .note-row { display: flex; align-items: stretch; gap: 4px; margin-bottom: 6px; }
     .note {
       display: flex;
       align-items: flex-start;
       gap: 10px;
       width: 100%;
       padding: 11px 12px;
-      margin-bottom: 6px;
+      margin: 0;
       border: 0;
       border-radius: var(--r-sm);
       background: var(--surface-2);
@@ -148,10 +149,17 @@ import { Icon } from './icon';
     .note__dismiss {
       color: var(--muted-2);
       font-size: 12px;
-      padding: 4px 2px 4px 8px;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 4px;
       flex: none;
       cursor: pointer;
+      border: 0;
+      border-radius: var(--r-sm);
+      background: var(--surface-2);
     }
+    .note-row--action .note__dismiss { background: var(--rose-soft); }
+    .note__dismiss:active { background: var(--line); }
   `,
 })
 export class NotificationBell {

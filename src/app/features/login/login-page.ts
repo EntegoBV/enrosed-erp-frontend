@@ -11,7 +11,7 @@ import { Auth } from '../../core/api/auth';
   template: `
     <div class="login">
       <form class="login__card" (ngSubmit)="submit()">
-        <img class="login__logo" src="logo.png" alt="Enrosed" />
+        <img class="login__logo" src="logo-ui.png" alt="Enrosed" />
         <div class="login__sub">Sales &amp; Sourcing</div>
 
         <div class="field">

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Skeleton } from '../../shared/skeleton';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -26,8 +26,12 @@ function blank(): Supplier {
     </app-page-header>
 
     <div class="content">
+      <div class="search-bar">
+        <input class="input" type="search" placeholder="Zoek op leverancier, contact, stad of haven…"
+               [ngModel]="query()" (ngModelChange)="query.set($event)" />
+      </div>
       <div class="card"><div class="list">
-        @for (supplier of suppliers(); track supplier.id) {
+        @for (supplier of filtered(); track supplier.id) {
           <button class="list-item" type="button" style="text-align:left;width:100%;border-width:0 0 1px"
                   (click)="open(supplier)">
             <div class="list-item__body">
@@ -45,7 +49,7 @@ function blank(): Supplier {
           </button>
         } @empty {
           <div class="empty"><div class="empty__title">
-            @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Nog geen leveranciers }</div></div>
+            @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen leveranciers gevonden }</div></div>
         }
       </div></div>
     </div>
@@ -123,6 +127,7 @@ export class SupplierList {
   private readonly ui = inject(Ui);
 
   readonly suppliers = signal<Supplier[]>([]);
+  readonly query = signal('');
   readonly editing = signal(false);
   readonly draft = signal<Supplier>(blank());
   readonly loading = signal(true);
@@ -133,6 +138,15 @@ export class SupplierList {
     this.suppliers.set(await this.sourcing.suppliers());
     this.loading.set(false);
   }
+
+  readonly filtered = computed(() => {
+    const needle = this.query().trim().toLowerCase();
+    if (!needle) return this.suppliers();
+    return this.suppliers().filter((supplier) => [
+      supplier.name, supplier.contact, supplier.city, supplier.country,
+      supplier.portOfLoading, supplier.email,
+    ].join(' ').toLowerCase().includes(needle));
+  });
 
   open(supplier: Supplier | null): void {
     this.draft.set(supplier ? { ...supplier } : blank());

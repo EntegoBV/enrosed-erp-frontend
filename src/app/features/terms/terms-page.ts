@@ -17,7 +17,7 @@ import { api } from '../../core/api/api.config';
   template: `
     <div class="terms">
       <header class="terms__bar">
-        <img class="terms__logo" src="logo.png" alt="Enrosed" />
+        <img class="terms__logo" src="logo-ui.png" alt="Enrosed" />
         <div class="terms__lang">
           <button type="button" [class.on]="language() === 'nl'"
                   (click)="load('nl')">NL</button>

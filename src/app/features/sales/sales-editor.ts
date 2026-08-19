@@ -1,12 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal,
+} from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
+import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Country, Customer, LANGUAGES, LanguageCode, MarkupMode, Product, QuoteEvent, QuoteRevision,
-  SalesOrder, SalesOrderView,
+  PricedLine, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -32,70 +35,91 @@ import { STATUS_LABEL, statusClass } from './quote-status';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
-      <!-- Only PDF up top. Sending lives in the bottom bar alone: the same
-           action twice on one screen means one of them is the wrong one. -->
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                        [showBack]="true" [showBell]="false"
-                       [titleEditable]="true"
+                       [titleEditable]="canEdit()"
                        (titleChange)="patch({ number: $event })">
-        <button class="btn btn--sm" type="button" (click)="openPdfSheet()">PDF</button>
+        <div class="quote-header-actions">
+          <div class="quote-header-total" aria-label="Offertetotaal exclusief btw">
+            <span>Totaal</span>
+            <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
+          </div>
+          <button class="btn btn--sm quote-header-button" type="button"
+                  (click)="openPdfSheet()">PDF</button>
+          @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
+            <button class="btn btn--primary btn--sm quote-header-button" type="button"
+                    [disabled]="busy()" (click)="reopen()">Heropen</button>
+          } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN'
+                     || data.order.status === 'BEKEKEN') {
+            <button class="btn btn--primary btn--sm quote-header-button" type="button"
+                    [disabled]="sending() || sendIssues().length > 0"
+                    [attr.title]="sendIssues()[0] || null"
+                    [attr.aria-label]="data.order.sentAt ? 'Offerte opnieuw versturen' : 'Offerte versturen'"
+                    (click)="openSend()">
+              {{ data.order.sentAt ? 'Opnieuw' : 'Verstuur' }}
+            </button>
+          }
+        </div>
       </app-page-header>
 
-      <div class="content content--with-action-bar">
-        <!-- ======================================= status and history -->
-        <div class="card">
-          <!-- The status block is itself the button to the history: that is
-               where you look when wondering how this quote got here, and it
-               saves a button on a screen that already has plenty. -->
-          <button class="status-bar" type="button" (click)="toggleHistory()"
-                  [attr.aria-expanded]="historyOpen()">
-            <span class="badge" [class]="'badge--' + cls(data.order.status)">
-              {{ label(data.order.status) }}
-            </span>
-            @if (data.order.sentAt) {
-              <span class="small muted">verzonden {{ data.order.sentAt | dateNl }}</span>
-            }
-            @if (data.order.viewedAt) {
-              <span class="small muted">
-                · {{ data.order.viewCount }}× bekeken, laatst
-                {{ data.order.viewedAt | dateNl }}
+      <main class="content sales-page">
+        <!-- A compact cockpit: status, readiness and commercial scale are
+             visible before somebody starts editing a long order. -->
+        <section class="quote-hero" aria-labelledby="quote-overview-title">
+          <div class="quote-hero__top">
+            <div>
+              <div class="quote-hero__eyebrow" id="quote-overview-title">Verkoopofferte</div>
+              <div class="quote-hero__customer">{{ customerName() }}</div>
+              <div class="quote-hero__meta">
+                {{ data.order.countryCode || 'Nog geen leverland' }}
+                · {{ data.order.incoterm || 'Geen incoterm' }}
+              </div>
+            </div>
+            <button class="history-button" type="button" (click)="toggleHistory()"
+                    [attr.aria-expanded]="historyOpen()" aria-controls="quote-history">
+              <span class="badge" [class]="'badge--' + cls(data.order.status)">
+                {{ label(data.order.status) }}
               </span>
-            }
-            @if (data.order.signedByName) {
-              <span class="small ok-text">· getekend door {{ data.order.signedByName }}</span>
-            }
-            @if (!historyOpen() && lastEvent(); as last) {
-              <!-- A bare "Concept" badge says nothing; the latest step does. -->
-              <span class="small muted">· {{ last.summary }}</span>
-            }
-            <span class="spacer"></span>
-            <span class="status-bar__more">
-              Geschiedenis
-              <span class="status-bar__toggle" [class.status-bar__toggle--open]="historyOpen()">
-                ▾
-              </span>
-            </span>
-          </button>
+              <span aria-hidden="true" class="history-button__chev"
+                    [class.history-button__chev--open]="historyOpen()">⌄</span>
+              <span class="sr-only">Geschiedenis tonen</span>
+            </button>
+          </div>
+
+          <div class="quote-hero__facts" aria-label="Offerte-overzicht">
+            <div class="hero-fact">
+              <span class="hero-fact__label">Producten</span>
+              <strong>{{ data.priced.lines.length }}</strong>
+              <span>{{ data.priced.totals.pieces | num }} stuks</span>
+            </div>
+            <div class="hero-fact">
+              <span class="hero-fact__label">Levering</span>
+              <strong>{{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}</strong>
+              <span>pallet(s)</span>
+            </div>
+            <div class="hero-fact hero-fact--total">
+              <span class="hero-fact__label">Offertetotaal</span>
+              <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
+              <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</span>
+            </div>
+          </div>
 
           @if (historyOpen()) {
-            <div class="card__body" style="padding-top:0">
-              <div class="section-title" style="margin-top:0">Geschiedenis</div>
+            <div class="quote-history" id="quote-history">
+              <div class="quote-history__title">Geschiedenis</div>
               @for (step of history(); track step.id) {
                 <div class="step" [class.step--customer]="step.byCustomer">
                   <span class="step__dot"></span>
                   <div class="step__body">
                     <div class="step__title">{{ step.summary }}</div>
                     <div class="step__meta">
-                      {{ step.at | dateTimeNl }}
-                      @if (step.actor) { · {{ step.actor }} }
+                      {{ step.at | dateTimeNl }}@if (step.actor) { · {{ step.actor }} }
                     </div>
-                    @if (step.detail) {
-                      <div class="step__detail">{{ step.detail }}</div>
-                    }
+                    @if (step.detail) { <div class="step__detail">{{ step.detail }}</div> }
                   </div>
                 </div>
               } @empty {
@@ -103,12 +127,38 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               }
             </div>
           }
-        </div>
+        </section>
+
+        @if (referenceError()) {
+          <div class="alert alert--warn reference-alert" role="status">
+            <span class="alert__icon">!</span>
+            <div class="grow">
+              <b>Keuzelijsten konden niet volledig laden</b>
+              <div class="small">{{ referenceError() }}</div>
+            </div>
+            <button class="btn btn--sm" type="button" (click)="retryReference()">Opnieuw</button>
+          </div>
+        }
+
+        @if (!canEdit()) {
+          <div class="alert alert--info quote-lock">
+            <span class="alert__icon">✓</span>
+            <div class="grow">
+              <b>Deze offerteversie staat vast</b>
+              <div class="small">
+                Klant, aantallen en prijzen veranderen niet meer via dit scherm.
+                Leverweken en vracht kun je nog veilig aanvullen.
+              </div>
+            </div>
+            <button class="btn btn--sm" type="button" [disabled]="busy()"
+                    (click)="duplicate()">Nieuwe kopie</button>
+          </div>
+        }
 
         @if (pendingRevision(); as revision) {
-          <div class="card" style="border-color:var(--gold)">
+          <section class="card revision-card" aria-labelledby="revision-title">
             <div class="card__head">
-              <h2>De klant vraagt een wijziging</h2>
+              <h2 id="revision-title">De klant vraagt een wijziging</h2>
               <span class="spacer"></span>
               <span class="badge badge--gold">wacht op ons</span>
             </div>
@@ -145,20 +195,42 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                         (click)="reject(revision)">Afwijzen</button>
               </div>
             </div>
-          </div>
+          </section>
         }
 
+        <div class="workflow-layout">
+        <nav class="workflow-nav" aria-label="Onderdelen van de offerte">
+          @for (item of workflowSections; track item.id; let number = $index) {
+            <button type="button"
+                    [class.workflow-nav__active]="activeSection() === item.id"
+                    [attr.aria-current]="activeSection() === item.id ? 'step' : null"
+                    (click)="scrollToSection(item.id)">
+              <span>{{ number + 1 }}</span>{{ item.label }}
+            </button>
+          }
+        </nav>
+        <div class="workflow-content">
+
         <!-- ==================================== order -->
-        <div class="card">
-          <div class="card__head card__head--toggle" (click)="toggle('order')">
-            <h2>Order</h2>
-            @if (!isOpen('order')) {
-              <span class="card__summary">{{ orderSummary() }}</span>
-            } @else { <span class="spacer"></span> }
-            <span class="card__chev" [class.card__chev--open]="isOpen('order')">›</span>
-          </div>
-          <div class="collapse" [class.collapse--open]="isOpen('order')"><div class="collapse__inner">
+        <section class="card form-card" id="quote-setup" aria-labelledby="quote-setup-title">
+          <button class="section-toggle" type="button" (click)="toggle('order')"
+                  [attr.aria-expanded]="isOpen('order')" aria-controls="quote-setup-body">
+            <span class="section-toggle__number">1</span>
+            <span class="section-toggle__copy">
+              <strong id="quote-setup-title">Klant &amp; offerte</strong>
+              <span>{{ orderSummary() }}</span>
+            </span>
+            <span class="section-toggle__chev" aria-hidden="true"
+                  [class.section-toggle__chev--open]="isOpen('order')">›</span>
+          </button>
+          <div class="collapse" id="quote-setup-body"
+               [class.collapse--open]="isOpen('order')"><div class="collapse__inner">
           <div class="card__body">
+            <fieldset class="form-lock" [disabled]="!canEdit()">
+            <p class="card-intro">
+              Kies eerst voor wie de offerte is. Leverland en voorwaarden worden waar mogelijk
+              van de klant overgenomen.
+            </p>
             <div class="form-grid">
               <div class="field span-2">
                 <label class="req" for="so-customer">Klant</label>
@@ -203,7 +275,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                          (ngModelChange)="patch({ paymentTerms: $event })" />
                 }
                 <span class="hint">
-                  Leeg = de voorwaarden van de klant. Uit de lijst wordt vertaald op de offerte.
+                  Standaard gebruiken we de voorwaarden uit het klantprofiel.
                 </span>
               </div>
               <div class="field">
@@ -216,49 +288,72 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <app-date-field fieldId="so-valid" [value]="data.order.validUntil"
                                 (valueChange)="patch({ validUntil: $event })" />
               </div>
-              <div class="field span-2">
-                <label for="so-notes">Notitie op de offerte <span class="opt"></span></label>
-                <input class="input" id="so-notes" [ngModel]="data.order.notes"
-                       (ngModelChange)="patch({ notes: $event })" />
-                <span class="hint">Deze ziet de klant.</span>
-              </div>
-              <div class="field span-2">
-                <label for="so-internal">Interne notities <span class="opt"></span></label>
-                <textarea class="textarea" id="so-internal"
-                          [ngModel]="data.order.internalNotes"
-                          (ngModelChange)="patch({ internalNotes: $event })"
-                          placeholder="Wat je zelf wil onthouden over deze order."></textarea>
-                <span class="hint">
-                  Blijft binnen: niet op de offerte, niet in het klantportaal.
-                </span>
-              </div>
             </div>
+
+            <details class="progressive-panel" [open]="!!data.order.notes || !!data.order.internalNotes">
+              <summary>
+                <span>Notities</span>
+                <span class="progressive-panel__summary">
+                  {{ data.order.notes || data.order.internalNotes ? 'ingevuld' : 'optioneel' }}
+                </span>
+              </summary>
+              <div class="progressive-panel__body form-grid">
+                <div class="field span-2">
+                  <label for="so-notes">Bericht op de offerte <span class="opt"></span></label>
+                  <textarea class="textarea" id="so-notes" [ngModel]="data.order.notes"
+                            (ngModelChange)="patch({ notes: $event })"
+                            placeholder="Bijvoorbeeld een afspraak of persoonlijke toelichting."></textarea>
+                  <span class="hint">Zichtbaar voor de klant.</span>
+                </div>
+                <div class="field span-2">
+                  <label for="so-internal">Interne notities <span class="opt"></span></label>
+                  <textarea class="textarea" id="so-internal"
+                            [ngModel]="data.order.internalNotes"
+                            (ngModelChange)="patch({ internalNotes: $event })"
+                            placeholder="Wat moet het team over deze order weten?"></textarea>
+                  <span class="hint">Alleen zichtbaar in het ERP.</span>
+                </div>
+              </div>
+            </details>
+            </fieldset>
           </div>
           </div></div>
-        </div>
+        </section>
 
-        <!-- ==================================== price build-up -->
-        <div class="card">
-          <div class="card__head card__head--toggle" (click)="toggle('pricing')">
-            <h2>Prijsopbouw</h2>
-            @if (!isOpen('pricing')) {
-              <span class="card__summary">{{ pricingSummary() }}</span>
-            } @else { <span class="spacer"></span> }
-            <span class="card__chev" [class.card__chev--open]="isOpen('pricing')">›</span>
-          </div>
-          <div class="collapse" [class.collapse--open]="isOpen('pricing')"><div class="collapse__inner">
+        <!-- Pricing is important but not part of every edit. It remains one
+             obvious, resumable section instead of a wall of fields. -->
+        <section class="card form-card" aria-labelledby="pricing-title">
+          <button class="section-toggle section-toggle--quiet" type="button"
+                  (click)="toggle('pricing')" [attr.aria-expanded]="isOpen('pricing')"
+                  aria-controls="pricing-body">
+            <span class="section-toggle__icon" aria-hidden="true">%</span>
+            <span class="section-toggle__copy">
+              <strong id="pricing-title">Prijsregels</strong>
+              <span>{{ pricingSummary() }}</span>
+            </span>
+            <span class="section-toggle__chev" aria-hidden="true"
+                  [class.section-toggle__chev--open]="isOpen('pricing')">›</span>
+          </button>
+          <div class="collapse" id="pricing-body"
+               [class.collapse--open]="isOpen('pricing')"><div class="collapse__inner">
           <div class="card__body">
-            <div class="chips" style="margin-bottom:10px">
-              <button class="chip" type="button"
-                      [class.active]="data.order.markupMode === 'PRODUCT'"
-                      (click)="setMarkupMode('PRODUCT')">Opslag per product</button>
-              <button class="chip" type="button"
-                      [class.active]="data.order.markupMode === 'ORDER'"
-                      (click)="setMarkupMode('ORDER')">Opslag op deze order</button>
+            <fieldset class="form-lock" [disabled]="!canEdit()">
+            <p class="card-intro">Bepaal waar de verkoopprijs vandaan komt. Handmatig aangepaste stukprijzen worden gewist wanneer je wisselt.</p>
+            <div class="segmented" role="group" aria-label="Prijsopbouw">
+              <button type="button" [class.segmented__active]="data.order.markupMode === 'PRODUCT'"
+                      [attr.aria-pressed]="data.order.markupMode === 'PRODUCT'"
+                      (click)="setMarkupMode('PRODUCT')">
+                Per product
+              </button>
+              <button type="button" [class.segmented__active]="data.order.markupMode === 'ORDER'"
+                      [attr.aria-pressed]="data.order.markupMode === 'ORDER'"
+                      (click)="setMarkupMode('ORDER')">
+                Hele order
+              </button>
             </div>
             @if (data.order.markupMode === 'ORDER') {
-              <div class="field">
-                <label for="so-markup">Opslag op de kostprijs, voor de hele order</label>
+              <div class="field price-field">
+                <label for="so-markup">Opslag op kostprijs</label>
                 <div class="input-affix">
                   <input class="input num right" id="so-markup" type="number" min="0" step="1"
                          inputmode="decimal" [ngModel]="data.order.orderMarkupPct"
@@ -267,19 +362,26 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 </div>
               </div>
             } @else {
-              <p class="small muted">Elk product gebruikt zijn eigen opslag uit de catalogus.</p>
+              <div class="mode-explanation">
+                <span aria-hidden="true">✓</span>
+                Elk product gebruikt zijn eigen opslag uit de catalogus.
+              </div>
             }
 
-            <details style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
-              <summary class="small strong" style="cursor:pointer">
-                Extra korting <span class="opt"></span>
+            <details class="progressive-panel"
+                     [open]="!!data.order.extraDiscountPct || !!data.order.extraDiscountLabel">
+              <summary>
+                <span>Extra orderkorting</span>
+                <span class="progressive-panel__summary">
+                  {{ data.order.extraDiscountPct ? (data.order.extraDiscountPct + '%') : 'optioneel' }}
+                </span>
               </summary>
-              <p class="small muted" style="margin:10px 0">
-                Losse korting bovenop de staffels, bijvoorbeeld een beurskorting. Ze rekent
-                over wat er ná de staffelkorting nog staat, zodat de twee niet dubbel over
-                hetzelfde bedrag lopen. Verschijnt met deze naam op de offerte.
-              </p>
-              <div class="field-row">
+              <div class="progressive-panel__body">
+                <p class="panel-help">
+                  Bovenop staffelkorting, bijvoorbeeld voor een beursactie. De omschrijving
+                  verschijnt op de offerte.
+                </p>
+              <div class="field-row price-discount-fields">
                 <div class="field">
                   <label for="so-extra-pct">Percentage</label>
                   <div class="input-affix">
@@ -295,192 +397,343 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                          [value]="data.order.extraDiscountLabel ?? ''"
                          (change)="patch({ extraDiscountLabel: $any($event.target).value })" />
                 </div>
-              </div>
+              </div></div>
             </details>
+            </fieldset>
           </div>
           </div></div>
-        </div>
+        </section>
 
         <!-- ==================================== lines -->
-        <div class="card" id="order-lines">
-          <div class="card__head">
-            <h2>Regels</h2><span class="spacer"></span>
-            <button class="btn btn--sm" type="button" (click)="openPicker()">+ Product</button>
+        <section class="card products-card" id="order-lines" aria-labelledby="order-lines-title">
+          <div class="products-card__head">
+            <div class="section-heading">
+              <span class="section-heading__number">2</span>
+              <div>
+                <h2 id="order-lines-title">Producten</h2>
+                <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' stuks in deze offerte' : 'Bouw de offerte regel voor regel op' }}</p>
+              </div>
+            </div>
+            <button class="btn btn--primary btn--sm add-product" type="button"
+                    [disabled]="!canEdit() || !available().length" (click)="openPicker()">
+              <span aria-hidden="true">＋</span> Product
+            </button>
           </div>
-          <div class="card__body card__body--flush">
-            <div class="list">
-              @for (line of data.priced.lines; track line.productId) {
-                <div class="list-item" style="flex-direction:column;align-items:stretch;gap:10px">
-                  <div class="row">
-                    <div class="list-item__body">
-                      <div class="list-item__title">{{ line.description }}</div>
-                      <div class="list-item__meta">
-                        {{ line.sku }} · {{ line.cartons | num }} dozen ·
-                        {{ line.pallets }} pallet(s) · {{ line.cbm | cbm }}
-                      </div>
-                    </div>
-                    <div class="list-item__end">
-                      <div class="strong num">{{ line.net | eur }}</div>
-                      @if (line.discountPct) {
-                        <div class="tiny ok-text">−{{ line.discountPct | pct: 1 }}</div>
-                      }
-                    </div>
-                  </div>
 
-                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-                    <div class="field">
-                      <label [attr.for]="'q-' + line.productId">Aantal</label>
-                      <input class="input input--sm num right" [id]="'q-' + line.productId"
-                             type="number" min="0" step="1" inputmode="numeric"
-                             [ngModel]="lineDraft()[line.productId] ?? line.quantity"
-                             (ngModelChange)="setLineQuantity(line.productId, +$event)" />
-                      @if (linePending()[line.productId]; as to) {
-                        <span class="hint warn-text">Wordt zo <b>{{ to | num }}</b></span>
-                      }
+          <div class="product-lines">
+            @for (line of data.priced.lines; track line.productId; let index = $index) {
+              <article class="order-line" [attr.aria-labelledby]="'line-title-' + line.productId">
+                <div class="order-line__head">
+                  @if (line.photoUrl) {
+                    <img class="order-line__photo" [appAuthSrc]="line.photoUrl"
+                         alt="" loading="lazy" />
+                  } @else {
+                    <span class="order-line__photo order-line__photo--empty" aria-hidden="true">◇</span>
+                  }
+                  <div class="order-line__identity">
+                    <span class="order-line__index">Regel {{ index + 1 }} · {{ line.sku }}</span>
+                    <h3 [id]="'line-title-' + line.productId">{{ line.description }}</h3>
+                    <span>{{ line.cartons | num }} dozen · {{ line.pallets }} pallet(s) · {{ line.cbm | cbm }}</span>
+                  </div>
+                  <div class="order-line__amount">
+                    <strong>{{ line.net | eur }}</strong>
+                    @if (line.discountPct) { <span>−{{ line.discountPct | pct: 1 }}</span> }
+                  </div>
+                </div>
+
+                <div class="quantity-editor">
+                  <div class="field">
+                    <label [attr.for]="'q-' + line.productId">Aantal stuks</label>
+                    <input class="input num" [id]="'q-' + line.productId" type="number"
+                           min="0" step="1" inputmode="numeric" [disabled]="!canEdit()"
+                           [ngModel]="lineDraft()[line.productId] ?? line.quantity"
+                           (ngModelChange)="setLineQuantity(line.productId, +$event)" />
+                    @if (linePending()[line.productId]; as to) {
+                      <span class="hint warn-text" role="status">
+                        Volle doos: wordt <b>{{ to | num }} stuks</b>
+                      </span>
+                    }
+                  </div>
+                  @if (line.nextTierAtQuantity) {
+                    <div class="tier-nudge">
+                      <span aria-hidden="true">↗</span>
+                      <span>Nog <b>{{ line.nextTierAtQuantity - line.quantity | num }}</b> stuks voor {{ line.nextTierPercent | pct: 0 }} korting</span>
                     </div>
+                  }
+                </div>
+
+                <details class="line-pricing">
+                  <summary>
+                    <span>Prijs aanpassen</span>
+                    <span>{{ line.unitPrice | eur: 2 }} / stuk@if (line.manualPercent) { · {{ line.manualPercent | pct: 1 }} extra }</span>
+                  </summary>
+                  <div class="line-pricing__fields">
                     <div class="field">
                       <label [attr.for]="'p-' + line.productId">Stukprijs</label>
-                      <input class="input input--sm num right" [id]="'p-' + line.productId"
-                             type="number" min="0" step="0.01" inputmode="decimal"
+                      <input class="input num" [id]="'p-' + line.productId" type="number"
+                             min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
                              [ngModel]="line.unitPrice"
                              (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
                     </div>
                     <div class="field">
-                      <label [attr.for]="'d-' + line.productId">Extra korting %</label>
-                      <input class="input input--sm num right" [id]="'d-' + line.productId"
-                             type="number" min="0" max="100" step="0.5" inputmode="decimal"
-                             [ngModel]="line.manualPercent"
-                             (ngModelChange)="setLine(line.productId, { manualDiscountPct: +$event })" />
+                      <label [attr.for]="'d-' + line.productId">Extra korting</label>
+                      <div class="input-affix">
+                        <input class="input num" [id]="'d-' + line.productId" type="number"
+                               min="0" max="100" step="0.5" inputmode="decimal"
+                               [disabled]="!canEdit()" [ngModel]="line.manualPercent"
+                               (ngModelChange)="setLine(line.productId, { manualDiscountPct: +$event })" />
+                        <span class="input-affix__suffix">%</span>
+                      </div>
                     </div>
                   </div>
+                </details>
 
-                  <!-- Delivery: from stock the server counts a date from the
-                       next working day plus the country's transit time. When
-                       stock is short, you pick a delivery week yourself.
-                       Never mandatory. -->
-                  <div class="delivery">
-                    <div class="row" style="gap:6px;align-items:flex-start">
-                      <span class="stock-dot" style="margin-top:5px"
-                            [class.stock-dot--none]="!line.inStock && !line.deliveryWeek"
-                            [class.stock-dot--ok]="line.inStock || line.deliveryWeek"></span>
-                      <span class="small grow">
-                        @if (line.inStock) {
-                          Leverbaar vanaf <b>{{ line.deliveryDate | dateNl }}</b>
-                          @if (line.deliveryWeek) { · {{ line.deliveryWeek | weekNl: 'short' }} }
-                        } @else if (line.deliveryWeek) {
-                          Levering in <b>{{ line.deliveryWeek | weekNl }}</b>
-                          <span class="muted">· {{ line.shortfall | num }} stuks te kort</span>
-                        } @else {
-                          <span class="danger-text">
-                            <b>Levertermijn afspreken</b> — {{ line.shortfall | num }} stuks
-                            te kort
-                          </span>
-                        }
-                      </span>
-                      <!-- A green line must be adjustable too: the calculated
-                           date is an estimate, not a promise. -->
-                      <button class="delivery__edit" type="button"
-                              [attr.aria-label]="'Levertermijn wijzigen'"
-                              [attr.aria-expanded]="editingDelivery() === line.productId"
-                              (click)="toggleDelivery(line.productId)">✎</button>
-                    </div>
-                    @if (!line.inStock || editingDelivery() === line.productId) {
-                      <div class="field mt-8" style="margin-bottom:0">
-                        <label [attr.for]="'w-' + line.productId">
-                          Leverweek <span class="opt"></span>
-                        </label>
+                <div class="delivery order-line__delivery">
+                  <div class="delivery-row">
+                    <span class="stock-dot"
+                          [class.stock-dot--none]="!line.inStock && !line.deliveryWeek"
+                          [class.stock-dot--ok]="line.inStock || line.deliveryWeek"></span>
+                    <span class="delivery-row__copy">
+                      @if (line.inStock) {
+                        <b>Op voorraad</b>
+                        <span>Leverbaar vanaf {{ line.deliveryDate | dateNl }}@if (line.deliveryWeek) { · {{ line.deliveryWeek | weekNl: 'short' }} }</span>
+                      } @else if (line.deliveryWeek) {
+                        <b>Levering {{ line.deliveryWeek | weekNl }}</b>
+                        <span>{{ line.shortfall | num }} stuks niet op voorraad</span>
+                      } @else {
+                        <b class="danger-text">Levertermijn nodig</b>
+                        <span>{{ line.shortfall | num }} stuks niet op voorraad</span>
+                      }
+                    </span>
+                    <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
+                            [attr.aria-label]="'Leverweek wijzigen voor ' + line.description"
+                            [attr.aria-expanded]="editingDelivery() === line.productId"
+                            (click)="toggleDelivery(line.productId)">
+                      {{ editingDelivery() === line.productId ? 'Sluiten' : 'Wijzigen' }}
+                    </button>
+                  </div>
+                  @if (!line.inStock || editingDelivery() === line.productId) {
+                    <div class="delivery-week">
+                      <div class="field">
+                        <label [attr.for]="'w-' + line.productId">Beloofde leverweek <span class="opt"></span></label>
                         <app-week-field [fieldId]="'w-' + line.productId"
                                         [value]="weekOf(line.productId)"
                                         (valueChange)="setLine(line.productId, { deliveryWeek: $event })" />
-                        <span class="hint">
-                          @if (line.inStock) {
-                            Er is voorraad, dus de datum hierboven geldt. Vul je toch een week
-                            in, dan gaat die naar de klant.
-                          } @else {
-                            Kies de week waarin je denkt te leveren; de klant ziet die op zijn
-                            offerte. Leeg laten mag ook.
-                          }
-                        </span>
-                      </div>
-                    }
-                  </div>
-
-                  @if (privacy.showPurchase()) {
-                    <div class="internal">
-                      <div class="internal__tag">intern</div>
-                      <div class="stat-row stat-row--muted">
-                        <span>Inkoopprijs (landed)</span>
-                        <span class="num">{{ line.landedUnitCost | eur: 4 }}</span>
-                      </div>
-                      <div class="stat-row stat-row--muted">
-                        <span>Marge</span>
-                        <span class="num strong"
-                              [class.ok-text]="line.marginPct >= 25"
-                              [class.danger-text]="line.marginPct < 10">
-                          {{ line.marginEur | eur }} · {{ line.marginPct | pct: 1 }}
-                        </span>
+                        <span class="hint">Deze week wordt zichtbaar voor de klant.</span>
                       </div>
                     </div>
                   }
-
-                  <div class="row" style="gap:8px">
-                    @if (line.nextTierAtQuantity) {
-                      <span class="tiny warn-text">
-                        +{{ line.nextTierAtQuantity - line.quantity | num }} st →
-                        {{ line.nextTierPercent | pct: 0 }}
-                      </span>
-                    }
-                    <span class="grow"></span>
-                    <button class="btn btn--sm btn--danger" type="button"
-                            (click)="removeLine(line.productId)">Verwijderen</button>
-                  </div>
                 </div>
-              } @empty {
-                <div class="empty">
-                  <div class="empty__icon">◇</div>
-                  <div class="empty__title">Nog geen producten</div>
-                  <button class="btn btn--primary" type="button" (click)="openPicker()">
-                    Product toevoegen
+
+                @if (privacy.showPurchase()) {
+                  <div class="line-internal" role="group"
+                       [attr.aria-labelledby]="'line-margin-title-' + line.productId">
+                    <div class="line-internal__head">
+                      <div>
+                        <span class="line-internal__privacy">Alleen intern</span>
+                        <strong [id]="'line-margin-title-' + line.productId">Rendabiliteit per stuk</strong>
+                      </div>
+                      <span class="line-internal__percentage"
+                            [class.line-internal__percentage--good]="line.marginPct >= 25"
+                            [class.line-internal__percentage--danger]="line.marginPct < 10">
+                        {{ line.marginPct | pct: 1 }} marge
+                      </span>
+                    </div>
+
+                    <dl class="line-internal__units">
+                      <div>
+                        <dt>Netto verkoop</dt>
+                        <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ stuk</small></dd>
+                      </div>
+                      <div>
+                        <dt>Gelande kost</dt>
+                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
+                      </div>
+                      <div class="line-internal__unit-margin"
+                           [class.line-internal__unit-margin--good]="line.marginPct >= 25"
+                           [class.line-internal__unit-margin--danger]="line.marginPct < 10">
+                        <dt>Marge per stuk</dt>
+                        <dd>{{ marginPerUnit(line) | eur: 4 }}<small>/ stuk</small></dd>
+                      </div>
+                    </dl>
+
+                    <div class="line-internal__total">
+                      <span>
+                        Totale regelmarge
+                        <small>{{ line.quantity | num }} stuks, na regelkorting</small>
+                      </span>
+                      <strong [class.ok-text]="line.marginPct >= 25"
+                              [class.danger-text]="line.marginPct < 10">{{ line.marginEur | eur }}</strong>
+                    </div>
+                    <p class="line-internal__note">
+                      Vóór orderkorting en vracht; de definitieve winst staat bij Controleren.
+                    </p>
+                  </div>
+                }
+
+                <div class="order-line__foot">
+                  <span class="small muted">Netto {{ line.netUnitPrice | eur: 2 }} per stuk</span>
+                  <button class="remove-line" type="button" [disabled]="!canEdit()"
+                          (click)="removeLine(line.productId)">
+                    <span aria-hidden="true">×</span> Verwijderen
                   </button>
+                </div>
+              </article>
+            } @empty {
+              <div class="products-empty">
+                <div class="products-empty__art" aria-hidden="true"><span>＋</span></div>
+                <h3>Nog geen producten</h3>
+                <p>Voeg een product toe, kies het aantal en de prijs wordt meteen berekend.</p>
+                <button class="btn btn--primary" type="button"
+                        [disabled]="!canEdit() || !available().length"
+                        (click)="openPicker()">Eerste product toevoegen</button>
+              </div>
+            }
+          </div>
+        </section>
+
+        <!-- ==================================== delivery and freight -->
+        <section class="card logistics-card" id="quote-logistics" aria-labelledby="logistics-title">
+          <div class="section-card-head">
+            <div class="section-heading">
+              <span class="section-heading__number">3</span>
+              <div>
+                <h2 id="logistics-title">Levering &amp; vracht</h2>
+                <p>{{ palletSummary() }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="logistics-grid">
+            <div class="logistics-option">
+              <div class="logistics-option__icon" aria-hidden="true">▦</div>
+              <div class="logistics-option__copy">
+                <strong>Palletindeling</strong>
+                <span>{{ data.order.pallets.length ? 'Handmatig verdeeld' : 'Automatisch berekend' }}</span>
+              </div>
+              @if (data.order.pallets.length) {
+                <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
+                  {{ layoutOk() ? 'compleet' : 'nakijken' }}
+                </span>
+              }
+              <button class="btn btn--sm" type="button" [disabled]="!canEdit()"
+                      (click)="palletSheet.set(true)">
+                {{ data.order.pallets.length ? 'Beheren' : 'Indelen' }}
+              </button>
+              @if (data.priced.totals.unassignedCartons > 0) {
+                <div class="logistics-option__warning">
+                  {{ data.priced.totals.unassignedCartons }} dozen zijn nog niet toegewezen.
+                </div>
+              }
+            </div>
+
+            <div class="logistics-option logistics-option--freight">
+              <div class="logistics-option__icon" aria-hidden="true">↗</div>
+              <div class="logistics-option__copy">
+                <strong>Vracht</strong>
+                @if (data.order.freight === 'TE_BEPALEN') {
+                  <span class="danger-text">Nog te bepalen</span>
+                } @else if (data.order.manualFreightEur !== null) {
+                  <span>Handmatig · {{ data.priced.totals.freight | eur }}</span>
+                } @else {
+                  <span>Landenregel · {{ data.priced.totals.freight | eur }}</span>
+                }
+              </div>
+              <button class="btn btn--sm" type="button" [disabled]="!canEditTerms()"
+                      (click)="freightOpen.set(!freightOpen())"
+                      [attr.aria-expanded]="freightOpen()" aria-controls="freight-options">
+                {{ freightOpen() ? 'Sluiten' : 'Aanpassen' }}
+              </button>
+
+              @if (freightOpen()) {
+                <div class="freight-options" id="freight-options">
+                  <label class="check-option">
+                    <input type="checkbox" [checked]="data.order.freight === 'TE_BEPALEN'"
+                           (change)="setFreightPending($any($event.target).checked)" />
+                    <span>
+                      <strong>Later bepalen</strong>
+                      <small>De klant ziet geen bedrag; vracht telt nog niet mee.</small>
+                    </span>
+                  </label>
+                  @if (data.order.freight !== 'TE_BEPALEN') {
+                    <div class="field">
+                      <label for="so-freight">Eigen vrachtbedrag <span class="opt"></span></label>
+                      <div class="input-prefix">
+                        <span>€</span>
+                        <input class="input num" id="so-freight" type="number" min="0"
+                               step="0.01" inputmode="decimal"
+                               [value]="data.order.manualFreightEur ?? ''"
+                               (change)="setManualFreight($any($event.target).value)" />
+                      </div>
+                      <span class="hint">Leeg gebruikt het tarief van het bestemmingsland.</span>
+                    </div>
+                  }
                 </div>
               }
             </div>
           </div>
-        </div>
-
-        <!-- ==================================== pallets -->
-        <div class="card">
-          <div class="card__head"><h2>Pallets</h2>
-            <span class="spacer"></span>
-            <span class="card__summary" style="flex:none">{{ palletSummary() }}</span>
-          </div>
-          <div class="card__body">
-            @if (data.order.pallets.length) {
-              <div class="row" style="margin-bottom:10px">
-                <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
-                  {{ layoutStatus() }}
-                </span>
-              </div>
-            }
-            @if (data.priced.totals.unassignedCartons > 0) {
-              <div class="pallet-warn">
-                {{ data.priced.totals.unassignedCartons }} dozen staan nog op geen pallet —
-                de vracht telt alleen jouw pallets.
-              </div>
-            }
-            <!-- Managing happens in a full-height sheet: rearranging pallets
-                 halfway down a long form kept scrolling out of view on a
-                 phone. -->
-            <button class="btn btn--block" type="button" (click)="palletSheet.set(true)">
-              {{ data.order.pallets.length ? 'Indeling beheren' : 'Zelf pallets indelen' }}
-            </button>
-          </div>
-        </div>
+        </section>
 
         <!-- ==================================== totals -->
-        <div class="card">
-          <div class="card__head"><h2>Totaal</h2></div>
+        <section class="card totals-card" id="quote-check" aria-labelledby="totals-title">
+          <div class="section-card-head">
+            <div class="section-heading">
+              <span class="section-heading__number">4</span>
+              <div>
+                <h2 id="totals-title">Controleren</h2>
+                <p>Bedragen, minimumorder en winst vóór het versturen</p>
+              </div>
+            </div>
+          </div>
           <div class="card__body">
+            <div class="total-highlight">
+              <div>
+                <span>Offertetotaal</span>
+                <strong>{{ data.priced.totals.total | eur }}</strong>
+                <small class="quote-total__meta">
+                  <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'exclusief BTW' }}</span>
+                  @if (privacy.showPurchase()) {
+                    <span class="quote-profit"
+                          [class.quote-profit--negative]="data.priced.totals.marginEur < 0">
+                      Winst {{ data.priced.totals.marginEur >= 0 ? '+' : '' }} {{ data.priced.totals.marginEur | eur: 0 }}
+                    </span>
+                  }
+                </small>
+              </div>
+              @if (!data.priced.totals.vatLegalMention) {
+                <div>
+                  <span>Inclusief BTW</span>
+                  <strong>{{ data.priced.totals.totalInclVat | eur }}</strong>
+                  <small>{{ data.priced.totals.vatRatePct | pct: 1 }} BTW</small>
+                </div>
+              }
+            </div>
+
+            @if (data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+              <div class="minimum-check" [class.minimum-check--ok]="data.priced.validation.meetsMinimum">
+                <div class="minimum-check__copy">
+                  <strong>
+                    {{ data.priced.validation.meetsMinimum ? 'Minimumorder bereikt' : 'Minimumorder nog niet bereikt' }}
+                  </strong>
+                  <span>
+                    {{ data.priced.totals.goodsTotal | eur: 0 }} van
+                    {{ data.priced.validation.minOrderValue | eur: 0 }}
+                  </span>
+                </div>
+                <span class="minimum-check__value">
+                  @if (data.priced.validation.meetsMinimum) { ✓ }
+                  @else { −{{ data.priced.validation.shortfall | eur: 0 }} }
+                </span>
+                <div class="meter__track" aria-hidden="true">
+                  <div class="meter__fill"
+                       [class.meter__fill--ok]="data.priced.validation.meetsMinimum"
+                       [style.width.%]="minimumPercent()"></div>
+                </div>
+              </div>
+            }
+
+            <details class="cost-breakdown" open>
+              <summary>Prijsopbouw <span>toon details</span></summary>
+              <div class="cost-breakdown__body">
             <div class="cost-section">Goederen</div>
             <div class="stat-row"><span>Bruto goederen</span>
               <span class="num">{{ data.priced.totals.gross | eur }}</span></div>
@@ -496,10 +749,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                  pickup, is unknown at drafting time. -->
             <div class="cost-section">Verzending</div>
             <div class="stat-row">
-              <span>Vracht ({{ palletCountLabel(data.priced.totals) }})
-                <button class="linklike" type="button"
-                        (click)="freightOpen.set(!freightOpen())">aanpassen</button>
-              </span>
+              <span>Vracht ({{ palletCountLabel(data.priced.totals) }})</span>
               <span class="num">
                 @if (data.order.freight === 'TE_BEPALEN') {
                   <span class="danger-text">nog te bepalen</span>
@@ -507,35 +757,6 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   {{ data.priced.totals.freight | eur }}
                 }
               </span></div>
-
-            @if (freightOpen()) {
-              <div class="freight-edit">
-                <label class="row" style="gap:8px;cursor:pointer">
-                  <input type="checkbox"
-                         [checked]="data.order.freight === 'TE_BEPALEN'"
-                         (change)="setFreightPending($any($event.target).checked)" />
-                  <span class="small strong">Vracht wordt later bepaald</span>
-                </label>
-                <span class="hint">
-                  De klant ziet dan "nog te bepalen" in plaats van een bedrag, en leest dat
-                  wij het laten weten. Er telt niets mee in het totaal.
-                </span>
-
-                @if (data.order.freight !== 'TE_BEPALEN') {
-                  <div class="field mt-8" style="margin-bottom:0">
-                    <label for="so-freight">Eigen vrachtbedrag <span class="opt"></span></label>
-                    <input class="input num right" id="so-freight" type="number"
-                           min="0" step="0.01" inputmode="decimal"
-                           [ngModel]="data.order.manualFreightEur"
-                           (ngModelChange)="patch({ manualFreightEur: $event === null || $event === ''
-                                                    ? null : +$event })" />
-                    <span class="hint">
-                      Leeg laten betekent: reken het tarief van het bestemmingsland.
-                    </span>
-                  </div>
-                }
-              </div>
-            }
             <div class="stat-row"><span>Administratie</span>
               <span class="num">{{ data.priced.totals.handling | eur }}</span></div>
             @if (!data.priced.totals.vatLegalMention) {
@@ -543,21 +764,6 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               <div class="stat-row"><span>BTW {{ data.priced.totals.vatRatePct | pct: 1 }}</span>
                 <span class="num">{{ data.priced.totals.vatAmount | eur }}</span></div>
             }
-
-            <div class="cost-hero">
-              <div>
-                <div class="cost-hero__label">Totaal</div>
-                <div class="cost-hero__value">{{ data.priced.totals.total | eur }}</div>
-              </div>
-              <div class="cost-hero__unit">
-                <div class="cost-hero__label">
-                  {{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'Incl. BTW' }}
-                </div>
-                <div class="cost-hero__value cost-hero__value--rose">
-                  {{ (data.priced.totals.vatLegalMention ? data.priced.totals.total
-                      : data.priced.totals.totalInclVat) | eur }}</div>
-              </div>
-            </div>
 
             @if (data.priced.totals.vatLegalMention) {
               <div class="alert alert--info mt-12">
@@ -570,109 +776,48 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             } @else if (data.priced.totals.vatReason) {
               <div class="tiny muted mt-8">{{ data.priced.totals.vatReason }}</div>
             }
-          </div>
-        </div>
-
-        @if (privacy.showPurchase()) {
-          <div class="card">
-            <div class="card__head"><h2>Marge</h2><span class="spacer"></span>
-              <span class="badge badge--neutral">intern</span></div>
-            <div class="card__body">
-              <div class="stat-row"><span>Inkoopwaarde</span>
-                <span class="num">{{ data.priced.totals.costTotal | eur }}</span></div>
-              <div class="stat-row stat-row--sub"><span>Brutomarge</span>
-                <span class="num" [class.ok-text]="data.priced.totals.marginPct >= 25"
-                      [class.danger-text]="data.priced.totals.marginPct < 10">
-                  {{ data.priced.totals.marginEur | eur }} ·
-                  {{ data.priced.totals.marginPct | pct: 1 }}
-                </span></div>
-              @if (data.priced.validation.productsWithoutCost.length) {
-                <div class="alert alert--warn mt-12">
-                  <span class="alert__icon">!</span>
-                  <div>Geen kostprijs voor
-                    <b>{{ data.priced.validation.productsWithoutCost.join(', ') }}</b>.</div>
-                </div>
-              }
-            </div>
-          </div>
-        }
-
-        @if (data.order.countryCode) {
-          <div class="card">
-            <div class="card__head"><h2>Minimum orderwaarde</h2></div>
-            <div class="card__body">
-              <div class="meter__track">
-                <div class="meter__fill"
-                     [class.meter__fill--ok]="data.priced.validation.meetsMinimum"
-                     [style.width.%]="minimumPercent()"></div>
               </div>
-              <div class="meter__labels">
-                <span>{{ data.priced.totals.goodsTotal | eur: 0 }} van
-                  {{ data.priced.validation.minOrderValue | eur: 0 }}</span>
-                <span>{{ minimumPercent() | num: 0 }}%</span>
-              </div>
-              @if (!data.priced.validation.meetsMinimum) {
-                <div class="alert alert--danger mt-12">
-                  <span class="alert__icon">!</span>
-                  <div>Nog <b>{{ data.priced.validation.shortfall | eur }}</b> nodig.</div>
-                </div>
-              }
-            </div>
+            </details>
           </div>
-        }
+        </section>
 
         <!-- ==================================== sending the quote -->
-        <div class="card">
-          <div class="card__head"><h2>Offerte</h2></div>
-          <div class="card__body">
-            <button class="btn btn--primary btn--block" type="button"
-                    [disabled]="sending()" (click)="openSend()">
-              {{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen naar de klant' }}
-            </button>
-            <button class="btn btn--block mt-8" type="button" (click)="openPdfSheet()">
-              PDF downloaden
-            </button>
-            @if (data.order.portalToken) {
-              <button class="btn btn--block mt-8" type="button" (click)="copyLink()">
-                Klantlink kopiëren
-              </button>
-              <p class="tiny muted mt-8">
-                De klant opent hiermee de offerte, tekent of stelt een wijziging voor.
+        <section class="card send-card" id="quote-status" aria-labelledby="send-title">
+          <div class="send-card__head">
+            <div class="send-card__icon" [class.send-card__icon--ok]="!sendIssues().length"
+                 aria-hidden="true">{{ sendIssues().length ? '!' : '✓' }}</div>
+            <div>
+              <h2 id="send-title">
+                {{ sendIssues().length ? 'Nog niet klaar om te versturen' : 'Klaar voor de klant' }}
+              </h2>
+              <p>
+                {{ sendIssues().length
+                    ? 'Los onderstaande punten op; daarna kun je meteen versturen.'
+                    : 'Klant, producten en minimumorder zijn gecontroleerd.' }}
               </p>
+            </div>
+          </div>
+          <div class="send-card__body">
+            @if (sendIssues().length) {
+              <ul class="send-issues">
+                @for (issue of sendIssues(); track issue) { <li>{{ issue }}</li> }
+              </ul>
             }
-            <button class="btn btn--danger btn--block mt-16" type="button" (click)="remove()">
-              Order verwijderen
-            </button>
+            @if (data.order.portalToken) {
+              <div class="status-actions">
+                <button class="btn" type="button" (click)="copyLink()">Klantlink kopiëren</button>
+              </div>
+            }
+            @if (canDelete()) {
+              <button class="delete-draft" type="button" (click)="remove()">
+                Dit concept verwijderen
+              </button>
+            }
           </div>
+        </section>
         </div>
-      </div>
-
-      <div class="action-bar">
-        <!-- Minimum order value as a hairline on the bar itself: green when
-             met, amber while short. No extra height - the bar stays a bar. -->
-        @if (data.priced.validation.minOrderValue > 0) {
-          <div class="action-bar__meter">
-            <div class="action-bar__meter-fill"
-                 [class.action-bar__meter-fill--ok]="data.priced.validation.meetsMinimum"
-                 [style.width.%]="minimumPercent()"></div>
-          </div>
-        }
-        <div class="action-bar__total">
-          <div class="action-bar__label">
-            Totaal · {{ palletCountLabel(data.priced.totals) }}
-            @if (privacy.showPurchase()) { · marge {{ data.priced.totals.marginPct | pct: 0 }} }
-          </div>
-          <div class="action-bar__value">{{ data.priced.totals.total | eur: 0 }}</div>
         </div>
-        @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
-          <button class="btn btn--primary" type="button"
-                  [disabled]="busy()" (click)="reopen()">Heropenen</button>
-        } @else {
-          <button class="btn btn--primary" type="button" (click)="openSend()">
-            {{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }}
-          </button>
-        }
-      </div>
+      </main>
 
       @if (pdfSheet()) {
         <app-sheet title="Offerte als PDF" (closed)="pdfSheet.set(false)">
@@ -868,13 +1013,279 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="sendSheet.set(false)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="sending()"
+            <button class="btn btn--primary" type="button"
+                    [disabled]="sending() || sendIssues().length > 0"
                     (click)="send()">{{ sending() ? 'Bezig…' : 'Versturen' }}</button>
           </div>
         </app-sheet>
       }
+    } @else {
+      <app-page-header title="Offerte" subtitle="Verkoop" [showBack]="true"
+                       [showBell]="false" />
+      <main class="content sales-state" aria-live="polite">
+        @if (loadError()) {
+          <section class="card load-error" role="alert">
+            <div class="load-error__icon" aria-hidden="true">!</div>
+            <h2>Offerte niet beschikbaar</h2>
+            <p>{{ loadError() }}</p>
+            <button class="btn btn--primary" type="button" (click)="retryLoad()">
+              Opnieuw proberen
+            </button>
+          </section>
+        } @else if (loading()) {
+          <div class="skel loading-hero" aria-hidden="true"></div>
+          <div class="skel loading-card" aria-hidden="true"></div>
+          <div class="skel loading-card" aria-hidden="true"></div>
+          <span class="sr-only">Offerte laden…</span>
+        } @else {
+          <section class="card load-error" role="status">
+            <div class="load-error__icon" aria-hidden="true">?</div>
+            <h2>Geen offerte geselecteerd</h2>
+            <p>Ga terug naar Verkoop en open een offerte.</p>
+          </section>
+        }
+      </main>
     }
   `,
+  styles: [`
+    :host { display:block }
+    .sales-page { max-width:1120px }
+    .sales-page>*+* { margin-top:12px }
+    #quote-setup,#order-lines,#quote-logistics,#quote-check,#quote-status { scroll-margin-top:calc(var(--appbar-h) + 76px) }
+    .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0 }
+
+    .quote-header-actions { display:flex;align-items:center;gap:5px }
+    .quote-header-total { min-width:0;padding-right:3px;display:flex;flex-direction:column;align-items:flex-end;line-height:1.08;white-space:nowrap }
+    .quote-header-total span { display:none;color:var(--muted);font-size:8.5px;font-weight:720;letter-spacing:.06em;text-transform:uppercase }
+    .quote-header-total strong { font-size:12px;font-variant-numeric:tabular-nums }
+    .quote-header-button { min-width:0;padding-inline:10px }
+    @media(max-width:380px) {
+      .quote-header-actions { gap:3px }
+      .quote-header-total { padding-right:0 }
+      .quote-header-total strong { font-size:11px }
+      .quote-header-button { padding-inline:7px;font-size:12px }
+    }
+    @media(max-width:340px) {
+      .quote-header-total { display:none }
+    }
+
+    .quote-hero { overflow:hidden;border-radius:22px;color:#fff;background:radial-gradient(circle at 92% 0%,color-mix(in srgb,var(--rose-mid) 42%,transparent),transparent 42%),linear-gradient(145deg,#211a17,#33251f 62%,color-mix(in srgb,var(--rose-dark) 58%,#211a17));box-shadow:0 12px 32px rgb(26 22 20/.15) }
+    .quote-hero__top { display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px }
+    .quote-hero__top>div:first-child { min-width:0;flex:1 }
+    .quote-hero__eyebrow { color:rgb(255 255 255/.58);font-size:10px;font-weight:750;letter-spacing:.14em;text-transform:uppercase }
+    .quote-hero__customer { margin-top:3px;font-size:clamp(20px,6vw,28px);font-weight:740;line-height:1.18;letter-spacing:-.025em }
+    .quote-hero__meta { margin-top:4px;color:rgb(255 255 255/.66);font-size:12px }
+    .history-button { min-height:44px;padding:5px 8px 5px 6px;display:flex;align-items:center;gap:5px;border:1px solid rgb(255 255 255/.14);border-radius:99px;background:rgb(255 255 255/.09);cursor:pointer;flex:none }
+    .history-button .badge { background:#fff;border-color:#fff;color:#2c231f }
+    .history-button__chev { color:rgb(255 255 255/.7);transition:transform .18s }
+    .history-button__chev--open { transform:rotate(180deg) }
+    .quote-hero__facts { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid rgb(255 255 255/.1);background:rgb(0 0 0/.1) }
+    .hero-fact { min-width:0;padding:12px 7px;text-align:center }
+    .hero-fact+.hero-fact { border-left:1px solid rgb(255 255 255/.1) }
+    .hero-fact__label { display:block;color:rgb(255 255 255/.54);font-size:9px;font-weight:720;letter-spacing:.08em;text-transform:uppercase }
+    .hero-fact strong { display:block;overflow:hidden;font-size:17px;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap }
+    .hero-fact>span:last-child { display:block;color:rgb(255 255 255/.58);font-size:10px }
+    .hero-fact--total strong { color:color-mix(in srgb,var(--rose-mid) 35%,#fff) }
+    .quote-history { padding:6px 18px 14px;border-top:1px solid rgb(255 255 255/.1) }
+    .quote-history__title { padding:10px 0 4px;color:rgb(255 255 255/.52);font-size:10px;font-weight:720;letter-spacing:.1em;text-transform:uppercase }
+    .quote-history .step+.step { border-color:rgb(255 255 255/.1) }
+    .quote-history .step__meta,.quote-history .step__detail { color:rgb(255 255 255/.55) }
+    .quote-history .step__dot { background:rgb(255 255 255/.42) }
+    .reference-alert,.quote-lock { align-items:center;flex-wrap:wrap }
+    .reference-alert .btn,.quote-lock .btn { min-height:44px;margin-left:auto }
+    .revision-card { border-color:color-mix(in srgb,var(--gold) 48%,var(--line)) }
+
+    .workflow-layout { position:relative }
+    .workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:5px;border:1px solid var(--line);border-radius:16px;background:rgb(255 255 255/.92);box-shadow:0 5px 18px rgb(26 22 20/.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px) }
+    .workflow-nav button { min-width:0;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 2px;border:0;border-radius:11px;background:transparent;color:var(--muted);font-size:10px;font-weight:670;cursor:pointer }
+    .workflow-nav button:active { background:var(--surface-2) }
+    .workflow-nav button span { width:19px;height:19px;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:50%;color:var(--ink-2) }
+    .workflow-nav .workflow-nav__active { background:var(--rose-soft);color:var(--rose-dark) }
+    .workflow-nav .workflow-nav__active span { border-color:var(--rose-line);background:var(--surface);color:var(--rose-dark) }
+    .workflow-content { min-width:0;margin-top:12px }
+    .workflow-content>*+* { margin-top:12px }
+
+    .form-lock { border:0;margin:0;min-inline-size:0;padding:0 }
+    .section-toggle { width:100%;min-height:68px;padding:12px 14px;display:flex;align-items:center;gap:11px;border:0;background:var(--surface);text-align:left;cursor:pointer }
+    .section-toggle:hover { background:var(--surface-2) }
+    .section-toggle__number,.section-heading__number { width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-size:13px;font-weight:780 }
+    .section-toggle__icon { width:32px;height:32px;flex:none;display:grid;place-items:center;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);color:var(--muted);font-weight:720 }
+    .section-toggle__copy { min-width:0;flex:1;display:flex;flex-direction:column }
+    .section-toggle__copy strong { font-size:15px }
+    .section-toggle__copy>span { overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap }
+    .section-toggle__chev { color:var(--muted);font-size:18px;transition:transform .2s }
+    .section-toggle__chev--open { transform:rotate(90deg) }
+    .form-card .collapse--open { border-top:1px solid var(--line) }
+    .card-intro,.panel-help { margin:0 0 14px;color:var(--muted);font-size:12px }
+    .progressive-panel,.line-pricing,.cost-breakdown { border:1px solid var(--line);border-radius:13px;background:var(--surface-2);overflow:hidden }
+    .progressive-panel { margin-top:4px }
+    .progressive-panel summary,.line-pricing summary,.cost-breakdown summary { min-height:48px;padding:11px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;font-size:12.5px;font-weight:670 }
+    .progressive-panel summary::-webkit-details-marker,.line-pricing summary::-webkit-details-marker,.cost-breakdown summary::-webkit-details-marker { display:none }
+    .progressive-panel summary:before,.line-pricing summary:before,.cost-breakdown summary:before { content:'+';width:20px;height:20px;display:grid;place-items:center;flex:none;border-radius:50%;background:var(--surface);color:var(--muted);font-size:16px;font-weight:400 }
+    .progressive-panel[open] summary:before,.line-pricing[open] summary:before,.cost-breakdown[open] summary:before { content:'−' }
+    .progressive-panel summary>span:first-of-type,.line-pricing summary>span:first-of-type,.cost-breakdown summary>span:first-of-type { flex:1 }
+    .progressive-panel__summary,.line-pricing summary>span:last-child,.cost-breakdown summary>span:last-child { color:var(--muted);font-size:11px;font-weight:520 }
+    .progressive-panel__body { padding:14px 12px 0;border-top:1px solid var(--line);background:var(--surface) }
+    .segmented { display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2) }
+    .segmented button { min-height:42px;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:650;cursor:pointer }
+    .segmented .segmented__active { background:var(--surface);color:var(--ink);box-shadow:0 1px 5px rgb(26 22 20/.09) }
+    .price-field { max-width:260px;margin:14px 0 0 }
+    .mode-explanation { margin-top:12px;display:flex;gap:7px;color:var(--muted);font-size:12px }
+    .mode-explanation span { color:var(--ok) }
+    .price-discount-fields { padding-bottom:14px }
+  `, `
+
+    .products-card__head,.section-card-head { padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line) }
+    .section-heading { min-width:0;display:flex;align-items:center;gap:10px }
+    .section-heading h2 { font-size:15px;line-height:1.25 }
+    .section-heading p { overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap }
+    .add-product { flex:none }
+    .product-lines { padding:10px;background:color-mix(in srgb,var(--bg) 68%,var(--surface)) }
+    .order-line { padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--surface);box-shadow:0 1px 5px rgb(26 22 20/.04) }
+    .order-line+.order-line { margin-top:10px }
+    .order-line__head { display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:10px;align-items:center }
+    .order-line__photo { width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover }
+    .order-line__photo--empty { display:grid;place-items:center;color:var(--muted-2);font-size:20px }
+    .order-line__identity { min-width:0;display:flex;flex-direction:column }
+    .order-line__identity h3 { overflow:hidden;font-size:14px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }
+    .order-line__identity>span { color:var(--muted);font-size:10.5px }
+    .order-line__index { color:var(--muted-2)!important;font-size:9.5px!important;font-weight:700;text-transform:uppercase }
+    .order-line__amount { display:flex;flex-direction:column;align-items:flex-end }
+    .order-line__amount strong { font-size:14px;font-variant-numeric:tabular-nums }
+    .order-line__amount span { color:var(--ok);font-size:10px }
+    .quantity-editor { margin-top:14px }
+    .quantity-editor .field { margin-bottom:8px }
+    .quantity-editor .input { min-height:48px;font-size:18px;font-weight:680 }
+    .tier-nudge { padding:8px 10px;display:flex;gap:8px;border-radius:10px;background:var(--gold-soft);color:#78591f;font-size:11.5px }
+    .line-pricing { margin-top:10px }
+    .line-pricing__fields { display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 10px 0;border-top:1px solid var(--line);background:var(--surface) }
+    .order-line__delivery { margin-top:10px;padding:10px }
+    .delivery-row { display:flex;align-items:center;gap:8px }
+    .delivery-row__copy { min-width:0;flex:1;display:flex;flex-direction:column;font-size:11.5px }
+    .delivery-row__copy b { font-size:12px }
+    .delivery-row__copy span { overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap }
+    .delivery-edit,.remove-line,.delete-draft { min-height:44px;padding:7px 9px;border:0;border-radius:10px;background:transparent;color:var(--rose-dark);font-size:11.5px;font-weight:680;cursor:pointer }
+    .delivery-week { margin-top:10px;padding-top:10px;border-top:1px solid var(--line) }
+    .delivery-week .field { margin:0 }
+    .line-internal { margin-top:10px;border:1px solid #e8d3ae;border-radius:13px;background:var(--surface);overflow:hidden }
+    .line-internal__head { min-height:54px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid #ecdcbf;background:var(--warn-soft) }
+    .line-internal__head>div { min-width:0;display:flex;flex-direction:column;gap:2px }
+    .line-internal__head strong { color:var(--ink);font-size:12px;line-height:1.25 }
+    .line-internal__privacy { color:var(--warn);font-size:8.5px;font-weight:780;letter-spacing:.075em;text-transform:uppercase }
+    .line-internal__percentage { flex:none;padding:5px 7px;border-radius:999px;background:var(--surface);color:var(--warn);font-size:10px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap }
+    .line-internal__percentage--good { background:var(--ok-soft);color:var(--ok) }
+    .line-internal__percentage--danger { background:var(--danger-soft);color:var(--danger) }
+    .line-internal__units { margin:0;padding:9px;display:grid;grid-template-columns:1fr 1fr;gap:7px }
+    .line-internal__units>div { min-width:0;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2) }
+    .line-internal__units dt { color:var(--muted);font-size:9.5px;line-height:1.25 }
+    .line-internal__units dd { margin:3px 0 0;color:var(--ink);font-size:14px;font-weight:720;font-variant-numeric:tabular-nums;line-height:1.2 }
+    .line-internal__units dd small { margin-left:3px;color:var(--muted);font-size:8.5px;font-weight:560 }
+    .line-internal__units .line-internal__unit-margin { grid-column:1/-1;border-color:var(--rose-line);background:var(--rose-soft) }
+    .line-internal__unit-margin--good dd { color:var(--ok) }
+    .line-internal__unit-margin--danger dd { color:var(--danger) }
+    .line-internal__total { margin:0 9px;padding:10px 2px 9px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line) }
+    .line-internal__total>span { min-width:0;display:flex;flex-direction:column;color:var(--ink);font-size:11px;font-weight:680 }
+    .line-internal__total small { margin-top:1px;color:var(--muted);font-size:9px;font-weight:520 }
+    .line-internal__total strong { flex:none;font-size:17px;font-variant-numeric:tabular-nums }
+    .line-internal__note { margin:0;padding:0 11px 10px;color:var(--muted);font-size:9px;line-height:1.4 }
+    .order-line__foot { margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px }
+    .remove-line,.delete-draft { color:var(--danger) }
+    .products-empty { padding:38px 18px 42px;text-align:center }
+    .products-empty__art { width:64px;height:64px;margin:0 auto 12px;display:grid;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px }
+    .products-empty h3 { font-size:16px }
+    .products-empty p { max-width:340px;margin:4px auto 16px;color:var(--muted);font-size:12.5px }
+
+    .logistics-grid { padding:10px;display:grid;gap:8px;background:var(--surface-2) }
+    .logistics-option { display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:9px;align-items:center;padding:11px;border:1px solid var(--line);border-radius:14px;background:var(--surface) }
+    .logistics-option__icon { width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:var(--surface-2);color:var(--muted);font-size:17px }
+    .logistics-option__copy { min-width:0;display:flex;flex-direction:column }
+    .logistics-option__copy strong { font-size:13px }
+    .logistics-option__copy span { overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap }
+    .logistics-option .badge { grid-column:2;justify-self:start }
+    .logistics-option>.btn { min-height:44px }
+    .logistics-option__warning { grid-column:1/-1;padding:8px 10px;border-radius:9px;background:var(--warn-soft);color:var(--warn);font-size:11.5px }
+    .freight-options { grid-column:1/-1;padding-top:10px;border-top:1px solid var(--line) }
+    .check-option { min-height:52px;padding:10px;display:flex;gap:10px;border:1px solid var(--line);border-radius:11px;cursor:pointer }
+    .check-option input { width:20px;height:20px;margin:1px 0;accent-color:var(--rose) }
+    .check-option span { display:flex;flex-direction:column }
+    .check-option strong { font-size:12.5px }
+    .check-option small { color:var(--muted);font-size:10.5px }
+    .freight-options .field { margin:12px 0 0 }
+    .input-prefix { display:flex }
+    .input-prefix>span { min-width:42px;display:grid;place-items:center;border:1px solid var(--line-strong);border-right:0;border-radius:var(--r-sm) 0 0 var(--r-sm);background:var(--surface-2);color:var(--muted) }
+    .input-prefix .input { border-radius:0 var(--r-sm) var(--r-sm) 0 }
+  `, `
+
+    .total-highlight { display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:8px;margin-bottom:12px }
+    .total-highlight>div { min-width:0;padding:13px 12px;display:flex;flex-direction:column;border-radius:13px;background:#241c18;color:#fff }
+    .total-highlight>div+div { background:var(--rose-soft);color:var(--ink) }
+    .total-highlight span { color:rgb(255 255 255/.58);font-size:9px;font-weight:700;text-transform:uppercase }
+    .total-highlight>div+div span,.total-highlight>div+div small { color:var(--muted) }
+    .total-highlight strong { overflow:hidden;font-size:clamp(17px,5vw,22px);font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap }
+    .total-highlight small { color:rgb(255 255 255/.52);font-size:10px }
+    .quote-total__meta { display:flex;align-items:center;gap:7px;min-width:0;white-space:nowrap }
+    .quote-profit { color:#63d69c;font-weight:720;font-variant-numeric:tabular-nums }
+    .quote-profit--negative { color:#ff8b84 }
+    .minimum-check { margin-bottom:12px;padding:11px;display:grid;grid-template-columns:1fr auto;gap:8px 12px;border:1px solid #f0dcbc;border-radius:13px;background:var(--warn-soft) }
+    .minimum-check--ok { border-color:#c6e5d5;background:var(--ok-soft) }
+    .minimum-check__copy { display:flex;flex-direction:column }
+    .minimum-check__copy strong { font-size:12.5px }
+    .minimum-check__copy span { color:var(--muted);font-size:10.5px }
+    .minimum-check__value { align-self:center;color:var(--warn);font-size:12px;font-weight:760 }
+    .minimum-check--ok .minimum-check__value { color:var(--ok);font-size:17px }
+    .minimum-check .meter__track { grid-column:1/-1;height:5px }
+    .cost-breakdown__body { padding:4px 12px 12px;border-top:1px solid var(--line);background:var(--surface) }
+    .send-card { border-color:color-mix(in srgb,var(--rose) 22%,var(--line)) }
+    .send-card__head { padding:16px;display:flex;align-items:center;gap:12px }
+    .send-card__icon { width:40px;height:40px;flex:none;display:grid;place-items:center;border-radius:13px;background:var(--warn-soft);color:var(--warn);font-size:18px;font-weight:780 }
+    .send-card__icon--ok { background:var(--ok-soft);color:var(--ok) }
+    .send-card__head h2 { font-size:15px }
+    .send-card__head p { color:var(--muted);font-size:11.5px }
+    .send-card__body { padding:0 14px 14px }
+    .send-issues { margin:0 0 14px;padding:10px 12px 10px 30px;border-radius:11px;background:var(--warn-soft);color:#7c450b;font-size:12px }
+    @media(max-width:350px) { .total-highlight { grid-template-columns:1fr } }
+    .status-actions { display:flex;flex-wrap:wrap;gap:8px }
+    .delete-draft { width:100%;margin-top:10px }
+
+    .sales-state { max-width:760px }
+    .loading-hero { height:150px;margin-bottom:12px;border-radius:22px }
+    .loading-card { height:92px;margin-bottom:10px;border-radius:16px }
+    .load-error { padding:24px;text-align:center }
+    .load-error__icon { width:48px;height:48px;margin:0 auto 12px;display:grid;place-items:center;border-radius:16px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:760 }
+    .load-error h2 { font-size:17px }
+    .load-error p { max-width:420px;margin:5px auto 16px;color:var(--muted);font-size:13px }
+
+    @media(max-width:520px) {
+      .reference-alert .btn,.quote-lock .btn { margin-left:0;width:100% }
+      .products-card__head { align-items:flex-start }
+      .add-product { min-height:42px;padding-inline:12px }
+      .section-heading p { max-width:190px }
+      .logistics-option .badge { display:none }
+    }
+    @media(min-width:700px) {
+      .quote-hero__top { padding:22px 24px 20px }
+      .quote-header-total span { display:block }
+      .workflow-nav { max-width:640px;margin-inline:auto }
+      .workflow-nav button { flex-direction:row;gap:7px;font-size:11.5px }
+      .product-lines,.logistics-grid { padding:14px }
+      .order-line { padding:16px }
+      .quantity-editor { display:grid;grid-template-columns:minmax(220px,1fr) 1fr;gap:12px;align-items:end }
+      .tier-nudge { min-height:48px;margin-bottom:8px;align-items:center }
+      .line-internal__units { grid-template-columns:repeat(3,minmax(0,1fr)) }
+      .line-internal__units .line-internal__unit-margin { grid-column:auto }
+      .logistics-grid { grid-template-columns:1fr 1fr }
+    }
+    @media(min-width:1024px) {
+      #quote-setup,#order-lines,#quote-logistics,#quote-check,#quote-status { scroll-margin-top:calc(var(--appbar-h) + 28px) }
+      .workflow-layout { display:grid;grid-template-columns:minmax(0,1fr) 168px;gap:16px;align-items:start }
+      .workflow-content { grid-column:1;grid-row:1;margin-top:0 }
+      .workflow-nav { grid-column:2;grid-row:1;top:calc(var(--appbar-h) + 16px);max-width:none;margin:0;grid-template-columns:1fr;gap:3px;padding:6px;border-radius:15px }
+      .workflow-nav button { min-height:44px;flex-direction:row;justify-content:flex-start;gap:8px;padding:7px 9px;font-size:12px;text-align:left }
+      .quote-hero__customer { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+      .order-line__head { grid-template-columns:56px minmax(0,1fr) auto }
+      .order-line__photo { width:56px;height:56px }
+    }
+  `],
 })
 export class SalesEditor {
   private readonly sales = inject(SalesApi);
@@ -883,8 +1294,17 @@ export class SalesEditor {
   private readonly ui = inject(Ui);
   readonly privacy = inject(Privacy);
   private readonly work = inject(WorkQueue);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly id = input<string>('');
+  readonly workflowSections = [
+    { id: 'quote-setup', label: 'Klant' },
+    { id: 'order-lines', label: 'Producten' },
+    { id: 'quote-logistics', label: 'Levering' },
+    { id: 'quote-check', label: 'Controle' },
+    { id: 'quote-status', label: 'Status' },
+  ] as const;
+  readonly activeSection = signal<(typeof this.workflowSections)[number]['id']>('quote-setup');
 
   readonly paymentTermsList = STANDARD_PAYMENT_TERMS;
   /** True while terms outside the standard list are being typed. */
@@ -909,6 +1329,9 @@ export class SalesEditor {
   readonly incoterms = ['EXW', 'FOB', 'CIF', 'DAP', 'DDP'];
 
   readonly view = signal<SalesOrderView | null>(null);
+  readonly loading = signal(true);
+  readonly loadError = signal('');
+  readonly referenceError = signal('');
   readonly customers = signal<Customer[]>([]);
   readonly countries = signal<Country[]>([]);
   readonly products = signal<Product[]>([]);
@@ -945,25 +1368,61 @@ export class SalesEditor {
     effect(() => {
       const routeId = this.id();
       if (routeId) void this.reload(+routeId);
+      else this.loading.set(false);
+    });
+    const scheduleSectionUpdate = () => this.scheduleSectionUpdate();
+    window.addEventListener('scroll', scheduleSectionUpdate, { passive: true });
+    window.addEventListener('resize', scheduleSectionUpdate, { passive: true });
+    this.destroyRef.onDestroy(() => {
+      window.removeEventListener('scroll', scheduleSectionUpdate);
+      window.removeEventListener('resize', scheduleSectionUpdate);
+      if (this.sectionFrame !== null) cancelAnimationFrame(this.sectionFrame);
+    });
+    effect(() => {
+      if (this.view()) this.scheduleSectionUpdate();
     });
   }
 
   private async loadReference(): Promise<void> {
-    const [customers, countries, products] = await Promise.all([
-      this.sales.customers(), this.sales.countries(), this.catalog.products(),
-    ]);
-    this.customers.set(customers);
-    this.countries.set(countries);
-    this.products.set(products);
+    this.referenceError.set('');
+    try {
+      const [customers, countries, products] = await Promise.all([
+        this.sales.customers(), this.sales.countries(), this.catalog.products(),
+      ]);
+      this.customers.set(customers);
+      this.countries.set(countries);
+      this.products.set(products);
+    } catch (failure: unknown) {
+      this.referenceError.set(messageOf(failure, 'Klanten, landen of producten ontbreken'));
+    }
   }
 
   private async reload(orderId: number): Promise<void> {
-    const [view, revisions] = await Promise.all([
-      this.sales.order(orderId), this.sales.revisionsFor(orderId),
-    ]);
-    this.view.set(view);
-    this.revisions.set(revisions);
-    void this.loadHistory(orderId);
+    this.loading.set(true);
+    this.loadError.set('');
+    this.view.set(null);
+    try {
+      const [view, revisions] = await Promise.all([
+        this.sales.order(orderId), this.sales.revisionsFor(orderId),
+      ]);
+      this.view.set(view);
+      this.revisions.set(revisions);
+      void this.loadHistory(orderId);
+    } catch (failure: unknown) {
+      this.view.set(null);
+      this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  retryReference(): void {
+    void this.loadReference();
+  }
+
+  retryLoad(): void {
+    const routeId = +this.id();
+    if (routeId) void this.reload(routeId);
   }
 
   readonly pendingRevision = computed(
@@ -982,6 +1441,41 @@ export class SalesEditor {
     return Math.min(100, (data.priced.totals.goodsTotal / minimum) * 100);
   });
 
+  /** Commercial fields belong to the draft version only. */
+  readonly canEdit = computed(() => this.view()?.order.status === 'CONCEPT');
+
+  /** A quote that has ever reached the customer must remain in the audit trail. */
+  readonly canDelete = computed(() => this.canEdit() && !this.view()?.order.sentAt);
+
+  /** Open delivery promises may still be completed without unlocking prices. */
+  readonly canEditTerms = computed(() => {
+    const status = this.view()?.order.status;
+    return status === 'CONCEPT' || status === 'VERZONDEN' || status === 'BEKEKEN';
+  });
+
+  /** The same preflight the server enforces, phrased before the user taps send. */
+  readonly sendIssues = computed(() => {
+    const data = this.view();
+    if (!data) return ['De offerte wordt nog geladen'];
+    const issues: string[] = [];
+    if (!['CONCEPT', 'VERZONDEN', 'BEKEKEN'].includes(data.order.status)) {
+      issues.push(`Status ${this.label(data.order.status).toLowerCase()} laat versturen niet toe`);
+    }
+    const customer = this.customers().find((item) => item.id === data.order.customerId);
+    if (!customer) issues.push('Kies een klant');
+    else if (!customer.email?.trim()) issues.push(`${customer.company} heeft geen e-mailadres`);
+    if (!data.order.countryCode) issues.push('Kies een land van levering');
+    if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
+    if (data.order.orderDate && data.order.validUntil
+        && data.order.validUntil < data.order.orderDate) {
+      issues.push('Geldig-totdatum ligt vóór de offertedatum');
+    }
+    if (!data.priced.validation.meetsMinimum) {
+      issues.push('De minimum orderwaarde is nog niet bereikt');
+    }
+    return issues;
+  });
+
   label = (status: SalesOrder['status']) => STATUS_LABEL[status];
   cls = statusClass;
 
@@ -996,6 +1490,16 @@ export class SalesEditor {
 
   currentQuantity(productId: number): number {
     return this.view()?.order.lines.find((l) => l.productId === productId)?.quantity ?? 0;
+  }
+
+  /**
+   * The server owns pricing. Its line margin is the net line amount minus
+   * landed cost, after line discount and before order-level adjustments.
+   * Dividing that returned value keeps this unit figure exactly aligned with
+   * the total shown alongside it instead of recreating pricing in the UI.
+   */
+  marginPerUnit(line: PricedLine): number {
+    return line.quantity > 0 ? line.marginEur / line.quantity : 0;
   }
 
   /* --------------------------------------------------------- mutating */
@@ -1022,6 +1526,10 @@ export class SalesEditor {
   }
 
   patch(changes: Partial<SalesOrder>): void {
+    if (!this.canEdit()) {
+      this.ui.toast('Deze offerteversie staat vast. Maak een nieuwe kopie om prijzen of aantallen te wijzigen.', 'err');
+      return;
+    }
     this.enqueue((order) => ({ ...order, ...changes }));
   }
 
@@ -1063,6 +1571,7 @@ export class SalesEditor {
    * off-carton one gets the full two seconds to finish typing.
    */
   setLineQuantity(productId: number, raw: number): void {
+    if (!this.canEdit()) return;
     const wanted = Math.max(0, raw || 0);
     this.lineDraft.update((map) => ({ ...map, [productId]: wanted }));
 
@@ -1078,6 +1587,7 @@ export class SalesEditor {
 
     clearTimeout(this.lineTimers.get(productId));
     this.lineTimers.set(productId, setTimeout(() => {
+      this.lineTimers.delete(productId);
       this.lineDraft.update((map) => {
         const next = { ...map };
         delete next[productId];
@@ -1094,6 +1604,19 @@ export class SalesEditor {
     }, offCarton ? 2000 : 400));
   }
 
+  /** Commit what is still being typed before a send action reads the order. */
+  private async flushPendingEdits(): Promise<void> {
+    const drafts = this.lineDraft();
+    for (const timer of this.lineTimers.values()) clearTimeout(timer);
+    this.lineTimers.clear();
+    this.lineDraft.set({});
+    this.linePending.set({});
+    for (const [productId, quantity] of Object.entries(drafts)) {
+      this.setLine(Number(productId), { quantity });
+    }
+    await this.saveQueue;
+  }
+
   private piecesPerCarton(productId: number): number {
     const per = this.products().find((product) => product.id === productId)
       ?.carton.piecesPerCarton;
@@ -1103,6 +1626,25 @@ export class SalesEditor {
   setLine(productId: number,
           changes: { quantity?: number; unitPriceEur?: number; manualDiscountPct?: number;
                      deliveryWeek?: string }): void {
+    if (!this.canEdit()) {
+      const deliveryOnly = Object.keys(changes).length === 1
+          && Object.prototype.hasOwnProperty.call(changes, 'deliveryWeek');
+      if (deliveryOnly && this.canEditTerms()) {
+        this.saveQueue = this.saveQueue.then(async () => {
+          const data = this.view();
+          if (!data) return;
+          try {
+            this.view.set(await this.sales.updateDeliveryTerms(data.order.id, [{
+              productId,
+              deliveryWeek: changes.deliveryWeek?.trim() || null,
+            }]));
+          } catch (failure: unknown) {
+            this.ui.toast(messageOf(failure, 'Leverweek opslaan mislukt'), 'err');
+          }
+        });
+      }
+      return;
+    }
     this.enqueue((order) => ({
       ...order,
       lines: order.lines.map((line) =>
@@ -1118,6 +1660,7 @@ export class SalesEditor {
   }
 
   openPicker(): void {
+    if (!this.canEdit()) return;
     this.picking.set(true);
   }
 
@@ -1153,20 +1696,33 @@ export class SalesEditor {
 
   /* ------------------------------------------------------------ quote */
 
-  openSend(): void {
+  async openSend(): Promise<void> {
+    await this.flushPendingEdits();
+    if (this.sendIssues().length) {
+      this.ui.toast(this.sendIssues()[0], 'err');
+      return;
+    }
     this.sendMessage.set('');
     this.sendSheet.set(true);
   }
 
   async send(): Promise<void> {
-    const data = this.view();
-    if (!data || this.sending()) return;
+    if (this.sending()) return;
     this.sending.set(true);
     try {
-      this.view.set(await this.sales.sendQuote(data.order.id, this.sendMessage()));
+      await this.flushPendingEdits();
+      const data = this.view();
+      if (!data) return;
+      if (this.sendIssues().length) {
+        this.ui.toast(this.sendIssues()[0], 'err');
+        return;
+      }
+      const sent = await this.sales.sendQuote(data.order.id, this.sendMessage());
+      this.view.set(sent);
       this.sendSheet.set(false);
       void this.work.refresh();
       this.ui.toast('Offerte verstuurd naar de klant');
+      await this.router.navigate(['/sales', sent.order.id]);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Versturen mislukt'), 'err');
     } finally {
@@ -1195,6 +1751,22 @@ export class SalesEditor {
     }
   }
 
+  /** Starts a clean draft instead of changing a quote the customer already received. */
+  async duplicate(): Promise<void> {
+    const data = this.view();
+    if (!data || this.busy()) return;
+    this.busy.set(true);
+    try {
+      const copy = await this.sales.duplicateOrder(data.order.id);
+      this.ui.toast('Nieuwe conceptkopie gemaakt');
+      await this.router.navigate(['/sales', copy.order.id, 'edit']);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Kopie maken mislukt'), 'err');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   /**
    * Sets the freight to "to be determined" or back.
    *
@@ -1204,10 +1776,34 @@ export class SalesEditor {
    */
   setFreightPending(pending: boolean): void {
     const data = this.view();
-    if (!data) return;
+    if (!data || !this.canEditTerms()) return;
     const wasPending = data.order.freight === 'TE_BEPALEN';
-    this.patch({
-      freight: pending ? 'TE_BEPALEN' : wasPending ? 'AANGEVULD' : data.order.freight,
+    const state = pending ? 'TE_BEPALEN' : wasPending ? 'AANGEVULD' : 'BEREKEND';
+    this.saveFreight(state, data.order.manualFreightEur);
+  }
+
+  setManualFreight(raw: string): void {
+    const data = this.view();
+    if (!data || !this.canEditTerms()) return;
+    const amount = raw.trim() === '' ? null : Number(raw);
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      this.ui.toast('Vul een geldig vrachtbedrag in', 'err');
+      return;
+    }
+    this.saveFreight(data.order.freight === 'TE_BEPALEN' ? 'BEREKEND'
+      : data.order.freight ?? 'BEREKEND', amount);
+  }
+
+  private saveFreight(state: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD',
+                      manualFreightEur: number | null): void {
+    this.saveQueue = this.saveQueue.then(async () => {
+      const data = this.view();
+      if (!data) return;
+      try {
+        this.view.set(await this.sales.updateFreight(data.order.id, state, manualFreightEur));
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Vracht opslaan mislukt'), 'err');
+      }
     });
   }
 
@@ -1334,7 +1930,7 @@ export class SalesEditor {
 
   remove(): void {
     const data = this.view();
-    if (!data) return;
+    if (!data || !this.canDelete()) return;
     this.ui.confirm(
       {
         title: 'Order verwijderen',
@@ -1350,8 +1946,8 @@ export class SalesEditor {
   }
   /* --------------------------------------------------------- sections */
 
-  /** Which cards are folded open; the lines are the heart, so they start open. */
-  readonly openSections = signal(new Set<string>(['lines']));
+  /** Start with the customer context visible; pricing stays progressive. */
+  readonly openSections = signal(new Set<string>(['order']));
 
   toggle(name: string): void {
     const next = new Set(this.openSections());
@@ -1361,6 +1957,50 @@ export class SalesEditor {
 
   isOpen(name: string): boolean {
     return this.openSections().has(name);
+  }
+
+  scrollToSection(id: string): void {
+    if (this.workflowSections.some((item) => item.id === id)) {
+      this.activeSection.set(id as (typeof this.workflowSections)[number]['id']);
+    }
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  private sectionFrame: number | null = null;
+
+  private scheduleSectionUpdate(): void {
+    if (this.sectionFrame !== null) return;
+    this.sectionFrame = requestAnimationFrame(() => {
+      this.sectionFrame = null;
+      this.updateActiveSection();
+    });
+  }
+
+  /** Follow the section just below the sticky chrome, including at page end. */
+  private updateActiveSection(): void {
+    const sections = this.workflowSections.flatMap((item) => {
+      const element = document.getElementById(item.id);
+      return element ? [{ item, element }] : [];
+    });
+    if (!sections.length) return;
+
+    const appbarBottom = document.querySelector<HTMLElement>('.appbar')
+      ?.getBoundingClientRect().bottom ?? 0;
+    const mobileNavBottom = window.innerWidth < 1024
+      ? (document.querySelector<HTMLElement>('.workflow-nav')?.getBoundingClientRect().bottom
+        ?? appbarBottom)
+      : appbarBottom;
+    const activationLine = mobileNavBottom + 24;
+    let current = sections[0].item.id;
+    for (const section of sections) {
+      if (section.element.getBoundingClientRect().top <= activationLine) {
+        current = section.item.id;
+      } else {
+        break;
+      }
+    }
+    const atPageEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 8;
+    this.activeSection.set(atPageEnd ? sections.at(-1)!.item.id : current);
   }
 
   orderSummary(): string {

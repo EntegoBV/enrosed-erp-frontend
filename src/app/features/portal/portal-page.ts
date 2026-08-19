@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { PortalCatalogItem, PortalQuote } from '../../core/api/models';
@@ -6,6 +8,82 @@ import { Sheet, Ui } from '../../shared/ui';
 import { PortalProductPicker } from './portal-product-picker';
 import { DateNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe } from '../../shared/pipes';
 import { LANGUAGES, LanguageCode } from '../../core/api/models';
+
+const PORTAL_LOCALES: Record<LanguageCode, string> = {
+  NL: 'nl-BE', FR: 'fr-BE', EN: 'en-GB', DE: 'de-DE',
+  ES: 'es-ES', PL: 'pl-PL', PT: 'pt-PT', TR: 'tr-TR',
+};
+
+type PortalFallback = 'chooseLanguage' | 'nameRequired' | 'genericError'
+  | 'emptyTitle' | 'emptyText' | 'change' | 'addedByCustomer'
+  | 'notFound' | 'notFoundText' | 'loading';
+
+const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
+  NL: {
+    chooseLanguage: 'Taal kiezen', nameRequired: 'Vul uw naam in om te tekenen.',
+    genericError: 'Er ging iets mis. Probeer het opnieuw.', emptyTitle: 'Niets gevonden',
+    emptyText: 'Probeer een deel van de naam of de kleur.', change: 'Wijzig',
+    addedByCustomer: 'Toegevoegd door de klant', notFound: 'Offerte niet gevonden',
+    notFoundText: 'Deze link is niet meer geldig. Neem contact op, dan sturen we een nieuwe.',
+    loading: 'Laden…',
+  },
+  FR: {
+    chooseLanguage: 'Choisir la langue', nameRequired: 'Saisissez votre nom pour signer.',
+    genericError: 'Une erreur s’est produite. Veuillez réessayer.', emptyTitle: 'Aucun article trouvé',
+    emptyText: 'Essayez une partie du nom ou de la couleur.', change: 'Modifier',
+    addedByCustomer: 'Ajouté par le client', notFound: 'Offre introuvable',
+    notFoundText: 'Ce lien n’est plus valable. Contactez-nous et nous vous en enverrons un nouveau.',
+    loading: 'Chargement…',
+  },
+  EN: {
+    chooseLanguage: 'Choose language', nameRequired: 'Enter your name to sign.',
+    genericError: 'Something went wrong. Please try again.', emptyTitle: 'No items found',
+    emptyText: 'Try part of the name or colour.', change: 'Change',
+    addedByCustomer: 'Added by the customer', notFound: 'Quotation not found',
+    notFoundText: 'This link is no longer valid. Contact us and we will send a new one.',
+    loading: 'Loading…',
+  },
+  DE: {
+    chooseLanguage: 'Sprache wählen', nameRequired: 'Geben Sie zum Unterzeichnen Ihren Namen ein.',
+    genericError: 'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.', emptyTitle: 'Keine Artikel gefunden',
+    emptyText: 'Suchen Sie nach einem Teil des Namens oder der Farbe.', change: 'Ändern',
+    addedByCustomer: 'Vom Kunden hinzugefügt', notFound: 'Angebot nicht gefunden',
+    notFoundText: 'Dieser Link ist nicht mehr gültig. Kontaktieren Sie uns für einen neuen.',
+    loading: 'Wird geladen…',
+  },
+  ES: {
+    chooseLanguage: 'Elegir idioma', nameRequired: 'Indique su nombre para firmar.',
+    genericError: 'Se ha producido un error. Inténtelo de nuevo.', emptyTitle: 'No se encontraron artículos',
+    emptyText: 'Pruebe con parte del nombre o del color.', change: 'Cambiar',
+    addedByCustomer: 'Añadido por el cliente', notFound: 'Presupuesto no encontrado',
+    notFoundText: 'Este enlace ya no es válido. Contáctenos y le enviaremos uno nuevo.',
+    loading: 'Cargando…',
+  },
+  PL: {
+    chooseLanguage: 'Wybierz język', nameRequired: 'Proszę podać imię i nazwisko, aby podpisać.',
+    genericError: 'Wystąpił błąd. Proszę spróbować ponownie.', emptyTitle: 'Nie znaleziono artykułów',
+    emptyText: 'Proszę wpisać część nazwy lub koloru.', change: 'Zmień',
+    addedByCustomer: 'Dodane przez klienta', notFound: 'Nie znaleziono oferty',
+    notFoundText: 'Ten link nie jest już aktywny. Prosimy o kontakt, prześlemy nowy.',
+    loading: 'Wczytywanie…',
+  },
+  PT: {
+    chooseLanguage: 'Escolher idioma', nameRequired: 'Indique o seu nome para assinar.',
+    genericError: 'Ocorreu um erro. Tente novamente.', emptyTitle: 'Nenhum artigo encontrado',
+    emptyText: 'Experimente parte do nome ou da cor.', change: 'Alterar',
+    addedByCustomer: 'Adicionado pelo cliente', notFound: 'Orçamento não encontrado',
+    notFoundText: 'Esta ligação já não é válida. Contacte-nos e enviaremos uma nova.',
+    loading: 'A carregar…',
+  },
+  TR: {
+    chooseLanguage: 'Dil seçin', nameRequired: 'İmzalamak için adınızı girin.',
+    genericError: 'Bir hata oluştu. Lütfen tekrar deneyin.', emptyTitle: 'Ürün bulunamadı',
+    emptyText: 'Adın veya rengin bir bölümünü deneyin.', change: 'Değiştir',
+    addedByCustomer: 'Müşteri tarafından eklendi', notFound: 'Teklif bulunamadı',
+    notFoundText: 'Bu bağlantı artık geçerli değil. Yeni bağlantı için bizimle iletişime geçin.',
+    loading: 'Yükleniyor…',
+  },
+};
 
 /**
  * The quote as the customer sees it.
@@ -25,7 +103,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
   template: `
     <div class="portal">
       <header class="portal__bar">
-        <img class="portal__logo" src="logo.png" alt="Enrosed" />
+        <img class="portal__logo" src="logo-ui.png" alt="Enrosed" />
 
         <!-- The customer can pick another language. Their pick only applies
              to this screen; the next quote leaves in the language on their
@@ -34,7 +112,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
         <div class="portal__lang">
           <span class="portal__globe" aria-hidden="true">◍</span>
           <select class="portal__select" [ngModel]="language()"
-                  (ngModelChange)="setLanguage($event)" aria-label="Taal kiezen">
+                  (ngModelChange)="setLanguage($event)" [attr.aria-label]="local('chooseLanguage')">
             @for (option of languages; track option.code) {
               <option [value]="option.code">{{ option.code }}</option>
             }
@@ -63,7 +141,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
                   <div style="font-size:22px;font-weight:700">{{ data.number }}</div>
                   <div class="small muted">
                     {{ t('portalFor') }} {{ data.companyName }} ·
-                    {{ t('portalValidUntil') }} {{ data.validUntil | dateNl }}
+                    {{ t('portalValidUntil') }} {{ data.validUntil | dateNl: locale() }}
                   </div>
                 </div>
                 <span class="badge" [class]="'badge--' + badge(data)">{{ statusLabel(data) }}</span>
@@ -141,28 +219,33 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
               <div class="list">
                 @for (line of data.lines; track line.productId) {
                   <div class="list-item">
+                    @if (line.photoUrl) {
+                      <img class="portal-line__photo" [src]="line.photoUrl" alt="" loading="lazy" />
+                    } @else {
+                      <div class="portal-line__photo portal-line__photo--empty" aria-hidden="true">◈</div>
+                    }
                     <div class="list-item__body">
                       <div class="list-item__title">{{ line.description }}</div>
                       <div class="list-item__meta">
-                        {{ line.quantity | num }} {{ t('portalPieces') }} ·
-                        {{ line.cartons | num }} {{ t('portalBoxes') }} ·
+                        {{ line.quantity | num: 0: locale() }} {{ t('portalPieces') }} ·
+                        {{ line.cartons | num: 0: locale() }} {{ t('portalBoxes') }} ·
                         {{ line.pallets }} {{ t('portalPalletsShort') }}
                       </div>
                       <div class="list-item__meta">
-                        {{ line.unitPrice | eur: 3 }} {{ t('portalPerPiece') }}
+                        {{ line.unitPrice | eur: 3: locale() }} {{ t('portalPerPiece') }}
                         @if (line.discountPct) {
-                          · {{ t('portalDiscount') }} {{ line.discountPct | pct: 1 }}
+                          · {{ t('portalDiscount') }} {{ line.discountPct | pct: 1: locale() }}
                         }
                       </div>
                       <div class="list-item__meta list-item__meta--wrap">
                         @if (line.inStock) {
                           <span class="ok-text"><span class="stock-dot stock-dot--ok"></span>
                             {{ t('portalDeliverableFrom') }}
-                            {{ line.deliveryDate | dateNl }}</span>
+                            {{ line.deliveryDate | dateNl: locale() }}</span>
                         } @else if (line.deliveryWeek) {
                           <span class="ok-text"><span class="stock-dot stock-dot--ok"></span>
                             {{ t('portalDeliveryInWeek') }}
-                            {{ line.deliveryWeek | weekNl }}</span>
+                            {{ line.deliveryWeek | weekNl: 'long': locale() }}</span>
                         } @else {
                           <!-- Orange, not red: it is an open item, not an error,
                                and red frightens on the screen where someone
@@ -173,7 +256,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
                       </div>
                     </div>
                     <div class="list-item__end">
-                      <div class="strong num">{{ line.net | eur }}</div>
+                      <div class="strong num">{{ line.net | eur: 2: locale() }}</div>
                     </div>
                   </div>
                 }
@@ -184,43 +267,43 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
           <div class="card">
             <div class="card__body">
               <div class="stat-row"><span>{{ t('subtotal') }}</span>
-                <span class="num">{{ data.totals.subtotal | eur }}</span></div>
+                <span class="num">{{ data.totals.subtotal | eur: 2: locale() }}</span></div>
               @if (data.totals.orderDiscountAmount) {
                 <div class="stat-row stat-row--discount">
-                  <span>{{ t('orderDiscount') }} {{ data.totals.orderDiscountPercent | pct: 0 }}</span>
-                  <span class="num">− {{ data.totals.orderDiscountAmount | eur }}</span></div>
+                  <span>{{ t('orderDiscount') }} {{ data.totals.orderDiscountPercent | pct: 0: locale() }}</span>
+                  <span class="num">− {{ data.totals.orderDiscountAmount | eur: 2: locale() }}</span></div>
               }
               @if (data.totals.extraDiscountAmount) {
                 <div class="stat-row stat-row--discount">
                   <span>{{ data.totals.extraDiscountLabel || t('extraDiscount') }}
-                    ({{ data.totals.extraDiscountPercent | pct: 1 }})</span>
-                  <span class="num">− {{ data.totals.extraDiscountAmount | eur }}</span></div>
+                    ({{ data.totals.extraDiscountPercent | pct: 1: locale() }})</span>
+                  <span class="num">− {{ data.totals.extraDiscountAmount | eur: 2: locale() }}</span></div>
               }
               <div class="stat-row stat-row--sub"><span>{{ t('goodsValue') }}</span>
-                <span class="num">{{ data.totals.goodsTotal | eur }}</span></div>
+                <span class="num">{{ data.totals.goodsTotal | eur: 2: locale() }}</span></div>
               <div class="stat-row">
                 <span>{{ t('freight') }} ({{ data.totals.pallets }} {{ t('portalPalletsShort') }})</span>
                 <span class="num">
                   @if (freightPending()) {
                     <span class="warn-text">{{ t('freightToBeDetermined') }}</span>
                   } @else {
-                    {{ data.totals.freight | eur }}
+                    {{ data.totals.freight | eur: 2: locale() }}
                   }
                 </span></div>
               <div class="stat-row"><span>{{ t('handling') }}</span>
-                <span class="num">{{ data.totals.handling | eur }}</span></div>
+                <span class="num">{{ data.totals.handling | eur: 2: locale() }}</span></div>
               <div class="stat-row stat-row--total"><span>{{ t('total') }}</span>
-                <span class="num">{{ data.totals.total | eur }}</span></div>
+                <span class="num">{{ data.totals.total | eur: 2: locale() }}</span></div>
               @if (data.totals.vatLegalMention) {
                 <div class="stat-row stat-row--muted">
                   <span>{{ t('vat') }} — {{ data.totals.vatTreatment }}</span>
-                  <span class="num">{{ 0 | eur }}</span></div>
+                  <span class="num">{{ 0 | eur: 2: locale() }}</span></div>
               } @else {
                 <div class="stat-row stat-row--muted">
-                  <span>{{ t('vat') }} {{ data.totals.vatRatePct | pct: 1 }}</span>
-                  <span class="num">{{ data.totals.vatAmount | eur }}</span></div>
+                  <span>{{ t('vat') }} {{ data.totals.vatRatePct | pct: 1: locale() }}</span>
+                  <span class="num">{{ data.totals.vatAmount | eur: 2: locale() }}</span></div>
                 <div class="stat-row stat-row--muted"><span>{{ t('totalInclVat') }}</span>
-                  <span class="num">{{ data.totals.totalInclVat | eur }}</span></div>
+                  <span class="num">{{ data.totals.totalInclVat | eur: 2: locale() }}</span></div>
               }
             </div>
           </div>
@@ -279,7 +362,8 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
 
     <!-- ======================================================= signing -->
     @if (signSheet()) {
-      <app-sheet [title]="t('portalSignTitle')" (closed)="signSheet.set(false)">
+      <app-sheet [title]="t('portalSignTitle')" [closeLabel]="t('portalCancel')"
+                 (closed)="signSheet.set(false)">
         <div body>
           <p class="small muted" style="margin-bottom:14px">{{ t('portalSignText') }}</p>
           <div class="field">
@@ -304,7 +388,8 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
 
     <!-- ====================================================== changes -->
     @if (proposalSheet()) {
-      <app-sheet [title]="t('portalPropose')" (closed)="proposalSheet.set(false)">
+      <app-sheet [title]="t('portalPropose')" [closeLabel]="t('portalCancel')"
+                 (closed)="proposalSheet.set(false)">
         <div body>
           <p class="small muted" style="margin-bottom:14px">{{ t('portalProposeText') }}</p>
           <div class="section-title" style="margin-top:0">{{ t('portalOnYourQuote') }}</div>
@@ -316,7 +401,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
                      (ngModelChange)="setProposal(line.productId, +$event)" />
               @if (pendingRound()[line.productId]; as to) {
                 <span class="hint warn-text">
-                  {{ t('portalRoundingNotice') }} <b>{{ to | num }}</b>
+                  {{ t('portalRoundingNotice') }} <b>{{ to | num: 0: locale() }}</b>
                   ({{ line.piecesPerCarton }} {{ t('portalPerBox') }})
                 </span>
               } @else {
@@ -324,13 +409,6 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
                   {{ line.piecesPerCarton }} {{ t('portalPerBox') }}
                 </span>
               }
-            </div>
-          }
-
-          @if (hasOutOfStockAddition()) {
-            <div class="alert alert--warn mt-8">
-              <span class="alert__icon">!</span>
-              <div>{{ t('portalOutOfStockWarning') }}</div>
             </div>
           }
 
@@ -344,7 +422,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
                 <div>
                   <div class="small strong">{{ entry.description }}</div>
                   <div class="tiny muted">
-                    {{ entry.quantity | num }} {{ t('portalPieces') }}
+                    {{ entry.quantity | num: 0: locale() }} {{ t('portalPieces') }}
                   </div>
                 </div>
                 <button class="btn btn--sm btn--danger" type="button"
@@ -386,13 +464,18 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
       <app-portal-product-picker
         [t]="translate"
         [items]="extraItems()"
+        [locale]="locale()"
+        [changeLabel]="local('change')"
+        [emptyTitle]="local('emptyTitle')"
+        [emptyText]="local('emptyText')"
         (picked)="addFromCatalog($event)"
         (cancelled)="catalogSheet.set(false)"
       />
     }
 
     @if (rejectSheet()) {
-      <app-sheet [title]="t('portalRejectQuote')" (closed)="rejectSheet.set(false)">
+      <app-sheet [title]="t('portalRejectQuote')" [closeLabel]="t('portalCancel')"
+                 (closed)="rejectSheet.set(false)">
         <div body>
           <div class="field">
             <label for="rej-msg">{{ t('portalReasonOptional') }}</label>
@@ -451,10 +534,26 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
       /* Black ink on transparent, so invert on the dark bar. */
       filter: invert(1);
     }
+    .portal-line__photo {
+      width: 56px;
+      height: 56px;
+      flex: none;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      object-fit: cover;
+    }
+    .portal-line__photo--empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted-2);
+      font-size: 18px;
+    }
     .portal .content { padding-bottom: 60px; }
   `,
 })
-export class PortalPage {
+export class PortalPage implements OnDestroy {
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
 
@@ -463,6 +562,10 @@ export class PortalPage {
   readonly quote = signal<PortalQuote | null>(null);
   readonly error = signal(false);
   readonly busy = signal(false);
+  /** Language and browser locale are related, but deliberately not identical. */
+  readonly language = signal<LanguageCode>('NL');
+  readonly locale = computed(() => PORTAL_LOCALES[this.language()] ?? PORTAL_LOCALES.NL);
+  private readonly originalDocumentLanguage = document.documentElement.lang;
 
   readonly signSheet = signal(false);
   readonly signName = signal('');
@@ -490,17 +593,27 @@ export class PortalPage {
       const token = this.token();
       if (token) void this.load(token);
     });
+    effect(() => {
+      document.documentElement.lang = this.language().toLowerCase();
+    });
+  }
+
+  ngOnDestroy(): void {
+    for (const timer of this.roundTimers.values()) clearTimeout(timer);
+    this.roundTimers.clear();
+    document.documentElement.lang = this.originalDocumentLanguage;
   }
 
   private async load(token: string): Promise<void> {
     try {
       /* When this customer picked a language here before, they start in it again. */
       const chosen = this.storedLanguage(token);
+      if (chosen) this.language.set(chosen);
       const quote = await this.sales.portalQuote(token, chosen ?? undefined);
       this.quote.set(quote);
       this.language.set(chosen ?? (quote.language as LanguageCode) ?? 'NL');
       this.proposeBy.set(quote.contactName ?? '');
-      this.catalog.set(await this.sales.portalCatalog(token));
+      this.catalog.set(await this.sales.portalCatalog(token, this.language()));
     } catch {
       this.error.set(true);
     }
@@ -537,7 +650,17 @@ export class PortalPage {
    * empty box in a document going to a customer.
    */
   t(key: string): string {
-    return this.quote()?.text?.[key] ?? key;
+    const translated = this.quote()?.text?.[key];
+    if (translated) return translated;
+    const localKeys: Partial<Record<string, PortalFallback>> = {
+      portalNotFound: 'notFound', portalNotFoundText: 'notFoundText', portalLoading: 'loading',
+    };
+    const fallback = localKeys[key];
+    return fallback ? this.local(fallback) : key;
+  }
+
+  local(key: PortalFallback): string {
+    return (PORTAL_FALLBACKS[this.language()] ?? PORTAL_FALLBACKS.NL)[key];
   }
 
   /** Is a proposal from this customer with us? */
@@ -556,12 +679,11 @@ export class PortalPage {
 
   readonly languages = LANGUAGES;
 
-  /** The language this screen is in; the customer's unless they picked one. */
-  readonly language = signal<LanguageCode>('NL');
-
   private storedLanguage(token: string): LanguageCode | null {
     try {
-      return (localStorage.getItem('enrosed.portalLanguage.' + token) as LanguageCode) || null;
+      const stored = localStorage.getItem('enrosed.portalLanguage.' + token);
+      return LANGUAGES.some((language) => language.code === stored)
+        ? stored as LanguageCode : null;
     } catch {
       return null;
     }
@@ -575,16 +697,22 @@ export class PortalPage {
    * between us and them, not a browser setting.
    */
   async setLanguage(code: LanguageCode): Promise<void> {
-    this.language.set(code);
     try {
-      localStorage.setItem('enrosed.portalLanguage.' + this.token(), code);
+      const token = this.token();
+      const [quote, catalog] = await Promise.all([
+        this.sales.portalQuote(token, code),
+        this.sales.portalCatalog(token, code),
+      ]);
+      this.quote.set(quote);
+      this.catalog.set(catalog);
+      this.language.set(code);
+      try {
+        localStorage.setItem('enrosed.portalLanguage.' + token, code);
+      } catch {
+        /* private mode: then the pick only lasts this visit */
+      }
     } catch {
-      /* private mode: then the pick only lasts this visit */
-    }
-    try {
-      this.quote.set(await this.sales.portalQuote(this.token(), code));
-    } catch {
-      /* the quote stays exactly as it was */
+      /* Quote, catalog and language stay in sync with the last successful pick. */
     }
   }
 
@@ -715,11 +843,11 @@ export class PortalPage {
 
   async accept(): Promise<void> {
     if (!this.signName().trim()) {
-      this.ui.toast('Vul uw naam in om te tekenen', 'err');
+      this.ui.toast(this.local('nameRequired'), 'err');
       return;
     }
     await this.run(() => this.sales.portalAccept(this.token(), this.signName(), this.signNote()),
-                   'Bedankt, de offerte is aanvaard');
+                   this.t('portalStatusAccepted'));
     this.signSheet.set(false);
   }
 
@@ -734,21 +862,21 @@ export class PortalPage {
       ...[...this.additions()].map(([productId, addition]) => ({
         productId,
         quantity: addition.quantity,
-        note: 'toegevoegd door de klant' as string | null,
+        note: this.local('addedByCustomer') as string | null,
       })),
     ];
 
     await this.run(
       () => this.sales.portalPropose(this.token(), this.proposeBy(), this.proposeMessage(), lines),
-      'Uw voorstel is doorgestuurd');
+      this.t('portalProposalSent'));
 
     this.proposalSheet.set(false);
-    this.catalog.set(await this.sales.portalCatalog(this.token()));
+    this.catalog.set(await this.sales.portalCatalog(this.token(), this.language()));
   }
 
   async reject(): Promise<void> {
     await this.run(() => this.sales.portalReject(this.token(), this.rejectMessage()),
-                   'Bedankt voor uw antwoord');
+                   this.t('portalStatusRejected'));
     this.rejectSheet.set(false);
   }
 
@@ -760,7 +888,7 @@ export class PortalPage {
       this.ui.toast(success);
     } catch (failure: unknown) {
       const message = (failure as { error?: { message?: string } }).error?.message;
-      this.ui.toast(message ?? 'Er ging iets mis', 'err');
+      this.ui.toast(message ?? this.local('genericError'), 'err');
     } finally {
       this.busy.set(false);
     }

@@ -37,7 +37,7 @@ import { Ui } from '../../shared/ui';
                 <option [value]="option.code">{{ option.label }}</option>
               }
             </select>
-            <span class="hint">Productnamen volgen de vertalingen uit het CSV-bestand.</span>
+            <span class="hint">Productnamen volgen de vertalingen uit het Excel-bestand.</span>
           </div>
           <div class="field">
             <label for="cat-intro">Inleiding <span class="opt"></span></label>

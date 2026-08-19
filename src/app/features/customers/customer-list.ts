@@ -36,14 +36,15 @@ function blank(countryCode: string): Customer {
       <div class="card"><div class="list">
         @for (customer of filtered(); track customer.id) {
           <div class="list-item">
-            <div class="list-item__body" style="cursor:pointer" (click)="open(customer)">
+            <button class="list-item__body customer-open" type="button" (click)="open(customer)"
+                    [attr.aria-label]="customer.company + ' bewerken'">
               <div class="list-item__title">{{ customer.company }}</div>
               <div class="list-item__meta">{{ customer.contact }} · {{ customer.city }}</div>
               <div class="list-item__meta">
                 <span class="flag">{{ customer.countryCode }}</span> {{ customer.incoterm }}
                 @if (!customer.email) { · <span class="warn-text">geen e-mail</span> }
               </div>
-            </div>
+            </button>
             <button class="btn btn--sm btn--primary" type="button"
                     (click)="newOrder(customer)">Order</button>
           </div>
@@ -143,6 +144,10 @@ function blank(countryCode: string): Customer {
       </app-sheet>
     }
   `,
+  styles: `
+    .customer-open { align-self: stretch; min-width: 0; border: 0; background: transparent;
+      padding: 0; text-align: left; cursor: pointer; border-radius: 8px; }
+  `,
 })
 export class CustomerList {
   readonly paymentTerms = STANDARD_PAYMENT_TERMS;
@@ -233,7 +238,7 @@ export class CustomerList {
   async newOrder(customer: Customer): Promise<void> {
     const view = await this.sales.createOrder(
       customer.id!, customer.countryCode, customer.incoterm);
-    await this.router.navigate(['/sales', view.order.id]);
+    await this.router.navigate(['/sales', view.order.id, 'edit']);
   }
 }
 
