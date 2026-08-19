@@ -184,9 +184,17 @@ export class PurchaseList {
     if (this.swipeHandled) return;
     const dx = event.touches[0].clientX - this.touchX;
     const dy = event.touches[0].clientY - this.touchY;
-    if (Math.abs(dx) < 24 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    this.swipeHandled = true;
-    this.swiped.set(dx < 0 ? id : null);
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    /* A committed swipe acts as the button press itself, iOS-Mail style;
+       the confirm dialog still guards the actual delete. */
+    if (dx < -140) {
+      this.swipeHandled = true;
+      const row = this.orders().find((candidate) => candidate.order.id === id);
+      if (row) this.remove(id, row.order.number);
+      return;
+    }
+    if (dx < -24) { this.swiped.set(id); return; }
+    if (dx > 24) { this.swipeHandled = true; this.swiped.set(null); }
   }
 
   swipeEnd(): void { /* the decision falls in swipeMove */ }

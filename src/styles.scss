@@ -1593,3 +1593,6 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
   cursor: pointer;
 }
 .swipe__delete:active { filter: brightness(0.9); }
+
+/* Breathing room between the pallet explainer and its two start options. */
+.pallet-intro { margin: 0 0 16px; line-height: 1.55; }

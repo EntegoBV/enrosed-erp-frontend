@@ -723,16 +723,19 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </p>
           @if (view(); as data) {
             @if (!data.order.pallets.length) {
-              <p class="small muted" style="margin-top:0">
+              <p class="small muted pallet-intro">
                 De rekenmodule stapelt automatisch: {{ data.priced.totals.palletsStrict }}
                 pallet(s), elk product apart. Zelf indelen kan ook — fragiel glas bovenaan,
                 dozen van één klant samen — en dan telt de vracht jouw indeling.
               </p>
-              <button class="btn btn--primary btn--block" type="button" (click)="autoLayout()">
-                Start van de berekening
+              <button class="btn btn--primary btn--block btn--stacked" type="button"
+                      (click)="autoLayout()">
+                <span>Start van de berekening</span>
+                <span class="btn__sub">{{ data.priced.totals.palletsStrict }} pallet(s) voorgevuld</span>
               </button>
-              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="addPallet()">
-                Start leeg
+              <button class="btn btn--block btn--stacked mt-8" type="button" (click)="addPallet()">
+                <span>Start leeg</span>
+                <span class="btn__sub">zelf pallets en dozen kiezen</span>
               </button>
             } @else {
               @if (data.priced.totals.unassignedCartons > 0) {
@@ -753,27 +756,27 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   Alles legen
                 </button>
               </div>
-              @for (pallet of data.order.pallets; track $index) {
+              @for (pallet of data.order.pallets; track pi; let pi = $index) {
                 <div class="pallet">
                   <div class="pallet__head">
-                    <button class="pallet__tool" type="button" [disabled]="$index === 0"
-                            (click)="movePallet($index, -1)" aria-label="Omhoog">↑</button>
+                    <button class="pallet__tool" type="button" [disabled]="pi === 0"
+                            (click)="movePallet(pi, -1)" aria-label="Omhoog">↑</button>
                     <button class="pallet__tool" type="button"
-                            [disabled]="$index === data.order.pallets.length - 1"
-                            (click)="movePallet($index, 1)" aria-label="Omlaag">↓</button>
+                            [disabled]="pi === data.order.pallets.length - 1"
+                            (click)="movePallet(pi, 1)" aria-label="Omlaag">↓</button>
                     <input class="pallet__label" #palletName [value]="pallet.label"
-                           placeholder="Pallet {{ $index + 1 }}"
-                           (change)="renamePallet($index, $any($event.target).value)" />
+                           placeholder="Pallet {{ pi + 1 }}"
+                           (change)="renamePallet(pi, $any($event.target).value)" />
                     <!-- The pencil says the name is typable; the bare input
                          did not. -->
                     <button class="pallet__tool" type="button" (click)="palletName.focus()"
                             aria-label="Naam wijzigen">✎</button>
-                    <button class="pallet__tool" type="button" (click)="removePallet($index)"
+                    <button class="pallet__tool" type="button" (click)="removePallet(pi)"
                             aria-label="Pallet verwijderen">✕</button>
                   </div>
                   <div class="pallet__sub">
                     <select class="pallet__type"
-                            (change)="setPalletType($index, $any($event.target).value)">
+                            (change)="setPalletType(pi, $any($event.target).value)">
                       @for (option of palletTypes; track option) {
                         <option [value]="option" [selected]="palletType(pallet) === option">
                           {{ option }}
@@ -786,7 +789,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     </select>
                     <input class="pallet__height" type="number" min="0" inputmode="numeric"
                            placeholder="hoogte" [value]="pallet.heightCm ?? ''"
-                           (change)="setPalletHeight($index, $any($event.target).value)" />
+                           (change)="setPalletHeight(pi, $any($event.target).value)" />
                     <span class="tiny muted">cm</span>
                     <span class="spacer"></span>
                     <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
@@ -799,24 +802,24 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                       <span class="pallet__item-name">{{ productLabel(item.productId) }}</span>
                       <div class="pallet__step">
                         <button class="pallet__step-btn" type="button" aria-label="Doos eraf"
-                                (click)="setItemCartons($index, item.productId, item.cartons - 1)">−</button>
+                                (click)="setItemCartons(pi, item.productId, item.cartons - 1)">−</button>
                         <input class="pallet__step-input" type="number" min="0" inputmode="numeric"
                                [value]="item.cartons"
-                               (change)="setItemCartons($index, item.productId, +$any($event.target).value)" />
+                               (change)="setItemCartons(pi, item.productId, +$any($event.target).value)" />
                         <button class="pallet__step-btn" type="button" aria-label="Doos erbij"
                                 [disabled]="remainingFor(item.productId) <= 0"
-                                (click)="setItemCartons($index, item.productId, item.cartons + 1)">+</button>
+                                (click)="setItemCartons(pi, item.productId, item.cartons + 1)">+</button>
                       </div>
                       <span class="pallet__item-unit">dozen</span>
                     </div>
                   }
-                  @if (assignable($index).length) {
+                  @if (assignable(pi).length) {
                     <div class="pallet__add">
                       <select class="select"
-                              (change)="addItem($index, +$any($event.target).value);
+                              (change)="addItem(pi, +$any($event.target).value);
                                         $any($event.target).selectedIndex = 0">
                         <option value="" selected disabled>+ Product op deze pallet…</option>
-                        @for (option of assignable($index); track option.productId) {
+                        @for (option of assignable(pi); track option.productId) {
                           <option [value]="option.productId">
                             {{ option.description }} — nog {{ option.remaining }} dozen
                           </option>
