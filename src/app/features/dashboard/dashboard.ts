@@ -114,10 +114,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                   {{ fxPct(rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates.usd, flipUsd()) | num: 1 }}%
                 </span>
               </div>
-              <app-sparkline class="fx-chart" [values]="fxSeries(rates.usd, flipUsd())"
+              <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(rates.usd), flipUsd())"
                              [width]="320" [height]="42" />
               <div class="fx-months">
-                @for (tick of monthTicks(rates.dates, rates.usd, flipUsd()); track tick.pct) {
+                @for (tick of monthTicks(chartDates(rates), chartSlice(rates.usd), flipUsd()); track tick.pct) {
                   <span [style.left.%]="tick.pct">{{ tick.label }}
                     <em>{{ tick.value | num: 2 }}</em></span>
                 }
@@ -135,10 +135,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                   {{ fxPct(rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates.cny, flipCny()) | num: 1 }}%
                 </span>
               </div>
-              <app-sparkline class="fx-chart" [values]="fxSeries(rates.cny, flipCny())"
+              <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(rates.cny), flipCny())"
                              [width]="320" [height]="42" />
               <div class="fx-months">
-                @for (tick of monthTicks(rates.dates, rates.cny, flipCny()); track tick.pct) {
+                @for (tick of monthTicks(chartDates(rates), chartSlice(rates.cny), flipCny()); track tick.pct) {
                   <span [style.left.%]="tick.pct">{{ tick.label }}
                     <em>{{ tick.value | num: 2 }}</em></span>
                 }
@@ -159,10 +159,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                   {{ fxPct(crossOf(rates), flipCross()) >= 0 ? '+' : '' }}{{ fxPct(crossOf(rates), flipCross()) | num: 1 }}%
                 </span>
               </div>
-              <app-sparkline class="fx-chart" [values]="fxSeries(crossOf(rates), flipCross())"
+              <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(crossOf(rates)), flipCross())"
                              [width]="320" [height]="42" />
               <div class="fx-months">
-                @for (tick of monthTicks(rates.dates, crossOf(rates), flipCross()); track tick.pct) {
+                @for (tick of monthTicks(chartDates(rates), chartSlice(crossOf(rates)), flipCross()); track tick.pct) {
                   <span [style.left.%]="tick.pct">{{ tick.label }}
                     <em>{{ tick.value | num: 2 }}</em></span>
                 }
@@ -175,6 +175,17 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <div class="market-analysis__verdict">
                   <span class="badge" [class]="'badge--' + a.tone">{{ a.verdict }}</span>
                   <span class="market-analysis__lead">{{ a.lead }}</span>
+                </div>
+                <!-- Is now a better moment than then? Green = the dollar is
+                     cheaper today than at that point. -->
+                <div class="market-analysis__horizons">
+                  @for (h of a.horizons; track h.label) {
+                    <span class="hchip" [class.hchip--good]="h.pct >= 0"
+                          [class.hchip--bad]="h.pct < 0">
+                      vs {{ h.label }}: {{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                      {{ h.pct >= 0 ? 'goedkoper' : 'duurder' }}
+                    </span>
+                  }
                 </div>
                 @for (line of a.lines; track line) {
                   <div class="market-analysis__line">
@@ -482,6 +493,18 @@ export class Dashboard {
     return rates.latestCny / rates.latestUsd;
   }
 
+  /* The charts stay at six months (a year of month labels does not fit a
+     phone); the analysis below reads the full year. */
+  private static readonly CHART_DAYS = 126;
+
+  chartSlice(series: number[]): number[] {
+    return series.slice(-Dashboard.CHART_DAYS);
+  }
+
+  chartDates(rates: FxSeries): string[] {
+    return rates.dates.slice(-Dashboard.CHART_DAYS);
+  }
+
   /**
    * The buying-desk analysis, computed fresh from the ECB series (and the
    * freight log when it has data). No external "analyst" API: every signal
@@ -500,6 +523,7 @@ export class Dashboard {
    */
   analysis(rates: FxSeries): {
     verdict: string; tone: string; lead: string; lines: string[];
+    horizons: { label: string; pct: number }[];
   } | null {
     const usd = rates.usd;
     if (usd.length < 30) return null;
@@ -511,7 +535,15 @@ export class Dashboard {
         value.toFixed(decimals).replace('.', ',');
 
     const usdMonth = pct(usd, 22);
-    const usdHalf = pct(usd, usd.length - 1);
+    /* Buying moments compared with 3, 6 and 12 months back; positive =
+       the dollar is cheaper now than it was then. */
+    const horizons = [
+      { label: '3 mnd', back: 65 },
+      { label: '6 mnd', back: 130 },
+      { label: '12 mnd', back: usd.length - 1 },
+    ].filter((h, i, all) => h.back <= usd.length - 1
+        && (i === 0 || h.back > all[i - 1].back))
+      .map((h) => ({ label: h.label, pct: pct(usd, h.back) }));
     const min = Math.min(...usd);
     const max = Math.max(...usd);
     /* 1 = euro at its strongest (dollar cheapest), 0 = weakest. */
@@ -522,15 +554,13 @@ export class Dashboard {
 
     const lines: string[] = [];
     lines.push(`Dollar: ${nl(Math.abs(usdMonth))}% ` +
-        `${usdMonth >= 0 ? 'goedkoper' : 'duurder'} dan een maand geleden, ` +
-        `${nl(Math.abs(usdHalf))}% ${usdHalf >= 0 ? 'goedkoper' : 'duurder'} ` +
-        `dan een half jaar terug.`);
+        `${usdMonth >= 0 ? 'goedkoper' : 'duurder'} dan een maand geleden.`);
 
     if (rangePos >= 0.85) {
-      lines.push(`De euro staat op zijn sterkste punt in zes maanden — ` +
+      lines.push(`De euro staat op zijn sterkste punt in twaalf maanden — ` +
           `dollarinkoop is nu op zijn goedkoopst binnen die periode.`);
     } else if (rangePos <= 0.15) {
-      lines.push(`De euro staat op zijn zwakste punt in zes maanden — ` +
+      lines.push(`De euro staat op zijn zwakste punt in twaalf maanden — ` +
           `wie kan wachten, koopt waarschijnlijk beter later.`);
     }
 
@@ -578,7 +608,7 @@ export class Dashboard {
       tone = 'neutral';
       lead = 'Geen uitgesproken voor- of nadeel tegenover vorige maand.';
     }
-    return { verdict, tone, lead, lines };
+    return { verdict, tone, lead, lines, horizons };
   }
   purchaseStatusLabel(status: string): string {
     return PURCHASE_STATUS_LABEL[status] ?? status;

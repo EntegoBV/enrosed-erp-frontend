@@ -10,7 +10,7 @@ import { Injectable, signal } from '@angular/core';
  * wrong, absent beats stale.
  */
 export interface FxSeries {
-  /** Oldest to newest, roughly the past half year of working days. */
+  /** Oldest to newest, roughly the past year of working days. */
   dates: string[];
   usd: number[];
   cny: number[];
@@ -30,7 +30,7 @@ export class Fx {
   async load(): Promise<void> {
     try {
       const from = new Date();
-      from.setDate(from.getDate() - 182);
+      from.setDate(from.getDate() - 370);
       const start = from.toISOString().slice(0, 10);
       const response = await fetch(
         `https://api.frankfurter.dev/v1/${start}..?base=EUR&symbols=USD,CNY`);
