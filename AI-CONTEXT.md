@@ -65,7 +65,7 @@ weekly by the backend's Drewry scrape).
 ### Sales editor (the heart)
 - Card sections: status/history (newest first, latest event on the bar),
   Order (customer, country, incoterm, payment terms pick-list with "Van
-  de klant" default and "Anders…"), lines (carton snap after 2 s pause,
+  de klant" default and "Anders…"), lines (picker prefills one carton; carton snap after 2 s pause,
   per-line delivery week via week-field), totals (journey layout, freight
   "aanpassen" inline panel: TE_BEPALEN or own amount), revision handling
   with two-line buttons (Wijzigen/Overnemen explain themselves, Afwijzen
@@ -85,6 +85,7 @@ weekly by the backend's Drewry scrape).
   shuffled). Same pattern in the purchase editor. Never bypass it.
 
 ### Purchasing
+- List rows swipe left (iOS pattern) to a confirm-guarded delete.
 - List → **read-only view first** (stepper without Onderweg, products
   with expandable per-line cost build-up, Totaal/Per stuk toggle,
   journey cost card, container fill bar, Gegevens above costs), edit
