@@ -606,7 +606,6 @@ import {
                 }
 
                 <div class="order-line__foot">
-                  <span class="small muted">Netto {{ line.netUnitPrice | eur: 2 }} per stuk</span>
                   <button class="remove-line" type="button" [disabled]="!canEdit()"
                           (click)="removeLine(line.productId)">
                     <span aria-hidden="true">×</span> Verwijderen
@@ -1111,14 +1110,19 @@ import {
     .order-line__amount { display:flex;flex-direction:column;align-items:flex-end }
     .order-line__amount strong { font-size:14px;font-variant-numeric:tabular-nums }
     .order-line__amount span { color:var(--ok);font-size:10px }
-    .line-quick-controls { margin-top:10px;display:grid;grid-template-columns:minmax(108px,.42fr) minmax(0,1fr);gap:8px;align-items:start }
-    .quantity-editor .field { margin:0 }
-    .quantity-editor .input { min-height:44px;font-size:15px;font-weight:680 }
+    .line-quick-controls { margin-top:10px;display:grid;grid-template-columns:minmax(108px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch }
+    .quantity-editor { min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:13px;background:var(--surface-2) }
+    .quantity-editor:focus-within { border-color:var(--rose);box-shadow:0 0 0 3px var(--rose-soft) }
+    .quantity-editor .field { height:100%;margin:0;padding:8px 10px 6px;display:grid;grid-template-rows:auto minmax(28px,1fr);align-content:center }
+    .quantity-editor label { color:var(--ink-2);font-size:10.5px;line-height:1.15 }
+    .quantity-editor .input { width:100%;min-height:28px;height:28px;padding:0;border:0;background:transparent;box-shadow:none;font-size:15px;font-weight:680;outline:0 }
     .tier-nudge { margin-top:8px;padding:8px 10px;display:flex;gap:8px;border-radius:10px;background:var(--gold-soft);color:#78591f;font-size:11px }
     .line-pricing { margin:0 }
     .line-pricing[open] { grid-column:1/-1 }
-    .line-pricing summary { min-height:44px;padding:8px 9px }
-    .line-pricing summary>span:last-child { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    .line-pricing summary { min-height:58px;padding:7px 9px;display:grid;grid-template-columns:20px minmax(0,1fr);grid-template-rows:auto auto;column-gap:9px;row-gap:2px;align-content:center }
+    .line-pricing summary:before { grid-column:1;grid-row:1/3 }
+    .line-pricing summary>span:first-of-type { grid-column:2;grid-row:1;font-size:10.5px;line-height:1.15 }
+    .line-pricing summary>span:last-child { grid-column:2;grid-row:2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px }
     .line-pricing__fields { display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 10px 0;border-top:1px solid var(--line);background:var(--surface) }
     .order-line__delivery { margin-top:10px;padding:10px }
     .delivery-row { display:flex;align-items:center;gap:8px }
@@ -1153,7 +1157,7 @@ import {
     .line-internal__total small { margin-top:1px;color:var(--muted);font-size:9px;font-weight:520 }
     .line-internal__total strong { flex:none;font-size:17px;font-variant-numeric:tabular-nums }
     .line-internal__note { margin:0;padding:0 11px 10px;color:var(--muted);font-size:9px;line-height:1.4 }
-    .order-line__foot { margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px }
+    .order-line__foot { margin-top:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px }
     .remove-line,.delete-draft { color:var(--danger) }
     .products-empty { padding:38px 18px 42px;text-align:center }
     .products-empty__art { width:64px;height:64px;margin:0 auto 12px;display:grid;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px }
