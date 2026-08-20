@@ -373,6 +373,14 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                         <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
                     }
                   </div>
+
+                  <div class="cost-stage">
+                    <span class="cost-stage__label">3 · Totaal</span>
+                    <div class="stat-row cost-stage__subtotal">
+                      <span>Totaal geland</span>
+                      <strong class="num">{{ data.costing.totals.totalEur | eur }}</strong>
+                    </div>
+                  </div>
                 </div>
               </section>
             } @else {

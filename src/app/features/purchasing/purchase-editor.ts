@@ -640,7 +640,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 
                   <div class="cost-summary">
                     <div class="cost-summary__group">
-                      <span class="cost-section">Tot de EU-grens</span>
+                      <span class="cost-section">1 · Tot de EU-grens</span>
                       <div class="stat-row">
                         <span>Goederen
                           <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small>
@@ -668,7 +668,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                     </div>
 
                     <div class="cost-summary__group">
-                      <span class="cost-section">Invoer &amp; aankomst</span>
+                      <span class="cost-section">2 · Invoer &amp; aankomst</span>
                       <div class="stat-row">
                         <span>Invoerrechten
                           <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
@@ -685,6 +685,14 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                           <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span>
                         </div>
                       }
+                    </div>
+
+                    <div class="cost-summary__group">
+                      <span class="cost-section">3 · Totaal</span>
+                      <div class="stat-row cost-summary__subtotal">
+                        <span>Totaal geland</span>
+                        <strong class="num">{{ data.costing.totals.totalEur | eur }}</strong>
+                      </div>
                     </div>
                   </div>
                 } @else {

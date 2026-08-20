@@ -1733,20 +1733,99 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
 .hgrid__value--missing { color: var(--muted); }
 .hgrid__word { font-size: 10px; color: var(--muted); }
 
-/* Market index next to the own USD quote on one row. */
-.index-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  margin-left: 8px; padding: 2px 8px;
-  background: var(--surface-2);
+/* Freight market data: one card per real departure port. The user's own
+   USD quote stays primary; licensed index points sit inside that same card
+   as clearly labelled context instead of becoming a duplicate route row. */
+.freight-benchmark,
+.freight-port {
   border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 11px; font-weight: 600; color: var(--ink-2);
-  vertical-align: 2px;
+  border-radius: 12px;
+  margin-top: 9px;
+  overflow: hidden;
+  background: var(--surface);
 }
-.index-chip em { font-style: normal; font-size: 10.5px; }
-.index-chip em.down { color: var(--ok, #2e7d4f); }
-.index-chip em.up { color: var(--warn, #a85e10); }
+.freight-benchmark { background: var(--surface-2); }
+.freight-benchmark__head,
+.freight-port__head,
+.freight-index__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; min-width: 0;
+}
+.freight-benchmark__head,
+.freight-port__head { padding: 9px 11px; }
+.freight-benchmark__head > div,
+.freight-port__head > div,
+.freight-index__head > span:first-child { min-width: 0; }
+.freight-benchmark__value,
+.freight-quote,
+.freight-index__value {
+  width: 100%; border: 0; color: inherit; font: inherit; text-align: left;
+  cursor: pointer; background: transparent;
+}
+.freight-benchmark__value,
+.freight-quote {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 11px; border-top: 1px solid var(--line);
+}
+.freight-benchmark__value:hover,
+.freight-quote:hover,
+.freight-index__value:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.freight-benchmark__empty,
+.freight-index__empty {
+  padding: 10px 11px; color: var(--muted); font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+.freight-quote > span { display: flex; flex-direction: column; min-width: 0; }
+.freight-quote__label { font-size: 11px; color: var(--muted); }
+.freight-quote__value { font-size: 18px; font-weight: 800; }
+.freight-quote__empty { font-size: 12px; color: var(--muted); }
 
-.index-chip--tap { cursor: pointer; }
-.index-chip--tap:active { background: var(--line); }
-.index-link { text-decoration: underline; cursor: pointer; }
+.freight-index {
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  padding: 9px 11px;
+}
+.freight-index__head { font-size: 11.5px; color: var(--ink-2); }
+.freight-index__value {
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center; gap: 7px; margin-top: 5px; padding: 4px 0;
+}
+.freight-index__value > .num { font-size: 16px; font-weight: 800; }
+.freight-index__trend {
+  color: var(--muted); font-size: 11.5px; text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.source-state {
+  flex: none; display: inline-flex; align-items: center;
+  min-height: 20px; padding: 2px 7px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 750; white-space: nowrap;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.source-state--ok { color: var(--ok, #2e7d4f); }
+.source-state--warn { color: var(--warn, #a85e10); }
+.source-state--neutral { color: var(--muted); }
+.source-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px;
+  min-width: 0; margin-top: 5px; color: var(--muted); font-size: 10.5px;
+}
+.freight-benchmark > .source-meta { margin-top: 0; padding: 0 11px 9px; }
+.source-meta span { min-width: 0; overflow-wrap: anywhere; }
+.source-meta a { color: var(--accent); }
+.source-detail {
+  margin-top: 5px; color: var(--muted); font-size: 10.5px; line-height: 1.4;
+}
+.market-source-note {
+  padding: 10px 11px; margin-bottom: 10px;
+  border-radius: 10px; background: var(--surface-2);
+  font-size: 12px; color: var(--ink-2);
+}
+.market-source-note > div:first-child {
+  display: flex; flex-direction: column; gap: 1px;
+}
+
+@media (max-width: 430px) {
+  .freight-index__value { grid-template-columns: auto 1fr; }
+  .freight-index__trend { grid-column: 1 / -1; text-align: left; }
+  .market-row__spark { max-width: 82px; }
+}

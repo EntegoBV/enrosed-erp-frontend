@@ -193,6 +193,26 @@ export interface FreightRate {
   usdPerContainer: number;
 }
 
+/** Provenance and cache health for one licensed freight benchmark. */
+export interface MarketSourceStatus {
+  code: string;
+  label: string;
+  scope: string;
+  metric: 'USD_PER_40FT' | 'INDEX_POINTS';
+  referenceKind: 'EXACT_ROUTE' | 'BROAD_REFERENCE';
+  sourceName: string;
+  sourceUrl: string;
+  termsUrl: string;
+  automatedAccessAuthorized: boolean;
+  state: 'CURRENT' | 'STALE' | 'NO_DATA' | 'FAILED' |
+      'CACHE_AFTER_FAILURE' | 'LICENSE_REQUIRED';
+  detail: string;
+  lastCheckedAt: string | null;
+  lastSuccessfulAt: string | null;
+  latestPublishedOn: string | null;
+  latestValue: number | null;
+}
+
 export interface PurchaseOrderLine {
   id: number | null;
   productId: number;

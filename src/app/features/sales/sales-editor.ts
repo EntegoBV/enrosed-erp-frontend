@@ -787,8 +787,10 @@ import {
               </div>
             }
 
-            <details class="cost-breakdown" open>
-              <summary>Prijsopbouw <span>toon details</span></summary>
+            <section class="cost-breakdown" aria-labelledby="price-breakdown-title">
+              <div class="cost-breakdown__head">
+                <h3 id="price-breakdown-title">Prijsopbouw</h3>
+              </div>
               <div class="cost-breakdown__body">
             <div class="cost-section">Goederen</div>
             <div class="stat-row"><span>Bruto goederen</span>
@@ -831,9 +833,9 @@ import {
               </div>
             } @else if (data.priced.totals.vatReason) {
               <div class="tiny muted mt-8">{{ data.priced.totals.vatReason }}</div>
-            }
+              }
               </div>
-            </details>
+            </section>
           </div>
         </section>
 
@@ -1076,12 +1078,12 @@ import {
     .card-intro,.panel-help { margin:0 0 14px;color:var(--muted);font-size:12px }
     .progressive-panel,.line-pricing,.cost-breakdown { border:1px solid var(--line);border-radius:13px;background:var(--surface-2);overflow:hidden }
     .progressive-panel { margin-top:4px }
-    .progressive-panel summary,.line-pricing summary,.cost-breakdown summary { min-height:48px;padding:11px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;font-size:12.5px;font-weight:670 }
-    .progressive-panel summary::-webkit-details-marker,.line-pricing summary::-webkit-details-marker,.cost-breakdown summary::-webkit-details-marker { display:none }
-    .progressive-panel summary:before,.line-pricing summary:before,.cost-breakdown summary:before { content:'+';width:20px;height:20px;display:grid;place-items:center;flex:none;border-radius:50%;background:var(--surface);color:var(--muted);font-size:16px;font-weight:400 }
-    .progressive-panel[open] summary:before,.line-pricing[open] summary:before,.cost-breakdown[open] summary:before { content:'−' }
-    .progressive-panel summary>span:first-of-type,.line-pricing summary>span:first-of-type,.cost-breakdown summary>span:first-of-type { flex:1 }
-    .progressive-panel__summary,.line-pricing summary>span:last-child,.cost-breakdown summary>span:last-child { color:var(--muted);font-size:11px;font-weight:520 }
+    .progressive-panel summary,.line-pricing summary { min-height:48px;padding:11px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;font-size:12.5px;font-weight:670 }
+    .progressive-panel summary::-webkit-details-marker,.line-pricing summary::-webkit-details-marker { display:none }
+    .progressive-panel summary:before,.line-pricing summary:before { content:'+';width:20px;height:20px;display:grid;place-items:center;flex:none;border-radius:50%;background:var(--surface);color:var(--muted);font-size:16px;font-weight:400 }
+    .progressive-panel[open] summary:before,.line-pricing[open] summary:before { content:'−' }
+    .progressive-panel summary>span:first-of-type,.line-pricing summary>span:first-of-type { flex:1 }
+    .progressive-panel__summary,.line-pricing summary>span:last-child { color:var(--muted);font-size:11px;font-weight:520 }
     .progressive-panel__body { padding:14px 12px 0;border-top:1px solid var(--line);background:var(--surface) }
     .segmented { display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2) }
     .segmented button { min-height:42px;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:650;cursor:pointer }
@@ -1206,6 +1208,8 @@ import {
     .minimum-check__value { align-self:center;color:var(--warn);font-size:12px;font-weight:760 }
     .minimum-check--ok .minimum-check__value { color:var(--ok);font-size:17px }
     .minimum-check .meter__track { grid-column:1/-1;height:5px }
+    .cost-breakdown__head { min-height:44px;padding:9px 12px;display:flex;align-items:center;gap:10px }
+    .cost-breakdown__head h3 { font-size:12.5px;font-weight:700 }
     .cost-breakdown__body { padding:4px 12px 12px;border-top:1px solid var(--line);background:var(--surface) }
     .send-card { border-color:color-mix(in srgb,var(--rose) 22%,var(--line)) }
     .send-card__head { padding:16px;display:flex;align-items:center;gap:12px }
@@ -2145,6 +2149,7 @@ export class SalesEditor {
       case 'add-pallet': this.addPallet(); break;
       case 'clear-layout': this.clearPallets(); break;
       case 'move-pallet': this.movePallet(event.index, event.direction); break;
+      case 'reorder-pallet': this.reorderPallet(event.fromIndex, event.toIndex); break;
       case 'remove-pallet': this.removePallet(event.index); break;
       case 'rename-pallet': this.renamePallet(event.index, event.label); break;
       case 'set-pallet-type': this.setPalletType(event.index, event.palletType); break;
@@ -2301,10 +2306,23 @@ export class SalesEditor {
   }
 
   movePallet(index: number, direction: number): void {
+    const count = this.view()?.order.pallets.length ?? 0;
+    const target = index + direction;
+    if (index < 0 || index >= count || target < 0 || target >= count) return;
     this.mutatePallets((pallets) => {
-      const target = index + direction;
-      if (target < 0 || target >= pallets.length) return pallets;
       [pallets[index], pallets[target]] = [pallets[target], pallets[index]];
+      return pallets;
+    });
+  }
+
+  reorderPallet(fromIndex: number, toIndex: number): void {
+    const count = this.view()?.order.pallets.length ?? 0;
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)
+        || fromIndex === toIndex || fromIndex < 0 || toIndex < 0
+        || fromIndex >= count || toIndex >= count) return;
+    this.mutatePallets((pallets) => {
+      const [moved] = pallets.splice(fromIndex, 1);
+      pallets.splice(toIndex, 0, moved);
       return pallets;
     });
   }

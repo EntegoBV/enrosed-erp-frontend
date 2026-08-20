@@ -9,7 +9,7 @@ import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { FreightRate, PurchaseOrderView, QuoteRevision, SalesOrderView } from '../../core/api/models';
+import { FreightRate, MarketSourceStatus, PurchaseOrderView, QuoteRevision, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
@@ -237,97 +237,106 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         </div>
         <div class="card__body">
           <div class="market-hint" style="margin:0 0 8px" role="note">
-            <strong>USD per 40ft-container.</strong> Shanghai is de wekelijkse
-            Drewry-marktbenchmark; de havenroutes tonen je exacte forwarderoffertes.
-            <strong>CCFI</strong> (China Containerized Freight Index) meet heel de
-            Chinese kust → Europa, <strong>NCFI</strong> (Ningbo Containerized
-            Freight Index) het vertrek uit Ningbo — in punten t.o.v. het basisjaar
-            (1000): niet de prijs maar de richting. Daalt de index, dan hoort je
-            volgende offerte mee te dalen.
+            <strong>Eigen offerte = jouw prijs.</strong> Marktindexen geven alleen
+            richting en zijn geen USD-vrachtprijs. Een bron wordt automatisch
+            gecontroleerd wanneer de provider dat voor deze ERP-installatie toestaat;
+            anders blijft een duidelijk gedateerde cache zichtbaar.
           </div>
-          @if (wciSeries().length) {
-            <button class="market-row market-row--btn" type="button"
-                    aria-label="Historiek van de Drewry-marktbenchmark Shanghai naar Rotterdam bekijken"
-                    (click)="openHistory('WCI SHA-RTM', 'Shanghai → Rotterdam · USD per 40ft', 'USD ')">
-              <div>
-                <div class="market-row__label">Shanghai → Rotterdam</div>
-                <div class="market-row__value num">USD {{ wciLatest() | num: 0 }}</div>
-                <div class="tiny muted">Drewry WCI · wekelijkse marktbenchmark · 40ft</div>
-              </div>
-              <app-sparkline class="market-row__spark" [values]="wciSeries()" />
-            </button>
-          }
-          <!-- Index rows: points, not dollars. The trend is the signal;
-               the forwarder quote below stays the price. -->
-          @for (index of marketIndices; track index.code) {
-            @if (latestFor(index.code); as latest) {
-              <button class="market-row market-row--btn" type="button"
-                      (click)="openHistory(index.code, index.title, '')">
+
+          <!-- The licensed USD benchmark is useful context, but never gets
+               mixed into a port's own forwarder quote. -->
+          @if (sourceFor('WCI SHA-RTM'); as wci) {
+            <section class="freight-benchmark" aria-label="Shanghai naar Rotterdam marktbenchmark">
+              <div class="freight-benchmark__head">
                 <div>
-                  <div class="market-row__label">{{ index.label }}</div>
-                  <div class="market-row__value num">{{ latest.usdPerContainer | num: 0 }}
-                    <span class="tiny muted">ptn</span>
-                    @if (indexChange(index.code); as change) {
-                      <span class="badge"
-                            [class]="change <= 0 ? 'badge--ok' : 'badge--warn'">
-                        {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%
-                      </span>
-                    }
-                  </div>
-                  <div class="tiny muted">{{ index.sub }} · {{ latest.quotedOn }}</div>
+                  <div class="market-row__label">Shanghai → Rotterdam</div>
+                  <div class="tiny muted">Aparte USD-benchmark · geen eigen offerte</div>
                 </div>
-                @if (seriesFor(index.code).length > 1) {
-                  <app-sparkline class="market-row__spark" [values]="seriesFor(index.code)" />
+                <span class="source-state" [class]="sourceStateClass(wci.state)">
+                  {{ sourceStateLabel(wci.state) }}
+                </span>
+              </div>
+              @if (latestFor(wci.code); as latest) {
+                <button class="freight-benchmark__value" type="button"
+                        (click)="openHistory(wci.code,
+                          'Shanghai → Rotterdam · USD-benchmark per 40ft', 'USD ')">
+                  <span class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}</span>
+                  @if (seriesFor(wci.code).length > 1) {
+                    <app-sparkline class="market-row__spark" [values]="seriesFor(wci.code)" />
+                  }
+                </button>
+              } @else {
+                <div class="freight-benchmark__empty">Nog geen geautoriseerde cache</div>
+              }
+              <div class="source-meta">
+                <span>{{ wci.sourceName }}</span>
+                @if (wci.latestPublishedOn) { <span>Notering {{ wci.latestPublishedOn }}</span> }
+                @if (wci.lastCheckedAt) { <span>Gecontroleerd {{ checkedOn(wci.lastCheckedAt) }}</span> }
+                <a [href]="wci.sourceUrl" target="_blank" rel="noopener noreferrer"
+                   [attr.aria-label]="'Open bron ' + wci.sourceName">Bron</a>
+              </div>
+            </section>
+          }
+
+          @for (route of ownRoutes; track route.code) {
+            <section class="freight-port" [attr.aria-label]="route.label + ' naar Rotterdam'">
+              <div class="freight-port__head">
+                <div class="market-row__label">{{ route.label }} → Rotterdam</div>
+                <span class="tiny muted">40ft</span>
+              </div>
+              <button class="freight-quote" type="button"
+                      [attr.aria-label]="freightRouteAriaLabel(route)"
+                      (click)="openFreightRoute(route)">
+                <span>
+                  <span class="freight-quote__label">Eigen forwarderofferte</span>
+                @if (latestFor(route.code); as latest) {
+                    <span class="freight-quote__value num">USD {{ latest.usdPerContainer | num: 0 }}</span>
+                    <span class="tiny muted">genoteerd {{ latest.quotedOn }}</span>
+                } @else {
+                    <span class="freight-quote__empty">Nog geen offerte</span>
+                    <span class="strong">Tarief noteren <span aria-hidden="true">›</span></span>
+                }
+                </span>
+                @if (seriesFor(route.code).length > 1) {
+                  <app-sparkline class="market-row__spark" [values]="seriesFor(route.code)" />
                 }
               </button>
-            }
-          }
-          @for (route of ownRoutes; track route.code) {
-            <button class="market-row market-row--btn" type="button"
-                    [attr.aria-label]="freightRouteAriaLabel(route)"
-                    (click)="openFreightRoute(route)">
-              <div>
-                <div class="market-row__label">{{ route.label }} → Rotterdam</div>
-                @if (latestFor(route.code); as latest) {
-                  <div class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}
-                    @if (route.indexCode && latestFor(route.indexCode); as index) {
-                      <span class="index-chip index-chip--tap" role="button" tabindex="0"
-                            [title]="route.indexName + ' — tik voor historiek'"
-                            (click)="$event.stopPropagation();
-                                     openHistory(route.indexCode!, route.indexTitle!, '')"
-                            (keydown.enter)="$event.stopPropagation();
-                                     openHistory(route.indexCode!, route.indexTitle!, '')">
-                        {{ route.indexName }} {{ index.usdPerContainer | num: 0 }} ptn
-                        @if (indexChange(route.indexCode); as change) {
-                          <em [class.up]="change > 0" [class.down]="change <= 0">
-                            {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%</em>
-                        }
-                      </span>
-                    }
+
+              @if (sourceFor(route.indexCode); as source) {
+                <div class="freight-index">
+                  <div class="freight-index__head">
+                    <span><strong>{{ route.indexName }}</strong> · marktindex, geen prijs</span>
+                    <span class="source-state" [class]="sourceStateClass(source.state)">
+                      {{ sourceStateLabel(source.state) }}
+                    </span>
                   </div>
-                  <div class="tiny muted">exacte forwarderofferte · {{ latest.quotedOn }} · 40ft</div>
-                } @else {
-                  <div class="tiny muted">Nog geen forwarderofferte
-                    @if (route.indexCode && latestFor(route.indexCode); as index) {
-                      · <span class="index-link" role="button" tabindex="0"
-                              (click)="$event.stopPropagation();
-                                       openHistory(route.indexCode!, route.indexTitle!, '')"
-                              (keydown.enter)="$event.stopPropagation();
-                                       openHistory(route.indexCode!, route.indexTitle!, '')">
-                        markt: {{ route.indexName }} {{ index.usdPerContainer | num: 0 }} ptn
-                        @if (indexChange(route.indexCode); as change) {
-                          ({{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%)
-                        }
-                      </span>
-                    }
+                  @if (latestFor(route.indexCode); as index) {
+                    <button class="freight-index__value" type="button"
+                            (click)="openHistory(route.indexCode, route.indexTitle, '')">
+                      <span class="num">{{ index.usdPerContainer | num: 0 }} ptn</span>
+                      @if (indexChange(route.indexCode); as change) {
+                        <span class="badge" [class]="change <= 0 ? 'badge--ok' : 'badge--warn'">
+                          {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}% vs vorige
+                        </span>
+                      }
+                      <span class="freight-index__trend">{{ indexTrend(route.indexCode) }}</span>
+                    </button>
+                  } @else {
+                    <div class="freight-index__empty">Geen geautoriseerde indexcache beschikbaar.</div>
+                  }
+                  <div class="source-meta">
+                    <span>{{ source.referenceKind === 'EXACT_ROUTE' ? 'Exacte routereferentie' : 'Brede China–Europa-referentie' }}</span>
+                    @if (source.latestPublishedOn) { <span>Publicatie {{ source.latestPublishedOn }}</span> }
+                    @if (source.lastCheckedAt) { <span>Gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
+                    <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer"
+                       [attr.aria-label]="'Open bron ' + source.sourceName">Bron</a>
                   </div>
-                  <div class="strong">Tarief noteren <span aria-hidden="true">›</span></div>
-                }
-              </div>
-              @if (seriesFor(route.code).length > 1) {
-                <app-sparkline class="market-row__spark" [values]="seriesFor(route.code)" />
+                  @if (source.state !== 'CURRENT') {
+                    <div class="source-detail">{{ source.detail }}</div>
+                  }
+                </div>
               }
-            </button>
+            </section>
           }
         </div>
       </div>
@@ -433,6 +442,23 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     @if (historyRoute(); as history) {
       <app-sheet [title]="history.label" (closed)="historyRoute.set(null)">
         <div body>
+          @if (sourceFor(history.code); as source) {
+            <div class="market-source-note" role="note">
+              <div>
+                <strong>{{ source.metric === 'INDEX_POINTS' ? 'Marktindex, geen prijs' : 'USD-marktbenchmark' }}</strong>
+                <span>{{ source.scope }}</span>
+              </div>
+              <div class="source-meta">
+                <span>{{ source.sourceName }}</span>
+                @if (source.latestPublishedOn) { <span>Publicatie {{ source.latestPublishedOn }}</span> }
+                @if (source.lastCheckedAt) { <span>Gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
+                <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer"
+                   [attr.aria-label]="'Open bron ' + source.sourceName">Bron</a>
+                <a [href]="source.termsUrl" target="_blank" rel="noopener noreferrer"
+                   [attr.aria-label]="'Open voorwaarden ' + source.sourceName">Voorwaarden</a>
+              </div>
+            </div>
+          }
           @if (rateHorizons(history.code).length) {
             <!-- Same reading as the FX tiles: is it cheaper now than then?
                  For freight a falling number is the green one. -->
@@ -445,7 +471,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                         [class.hgrid__value--bad]="h.pct > 0">
                     {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
                   </span>
-                  <span class="hgrid__word">{{ h.pct > 0 ? 'duurder' : 'goedkoper' }}</span>
+                  <span class="hgrid__word">{{ horizonWord(history.code, h.pct) }}</span>
                 </div>
               }
             </div>
@@ -462,8 +488,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 </div>
                 <div class="tiny muted">{{ rate.quotedOn }}</div>
               </div>
-              <button class="pallet__tool" type="button" aria-label="Verwijderen"
-                      (click)="deleteRate(rate)">✕</button>
+              @if (!sourceFor(history.code)) {
+                <button class="pallet__tool" type="button" aria-label="Verwijderen"
+                        (click)="deleteRate(rate)">✕</button>
+              }
             </div>
           } @empty {
             <div class="empty"><div class="empty__title">Nog geen historiek</div></div>
@@ -486,16 +514,17 @@ export class Dashboard {
   /* indexCode couples a port row to its public weekly index, so the own
      USD quote and the market's points sit side by side on one row. */
   readonly ownRoutes = [
-    { code: 'NINGBO', label: 'Ningbo', indexCode: 'NCFI NINGBO', indexName: 'NCFI',
-      indexTitle: 'NCFI composiet · vertrek Ningbo · indexpunten' },
-    /* No public per-port index exists for South China; the whole-coast
-       CCFI is the honest market context for both. */
+    { code: 'NINGBO', label: 'Ningbo', indexCode: 'NCFI NGB-EUR', indexName: 'NCFI Europa',
+      indexTitle: 'NCFI Ningbo → Europa · Hamburg/Rotterdam · indexpunten' },
+    /* Source research found no reusable exact South China-Europe series;
+       the whole-coast CCFI is the honest market context for both. */
     { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', indexCode: 'CCFI CN-EUR',
       indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten' },
     { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', indexCode: 'CCFI CN-EUR',
       indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten' },
   ];
   readonly freightRates = signal<FreightRate[]>([]);
+  readonly marketSources = signal<MarketSourceStatus[]>([]);
   readonly rateSheet = signal(false);
   readonly newRoute = signal('NINGBO');
   readonly newRate = signal(0);
@@ -637,27 +666,11 @@ export class Dashboard {
       .filter((rate) => rate.route === 'WCI SHA-RTM')
       .map((rate) => rate.usdPerContainer));
 
-  wciLatest(): number {
-    const series = this.wciSeries();
-    return series[series.length - 1] ?? 0;
-  }
-
   seriesFor(route: string): number[] {
     return this.freightRates()
         .filter((rate) => rate.route === route)
         .map((rate) => rate.usdPerContainer);
   }
-
-  /* The two public weekly indices next to the own forwarder quotes.
-     CCFI covers the whole Chinese coast per destination; NCFI is the
-     Ningbo-departure composite - the closest open numbers to
-     "Ningbo/Guangzhou/Shenzhen -> Europe", since no per-port index is
-     published publicly. */
-  readonly marketIndices = [
-    { code: 'CCFI CN-EUR', label: 'China → Europa · CCFI',
-      title: 'CCFI Europa-route · indexpunten',
-      sub: 'alle Chinese havens · wekelijks' },
-  ];
 
   /** Week-over-week change of an index, when two entries exist. */
   indexChange(route: string): number | null {
@@ -665,6 +678,50 @@ export class Dashboard {
     if (series.length < 2) return null;
     const previous = series[series.length - 2];
     return ((series[series.length - 1] - previous) / previous) * 100;
+  }
+
+  sourceFor(code: string): MarketSourceStatus | null {
+    return this.marketSources().find((source) => source.code === code) ?? null;
+  }
+
+  sourceStateLabel(state: MarketSourceStatus['state']): string {
+    if (state === 'CURRENT') return 'Actueel';
+    if (state === 'CACHE_AFTER_FAILURE') return 'Cache';
+    if (state === 'STALE') return 'Verouderd';
+    if (state === 'LICENSE_REQUIRED') return 'Automatisch uit';
+    if (state === 'FAILED') return 'Bronfout';
+    return 'Geen data';
+  }
+
+  sourceStateClass(state: MarketSourceStatus['state']): string {
+    if (state === 'CURRENT') return 'source-state--ok';
+    if (state === 'LICENSE_REQUIRED' || state === 'NO_DATA') return 'source-state--neutral';
+    return 'source-state--warn';
+  }
+
+  checkedOn(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat('nl-BE', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+    }).format(date);
+  }
+
+  indexTrend(code: string): string {
+    const change = this.indexChange(code);
+    if (change === null) return 'Nog geen tweede publicatie voor een trend.';
+    if (change <= -3) return 'Index daalt duidelijk; vraag een scherpere nieuwe offerte.';
+    if (change < -0.5) return 'Index daalt licht sinds de vorige publicatie.';
+    if (change < 0.5) return 'Index bleef vrijwel gelijk.';
+    if (change < 3) return 'Index stijgt licht sinds de vorige publicatie.';
+    return 'Index stijgt duidelijk; controleer hoe je forwarder dit doorrekent.';
+  }
+
+  horizonWord(code: string, pct: number): string {
+    if (this.sourceFor(code)?.metric === 'INDEX_POINTS') {
+      return pct > 0 ? 'hoger' : 'lager';
+    }
+    return pct > 0 ? 'duurder' : 'goedkoper';
   }
 
   latestFor(route: string): FreightRate | null {
@@ -946,9 +1003,7 @@ export class Dashboard {
     /* Market data loads independently: a slow external feed must never
        hold up the work overview. */
     void this.fx.load();
-    void this.sourcing.freightRates()
-        .then((rates) => this.freightRates.set(rates))
-        .catch(() => undefined);
+    void this.loadFreightMarket();
 
     const [orders, purchases, revisions, products] = await Promise.all([
       this.sales.orders(), this.sourcing.purchaseOrders(),
@@ -961,6 +1016,18 @@ export class Dashboard {
     this.catalogAttention.set(products.filter((product) =>
       product.active && (product.publicationIssues?.length ?? 0) > 0).length);
     this.loading.set(false);
+  }
+
+  private async loadFreightMarket(): Promise<void> {
+    try {
+      /* Own quotes and existing cache render immediately. The slower licensed
+         provider checks then refresh statuses and observations in place. */
+      this.freightRates.set(await this.sourcing.freightRates());
+      this.marketSources.set(await this.sourcing.marketSourceStatuses());
+      this.freightRates.set(await this.sourcing.freightRates());
+    } catch {
+      /* Market context is advisory and must never block the work dashboard. */
+    }
   }
 
   readonly openOrders = computed(() =>

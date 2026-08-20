@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import {
   FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, SalesOrderView,
 } from '../../core/api/models';
@@ -25,6 +25,7 @@ export type ShippingPalletAction =
   | { type: 'add-pallet' }
   | { type: 'clear-layout' }
   | { type: 'move-pallet'; index: number; direction: -1 | 1 }
+  | { type: 'reorder-pallet'; fromIndex: number; toIndex: number }
   | { type: 'remove-pallet'; index: number }
   | { type: 'rename-pallet'; index: number; label: string }
   | { type: 'set-pallet-type'; index: number; palletType: string }
@@ -233,9 +234,32 @@ export type ShippingPalletAction =
               </button>
             </div>
 
+            <p class="sr-only" aria-live="polite">{{ reorderAnnouncement() }}</p>
             <div class="pallet-list">
-              @for (pallet of view().order.pallets; track pallet.id ?? pi; let pi = $index) {
-                <details class="pallet-card">
+              <!-- Persistence rebuilds pallet rows after every save, so database ids are
+                   intentionally not a UI identity. Tracking the position keeps an open
+                   card and its focused input intact while the fresh response arrives. -->
+              @for (pallet of view().order.pallets; track $index; let pi = $index) {
+                <div class="pallet-card-shell" [attr.data-pallet-index]="pi"
+                     [class.pallet-card-shell--dragging]="draggingIndex() === pi"
+                     [class.pallet-card-shell--target]="draggingIndex() !== null
+                       && dropTargetIndex() === pi && draggingIndex() !== pi">
+                  <button class="pallet-card__drag" type="button" [disabled]="!canEdit()"
+                          [attr.aria-label]="'Pallet ' + (pi + 1)
+                            + ' verplaatsen. Sleep of gebruik de pijltjestoetsen.'"
+                          (pointerdown)="startPalletDrag($event, pi)"
+                          (pointermove)="movePalletDrag($event)"
+                          (pointerup)="finishPalletDrag($event)"
+                          (pointercancel)="cancelPalletDrag($event)"
+                          (keydown)="movePalletWithKeyboard($event, pi)">
+                    <span aria-hidden="true">⠿</span>
+                  </button>
+                  <button class="pallet-card__remove" type="button" [disabled]="!canEdit()"
+                          [attr.aria-label]="'Pallet ' + (pi + 1) + ' verwijderen'"
+                          (click)="removePallet(pi)">
+                    <span aria-hidden="true">×</span>
+                  </button>
+                  <details class="pallet-card">
                   <summary>
                     <span class="pallet-card__number">{{ pi + 1 }}</span>
                     <span class="pallet-card__title">
@@ -323,14 +347,11 @@ export type ShippingPalletAction =
                       <button type="button" aria-label="Pallet omlaag"
                               [disabled]="!canEdit() || pi === view().order.pallets.length - 1"
                               (click)="movePallet(pi, 1)">↓</button>
-                      <span></span>
-                      <button class="danger-action" type="button" [disabled]="!canEdit()"
-                              (click)="action.emit({ type: 'remove-pallet', index: pi })">
-                        Verwijderen
-                      </button>
+                      <span class="pallet-card__move-help">Volgorde aanpassen</span>
                     </div>
                   </div>
                 </details>
+                </div>
               }
             </div>
           </section>
@@ -474,6 +495,7 @@ export type ShippingPalletAction =
   styles: [`
     :host { display:block }
     .planner { display:grid;gap:16px;color:var(--ink) }
+    .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0 }
     section { min-width:0 }
     h3 { margin:1px 0 0;font-size:15px;line-height:1.3 }
     .eyebrow { display:block;color:var(--muted);font-size:9px;font-weight:760;letter-spacing:.1em;text-transform:uppercase }
@@ -560,8 +582,17 @@ export type ShippingPalletAction =
     .manual-toolbar .manual-toolbar__reset { border-color:transparent;background:transparent;color:var(--rose-dark) }
     .manual-toolbar button:disabled { cursor:default;opacity:.6 }
     .pallet-list { display:grid;gap:8px }
+    .pallet-card-shell { position:relative;min-width:0;border-radius:12px;transition:transform .16s ease,opacity .16s ease,box-shadow .16s ease }
+    .pallet-card-shell--dragging { z-index:2;opacity:.56;transform:scale(.985) }
+    .pallet-card-shell--target { box-shadow:0 0 0 2px var(--rose-dark),0 8px 18px rgb(31 25 22/.12) }
     .pallet-card { margin:0;background:var(--surface) }
-    .pallet-card>summary { min-height:54px;padding:8px 10px;display:grid;grid-template-columns:30px minmax(0,1fr) 20px;gap:8px;align-items:center }
+    .pallet-card>summary { min-height:56px;padding:8px 50px;display:grid;grid-template-columns:30px minmax(0,1fr) 16px;gap:8px;align-items:center }
+    .pallet-card__drag,.pallet-card__remove { position:absolute;z-index:3;top:7px;width:42px;height:42px;display:grid;place-items:center;padding:0;border:0;border-radius:10px;background:transparent;font:inherit;cursor:pointer }
+    .pallet-card__drag { left:4px;color:var(--muted);font-size:20px;line-height:1;touch-action:none;cursor:grab }
+    .pallet-card__drag:active { cursor:grabbing;background:var(--rose-soft);color:var(--rose-dark) }
+    .pallet-card__remove { right:4px;color:var(--danger);font-size:24px;font-weight:420 }
+    .pallet-card__remove:hover,.pallet-card__remove:focus-visible { background:var(--danger-soft) }
+    .pallet-card__drag:disabled,.pallet-card__remove:disabled { cursor:default;opacity:.45 }
     .pallet-card__number { width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose-dark);font-size:11px;font-weight:760 }
     .pallet-card__title { min-width:0;display:flex;flex-direction:column }
     .pallet-card__title strong,.pallet-card__title small { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
@@ -580,7 +611,8 @@ export type ShippingPalletAction =
     .stepper input { width:42px;border:0;border-inline:1px solid var(--line);font:inherit;font-size:11.5px;text-align:center;-moz-appearance:textfield }
     .stepper input::-webkit-inner-spin-button,.stepper input::-webkit-outer-spin-button { -webkit-appearance:none;margin:0 }
     .add-product { margin-top:8px }
-    .pallet-card__actions { padding:3px 8px;display:grid;grid-template-columns:40px 40px 1fr auto;align-items:center;border-top:1px solid var(--line) }
+    .pallet-card__actions { padding:3px 8px;display:grid;grid-template-columns:40px 40px minmax(0,1fr);align-items:center;border-top:1px solid var(--line) }
+    .pallet-card__move-help { padding-right:5px;color:var(--muted);font-size:9.5px;text-align:right }
     .pallet-card__actions .danger-action { color:var(--danger) }
   `, `
 
@@ -619,6 +651,9 @@ export type ShippingPalletAction =
       .height-input,.money-input { width:100% }
       .height-input input,.money-input input { flex:1 }
     }
+    @media (prefers-reduced-motion:reduce) {
+      .pallet-card-shell { transition:none }
+    }
   `],
 })
 export class ShippingPlanner {
@@ -626,6 +661,15 @@ export class ShippingPlanner {
   readonly canEdit = input(true);
   readonly patch = output<ShippingOrderPatch>();
   readonly action = output<ShippingPalletAction>();
+
+  readonly draggingIndex = signal<number | null>(null);
+  readonly dropTargetIndex = signal<number | null>(null);
+  readonly reorderAnnouncement = signal('');
+  private dragPointerId: number | null = null;
+  private dragSourceIndex: number | null = null;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private dragScrollHost: HTMLElement | null = null;
 
   readonly order = computed(() => this.view().order);
   readonly loadMode = computed<LoadMode>(() => this.order().loadMode ?? 'PALLETS');
@@ -849,7 +893,119 @@ export class ShippingPlanner {
   }
 
   movePallet(index: number, direction: -1 | 1): void {
-    if (this.canEdit()) this.action.emit({ type: 'move-pallet', index, direction });
+    if (!this.canEdit()) return;
+    const target = index + direction;
+    if (target < 0 || target >= this.view().order.pallets.length) return;
+    this.action.emit({ type: 'move-pallet', index, direction });
+    this.reorderAnnouncement.set(
+      `Pallet ${index + 1} verplaatst naar positie ${target + 1}.`,
+    );
+  }
+
+  removePallet(index: number): void {
+    if (!this.canEdit()) return;
+    this.action.emit({ type: 'remove-pallet', index });
+    this.reorderAnnouncement.set(`Pallet ${index + 1} verwijderd.`);
+  }
+
+  startPalletDrag(event: PointerEvent, index: number): void {
+    if (!this.canEdit() || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragPointerId = event.pointerId;
+    this.dragSourceIndex = index;
+    this.dragStartX = event.clientX;
+    this.dragStartY = event.clientY;
+    this.dragScrollHost = (event.currentTarget as HTMLElement)
+      .closest<HTMLElement>('.sheet__body');
+    const handle = event.currentTarget as HTMLElement;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      /* Losing capture merely cancels the drag; it must never save anything. */
+    }
+  }
+
+  movePalletDrag(event: PointerEvent): void {
+    if (event.pointerId !== this.dragPointerId || this.dragSourceIndex === null) return;
+    const moved = Math.hypot(
+      event.clientX - this.dragStartX,
+      event.clientY - this.dragStartY,
+    );
+    if (moved < 7 && this.draggingIndex() === null) return;
+    event.preventDefault();
+    if (this.draggingIndex() === null) {
+      this.draggingIndex.set(this.dragSourceIndex);
+      this.dropTargetIndex.set(this.dragSourceIndex);
+    }
+    const shell = document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>('[data-pallet-index]');
+    const rawIndex = shell?.dataset['palletIndex'];
+    const target = rawIndex == null ? Number.NaN : Number(rawIndex);
+    if (Number.isInteger(target) && target >= 0
+        && target < this.view().order.pallets.length) {
+      this.dropTargetIndex.set(target);
+    }
+    this.scrollWhileDragging(event.clientY);
+  }
+
+  finishPalletDrag(event: PointerEvent): void {
+    if (event.pointerId !== this.dragPointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const source = this.draggingIndex();
+    const target = this.dropTargetIndex();
+    this.releasePointer(event);
+    this.resetPalletDrag();
+    if (source === null || target === null || source === target) return;
+    this.action.emit({ type: 'reorder-pallet', fromIndex: source, toIndex: target });
+    this.reorderAnnouncement.set(
+      `Pallet ${source + 1} verplaatst naar positie ${target + 1}.`,
+    );
+  }
+
+  cancelPalletDrag(event: PointerEvent): void {
+    if (event.pointerId !== this.dragPointerId) return;
+    this.releasePointer(event);
+    this.resetPalletDrag();
+  }
+
+  movePalletWithKeyboard(event: KeyboardEvent, index: number): void {
+    if (!this.canEdit() || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+    const toIndex = index + (event.key === 'ArrowUp' ? -1 : 1);
+    if (toIndex < 0 || toIndex >= this.view().order.pallets.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.action.emit({ type: 'reorder-pallet', fromIndex: index, toIndex });
+    this.reorderAnnouncement.set(
+      `Pallet ${index + 1} verplaatst naar positie ${toIndex + 1}.`,
+    );
+  }
+
+  private scrollWhileDragging(pointerY: number): void {
+    const host = this.dragScrollHost;
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    const edge = Math.min(72, rect.height / 4);
+    if (pointerY < rect.top + edge) host.scrollTop -= 14;
+    else if (pointerY > rect.bottom - edge) host.scrollTop += 14;
+  }
+
+  private releasePointer(event: PointerEvent): void {
+    const handle = event.currentTarget as HTMLElement;
+    try {
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    } catch {
+      /* The browser may already have released capture on cancellation. */
+    }
+  }
+
+  private resetPalletDrag(): void {
+    this.dragPointerId = null;
+    this.dragSourceIndex = null;
+    this.dragScrollHost = null;
+    this.draggingIndex.set(null);
+    this.dropTargetIndex.set(null);
   }
 
   returnToAutomatic(): void {
