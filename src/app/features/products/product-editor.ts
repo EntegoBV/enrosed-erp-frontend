@@ -13,7 +13,15 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
-import { Category, Currency, HsCode, Product, Supplier } from '../../core/api/models';
+import {
+  Category,
+  Currency,
+  HsCode,
+  Product,
+  ProductFamily,
+  ProductFamilyText,
+  Supplier,
+} from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { Privacy } from '../../core/api/privacy';
@@ -21,10 +29,13 @@ import { Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS } from '../../core/api/geo';
+import { ProductPublicationEditor } from './product-publication-editor';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
-    id: null, sku: null, name: '',
+    id: null, familyId: null, canonicalVariantKey: null, canonicalBarcode: null,
+    variantPosition: 0,
+    inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null },
     colour: '', description: '', categoryId: null, supplierId, active: true,
     familyKey: '', publicHandle: '', websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -33,6 +44,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     exwPrice: 0, exwCurrency: currency, extraUnitCost: 0,
     landedCostEur: null, landedCostSource: null,
     markupPct: 45, fixedSalesPriceEur: null,
+    computedSalesPriceEur: 0,
     stockQuantity: 0,
     photos: [],
     texts: [], publicationIssues: [],
@@ -42,7 +54,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 @Component({
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, PhotoManager, Sheet,
+  imports: [FormsModule, PageHeader, PhotoManager, ProductPublicationEditor, Sheet,
             EurPipe, NumPipe, CbmPipe],
   template: `
     <app-page-header
@@ -80,10 +92,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </div>
           @if (!isNew()) {
             <div class="master-status__channels" aria-label="Publicatiestatus">
-              <span class="channel-dot" [class.channel-dot--live]="draft().websiteStatus === 'PUBLISHED'">
+              <span class="channel-dot"
+                    [class.channel-dot--live]="(family()?.websiteStatus ?? draft().websiteStatus) === 'PUBLISHED'">
                 Website
               </span>
-              <span class="channel-dot" [class.channel-dot--live]="draft().orderAppStatus === 'PUBLISHED'">
+              <span class="channel-dot"
+                    [class.channel-dot--live]="(family()?.orderAppStatus ?? draft().orderAppStatus) === 'PUBLISHED'">
                 Orderapp
               </span>
             </div>
@@ -101,7 +115,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <span>{{ privacy.showPurchase() ? '05' : '04' }}</span>Verkoop
           </button>
           <button type="button" (click)="scrollToSection('publication')">
-            <span>{{ privacy.showPurchase() ? '06' : '05' }}</span>Kanalen
+            <span>{{ privacy.showPurchase() ? '06' : '05' }}</span>Website
           </button>
         </nav>
 
@@ -127,9 +141,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </select>
             </div>
             <div class="field">
-              <label class="req" for="p-name">Naam</label>
+              <label class="req" for="p-name">Productnaam intern</label>
               <input class="input" id="p-name" [ngModel]="draft().name"
                      (ngModelChange)="patch({ name: $event })" />
+              <span class="hint">Voor verkoop, inkoop en magazijn. De publieke naam staat onder Website &amp; publicatie.</span>
             </div>
             <div class="field">
               <label for="p-category">Categorie <span class="opt"></span></label>
@@ -163,15 +178,21 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </span>
             </div>
             <div class="field span-2">
-              <label for="p-description">Beschrijving <span class="opt"></span></label>
-              <textarea class="textarea" id="p-description" rows="4"
-                        placeholder="Wat maakt dit product bijzonder voor de klant?"
+              <label for="p-description">Omschrijving op offerte <span class="opt"></span></label>
+              <textarea class="textarea" id="p-description" rows="3"
+                        placeholder="Korte omschrijving voor verkoopdocumenten"
                         [ngModel]="draft().description"
                         (ngModelChange)="patch({ description: $event })"></textarea>
-              <span class="hint">
-                Basistekst voor offerte, website en orderapp. Vertalingen beheer je via Excel.
-              </span>
+              <span class="hint">Varianttekst voor offertes. Websitecopy staat apart onder Website &amp; publicatie.</span>
             </div>
+            <label class="switch-row span-2" for="p-active">
+              <span>
+                <b>Actieve variant</b>
+                <small>Beschikbaar voor verkoop, inkoop en de interne productkiezer.</small>
+              </span>
+              <input id="p-active" type="checkbox" [ngModel]="draft().active"
+                     (ngModelChange)="patch({ active: $event })" />
+            </label>
           </div>
 
           <fieldset class="measure-group">
@@ -456,7 +477,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
             </div>
             <div class="price-preview__meta">
-              <span>Voorraad <b class="num">{{ draft().stockQuantity | num }}</b></span>
+              <span>
+                Voorraad
+                @if (draft().inventoryKnown) {
+                  <b class="num">{{ draft().stockQuantity | num }}</b>
+                } @else {
+                  <b>onbekend</b>
+                }
+              </span>
               @if (privacy.showPurchase()) {
                 <span>Marge per stuk <b class="num">{{ unitMargin() | eur }}</b></span>
               }
@@ -465,89 +493,18 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
       </section>
 
-      <!-- ======================================== publication -->
-      <section class="card editor-section" id="publication" aria-labelledby="publication-title">
-        <div class="card__head section-head">
-          <span class="section-head__number">{{ privacy.showPurchase() ? '06' : '05' }}</span>
-          <div>
-            <h2 id="publication-title">Kanalen</h2>
-            <p>Eén productmaster voor website en orderapp</p>
-          </div>
-        </div>
-        <div class="card__body">
-          <label class="switch-row" for="p-active">
-            <span>
-              <b>Actief product</b>
-              <small>Beschikbaar in de interne catalogus en productkiezers.</small>
-            </span>
-            <input id="p-active" type="checkbox" [ngModel]="draft().active"
-                   (ngModelChange)="patch({ active: $event })" />
-          </label>
-
-          <div class="form-grid mt-16">
-            <div class="field">
-              <label for="p-family">Productfamilie <span class="opt"></span></label>
-              <input class="input mono" id="p-family" [ngModel]="draft().familyKey"
-                     placeholder="bijv. rose-dome-25"
-                     (ngModelChange)="patch({ familyKey: $event })" />
-              <span class="hint">Groepeert kleuren en maten als varianten van één product.</span>
-            </div>
-            <div class="field">
-              <label for="p-handle">Publieke URL</label>
-              <input class="input mono" id="p-handle" [ngModel]="draft().publicHandle"
-                     placeholder="bijv. loungestoel-zand"
-                     (ngModelChange)="patch({ publicHandle: $event })" />
-              <span class="hint">Kies een unieke URL-naam. Deze blijft stabiel als de productnaam verandert.</span>
-            </div>
-          </div>
-
-          <div class="channel-grid mt-16">
-            <div class="channel-card">
-              <div>
-                <b>Website</b>
-                <div class="tiny muted">Publieke productcatalogus</div>
-              </div>
-              <select class="select select--sm" aria-label="Website publicatiestatus"
-                      [ngModel]="draft().websiteStatus"
-                      (ngModelChange)="patch({ websiteStatus: $event })">
-                <option value="DRAFT">Concept</option>
-                <option value="READY">Klaar</option>
-                <option value="PUBLISHED">Gepubliceerd</option>
-              </select>
-            </div>
-            <div class="channel-card">
-              <div>
-                <b>Orderapp</b>
-                <div class="tiny muted">Bestelbaar voor klanten</div>
-              </div>
-              <select class="select select--sm" aria-label="Orderapp publicatiestatus"
-                      [ngModel]="draft().orderAppStatus"
-                      (ngModelChange)="patch({ orderAppStatus: $event })">
-                <option value="DRAFT">Concept</option>
-                <option value="READY">Klaar</option>
-                <option value="PUBLISHED">Gepubliceerd</option>
-              </select>
-            </div>
-          </div>
-
-          @if (readinessIssues().length) {
-            <div class="readiness mt-16">
-              <div class="readiness__head">
-                <span aria-hidden="true">!</span>
-                <div><b>Nog niet publiceerbaar</b><div class="tiny">Werk deze punten af.</div></div>
-              </div>
-              <ul>
-                @for (issue of readinessIssues(); track issue) { <li>{{ issue }}</li> }
-              </ul>
-            </div>
-          } @else {
-            <div class="alert alert--ok mt-16">
-              <span class="alert__icon">✓</span>
-              <div><b>Productinformatie compleet.</b> Dit product kan veilig live.</div>
-            </div>
-          }
-        </div>
-      </section>
+      <!-- Public content stays available without crowding daily ERP fields. -->
+      <app-product-publication-editor
+        [product]="draft()"
+        [family]="family()"
+        [families]="families()"
+        [categories]="categories()"
+        (familyChange)="onFamilyChange($event)"
+        (familyIdChange)="selectFamily($event)"
+        (createFamilyRequested)="startNewFamily()"
+        (imageUploadRequested)="uploadFamilyImage($event)"
+        (imageDeleteRequested)="removeFamilyImage($event)"
+      />
 
       <div class="editor-actions">
         <button class="btn btn--primary btn--block" type="button"
@@ -870,8 +827,14 @@ export class ProductEditor {
   readonly suppliers = signal<Supplier[]>([]);
   readonly categories = signal<Category[]>([]);
   readonly hsCodes = signal<HsCode[]>([]);
+  readonly families = signal<ProductFamily[]>([]);
+  readonly family = signal<ProductFamily | null>(null);
+  private readonly savedFamily = signal<ProductFamily | null>(null);
+  readonly familyDirty = computed(() =>
+    JSON.stringify(this.family()) !== JSON.stringify(this.savedFamily()));
   readonly saving = signal(false);
   readonly priceStrategy = signal<'MARKUP' | 'FIXED'>('MARKUP');
+  private readonly priceTouched = signal(false);
   private readonly lastMarkupPct = signal(45);
   readonly copying = signal(false);
   readonly copyColour = signal('');
@@ -892,11 +855,14 @@ export class ProductEditor {
 
   readonly copyVariants = computed(() => {
     const source = this.copySource();
+    const familyId = source.familyId ?? null;
     const familyKey = source.familyKey?.trim().toLocaleLowerCase('nl-BE');
-    if (!familyKey) return [];
+    if (familyId === null && !familyKey) return [];
     return this.copyProducts().filter((product) =>
       product.id !== source.id
-      && product.familyKey?.trim().toLocaleLowerCase('nl-BE') === familyKey);
+      && (familyId !== null
+        ? product.familyId === familyId
+        : product.familyKey?.trim().toLocaleLowerCase('nl-BE') === familyKey));
   });
 
   readonly copyColourConflict = computed(() => {
@@ -924,15 +890,50 @@ export class ProductEditor {
 
   constructor() {
     void this.loadReference();
+    void this.loadFamilies();
     effect(() => {
       const routeId = this.id();
       if (routeId && routeId !== 'new') {
         void this.catalog.product(+routeId).then((product) => {
           this.draft.set(product);
           this.syncPriceStrategy(product);
+          void this.loadFamilyForProduct(product);
         });
       }
     });
+  }
+
+  private async loadFamilies(): Promise<void> {
+    try {
+      const families = await this.catalog.productFamilies();
+      this.families.set(families);
+      const product = this.draft();
+      if (product.id !== null && this.family() === null) {
+        await this.loadFamilyForProduct(product);
+      }
+    } catch {
+      /* Product work remains usable while the family endpoint is unavailable. */
+      this.families.set([]);
+    }
+  }
+
+  private async loadFamilyForProduct(product: Product): Promise<void> {
+    const familyId = product.familyId ?? null;
+    let family = familyId === null
+      ? null
+      : this.families().find((item) => item.id === familyId) ?? null;
+    family ??= product.familyKey
+      ? this.families().find((item) => item.familyKey === product.familyKey) ?? null
+      : null;
+
+    if (!family && familyId !== null) {
+      try {
+        family = await this.catalog.productFamily(familyId);
+      } catch {
+        family = null;
+      }
+    }
+    this.setFamilyDraft(family);
   }
 
   private async loadReference(): Promise<void> {
@@ -963,6 +964,7 @@ export class ProductEditor {
 
   readonly salesPrice = computed(() => {
     const product = this.draft();
+    if (product.id !== null && !this.priceTouched()) return product.computedSalesPriceEur;
     if (this.priceStrategy() === 'FIXED') return product.fixedSalesPriceEur ?? 0;
     const cost = product.landedCostEur ?? 0;
     return Math.round(cost * (1 + (product.markupPct ?? 0) / 100) * 100) / 100;
@@ -972,17 +974,20 @@ export class ProductEditor {
     Math.round((this.salesPrice() - (this.draft().landedCostEur ?? 0)) * 100) / 100);
 
   readonly readinessIssues = computed(() => {
-    const server = this.draft().publicationIssues ?? [];
+    const family = this.family();
+    const server = family?.publicationIssues ?? this.draft().publicationIssues ?? [];
     if (server.length) return server;
     const product = this.draft();
     const issues: string[] = [];
     if (!product.active) issues.push('Zet het product actief.');
     if (!product.name.trim()) issues.push('Vul een productnaam in.');
     if (!product.categoryId) issues.push('Kies een categorie.');
-    if (!product.description?.trim()) issues.push('Schrijf een klantgerichte beschrijving.');
-    if (!product.publicHandle?.trim()) issues.push('Vul een stabiele publieke URL in.');
-    if (!product.photos.length && !this.photoManager()?.pendingCount()) {
-      issues.push('Voeg minstens één productfoto toe.');
+    if (!family) {
+      issues.push('Koppel een productfamilie voor website en orderapp.');
+    } else {
+      if (!family.name.trim()) issues.push('Vul de publieke familienaam in.');
+      if (!family.publicHandle.trim()) issues.push('Vul een stabiele publieke URL in.');
+      if (!family.images.length) issues.push('Voeg minstens één publieke productfoto toe.');
     }
     if (this.salesPrice() <= 0) issues.push('Stel een verkoopprijs in.');
     if (!product.carton.piecesPerCarton || product.carton.piecesPerCarton < 1) {
@@ -992,7 +997,9 @@ export class ProductEditor {
   });
 
   scrollToSection(id: string): void {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const section = document.getElementById(id);
+    if (section instanceof HTMLDetailsElement) section.open = true;
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   num(value: unknown): number | null {
@@ -1012,8 +1019,171 @@ export class ProductEditor {
     this.draft.update((p) => ({ ...p, carton: { ...p.carton, ...changes } }));
   }
 
+  onFamilyChange(family: ProductFamily): void {
+    this.family.set(family);
+    this.patch({
+      familyId: family.id,
+      familyKey: family.familyKey,
+      ...this.variantPublicationFields(),
+    });
+  }
+
+  async selectFamily(familyId: number | null): Promise<void> {
+    if (familyId === null) {
+      this.setFamilyDraft(null);
+      this.patch({ familyId: null, familyKey: null, ...this.variantPublicationFields() });
+      return;
+    }
+    let family = this.families().find((item) => item.id === familyId) ?? null;
+    if (!family) {
+      try {
+        family = await this.catalog.productFamily(familyId);
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Productfamilie laden mislukt'), 'err');
+        return;
+      }
+    }
+    this.setFamilyDraft(family);
+    this.patch({
+      familyId,
+      familyKey: family.familyKey,
+      ...this.variantPublicationFields(),
+    });
+  }
+
+  startNewFamily(): void {
+    const product = this.draft();
+    const category = this.categories().find((item) => item.id === product.categoryId);
+    const familyKey = this.slug(product.name) || 'nieuwe-productfamilie';
+    const englishText: ProductFamilyText = {
+      language: 'EN',
+      name: product.name.trim() || null,
+      summary: null,
+      description: null,
+      format: null,
+      highlights: [],
+      seoTitle: null,
+      seoDescription: null,
+    };
+    const family: ProductFamily = {
+      id: null,
+      familyKey,
+      publicHandle: familyKey,
+      categoryId: product.categoryId,
+      categoryKey: category?.code ?? null,
+      categoryName: category?.name ?? null,
+      categoryPosition: category?.position ?? 0,
+      collectionKey: null,
+      collections: [],
+      productPosition: this.families().length,
+      tags: [],
+      websiteStatus: 'DRAFT',
+      orderAppStatus: 'DRAFT',
+      catalogueStatus: 'DRAFT',
+      active: true,
+      name: product.name.trim(),
+      summary: null,
+      description: null,
+      format: null,
+      highlights: [],
+      seoTitle: null,
+      seoDescription: null,
+      dimensions: null,
+      texts: [englishText],
+      packages: [],
+      images: [],
+      externalIdentifiers: [],
+      priceObservations: [],
+      provenance: [],
+      conflicts: [],
+      publicationIssues: [],
+      variantCount: 1,
+    };
+    this.family.set(family);
+    this.patch({
+      familyId: null,
+      familyKey: family.familyKey,
+      ...this.variantPublicationFields(),
+    });
+    queueMicrotask(() => document.getElementById('publication')?.setAttribute('open', ''));
+  }
+
+  private setFamilyDraft(family: ProductFamily | null): void {
+    const current = family ? structuredClone(family) : null;
+    this.family.set(current);
+    this.savedFamily.set(family ? structuredClone(family) : null);
+  }
+
+  async uploadFamilyImage(file: File): Promise<void> {
+    if (this.saving()) return;
+    this.saving.set(true);
+    try {
+      await this.persistFamilyDraft();
+      const familyId = this.family()?.id;
+      if (familyId === null || familyId === undefined) {
+        throw new Error('Productfamilie kon niet worden aangemaakt');
+      }
+      const saved = await this.catalog.uploadProductFamilyImage(
+        familyId,
+        file,
+        this.draft().canonicalVariantKey,
+        this.draft().colour,
+      );
+      this.replaceFamily(saved);
+      this.ui.toast('Websitefoto toegevoegd');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Websitefoto toevoegen mislukt'), 'err');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  removeFamilyImage(imageId: number): void {
+    const family = this.family();
+    if (!family?.id || this.saving()) return;
+    this.ui.confirm(
+      {
+        title: 'Websitefoto verwijderen',
+        message: 'Deze foto uit de publieke galerij verwijderen?',
+        confirmLabel: 'Verwijderen',
+        danger: true,
+      },
+      async () => {
+        this.saving.set(true);
+        try {
+          await this.persistFamilyDraft();
+          const saved = await this.catalog.deleteProductFamilyImage(family.id!, imageId);
+          this.replaceFamily(saved);
+          this.ui.toast('Websitefoto verwijderd');
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, 'Websitefoto verwijderen mislukt'), 'err');
+        } finally {
+          this.saving.set(false);
+        }
+      },
+    );
+  }
+
+  private replaceFamily(family: ProductFamily): void {
+    this.setFamilyDraft(family);
+    this.families.update((families) => families.some((item) => item.id === family.id)
+      ? families.map((item) => item.id === family.id ? family : item)
+      : [...families, family]);
+    this.patch({
+      familyId: family.id,
+      familyKey: family.familyKey,
+      ...this.variantPublicationFields(),
+    });
+  }
+
+  private slug(value: string): string {
+    return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
   setPriceStrategy(strategy: 'MARKUP' | 'FIXED'): void {
     if (strategy === this.priceStrategy()) return;
+    this.priceTouched.set(true);
 
     const product = this.draft();
     if (strategy === 'FIXED') {
@@ -1038,16 +1208,19 @@ export class ProductEditor {
   }
 
   setMarkup(value: unknown): void {
+    this.priceTouched.set(true);
     const markupPct = Math.max(0, this.num(value) ?? 0);
     this.lastMarkupPct.set(markupPct);
     this.patch({ markupPct, fixedSalesPriceEur: null });
   }
 
   setFixedSalesPrice(value: unknown): void {
+    this.priceTouched.set(true);
     this.patch({ fixedSalesPriceEur: this.num(value), markupPct: 0 });
   }
 
   private syncPriceStrategy(product: Product): void {
+    this.priceTouched.set(false);
     if (product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0) {
       this.priceStrategy.set('FIXED');
       if (product.markupPct !== 0) this.patch({ markupPct: 0 });
@@ -1187,6 +1360,7 @@ export class ProductEditor {
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saving.set(true);
     try {
+      await this.persistFamilyDraft();
       const product = this.draft();
       const photoManager = this.photoManager();
       const saved = product.id === null
@@ -1208,6 +1382,57 @@ export class ProductEditor {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  private async persistFamilyDraft(): Promise<void> {
+    const desired = this.family();
+    if (!desired || !this.familyDirty()) return;
+
+    const previous = this.savedFamily();
+    let saved = desired.id === null
+      ? await this.catalog.createProductFamily(desired)
+      : await this.catalog.updateProductFamily(desired.id, desired);
+
+    if (saved.id !== null && desired.id !== null && previous?.id === desired.id) {
+      const familyId = saved.id;
+      const desiredImages = [...desired.images].sort((left, right) => left.position - right.position);
+      const previousImages = [...previous.images].sort((left, right) => left.position - right.position);
+      const desiredIds = desiredImages.map((image) => image.id);
+      const previousIds = previousImages.map((image) => image.id);
+      if (desiredIds.join(',') !== previousIds.join(',')) {
+        saved = await this.catalog.reorderProductFamilyImages(familyId, desiredIds);
+      }
+
+      for (const image of desired.images) {
+        const before = previous.images.find((item) => item.id === image.id);
+        for (const alt of image.altTexts) {
+          const oldAlt = before?.altTexts.find((item) => item.language === alt.language)?.alt ?? '';
+          const nextAlt = alt.alt ?? '';
+          if (oldAlt !== nextAlt) {
+            saved = await this.catalog.updateProductFamilyImageAlt(
+              familyId, image.id, alt.language, nextAlt);
+          }
+        }
+      }
+    }
+
+    this.setFamilyDraft(saved);
+    this.families.update((families) => {
+      const index = families.findIndex((item) => item.id === saved.id);
+      return index < 0
+        ? [...families, saved]
+        : families.map((item) => item.id === saved.id ? saved : item);
+    });
+    this.patch({
+      familyId: saved.id,
+      familyKey: saved.familyKey,
+      ...this.variantPublicationFields(),
+    });
+  }
+
+  /** Public handle and channel state belong to the family, never to one colour SKU. */
+  private variantPublicationFields(): Pick<Product, 'publicHandle' | 'websiteStatus' | 'orderAppStatus'> {
+    return { publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT' };
   }
 
   private async createWithPendingPhotos(

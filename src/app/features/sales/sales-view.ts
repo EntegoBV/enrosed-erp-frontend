@@ -502,14 +502,16 @@ export class SalesView {
   }
 
   deliveryOpen(line: PricedLine, data: SalesOrderView): boolean {
-    return !line.deliveryWeek && (data.order.deliveryTerms === 'TE_BEPALEN' || line.shortfall > 0);
+    return !line.deliveryWeek && (data.order.deliveryTerms === 'TE_BEPALEN'
+      || !line.inventoryKnown || (line.shortfall ?? 0) > 0);
   }
 
   deliveryText(line: PricedLine, data: SalesOrderView): string {
     if (line.deliveryWeek) return new WeekNlPipe().transform(line.deliveryWeek, 'short');
     if (line.deliveryExplanation) return line.deliveryExplanation;
     if (data.order.deliveryTerms === 'TE_BEPALEN') return 'Nog te bepalen';
-    if (line.shortfall > 0) return `${line.shortfall} stuks tekort`;
+    if (!line.inventoryKnown) return 'Voorraad nog niet bevestigd';
+    if ((line.shortfall ?? 0) > 0) return `${line.shortfall} stuks tekort`;
     if (line.inStock) return 'Op voorraad';
     return 'Volgens afspraak';
   }

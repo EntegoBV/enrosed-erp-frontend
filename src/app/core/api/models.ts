@@ -54,6 +54,13 @@ export interface ProductText {
 
 export interface Product {
   id: number | null;
+  /** Canonical customer-facing model shared by all colour variants. */
+  familyId: number | null;
+  canonicalVariantKey: string | null;
+  canonicalBarcode: string | null;
+  variantPosition: number | null;
+  /** False when a migrated source did not contain a reliable stock value. */
+  inventoryKnown: boolean | null;
   sku: string | null;
   name: string;
   /** Dimensions of the product itself - apart from variant and outer carton. */
@@ -82,6 +89,8 @@ export interface Product {
   landedCostSource: string | null;
   markupPct: number | null;
   fixedSalesPriceEur: number | null;
+  /** Server-owned result of the active price strategy. */
+  computedSalesPriceEur: number;
   /** Stock in pieces; grows when a purchase order is received. */
   stockQuantity: number;
   photos: PhotoDto[];
@@ -91,6 +100,166 @@ export interface Product {
   describedAs?: string;
   cartonCbm?: number;
   pieceCbm?: number;
+}
+
+export interface ProductFamilyText {
+  language: LanguageCode;
+  name: string | null;
+  summary: string | null;
+  description: string | null;
+  format: string | null;
+  highlights: string[];
+  seoTitle: string | null;
+  seoDescription: string | null;
+}
+
+export interface ProductFamilyImageAlt {
+  language: LanguageCode;
+  alt: string | null;
+}
+
+export interface ProductFamilyImage {
+  id: number;
+  sourceKey: string;
+  sourceAssetId: string | null;
+  sourceUrl: string | null;
+  originalFilename: string;
+  originalWidthPx: number | null;
+  originalHeightPx: number | null;
+  smallUrl: string;
+  largeUrl: string;
+  smallSha256: string;
+  smallWidthPx: number | null;
+  smallHeightPx: number | null;
+  largeSha256: string;
+  largeWidthPx: number | null;
+  largeHeightPx: number | null;
+  position: number;
+  variantExternalId: string | null;
+  variantColor: string | null;
+  altTextSource: string | null;
+  altTexts: ProductFamilyImageAlt[];
+}
+
+export interface ProductExternalIdentifier {
+  source: string;
+  identifierType: string;
+  value: string;
+}
+
+export interface ProductFieldProvenance {
+  fieldName: string;
+  source: string;
+  sourceRecordKey: string | null;
+  rawValue: string | null;
+  confidence: string | null;
+  status: string;
+}
+
+export interface ProductSourceConflict {
+  fieldName: string;
+  reason: string;
+  confidence: string | null;
+  status: string;
+}
+
+export interface ProductFamilyDimensions {
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  unit: string | null;
+  raw: string | null;
+}
+
+export interface ProductPackage {
+  id: number | null;
+  sourceKey: string;
+  packageType: string | null;
+  position: number;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  dimensionUnit: string | null;
+  piecesPerPackage: number | null;
+  weight: number | null;
+  weightUnit: string | null;
+  raw: string | null;
+  variantExternalId: string | null;
+  productId: number | null;
+  axisMeaningConfirmed: boolean | null;
+  sourceType: string | null;
+  sourceLocation: string | null;
+  operational: boolean | null;
+  confidence: string | null;
+}
+
+export interface ProductPriceObservation {
+  id: number;
+  ownerType: string;
+  ownerKey: string;
+  productId: number | null;
+  context: string;
+  amount: number | null;
+  currency: string | null;
+  taxContext: string | null;
+  incoterm: string | null;
+  market: string | null;
+  sourceType: string | null;
+  sourceLocation: string | null;
+  rawValue: string | null;
+  publicPrice: boolean;
+  publicRole: string | null;
+}
+
+export interface ProductCollection {
+  id: number;
+  key: string;
+  name: string;
+  eyebrow: string | null;
+  description: string | null;
+  position: number;
+  primary: boolean;
+}
+
+/**
+ * Customer-facing model data. Operational stock, purchase and packaging fields
+ * remain on Product, while this record is shared by every colour variant.
+ */
+export interface ProductFamily {
+  id: number | null;
+  familyKey: string;
+  publicHandle: string;
+  categoryId: number | null;
+  categoryKey: string | null;
+  categoryName: string | null;
+  categoryPosition: number;
+  collectionKey: string | null;
+  collections: ProductCollection[];
+  productPosition: number;
+  tags: string[];
+  websiteStatus: PublicationStatus;
+  orderAppStatus: PublicationStatus;
+  /** Reserved now so the later dashboard-to-catalogue sync needs no remodel. */
+  catalogueStatus: PublicationStatus;
+  active: boolean;
+  name: string;
+  summary: string | null;
+  description: string | null;
+  format: string | null;
+  highlights: string[];
+  seoTitle: string | null;
+  seoDescription: string | null;
+  dimensions: ProductFamilyDimensions | null;
+  texts: ProductFamilyText[];
+  packages: ProductPackage[];
+  images: ProductFamilyImage[];
+  externalIdentifiers: ProductExternalIdentifier[];
+  /** Source observations stay read-only until currency and commercial context are confirmed. */
+  priceObservations: ProductPriceObservation[];
+  provenance: ProductFieldProvenance[];
+  conflicts: ProductSourceConflict[];
+  publicationIssues: string[];
+  variantCount: number;
 }
 
 export interface Category {
@@ -422,9 +591,10 @@ export interface PricedLine {
   marginPct: number;
   nextTierAtQuantity: number | null;
   nextTierPercent: number | null;
-  stockQuantity: number;
+  stockQuantity: number | null;
+  inventoryKnown: boolean;
   inStock: boolean;
-  shortfall: number;
+  shortfall: number | null;
   deliveryDate: string | null;
   deliveryWeek: string | null;
   deliveryExplanation: string | null;
@@ -511,6 +681,7 @@ export interface PortalLine {
   unitPrice: number;
   discountPct: number;
   net: number;
+  inventoryKnown: boolean;
   inStock: boolean;
   deliveryDate: string | null;
   deliveryWeek: string | null;
@@ -525,6 +696,7 @@ export interface PortalCatalogItem {
   piecesPerCarton: number;
   unitPrice: number;
   /** Available from stock, or do we have to order it first? */
+  inventoryKnown: boolean;
   inStock: boolean;
 }
 

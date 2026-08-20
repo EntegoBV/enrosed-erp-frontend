@@ -74,10 +74,15 @@ import { CartonQuantity } from '../../shared/carton-quantity';
               }
             </div>
 
-            @if (!item.inStock) {
+            @if (item.inventoryKnown && !item.inStock) {
               <div class="alert alert--warn mt-12">
                 <span class="alert__icon">!</span>
                 <div>{{ t()('portalOutOfStockWarning') }}</div>
+              </div>
+            } @else if (!item.inventoryKnown) {
+              <div class="alert alert--warn mt-12">
+                <span class="alert__icon">?</span>
+                <div>{{ t()('portalTermToBeDetermined') }}</div>
               </div>
             }
           </div>
@@ -98,7 +103,8 @@ import { CartonQuantity } from '../../shared/carton-quantity';
                   <div class="picker-item__meta row" style="gap:5px">
                     <span class="stock-dot"
                           [class.stock-dot--ok]="item.inStock"
-                          [class.stock-dot--none]="!item.inStock"></span>
+                          [class.stock-dot--none]="item.inventoryKnown && !item.inStock"
+                          [class.stock-dot--low]="!item.inventoryKnown"></span>
                     <span>{{ item.inStock
                       ? t()('portalInStock') : t()('portalTermToBeDetermined') }}</span>
                   </div>

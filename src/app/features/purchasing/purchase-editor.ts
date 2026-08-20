@@ -1239,7 +1239,9 @@ export class PurchaseEditor {
     const data = this.view();
     if (!data) return;
     const created = await this.catalog.createProduct({
-      id: null, sku: null, name: draft.name,
+      id: null, familyId: null, canonicalVariantKey: null, canonicalBarcode: null,
+      variantPosition: 0,
+      inventoryKnown: true, sku: null, name: draft.name,
       dimensions: { lengthCm: draft.lengthCm, widthCm: draft.widthCm,
           heightCm: draft.heightCm },
       colour: '', description: '', categoryId: null,
@@ -1248,11 +1250,15 @@ export class PurchaseEditor {
       carton: { lengthCm: draft.cartonLengthCm, widthCm: draft.cartonWidthCm,
           heightCm: draft.cartonHeightCm,
           piecesPerCarton: draft.piecesPerCarton, weightKg: draft.weightKg },
-      exwPrice: draft.exwPrice, exwCurrency: draft.exwCurrency, extraUnitCost: 0,
+      exwPrice: draft.exwPrice, exwCurrency: draft.exwCurrency as Currency, extraUnitCost: 0,
       landedCostEur: null, landedCostSource: null,
       markupPct: 45, fixedSalesPriceEur: null,
+      computedSalesPriceEur: 0,
       stockQuantity: 0, photos: [],
-    } as unknown as Product);
+      familyKey: null, publicHandle: null,
+      websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
+      texts: [], publicationIssues: [],
+    });
     this.products.set(await this.catalog.products(data.order.supplierId));
     this.addLine({ product: created, quantity: draft.piecesPerCarton });
     this.ui.toast(`${draft.name} aangemaakt en op de order gezet`);

@@ -516,18 +516,22 @@ import {
                 <div class="delivery order-line__delivery">
                   <div class="delivery-row">
                     <span class="stock-dot"
-                          [class.stock-dot--none]="!line.inStock && !line.deliveryWeek"
+                          [class.stock-dot--none]="line.inventoryKnown && !line.inStock && !line.deliveryWeek"
+                          [class.stock-dot--low]="!line.inventoryKnown && !line.deliveryWeek"
                           [class.stock-dot--ok]="line.inStock || line.deliveryWeek"></span>
                     <span class="delivery-row__copy">
-                      @if (line.inStock) {
+                      @if (!line.inventoryKnown) {
+                        <b>Voorraad nog niet bevestigd</b>
+                        <span>Vul de leverweek in zodra de beschikbaarheid is bevestigd.</span>
+                      } @else if (line.inStock) {
                         <b>Op voorraad</b>
                         <span>Leverbaar vanaf {{ line.deliveryDate | dateNl }}@if (line.deliveryWeek) { · {{ line.deliveryWeek | weekNl: 'short' }} }</span>
                       } @else if (line.deliveryWeek) {
                         <b>Levering {{ line.deliveryWeek | weekNl }}</b>
-                        <span>{{ line.shortfall | num }} stuks niet op voorraad</span>
+                        <span>{{ line.shortfall ?? 0 | num }} stuks niet op voorraad</span>
                       } @else {
                         <b class="danger-text">Levertermijn nodig</b>
-                        <span>{{ line.shortfall | num }} stuks niet op voorraad</span>
+                        <span>{{ line.shortfall ?? 0 | num }} stuks niet op voorraad</span>
                       }
                     </span>
                     <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
@@ -1705,12 +1709,10 @@ export class SalesEditor {
 
   /** Price the picker shows: what THIS order would charge for that product. */
   readonly priceOf = (product: Product): number => {
-    if (product.fixedSalesPriceEur) return product.fixedSalesPriceEur;
     const order = this.view()?.order;
+    if (order?.markupMode !== 'ORDER') return product.computedSalesPriceEur;
     const cost = product.landedCostEur ?? 0;
-    const markup = order?.markupMode === 'ORDER'
-      ? (order.orderMarkupPct ?? 0)
-      : (product.markupPct ?? 0);
+    const markup = order.orderMarkupPct ?? 0;
     return Math.round(cost * (1 + markup / 100) * 100) / 100;
   };
 

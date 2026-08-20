@@ -795,7 +795,10 @@ export class PortalPage implements OnDestroy {
   readonly hasOutOfStockAddition = computed(() => {
     const catalog = this.catalog();
     return [...this.additions().keys()].some(
-      (productId) => catalog.find((item) => item.productId === productId)?.inStock === false);
+      (productId) => {
+        const item = catalog.find((candidate) => candidate.productId === productId);
+        return item?.inventoryKnown === true && item.inStock === false;
+      });
   });
 
   /** What the customer added, as a list for the summary. */

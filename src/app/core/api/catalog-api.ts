@@ -2,7 +2,14 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
-import { CatalogImportResult, Category, HsCode, Product } from './models';
+import {
+  CatalogImportResult,
+  Category,
+  HsCode,
+  LanguageCode,
+  Product,
+  ProductFamily,
+} from './models';
 
 @Injectable({ providedIn: 'root' })
 export class CatalogApi {
@@ -35,6 +42,61 @@ export class CatalogApi {
 
   deleteProduct(id: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/products/${id}`)));
+  }
+
+  /* --------------------------------------------------- productfamilies */
+
+  productFamilies(): Promise<ProductFamily[]> {
+    return firstValueFrom(this.http.get<ProductFamily[]>(api('/api/product-families')));
+  }
+
+  productFamily(id: number): Promise<ProductFamily> {
+    return firstValueFrom(
+      this.http.get<ProductFamily>(api(`/api/product-families/${id}`)));
+  }
+
+  createProductFamily(family: ProductFamily): Promise<ProductFamily> {
+    return firstValueFrom(
+      this.http.post<ProductFamily>(api('/api/product-families'), family));
+  }
+
+  updateProductFamily(id: number, family: ProductFamily): Promise<ProductFamily> {
+    return firstValueFrom(
+      this.http.put<ProductFamily>(api(`/api/product-families/${id}`), family));
+  }
+
+  uploadProductFamilyImage(
+    familyId: number,
+    file: File,
+    variantExternalId?: string | null,
+    variantColor?: string | null,
+  ): Promise<ProductFamily> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    if (variantExternalId) form.append('variantExternalId', variantExternalId);
+    if (variantColor) form.append('variantColor', variantColor);
+    return firstValueFrom(this.http.post<ProductFamily>(
+      api(`/api/product-families/${familyId}/images`), form));
+  }
+
+  deleteProductFamilyImage(familyId: number, imageId: number): Promise<ProductFamily> {
+    return firstValueFrom(this.http.delete<ProductFamily>(
+      api(`/api/product-families/${familyId}/images/${imageId}`)));
+  }
+
+  reorderProductFamilyImages(familyId: number, imageIds: number[]): Promise<ProductFamily> {
+    return firstValueFrom(this.http.put<ProductFamily>(
+      api(`/api/product-families/${familyId}/images/order`), imageIds));
+  }
+
+  updateProductFamilyImageAlt(
+    familyId: number,
+    imageId: number,
+    language: LanguageCode,
+    alt: string,
+  ): Promise<ProductFamily> {
+    return firstValueFrom(this.http.put<ProductFamily>(
+      api(`/api/product-families/${familyId}/images/${imageId}/alt`), { language, alt }));
   }
 
   checkBarcode(value: string): Promise<{ valid: boolean; message: string }> {

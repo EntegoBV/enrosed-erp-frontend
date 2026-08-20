@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Product } from '../../core/api/models';
+import { Category, Product, ProductFamily } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Privacy } from '../../core/api/privacy';
@@ -84,9 +84,9 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
                   <div class="list-item__title">{{ product.name }}</div>
                   @if (!product.active) {
                     <span class="master-chip master-chip--muted">inactief</span>
-                  } @else if (product.publicationIssues?.length) {
+                  } @else if (publicationIssues(product).length) {
                     <span class="master-chip master-chip--warn">
-                      {{ product.publicationIssues.length }} aandacht
+                      {{ publicationIssues(product).length }} aandacht
                     </span>
                   }
                 </div>
@@ -94,21 +94,31 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
                   {{ product.sku }} · {{ sizeLabel(product) }}
                   @if (product.colour) { · {{ product.colour }} }
                 </div>
-                @if (product.active
-                    && (product.websiteStatus === 'PUBLISHED' || product.orderAppStatus === 'PUBLISHED')) {
+                @if (familyFor(product); as family) {
+                  <div class="list-item__family">
+                    <span>{{ family.name || family.familyKey }}</span>
+                    <small>{{ family.variantCount }} variant(en)</small>
+                  </div>
+                }
+                @if (publicationActive(product)
+                    && (websiteStatus(product) === 'PUBLISHED' || orderAppStatus(product) === 'PUBLISHED')) {
                   <div class="list-item__channels">
-                    @if (product.websiteStatus === 'PUBLISHED') {
+                    @if (websiteStatus(product) === 'PUBLISHED') {
                       <span class="master-chip master-chip--live">Website</span>
                     }
-                    @if (product.orderAppStatus === 'PUBLISHED') {
+                    @if (orderAppStatus(product) === 'PUBLISHED') {
                       <span class="master-chip master-chip--live">Orderapp</span>
                     }
                   </div>
                 }
                 <div class="list-item__meta">
-                  <span [class.warn-text]="product.stockQuantity <= 0">
-                    voorraad {{ product.stockQuantity | num }}
-                  </span>
+                  @if (product.inventoryKnown) {
+                    <span [class.warn-text]="product.stockQuantity <= 0">
+                      voorraad {{ product.stockQuantity | num }}
+                    </span>
+                  } @else {
+                    <span>voorraad onbekend</span>
+                  }
                 </div>
                 @if (privacy.showPurchase()) {
                   <div class="list-item__pricing" aria-label="Interne prijsinformatie">
@@ -125,7 +135,11 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
                 }
               </div>
               <div class="list-item__end">
-                <div class="strong num">{{ salesPrice(product) | eur }}</div>
+                @if (salesPrice(product); as price) {
+                  <div class="strong num">{{ price | eur }}</div>
+                } @else {
+                  <div class="strong muted">—</div>
+                }
                 <div class="tiny muted">
                   {{ product.carton.piecesPerCarton | num }}/doos
                   @if (product.photos.length > 1) { · {{ product.photos.length }} foto's }
@@ -211,6 +225,10 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
     .list-item__title-row .list-item__title { min-width: 0; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap; }
     .list-item__channels { display: flex; gap: 5px; margin-top: 3px; }
+    .list-item__family { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px;
+      margin-top: 3px; color: var(--ink-2); font-size: 10.5px; }
+    .list-item__family small { padding-left: 7px; border-left: 1px solid var(--line);
+      color: var(--muted); font-size: 9.5px; }
     .list-item__pricing {
       display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px;
       margin-top: 4px; color: var(--muted); font-size: 10.5px; line-height: 1.35;
@@ -236,18 +254,24 @@ export class ProductList {
 
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
+  readonly families = signal<ProductFamily[]>([]);
+  private readonly familyMap = computed(() =>
+    new Map(this.families().filter((family) => family.id !== null)
+      .map((family) => [family.id!, family])));
 
   constructor() {
     void this.load();
   }
 
   private async load(): Promise<void> {
-    const [products, categories] = await Promise.all([
+    const [products, categories, families] = await Promise.all([
       this.catalog.products(),
       this.catalog.categories(),
+      this.catalog.productFamilies().catch(() => []),
     ]);
     this.products.set(products);
     this.categories.set(categories);
+    this.families.set(families);
     this.loading.set(false);
   }
 
@@ -257,16 +281,17 @@ export class ProductList {
     const status = this.statusFilter();
     return this.products().filter((product) => {
       if (category !== null && product.categoryId !== category) return false;
-      if (status === 'NEEDS_WORK' && (!product.active || !product.publicationIssues?.length)) return false;
+      if (status === 'NEEDS_WORK' && (!product.active || !this.publicationIssues(product).length)) return false;
       if (status === 'WEBSITE'
-          && (!product.active || product.websiteStatus !== 'PUBLISHED')) return false;
+          && (!this.publicationActive(product) || this.websiteStatus(product) !== 'PUBLISHED')) return false;
       if (status === 'ORDER_APP'
-          && (!product.active || product.orderAppStatus !== 'PUBLISHED')) return false;
+          && (!this.publicationActive(product) || this.orderAppStatus(product) !== 'PUBLISHED')) return false;
       if (status === 'INACTIVE' && product.active) return false;
       if (!needle) return true;
       return [
         product.sku, product.name, product.colour,
         product.barcodeInner, product.barcodeOuter, product.hsCode,
+        this.familyFor(product)?.name, this.familyFor(product)?.familyKey,
       ].join(' ').toLowerCase().includes(needle);
     });
   });
@@ -287,11 +312,9 @@ export class ProductList {
     return `${trim(lengthCm)} × ${trim(widthCm)} × ${trim(heightCm)} cm`;
   }
 
-  /** Mirrors the server's active product pricing rule for list previews. */
-  salesPrice(product: Product): number {
-    if (this.hasFixedSalesPrice(product)) return product.fixedSalesPriceEur!;
-    const cost = product.landedCostEur ?? 0;
-    return Math.round(cost * (1 + (product.markupPct ?? 0) / 100) * 100) / 100;
+  /** The active price strategy is calculated once by the backend. */
+  salesPrice(product: Product): number | null {
+    return product.computedSalesPriceEur > 0 ? product.computedSalesPriceEur : null;
   }
 
   pricingStrategyLabel(product: Product): string {
@@ -303,7 +326,32 @@ export class ProductList {
   unitMargin(product: Product): { eur: number } | null {
     const landedCost = product.landedCostEur;
     if (landedCost === null || landedCost <= 0) return null;
-    return { eur: Math.round((this.salesPrice(product) - landedCost) * 100) / 100 };
+    const price = this.salesPrice(product);
+    if (price === null) return null;
+    return { eur: Math.round((price - landedCost) * 100) / 100 };
+  }
+
+  familyFor(product: Product): ProductFamily | null {
+    if (product.familyId != null) return this.familyMap().get(product.familyId) ?? null;
+    return product.familyKey
+      ? this.families().find((family) => family.familyKey === product.familyKey) ?? null
+      : null;
+  }
+
+  publicationIssues(product: Product): string[] {
+    return this.familyFor(product)?.publicationIssues ?? product.publicationIssues ?? [];
+  }
+
+  websiteStatus(product: Product): Product['websiteStatus'] {
+    return this.familyFor(product)?.websiteStatus ?? product.websiteStatus;
+  }
+
+  orderAppStatus(product: Product): Product['orderAppStatus'] {
+    return this.familyFor(product)?.orderAppStatus ?? product.orderAppStatus;
+  }
+
+  publicationActive(product: Product): boolean {
+    return product.active && (this.familyFor(product)?.active ?? true);
   }
 
   private hasFixedSalesPrice(product: Product): boolean {

@@ -4,7 +4,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, Product, Supplier } from '../../core/api/models';
+import { Category, Product, ProductFamily, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -88,10 +88,15 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 </div>
                 <div>
                   <span>Voorraad</span>
-                  <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
-                    {{ product.stockQuantity | num }}
-                  </strong>
-                  <small>stuks</small>
+                  @if (product.inventoryKnown) {
+                    <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
+                      {{ product.stockQuantity | num }}
+                    </strong>
+                    <small>stuks</small>
+                  } @else {
+                    <strong>—</strong>
+                    <small>nog niet bevestigd</small>
+                  }
                 </div>
               </div>
 
@@ -100,38 +105,47 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 @if (product.sku) { <span><b>SKU</b><span class="mono">{{ product.sku }}</span></span> }
               </div>
 
-              @if (product.description) {
-                <p class="product-copy">{{ product.description }}</p>
-              } @else {
-                <p class="product-copy product-copy--empty">Nog geen klantgerichte beschrijving.</p>
-              }
-
               <div class="publication-strip">
                 <div class="publication-strip__main">
                   <span>Publicatie</span>
-                  <strong>{{ publicationSummary(product) }}</strong>
-                  @if (product.publicHandle) {
-                    <small class="mono">/{{ product.publicHandle }}</small>
+                  <strong>{{ publicationSummary() }}</strong>
+                  @if (publicHandle()) {
+                    <small class="mono">/products/{{ publicHandle() }}</small>
                   }
                 </div>
                 <div class="publication-strip__states" aria-label="Verkoopkanalen">
-                  <span [class.live]="product.active && product.websiteStatus === 'PUBLISHED'">
+                  <span [class.live]="publicationActive() && websiteStatus() === 'PUBLISHED'">
                     Website
                   </span>
-                  <span [class.live]="product.active && product.orderAppStatus === 'PUBLISHED'">
+                  <span [class.live]="publicationActive() && orderAppStatus() === 'PUBLISHED'">
                     Orderapp
                   </span>
                 </div>
               </div>
 
-              @if (product.publicationIssues?.length) {
+              @if (publicationIssues().length) {
                 <div class="publication-alert">
                   <span aria-hidden="true">!</span>
                   <div>
-                    <b>{{ product.publicationIssues.length }} punt(en) voor publicatie</b>
-                    <p>{{ product.publicationIssues.join(' · ') }}</p>
+                    <b>{{ publicationIssues().length }} punt(en) voor publicatie</b>
+                    <p>Open Bewerken en daarna Website &amp; publicatie om ze op te lossen.</p>
                   </div>
                 </div>
+              }
+
+              @if (family(); as family) {
+                <details class="website-preview">
+                  <summary>Website-informatie bekijken</summary>
+                  <div>
+                    <b>{{ family.name }}</b>
+                    @if (family.summary) { <p>{{ family.summary }}</p> }
+                    @if (family.description) { <p>{{ family.description }}</p> }
+                    <small>
+                      {{ family.collectionKey || family.categoryName || 'Geen collectie' }}
+                      · {{ family.variantCount }} variant(en)
+                    </small>
+                  </div>
+                </details>
               }
             </div>
           </section>
@@ -146,7 +160,9 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 <div><dt>Leverancier</dt><dd>{{ supplierName() || '—' }}</dd></div>
                 <div><dt>Afmeting</dt><dd class="num">{{ size(product.dimensions) }}</dd></div>
                 <div><dt>Barcode stuk</dt><dd class="mono">{{ product.barcodeInner || '—' }}</dd></div>
-                @if (product.familyKey) {
+                @if (family(); as family) {
+                  <div><dt>Productfamilie</dt><dd>{{ family.name }} <span class="mono">· {{ family.familyKey }}</span></dd></div>
+                } @else if (product.familyKey) {
                   <div><dt>Productfamilie</dt><dd class="mono">{{ product.familyKey }}</dd></div>
                 }
               </dl>
@@ -305,6 +321,15 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
       border-radius: 50%; background: var(--warn); color: #fff; font-size: 12px; font-weight: 800; }
     .publication-alert b { font-size: 11.5px; }
     .publication-alert p { margin-top: 1px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+    .website-preview { margin-top: 9px; overflow: hidden; border: 1px solid var(--line);
+      border-radius: var(--r-sm); background: var(--surface-2); }
+    .website-preview summary { padding: 10px 12px; color: var(--ink-2); font-size: 11px;
+      font-weight: 680; cursor: pointer; }
+    .website-preview > div { padding: 0 12px 12px; }
+    .website-preview b { font-size: 12px; }
+    .website-preview p { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.5;
+      white-space: pre-line; }
+    .website-preview small { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; }
 
     .details-grid { display: grid; gap: 12px; margin-top: 14px; }
     .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);
@@ -346,6 +371,7 @@ export class ProductView {
   readonly privacy = inject(Privacy);
 
   readonly product = signal<Product | null>(null);
+  readonly family = signal<ProductFamily | null>(null);
   private readonly categories = signal<Category[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);
 
@@ -357,14 +383,19 @@ export class ProductView {
   readonly displayPrice = computed(() => {
     const product = this.product();
     if (!product) return null;
-    if (this.hasFixedSalesPrice(product)) {
-      return product.fixedSalesPriceEur;
-    }
-    const landedCost = product.landedCostEur;
-    if (landedCost === null || landedCost <= 0) return null;
-    const calculated = landedCost * (1 + (product.markupPct ?? 0) / 100);
-    return Math.round(calculated * 100) / 100;
+    return product.computedSalesPriceEur > 0 ? product.computedSalesPriceEur : null;
   });
+
+  readonly publicHandle = computed(() =>
+    this.family()?.publicHandle || this.product()?.publicHandle || null);
+  readonly websiteStatus = computed(() =>
+    this.family()?.websiteStatus ?? this.product()?.websiteStatus ?? 'DRAFT');
+  readonly orderAppStatus = computed(() =>
+    this.family()?.orderAppStatus ?? this.product()?.orderAppStatus ?? 'DRAFT');
+  readonly publicationActive = computed(() =>
+    this.family()?.active ?? this.product()?.active ?? false);
+  readonly publicationIssues = computed(() =>
+    this.family()?.publicationIssues ?? this.product()?.publicationIssues ?? []);
 
   readonly margin = computed(() => {
     const price = this.displayPrice();
@@ -391,6 +422,11 @@ export class ProductView {
       this.categories.set(categories);
       this.suppliers.set(suppliers);
       this.activePhotoIndex.set(0);
+      if (product.familyId != null) {
+        void this.catalog.productFamily(product.familyId)
+          .then((family) => this.family.set(family))
+          .catch(() => this.family.set(null));
+      }
     });
   }
 
@@ -411,15 +447,15 @@ export class ProductView {
     return [product.sku, formatted].filter(Boolean).join(' · ');
   }
 
-  publicationSummary(product: Product): string {
-    if (!product.active) return 'Inactief';
+  publicationSummary(): string {
+    if (!this.publicationActive()) return 'Inactief';
     const live = [
-      product.websiteStatus === 'PUBLISHED' ? 'website' : null,
-      product.orderAppStatus === 'PUBLISHED' ? 'orderapp' : null,
+      this.websiteStatus() === 'PUBLISHED' ? 'website' : null,
+      this.orderAppStatus() === 'PUBLISHED' ? 'orderapp' : null,
     ].filter(Boolean);
     if (live.length) return `Live op ${live.join(' en ')}`;
-    if (product.publicationIssues?.length) return 'Nog niet compleet';
-    if (product.websiteStatus === 'READY' || product.orderAppStatus === 'READY') {
+    if (this.publicationIssues().length) return 'Nog niet compleet';
+    if (this.websiteStatus() === 'READY' || this.orderAppStatus() === 'READY') {
       return 'Klaar om te publiceren';
     }
     return 'Concept';

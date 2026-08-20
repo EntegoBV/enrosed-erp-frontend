@@ -83,8 +83,8 @@ interface FreightHorizon {
           <div class="kpi__label">Catalogus</div>
           <div class="kpi__value">{{ productCount() }}</div>
           <div class="kpi__meta">
-            @if (catalogAttention()) { {{ catalogAttention() }} met aandacht }
-            @else { productmaster compleet }
+            @if (catalogAttention()) { {{ catalogAttention() }} families met aandacht }
+            @else { {{ variantCount() }} kleurvarianten }
           </div>
         </a>
       </div>
@@ -106,7 +106,7 @@ interface FreightHorizon {
            style="text-decoration:none;color:inherit">
           <span class="alert__icon">◈</span>
           <div>
-            <b>{{ catalogAttention() }} product(en)</b> missen nog informatie voor website of
+            <b>{{ catalogAttention() }} productfamilie(s)</b> missen nog informatie voor website of
             orderapp. Tik om de productmaster af te werken.
           </div>
         </a>
@@ -1243,6 +1243,7 @@ export class Dashboard {
   readonly purchases = signal<PurchaseOrderView[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly productCount = signal(0);
+  readonly variantCount = signal(0);
   readonly catalogAttention = signal(0);
   readonly loading = signal(true);
 
@@ -1256,16 +1257,20 @@ export class Dashboard {
     void this.fx.load();
     void this.loadFreightMarket();
 
-    const [orders, purchases, revisions, products] = await Promise.all([
+    const [orders, purchases, revisions, products, families] = await Promise.all([
       this.sales.orders(), this.sourcing.purchaseOrders(),
       this.sales.pendingRevisions(), this.catalog.products(),
+      this.catalog.productFamilies().catch(() => []),
     ]);
     this.salesOrders.set(orders);
     this.purchases.set(purchases.slice(0, 5));
     this.revisions.set(revisions);
-    this.productCount.set(products.length);
-    this.catalogAttention.set(products.filter((product) =>
-      product.active && (product.publicationIssues?.length ?? 0) > 0).length);
+    this.productCount.set(families.length || products.length);
+    this.variantCount.set(products.length);
+    this.catalogAttention.set(families.length
+      ? families.filter((family) => family.active && family.publicationIssues.length > 0).length
+      : products.filter((product) =>
+        product.active && (product.publicationIssues?.length ?? 0) > 0).length);
     this.loading.set(false);
   }
 

@@ -161,7 +161,15 @@ export interface ProductDraft {
               }
             </div>
 
-            @if (!hasEnoughStock()) {
+            @if (!product.inventoryKnown) {
+              <div class="alert alert--warn mt-8">
+                <span class="alert__icon">?</span>
+                <div>
+                  <b>Voorraad nog niet bevestigd.</b>
+                  Controleer de levertermijn voordat je deze regel aan de klant toezegt.
+                </div>
+              </div>
+            } @else if (!hasEnoughStock()) {
               <div class="alert alert--warn mt-8">
                 <span class="alert__icon">!</span>
                 <div>
@@ -272,6 +280,7 @@ export interface ProductDraft {
     .stock-dot--none { background: var(--danger); }
     .stock-dot--low { background: var(--warn); }
     .stock-dot--ok { background: var(--ok); }
+    .stock-dot--unknown { background: var(--muted); }
 
     .picker-chosen {
       border: 1px solid var(--line-strong);
@@ -286,7 +295,7 @@ export class ProductPicker implements OnDestroy {
   readonly products = input.required<Product[]>();
   /** The price to display; the caller decides which one that is. */
   readonly priceOf = input<(product: Product) => number>((product) =>
-    product.fixedSalesPriceEur ?? 0);
+    product.computedSalesPriceEur);
   /**
    * Whether quantities snap to full cartons.
    *
@@ -370,17 +379,19 @@ export class ProductPicker implements OnDestroy {
   /** Enough stock for what is being asked? */
   readonly hasEnoughStock = computed(() => {
     const product = this.chosen();
-    return product ? product.stockQuantity >= this.carton.value() : true;
+    return product ? !product.inventoryKnown || product.stockQuantity >= this.carton.value() : true;
   });
 
   /** Grof niveau voor de stip: leeg, krap of ruim. */
-  stockLevel(product: Product): 'none' | 'low' | 'ok' {
+  stockLevel(product: Product): 'none' | 'low' | 'ok' | 'unknown' {
+    if (!product.inventoryKnown) return 'unknown';
     if (product.stockQuantity <= 0) return 'none';
     /* Under ten cartons we call tight; below that you run out fast. */
     return product.stockQuantity < (product.carton.piecesPerCarton ?? 1) * 10 ? 'low' : 'ok';
   }
 
   stockLabel(product: Product): string {
+    if (!product.inventoryKnown) return 'voorraad nog niet bevestigd';
     if (product.stockQuantity <= 0) return 'geen voorraad — op bestelling';
     return `${product.stockQuantity.toLocaleString('nl-BE')} op voorraad`;
   }
