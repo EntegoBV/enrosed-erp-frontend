@@ -242,6 +242,31 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               <app-sparkline class="market-row__spark" [values]="wciSeries()" />
             </button>
           }
+          <!-- Index rows: points, not dollars. The trend is the signal;
+               the forwarder quote below stays the price. -->
+          @for (index of marketIndices; track index.code) {
+            @if (latestFor(index.code); as latest) {
+              <button class="market-row market-row--btn" type="button"
+                      (click)="openHistory(index.code, index.title, '')">
+                <div>
+                  <div class="market-row__label">{{ index.label }}</div>
+                  <div class="market-row__value num">{{ latest.usdPerContainer | num: 0 }}
+                    <span class="tiny muted">ptn</span>
+                    @if (indexChange(index.code); as change) {
+                      <span class="badge"
+                            [class]="change <= 0 ? 'badge--ok' : 'badge--warn'">
+                        {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%
+                      </span>
+                    }
+                  </div>
+                  <div class="tiny muted">{{ index.sub }} · {{ latest.quotedOn }}</div>
+                </div>
+                @if (seriesFor(index.code).length > 1) {
+                  <app-sparkline class="market-row__spark" [values]="seriesFor(index.code)" />
+                }
+              </button>
+            }
+          }
           @for (route of ownRoutes; track route.code) {
             <button class="market-row market-row--btn" type="button"
                     [attr.aria-label]="freightRouteAriaLabel(route)"
@@ -503,6 +528,28 @@ export class Dashboard {
     return this.freightRates()
         .filter((rate) => rate.route === route)
         .map((rate) => rate.usdPerContainer);
+  }
+
+  /* The two public weekly indices next to the own forwarder quotes.
+     CCFI covers the whole Chinese coast per destination; NCFI is the
+     Ningbo-departure composite - the closest open numbers to
+     "Ningbo/Guangzhou/Shenzhen -> Europe", since no per-port index is
+     published publicly. */
+  readonly marketIndices = [
+    { code: 'CCFI CN-EUR', label: 'China → Europa · CCFI',
+      title: 'CCFI Europa-route · indexpunten',
+      sub: 'alle Chinese havens · wekelijks' },
+    { code: 'NCFI NINGBO', label: 'Ningbo · NCFI-composiet',
+      title: 'NCFI composiet · indexpunten',
+      sub: 'vertrek Ningbo, alle routes · wekelijks' },
+  ];
+
+  /** Week-over-week change of an index, when two entries exist. */
+  indexChange(route: string): number | null {
+    const series = this.seriesFor(route);
+    if (series.length < 2) return null;
+    const previous = series[series.length - 2];
+    return ((series[series.length - 1] - previous) / previous) * 100;
   }
 
   latestFor(route: string): FreightRate | null {
