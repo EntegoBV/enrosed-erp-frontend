@@ -1746,3 +1746,7 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
 .index-chip em { font-style: normal; font-size: 10.5px; }
 .index-chip em.down { color: var(--ok, #2e7d4f); }
 .index-chip em.up { color: var(--warn, #a85e10); }
+
+.index-chip--tap { cursor: pointer; }
+.index-chip--tap:active { background: var(--line); }
+.index-link { text-decoration: underline; cursor: pointer; }

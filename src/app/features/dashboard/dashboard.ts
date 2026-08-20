@@ -291,8 +291,12 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 @if (latestFor(route.code); as latest) {
                   <div class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}
                     @if (route.indexCode && latestFor(route.indexCode); as index) {
-                      <span class="index-chip"
-                            [title]="route.indexName + ' · vertrek ' + route.label">
+                      <span class="index-chip index-chip--tap" role="button" tabindex="0"
+                            [title]="route.indexName + ' — tik voor historiek'"
+                            (click)="$event.stopPropagation();
+                                     openHistory(route.indexCode!, route.indexTitle!, '')"
+                            (keydown.enter)="$event.stopPropagation();
+                                     openHistory(route.indexCode!, route.indexTitle!, '')">
                         {{ route.indexName }} {{ index.usdPerContainer | num: 0 }} ptn
                         @if (indexChange(route.indexCode); as change) {
                           <em [class.up]="change > 0" [class.down]="change <= 0">
@@ -305,10 +309,16 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 } @else {
                   <div class="tiny muted">Nog geen forwarderofferte
                     @if (route.indexCode && latestFor(route.indexCode); as index) {
-                      · markt: {{ route.indexName }} {{ index.usdPerContainer | num: 0 }} ptn
-                      @if (indexChange(route.indexCode); as change) {
-                        ({{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%)
-                      }
+                      · <span class="index-link" role="button" tabindex="0"
+                              (click)="$event.stopPropagation();
+                                       openHistory(route.indexCode!, route.indexTitle!, '')"
+                              (keydown.enter)="$event.stopPropagation();
+                                       openHistory(route.indexCode!, route.indexTitle!, '')">
+                        markt: {{ route.indexName }} {{ index.usdPerContainer | num: 0 }} ptn
+                        @if (indexChange(route.indexCode); as change) {
+                          ({{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%)
+                        }
+                      </span>
                     }
                   </div>
                   <div class="strong">Tarief noteren <span aria-hidden="true">›</span></div>
@@ -423,6 +433,26 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     @if (historyRoute(); as history) {
       <app-sheet [title]="history.label" (closed)="historyRoute.set(null)">
         <div body>
+          @if (rateHorizons(history.code).length) {
+            <!-- Same reading as the FX tiles: is it cheaper now than then?
+                 For freight a falling number is the green one. -->
+            <div class="hgrid" style="margin-bottom:8px">
+              @for (h of rateHorizons(history.code); track h.label) {
+                <div class="hgrid__cell">
+                  <span class="hgrid__label">{{ h.label }}</span>
+                  <span class="hgrid__value"
+                        [class.hgrid__value--good]="h.pct <= 0"
+                        [class.hgrid__value--bad]="h.pct > 0">
+                    {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                  </span>
+                  <span class="hgrid__word">{{ h.pct > 0 ? 'duurder' : 'goedkoper' }}</span>
+                </div>
+              }
+            </div>
+            <p class="tiny muted" style="margin:0 0 10px">
+              {{ horizonNote(history.code) }}
+            </p>
+          }
           @for (rate of historyFor(history.code); track rate.id) {
             <div class="market-row">
               <div>
@@ -456,9 +486,14 @@ export class Dashboard {
   /* indexCode couples a port row to its public weekly index, so the own
      USD quote and the market's points sit side by side on one row. */
   readonly ownRoutes = [
-    { code: 'NINGBO', label: 'Ningbo', indexCode: 'NCFI NINGBO', indexName: 'NCFI' },
-    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', indexCode: null, indexName: null },
-    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', indexCode: null, indexName: null },
+    { code: 'NINGBO', label: 'Ningbo', indexCode: 'NCFI NINGBO', indexName: 'NCFI',
+      indexTitle: 'NCFI composiet · vertrek Ningbo · indexpunten' },
+    /* No public per-port index exists for South China; the whole-coast
+       CCFI is the honest market context for both. */
+    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', indexCode: 'CCFI CN-EUR',
+      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten' },
+    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', indexCode: 'CCFI CN-EUR',
+      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten' },
   ];
   readonly freightRates = signal<FreightRate[]>([]);
   readonly rateSheet = signal(false);
@@ -511,6 +546,55 @@ export class Dashboard {
     }
     /* The last tick sits too close to the right edge to stay readable. */
     return ticks.filter((tick) => tick.pct < 90);
+  }
+
+  /**
+   * Change versus roughly 1, 3, 6 and 12 months back, computed from the
+   * DATED entries of a route - the log is weekly-ish with holes (holiday
+   * weeks have no reprint), so each horizon looks for the entry closest
+   * to its target date and gives up beyond three weeks' distance rather
+   * than compare against a wrong era. Horizons without data simply do
+   * not render; nothing is interpolated or invented.
+   */
+  rateHorizons(code: string): { label: string; pct: number }[] {
+    const entries = this.freightRates()
+        .filter((rate) => rate.route === code)
+        .slice()
+        .sort((a, b) => a.quotedOn.localeCompare(b.quotedOn));
+    if (entries.length < 2) return [];
+    const latest = entries[entries.length - 1];
+    const latestDate = new Date(latest.quotedOn).getTime();
+    const day = 24 * 3600 * 1000;
+
+    const result: { label: string; pct: number }[] = [];
+    for (const horizon of [
+      { label: '1 mnd', days: 30 },
+      { label: '3 mnd', days: 91 },
+      { label: '6 mnd', days: 182 },
+      { label: '12 mnd', days: 365 },
+    ]) {
+      const target = latestDate - horizon.days * day;
+      let best: { distance: number; value: number } | null = null;
+      for (const entry of entries.slice(0, -1)) {
+        const distance = Math.abs(new Date(entry.quotedOn).getTime() - target);
+        if (!best || distance < best.distance) {
+          best = { distance, value: entry.usdPerContainer };
+        }
+      }
+      if (!best || best.distance > 21 * day) continue;
+      result.push({
+        label: horizon.label,
+        pct: ((latest.usdPerContainer - best.value) / best.value) * 100,
+      });
+    }
+    return result;
+  }
+
+  horizonNote(code: string): string {
+    const entries = this.freightRates().filter((rate) => rate.route === code);
+    const missing = 4 - this.rateHorizons(code).length;
+    const base = `t.o.v. de dichtstbijzijnde notering per periode · ${entries.length} noteringen`;
+    return missing > 0 ? `${base} · langere periodes volgen zodra er historiek is` : base;
   }
 
   openHistory(code: string, label: string, unit: string): void {
