@@ -1732,3 +1732,17 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
 .hgrid__value--bad { color: var(--warn, #a85e10); }
 .hgrid__value--missing { color: var(--muted); }
 .hgrid__word { font-size: 10px; color: var(--muted); }
+
+/* Market index next to the own USD quote on one row. */
+.index-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-left: 8px; padding: 2px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px; font-weight: 600; color: var(--ink-2);
+  vertical-align: 2px;
+}
+.index-chip em { font-style: normal; font-size: 10.5px; }
+.index-chip em.down { color: var(--ok, #2e7d4f); }
+.index-chip em.up { color: var(--warn, #a85e10); }

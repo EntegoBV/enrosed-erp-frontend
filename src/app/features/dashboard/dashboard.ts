@@ -238,7 +238,12 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         <div class="card__body">
           <div class="market-hint" style="margin:0 0 8px" role="note">
             <strong>USD per 40ft-container.</strong> Shanghai is de wekelijkse
-            Drewry-marktbenchmark. De andere routes tonen je exacte forwarderoffertes.
+            Drewry-marktbenchmark; de havenroutes tonen je exacte forwarderoffertes.
+            <strong>CCFI</strong> (China Containerized Freight Index) meet heel de
+            Chinese kust → Europa, <strong>NCFI</strong> (Ningbo Containerized
+            Freight Index) het vertrek uit Ningbo — in punten t.o.v. het basisjaar
+            (1000): niet de prijs maar de richting. Daalt de index, dan hoort je
+            volgende offerte mee te dalen.
           </div>
           @if (wciSeries().length) {
             <button class="market-row market-row--btn" type="button"
@@ -284,10 +289,28 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               <div>
                 <div class="market-row__label">{{ route.label }} → Rotterdam</div>
                 @if (latestFor(route.code); as latest) {
-                  <div class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}</div>
+                  <div class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}
+                    @if (route.indexCode && latestFor(route.indexCode); as index) {
+                      <span class="index-chip"
+                            [title]="route.indexName + ' · vertrek ' + route.label">
+                        {{ route.indexName }} {{ index.usdPerContainer | num: 0 }} ptn
+                        @if (indexChange(route.indexCode); as change) {
+                          <em [class.up]="change > 0" [class.down]="change <= 0">
+                            {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%</em>
+                        }
+                      </span>
+                    }
+                  </div>
                   <div class="tiny muted">exacte forwarderofferte · {{ latest.quotedOn }} · 40ft</div>
                 } @else {
-                  <div class="tiny muted">Nog geen forwarderofferte</div>
+                  <div class="tiny muted">Nog geen forwarderofferte
+                    @if (route.indexCode && latestFor(route.indexCode); as index) {
+                      · markt: {{ route.indexName }} {{ index.usdPerContainer | num: 0 }} ptn
+                      @if (indexChange(route.indexCode); as change) {
+                        ({{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%)
+                      }
+                    }
+                  </div>
                   <div class="strong">Tarief noteren <span aria-hidden="true">›</span></div>
                 }
               </div>
@@ -430,10 +453,12 @@ export class Dashboard {
 
   /* ---- freight-rate log --------------------------------------------- */
 
+  /* indexCode couples a port row to its public weekly index, so the own
+     USD quote and the market's points sit side by side on one row. */
   readonly ownRoutes = [
-    { code: 'NINGBO', label: 'Ningbo' },
-    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)' },
-    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)' },
+    { code: 'NINGBO', label: 'Ningbo', indexCode: 'NCFI NINGBO', indexName: 'NCFI' },
+    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', indexCode: null, indexName: null },
+    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', indexCode: null, indexName: null },
   ];
   readonly freightRates = signal<FreightRate[]>([]);
   readonly rateSheet = signal(false);
@@ -548,9 +573,6 @@ export class Dashboard {
     { code: 'CCFI CN-EUR', label: 'China → Europa · CCFI',
       title: 'CCFI Europa-route · indexpunten',
       sub: 'alle Chinese havens · wekelijks' },
-    { code: 'NCFI NINGBO', label: 'Ningbo · NCFI-composiet',
-      title: 'NCFI composiet · indexpunten',
-      sub: 'vertrek Ningbo, alle routes · wekelijks' },
   ];
 
   /** Week-over-week change of an index, when two entries exist. */
