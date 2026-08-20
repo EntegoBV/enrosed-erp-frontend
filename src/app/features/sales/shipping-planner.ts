@@ -97,7 +97,8 @@ export type ShippingPalletAction =
       </section>
 
       @if (loadMode() === 'PALLETS') {
-        <section class="calculation" aria-labelledby="pallet-result-title">
+        @if (!view().order.pallets.length) {
+          <section class="calculation" aria-labelledby="pallet-result-title">
           <div class="calculation__head">
             <div>
               <span class="eyebrow">Voorstel</span>
@@ -116,11 +117,22 @@ export type ShippingPalletAction =
             Dozen per laag × lagen binnen {{ maxPalletHeightCm() | num }} cm,
             begrensd door gewicht. De pallet van {{ palletBaseHeightCm() | num }} cm telt mee.
           </p>
+          @if (invalidPalletLines().length) {
+            <div class="layout-warning invalid-fit" id="invalid-pallet-fit" role="alert">
+              <strong>Zelf aanpassen is nog niet mogelijk</strong>
+              <span>
+                Controleer omdoosafmetingen, gewicht of laadhoogte voor
+                {{ invalidPalletLineNames() }}.
+              </span>
+            </div>
+          }
 
           <details class="pallet-settings">
             <summary>
-              <span>{{ palletProfileLabel() }}</span>
-              <small>Pallettype · max. {{ maxPalletHeightCm() | num }} cm</small>
+              <span>
+                <strong>Berekeningsinstellingen</strong>
+                <small>{{ palletProfileLabel() }} · max. {{ maxPalletHeightCm() | num }} cm</small>
+              </span>
             </summary>
             <div class="pallet-settings__body">
               <div class="field-row">
@@ -174,148 +186,155 @@ export type ShippingPalletAction =
             </div>
           </details>
 
-          <details class="manual-layout">
-            <summary>
-              <span>
-                <strong>Zelf aanpassen</strong>
-                <small>Begin met het automatische voorstel en pas alleen uitzonderingen aan</small>
+          <div class="manual-start">
+            <span>
+              <strong>Uitzondering in de indeling?</strong>
+              <small>Maak van dit voorstel direct een bewerkbare palletlijst.</small>
+            </span>
+            <button class="btn btn--primary" type="button"
+                    [disabled]="!canEdit() || !view().priced.lines.length
+                      || invalidPalletLines().length > 0"
+                    [attr.aria-describedby]="invalidPalletLines().length
+                      ? 'invalid-pallet-fit' : null"
+                    (click)="action.emit({ type: 'auto-layout' })">
+              Zelf aanpassen
+            </button>
+          </div>
+        </section>
+        } @else {
+          <section class="calculation manual-workspace" aria-labelledby="manual-layout-title">
+            <div class="calculation__head manual-workspace__head">
+              <div>
+                <span class="eyebrow">Verzendindeling</span>
+                <h3 id="manual-layout-title">Zelf ingedeeld</h3>
+                <p>
+                  {{ view().order.pallets.length }}
+                  {{ view().order.pallets.length === 1 ? 'pallet' : 'pallets' }} ·
+                  pas alleen de uitzonderingen aan
+                </p>
+              </div>
+              <span class="layout-badge" [class.layout-badge--warn]="!layoutOk()">
+                {{ layoutOk() ? 'compleet' : layoutStatus() }}
               </span>
-              @if (view().order.pallets.length) {
-                <span class="layout-badge" [class.layout-badge--warn]="!layoutOk()">
-                  {{ layoutOk() ? 'compleet' : layoutStatus() }}
-                </span>
-              }
-            </summary>
-            <div class="manual-layout__body">
-              @if (!view().order.pallets.length) {
-                <div class="empty-layout">
-                  <p>
-                    Neem de automatische indeling over als startvoorstel. Daarna kun je dozen
-                    verplaatsen, pallets splitsen of een gemeten hoogte invullen.
-                  </p>
-                  <button class="btn btn--primary btn--block" type="button"
-                          [disabled]="!canEdit()" (click)="action.emit({ type: 'auto-layout' })">
-                    Voorstel overnemen
-                  </button>
-                  <button class="btn btn--block mt-8" type="button" [disabled]="!canEdit()"
-                          (click)="action.emit({ type: 'add-pallet' })">Lege pallet toevoegen</button>
-                </div>
-              } @else {
-                @if (!layoutOk()) {
-                  <div class="layout-warning" role="status">{{ layoutStatus() }}.</div>
-                }
-                @for (pallet of view().order.pallets; track pallet.id ?? pi; let pi = $index) {
-                  <details class="pallet-card">
-                    <summary>
-                      <span class="pallet-card__number">{{ pi + 1 }}</span>
-                      <span class="pallet-card__title">
-                        <strong>{{ pallet.label || 'Pallet ' + (pi + 1) }}</strong>
-                        <small>
-                          {{ palletCartons(pallet) | num }}
-                          {{ palletCartons(pallet) === 1 ? 'doos' : 'dozen' }}
-                          @if (pallet.heightCm) { · {{ pallet.heightCm | num }} cm }
-                        </small>
-                      </span>
-                      <span class="pallet-card__chev" aria-hidden="true">⌄</span>
-                    </summary>
-                    <div class="pallet-card__body">
-                      <div class="pallet-card__meta">
-                        <div class="field-row">
-                          <label [for]="'pallet-label-' + pi">Naam</label>
-                          <input class="input" [id]="'pallet-label-' + pi" [value]="pallet.label"
-                                 [disabled]="!canEdit()"
-                                 (change)="renamePallet(pi, $any($event.target).value)" />
-                        </div>
-                        <div class="field-row">
-                          <label [for]="'pallet-type-' + pi">Type</label>
-                          <select class="select" [id]="'pallet-type-' + pi" [value]="pallet.type"
-                                  [disabled]="!canEdit()"
-                                  (change)="setPalletType(pi, $any($event.target).value)">
-                            <option value="Europallet">Europallet · 120 × 80</option>
-                            <option value="Blokpallet 100×120">Blokpallet · 120 × 100</option>
-                            <option value="Halve pallet 60×80">Halve pallet · 80 × 60</option>
-                          </select>
-                        </div>
-                        <div class="height-row height-row--pallet">
-                          <div>
-                            <label [for]="'pallet-height-' + pi">Gemeten hoogte</label>
-                            <small>Optioneel; leeg gebruikt de berekening.</small>
-                          </div>
-                          <div class="height-input">
-                            <input class="input num" [id]="'pallet-height-' + pi" type="number"
-                                   [attr.min]="minimumManualHeightCm()"
-                                   [attr.max]="maximumManualHeightCm()" inputmode="numeric"
-                                   [value]="pallet.heightCm ?? ''" [disabled]="!canEdit()"
-                                   placeholder="auto"
-                                   (change)="setPalletHeight(pi, $any($event.target).value)" />
-                            <span>cm</span>
-                          </div>
-                        </div>
-                      </div>
+            </div>
 
-                      <div class="pallet-products">
-                        @for (item of pallet.items; track item.productId) {
-                          <div class="pallet-product">
-                            <span class="pallet-product__name">{{ productLabel(item.productId) }}</span>
-                            <div class="stepper" aria-label="Aantal dozen">
-                              <button type="button" [disabled]="!canEdit()"
-                                      [attr.aria-label]="'Doos verwijderen bij ' + productLabel(item.productId)"
-                                      (click)="setItemCartons(pi, item.productId, item.cartons - 1)">−</button>
-                              <input type="number" min="0" inputmode="numeric" [value]="item.cartons"
-                                     [disabled]="!canEdit()"
-                                     [attr.aria-label]="'Dozen ' + productLabel(item.productId)"
-                                     (change)="setItemCartons(pi, item.productId,
-                                               +$any($event.target).value)" />
-                              <button type="button" [disabled]="!canEdit() || remainingFor(item.productId) <= 0"
-                                      [attr.aria-label]="'Doos toevoegen bij ' + productLabel(item.productId)"
-                                      (click)="setItemCartons(pi, item.productId, item.cartons + 1)">+</button>
-                            </div>
-                          </div>
-                        }
-                        @if (assignable(pi).length) {
-                          <select class="select add-product" aria-label="Product op pallet zetten"
-                                  [disabled]="!canEdit()"
-                                  (change)="addItem(pi, +$any($event.target).value);
-                                            $any($event.target).selectedIndex = 0">
-                            <option value="" selected disabled>Product toevoegen…</option>
-                            @for (line of assignable(pi); track line.productId) {
-                              <option [value]="line.productId">
-                                {{ line.description }} · {{ line.remaining }} dozen over
-                              </option>
-                            }
-                          </select>
-                        }
-                      </div>
+            @if (!layoutOk()) {
+              <div class="layout-warning" role="status">{{ layoutStatus() }}.</div>
+            }
 
-                      <div class="pallet-card__actions">
-                        <button type="button" aria-label="Pallet omhoog" [disabled]="!canEdit() || pi === 0"
-                                (click)="movePallet(pi, -1)">↑</button>
-                        <button type="button" aria-label="Pallet omlaag"
-                                [disabled]="!canEdit() || pi === view().order.pallets.length - 1"
-                                (click)="movePallet(pi, 1)">↓</button>
-                        <span></span>
-                        <button class="danger-action" type="button" [disabled]="!canEdit()"
-                                (click)="action.emit({ type: 'remove-pallet', index: pi })">
-                          Verwijderen
-                        </button>
+            <div class="manual-toolbar" aria-label="Acties voor eigen palletindeling">
+              <button class="manual-toolbar__add" type="button" [disabled]="!canEdit()"
+                      (click)="action.emit({ type: 'add-pallet' })">
+                <span aria-hidden="true">＋</span> Pallet toevoegen
+              </button>
+              <button class="manual-toolbar__reset" type="button" [disabled]="!canEdit()"
+                      (click)="returnToAutomatic()">
+                Terug naar automatisch voorstel
+              </button>
+            </div>
+
+            <div class="pallet-list">
+              @for (pallet of view().order.pallets; track pallet.id ?? pi; let pi = $index) {
+                <details class="pallet-card">
+                  <summary>
+                    <span class="pallet-card__number">{{ pi + 1 }}</span>
+                    <span class="pallet-card__title">
+                      <strong>{{ pallet.label || 'Pallet ' + (pi + 1) }}</strong>
+                      <small>
+                        {{ palletCartons(pallet) | num }}
+                        {{ palletCartons(pallet) === 1 ? 'doos' : 'dozen' }}
+                        @if (pallet.heightCm) { · {{ pallet.heightCm | num }} cm }
+                      </small>
+                    </span>
+                    <span class="pallet-card__chev" aria-hidden="true">⌄</span>
+                  </summary>
+                  <div class="pallet-card__body">
+                    <div class="pallet-card__meta">
+                      <div class="field-row">
+                        <label [for]="'pallet-label-' + pi">Naam</label>
+                        <input class="input" [id]="'pallet-label-' + pi" [value]="pallet.label"
+                               [disabled]="!canEdit()"
+                               (change)="renamePallet(pi, $any($event.target).value)" />
+                      </div>
+                      <div class="field-row">
+                        <label [for]="'pallet-type-' + pi">Pallettype voor deze pallet</label>
+                        <select class="select" [id]="'pallet-type-' + pi" [value]="pallet.type"
+                                [disabled]="!canEdit()"
+                                (change)="setPalletType(pi, $any($event.target).value)">
+                          <option value="Europallet">Europallet · 120 × 80</option>
+                          <option value="Blokpallet 100×120">Blokpallet · 120 × 100</option>
+                          <option value="Halve pallet 60×80">Halve pallet · 80 × 60</option>
+                        </select>
+                      </div>
+                      <div class="height-row height-row--pallet">
+                        <div>
+                          <label [for]="'pallet-height-' + pi">Gemeten hoogte</label>
+                          <small>Optioneel; leeg gebruikt de berekening.</small>
+                        </div>
+                        <div class="height-input">
+                          <input class="input num" [id]="'pallet-height-' + pi" type="number"
+                                 [attr.min]="minimumManualHeightCm()"
+                                 [attr.max]="maximumManualHeightCm()" inputmode="numeric"
+                                 [value]="pallet.heightCm ?? ''" [disabled]="!canEdit()"
+                                 placeholder="auto"
+                                 (change)="setPalletHeight(pi, $any($event.target).value)" />
+                          <span>cm</span>
+                        </div>
                       </div>
                     </div>
-                  </details>
-                }
-                <button class="btn btn--block" type="button" [disabled]="!canEdit()"
-                        (click)="action.emit({ type: 'add-pallet' })">+ Pallet toevoegen</button>
-                <div class="layout-actions">
-                  <button type="button" [disabled]="!canEdit()"
-                          title="Vervang je wijzigingen door een nieuw automatisch startvoorstel"
-                          (click)="action.emit({ type: 'auto-layout' })">Startindeling herstellen</button>
-                  <button type="button" [disabled]="!canEdit()"
-                          title="Verwijder de eigen indeling en gebruik voortaan de berekende uitkomst"
-                          (click)="action.emit({ type: 'clear-layout' })">Zelf aanpassen stoppen</button>
-                </div>
+
+                    <div class="pallet-products">
+                      @for (item of pallet.items; track item.productId) {
+                        <div class="pallet-product">
+                          <span class="pallet-product__name">{{ productLabel(item.productId) }}</span>
+                          <div class="stepper" aria-label="Aantal dozen">
+                            <button type="button" [disabled]="!canEdit()"
+                                    [attr.aria-label]="'Doos verwijderen bij ' + productLabel(item.productId)"
+                                    (click)="setItemCartons(pi, item.productId, item.cartons - 1)">−</button>
+                            <input type="number" min="0" inputmode="numeric" [value]="item.cartons"
+                                   [disabled]="!canEdit()"
+                                   [attr.aria-label]="'Dozen ' + productLabel(item.productId)"
+                                   (change)="setItemCartons(pi, item.productId,
+                                             +$any($event.target).value)" />
+                            <button type="button" [disabled]="!canEdit() || remainingFor(item.productId) <= 0"
+                                    [attr.aria-label]="'Doos toevoegen bij ' + productLabel(item.productId)"
+                                    (click)="setItemCartons(pi, item.productId, item.cartons + 1)">+</button>
+                          </div>
+                        </div>
+                      }
+                      @if (assignable(pi).length) {
+                        <select class="select add-product" aria-label="Product op pallet zetten"
+                                [disabled]="!canEdit()"
+                                (change)="addItem(pi, +$any($event.target).value);
+                                          $any($event.target).selectedIndex = 0">
+                          <option value="" selected disabled>Product toevoegen…</option>
+                          @for (line of assignable(pi); track line.productId) {
+                            <option [value]="line.productId">
+                              {{ line.description }} · {{ line.remaining }} dozen over
+                            </option>
+                          }
+                        </select>
+                      }
+                    </div>
+
+                    <div class="pallet-card__actions">
+                      <button type="button" aria-label="Pallet omhoog" [disabled]="!canEdit() || pi === 0"
+                              (click)="movePallet(pi, -1)">↑</button>
+                      <button type="button" aria-label="Pallet omlaag"
+                              [disabled]="!canEdit() || pi === view().order.pallets.length - 1"
+                              (click)="movePallet(pi, 1)">↓</button>
+                      <span></span>
+                      <button class="danger-action" type="button" [disabled]="!canEdit()"
+                              (click)="action.emit({ type: 'remove-pallet', index: pi })">
+                        Verwijderen
+                      </button>
+                    </div>
+                  </div>
+                </details>
               }
             </div>
-          </details>
-        </section>
+          </section>
+        }
       } @else {
         <section class="calculation calculation--loose" aria-labelledby="loose-result-title">
           <div class="calculation__head">
@@ -486,14 +505,15 @@ export type ShippingPalletAction =
 
   `, `
 
-    .pallet-settings,.manual-layout,.pallet-card { margin-top:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden }
+    .pallet-settings,.pallet-card { margin-top:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden }
     summary { list-style:none;cursor:pointer }
     summary::-webkit-details-marker { display:none }
-    .pallet-settings>summary,.manual-layout>summary { min-height:48px;padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11.5px;font-weight:680 }
-    .pallet-settings>summary:after,.manual-layout>summary:after { content:'⌄';color:var(--muted);font-size:14px;transition:transform .18s }
-    .pallet-settings[open]>summary:after,.manual-layout[open]>summary:after { transform:rotate(180deg) }
-    .pallet-settings>summary small { overflow:hidden;flex:1;color:var(--muted);font-size:9.5px;font-weight:520;text-align:right;text-overflow:ellipsis;white-space:nowrap }
-    .pallet-settings__body,.manual-layout__body { padding:11px;border-top:1px solid var(--line);background:var(--surface) }
+    .pallet-settings>summary { min-height:48px;padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11.5px;font-weight:680 }
+    .pallet-settings>summary:after { content:'⌄';color:var(--muted);font-size:14px;transition:transform .18s }
+    .pallet-settings[open]>summary:after { transform:rotate(180deg) }
+    .pallet-settings>summary>span { min-width:0;display:flex;flex:1;flex-direction:column;gap:1px }
+    .pallet-settings>summary small { overflow:hidden;color:var(--muted);font-size:9.5px;font-weight:520;text-overflow:ellipsis;white-space:nowrap }
+    .pallet-settings__body { padding:11px;border-top:1px solid var(--line);background:var(--surface) }
     .field-row { display:grid;gap:5px }
     .field-row+* { margin-top:10px }
     label { font-size:11px;font-weight:680 }
@@ -503,7 +523,7 @@ export type ShippingPalletAction =
     .height-input,.money-input { display:flex }
     .height-input input { min-width:0;border-radius:9px 0 0 9px }
     .height-input>span { min-width:38px;display:grid;place-items:center;border:1px solid var(--line-strong);border-left:0;border-radius:0 9px 9px 0;background:var(--surface-2);color:var(--muted);font-size:10px }
-    .text-action,.layout-actions button,.pallet-card__actions button { min-height:40px;padding:6px;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:10.5px;font-weight:680;cursor:pointer }
+    .text-action,.pallet-card__actions button { min-height:40px;padding:6px;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:10.5px;font-weight:680;cursor:pointer }
     .text-action { margin-top:5px }
     .stacking-list { margin-top:8px;border-top:1px solid var(--line) }
     .stacking-list>div { padding:8px 1px;display:flex;flex-direction:column;border-bottom:1px solid var(--line) }
@@ -520,13 +540,27 @@ export type ShippingPalletAction =
 
   `, `
 
-    .manual-layout>summary>span:first-child { min-width:0;display:flex;flex:1;flex-direction:column }
-    .manual-layout>summary small { color:var(--muted);font-size:9.5px;font-weight:520 }
+    .manual-start { margin-top:10px;padding:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-radius:12px;background:var(--surface-2) }
+    .manual-start>span { min-width:0;display:flex;flex-direction:column;gap:1px }
+    .manual-start strong { font-size:10.5px }
+    .manual-start small { color:var(--muted);font-size:9.5px;line-height:1.35 }
+    .manual-start .btn { min-height:40px;flex:none }
+    .manual-workspace { background:var(--surface-2) }
+    .manual-workspace__head { margin-bottom:9px }
+    .manual-workspace__head>div { min-width:0 }
+    .manual-workspace__head p { margin:2px 0 0;color:var(--muted);font-size:9.5px;line-height:1.35 }
     .layout-badge { max-width:108px;overflow:hidden;background:var(--ok-soft);color:var(--ok);text-overflow:ellipsis }
     .layout-badge--warn { background:var(--warn-soft);color:var(--warn) }
-    .empty-layout p { margin:0 0 10px;color:var(--muted);font-size:11px;line-height:1.45 }
     .layout-warning { margin-bottom:9px;padding:8px 9px;border-radius:9px;background:var(--warn-soft);color:var(--warn);font-size:10.5px }
-    .pallet-card { margin:0 0 8px;background:var(--surface) }
+    .invalid-fit { margin:10px 0 0;display:flex;flex-direction:column;gap:2px;line-height:1.4 }
+    .invalid-fit strong { font-size:11px }
+    .manual-toolbar { margin-bottom:10px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px }
+    .manual-toolbar button { min-height:42px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:10px;font-weight:680;cursor:pointer }
+    .manual-toolbar__add span { color:var(--rose-dark);font-size:13px }
+    .manual-toolbar .manual-toolbar__reset { border-color:transparent;background:transparent;color:var(--rose-dark) }
+    .manual-toolbar button:disabled { cursor:default;opacity:.6 }
+    .pallet-list { display:grid;gap:8px }
+    .pallet-card { margin:0;background:var(--surface) }
     .pallet-card>summary { min-height:54px;padding:8px 10px;display:grid;grid-template-columns:30px minmax(0,1fr) 20px;gap:8px;align-items:center }
     .pallet-card__number { width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose-dark);font-size:11px;font-weight:760 }
     .pallet-card__title { min-width:0;display:flex;flex-direction:column }
@@ -548,9 +582,6 @@ export type ShippingPalletAction =
     .add-product { margin-top:8px }
     .pallet-card__actions { padding:3px 8px;display:grid;grid-template-columns:40px 40px 1fr auto;align-items:center;border-top:1px solid var(--line) }
     .pallet-card__actions .danger-action { color:var(--danger) }
-    .layout-actions { margin-top:4px;display:grid;grid-template-columns:1fr 1fr;gap:4px }
-    .layout-actions button { min-height:44px;line-height:1.25 }
-
   `, `
 
     .freight-price { background:var(--surface-2) }
@@ -581,7 +612,9 @@ export type ShippingPalletAction =
       .result-grid>div { display:flex;align-items:center;justify-content:space-between;text-align:left }
       .result-grid dd { margin:0 }
       .height-row,.height-row--pallet,.price-input { grid-template-columns:1fr }
-      .layout-actions { grid-template-columns:1fr }
+      .manual-start { align-items:stretch;flex-direction:column }
+      .manual-start .btn { width:100% }
+      .manual-toolbar { grid-template-columns:1fr }
       .price-input>small { grid-column:1 }
       .height-input,.money-input { width:100% }
       .height-input input,.money-input input { flex:1 }
@@ -615,6 +648,8 @@ export class ShippingPlanner {
   readonly freightPending = computed(() => this.order().freight === 'TE_BEPALEN');
   readonly missingCartonDimensions = computed(() =>
     this.view().priced.validation.productsWithoutCartonDimensions ?? []);
+  readonly invalidPalletLines = computed(() => this.view().priced.lines
+    .filter((line) => line.cartons > 0 && line.cartonsPerPallet <= 0));
   readonly preservedLayoutMatches = computed(() => {
     const data = this.view();
     if (!data.order.pallets.length) return true;
@@ -664,6 +699,10 @@ export class ShippingPlanner {
       BLOCK_120X100: 'Blok 120 × 100',
       HALF_80X60: 'Half 80 × 60',
     }[this.palletProfile()];
+  }
+
+  invalidPalletLineNames(): string {
+    return this.invalidPalletLines().map((line) => line.description).join(', ');
   }
 
   choosePricing(strategy: FreightPricingStrategy): void {
@@ -811,5 +850,13 @@ export class ShippingPlanner {
 
   movePallet(index: number, direction: -1 | 1): void {
     if (this.canEdit()) this.action.emit({ type: 'move-pallet', index, direction });
+  }
+
+  returnToAutomatic(): void {
+    if (!this.canEdit()) return;
+    const confirmed = window.confirm(
+      'Je eigen palletindeling wordt verwijderd. Terug naar het automatische voorstel?',
+    );
+    if (confirmed) this.action.emit({ type: 'clear-layout' });
   }
 }

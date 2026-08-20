@@ -73,7 +73,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
             <div class="route-stop">
               <span class="route-stop__dot" aria-hidden="true"></span>
               <span>
-                <small>Vertrek</small>
+                <small>Vertrekhaven</small>
                 <strong>{{ costLabels().loadingPort }}</strong>
               </span>
             </div>
@@ -81,7 +81,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
             <div class="route-stop route-stop--end">
               <span class="route-stop__dot" aria-hidden="true"></span>
               <span>
-                <small>Aankomst</small>
+                <small>Aankomsthaven</small>
                 <strong>{{ costLabels().destinationPort }}</strong>
               </span>
             </div>
@@ -288,12 +288,12 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                   <strong>{{ data.order.orderDate | dateNl }}</strong>
                 </div>
                 <div class="detail-item">
-                  <span>Vertrek</span>
+                  <span>Vertrekhaven</span>
                   <strong>{{ costLabels().loadingPort }}</strong>
                   <small>{{ costLabels().originCountry }}</small>
                 </div>
                 <div class="detail-item">
-                  <span>Aankomst</span>
+                  <span>Aankomsthaven</span>
                   <strong>{{ costLabels().destinationPort }}</strong>
                 </div>
                 <div class="detail-item">

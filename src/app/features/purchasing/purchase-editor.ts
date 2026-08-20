@@ -4,7 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { saveBlob } from '../../core/api/download';
-import { CONTAINER_TYPES, DESTINATION_PORTS, containerLabel } from '../../core/api/geo';
+import {
+  CHINESE_DEPARTURE_PORTS,
+  CONTAINER_TYPES,
+  DESTINATION_PORTS,
+  OTHER_PORT_VALUE,
+  PortOption,
+  containerLabel,
+} from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import { Allocation, Currency, Product, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, Supplier } from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
@@ -105,15 +112,15 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 
           <div class="po-facts">
             <div class="po-fact">
-              <span class="po-fact__label">Herkomst</span>
-              <strong>{{ originLabel() }}</strong>
+              <span class="po-fact__label">Vertrekhaven</span>
+              <strong>{{ costLabels().loadingPort }}</strong>
             </div>
             <div class="po-fact">
               <span class="po-fact__label">Container</span>
               <strong>{{ containerLabel(data.order.containerType) }}</strong>
             </div>
             <div class="po-fact">
-              <span class="po-fact__label">Bestemming</span>
+              <span class="po-fact__label">Aankomsthaven</span>
               <strong>{{ data.order.destinationPort || 'Rotterdam' }}</strong>
             </div>
             <div class="po-fact">
@@ -179,7 +186,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                       <app-date-field fieldId="po-date" [value]="data.order.orderDate"
                                       (valueChange)="patch({ orderDate: $event })" />
                     </div>
-                    <div class="field">
+                    <div class="field order-route-field">
                       <label for="po-container">Type container</label>
                       <select class="select" id="po-container"
                               [ngModel]="data.order.containerType"
@@ -189,15 +196,49 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                         }
                       </select>
                     </div>
-                    <div class="field">
-                      <label for="c-port">Aankomsthaven</label>
-                      <select class="select" id="c-port"
-                              [ngModel]="data.order.destinationPort"
-                              (ngModelChange)="patch({ destinationPort: $event })">
-                        @for (port of ports; track port) {
-                          <option [value]="port">{{ port }}</option>
+                    <div class="field port-field order-route-field">
+                      <label for="po-departure-port">Vertrekhaven</label>
+                      <select class="select" id="po-departure-port"
+                              [ngModel]="portSelection(
+                                data.order.departurePort, departurePorts, customDeparturePort())"
+                              (ngModelChange)="selectDeparturePort($event)">
+                        @for (port of departurePorts; track port.value) {
+                          <option [value]="port.value">{{ port.label }}</option>
                         }
+                        <option [value]="otherPortValue">Andere haven…</option>
                       </select>
+                      @if (usesCustomDeparturePort(data.order.departurePort)) {
+                        <input class="input port-field__custom" id="po-custom-departure-port"
+                               aria-label="Andere vertrekhaven"
+                               autocomplete="off" placeholder="Typ de vertrekhaven"
+                               [value]="customPortInput(
+                                 data.order.departurePort, departurePorts, customDeparturePort())"
+                               (blur)="setCustomDeparturePort($any($event.target).value)" />
+                      }
+                      <span class="hint">Standaard Ningbo. De gekozen haven bepaalt de vaarroute.</span>
+                    </div>
+                    <div class="field port-field order-route-field">
+                      <label for="po-destination-port">Aankomsthaven</label>
+                      <select class="select" id="po-destination-port"
+                              [ngModel]="portSelection(
+                                data.order.destinationPort, destinationPorts,
+                                customDestinationPort(), 'Rotterdam')"
+                              (ngModelChange)="selectDestinationPort($event)">
+                        @for (port of destinationPorts; track port.value) {
+                          <option [value]="port.value">{{ port.label }}</option>
+                        }
+                        <option [value]="otherPortValue">Andere haven…</option>
+                      </select>
+                      @if (usesCustomDestinationPort(data.order.destinationPort)) {
+                        <input class="input port-field__custom" id="po-custom-destination-port"
+                               aria-label="Andere aankomsthaven"
+                               autocomplete="off" placeholder="Typ de aankomsthaven"
+                               [value]="customPortInput(
+                                 data.order.destinationPort, destinationPorts,
+                                 customDestinationPort())"
+                               (blur)="setCustomDestinationPort($any($event.target).value)" />
+                      }
+                      <span class="hint">Niet in de lijst? Kies ‘Andere haven…’.</span>
                     </div>
                     <div class="field span-2">
                       <label for="po-notes">Interne notitie <span class="opt"></span></label>
@@ -226,20 +267,6 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                   <span aria-hidden="true">+</span> Product
                 </button>
               </div>
-
-              @if (privacy.showPurchase() && data.costing.lines.length) {
-                <div class="product-tools">
-                  <span class="product-tools__label">Kostopbouw tonen als</span>
-                  <div class="per-toggle" role="group" aria-label="Weergave kostopbouw">
-                    <button type="button" [class.on]="!perPiece()"
-                            [attr.aria-pressed]="!perPiece()"
-                            (click)="perPiece.set(false)">Totaal</button>
-                    <button type="button" [class.on]="perPiece()"
-                            [attr.aria-pressed]="perPiece()"
-                            (click)="perPiece.set(true)">Per stuk</button>
-                  </div>
-                </div>
-              }
 
               <div class="product-lines">
                 @for (line of data.costing.lines; track line.productId; let lineIndex = $index) {
@@ -304,7 +331,16 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                         <summary>
                           <span class="line-breakdown__label">
                             <span>Kostopbouw</span>
-                            <small>{{ perPiece() ? 'per stuk' : 'hele regel' }}</small>
+                          </span>
+                          <span class="per-toggle line-breakdown__toggle"
+                                role="group" aria-label="Kostopbouw tonen als"
+                                (click)="$event.stopPropagation()">
+                            <button type="button" [class.on]="!perPiece()"
+                                    [attr.aria-pressed]="!perPiece()"
+                                    (click)="perPiece.set(false)">Totaal</button>
+                            <button type="button" [class.on]="perPiece()"
+                                    [attr.aria-pressed]="perPiece()"
+                                    (click)="perPiece.set(true)">Per stuk</button>
                           </span>
                           <span class="line-breakdown__value">
                             <svg class="line-breakdown__chevron" viewBox="0 0 20 20"
@@ -504,6 +540,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                                    (ngModelChange)="patch({ extraRevenueEur: +$event })" />
                             <span class="input-affix__suffix">EUR</span>
                           </div>
+                          <span class="hint">Nieuwe calculaties starten op € 2.000 per container.</span>
                         </div>
                       </div>
                     </section>
@@ -759,12 +796,11 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 
     .supplier-context{display:flex;align-items:center;gap:9px;margin-bottom:14px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     .supplier-context__mark{display:grid;width:34px;height:34px;place-items:center;border-radius:10px;background:var(--rose);color:#fff}.supplier-context__copy{display:flex;min-width:0;flex:1;flex-direction:column}.supplier-context__copy>span,.supplier-context__country{color:var(--muted);font-size:10px}.supplier-context__copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.supplier-context__copy app-supplier-address{margin-top:1px}
-    :is(.order-fields,.po-line__inputs) .field{min-width:0}
+    :is(.order-fields,.po-line__inputs) .field{min-width:0}.port-field__custom{margin-top:7px}
 
   `, `
 
     .products-card{overflow:visible}:is(.products-card .section-heading,.summary-heading){border-bottom:1px solid var(--line)}.add-product{flex:none;min-height:40px;padding-inline:11px}
-    .product-tools{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}.product-tools__label{color:var(--muted);font-size:11px}
     .po-line{padding:14px;border-bottom:1px solid var(--line)}.po-line:last-child{border:0}.po-line__head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
     .po-line__index{width:24px;color:var(--muted);font-size:11px;text-align:center}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
     .line-remove{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}.line-remove:active{background:var(--danger-soft);color:var(--danger)}:is(.line-currency,.cost-currency){min-width:74px;border-radius:0 var(--r-sm) var(--r-sm) 0}
@@ -772,8 +808,9 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
     :is(.line-breakdown,.allocation-settings){overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     :is(.line-breakdown,.allocation-settings) summary{display:flex;min-height:50px;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;list-style:none}
     .line-breakdown summary::-webkit-details-marker{display:none}
-    .line-breakdown__label{display:flex;min-width:0;flex:1;flex-direction:column;font-size:12px}.line-breakdown__label small{color:var(--muted);font-size:10px}.line-breakdown__total{color:var(--rose)}
+    .line-breakdown summary{display:grid;grid-template-columns:minmax(0,1fr) auto}.line-breakdown__label{display:flex;min-width:0;flex:1;flex-direction:column;font-size:12px}.line-breakdown__toggle{flex:none}.line-breakdown__toggle button{min-height:28px;padding:3px 7px;font-size:10px}.line-breakdown__total{color:var(--rose)}
     .line-breakdown__value{display:flex;align-items:center;gap:5px}.line-breakdown__chevron{flex:none;color:var(--muted);transition:transform .18s ease}.line-breakdown[open] .line-breakdown__chevron{transform:rotate(180deg)}
+    .line-breakdown__value{grid-column:1/-1;justify-content:flex-end;padding-top:2px}
     .line-breakdown__body{padding:3px 10px 8px;border-top:1px solid var(--line)}.line-divider{border-top:1px solid var(--line)}.line-breakdown__body .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}.product-empty{padding-block:34px}
 
     .cost-fields{padding-bottom:14px}.cost-group{padding:11px 10px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.cost-group+.cost-group{margin-top:10px}
@@ -785,8 +822,8 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
     .action-card{padding:14px}.action-card__head h2{font-size:16px}.action-card__head p{color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:12px}.danger-zone{margin-top:7px;border-top:1px solid var(--line)}.danger-zone summary{padding:11px;color:var(--muted);font-size:11px;text-align:center}.danger-zone p{color:var(--muted);font-size:10px;text-align:center}
     .loading-card{display:flex;min-height:160px;align-items:center;justify-content:center;color:var(--muted)}.loading-card__mark{display:none}
 
-    @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(4,1fr)}}
-    @media(min-width:700px){:is(.section-toggle,.section-heading,.product-tools){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px 18px}}
+    @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(4,1fr)}.line-breakdown summary{display:flex}.line-breakdown__value{padding-top:0}}
+    @media(min-width:700px){:is(.section-toggle,.section-heading){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px 18px}.order-fields{grid-template-columns:repeat(6,minmax(0,1fr))}.order-fields>.field{grid-column:span 3}.order-fields>.order-route-field{grid-column:span 2}.order-fields>.span-2{grid-column:1/-1}}
     @media(min-width:1000px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.7fr);gap:16px}.purchase-summary{margin-top:0}}
   `]
 })
@@ -821,7 +858,8 @@ export class PurchaseEditor {
     const data = this.view();
     if (!data) return '';
     return [this.supplierName(), containerLabel(data.order.containerType),
-        data.order.destinationPort].filter(Boolean).join(' · ');
+        `${this.costLabels().loadingPort} → ${this.costLabels().destinationPort}`]
+      .filter(Boolean).join(' · ');
   }
 
   costsSummary(): string {
@@ -901,14 +939,91 @@ export class PurchaseEditor {
     );
   }
 
-  readonly ports = DESTINATION_PORTS;
+  readonly departurePorts = CHINESE_DEPARTURE_PORTS;
+  readonly destinationPorts = DESTINATION_PORTS;
+  readonly otherPortValue = OTHER_PORT_VALUE;
+  readonly customDeparturePort = signal(false);
+  readonly customDestinationPort = signal(false);
+
+  portSelection(
+    rawValue: string | null | undefined,
+    options: readonly PortOption[],
+    forceCustom: boolean,
+    fallback = 'Ningbo',
+  ): string {
+    if (forceCustom) return OTHER_PORT_VALUE;
+    const value = rawValue?.trim() || fallback;
+    return this.isKnownPort(value, options) ? value : OTHER_PORT_VALUE;
+  }
+
+  customPortInput(
+    rawValue: string | null | undefined,
+    options: readonly PortOption[],
+    forceCustom: boolean,
+  ): string {
+    const value = rawValue?.trim() ?? '';
+    return forceCustom && this.isKnownPort(value, options) ? '' : value;
+  }
+
+  usesCustomDeparturePort(value: string | null | undefined): boolean {
+    return this.customDeparturePort()
+      || !this.isKnownPort(value?.trim() || 'Ningbo', this.departurePorts);
+  }
+
+  usesCustomDestinationPort(value: string | null | undefined): boolean {
+    return this.customDestinationPort()
+      || !this.isKnownPort(value?.trim() || 'Rotterdam', this.destinationPorts);
+  }
+
+  selectDeparturePort(value: string): void {
+    if (value === OTHER_PORT_VALUE) {
+      this.customDeparturePort.set(true);
+      return;
+    }
+    this.customDeparturePort.set(false);
+    this.patch({ departurePort: value });
+  }
+
+  selectDestinationPort(value: string): void {
+    if (value === OTHER_PORT_VALUE) {
+      this.customDestinationPort.set(true);
+      return;
+    }
+    this.customDestinationPort.set(false);
+    this.patch({ destinationPort: value });
+  }
+
+  setCustomDeparturePort(value: string): void {
+    const port = this.normalizedKnownPort(value, this.departurePorts);
+    if (!port || this.isKnownPort(port, this.departurePorts)) {
+      this.customDeparturePort.set(false);
+    }
+    this.patch({ departurePort: port || 'Ningbo' });
+  }
+
+  setCustomDestinationPort(value: string): void {
+    const port = this.normalizedKnownPort(value, this.destinationPorts);
+    if (!port || this.isKnownPort(port, this.destinationPorts)) {
+      this.customDestinationPort.set(false);
+    }
+    this.patch({ destinationPort: port || 'Rotterdam' });
+  }
+
+  private isKnownPort(value: string, options: readonly PortOption[]): boolean {
+    return options.some((option) => option.value === value);
+  }
+
+  private normalizedKnownPort(value: string, options: readonly PortOption[]): string {
+    const trimmed = value.trim();
+    return options.find((option) => option.value.toLocaleLowerCase() === trimmed.toLocaleLowerCase())
+      ?.value ?? trimmed;
+  }
 
   /**
    * Where the origin costs are incurred, named after the supplier's country.
    * "Local costs China" was hardcoded once, but not every supplier is Chinese.
    */
   readonly costLabels = computed(() => purchaseCostLabels(this.view(), this.supplier()));
-  readonly originLabel = computed(() => this.costLabels().originCountry);
 
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);

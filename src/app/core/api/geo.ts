@@ -75,21 +75,44 @@ export function countryName(code: string | null | undefined): string {
   return ISO_COUNTRIES.find((country) => country.code === code)?.name ?? code;
 }
 
+export interface PortOption {
+  /** Stable value exchanged with the API. */
+  value: string;
+  /** Friendly name shown in the native mobile picker. */
+  label: string;
+}
+
+/** Sentinel used by a port picker to reveal its free-text alternative. */
+export const OTHER_PORT_VALUE = '__OTHER_PORT__';
+
 /**
- * Ports of arrival we realistically book containers to.
+ * Main Chinese container ports used for our sourcing lanes.
  *
- * A fixed list instead of free text: "Rotterdam", "rotterdam" and "R'dam"
- * would otherwise become three different ports in the data.
+ * The API deliberately keeps the short city name. The terminal/port-system
+ * name in the label helps a buyer pick the right option without changing
+ * existing freight routes such as `Ningbo -> Rotterdam`.
  */
-export const DESTINATION_PORTS = [
-  'Rotterdam',
-  'Amsterdam',
-  'Antwerpen',
-  'Zeebrugge',
-  'Hamburg',
-  'Bremerhaven',
-  'Le Havre',
-] as const;
+export const CHINESE_DEPARTURE_PORTS: readonly PortOption[] = [
+  { value: 'Ningbo', label: 'Ningbo — Ningbo-Zhoushan' },
+  { value: 'Shanghai', label: 'Shanghai' },
+  { value: 'Shenzhen', label: 'Shenzhen — Yantian' },
+  { value: 'Guangzhou', label: 'Guangzhou — Nansha' },
+  { value: 'Qingdao', label: 'Qingdao' },
+  { value: 'Tianjin', label: 'Tianjin — Xingang' },
+  { value: 'Xiamen', label: 'Xiamen' },
+];
+
+/** Frequent European destination ports; every other port stays possible. */
+export const DESTINATION_PORTS: readonly PortOption[] = [
+  { value: 'Rotterdam', label: 'Rotterdam' },
+  { value: 'Amsterdam', label: 'Amsterdam' },
+  { value: 'Antwerpen', label: 'Antwerpen' },
+  { value: 'Zeebrugge', label: 'Zeebrugge' },
+  { value: 'Hamburg', label: 'Hamburg' },
+  { value: 'Bremerhaven', label: 'Bremerhaven' },
+  { value: 'Felixstowe', label: 'Felixstowe' },
+  { value: 'Le Havre', label: 'Le Havre' },
+];
 
 /**
  * Container types as the API names them, with human labels.

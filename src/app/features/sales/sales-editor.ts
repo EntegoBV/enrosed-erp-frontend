@@ -1546,12 +1546,14 @@ export class SalesEditor {
    */
   private saveQueue: Promise<void> = Promise.resolve();
 
-  private enqueue(make: (order: SalesOrder) => SalesOrder): void {
+  private enqueue(make: (order: SalesOrder) => SalesOrder | null): void {
     this.saveQueue = this.saveQueue.then(async () => {
       const data = this.view();
       if (!data) return;
       try {
-        this.view.set(await this.sales.updateOrder(data.order.id, make(data.order)));
+        const next = make(data.order);
+        if (!next) return;
+        this.view.set(await this.sales.updateOrder(data.order.id, next));
       } catch (failure: unknown) {
         this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
       }
@@ -2256,10 +2258,20 @@ export class SalesEditor {
   autoLayout(): void {
     this.enqueue((order) => {
       const lines = this.view()?.priced.lines ?? [];
+      const invalid = lines.find((line) =>
+        line.cartons > 0 && line.cartonsPerPallet <= 0);
+      if (invalid) {
+        this.ui.toast(
+          `Palletindeling niet mogelijk voor ${invalid.description}. `
+            + 'Controleer omdoosafmetingen, gewicht en laadhoogte.',
+          'err',
+        );
+        return null;
+      }
       const pallets: OrderPallet[] = [];
       const type = this.palletTypeForProfile(order.palletProfile);
       for (const line of lines) {
-        const per = Math.max(1, line.cartonsPerPallet);
+        const per = line.cartonsPerPallet;
         let left = line.cartons;
         while (left > 0) {
           const take = Math.min(per, left);

@@ -5,6 +5,10 @@
 /tmp
 /out-tsc
 /bazel-out
+# Guard against `ngc`/`tsc` runs without `--noEmit` writing stale JavaScript
+# beside the TypeScript sources. Runtime code in this project lives in `.ts`.
+/src/**/*.js
+/src/**/*.js.map
 
 # Node
 /node_modules

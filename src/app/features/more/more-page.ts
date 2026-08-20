@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/api/auth';
-import { WorkQueue } from '../../core/api/work-queue';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 
@@ -15,17 +14,6 @@ import { PageHeader } from '../../shared/page-header';
     <div class="content">
       <div class="section-title">Verkoop</div>
       <div class="card"><div class="list">
-        <a class="list-item" routerLink="/revisions">
-          <span class="thumb thumb--placeholder"><app-icon name="exchange" /></span>
-          <div class="list-item__body">
-            <div class="list-item__title">Wijzigingsvoorstellen</div>
-            <div class="list-item__meta">Offertes waar de klant aanpassingen vraagt</div>
-          </div>
-          @if (work.actionCount(); as count) {
-            <span class="badge badge--warn">{{ count }}</span>
-          }
-          <span class="list-item__chev">›</span>
-        </a>
         <a class="list-item" routerLink="/customers">
           <span class="thumb thumb--placeholder"><app-icon name="customers" /></span>
           <div class="list-item__body"><div class="list-item__title">Klanten</div>
@@ -93,7 +81,6 @@ import { PageHeader } from '../../shared/page-header';
 })
 export class MorePage {
   readonly auth = inject(Auth);
-  readonly work = inject(WorkQueue);
   private readonly router = inject(Router);
 
   logout(): void {

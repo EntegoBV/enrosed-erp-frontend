@@ -228,6 +228,8 @@ export interface PurchaseOrder {
   allocOrigin: Allocation;
   allocDestination: Allocation;
   allocExtra: Allocation;
+  /** Port where this order leaves; fixed per order instead of following later supplier edits. */
+  departurePort: string;
   /** Port of arrival (Rotterdam, Amsterdam, ...); drives the cost labels. */
   destinationPort: string;
   notes: string;

@@ -18,7 +18,7 @@ export function purchaseCostLabels(
 
   const order = view?.order;
   const originCountry = countryName(supplier?.country) || 'land van oorsprong';
-  const loadingPort = clean(supplier?.portOfLoading)
+  const loadingPort = clean(order?.departurePort) || clean(supplier?.portOfLoading)
     || clean(supplier?.city) || 'laadhaven';
   const destinationPort = clean(order?.destinationPort) || 'Rotterdam';
   return {
