@@ -20,6 +20,13 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen',
 };
 
+interface FreightHorizon {
+  label: string;
+  pct: number | null;
+  comparedOn: string | null;
+  actualDays: number | null;
+}
+
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -237,10 +244,9 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         </div>
         <div class="card__body">
           <div class="market-hint" style="margin:0 0 8px" role="note">
-            <strong>Eigen offerte = jouw prijs.</strong> Marktindexen geven alleen
-            richting en zijn geen USD-vrachtprijs. Een bron wordt automatisch
-            gecontroleerd wanneer de provider dat voor deze ERP-installatie toestaat;
-            anders blijft een duidelijk gedateerde cache zichtbaar.
+            <strong>Eigen offerte = jouw prijs.</strong> De grafieken eronder tonen
+            de marktrichting. Indexpunten zijn geen USD-vrachtprijs; datum, bereik en
+            bron blijven daarom altijd zichtbaar.
           </div>
 
           <!-- The licensed USD benchmark is useful context, but never gets
@@ -261,13 +267,59 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                         (click)="openHistory(wci.code,
                           'Shanghai → Rotterdam · USD-benchmark per 40ft', 'USD ')">
                   <span class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}</span>
-                  @if (seriesFor(wci.code).length > 1) {
-                    <app-sparkline class="market-row__spark" [values]="seriesFor(wci.code)" />
-                  }
+                  <span class="freight-open-label">Alle noteringen <span aria-hidden="true">›</span></span>
                 </button>
               } @else {
-                <div class="freight-benchmark__empty">Nog geen geautoriseerde cache</div>
+                <div class="freight-benchmark__empty">Nog geen marktdata ontvangen</div>
               }
+              <div class="freight-analysis-card">
+                <div class="freight-chart-panel" role="img"
+                     [attr.aria-label]="chartAriaLabel(wci.code, 'Shanghai naar Rotterdam')">
+                  <div class="freight-chart-panel__head">
+                    <strong>Marktverloop</strong>
+                    <span>{{ observationLabel(wci.code) }}</span>
+                  </div>
+                  @if (seriesFor(wci.code).length > 1) {
+                    <app-sparkline class="freight-chart"
+                                   [values]="seriesFor(wci.code)" [width]="640" [height]="88" />
+                    <div class="freight-chart-axis">
+                      <span>{{ firstDateLabel(wci.code) }}</span>
+                      <span>{{ latestDateLabel(wci.code) }}</span>
+                    </div>
+                  } @else {
+                    <div class="freight-chart-empty">
+                      <span class="freight-chart-empty__line"></span>
+                      <span>{{ seriesFor(wci.code).length ? 'Nog een tweede meetpunt nodig voor de grafiek' : 'Grafiek verschijnt bij de eerste noteringen' }}</span>
+                    </div>
+                  }
+                </div>
+                <div class="freight-horizons" aria-label="Prijsverschil per periode">
+                  @for (h of rateHorizons(wci.code); track h.label) {
+                    <div class="freight-horizon">
+                      <span class="freight-horizon__label">{{ h.label }}</span>
+                      @if (h.pct !== null) {
+                        <strong [class.freight-horizon__good]="h.pct <= 0"
+                                [class.freight-horizon__bad]="h.pct > 0">
+                          {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                        </strong>
+                        <span>{{ horizonWord(wci.code, h.pct) }}</span>
+                        <span class="freight-horizon__baseline">
+                          vs {{ horizonBaselineLabel(h) }}
+                        </span>
+                      } @else {
+                        <strong class="freight-horizon__missing">—</strong>
+                        <span>Nog te weinig data</span>
+                      }
+                    </div>
+                  }
+                </div>
+                <div class="freight-analysis-copy" aria-label="Analyse">
+                  <strong>Analyse</strong>
+                  @for (line of freightAnalysisLines(wci.code); track line) {
+                    <p>{{ line }}</p>
+                  }
+                </div>
+              </div>
               <div class="source-meta">
                 <span>{{ wci.sourceName }}</span>
                 @if (wci.latestPublishedOn) { <span>Notering {{ wci.latestPublishedOn }}</span> }
@@ -275,6 +327,11 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <a [href]="wci.sourceUrl" target="_blank" rel="noopener noreferrer"
                    [attr.aria-label]="'Open bron ' + wci.sourceName">Bron</a>
               </div>
+              @if (showSourceDetail(wci)) {
+                <div class="source-detail source-detail--benchmark">
+                  {{ sourceGuidance(wci) }}
+                </div>
+              }
             </section>
           }
 
@@ -310,20 +367,69 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                       {{ sourceStateLabel(source.state) }}
                     </span>
                   </div>
+                  <div class="freight-index__scope">{{ route.scopeNote }}</div>
                   @if (latestFor(route.indexCode); as index) {
                     <button class="freight-index__value" type="button"
                             (click)="openHistory(route.indexCode, route.indexTitle, '')">
                       <span class="num">{{ index.usdPerContainer | num: 0 }} ptn</span>
-                      @if (indexChange(route.indexCode); as change) {
-                        <span class="badge" [class]="change <= 0 ? 'badge--ok' : 'badge--warn'">
-                          {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}% vs vorige
+                      @if (indexChange(route.indexCode) !== null) {
+                        <span class="badge" [class]="(indexChange(route.indexCode) ?? 0) <= 0 ? 'badge--ok' : 'badge--warn'">
+                          {{ (indexChange(route.indexCode) ?? 0) > 0 ? '+' : '' }}{{ (indexChange(route.indexCode) ?? 0) | num: 1 }}% {{ previousComparisonLabel(route.indexCode) }}
                         </span>
                       }
-                      <span class="freight-index__trend">{{ indexTrend(route.indexCode) }}</span>
+                      <span class="freight-open-label">Alle noteringen <span aria-hidden="true">›</span></span>
                     </button>
                   } @else {
-                    <div class="freight-index__empty">Geen geautoriseerde indexcache beschikbaar.</div>
+                    <div class="freight-index__empty">Nog geen indexdata ontvangen.</div>
                   }
+                  <div class="freight-analysis-card freight-analysis-card--index">
+                    <div class="freight-chart-panel" role="img"
+                         [attr.aria-label]="chartAriaLabel(route.indexCode, route.indexTitle)">
+                      <div class="freight-chart-panel__head">
+                        <strong>Indexverloop</strong>
+                        <span>{{ observationLabel(route.indexCode) }}</span>
+                      </div>
+                      @if (seriesFor(route.indexCode).length > 1) {
+                        <app-sparkline class="freight-chart"
+                                       [values]="seriesFor(route.indexCode)" [width]="640" [height]="88" />
+                        <div class="freight-chart-axis">
+                          <span>{{ firstDateLabel(route.indexCode) }}</span>
+                          <span>{{ latestDateLabel(route.indexCode) }}</span>
+                        </div>
+                      } @else {
+                        <div class="freight-chart-empty">
+                          <span class="freight-chart-empty__line"></span>
+                          <span>{{ seriesFor(route.indexCode).length ? 'Nog een tweede week nodig voor de grafiek' : 'Grafiek verschijnt zodra de bron data geeft' }}</span>
+                        </div>
+                      }
+                    </div>
+                    <div class="freight-horizons" aria-label="Indexverschil per periode">
+                      @for (h of rateHorizons(route.indexCode); track h.label) {
+                        <div class="freight-horizon">
+                          <span class="freight-horizon__label">{{ h.label }}</span>
+                          @if (h.pct !== null) {
+                            <strong [class.freight-horizon__good]="h.pct <= 0"
+                                    [class.freight-horizon__bad]="h.pct > 0">
+                              {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                            </strong>
+                            <span>{{ horizonWord(route.indexCode, h.pct) }}</span>
+                            <span class="freight-horizon__baseline">
+                              vs {{ horizonBaselineLabel(h) }}
+                            </span>
+                          } @else {
+                            <strong class="freight-horizon__missing">—</strong>
+                            <span>Nog te weinig data</span>
+                          }
+                        </div>
+                      }
+                    </div>
+                    <div class="freight-analysis-copy" aria-label="Analyse">
+                      <strong>Analyse</strong>
+                      @for (line of freightAnalysisLines(route.indexCode); track line) {
+                        <p>{{ line }}</p>
+                      }
+                    </div>
+                  </div>
                   <div class="source-meta">
                     <span>{{ source.referenceKind === 'EXACT_ROUTE' ? 'Exacte routereferentie' : 'Brede China–Europa-referentie' }}</span>
                     @if (source.latestPublishedOn) { <span>Publicatie {{ source.latestPublishedOn }}</span> }
@@ -331,8 +437,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                     <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer"
                        [attr.aria-label]="'Open bron ' + source.sourceName">Bron</a>
                   </div>
-                  @if (source.state !== 'CURRENT') {
-                    <div class="source-detail">{{ source.detail }}</div>
+                  @if (showSourceDetail(source)) {
+                    <div class="source-detail">{{ sourceGuidance(source) }}</div>
                   }
                 </div>
               }
@@ -454,31 +560,61 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 @if (source.lastCheckedAt) { <span>Gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
                 <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer"
                    [attr.aria-label]="'Open bron ' + source.sourceName">Bron</a>
-                <a [href]="source.termsUrl" target="_blank" rel="noopener noreferrer"
-                   [attr.aria-label]="'Open voorwaarden ' + source.sourceName">Voorwaarden</a>
               </div>
+              @if (showSourceDetail(source)) {
+                <div class="source-detail">{{ sourceGuidance(source) }}</div>
+              }
             </div>
           }
-          @if (rateHorizons(history.code).length) {
-            <!-- Same reading as the FX tiles: is it cheaper now than then?
-                 For freight a falling number is the green one. -->
-            <div class="hgrid" style="margin-bottom:8px">
-              @for (h of rateHorizons(history.code); track h.label) {
-                <div class="hgrid__cell">
-                  <span class="hgrid__label">{{ h.label }}</span>
-                  <span class="hgrid__value"
-                        [class.hgrid__value--good]="h.pct <= 0"
-                        [class.hgrid__value--bad]="h.pct > 0">
-                    {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
-                  </span>
-                  <span class="hgrid__word">{{ horizonWord(history.code, h.pct) }}</span>
+          <div class="freight-analysis-card freight-analysis-card--sheet">
+            <div class="freight-chart-panel" role="img"
+                 [attr.aria-label]="chartAriaLabel(history.code, history.label)">
+              <div class="freight-chart-panel__head">
+                <strong>Verloop</strong>
+                <span>{{ observationLabel(history.code) }}</span>
+              </div>
+              @if (seriesFor(history.code).length > 1) {
+                <app-sparkline class="freight-chart"
+                               [values]="seriesFor(history.code)" [width]="640" [height]="96" />
+                <div class="freight-chart-axis">
+                  <span>{{ firstDateLabel(history.code) }}</span>
+                  <span>{{ latestDateLabel(history.code) }}</span>
+                </div>
+              } @else {
+                <div class="freight-chart-empty">
+                  <span class="freight-chart-empty__line"></span>
+                  <span>Nog te weinig data voor een verloop</span>
                 </div>
               }
             </div>
-            <p class="tiny muted" style="margin:0 0 10px">
-              {{ horizonNote(history.code) }}
-            </p>
-          }
+            <div class="freight-horizons" aria-label="Verschil per periode">
+              @for (h of rateHorizons(history.code); track h.label) {
+                <div class="freight-horizon">
+                  <span class="freight-horizon__label">{{ h.label }}</span>
+                  @if (h.pct !== null) {
+                    <strong [class.freight-horizon__good]="h.pct <= 0"
+                            [class.freight-horizon__bad]="h.pct > 0">
+                      {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                    </strong>
+                    <span>{{ horizonWord(history.code, h.pct) }}</span>
+                    <span class="freight-horizon__baseline">
+                      vs {{ horizonBaselineLabel(h) }}
+                    </span>
+                  } @else {
+                    <strong class="freight-horizon__missing">—</strong>
+                    <span>Nog te weinig data</span>
+                  }
+                </div>
+              }
+            </div>
+            <div class="freight-analysis-copy" aria-label="Analyse">
+              <strong>Analyse</strong>
+              @for (line of freightAnalysisLines(history.code); track line) {
+                <p>{{ line }}</p>
+              }
+            </div>
+            <p class="tiny muted freight-history-note">{{ horizonNote(history.code) }}</p>
+          </div>
           @for (rate of historyFor(history.code); track rate.id) {
             <div class="market-row">
               <div>
@@ -515,13 +651,16 @@ export class Dashboard {
      USD quote and the market's points sit side by side on one row. */
   readonly ownRoutes = [
     { code: 'NINGBO', label: 'Ningbo', indexCode: 'NCFI NGB-EUR', indexName: 'NCFI Europa',
-      indexTitle: 'NCFI Ningbo → Europa · Hamburg/Rotterdam · indexpunten' },
+      indexTitle: 'NCFI Ningbo → Europa · Hamburg/Rotterdam · indexpunten',
+      scopeNote: 'Exacte Ningbo–Europa-route met Hamburg en Rotterdam als bestemmingen.' },
     /* Source research found no reusable exact South China-Europe series;
        the whole-coast CCFI is the honest market context for both. */
     { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', indexCode: 'CCFI CN-EUR',
-      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten' },
+      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten',
+      scopeNote: 'Brede China–Europa-index; geen afzonderlijke Nansha-notering.' },
     { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', indexCode: 'CCFI CN-EUR',
-      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten' },
+      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten',
+      scopeNote: 'Brede China–Europa-index; geen afzonderlijke Yantian-notering.' },
   ];
   readonly freightRates = signal<FreightRate[]>([]);
   readonly marketSources = signal<MarketSourceStatus[]>([]);
@@ -581,48 +720,64 @@ export class Dashboard {
    * Change versus roughly 1, 3, 6 and 12 months back, computed from the
    * DATED entries of a route - the log is weekly-ish with holes (holiday
    * weeks have no reprint), so each horizon looks for the entry closest
-   * to its target date and gives up beyond three weeks' distance rather
-   * than compare against a wrong era. Horizons without data simply do
-   * not render; nothing is interpolated or invented.
+   * to its target date. The acceptance window grows with the horizon: one
+   * month stays tight enough that a 9–14 day-old point can never pretend to
+   * be a month. Horizons without a representative point still render as
+   * explicitly unavailable; nothing is interpolated or invented.
    */
-  rateHorizons(code: string): { label: string; pct: number }[] {
-    const entries = this.freightRates()
-        .filter((rate) => rate.route === code)
-        .slice()
-        .sort((a, b) => a.quotedOn.localeCompare(b.quotedOn));
-    if (entries.length < 2) return [];
-    const latest = entries[entries.length - 1];
+  rateHorizons(code: string): FreightHorizon[] {
+    const horizons = [
+      { label: '1 mnd', days: 30, toleranceDays: 8 },
+      { label: '3 mnd', days: 91, toleranceDays: 14 },
+      { label: '6 mnd', days: 182, toleranceDays: 21 },
+      { label: '12 mnd', days: 365, toleranceDays: 28 },
+    ];
+    const entries = this.ratesFor(code);
+    if (entries.length < 2) {
+      return horizons.map(({ label }) => ({
+        label, pct: null, comparedOn: null, actualDays: null,
+      }));
+    }
+    const latest = entries.at(-1)!;
     const latestDate = new Date(latest.quotedOn).getTime();
     const day = 24 * 3600 * 1000;
 
-    const result: { label: string; pct: number }[] = [];
-    for (const horizon of [
-      { label: '1 mnd', days: 30 },
-      { label: '3 mnd', days: 91 },
-      { label: '6 mnd', days: 182 },
-      { label: '12 mnd', days: 365 },
-    ]) {
+    const result: FreightHorizon[] = [];
+    for (const horizon of horizons) {
       const target = latestDate - horizon.days * day;
-      let best: { distance: number; value: number } | null = null;
+      let best: { distance: number; value: number; quotedOn: string; actualDays: number } | null = null;
       for (const entry of entries.slice(0, -1)) {
-        const distance = Math.abs(new Date(entry.quotedOn).getTime() - target);
+        const entryDate = new Date(entry.quotedOn).getTime();
+        const distance = Math.abs(entryDate - target);
         if (!best || distance < best.distance) {
-          best = { distance, value: entry.usdPerContainer };
+          best = {
+            distance,
+            value: entry.usdPerContainer,
+            quotedOn: entry.quotedOn,
+            actualDays: Math.round((latestDate - entryDate) / day),
+          };
         }
       }
-      if (!best || best.distance > 21 * day) continue;
+      if (!best || best.distance > horizon.toleranceDays * day) {
+        result.push({
+          label: horizon.label, pct: null, comparedOn: null, actualDays: null,
+        });
+        continue;
+      }
       result.push({
         label: horizon.label,
         pct: ((latest.usdPerContainer - best.value) / best.value) * 100,
+        comparedOn: best.quotedOn,
+        actualDays: best.actualDays,
       });
     }
     return result;
   }
 
   horizonNote(code: string): string {
-    const entries = this.freightRates().filter((rate) => rate.route === code);
-    const missing = 4 - this.rateHorizons(code).length;
-    const base = `t.o.v. de dichtstbijzijnde notering per periode · ${entries.length} noteringen`;
+    const entries = this.ratesFor(code);
+    const missing = this.rateHorizons(code).filter((horizon) => horizon.pct === null).length;
+    const base = `Werkelijke vergelijkingsdatum staat per periode · ${entries.length} noteringen`;
     return missing > 0 ? `${base} · langere periodes volgen zodra er historiek is` : base;
   }
 
@@ -650,10 +805,7 @@ export class Dashboard {
 
   /** Newest first: the question is what it costs now and how it got there. */
   historyFor(code: string): FreightRate[] {
-    return this.freightRates()
-        .filter((rate) => rate.route === code)
-        .slice()
-        .reverse();
+    return this.ratesFor(code).reverse();
   }
 
   async deleteRate(rate: FreightRate): Promise<void> {
@@ -667,9 +819,7 @@ export class Dashboard {
       .map((rate) => rate.usdPerContainer));
 
   seriesFor(route: string): number[] {
-    return this.freightRates()
-        .filter((rate) => rate.route === route)
-        .map((rate) => rate.usdPerContainer);
+    return this.ratesFor(route).map((rate) => rate.usdPerContainer);
   }
 
   /** Week-over-week change of an index, when two entries exist. */
@@ -680,6 +830,15 @@ export class Dashboard {
     return ((series[series.length - 1] - previous) / previous) * 100;
   }
 
+  previousComparisonLabel(code: string): string {
+    const entries = this.ratesFor(code);
+    if (entries.length < 2) return 'vs vorige notering';
+    const latest = new Date(entries.at(-1)!.quotedOn).getTime();
+    const previous = new Date(entries.at(-2)!.quotedOn).getTime();
+    const days = Math.round((latest - previous) / (24 * 3600 * 1000));
+    return days >= 5 && days <= 10 ? 'vs vorige week' : 'vs vorige notering';
+  }
+
   sourceFor(code: string): MarketSourceStatus | null {
     return this.marketSources().find((source) => source.code === code) ?? null;
   }
@@ -688,14 +847,16 @@ export class Dashboard {
     if (state === 'CURRENT') return 'Actueel';
     if (state === 'CACHE_AFTER_FAILURE') return 'Cache';
     if (state === 'STALE') return 'Verouderd';
-    if (state === 'LICENSE_REQUIRED') return 'Automatisch uit';
+    if (state === 'DISABLED') return 'Uitgeschakeld';
+    if (state === 'PROVIDER_ACCESS_REQUIRED') return 'Provider-toegang nodig';
+    if (state === 'CACHE_AFTER_ACCESS_BLOCK') return 'Cache · toegang nodig';
     if (state === 'FAILED') return 'Bronfout';
     return 'Geen data';
   }
 
   sourceStateClass(state: MarketSourceStatus['state']): string {
     if (state === 'CURRENT') return 'source-state--ok';
-    if (state === 'LICENSE_REQUIRED' || state === 'NO_DATA') return 'source-state--neutral';
+    if (state === 'DISABLED' || state === 'NO_DATA') return 'source-state--neutral';
     return 'source-state--warn';
   }
 
@@ -709,12 +870,103 @@ export class Dashboard {
 
   indexTrend(code: string): string {
     const change = this.indexChange(code);
-    if (change === null) return 'Nog geen tweede publicatie voor een trend.';
-    if (change <= -3) return 'Index daalt duidelijk; vraag een scherpere nieuwe offerte.';
-    if (change < -0.5) return 'Index daalt licht sinds de vorige publicatie.';
-    if (change < 0.5) return 'Index bleef vrijwel gelijk.';
-    if (change < 3) return 'Index stijgt licht sinds de vorige publicatie.';
-    return 'Index stijgt duidelijk; controleer hoe je forwarder dit doorrekent.';
+    const source = this.sourceFor(code);
+    const subject = source?.metric === 'INDEX_POINTS'
+      ? 'Index'
+      : source ? 'Benchmark' : 'Eigen tarief';
+    if (change === null) return `Nog geen tweede publicatie voor een trend.`;
+    if (change <= -3) return `${subject} daalt duidelijk; vraag een scherpere nieuwe offerte.`;
+    if (change < -0.5) return `${subject} daalt licht sinds de vorige notering.`;
+    if (change < 0.5) return `${subject} bleef vrijwel gelijk.`;
+    if (change < 3) return `${subject} stijgt licht sinds de vorige notering.`;
+    return `${subject} stijgt duidelijk; controleer hoe je forwarder dit doorrekent.`;
+  }
+
+  /** Short, actionable analysis that stays next to the chart. */
+  freightAnalysisLines(code: string): string[] {
+    const entries = this.ratesFor(code);
+    if (!entries.length) {
+      return ['Nog geen meetpunt. Na de eerste synchronisatie verschijnt hier de marktanalyse.'];
+    }
+    if (entries.length === 1) {
+      return [`Eerste meetpunt op ${this.shortDate(entries[0].quotedOn)}. Een tweede week is nodig om de richting te bepalen.`];
+    }
+
+    const lines = [this.indexTrend(code)];
+    const longest = this.rateHorizons(code).slice().reverse()
+        .find((horizon) => horizon.pct !== null);
+    if (longest?.pct !== null && longest?.pct !== undefined) {
+      const metric = this.sourceFor(code)?.metric === 'INDEX_POINTS' ? 'index' : 'benchmark';
+      lines.push(`Over ${longest.label} staat de ${metric} ${Math.abs(longest.pct).toLocaleString('nl-BE', {
+        minimumFractionDigits: 1, maximumFractionDigits: 1,
+      })}% ${longest.pct > 0 ? 'hoger' : 'lager'} dan op ` +
+          `${this.shortDate(longest.comparedOn!)} (${longest.actualDays} dagen).`);
+    } else {
+      lines.push('De langere vergelijking volgt zodra er voldoende wekelijkse historiek is.');
+    }
+    return lines;
+  }
+
+  /** Provider state only deserves extra space when the feed needs attention. */
+  showSourceDetail(source: MarketSourceStatus): boolean {
+    return source.state === 'FAILED' || source.state === 'STALE' ||
+        source.state === 'CACHE_AFTER_FAILURE' ||
+        source.state === 'PROVIDER_ACCESS_REQUIRED' ||
+        source.state === 'CACHE_AFTER_ACCESS_BLOCK';
+  }
+
+  sourceGuidance(source: MarketSourceStatus): string {
+    if (source.state === 'PROVIDER_ACCESS_REQUIRED') {
+      return 'De provider blokkeert de automatische bronoproep. Koppel de toegestane feed, ' +
+          'credentials of IP-allowlist; er is nog geen geldige cache.';
+    }
+    if (source.state === 'CACHE_AFTER_ACCESS_BLOCK') {
+      return 'De provider blokkeert de nieuwe bronoproep. De laatst geldige cache blijft ' +
+          'zichtbaar; controleer de feed, credentials of IP-allowlist.';
+    }
+    return source.detail;
+  }
+
+  horizonBaselineLabel(horizon: FreightHorizon): string {
+    if (!horizon.comparedOn || horizon.actualDays === null) return '';
+    return `${this.shortDate(horizon.comparedOn)} · ${horizon.actualDays} d`;
+  }
+
+  observationLabel(code: string): string {
+    const count = this.ratesFor(code).length;
+    return `${count} ${count === 1 ? 'meetpunt' : 'meetpunten'}`;
+  }
+
+  firstDateLabel(code: string): string {
+    const first = this.ratesFor(code)[0];
+    return first ? this.shortDate(first.quotedOn) : '';
+  }
+
+  latestDateLabel(code: string): string {
+    const latest = this.ratesFor(code).at(-1);
+    return latest ? this.shortDate(latest.quotedOn) : '';
+  }
+
+  chartAriaLabel(code: string, label: string): string {
+    const entries = this.ratesFor(code);
+    if (entries.length < 2) return `${label}: nog te weinig data voor een verloopgrafiek`;
+    return `${label}: verloop van ${this.shortDate(entries[0].quotedOn)} tot ` +
+        `${this.shortDate(entries.at(-1)!.quotedOn)}, ${entries.length} meetpunten`;
+  }
+
+  private shortDate(value: string): string {
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat('nl-BE', {
+      day: 'numeric', month: 'short', year: '2-digit',
+    }).format(date);
+  }
+
+  private ratesFor(code: string): FreightRate[] {
+    return this.freightRates()
+        .filter((rate) => rate.route === code)
+        .slice()
+        .sort((a, b) => a.quotedOn.localeCompare(b.quotedOn));
   }
 
   horizonWord(code: string, pct: number): string {
@@ -725,8 +977,7 @@ export class Dashboard {
   }
 
   latestFor(route: string): FreightRate | null {
-    const rates = this.freightRates().filter((rate) => rate.route === route);
-    return rates[rates.length - 1] ?? null;
+    return this.ratesFor(route).at(-1) ?? null;
   }
 
   async saveRate(): Promise<void> {

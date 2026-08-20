@@ -205,7 +205,8 @@ export interface MarketSourceStatus {
   termsUrl: string;
   automatedAccessAuthorized: boolean;
   state: 'CURRENT' | 'STALE' | 'NO_DATA' | 'FAILED' |
-      'CACHE_AFTER_FAILURE' | 'LICENSE_REQUIRED';
+      'CACHE_AFTER_FAILURE' | 'DISABLED' | 'PROVIDER_ACCESS_REQUIRED' |
+      'CACHE_AFTER_ACCESS_BLOCK';
   detail: string;
   lastCheckedAt: string | null;
   lastSuccessfulAt: string | null;

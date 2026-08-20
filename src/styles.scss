@@ -1779,6 +1779,10 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
 .freight-quote__label { font-size: 11px; color: var(--muted); }
 .freight-quote__value { font-size: 18px; font-weight: 800; }
 .freight-quote__empty { font-size: 12px; color: var(--muted); }
+.freight-open-label {
+  flex: none; font-size: 11px; font-weight: 750; color: var(--accent);
+  white-space: nowrap;
+}
 
 .freight-index {
   border-top: 1px solid var(--line);
@@ -1786,15 +1790,99 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
   padding: 9px 11px;
 }
 .freight-index__head { font-size: 11.5px; color: var(--ink-2); }
+.freight-index__scope {
+  margin-top: 3px; color: var(--muted); font-size: 10.5px; line-height: 1.4;
+}
 .freight-index__value {
-  display: grid; grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: center; gap: 7px; margin-top: 5px; padding: 4px 0;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 6px 8px; margin-top: 5px; padding: 5px 0;
 }
 .freight-index__value > .num { font-size: 16px; font-weight: 800; }
-.freight-index__trend {
-  color: var(--muted); font-size: 11.5px; text-align: right;
-  overflow-wrap: anywhere;
+.freight-index__value > .freight-open-label { margin-left: auto; }
+
+/* Charts are part of the scan view rather than hidden behind the history
+   sheet. The 2-column mobile horizon grid keeps its labels legible. */
+.freight-analysis-card {
+  margin: 0 10px 10px; padding: 9px;
+  border: 1px solid var(--line); border-radius: 11px;
+  background: var(--surface);
 }
+.freight-analysis-card--index {
+  margin: 4px 0 0; padding: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+.freight-analysis-card--sheet { margin: 0 0 12px; }
+.freight-chart-panel {
+  min-width: 0; padding: 8px 8px 5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+.freight-chart-panel__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin-bottom: 3px;
+  font-size: 10.5px; color: var(--muted);
+}
+.freight-chart-panel__head strong {
+  color: var(--ink-2); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.freight-chart {
+  display: flex; width: 100%; min-width: 0; color: var(--accent);
+}
+.freight-chart svg { width: 100%; height: 88px; }
+.freight-chart-axis {
+  display: flex; justify-content: space-between; gap: 8px;
+  margin-top: -2px; color: var(--muted); font-size: 9.5px;
+}
+.freight-chart-empty {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  min-height: 88px; padding: 20px; text-align: center;
+  color: var(--muted); font-size: 11px; line-height: 1.35;
+}
+.freight-chart-empty__line {
+  position: absolute; left: 8px; right: 8px; top: 50%;
+  border-top: 1px dashed var(--line-strong); opacity: 0.75;
+}
+.freight-chart-empty > span:last-child {
+  position: relative; padding: 3px 7px; border-radius: 6px;
+  background: var(--surface);
+}
+.freight-horizons {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px; margin-top: 7px;
+}
+.freight-horizon {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  min-width: 0; min-height: 76px; padding: 7px 8px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+}
+.freight-horizon__label {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--muted);
+}
+.freight-horizon strong {
+  margin-top: 2px; font-size: 15px; line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.freight-horizon strong + span { font-size: 9.5px; color: var(--muted); }
+.freight-horizon__baseline {
+  margin-top: 2px; font-size: 8.5px; line-height: 1.25; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.freight-horizon__good { color: var(--ok, #2e7d4f); }
+.freight-horizon__bad { color: var(--warn, #a85e10); }
+.freight-horizon__missing { color: var(--muted); }
+.freight-analysis-copy {
+  margin-top: 7px; padding: 7px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--ink-2); font-size: 11px; line-height: 1.45;
+}
+.freight-analysis-copy > strong {
+  display: block; margin-bottom: 2px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.freight-analysis-copy p { margin: 1px 0; }
+.freight-history-note { margin: 7px 0 0; }
 
 .source-state {
   flex: none; display: inline-flex; align-items: center;
@@ -1815,6 +1903,7 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
 .source-detail {
   margin-top: 5px; color: var(--muted); font-size: 10.5px; line-height: 1.4;
 }
+.source-detail--benchmark { margin: 0; padding: 0 11px 9px; }
 .market-source-note {
   padding: 10px 11px; margin-bottom: 10px;
   border-radius: 10px; background: var(--surface-2);
@@ -1825,7 +1914,12 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
 }
 
 @media (max-width: 430px) {
-  .freight-index__value { grid-template-columns: auto 1fr; }
-  .freight-index__trend { grid-column: 1 / -1; text-align: left; }
   .market-row__spark { max-width: 82px; }
+  .freight-benchmark__head,
+  .freight-port__head { align-items: flex-start; }
+  .freight-index__value > .freight-open-label { width: 100%; margin-left: 0; }
+}
+
+@media (min-width: 700px) {
+  .freight-horizons { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
