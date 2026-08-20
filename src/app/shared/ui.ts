@@ -181,6 +181,16 @@ export interface ConfirmRequest {
   onConfirm: () => void;
 }
 
+/** Escapes dynamic copy before it is embedded in a confirm dialog's rich text. */
+export function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 @Injectable({ providedIn: 'root' })
 export class Ui {
   private counter = 0;

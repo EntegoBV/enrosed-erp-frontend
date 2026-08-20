@@ -25,7 +25,7 @@ import {
 import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { Privacy } from '../../core/api/privacy';
-import { Sheet, Ui } from '../../shared/ui';
+import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS } from '../../core/api/geo';
@@ -520,7 +520,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <details class="danger-zone">
             <summary>Geavanceerde acties</summary>
             <div>
-              <p>Verwijderen kan gevolgen hebben voor regels op bestaande orders.</p>
+              <p>Staat dit product al op een order of offerte? Zet het dan inactief; gebruikte producten kunnen niet worden verwijderd.</p>
               <button class="btn btn--danger btn--block" type="button"
                       [disabled]="saving() || photoUploading()" (click)="remove()">
                 Product definitief verwijderen
@@ -1512,13 +1512,17 @@ export class ProductEditor {
     this.ui.confirm(
       {
         title: 'Product verwijderen',
-        message: `<b>${product.name}</b> verwijderen? Regels op orders verdwijnen mee.`,
+        message: `<b>${escapeHtml(product.name)}</b> verwijderen? Producten die al op een order staan, kunnen niet worden verwijderd; zet die inactief.`,
         confirmLabel: 'Verwijderen', danger: true,
       },
       async () => {
-        await this.catalog.deleteProduct(product.id!);
-        this.ui.toast('Product verwijderd');
-        await this.router.navigate(['/products']);
+        try {
+          await this.catalog.deleteProduct(product.id!);
+          this.ui.toast('Product verwijderd');
+          await this.router.navigate(['/products']);
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+        }
       },
     );
   }

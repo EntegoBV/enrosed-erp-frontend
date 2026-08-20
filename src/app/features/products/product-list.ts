@@ -8,6 +8,8 @@ import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Privacy } from '../../core/api/privacy';
 import { EurPipe, NumPipe } from '../../shared/pipes';
+import { escapeHtml, Ui } from '../../shared/ui';
+import { messageOf } from '../../core/api/errors';
 
 @Component({
   selector: 'app-product-list',
@@ -72,8 +74,15 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
       <div class="card">
         <div class="list">
           @for (product of filtered(); track product.id) {
-            <a class="list-item" [class.list-item--inactive]="!product.active"
-               [routerLink]="['/products', product.id]">
+            <div class="swipe swipe--desktop-action"
+                 [class.swipe--open]="swiped() === product.id">
+            <a class="list-item swipe__row" [class.list-item--inactive]="!product.active"
+               [routerLink]="['/products', product.id]"
+               (touchstart)="swipeStart($event, product)"
+               (touchmove)="swipeMove($event, product)"
+               (touchend)="swipeEnd()"
+               (touchcancel)="swipeEnd(true)"
+               (click)="blockWhenSwiped($event, product.id)">
               @if (product.photos.length) {
                 <img class="thumb" [appAuthSrc]="product.photos[0].url" [alt]="product.name" />
               } @else {
@@ -147,6 +156,19 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
               </div>
               <span class="list-item__chev">›</span>
             </a>
+            <button class="swipe__delete" type="button"
+                    [disabled]="deleting() !== null"
+                    [attr.aria-label]="'Product ' + product.name + ' verwijderen'"
+                    [attr.title]="'Product verwijderen'"
+                    (click)="remove(product)">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+                   stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                   stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+              </svg>
+            </button>
+            </div>
           } @empty {
             @if (loading()) {
               <app-skeleton kind="list" [rows]="6" />
@@ -245,12 +267,20 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 })
 export class ProductList {
   private readonly catalog = inject(CatalogApi);
+  private readonly ui = inject(Ui);
   readonly privacy = inject(Privacy);
 
   readonly query = signal('');
   readonly categoryFilter = signal<number | null>(null);
   readonly statusFilter = signal<'ALL' | 'NEEDS_WORK' | 'WEBSITE' | 'ORDER_APP' | 'INACTIVE'>('ALL');
   readonly loading = signal(true);
+  readonly deleting = signal<number | null>(null);
+  readonly swiped = signal<number | null>(null);
+
+  private touchX = 0;
+  private touchY = 0;
+  private swipeHandled = false;
+  private swipeResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
@@ -304,6 +334,98 @@ export class ProductList {
     this.query.set('');
     this.categoryFilter.set(null);
     this.statusFilter.set('ALL');
+  }
+
+  swipeStart(event: TouchEvent, product: Product): void {
+    if (product.id === null || event.touches.length !== 1 || this.deleting() !== null) return;
+    if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
+    this.touchX = event.touches[0].clientX;
+    this.touchY = event.touches[0].clientY;
+    this.swipeHandled = false;
+    if (this.swiped() !== null && this.swiped() !== product.id) this.swiped.set(null);
+  }
+
+  swipeMove(event: TouchEvent, product: Product): void {
+    if (product.id === null || event.touches.length !== 1 || this.swipeHandled
+        || this.deleting() !== null) return;
+    const dx = event.touches[0].clientX - this.touchX;
+    const dy = event.touches[0].clientY - this.touchY;
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < -140) {
+      this.swipeHandled = true;
+      this.remove(product);
+      return;
+    }
+    if (dx < -24) {
+      this.swiped.set(product.id);
+      return;
+    }
+    if (dx > 24) {
+      this.swipeHandled = true;
+      this.swiped.set(null);
+    }
+  }
+
+  swipeEnd(cancelled = false): void {
+    if (cancelled) {
+      this.swipeHandled = false;
+      this.swiped.set(null);
+      return;
+    }
+    if (this.swipeHandled) {
+      /* Keep the synthetic click after touchend from opening the row, then
+         release the guard so a cancelled confirmation never leaves it stuck. */
+      this.swipeResetTimer = setTimeout(() => {
+        this.swipeHandled = false;
+        this.swipeResetTimer = null;
+      }, 400);
+    }
+  }
+
+  blockWhenSwiped(event: Event, productId: number | null): void {
+    if (this.swiped() === productId || this.swipeHandled) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!this.swipeHandled) this.swiped.set(null);
+    }
+  }
+
+  remove(product: Product): void {
+    if (product.id === null || this.deleting() !== null) return;
+    const productId = product.id;
+    const family = this.familyFor(product);
+    const familyMessage = family === null
+      ? ''
+      : family.variantCount > 1
+        ? ' Alleen deze kleurvariant/SKU wordt verwijderd; de familie en andere kleuren blijven bestaan.'
+        : ' De websitefamilie en haar content blijven bewaard, maar worden zonder variant niet gepubliceerd.';
+    const historyMessage = ' Staat dit product al op een order of offerte, dan blijft het bewaard en kun je het alleen inactief zetten.';
+    this.swiped.set(null);
+    this.ui.confirm(
+      {
+        title: 'Product verwijderen',
+        message: `<b>${escapeHtml(product.name)}</b> verwijderen?${familyMessage}${historyMessage}`,
+        confirmLabel: 'Verwijderen',
+        danger: true,
+      },
+      async () => {
+        this.deleting.set(productId);
+        try {
+          await this.catalog.deleteProduct(productId);
+          this.products.update((products) => products.filter((item) => item.id !== productId));
+          if (family?.id !== null && family?.id !== undefined) {
+            this.families.update((families) => families.map((item) => item.id === family.id
+              ? { ...item, variantCount: Math.max(0, item.variantCount - 1) }
+              : item));
+          }
+          this.ui.toast('Product verwijderd');
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+        } finally {
+          this.deleting.set(null);
+        }
+      },
+    );
   }
 
   sizeLabel(product: Product): string {

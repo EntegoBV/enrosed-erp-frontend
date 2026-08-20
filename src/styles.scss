@@ -1651,10 +1651,13 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
 
 /* ------------------------------------------------- swipe-to-delete rows */
 .swipe { position: relative; overflow: hidden; }
+.list > .swipe:not(:last-child) { border-bottom: 1px solid var(--line); }
+.list > .swipe .list-item { border-bottom: 0; }
 .swipe__row {
   position: relative; z-index: 1;
   background: var(--surface);
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: pan-y;
 }
 .swipe--open .swipe__row { transform: translateX(-76px); }
 .swipe__delete {
@@ -1664,6 +1667,40 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
   cursor: pointer;
 }
 .swipe__delete:active { filter: brightness(0.9); }
+.swipe__delete:disabled { cursor: wait; opacity: 0.58; }
+
+@media (max-width: 1023px) {
+  .swipe:has(.swipe__delete:focus-visible) .swipe__row {
+    transform: translateX(-76px);
+  }
+}
+
+/* On fine-pointer desktop screens the destructive action must not remain
+   hidden behind a touch-only gesture. The same modifier is shared by product
+   and purchase rows so both lists behave consistently. */
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  .swipe--desktop-action { display: flex; align-items: stretch; }
+  .swipe--desktop-action .swipe__row {
+    min-width: 0; flex: 1 1 auto; transform: none;
+  }
+  .swipe--desktop-action.swipe--open .swipe__row { transform: none; }
+  .swipe--desktop-action .swipe__delete {
+    position: static; inset: auto; flex: 0 0 56px; width: 56px;
+    border-left: 1px solid var(--line); background: var(--surface);
+    color: var(--danger);
+  }
+  .swipe--desktop-action .swipe__delete:hover:not(:disabled) {
+    background: var(--danger-soft);
+  }
+  .swipe--desktop-action .swipe__delete:focus-visible {
+    position: relative; z-index: 2; outline: 3px solid var(--rose-line);
+    outline-offset: -3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swipe__row { transition: none; }
+}
 
 /* Breathing room between the pallet explainer and its two start options. */
 .pallet-intro { margin: 0 0 16px; line-height: 1.55; }

@@ -52,7 +52,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         @for (row of orders(); track row.order.id) {
           <!-- iOS pattern: swipe the row left to reveal delete - no need to
                open a calculation just to get rid of it. -->
-          <div class="swipe" [class.swipe--open]="swiped() === row.order.id">
+          <div class="swipe swipe--desktop-action"
+               [class.swipe--open]="swiped() === row.order.id">
             <a class="list-item swipe__row" [routerLink]="['/purchasing', row.order.id]"
                (touchstart)="row.order.status !== 'ONTVANGEN' && swipeStart($event, row.order.id)"
                (touchmove)="row.order.status !== 'ONTVANGEN' && swipeMove($event, row.order.id)"
@@ -86,9 +87,11 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             </a>
             @if (row.order.status !== 'ONTVANGEN') {
               <button class="swipe__delete" type="button" (click)="remove(row.order.id, row.order.number)"
-                      aria-label="Calculatie verwijderen">
+                      [attr.aria-label]="'Inkooporder ' + row.order.number + ' verwijderen'"
+                      title="Calculatie verwijderen">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true" focusable="false">
                   <path d="M4 7h16" /><path d="M9 7V5h6v2" />
                   <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
                 </svg>
