@@ -3,8 +3,9 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE, api } from './api.config';
 import {
-  CompanyProfile, Country, Customer, DiscountTier, LanguageCode, NotificationFeed, PortalCatalogItem,
-  PortalQuote, QuoteEvent, QuoteRevision, SalesOrder, SalesOrderView,
+  CompanyProfile, Country, Customer, DiscountTier, FreightPricingStrategy, LanguageCode,
+  NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
+  SalesOrderView,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -91,9 +92,13 @@ export class SalesApi {
 
   /** Changes only the open freight item; prices and quantities stay locked. */
   updateFreight(id: number, state: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD',
-                manualFreightEur: number | null): Promise<SalesOrderView> {
+                manualFreightEur: number | null,
+                freightPricingStrategy: FreightPricingStrategy | null,
+                freightRatePerCbmEur: number | null): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(
-      api(`/api/sales-orders/${id}/freight`), { state, manualFreightEur }));
+      api(`/api/sales-orders/${id}/freight`), {
+        state, manualFreightEur, freightPricingStrategy, freightRatePerCbmEur,
+      }));
   }
 
   duplicateOrder(id: number): Promise<SalesOrderView> {

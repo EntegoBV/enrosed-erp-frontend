@@ -12,7 +12,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { FreightRate, PurchaseOrderView, QuoteRevision, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
-import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from '../sales/quote-status';
 import { containerLabel } from '../../core/api/geo';
 
@@ -23,7 +23,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, Sparkline, Icon, Sheet, FormsModule, RouterLink, PageHeader, EurPipe, NumPipe, PctPipe],
+  imports: [Skeleton, Sparkline, Icon, Sheet, FormsModule, RouterLink, PageHeader,
+            EurPipe, NumPipe, PctPipe, CbmPipe],
   template: `
     <app-page-header [title]="greeting()" [subtitle]="today()">
     </app-page-header>
@@ -272,7 +273,15 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <div class="list-item__title">{{ row.order.number }}</div>
                 <div class="list-item__meta">
                   {{ row.priced.totals.pieces | num }} st ·
-                  {{ row.priced.totals.palletsStrict }} pallet(s)
+                  @if (row.order.loadMode === 'LOOSE_CARTONS') {
+                    {{ row.priced.totals.cartons | num }}
+                    {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} ·
+                    {{ row.priced.totals.cbm | cbm }}
+                  } @else {
+                    {{ row.priced.totals.palletsManual || row.priced.totals.palletsStrict }}
+                    {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
+                        ? 'pallet' : 'pallets' }}
+                  }
                 </div>
               </div>
               <div class="list-item__end">

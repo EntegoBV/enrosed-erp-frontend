@@ -14,6 +14,7 @@ import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { SupplierAddress } from '../../shared/supplier-address';
 
 /**
  * Landed-cost calculation of a container.
@@ -26,7 +27,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader, ProductPicker, DateField,
-            EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe],
+            SupplierAddress, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="supplierName()"
@@ -150,8 +151,12 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                     <span class="supplier-context__copy">
                       <span>Leverancier</span>
                       <strong>{{ supplierName() }}</strong>
+                      @if (privacy.showPurchase()) {
+                        <app-supplier-address [supplier]="supplier()" [inline]="true"
+                                              [showEmpty]="true" />
+                      }
                     </span>
-                    <span class="supplier-context__country">{{ originLabel() }}</span>
+                    <span class="supplier-context__country">{{ supplier()?.currency }}</span>
                   </div>
 
                   <div class="form-grid order-fields">
@@ -294,12 +299,24 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                             <span>Kostopbouw</span>
                             <small>{{ perPiece() ? 'per stuk' : 'hele regel' }}</small>
                           </span>
-                          <strong class="line-breakdown__total">
-                            {{ perPiece() ? (line.landedUnitEur | eur: 4)
-                              : (line.totalEur | eur) }}
-                          </strong>
+                          <span class="line-breakdown__value">
+                            <svg class="line-breakdown__chevron" viewBox="0 0 20 20"
+                                 width="18" height="18" aria-hidden="true">
+                              <path d="m6.5 8 3.5 3.5L13.5 8" fill="none"
+                                    stroke="currentColor" stroke-width="1.8"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <strong class="line-breakdown__total">
+                              {{ perPiece() ? (line.landedUnitEur | eur: 4)
+                                : (line.totalEur | eur) }}
+                            </strong>
+                          </span>
                         </summary>
                         <div class="line-breakdown__body">
+                          <div class="stat-row stat-row--muted">
+                            <span>Goederen</span>
+                            <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span>
+                          </div>
                           @if (line.originEur) {
                             <div class="stat-row stat-row--muted">
                               <span>Lokale kosten {{ originLabel() }}</span>
@@ -324,13 +341,17 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
                             <span>{{ data.order.destinationPort || 'Rotterdam' }} → magazijn</span>
                             <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span>
                           </div>
-                          <div class="stat-row line-breakdown__landed">
-                            <span>{{ perPiece() ? 'Geland per stuk' : 'Totaal regel' }}</span>
-                            <strong class="num">
-                              {{ perPiece() ? (line.landedUnitEur | eur: 4)
-                                : (line.totalEur | eur) }}
-                            </strong>
-                          </div>
+                          @if (line.extraRevenueEur) {
+                            <div class="stat-row stat-row--muted">
+                              <span>
+                                Extra opbrengst
+                                <small>{{ perPiece() ? 'per stuk' : 'hele regel' }}</small>
+                              </span>
+                              <span class="num">
+                                {{ amt(line.extraRevenueEur, line) | eur: decimals() }}
+                              </span>
+                            </div>
+                          }
                         </div>
                       </details>
                     }
@@ -718,8 +739,10 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
     .section-chevron{flex:none;color:var(--muted)}.section-chevron--open{transform:rotate(180deg)}.section-body{padding:14px 14px 0;border-top:1px solid var(--line);background:var(--surface-2)}
 
     .supplier-context{display:flex;align-items:center;gap:9px;margin-bottom:14px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
-    .supplier-context__mark{display:grid;width:34px;height:34px;place-items:center;border-radius:10px;background:var(--rose);color:#fff}.supplier-context__copy{display:flex;min-width:0;flex:1;flex-direction:column}.supplier-context__copy span,.supplier-context__country{color:var(--muted);font-size:10px}.supplier-context__copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .supplier-context__mark{display:grid;width:34px;height:34px;place-items:center;border-radius:10px;background:var(--rose);color:#fff}.supplier-context__copy{display:flex;min-width:0;flex:1;flex-direction:column}.supplier-context__copy>span,.supplier-context__country{color:var(--muted);font-size:10px}.supplier-context__copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.supplier-context__copy app-supplier-address{margin-top:1px}
     :is(.order-fields,.po-line__inputs) .field{min-width:0}
+
+  `, `
 
     .products-card{overflow:visible}:is(.products-card .section-heading,.summary-heading){border-bottom:1px solid var(--line)}.add-product{flex:none;min-height:40px;padding-inline:11px}
     .product-tools{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}.product-tools__label{color:var(--muted);font-size:11px}
@@ -729,8 +752,10 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes'
 
     :is(.line-breakdown,.allocation-settings){overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     :is(.line-breakdown,.allocation-settings) summary{display:flex;min-height:50px;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;list-style:none}
+    .line-breakdown summary::-webkit-details-marker{display:none}
     .line-breakdown__label{display:flex;min-width:0;flex:1;flex-direction:column;font-size:12px}.line-breakdown__label small{color:var(--muted);font-size:10px}.line-breakdown__total{color:var(--rose)}
-    .line-breakdown__body{padding:3px 10px 8px;border-top:1px solid var(--line)}:is(.line-divider,.line-breakdown__landed){border-top:1px solid var(--line)}.line-breakdown__landed{color:var(--rose);font-weight:700}.product-empty{padding-block:34px}
+    .line-breakdown__value{display:flex;align-items:center;gap:5px}.line-breakdown__chevron{flex:none;color:var(--muted);transition:transform .18s ease}.line-breakdown[open] .line-breakdown__chevron{transform:rotate(180deg)}
+    .line-breakdown__body{padding:3px 10px 8px;border-top:1px solid var(--line)}.line-divider{border-top:1px solid var(--line)}.line-breakdown__body .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}.product-empty{padding-block:34px}
 
     .cost-fields{padding-bottom:14px}.cost-group{padding:11px 10px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.cost-group+.cost-group{margin-top:10px}
     .cost-group__intro{margin-bottom:10px}.cost-group__intro>div{display:flex;gap:7px}.cost-group__step{color:var(--rose);font-size:11px}.cost-group h3{font-size:13px}.cost-group__intro p{color:var(--muted);font-size:11px}.rate-grid{display:grid}
@@ -897,11 +922,14 @@ export class PurchaseEditor {
 
   private async load(orderId: number): Promise<void> {
     const view = await this.sourcing.purchaseOrder(orderId);
-    this.view.set(view);
     const [products, suppliers] = await Promise.all([
       this.catalog.products(view.order.supplierId), this.sourcing.suppliers()]);
     this.products.set(products);
     this.supplier.set(suppliers.find((s) => s.id === view.order.supplierId) ?? null);
+    /* Publish the order only after its header context is ready. Otherwise the
+       app bar first paints a placeholder supplier and visibly jumps when the
+       supplier request finishes. */
+    this.view.set(view);
   }
 
   supplierName(): string { return this.supplier()?.name ?? 'Onbekend'; }

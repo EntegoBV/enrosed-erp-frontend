@@ -8,8 +8,8 @@ import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
-  Country, Customer, LANGUAGES, LanguageCode, MarkupMode, Product, QuoteEvent, QuoteRevision,
-  PricedLine, SalesOrder, SalesOrderView,
+  Country, Customer, FreightPricingStrategy, LANGUAGES, LanguageCode, MarkupMode, Product,
+  QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -24,6 +24,9 @@ import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from './quote-status';
+import {
+  ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
+} from './shipping-planner';
 
 /**
  * Sales order and quote.
@@ -36,6 +39,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+            ShippingPlanner,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -98,8 +102,19 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             </div>
             <div class="hero-fact">
               <span class="hero-fact__label">Levering</span>
-              <strong>{{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}</strong>
-              <span>pallet(s)</span>
+              @if (isLooseCartons(data)) {
+                <strong>{{ data.priced.totals.cbm | cbm }}</strong>
+                <span>
+                  {{ data.priced.totals.cartons | num }}
+                  {{ data.priced.totals.cartons === 1 ? 'losse doos' : 'losse dozen' }}
+                </span>
+              } @else {
+                <strong>{{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}</strong>
+                <span>
+                  {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1
+                      ? 'pallet' : 'pallets' }}
+                </span>
+              }
             </div>
             <div class="hero-fact hero-fact--total">
               <span class="hero-fact__label">Offertetotaal</span>
@@ -433,7 +448,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   <div class="order-line__identity">
                     <span class="order-line__index">Regel {{ index + 1 }} · {{ line.sku }}</span>
                     <h3 [id]="'line-title-' + line.productId">{{ line.description }}</h3>
-                    <span>{{ line.cartons | num }} dozen · {{ line.pallets }} pallet(s) · {{ line.cbm | cbm }}</span>
+                    <span>
+                      {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} ·
+                      @if (!isLooseCartons(data) && !data.order.pallets.length) {
+                        {{ line.pallets }} {{ line.pallets === 1 ? 'pallet' : 'pallets' }} ·
+                      }
+                      {{ line.cbm | cbm }}
+                    </span>
                   </div>
                   <div class="order-line__amount">
                     <strong>{{ line.net | eur }}</strong>
@@ -605,21 +626,29 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           </div>
           <div class="logistics-grid">
             <div class="logistics-option">
-              <div class="logistics-option__icon" aria-hidden="true">▦</div>
-              <div class="logistics-option__copy">
-                <strong>Palletindeling</strong>
-                <span>{{ data.order.pallets.length ? 'Handmatig verdeeld' : 'Automatisch berekend' }}</span>
+              <div class="logistics-option__icon" aria-hidden="true">
+                {{ isLooseCartons(data) ? '▤' : '▦' }}
               </div>
-              @if (data.order.pallets.length) {
+              <div class="logistics-option__copy">
+                <strong>Verzendindeling</strong>
+                <span>
+                  @if (isLooseCartons(data)) {
+                    {{ data.priced.totals.cbm | cbm }} · losse dozen
+                  } @else {
+                    {{ data.order.pallets.length ? 'Handmatig verdeeld' : 'Automatisch berekend' }}
+                  }
+                </span>
+              </div>
+              @if (!isLooseCartons(data) && data.order.pallets.length) {
                 <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
                   {{ layoutOk() ? 'compleet' : 'nakijken' }}
                 </span>
               }
               <button class="btn btn--sm" type="button" [disabled]="!canEdit()"
                       (click)="palletSheet.set(true)">
-                {{ data.order.pallets.length ? 'Beheren' : 'Indelen' }}
+                Aanpassen
               </button>
-              @if (data.priced.totals.unassignedCartons > 0) {
+              @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
                 <div class="logistics-option__warning">
                   {{ data.priced.totals.unassignedCartons }} dozen zijn nog niet toegewezen.
                 </div>
@@ -632,19 +661,18 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <strong>Vracht</strong>
                 @if (data.order.freight === 'TE_BEPALEN') {
                   <span class="danger-text">Nog te bepalen</span>
-                } @else if (data.order.manualFreightEur !== null) {
-                  <span>Handmatig · {{ data.priced.totals.freight | eur }}</span>
                 } @else {
-                  <span>Landenregel · {{ data.priced.totals.freight | eur }}</span>
+                  <span>{{ freightStrategyLabel(data) }} · {{ data.priced.totals.freight | eur }}</span>
                 }
               </div>
               <button class="btn btn--sm" type="button" [disabled]="!canEditTerms()"
-                      (click)="freightOpen.set(!freightOpen())"
-                      [attr.aria-expanded]="freightOpen()" aria-controls="freight-options">
-                {{ freightOpen() ? 'Sluiten' : 'Aanpassen' }}
+                      (click)="canEdit() ? palletSheet.set(true) : freightOpen.set(!freightOpen())"
+                      [attr.aria-expanded]="!canEdit() && freightOpen()"
+                      aria-controls="freight-options">
+                {{ !canEdit() && freightOpen() ? 'Sluiten' : 'Aanpassen' }}
               </button>
 
-              @if (freightOpen()) {
+              @if (!canEdit() && freightOpen()) {
                 <div class="freight-options" id="freight-options">
                   <label class="check-option">
                     <input type="checkbox" [checked]="data.order.freight === 'TE_BEPALEN'"
@@ -654,9 +682,32 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                       <small>De klant ziet geen bedrag; vracht telt nog niet mee.</small>
                     </span>
                   </label>
-                  @if (data.order.freight !== 'TE_BEPALEN') {
+                  <div class="field">
+                    <label for="so-freight-strategy">Prijsstrategie</label>
+                    <select class="select" id="so-freight-strategy"
+                            [value]="effectiveFreightStrategy(data)"
+                            (change)="setLockedFreightStrategy($any($event.target).value)">
+                      @if (!isLooseCartons(data)) {
+                        <option value="COUNTRY_PALLET">Landentarief per pallet</option>
+                      }
+                      <option value="PER_CBM">Tarief per m³</option>
+                      <option value="FIXED">Vast bedrag</option>
+                    </select>
+                  </div>
+                  @if (effectiveFreightStrategy(data) === 'PER_CBM') {
                     <div class="field">
-                      <label for="so-freight">Eigen vrachtbedrag <span class="opt"></span></label>
+                      <label for="so-freight-cbm">Tarief per m³</label>
+                      <div class="input-prefix">
+                        <span>€</span>
+                        <input class="input num" id="so-freight-cbm" type="number" min="0"
+                               step="0.01" inputmode="decimal"
+                               [value]="data.order.freightRatePerCbmEur ?? ''"
+                               (change)="setFreightCbmRate($any($event.target).value)" />
+                      </div>
+                    </div>
+                  } @else if (effectiveFreightStrategy(data) === 'FIXED') {
+                    <div class="field">
+                      <label for="so-freight">Vast vrachtbedrag</label>
                       <div class="input-prefix">
                         <span>€</span>
                         <input class="input num" id="so-freight" type="number" min="0"
@@ -664,8 +715,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                                [value]="data.order.manualFreightEur ?? ''"
                                (change)="setManualFreight($any($event.target).value)" />
                       </div>
-                      <span class="hint">Leeg gebruikt het tarief van het bestemmingsland.</span>
                     </div>
+                  }
+                  @if (data.order.freight === 'TE_BEPALEN') {
+                    <span class="hint">Vul de prijs in en zet ‘Later bepalen’ uit wanneer hij klaar is.</span>
                   }
                 </div>
               }
@@ -749,7 +802,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                  pickup, is unknown at drafting time. -->
             <div class="cost-section">Verzending</div>
             <div class="stat-row">
-              <span>Vracht ({{ palletCountLabel(data.priced.totals) }})</span>
+              <span>Vracht ({{ freightBasisLabel(data) }})</span>
               <span class="num">
                 @if (data.order.freight === 'TE_BEPALEN') {
                   <span class="danger-text">nog te bepalen</span>
@@ -844,8 +897,11 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     (click)="downloadPackingSlip()">
               <span>Pakbon downloaden</span>
               <span class="btn__sub">
-                {{ view()?.order?.pallets?.length
-                    ? 'per pallet, met type en hoogte' : 'per product; pallets zijn niet verplicht' }}
+                {{ view() && isLooseCartons(view()!)
+                    ? 'per product; volume uit omdozen'
+                    : view()?.order?.pallets?.length
+                      ? 'per pallet, met type en hoogte'
+                      : 'per product; automatische palletberekening' }}
               </span>
             </button>
           </div>
@@ -859,134 +915,23 @@ import { STATUS_LABEL, statusClass } from './quote-status';
       }
 
       @if (palletSheet()) {
-      <app-sheet title="Pallets" (closed)="palletSheet.set(false)">
-        <div body>
-          <!-- Help up front: this sheet is used twice a season, not daily. -->
-          <p class="tiny muted" style="margin:0 0 12px">
-            Verdeel de dozen per product over de pallets. Aantal aanpassen verplaatst
-            dozen, 0 haalt het product van de pallet. De vracht telt jouw pallets.
-          </p>
-          @if (view(); as data) {
-            @if (!data.order.pallets.length) {
-              <p class="small muted pallet-intro">
-                De rekenmodule stapelt automatisch: {{ data.priced.totals.palletsStrict }}
-                pallet(s), elk product apart. Zelf indelen kan ook — fragiel glas bovenaan,
-                dozen van één klant samen — en dan telt de vracht jouw indeling.
-              </p>
-              <button class="btn btn--primary btn--block btn--stacked" type="button"
-                      (click)="autoLayout()">
-                <span>Start van de berekening</span>
-                <span class="btn__sub">{{ data.priced.totals.palletsStrict }} pallet(s) voorgevuld</span>
-              </button>
-              <button class="btn btn--block btn--stacked mt-8" type="button" (click)="addPallet()">
-                <span>Start leeg</span>
-                <span class="btn__sub">zelf pallets en dozen kiezen</span>
-              </button>
-            } @else {
-              @if (data.priced.totals.unassignedCartons > 0) {
-                <div class="pallet-warn">
-                  {{ data.priced.totals.unassignedCartons }} dozen staan nog op geen pallet —
-                  de vracht telt alleen de pallets hieronder.
-                </div>
-              }
-              <div class="row" style="margin-bottom:10px;gap:8px">
-                <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
-                  {{ layoutStatus() }}
-                </span>
-                <span class="spacer"></span>
-                <button class="btn btn--sm" type="button" (click)="autoLayout()">
-                  Herbereken
-                </button>
-                <button class="btn btn--sm btn--quiet" type="button" (click)="emptyPallets()">
-                  Alles legen
-                </button>
-              </div>
-              @for (pallet of data.order.pallets; track pi; let pi = $index) {
-                <div class="pallet">
-                  <div class="pallet__head">
-                    <button class="pallet__tool" type="button" [disabled]="pi === 0"
-                            (click)="movePallet(pi, -1)" aria-label="Omhoog">↑</button>
-                    <button class="pallet__tool" type="button"
-                            [disabled]="pi === data.order.pallets.length - 1"
-                            (click)="movePallet(pi, 1)" aria-label="Omlaag">↓</button>
-                    <input class="pallet__label" #palletName [value]="pallet.label"
-                           placeholder="Pallet {{ pi + 1 }}"
-                           (change)="renamePallet(pi, $any($event.target).value)" />
-                    <!-- The pencil says the name is typable; the bare input
-                         did not. -->
-                    <button class="pallet__tool" type="button" (click)="palletName.focus()"
-                            aria-label="Naam wijzigen">✎</button>
-                    <button class="pallet__tool" type="button" (click)="removePallet(pi)"
-                            aria-label="Pallet verwijderen">✕</button>
-                  </div>
-                  <div class="pallet__sub">
-                    <select class="pallet__type"
-                            (change)="setPalletType(pi, $any($event.target).value)">
-                      @for (option of palletTypes; track option) {
-                        <option [value]="option" [selected]="palletType(pallet) === option">
-                          {{ option }}
-                        </option>
-                      }
-                      @if (!palletTypes.includes(palletType(pallet))) {
-                        <option [value]="palletType(pallet)" selected>{{ palletType(pallet) }}</option>
-                      }
-                      <option value="__other__">Anders…</option>
-                    </select>
-                    <input class="pallet__height" type="number" min="0" inputmode="numeric"
-                           placeholder="hoogte" [value]="pallet.heightCm ?? ''"
-                           (change)="setPalletHeight(pi, $any($event.target).value)" />
-                    <span class="tiny muted">cm</span>
-                    <span class="spacer"></span>
-                    <span class="pallet__count">{{ palletCartons(pallet) }} dozen</span>
-                  </div>
-                  @if (!pallet.items.length) {
-                    <div class="pallet__empty">Nog leeg — kies hieronder een product.</div>
-                  }
-                  @for (item of pallet.items; track item.productId) {
-                    <div class="pallet__item">
-                      <span class="pallet__item-name">{{ productLabel(item.productId) }}</span>
-                      <div class="pallet__step">
-                        <button class="pallet__step-btn" type="button" aria-label="Doos eraf"
-                                (click)="setItemCartons(pi, item.productId, item.cartons - 1)">−</button>
-                        <input class="pallet__step-input" type="number" min="0" inputmode="numeric"
-                               [value]="item.cartons"
-                               (change)="setItemCartons(pi, item.productId, +$any($event.target).value)" />
-                        <button class="pallet__step-btn" type="button" aria-label="Doos erbij"
-                                [disabled]="remainingFor(item.productId) <= 0"
-                                (click)="setItemCartons(pi, item.productId, item.cartons + 1)">+</button>
-                      </div>
-                      <span class="pallet__item-unit">dozen</span>
-                    </div>
-                  }
-                  @if (assignable(pi).length) {
-                    <div class="pallet__add">
-                      <select class="select"
-                              (change)="addItem(pi, +$any($event.target).value);
-                                        $any($event.target).selectedIndex = 0">
-                        <option value="" selected disabled>+ Product op deze pallet…</option>
-                        @for (option of assignable(pi); track option.productId) {
-                          <option [value]="option.productId">
-                            {{ option.description }} — nog {{ option.remaining }} dozen
-                          </option>
-                        }
-                      </select>
-                    </div>
-                  }
-                </div>
-              }
-              <button class="btn btn--block" type="button" (click)="addPallet()">+ Pallet</button>
-              <button class="btn btn--block btn--quiet mt-8" type="button" (click)="clearPallets()">
-                Terug naar automatisch
-              </button>
+        <app-sheet title="Verzendindeling" [wide]="true" (closed)="palletSheet.set(false)">
+          <div body>
+            @if (view(); as data) {
+              <app-shipping-planner
+                [view]="data"
+                [canEdit]="canEdit()"
+                (patch)="applyShippingPatch($event)"
+                (action)="handlePalletAction($event)"
+              />
             }
-          }
-        </div>
-        <div foot style="display:contents">
-          <button class="btn btn--primary btn--block" type="button"
-                  (click)="palletSheet.set(false)">Klaar</button>
-        </div>
-      </app-sheet>
-    }
+          </div>
+          <div foot style="display:contents">
+            <button class="btn btn--primary btn--block" type="button"
+                    (click)="palletSheet.set(false)">Klaar</button>
+          </div>
+        </app-sheet>
+      }
 
     @if (picking()) {
         <app-product-picker
@@ -1466,6 +1411,53 @@ export class SalesEditor {
     else if (!customer.email?.trim()) issues.push(`${customer.company} heeft geen e-mailadres`);
     if (!data.order.countryCode) issues.push('Kies een land van levering');
     if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
+    if (data.order.loadMode === 'LOOSE_CARTONS'
+        && data.priced.validation.productsWithoutCartonDimensions?.length) {
+      issues.push('Vul de buitenmaten van alle omdozen in');
+    }
+    if (data.order.loadMode !== 'LOOSE_CARTONS'
+        && data.priced.validation.productsWithoutPalletFit?.length) {
+      issues.push('Controleer de omdoosmaten: niet elk product past op de gekozen pallet');
+    }
+    if (data.order.loadMode !== 'LOOSE_CARTONS' && data.order.pallets.length) {
+      if (data.priced.totals.unassignedCartons > 0) {
+        issues.push('Wijs alle dozen toe aan de handmatige pallets');
+      }
+      if (this.overassigned()) issues.push('Er zijn meer dozen op pallets gezet dan besteld');
+      if (data.order.pallets.some((pallet) => pallet.items.length === 0)) {
+        issues.push('Verwijder lege pallets of zet er producten op');
+      }
+      if (data.order.pallets.some((pallet) =>
+          pallet.items.some((item) => item.cartons <= 0))) {
+        issues.push('Vul op elke pallet een geldig aantal dozen in');
+      }
+      const lineIds = new Set(data.priced.lines.map((line) => line.productId));
+      if (data.order.pallets.some((pallet) =>
+          pallet.items.some((item) => !lineIds.has(item.productId)))) {
+        issues.push('Vernieuw de palletindeling: er staat een verwijderd product op');
+      }
+      const palletBase = data.priced.totals.palletBaseHeightCm ?? 14.4;
+      const palletMax = data.priced.totals.palletMaxHeightCm ?? 260;
+      if (data.order.pallets.some((pallet) => pallet.heightCm != null
+          && (pallet.heightCm < palletBase || pallet.heightCm > palletMax))) {
+        issues.push('Controleer de gemeten hoogte van de handmatige pallets');
+      }
+    }
+    if (data.priced.validation.freightPricingIssue) {
+      issues.push(data.priced.validation.freightPricingIssue);
+    } else if (data.order.freight !== 'TE_BEPALEN') {
+      const strategy = data.order.freightPricingStrategy
+        ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+      if (strategy === 'PER_CBM' && !(data.order.freightRatePerCbmEur! > 0)) {
+        issues.push('Vul een vrachttarief per m³ in');
+      }
+      if (strategy === 'FIXED' && data.order.manualFreightEur == null) {
+        issues.push('Vul het vaste vrachtbedrag in');
+      }
+      if (strategy === 'COUNTRY_PALLET' && data.order.loadMode === 'LOOSE_CARTONS') {
+        issues.push('Kies voor losse dozen een m³-tarief of vast vrachtbedrag');
+      }
+    }
     if (data.order.orderDate && data.order.validUntil
         && data.order.validUntil < data.order.orderDate) {
       issues.push('Geldig-totdatum ligt vóór de offertedatum');
@@ -1779,7 +1771,21 @@ export class SalesEditor {
     if (!data || !this.canEditTerms()) return;
     const wasPending = data.order.freight === 'TE_BEPALEN';
     const state = pending ? 'TE_BEPALEN' : wasPending ? 'AANGEVULD' : 'BEREKEND';
-    this.saveFreight(state, data.order.manualFreightEur);
+    const strategy = this.effectiveFreightStrategy(data);
+    if (!pending && strategy === 'PER_CBM' && !(data.order.freightRatePerCbmEur! > 0)) {
+      this.ui.toast('Vul eerst een vrachttarief per m³ in', 'err');
+      return;
+    }
+    if (!pending && strategy === 'FIXED' && data.order.manualFreightEur == null) {
+      this.ui.toast('Vul eerst het vaste vrachtbedrag in', 'err');
+      return;
+    }
+    if (!pending && strategy === 'COUNTRY_PALLET' && this.isLooseCartons(data)) {
+      this.ui.toast('Kies voor losse dozen een m³-tarief of vast bedrag', 'err');
+      return;
+    }
+    this.saveFreight(state, data.order.manualFreightEur, strategy,
+      data.order.freightRatePerCbmEur ?? null);
   }
 
   setManualFreight(raw: string): void {
@@ -1790,21 +1796,59 @@ export class SalesEditor {
       this.ui.toast('Vul een geldig vrachtbedrag in', 'err');
       return;
     }
-    this.saveFreight(data.order.freight === 'TE_BEPALEN' ? 'BEREKEND'
-      : data.order.freight ?? 'BEREKEND', amount);
+    if (amount === null && this.isLooseCartons(data)
+        && data.order.freight !== 'TE_BEPALEN') {
+      this.ui.toast('Losse dozen hebben een m³-tarief of vast vrachtbedrag nodig', 'err');
+      return;
+    }
+    const strategy = amount === null
+      ? data.order.freight === 'TE_BEPALEN' ? 'FIXED' : 'COUNTRY_PALLET'
+      : 'FIXED';
+    this.saveFreight(data.order.freight ?? 'BEREKEND', amount, strategy, null);
+  }
+
+  setFreightCbmRate(raw: string): void {
+    const data = this.view();
+    if (!data || !this.canEditTerms()) return;
+    const rate = raw.trim() === '' ? null : Number(raw);
+    if (rate === null || !Number.isFinite(rate) || rate <= 0) {
+      this.ui.toast('Vul een vrachttarief groter dan € 0 per m³ in', 'err');
+      return;
+    }
+    this.saveFreight(data.order.freight ?? 'BEREKEND', null, 'PER_CBM', rate);
+  }
+
+  setLockedFreightStrategy(strategy: FreightPricingStrategy): void {
+    const data = this.view();
+    if (!data || !this.canEditTerms()) return;
+    if (strategy === 'COUNTRY_PALLET' && this.isLooseCartons(data)) return;
+    const manual = strategy === 'FIXED' ? data.order.manualFreightEur : null;
+    const rate = strategy === 'PER_CBM' ? data.order.freightRatePerCbmEur ?? null : null;
+    const incomplete = (strategy === 'FIXED' && manual == null)
+      || (strategy === 'PER_CBM' && !(rate! > 0));
+    const state = incomplete ? 'TE_BEPALEN' : data.order.freight ?? 'BEREKEND';
+    this.saveFreight(state, manual, strategy, rate);
   }
 
   private saveFreight(state: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD',
-                      manualFreightEur: number | null): void {
+                      manualFreightEur: number | null,
+                      freightPricingStrategy: SalesOrder['freightPricingStrategy'],
+                      freightRatePerCbmEur: number | null): void {
     this.saveQueue = this.saveQueue.then(async () => {
       const data = this.view();
       if (!data) return;
       try {
-        this.view.set(await this.sales.updateFreight(data.order.id, state, manualFreightEur));
+        this.view.set(await this.sales.updateFreight(data.order.id, state, manualFreightEur,
+          freightPricingStrategy ?? null, freightRatePerCbmEur));
       } catch (failure: unknown) {
         this.ui.toast(messageOf(failure, 'Vracht opslaan mislukt'), 'err');
       }
     });
+  }
+
+  effectiveFreightStrategy(data: SalesOrderView): FreightPricingStrategy {
+    return data.order.freightPricingStrategy
+      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
   }
 
   /** The most recent step, shown next to the status badge. */
@@ -2026,27 +2070,68 @@ export class SalesEditor {
     const data = this.view();
     if (!data) return '';
     const totals = data.priced.totals;
-    if (!totals.palletsManual) return `automatisch · ${totals.palletsStrict} pallet(s)`;
+    if (this.isLooseCartons(data)) {
+      return `${this.countLabel(totals.cartons, 'doos', 'dozen')} · `
+        + `${new CbmPipe().transform(totals.cbm)} · los geladen`;
+    }
+    if (!totals.palletsManual) {
+      return `automatisch · ${this.countLabel(totals.palletsStrict, 'pallet', 'pallets')}`;
+    }
     const rest = totals.unassignedCartons > 0
-        ? ` · ${totals.unassignedCartons} dozen los` : '';
-    return `${totals.palletsManual} pallet(s) · handmatig${rest}`;
+        ? ` · ${this.countLabel(totals.unassignedCartons, 'doos', 'dozen')} los` : '';
+    return `${this.countLabel(totals.palletsManual, 'pallet', 'pallets')} · handmatig${rest}`;
   }
 
   /* ---------------------------------------------------------- pallets */
 
-  palletCountLabel(totals: { palletsManual: number; palletsStrict: number }): string {
+  applyShippingPatch(changes: ShippingOrderPatch): void {
+    this.patch(changes);
+  }
+
+  handlePalletAction(event: ShippingPalletAction): void {
+    switch (event.type) {
+      case 'auto-layout': this.autoLayout(); break;
+      case 'add-pallet': this.addPallet(); break;
+      case 'clear-layout': this.clearPallets(); break;
+      case 'move-pallet': this.movePallet(event.index, event.direction); break;
+      case 'remove-pallet': this.removePallet(event.index); break;
+      case 'rename-pallet': this.renamePallet(event.index, event.label); break;
+      case 'set-pallet-type': this.setPalletType(event.index, event.palletType); break;
+      case 'set-pallet-height': this.setPalletHeight(event.index, event.heightCm); break;
+      case 'add-item': this.addItem(event.palletIndex, event.productId); break;
+      case 'set-item-cartons':
+        this.setItemCartons(event.palletIndex, event.productId, event.cartons);
+        break;
+    }
+  }
+
+  isLooseCartons(data: SalesOrderView): boolean {
+    return data.order.loadMode === 'LOOSE_CARTONS';
+  }
+
+  freightStrategyLabel(data: SalesOrderView): string {
+    const strategy = data.order.freightPricingStrategy
+      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+    if (strategy === 'PER_CBM') return 'Tarief per m³';
+    if (strategy === 'FIXED') return 'Vast bedrag';
+    return 'Landentarief';
+  }
+
+  freightBasisLabel(data: SalesOrderView): string {
+    const strategy = data.order.freightPricingStrategy
+      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+    if (strategy === 'FIXED') return 'vast bedrag';
+    if (strategy === 'PER_CBM') {
+      return `${new CbmPipe().transform(data.priced.totals.cbm)} · per m³`;
+    }
+    const totals = data.priced.totals;
     return totals.palletsManual > 0
-        ? `${totals.palletsManual} pallet(s) · handmatig`
-        : `${totals.palletsStrict} pallet(s)`;
+      ? `${this.countLabel(totals.palletsManual, 'pallet', 'pallets')} · handmatig`
+      : this.countLabel(totals.palletsStrict, 'pallet', 'pallets');
   }
 
-  palletCartons(pallet: OrderPallet): number {
-    return pallet.items.reduce((sum, item) => sum + item.cartons, 0);
-  }
-
-  productLabel(productId: number): string {
-    return this.view()?.priced.lines
-        .find((line) => line.productId === productId)?.description ?? `#${productId}`;
+  private countLabel(count: number, singular: string, plural: string): string {
+    return `${count} ${count === 1 ? singular : plural}`;
   }
 
   /** Cartons of this product already on any pallet. */
@@ -2057,40 +2142,19 @@ export class SalesEditor {
         .reduce((sum, item) => sum + item.cartons, 0);
   }
 
-  /** Cartons of this product not yet on any pallet. */
-  remainingFor(productId: number): number {
-    const line = this.view()?.priced.lines.find((l) => l.productId === productId);
-    return line ? line.cartons - this.assignedFor(productId) : 0;
-  }
-
-  /** Lines with cartons left to place, excluding ones already on this pallet. */
-  assignable(palletIndex: number): { productId: number; description: string; remaining: number }[] {
-    const data = this.view();
-    if (!data) return [];
-    const onThisPallet = new Set(
-        data.order.pallets[palletIndex]?.items.map((item) => item.productId) ?? []);
-    return data.priced.lines
-        .filter((line) => !onThisPallet.has(line.productId))
-        .map((line) => ({
-          productId: line.productId,
-          description: line.description,
-          remaining: line.cartons - this.assignedFor(line.productId),
-        }))
-        .filter((line) => line.remaining > 0);
-  }
-
-  /** The road-freight standards; anything else goes through "Anders…". */
-  readonly palletTypes = ['Europallet', 'Blokpallet 100×120', 'Halve pallet 60×80'];
-
-  palletType(pallet: OrderPallet): string {
-    return pallet.type || 'Europallet';
-  }
-
   /** Does the manual layout still match the order's cartons exactly? */
   layoutOk(): boolean {
     const data = this.view();
     if (!data) return true;
-    return data.priced.totals.unassignedCartons === 0 && !this.overassigned();
+    const lineIds = new Set(data.priced.lines.map((line) => line.productId));
+    const palletBase = data.priced.totals.palletBaseHeightCm ?? 14.4;
+    const palletMax = data.priced.totals.palletMaxHeightCm ?? 260;
+    return data.order.pallets.every((pallet) => pallet.items.length > 0
+        && pallet.items.every((item) => item.cartons > 0 && lineIds.has(item.productId))
+        && (pallet.heightCm == null
+          || (pallet.heightCm >= palletBase && pallet.heightCm <= palletMax)))
+      && data.priced.totals.unassignedCartons === 0
+      && !this.overassigned();
   }
 
   private overassigned(): boolean {
@@ -2100,16 +2164,13 @@ export class SalesEditor {
         this.assignedFor(line.productId) > line.cartons);
   }
 
-  layoutStatus(): string {
-    const data = this.view();
-    if (!data) return '';
-    if (this.overassigned()) return 'meer toegewezen dan besteld';
-    const loose = data.priced.totals.unassignedCartons;
-    return loose > 0 ? `${loose} dozen niet toegewezen` : 'indeling compleet';
-  }
-
-  setPalletHeight(index: number, raw: string): void {
-    const value = raw === '' ? null : Math.max(0, Math.round(+raw));
+  setPalletHeight(index: number, raw: string | number | null): void {
+    const rounded = Math.round(Number(raw));
+    const minimum = Math.ceil(this.view()?.priced.totals.palletBaseHeightCm ?? 14.4);
+    const maximum = Math.floor(this.view()?.priced.totals.palletMaxHeightCm ?? 260);
+    const value = raw === '' || raw === null || !Number.isFinite(rounded) || rounded <= 0
+      ? null
+      : Math.max(minimum, Math.min(maximum, rounded));
     this.mutatePallets((pallets) => {
       if (pallets[index]) pallets[index] = { ...pallets[index], heightCm: value };
       return pallets;
@@ -2147,12 +2208,13 @@ export class SalesEditor {
     this.enqueue((order) => {
       const lines = this.view()?.priced.lines ?? [];
       const pallets: OrderPallet[] = [];
+      const type = this.palletTypeForProfile(order.palletProfile);
       for (const line of lines) {
         const per = Math.max(1, line.cartonsPerPallet);
         let left = line.cartons;
         while (left > 0) {
           const take = Math.min(per, left);
-          pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet',
+          pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type,
               heightCm: null, items: [{ productId: line.productId, cartons: take }] });
           left -= take;
         }
@@ -2161,14 +2223,10 @@ export class SalesEditor {
     });
   }
 
-  /** Keep the pallets, drop everything on them - restack from scratch. */
-  emptyPallets(): void {
-    this.mutatePallets((pallets) => pallets.map((pallet) => ({ ...pallet, items: [] })));
-  }
-
   addPallet(): void {
     this.mutatePallets((pallets) => {
-      pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type: 'Europallet',
+      const type = this.palletTypeForProfile(this.view()?.order.palletProfile);
+      pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type,
           heightCm: null, items: [] });
       return pallets;
     });
@@ -2229,6 +2287,14 @@ export class SalesEditor {
 
   clearPallets(): void {
     this.patch({ pallets: [] });
+  }
+
+  private palletTypeForProfile(profile: SalesOrder['palletProfile']): string {
+    switch (profile) {
+      case 'BLOCK_120X100': return 'Blokpallet 100×120';
+      case 'HALF_80X60': return 'Halve pallet 60×80';
+      default: return 'Europallet';
+    }
   }
 
 }

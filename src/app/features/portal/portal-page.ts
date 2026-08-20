@@ -6,7 +6,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { PortalCatalogItem, PortalQuote } from '../../core/api/models';
 import { Sheet, Ui } from '../../shared/ui';
 import { PortalProductPicker } from './portal-product-picker';
-import { DateNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe } from '../../shared/pipes';
+import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe } from '../../shared/pipes';
 import { LANGUAGES, LanguageCode } from '../../core/api/models';
 
 const PORTAL_LOCALES: Record<LanguageCode, string> = {
@@ -98,8 +98,8 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
 @Component({
   selector: 'app-portal-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, PortalProductPicker, EurPipe, NumPipe, PctPipe, DateNlPipe,
-            WeekNlPipe],
+  imports: [FormsModule, Sheet, PortalProductPicker, EurPipe, NumPipe, PctPipe, CbmPipe,
+            DateNlPipe, WeekNlPipe],
   template: `
     <div class="portal">
       <header class="portal__bar">
@@ -228,8 +228,12 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                       <div class="list-item__title">{{ line.description }}</div>
                       <div class="list-item__meta">
                         {{ line.quantity | num: 0: locale() }} {{ t('portalPieces') }} ·
-                        {{ line.cartons | num: 0: locale() }} {{ t('portalBoxes') }} ·
-                        {{ line.pallets }} {{ t('portalPalletsShort') }}
+                        {{ line.cartons | num: 0: locale() }} {{ t('portalBoxes') }}
+                        @if (data.loadMode === 'LOOSE_CARTONS') {
+                          · {{ (line.cbm ?? 0) | cbm: 3: locale() }}
+                        } @else {
+                          · {{ line.pallets }} {{ t('portalPalletsShort') }}
+                        }
                       </div>
                       <div class="list-item__meta">
                         {{ line.unitPrice | eur: 3: locale() }} {{ t('portalPerPiece') }}
@@ -282,7 +286,10 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
               <div class="stat-row stat-row--sub"><span>{{ t('goodsValue') }}</span>
                 <span class="num">{{ data.totals.goodsTotal | eur: 2: locale() }}</span></div>
               <div class="stat-row">
-                <span>{{ t('freight') }} ({{ data.totals.pallets }} {{ t('portalPalletsShort') }})</span>
+                <span>
+                  {{ t('freight') }}
+                  @if (!freightPending()) { ({{ freightBasis(data) }}) }
+                </span>
                 <span class="num">
                   @if (freightPending()) {
                     <span class="warn-text">{{ t('freightToBeDetermined') }}</span>
@@ -735,6 +742,21 @@ export class PortalPage implements OnDestroy {
 
   /** Is the customer still waiting on a freight amount from us? */
   readonly freightPending = computed(() => this.quote()?.freight === 'TE_BEPALEN');
+
+  freightBasis(quote: PortalQuote): string {
+    if (quote.freight === 'TE_BEPALEN') return '';
+    switch (quote.freightPricingStrategy) {
+      case 'PER_CBM':
+        return `${new CbmPipe().transform(quote.totals.cbm ?? 0, 3, this.locale())} · ${this.t('freightPerCbm')}`;
+      case 'FIXED':
+        return this.t('freightFixedAmount');
+      default:
+        if (quote.loadMode === 'LOOSE_CARTONS') {
+          return `${new CbmPipe().transform(quote.totals.cbm ?? 0, 3, this.locale())} · ${this.t('freightPerCbm')}`;
+        }
+        return `${quote.totals.pallets} ${this.t('portalPalletsShort')} · ${this.t('freightPerPallet')}`;
+    }
+  }
 
   /** Did we fill in the freight the customer was missing? */
   readonly freightJustAdded = computed(() => {

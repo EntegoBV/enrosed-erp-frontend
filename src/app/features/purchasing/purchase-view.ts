@@ -12,6 +12,7 @@ import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Product, PurchaseOrderView, Supplier } from '../../core/api/models';
 import { containerLabel, countryName } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
+import { SupplierAddress } from '../../shared/supplier-address';
 
 /**
  * Read-only control room for one incoming container.
@@ -24,7 +25,7 @@ import { DateNlPipe } from '../../shared/pipes';
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            EurPipe, NumPipe, PctPipe],
+            SupplierAddress, EurPipe, NumPipe, PctPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -193,12 +194,6 @@ import { DateNlPipe } from '../../shared/pipes';
                         <strong>{{ line.productName }}</strong>
                         <span>{{ line.quantity | num }} st · {{ line.cartons | num }} dozen</span>
                       </span>
-                      @if (showMoney()) {
-                        <span class="purchase-line__unit">
-                          <small>Geland per stuk</small>
-                          <strong>{{ line.landedUnitEur | eur: 4 }}</strong>
-                        </span>
-                      }
                     </div>
 
                     <div class="line-facts">
@@ -248,11 +243,6 @@ import { DateNlPipe } from '../../shared/pipes';
                           <div class="stat-row"><span>Extra opbrengst</span>
                             <span class="num">{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
                         }
-                        <div class="stat-row line-breakdown__landed">
-                          <span>{{ perPiece() ? 'Geland per stuk' : 'Totaal regel' }}</span>
-                          <strong class="num">{{ perPiece() ? (line.landedUnitEur | eur: 4)
-                            : (line.totalEur | eur) }}</strong>
-                        </div>
                       </div>
                     }
                   </article>
@@ -280,10 +270,13 @@ import { DateNlPipe } from '../../shared/pipes';
                 </span>
               </div>
               <div class="details-grid">
-                <div class="detail-item">
+                <div class="detail-item detail-item--supplier">
                   <span>Leverancier</span>
                   <strong>{{ supplierName() }}</strong>
-                  @if (supplier()?.contact) { <small>{{ supplier()?.contact }}</small> }
+                  @if (showMoney()) {
+                    <app-supplier-address [supplier]="supplier()" />
+                    @if (supplier()?.contact) { <small>Contact: {{ supplier()?.contact }}</small> }
+                  }
                 </div>
                 <div class="detail-item">
                   <span>Orderdatum</span>
@@ -440,19 +433,18 @@ import { DateNlPipe } from '../../shared/pipes';
     .purchase-line{padding:14px;border-bottom:1px solid var(--line)}.purchase-line:last-child{border:0}.purchase-line__identity{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px}
     .purchase-line__photo{width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover}.purchase-line__photo--empty{display:grid;place-items:center;color:var(--muted);font-size:20px}
     .purchase-line__copy{display:flex;min-width:0;flex-direction:column}.purchase-line__copy small{color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase}.purchase-line__copy strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__copy>span{color:var(--muted);font-size:11px}
-    .purchase-line__unit{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;padding:8px 10px;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft)}.purchase-line__unit small{color:var(--rose-dark);font-size:10px}.purchase-line__unit strong{color:var(--rose-dark);font-size:15px}
     .line-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden}.line-facts>span{display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2)}.line-facts small{color:var(--muted);font-size:8.5px;text-transform:uppercase}.line-facts strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
     .line-breakdown-toggle{display:flex;width:100%;min-height:48px;align-items:center;gap:8px;margin-top:9px;padding:7px 9px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}.line-breakdown-toggle>span:first-child{display:flex;min-width:0;flex:1;flex-direction:column}.line-breakdown-toggle small{color:var(--muted);font-size:9px}.line-breakdown-toggle strong{font-size:11px}.line-breakdown-toggle__total{color:var(--rose);font-size:12px;font-weight:760}.line-breakdown-toggle svg{flex:none;color:var(--muted);transition:transform .18s}.line-breakdown-toggle svg.chevron-open{transform:rotate(180deg)}
-    .line-breakdown{margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease}.line-breakdown .stat-row{padding:4px 0;font-size:11.5px}.line-breakdown small,.cost-stage small{display:block;color:var(--muted);font-size:9px}.line-breakdown__subtotal{border-top:1px solid var(--line)}.line-breakdown__landed{border-top:1px solid var(--rose-line);color:var(--rose-dark);font-weight:720}
+    .line-breakdown{margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease}.line-breakdown .stat-row{padding:4px 0;font-size:11.5px}.line-breakdown small,.cost-stage small{display:block;color:var(--muted);font-size:9px}.line-breakdown__subtotal{border-top:1px solid var(--line)}
     .product-empty{padding:34px 18px;text-align:center}.product-empty__art{display:grid;width:64px;height:64px;margin:0 auto 12px;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px}.product-empty h3{font-size:16px}.product-empty p{max-width:360px;margin:4px auto 15px;color:var(--muted);font-size:12px}
   `, `
-    .details-grid{display:grid;gap:1px;background:var(--line)}.detail-item{display:flex;min-width:0;flex-direction:column;padding:12px 14px;background:var(--surface)}.detail-item>span{color:var(--muted);font-size:9.5px;text-transform:uppercase}.detail-item strong{overflow-wrap:anywhere;font-size:12.5px}.detail-item small{color:var(--muted);font-size:10px}.detail-note{font-weight:500;white-space:pre-wrap}.internal-detail{background:var(--rose-soft)}
+    .details-grid{display:grid;gap:1px;background:var(--line)}.detail-item{display:flex;min-width:0;flex-direction:column;padding:12px 14px;background:var(--surface)}.detail-item>span{color:var(--muted);font-size:9.5px;text-transform:uppercase}.detail-item strong{overflow-wrap:anywhere;font-size:12.5px}.detail-item small{color:var(--muted);font-size:10px}.detail-item--supplier app-supplier-address{margin-top:3px;color:var(--ink-2);font-size:10.5px}.detail-note{font-weight:500;white-space:pre-wrap}.internal-detail{background:var(--rose-soft)}
 
     .cost-card{border-color:var(--rose-line)}.cost-card__head{display:flex;min-height:76px;align-items:center;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid var(--rose-line);background:linear-gradient(145deg,var(--surface),var(--rose-soft))}.cost-card h2{font-size:16px}.internal-badge{padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:10px;font-weight:760;text-transform:uppercase}.cost-card__body{padding:14px}.cost-card .cost-hero{margin-top:0}.cost-stage{padding:8px 0}.cost-stage+.cost-stage{border-top:1px solid var(--line)}.cost-stage__label{display:block;margin-bottom:3px;color:var(--rose);font-size:9px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.cost-stage .stat-row{padding:4px 0;font-size:11.5px}.cost-stage__subtotal{border-top:1px solid var(--line);font-weight:680}
     .safe-card{display:flex;align-items:flex-start;gap:10px;padding:14px}.safe-card__icon{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:760}.safe-card h2{font-size:14px}.safe-card p{color:var(--muted);font-size:11px}
     .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
 
-    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(4,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr) auto}.purchase-line__unit{grid-column:auto;min-width:150px;flex-direction:column;align-items:flex-end;border:0;background:transparent;padding:0}.purchase-line__unit small{color:var(--muted)}}
+    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(4,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}}
     @media(min-width:700px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
     @media(min-width:1000px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.72fr);gap:16px}.view-sidebar{margin-top:0}}
   `],

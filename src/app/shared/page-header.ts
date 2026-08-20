@@ -77,14 +77,19 @@ import { NotificationBell } from './notification-bell';
   styles: `
     .appbar__titles {
       display: flex;
+      min-width: 0;
+      overflow: hidden;
       flex-direction: column;
       justify-content: center;
-      gap: 0;
+      gap: 2px;
     }
-    .appbar__title { line-height: 1.08; }
+    .appbar__title {
+      min-width: 0;
+      line-height: 1;
+    }
     .appbar__sub {
-      margin-top: 1px;
-      line-height: 1.12;
+      margin: 0;
+      line-height: 1;
     }
     .appbar__title-button {
       border: 0;
@@ -99,7 +104,8 @@ import { NotificationBell } from './notification-bell';
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      line-height: 1.08;
+      display: block;
+      line-height: 1;
     }
     .appbar__pencil {
       display: inline-block;

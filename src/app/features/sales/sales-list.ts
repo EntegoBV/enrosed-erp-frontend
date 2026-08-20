@@ -8,13 +8,14 @@ import { Privacy } from '../../core/api/privacy';
 import { WorkQueue } from '../../core/api/work-queue';
 import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
-import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
 
 @Component({
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, EurPipe, NumPipe, PctPipe, DateNlPipe],
+  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton,
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
@@ -148,7 +149,15 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
                 </div>
                 <div class="list-item__meta list-item__meta--wrap">
                   {{ row.priced.totals.pieces | num }} st ·
-                  {{ row.priced.totals.palletsStrict }} pallet(s)
+                  @if (row.order.loadMode === 'LOOSE_CARTONS') {
+                    {{ row.priced.totals.cartons | num }}
+                    {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} ·
+                    {{ row.priced.totals.cbm | cbm }}
+                  } @else {
+                    {{ row.priced.totals.palletsManual || row.priced.totals.palletsStrict }}
+                    {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
+                        ? 'pallet' : 'pallets' }}
+                  }
                   @if (privacy.showPurchase() && row.priced.totals.marginPct) {
                     · marge {{ row.priced.totals.marginPct | pct: 0 }}
                   }

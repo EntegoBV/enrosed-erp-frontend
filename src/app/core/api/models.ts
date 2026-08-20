@@ -8,6 +8,9 @@
 export type Currency = 'EUR' | 'USD' | 'CNY';
 export type MarkupMode = 'PRODUCT' | 'ORDER';
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES';
+export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
+export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
+export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED';
 export type PublicationStatus = 'DRAFT' | 'READY' | 'PUBLISHED';
 
 export type QuoteStatus =
@@ -107,9 +110,16 @@ export interface HsCode {
 
 export interface Supplier {
   id: number | null;
+  /** Legal/company name used on purchase documents. */
   name: string;
+  /** ISO country code. The backend keeps the country name out of the wire shape. */
   country: string;
+  /** International postal address; nullable because older suppliers may be incomplete. */
+  addressLine1: string | null;
+  addressLine2: string | null;
+  postalCode: string | null;
   city: string;
+  region: string | null;
   contact: string;
   email: string;
   phone: string;
@@ -331,6 +341,16 @@ export interface SalesOrder {
   freight?: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD';
   /** Own freight amount instead of the country rate; empty means: charge the rate. */
   manualFreightEur: number | null;
+  /** Physical load calculation; absent on legacy orders means pallets. */
+  loadMode?: LoadMode | null;
+  /** Footprint used by the server's pallet fit calculation. */
+  palletProfile?: PalletProfile | null;
+  /** Order override for total loaded height, including the pallet base. */
+  maxPalletHeightCm?: number | null;
+  /** Mutually exclusive source of the freight amount. */
+  freightPricingStrategy?: FreightPricingStrategy | null;
+  /** Used only with PER_CBM; the inactive strategy keeps no shadow value. */
+  freightRatePerCbmEur?: number | null;
   lines: SalesOrderLine[];
   /** Hand-built pallet layout; empty means the calculated stacking applies. */
   pallets: OrderPallet[];
@@ -344,6 +364,10 @@ export interface PricedLine {
   quantity: number;
   cartons: number;
   cartonsPerPallet: number;
+  /** Server-owned explanation of the pallet fit. Optional for older responses. */
+  cartonsPerLayer?: number;
+  palletLayers?: number;
+  calculatedPalletHeightCm?: number;
   pallets: number;
   cbm: number;
   weightKg: number;
@@ -375,6 +399,8 @@ export interface PricedOrder {
     pieces: number; cartons: number; palletsStrict: number; palletsOptimised: number;
     /** Hand-built pallets (0 = calculated stacking) and cartons on no pallet. */
     palletsManual: number; unassignedCartons: number;
+    /** Effective server settings used for this calculation. */
+    palletBaseHeightCm?: number; palletMaxHeightCm?: number;
     cbm: number; weightKg: number;
     gross: number; lineDiscountTotal: number; subtotal: number;
     orderDiscountPercent: number; orderDiscountAmount: number;
@@ -388,6 +414,9 @@ export interface PricedOrder {
   validation: {
     minOrderValue: number; meetsMinimum: boolean; shortfall: number;
     hasLines: boolean; countrySelected: boolean; productsWithoutCost: string[];
+    productsWithoutCartonDimensions?: string[];
+    productsWithoutPalletFit?: string[];
+    freightPricingIssue?: string | null;
   };
 }
 
@@ -426,6 +455,7 @@ export interface PortalLine {
   quantity: number;
   cartons: number;
   pallets: number;
+  cbm?: number;
   /** Carton content, for rounding quantities to full cartons. */
   piecesPerCarton: number;
   unitPrice: number;
@@ -522,9 +552,12 @@ export interface PortalQuote {
   companyName: string | null;
   contactName: string | null;
   countryCode: string | null;
+  /** Optional while an older portal backend is still serving cached quotes. */
+  loadMode?: LoadMode;
+  freightPricingStrategy?: FreightPricingStrategy;
   lines: PortalLine[];
   totals: {
-    pieces: number; cartons: number; pallets: number;
+    pieces: number; cartons: number; pallets: number; cbm?: number;
     subtotal: number; orderDiscountPercent: number; orderDiscountAmount: number;
     extraDiscountPercent: number; extraDiscountLabel: string | null; extraDiscountAmount: number;
     goodsTotal: number; freight: number; handling: number;

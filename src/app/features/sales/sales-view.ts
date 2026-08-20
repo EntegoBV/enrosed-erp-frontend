@@ -66,8 +66,16 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             </div>
             <div>
               <span>Levering</span>
-              <strong>{{ palletCount(data) | num }}</strong>
-              <small>pallet(s)</small>
+              @if (isLooseCartons(data)) {
+                <strong>{{ data.priced.totals.cbm | cbm }}</strong>
+                <small>
+                  {{ data.priced.totals.cartons | num }}
+                  {{ data.priced.totals.cartons === 1 ? 'losse doos' : 'losse dozen' }}
+                </small>
+              } @else {
+                <strong>{{ palletCount(data) | num }}</strong>
+                <small>{{ palletCount(data) === 1 ? 'pallet' : 'pallets' }}</small>
+              }
             </div>
             <div class="hero-facts__total">
               <span>Offertetotaal</span>
@@ -111,7 +119,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   <span class="section-kicker">Orderinhoud</span>
                   <h2 id="sales-lines-title">Producten</h2>
                 </div>
-                <span class="section-count">{{ data.priced.lines.length }} regels</span>
+                <span class="section-count">
+                  {{ data.priced.lines.length }}
+                  {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}
+                </span>
               </header>
 
               <div class="product-lines">
@@ -129,7 +140,9 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                       <p class="product-line__sku">{{ line.sku || 'Zonder SKU' }}</p>
                       <div class="product-line__meta">
                         <span><b>{{ line.quantity | num }}</b> stuks</span>
-                        <span>{{ line.cartons | num }} dozen</span>
+                        <span>
+                          {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }}
+                        </span>
                         <span>{{ line.netUnitPrice | eur: 2 }} / stuk</span>
                       </div>
                     </div>
@@ -194,11 +207,14 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               <dl class="detail-grid">
                 <div><dt>Leverland</dt><dd>{{ countryName() }}</dd></div>
                 <div><dt>Incoterm</dt><dd>{{ data.order.incoterm || '—' }}</dd></div>
-                <div><dt>Pallets</dt><dd>{{ palletCount(data) | num }}</dd></div>
+                <div><dt>Verzendwijze</dt><dd>{{ isLooseCartons(data) ? 'Losse dozen' : 'Pallets' }}</dd></div>
+                @if (!isLooseCartons(data)) {
+                  <div><dt>Pallets</dt><dd>{{ palletCount(data) | num }}</dd></div>
+                }
                 <div><dt>Dozen</dt><dd>{{ data.priced.totals.cartons | num }}</dd></div>
                 <div><dt>Volume</dt><dd>{{ data.priced.totals.cbm | cbm }}</dd></div>
                 <div><dt>Gewicht</dt><dd>{{ data.priced.totals.weightKg | num: 1 }} kg</dd></div>
-                <div><dt>Vracht</dt><dd>{{ freightLabel(data) }}</dd></div>
+                <div><dt>Vracht · {{ freightStrategyLabel(data) }}</dt><dd>{{ freightLabel(data) }}</dd></div>
                 <div><dt>Levertermijn</dt><dd>{{ deliveryState(data) }}</dd></div>
               </dl>
             </section>
@@ -230,7 +246,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               <header><span class="section-kicker">Controle</span><h2>Totalen</h2></header>
               <dl class="totals-list">
                 <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div>
-                <div><dt>Vracht</dt><dd>{{ freightAmount(data) }}</dd></div>
+                <div><dt>Vracht <small>{{ freightStrategyLabel(data) }}</small></dt><dd>{{ freightAmount(data) }}</dd></div>
                 <div><dt>Handling</dt><dd>{{ data.priced.totals.handling | eur: 2 }}</dd></div>
                 <div class="totals-list__main"><dt>Offertetotaal <small>excl. BTW</small></dt><dd>{{ data.priced.totals.total | eur: 2 }}</dd></div>
                 <div><dt>BTW {{ data.priced.totals.vatRatePct | pct: 0 }}</dt><dd>{{ data.priced.totals.vatAmount | eur: 2 }}</dd></div>
@@ -406,6 +422,19 @@ export class SalesView {
 
   palletCount(data: SalesOrderView): number {
     return data.priced.totals.palletsManual || data.priced.totals.palletsStrict;
+  }
+
+  isLooseCartons(data: SalesOrderView): boolean {
+    return data.order.loadMode === 'LOOSE_CARTONS';
+  }
+
+  freightStrategyLabel(data: SalesOrderView): string {
+    if (data.order.freight === 'TE_BEPALEN') return 'later bepalen';
+    const strategy = data.order.freightPricingStrategy
+      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+    if (strategy === 'PER_CBM') return 'per m³';
+    if (strategy === 'FIXED') return 'vast bedrag';
+    return 'per pallet';
   }
 
   deliveryOpen(line: PricedLine, data: SalesOrderView): boolean {
