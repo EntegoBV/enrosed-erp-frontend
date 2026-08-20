@@ -126,7 +126,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <div class="market-row__value num">
                   {{ fxValue(rates.latestUsd, flipUsd()) | num: 4 }}</div>
                 <span class="badge" [class]="fxPct(rates.usd, flipUsd()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                  {{ fxPct(rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates.usd, flipUsd()) | num: 1 }}%
+                  {{ fxPct(rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates.usd, flipUsd()) | num: 1 }}% · 1 mnd
                 </span>
               </div>
               <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(rates.usd), flipUsd())"
@@ -147,7 +147,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <div class="market-row__value num">
                   {{ fxValue(rates.latestCny, flipCny()) | num: 4 }}</div>
                 <span class="badge" [class]="fxPct(rates.cny, flipCny()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                  {{ fxPct(rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates.cny, flipCny()) | num: 1 }}%
+                  {{ fxPct(rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates.cny, flipCny()) | num: 1 }}% · 1 mnd
                 </span>
               </div>
               <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(rates.cny), flipCny())"
@@ -171,7 +171,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <div class="market-row__value num">
                   {{ fxValue(latestCross(rates), flipCross()) | num: 4 }}</div>
                 <span class="badge" [class]="fxPct(crossOf(rates), flipCross()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                  {{ fxPct(crossOf(rates), flipCross()) >= 0 ? '+' : '' }}{{ fxPct(crossOf(rates), flipCross()) | num: 1 }}%
+                  {{ fxPct(crossOf(rates), flipCross()) >= 0 ? '+' : '' }}{{ fxPct(crossOf(rates), flipCross()) | num: 1 }}% · 1 mnd
                 </span>
               </div>
               <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(crossOf(rates)), flipCross())"
@@ -187,24 +187,34 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                  number: purchasing pays in dollars and yuan. -->
             @if (analysis(rates); as a) {
               <div class="market-analysis">
+                <div class="market-analysis__range-label">Vergelijk met</div>
+                <!-- These are controls, not passive statistics: the complete
+                     buying analysis below follows the selected period. -->
+                <div class="hgrid" role="group" aria-label="Kies de analyseperiode">
+                  @for (h of a.horizons; track h.label) {
+                    <button class="hgrid__cell" type="button"
+                            [class.hgrid__cell--active]="analysisMonths() === h.months"
+                            [attr.aria-pressed]="analysisMonths() === h.months"
+                            [disabled]="h.pct === null"
+                            (click)="analysisMonths.set(h.months)">
+                      <span class="hgrid__label">{{ h.label }}</span>
+                      @if (h.pct !== null) {
+                        <span class="hgrid__value"
+                              [class.hgrid__value--good]="h.pct >= 0"
+                              [class.hgrid__value--bad]="h.pct < 0">
+                          {{ h.pct >= 0 ? '↓' : '↑' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                        </span>
+                        <span class="hgrid__word">{{ h.pct >= 0 ? 'goedkoper' : 'duurder' }}</span>
+                      } @else {
+                        <span class="hgrid__value hgrid__value--missing">—</span>
+                        <span class="hgrid__word">geen data</span>
+                      }
+                    </button>
+                  }
+                </div>
                 <div class="market-analysis__verdict">
                   <span class="badge" [class]="'badge--' + a.tone">{{ a.verdict }}</span>
                   <span class="market-analysis__lead">{{ a.lead }}</span>
-                </div>
-                <!-- Is now a better moment than then? Three equal tiles,
-                     arrow down = the dollar is cheaper today than then. -->
-                <div class="hgrid">
-                  @for (h of a.horizons; track h.label) {
-                    <div class="hgrid__cell">
-                      <span class="hgrid__label">{{ h.label }}</span>
-                      <span class="hgrid__value"
-                            [class.hgrid__value--good]="h.pct >= 0"
-                            [class.hgrid__value--bad]="h.pct < 0">
-                        {{ h.pct >= 0 ? '↓' : '↑' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
-                      </span>
-                      <span class="hgrid__word">{{ h.pct >= 0 ? 'goedkoper' : 'duurder' }}</span>
-                    </div>
-                  }
                 </div>
                 @for (line of a.lines; track line) {
                   <div class="market-analysis__line">
@@ -435,6 +445,7 @@ export class Dashboard {
      euro buy". */
   readonly flipUsd = signal(false);
   readonly flipCny = signal(false);
+  readonly analysisMonths = signal<3 | 6 | 12>(3);
 
   readonly historyRoute = signal<{ code: string; label: string; unit: string } | null>(null);
 
@@ -604,78 +615,157 @@ export class Dashboard {
     return rates.dates.slice(-Dashboard.CHART_DAYS);
   }
 
+  /** The last published ECB day on or before the calendar baseline. */
+  private baselineIndex(rates: FxSeries, months: 3 | 6 | 12): number | null {
+    if (rates.dates.length < 2 || rates.dates.length !== rates.usd.length ||
+        rates.dates.length !== rates.cny.length) return null;
+
+    const latest = new Date(`${rates.dates[rates.dates.length - 1]}T00:00:00Z`);
+    if (Number.isNaN(latest.getTime())) return null;
+
+    /* Clamp month-end dates: 31 August - 6 months is 28/29 February,
+       never an overflow into March. */
+    const targetMonth = new Date(Date.UTC(
+        latest.getUTCFullYear(), latest.getUTCMonth() - months, 1));
+    const monthEnd = new Date(Date.UTC(
+        targetMonth.getUTCFullYear(), targetMonth.getUTCMonth() + 1, 0)).getUTCDate();
+    const target = new Date(Date.UTC(
+        targetMonth.getUTCFullYear(), targetMonth.getUTCMonth(),
+        Math.min(latest.getUTCDate(), monthEnd)));
+
+    let baseline = -1;
+    for (let i = 0; i < rates.dates.length - 1; i++) {
+      const date = new Date(`${rates.dates[i]}T00:00:00Z`);
+      if (Number.isNaN(date.getTime())) return null;
+      if (date <= target) baseline = i;
+      else break;
+    }
+    if (baseline < 0) return null;
+
+    /* A weekend/holiday gap is expected; an old, sparse observation is not
+       a truthful three-, six- or twelve-month comparison. */
+    const chosen = new Date(`${rates.dates[baseline]}T00:00:00Z`);
+    const maxGapMs = 10 * 24 * 60 * 60 * 1000;
+    return target.getTime() - chosen.getTime() <= maxGapMs ? baseline : null;
+  }
+
+  private analysisPeriod(months: 3 | 6 | 12): string {
+    if (months === 3) return 'drie maanden';
+    if (months === 6) return 'zes maanden';
+    return 'twaalf maanden';
+  }
+
+  private analysisDate(value: string): string {
+    const date = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat('nl-BE', {
+      day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+    }).format(date);
+  }
+
   /**
-   * The buying-desk analysis, computed fresh from the ECB series (and the
-   * freight log when it has data). No external "analyst" API: every signal
-   * here is arithmetic on primary data, so it needs no keys, cannot go
-   * stale behind a paywall, and every sentence can be traced to a number.
-   *
-   * Signals:
-   * - dollar over one month and over the visible half year;
-   * - where today sits in the 6-month range (bottom = dollar at its
-   *   cheapest point, a concrete buying moment);
-   * - the USD/CNY cross (EURCNY / EURUSD): when the yuan weakens against
-   *   the dollar, CNY-quoted EXW prices get an extra discount on top;
-   * - what the month's move means per $10,000 of purchasing;
-   * - the freight trend from the WCI log, because a cheap dollar can be
-   *   eaten by an expensive container.
+   * Buying-desk analysis from the ECB series. Every sentence uses the
+   * selected calendar baseline, while freight deliberately remains a
+   * separate comparison with its previous recorded quote.
    */
   analysis(rates: FxSeries): {
     verdict: string; tone: string; lead: string; lines: string[];
-    horizons: { label: string; pct: number }[];
+    horizons: {
+      label: string; months: 3 | 6 | 12; pct: number | null;
+    }[];
   } | null {
-    const usd = rates.usd;
-    if (usd.length < 30) return null;
-    const pct = (series: number[], back: number) => {
-      const i = Math.max(0, series.length - 1 - back);
-      return ((series[series.length - 1] - series[i]) / series[i]) * 100;
-    };
+    if (rates.usd.length < 2) return null;
     const nl = (value: number, decimals = 1) =>
         value.toFixed(decimals).replace('.', ',');
 
-    const usdMonth = pct(usd, 22);
-    /* Buying moments compared with 3, 6 and 12 months back; positive =
-       the dollar is cheaper now than it was then. */
-    const horizons = [
-      { label: '3 mnd', back: 65 },
-      { label: '6 mnd', back: 130 },
-      { label: '12 mnd', back: usd.length - 1 },
-    ].filter((h, i, all) => h.back <= usd.length - 1
-        && (i === 0 || h.back > all[i - 1].back))
-      .map((h) => ({ label: h.label, pct: pct(usd, h.back) }));
-    const min = Math.min(...usd);
-    const max = Math.max(...usd);
-    /* 1 = euro at its strongest (dollar cheapest), 0 = weakest. */
-    const rangePos = max === min ? 0.5 : (usd[usd.length - 1] - min) / (max - min);
+    const definitions = [
+      { label: '3 mnd', months: 3 as const },
+      { label: '6 mnd', months: 6 as const },
+      { label: '12 mnd', months: 12 as const },
+    ];
+    const latestIndex = rates.usd.length - 1;
+    const latestUsd = rates.usd[latestIndex];
+    const contexts = definitions.map((definition) => {
+      const index = this.baselineIndex(rates, definition.months);
+      const baselineUsd = index === null ? null : rates.usd[index];
+      const valid = baselineUsd !== null && Number.isFinite(baselineUsd) &&
+          baselineUsd > 0 && Number.isFinite(latestUsd) && latestUsd > 0;
+      /* Positive means that one dollar literally costs fewer euros now. */
+      const pct = valid ? (1 - baselineUsd! / latestUsd) * 100 : null;
+      return { ...definition, index, pct };
+    });
+    const horizons = contexts.map(({ label, months, pct }) => ({ label, months, pct }));
+    const selectedMonths = this.analysisMonths();
+    const selected = contexts.find((context) => context.months === selectedMonths);
+    const period = this.analysisPeriod(selectedMonths);
 
-    /* Rising = yuan weakening against the dollar. */
-    const crossMonth = pct(this.crossOf(rates), 22);
+    if (!selected || selected.index === null || selected.pct === null) {
+      return {
+        verdict: 'Onvoldoende historie',
+        tone: 'neutral',
+        lead: `Voor ${period} zijn nog niet genoeg ECB-koersen beschikbaar.`,
+        lines: ['Kies hierboven een beschikbare kortere periode.'],
+        horizons,
+      };
+    }
+
+    const baselineIndex = selected.index;
+    const baselineDate = this.analysisDate(rates.dates[baselineIndex]);
+    const baselineUsd = rates.usd[baselineIndex];
+    const usdCheaperPct = selected.pct;
+    const windowUsd = rates.usd.slice(baselineIndex)
+        .filter((value) => Number.isFinite(value) && value > 0);
+    const min = Math.min(...windowUsd);
+    const max = Math.max(...windowUsd);
+    /* 1 = euro at its strongest (dollar cheapest), 0 = weakest. */
+    const rangePos = max === min ? 0.5 : (latestUsd - min) / (max - min);
+
+    const baselineCross = rates.cny[baselineIndex] / baselineUsd;
+    const latestCross = rates.cny[latestIndex] / latestUsd;
+    /* Positive = fewer yuan per dollar today, so the yuan strengthened. */
+    const yuanStrengthPct = Number.isFinite(baselineCross) && baselineCross > 0 &&
+        Number.isFinite(latestCross) && latestCross > 0
+      ? (baselineCross / latestCross - 1) * 100
+      : null;
 
     const lines: string[] = [];
-    lines.push(`Dollar: ${nl(Math.abs(usdMonth))}% ` +
-        `${usdMonth >= 0 ? 'goedkoper' : 'duurder'} dan een maand geleden.`);
+    if (Math.abs(usdCheaperPct) < 0.05) {
+      lines.push(`Dollar: minder dan 0,1% prijsverschil tegenover ${period} geleden.`);
+    } else {
+      lines.push(`Dollar: ${nl(Math.abs(usdCheaperPct))}% ` +
+          `${usdCheaperPct >= 0 ? 'goedkoper' : 'duurder'} dan ${period} geleden.`);
+    }
 
     if (rangePos >= 0.85) {
-      lines.push(`De euro staat op zijn sterkste punt in twaalf maanden — ` +
-          `dollarinkoop is nu op zijn goedkoopst binnen die periode.`);
+      lines.push(`In de afgelopen ${period} staat de euro nu dicht bij zijn sterkste ` +
+          `punt tegenover de dollar.`);
     } else if (rangePos <= 0.15) {
-      lines.push(`De euro staat op zijn zwakste punt in twaalf maanden — ` +
-          `wie kan wachten, koopt waarschijnlijk beter later.`);
+      lines.push(`In de afgelopen ${period} staat de euro nu dicht bij zijn zwakste ` +
+          `punt tegenover de dollar.`);
     }
 
-    if (Math.abs(crossMonth) >= 0.4) {
-      lines.push(crossMonth > 0
-          ? `Yuan verzwakt ${nl(crossMonth)}% tegen de dollar — EXW-prijzen in ` +
-            `CNY leveren bovenop het dollareffect extra voordeel op.`
-          : `Yuan verstevigt ${nl(Math.abs(crossMonth))}% tegen de dollar — het ` +
-            `voordeel geldt vooral voor EXW in USD, minder voor CNY.`);
+    if (yuanStrengthPct === null) {
+      lines.push(`Yuan/dollaranalyse is niet beschikbaar voor deze periode.`);
+    } else if (Math.abs(yuanStrengthPct) < 0.05) {
+      lines.push(`Yuan: minder dan 0,1% verschil tegenover de dollar over dezelfde periode.`);
+    } else {
+      lines.push(yuanStrengthPct > 0
+          ? `Yuan verstevigt ${nl(yuanStrengthPct)}% tegen de dollar over dezelfde ` +
+            `periode — het voordeel geldt vooral voor EXW in USD, minder voor CNY.`
+          : `Yuan verzwakt ${nl(Math.abs(yuanStrengthPct))}% tegen de dollar over ` +
+            `dezelfde periode — EXW in CNY werd daarmee relatief voordeliger dan EXW in USD.`);
     }
 
-    const perTenK = Math.abs(usdMonth) * 10000 / 100 /
-        rates.latestUsd;
-    if (Math.abs(usdMonth) >= 0.3) {
-      lines.push(`Per $10.000 aan inkoop scheelt de maandbeweging zo'n ` +
-          `€ ${Math.round(perTenK)}.`);
+    const eurSavingPerTenK = 10000 / baselineUsd - 10000 / latestUsd;
+    const roundedSaving = Math.round(Math.abs(eurSavingPerTenK));
+    if (roundedSaving < 1) {
+      lines.push(`Per $10.000 aan inkoop is het verschil tegenover ${period} geleden minder dan € 1.`);
+    } else if (eurSavingPerTenK > 0) {
+      lines.push(`Per $10.000 aan inkoop bespaar je tegenover ${period} geleden ongeveer ` +
+          `€ ${roundedSaving.toLocaleString('nl-BE')}.`);
+    } else {
+      lines.push(`Per $10.000 aan inkoop betaal je tegenover ${period} geleden ongeveer ` +
+          `€ ${roundedSaving.toLocaleString('nl-BE')} meer.`);
     }
 
     /* Freight from the WCI log, when the scraper or the owner fed it. */
@@ -690,22 +780,22 @@ export class Dashboard {
       }
     }
 
-    /* Verdict: strong signals first, then the range as tiebreaker. */
+    /* Comparative verdict only: the dashboard describes, never predicts. */
     let verdict: string;
     let tone: string;
     let lead: string;
-    if (usdMonth >= 1 || (usdMonth >= 0.3 && rangePos >= 0.8)) {
-      verdict = 'Gunstig koopmoment';
+    if (usdCheaperPct >= 0.5) {
+      verdict = 'Goedkoper dan toen';
       tone = 'ok';
-      lead = 'De euro koopt merkbaar meer dollar dan vorige maand.';
-    } else if (usdMonth <= -1) {
-      verdict = 'Ongunstig';
+      lead = `Een dollar kost nu ${nl(usdCheaperPct)}% minder euro dan op ${baselineDate}.`;
+    } else if (usdCheaperPct <= -0.5) {
+      verdict = 'Duurder dan toen';
       tone = 'warn';
-      lead = 'Dezelfde EXW-prijs kost nu duidelijk meer euro\u2019s dan vorige maand.';
+      lead = `Een dollar kost nu ${nl(Math.abs(usdCheaperPct))}% meer euro dan op ${baselineDate}.`;
     } else {
-      verdict = 'Neutraal';
+      verdict = 'Vrijwel gelijk';
       tone = 'neutral';
-      lead = 'Geen uitgesproken voor- of nadeel tegenover vorige maand.';
+      lead = `De dollarkosten liggen dicht bij het niveau van ${baselineDate}.`;
     }
     return { verdict, tone, lead, lines, horizons };
   }

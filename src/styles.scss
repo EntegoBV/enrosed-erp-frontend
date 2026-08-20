@@ -1681,6 +1681,11 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-bottom: 10px;
 }
+.market-analysis__range-label {
+  margin-bottom: 6px;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+}
 .market-analysis__lead { font-size: 13px; font-weight: 600; }
 .market-analysis__line {
   display: flex; gap: 8px;
@@ -1703,7 +1708,18 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px 4px;
+  min-width: 0; min-height: 58px;
+  color: inherit; font: inherit; cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease,
+              box-shadow 0.15s ease;
 }
+.hgrid__cell:hover:not(:disabled) { border-color: var(--line-strong); }
+.hgrid__cell--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.hgrid__cell:disabled { cursor: not-allowed; opacity: 0.55; }
 .hgrid__label {
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--muted);
@@ -1714,4 +1730,5 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
 }
 .hgrid__value--good { color: var(--ok, #2e7d4f); }
 .hgrid__value--bad { color: var(--warn, #a85e10); }
+.hgrid__value--missing { color: var(--muted); }
 .hgrid__word { font-size: 10px; color: var(--muted); }
