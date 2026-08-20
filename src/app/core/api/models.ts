@@ -279,10 +279,24 @@ export interface CartonAdjustment {
   piecesPerCarton: number;
 }
 
+/** Server-owned wording for every physical cost leg of the purchase route. */
+export interface PurchaseCostLabels {
+  originCountry: string;
+  loadingPort: string;
+  destinationPort: string;
+  originCostsLabel: string;
+  originRoute: string;
+  seaFreightLabel: string;
+  seaFreightRoute: string;
+  destinationCostsLabel: string;
+}
+
 export interface PurchaseOrderView {
   order: PurchaseOrder;
   costing: LandedCost;
   adjustments: CartonAdjustment[];
+  /** Optional while a cached/older backend response is still in the browser. */
+  costLabels?: PurchaseCostLabels;
 }
 
 /* ----------------------------------------------------------------- sales */
@@ -425,6 +439,19 @@ export interface SalesOrderView {
   priced: PricedOrder;
 }
 
+/**
+ * Copy-safe customer portal capability returned by the server.
+ *
+ * The browser deliberately receives no raw token here and never constructs
+ * the public URL itself. A reopened draft can therefore keep its historical
+ * token without accidentally making that unsent version shareable.
+ */
+export interface CustomerPortalLink {
+  available: boolean;
+  status: 'BESCHIKBAAR' | 'NIET_VERSTUURD' | 'CONCEPT_IN_BEWERKING';
+  url: string | null;
+}
+
 export interface QuoteRevisionLine {
   id: number | null;
   productId: number;
@@ -543,6 +570,8 @@ export interface NotificationFeed {
 }
 
 export interface PortalQuote {
+  /** True only for the authenticated, read-only staff preview. */
+  preview?: boolean;
   number: string;
   status: QuoteStatus;
   orderDate: string;

@@ -36,6 +36,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/sales/sales-editor').then((m) => m.SalesEditor),
   },
   {
+    path: 'sales/:id/customer-preview',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/sales/customer-preview').then((m) => m.CustomerPreview),
+  },
+  {
     path: 'sales/:id',
     canActivate: [authGuard],
     loadComponent: () => import('./features/sales/sales-view').then((m) => m.SalesView),

@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { saveBlob } from '../../core/api/download';
-import { CONTAINER_TYPES, DESTINATION_PORTS, containerLabel, countryName } from '../../core/api/geo';
+import { CONTAINER_TYPES, DESTINATION_PORTS, containerLabel } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import { Allocation, Currency, Product, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, Supplier } from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
@@ -15,6 +15,12 @@ import { DateField } from '../../shared/date-field';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
+import {
+  effectiveUsdToEur,
+  purchaseCostLabels,
+  withUsdToEur,
+} from './purchase-cost-labels';
+import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 
 /**
  * Landed-cost calculation of a container.
@@ -27,7 +33,8 @@ import { SupplierAddress } from '../../shared/supplier-address';
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader, ProductPicker, DateField,
-            SupplierAddress, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe],
+            SupplierAddress, PurchaseOrderedSuccess,
+            EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="supplierName()"
@@ -319,12 +326,16 @@ import { SupplierAddress } from '../../shared/supplier-address';
                           </div>
                           @if (line.originEur) {
                             <div class="stat-row stat-row--muted">
-                              <span>Lokale kosten {{ originLabel() }}</span>
+                              <span>{{ costLabels().originCostsLabel }}
+                                <small>{{ costLabels().originRoute }}</small>
+                              </span>
                               <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span>
                             </div>
                           }
                           <div class="stat-row stat-row--muted">
-                            <span>Zeevracht</span>
+                            <span>{{ costLabels().seaFreightLabel }}
+                              <small>{{ costLabels().seaFreightRoute }}</small>
+                            </span>
                             <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span>
                           </div>
                           <div class="stat-row stat-row--muted line-divider">
@@ -338,7 +349,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
                             <span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span>
                           </div>
                           <div class="stat-row stat-row--muted">
-                            <span>{{ data.order.destinationPort || 'Rotterdam' }} → magazijn</span>
+                            <span>{{ costLabels().destinationCostsLabel }}</span>
                             <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span>
                           </div>
                           @if (line.extraRevenueEur) {
@@ -402,7 +413,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
                           <span class="cost-group__step">A</span>
                           <h3 id="exchange-title">Wisselkoersen</h3>
                         </div>
-                        <p>Goederen en transport kunnen met een eigen USD-koers worden begroot.</p>
+                        <p>Eén USD-koers houdt goederen en transport consequent gelijk.</p>
                       </div>
                       <div class="rate-grid">
                         <div class="field">
@@ -413,18 +424,12 @@ import { SupplierAddress } from '../../shared/supplier-address';
                                  (ngModelChange)="patch({ cnyToUsd: +$event })" />
                         </div>
                         <div class="field">
-                          <label for="r-goods">USD naar EUR · goederen</label>
-                          <input class="input num right" id="r-goods" type="number"
+                          <label for="r-usd">USD naar EUR</label>
+                          <input class="input num right" id="r-usd" type="number"
                                  step="0.0001" inputmode="decimal"
-                                 [ngModel]="data.order.usdToEurGoods"
-                                 (ngModelChange)="patch({ usdToEurGoods: +$event })" />
-                        </div>
-                        <div class="field">
-                          <label for="r-transport">USD naar EUR · transport</label>
-                          <input class="input num right" id="r-transport" type="number"
-                                 step="0.0001" inputmode="decimal"
-                                 [ngModel]="data.order.usdToEurTransport"
-                                 (ngModelChange)="patch({ usdToEurTransport: +$event })" />
+                                 [ngModel]="usdToEurRate()"
+                                 (ngModelChange)="setUsdToEur(+$event)" />
+                          <span class="hint">Geldt voor goederen én transport.</span>
                         </div>
                       </div>
                     </section>
@@ -439,7 +444,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
                       </div>
                       <div class="form-grid">
                         <div class="field">
-                          <label class="req" for="c-freight">Zeevracht tot haven</label>
+                          <label class="req" for="c-freight">{{ costLabels().seaFreightLabel }}</label>
                           <div class="input-affix">
                             <input class="input num right" id="c-freight" type="number"
                                    step="50" min="0" inputmode="decimal"
@@ -447,9 +452,10 @@ import { SupplierAddress } from '../../shared/supplier-address';
                                    (ngModelChange)="patch({ freightUsd: +$event })" />
                             <span class="input-affix__suffix">USD</span>
                           </div>
+                          <span class="hint">{{ costLabels().seaFreightRoute }}</span>
                         </div>
                         <div class="field">
-                          <label for="c-origin">Lokale kosten {{ originLabel() }}</label>
+                          <label for="c-origin">{{ costLabels().originCostsLabel }}</label>
                           <div class="input-affix">
                             <input class="input num right" id="c-origin" type="number"
                                    step="50" min="0" inputmode="decimal"
@@ -464,11 +470,11 @@ import { SupplierAddress } from '../../shared/supplier-address';
                               <option value="EUR">EUR</option>
                             </select>
                           </div>
-                          <span class="hint">Fabriek → haven en exportdocumenten.</span>
+                          <span class="hint">{{ costLabels().originRoute }} · voortransport en exportdocumenten.</span>
                         </div>
                         <div class="field">
                           <label for="c-dest">
-                            {{ data.order.destinationPort || 'Rotterdam' }} → magazijn
+                            {{ costLabels().destinationCostsLabel }}
                           </label>
                           <div class="input-affix">
                             <input class="input num right" id="c-dest" type="number"
@@ -510,7 +516,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
                         </span>
                       </summary>
                       <div class="form-grid allocation-settings__body">
-                        @for (key of allocationKeys; track key.field) {
+                        @for (key of allocationKeys(); track key.field) {
                           <div class="field">
                             <label [attr.for]="'a-' + key.field">{{ key.label }}</label>
                             <select class="select" [id]="'a-' + key.field"
@@ -520,6 +526,9 @@ import { SupplierAddress } from '../../shared/supplier-address';
                               <option value="VALUE">Naar goederenwaarde</option>
                               <option value="PIECES">Naar aantal stuks</option>
                             </select>
+                            @if (key.route) {
+                              <span class="hint">{{ key.route }}</span>
+                            }
                           </div>
                         }
                       </div>
@@ -603,12 +612,16 @@ import { SupplierAddress } from '../../shared/supplier-address';
                       </div>
                       @if (data.costing.totals.originEur) {
                         <div class="stat-row">
-                          <span>Lokale kosten {{ originLabel() }}</span>
+                          <span>{{ costLabels().originCostsLabel }}
+                            <small>{{ costLabels().originRoute }}</small>
+                          </span>
                           <span class="num">{{ data.costing.totals.originEur | eur }}</span>
                         </div>
                       }
                       <div class="stat-row">
-                        <span>Zeevracht</span>
+                        <span>{{ costLabels().seaFreightLabel }}
+                          <small>{{ costLabels().seaFreightRoute }}</small>
+                        </span>
                         <span class="num">{{ data.costing.totals.freightEur | eur }}</span>
                       </div>
                       <div class="stat-row cost-summary__subtotal">
@@ -626,7 +639,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
                         <span class="num">{{ data.costing.totals.dutyEur | eur }}</span>
                       </div>
                       <div class="stat-row">
-                        <span>{{ data.order.destinationPort || 'Haven' }} → magazijn</span>
+                        <span>{{ costLabels().destinationCostsLabel }}</span>
                         <span class="num">{{ data.costing.totals.destinationEur | eur }}</span>
                       </div>
                       @if (data.costing.totals.extraRevenueEur) {
@@ -711,6 +724,12 @@ import { SupplierAddress } from '../../shared/supplier-address';
           (create)="quickCreate($event)"
         />
       }
+
+      @if (orderPlaced()) {
+        <app-purchase-ordered-success [orderNumber]="data.order.number"
+                                      (closed)="closeOrderPlaced()"
+                                      (overview)="openOrderView()" />
+      }
     } @else {
       <div class="content po-page">
         <div class="loading-card" role="status" aria-live="polite">
@@ -766,7 +785,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
     .action-card{padding:14px}.action-card__head h2{font-size:16px}.action-card__head p{color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:12px}.danger-zone{margin-top:7px;border-top:1px solid var(--line)}.danger-zone summary{padding:11px;color:var(--muted);font-size:11px;text-align:center}.danger-zone p{color:var(--muted);font-size:10px;text-align:center}
     .loading-card{display:flex;min-height:160px;align-items:center;justify-content:center;color:var(--muted)}.loading-card__mark{display:none}
 
-    @media(min-width:560px){.rate-grid{grid-template-columns:repeat(3,1fr)}.po-facts{grid-template-columns:repeat(4,1fr)}}
+    @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(4,1fr)}}
     @media(min-width:700px){:is(.section-toggle,.section-heading,.product-tools){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px 18px}}
     @media(min-width:1000px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.7fr);gap:16px}.purchase-summary{margin-top:0}}
   `]
@@ -808,7 +827,7 @@ export class PurchaseEditor {
   costsSummary(): string {
     const data = this.view();
     if (!data) return '';
-    return `USD ${data.order.usdToEurGoods} · vracht $${data.order.freightUsd}`;
+    return `1 USD = ${effectiveUsdToEur(data.order)} EUR · vracht $${data.order.freightUsd}`;
   }
 
   readonly containerTypes = CONTAINER_TYPES;
@@ -876,7 +895,10 @@ export class PurchaseEditor {
       );
       return;
     }
-    this.enqueue((order) => ({ ...order, status: step.to as PurchaseOrder['status'] }));
+    this.enqueue(
+      (order) => ({ ...order, status: step.to as PurchaseOrder['status'] }),
+      () => this.orderPlaced.set(true),
+    );
   }
 
   readonly ports = DESTINATION_PORTS;
@@ -885,10 +907,8 @@ export class PurchaseEditor {
    * Where the origin costs are incurred, named after the supplier's country.
    * "Local costs China" was hardcoded once, but not every supplier is Chinese.
    */
-  readonly originLabel = computed(() => {
-    const code = this.supplier()?.country;
-    return code ? countryName(code) : 'oorsprong';
-  });
+  readonly costLabels = computed(() => purchaseCostLabels(this.view(), this.supplier()));
+  readonly originLabel = computed(() => this.costLabels().originCountry);
 
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
@@ -898,12 +918,19 @@ export class PurchaseEditor {
 
   readonly id = input<string>('');
 
-  readonly allocationKeys = [
-    { field: 'allocFreight' as const, label: 'Zeevracht' },
-    { field: 'allocOrigin' as const, label: 'Lokale kosten oorsprong' },
-    { field: 'allocDestination' as const, label: 'Lokale kosten bestemming' },
-    { field: 'allocExtra' as const, label: 'Extra opbrengst' },
-  ];
+  readonly allocationKeys = computed(() => {
+    const labels = this.costLabels();
+    return [
+      { field: 'allocFreight' as const, label: labels.seaFreightLabel,
+        route: labels.seaFreightRoute },
+      { field: 'allocOrigin' as const, label: labels.originCostsLabel,
+        route: labels.originRoute },
+      { field: 'allocDestination' as const, label: labels.destinationCostsLabel,
+        route: '' },
+      { field: 'allocExtra' as const, label: 'Extra opbrengst',
+        route: 'Commerciële opslag per verdeelsleutel' },
+    ];
+  });
 
   readonly view = signal<PurchaseOrderView | null>(null);
   readonly adjustments = signal<PurchaseOrderView['adjustments']>([]);
@@ -912,6 +939,8 @@ export class PurchaseEditor {
   readonly supplier = signal<Supplier | null>(null);
 
   readonly picking = signal(false);
+  /** Opens only after the server confirms CONCEPT -> BESTELD. */
+  readonly orderPlaced = signal(false);
 
   constructor() {
     effect(() => {
@@ -950,12 +979,16 @@ export class PurchaseEditor {
      this prevents. Each queued change is applied onto the freshest order. */
   private saveQueue: Promise<void> = Promise.resolve();
 
-  private enqueue(make: (order: PurchaseOrder) => PurchaseOrder): void {
+  private enqueue(
+    make: (order: PurchaseOrder) => PurchaseOrder,
+    afterSave?: (saved: PurchaseOrderView) => void,
+  ): void {
     this.saveQueue = this.saveQueue.then(async () => {
       const data = this.view();
       if (!data) return;
       try {
-        await this.save(make(data.order));
+        const saved = await this.save(make(data.order));
+        afterSave?.(saved);
       } catch (failure: unknown) {
         /* A rejected save must not reject the queue: the next correction still
            has to reach the server without forcing the user to reload. */
@@ -964,7 +997,7 @@ export class PurchaseEditor {
     });
   }
 
-  private async save(order: PurchaseOrder): Promise<void> {
+  private async save(order: PurchaseOrder): Promise<PurchaseOrderView> {
     const result = await this.sourcing.updatePurchaseOrder(order.id, order);
     this.view.set(result);
     this.adjustments.set(result.adjustments ?? []);
@@ -984,6 +1017,7 @@ export class PurchaseEditor {
       this.ui.toast(
         messageOf(failure, 'Order opgeslagen, maar productgegevens vernieuwen mislukt'), 'err');
     }
+    return result;
   }
 
   piecesPerCarton(productId: number): number {
@@ -996,6 +1030,24 @@ export class PurchaseEditor {
 
   patch(changes: Partial<PurchaseOrder>): void {
     this.enqueue((order) => ({ ...order, ...changes }));
+  }
+
+  usdToEurRate(): number {
+    return effectiveUsdToEur(this.view()?.order);
+  }
+
+  setUsdToEur(rate: number): void {
+    this.enqueue((order) => withUsdToEur(order, rate));
+  }
+
+  closeOrderPlaced(): void {
+    this.orderPlaced.set(false);
+  }
+
+  openOrderView(): void {
+    const id = this.view()?.order.id;
+    this.orderPlaced.set(false);
+    if (id) void this.router.navigate(['/purchasing', id]);
   }
 
   setAllocation(field: keyof PurchaseOrder, value: Allocation): void {

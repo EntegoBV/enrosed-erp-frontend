@@ -10,9 +10,10 @@ import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Product, PurchaseOrderView, Supplier } from '../../core/api/models';
-import { containerLabel, countryName } from '../../core/api/geo';
+import { containerLabel } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
+import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 
 /**
  * Read-only control room for one incoming container.
@@ -73,7 +74,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
               <span class="route-stop__dot" aria-hidden="true"></span>
               <span>
                 <small>Vertrek</small>
-                <strong>{{ loadingPoint() }}</strong>
+                <strong>{{ costLabels().loadingPort }}</strong>
               </span>
             </div>
             <span class="route-strip__line" aria-hidden="true"></span>
@@ -81,7 +82,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
               <span class="route-stop__dot" aria-hidden="true"></span>
               <span>
                 <small>Aankomst</small>
-                <strong>{{ data.order.destinationPort || 'Nog te kiezen' }}</strong>
+                <strong>{{ costLabels().destinationPort }}</strong>
               </span>
             </div>
           </div>
@@ -227,17 +228,21 @@ import { SupplierAddress } from '../../shared/supplier-address';
                         <div class="stat-row"><span>Goederen</span>
                           <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
                         @if (line.originEur) {
-                          <div class="stat-row"><span>Lokale kosten {{ originCountry() }}</span>
+                          <div class="stat-row"><span>{{ costLabels().originCostsLabel }}
+                            <small>{{ costLabels().originRoute }}</small>
+                          </span>
                             <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
                         }
-                        <div class="stat-row"><span>Zeevracht</span>
+                        <div class="stat-row"><span>{{ costLabels().seaFreightLabel }}
+                          <small>{{ costLabels().seaFreightRoute }}</small>
+                        </span>
                           <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
                         <div class="stat-row line-breakdown__subtotal"><span>Douanewaarde</span>
                           <span class="num">{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
                         <div class="stat-row"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
                           @if (line.dutySource) { <small>({{ line.dutySource }})</small> }
                         </span><span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
-                        <div class="stat-row"><span>{{ data.order.destinationPort || 'Haven' }} → magazijn</span>
+                        <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
                           <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
                         @if (line.extraRevenueEur) {
                           <div class="stat-row"><span>Extra opbrengst</span>
@@ -266,7 +271,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
                 <span class="section-heading__copy">
                   <span class="section-kicker">Route &amp; afspraak</span>
                   <h2 id="purchase-details-title">Ordergegevens</h2>
-                  <span>{{ loadingPoint() }} → {{ data.order.destinationPort || 'Nog te kiezen' }}</span>
+                  <span>{{ costLabels().seaFreightRoute }}</span>
                 </span>
               </div>
               <div class="details-grid">
@@ -284,12 +289,12 @@ import { SupplierAddress } from '../../shared/supplier-address';
                 </div>
                 <div class="detail-item">
                   <span>Vertrek</span>
-                  <strong>{{ loadingPoint() }}</strong>
-                  @if (originCountry()) { <small>{{ originCountry() }}</small> }
+                  <strong>{{ costLabels().loadingPort }}</strong>
+                  <small>{{ costLabels().originCountry }}</small>
                 </div>
                 <div class="detail-item">
                   <span>Aankomst</span>
-                  <strong>{{ data.order.destinationPort || '—' }}</strong>
+                  <strong>{{ costLabels().destinationPort }}</strong>
                 </div>
                 <div class="detail-item">
                   <span>Container</span>
@@ -297,8 +302,8 @@ import { SupplierAddress } from '../../shared/supplier-address';
                 </div>
                 @if (showMoney()) {
                   <div class="detail-item internal-detail">
-                    <span>Koers goederen</span>
-                    <strong class="num">1 USD = {{ data.order.usdToEurGoods | num: 4 }} EUR</strong>
+                    <span>USD → EUR koers</span>
+                    <strong class="num">1 USD = {{ usdToEurRate() | num: 4 }} EUR</strong>
                     <small>Alleen intern zichtbaar</small>
                   </div>
                 }
@@ -343,10 +348,14 @@ import { SupplierAddress } from '../../shared/supplier-address';
                       <small>{{ data.costing.totals.goodsUsd | num: 2 }} USD</small>
                     </span><span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
                     @if (data.costing.totals.originEur) {
-                      <div class="stat-row"><span>Lokale kosten {{ originCountry() }}</span>
+                      <div class="stat-row"><span>{{ costLabels().originCostsLabel }}
+                        <small>{{ costLabels().originRoute }}</small>
+                      </span>
                         <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
                     }
-                    <div class="stat-row"><span>Zeevracht</span>
+                    <div class="stat-row"><span>{{ costLabels().seaFreightLabel }}
+                      <small>{{ costLabels().seaFreightRoute }}</small>
+                    </span>
                       <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
                     <div class="stat-row cost-stage__subtotal"><span>Douanewaarde</span>
                       <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
@@ -357,7 +366,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
                     <div class="stat-row"><span>Invoerrechten
                       <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
                     </span><span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-                    <div class="stat-row"><span>{{ data.order.destinationPort || 'Haven' }} → magazijn</span>
+                    <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
                       <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
                     @if (data.costing.totals.extraRevenueEur) {
                       <div class="stat-row"><span>Extra opbrengst</span>
@@ -513,13 +522,10 @@ export class PurchaseView {
     return this.supplier()?.name ?? 'Onbekende leverancier';
   }
 
-  originCountry(): string {
-    return countryName(this.supplier()?.country);
-  }
+  readonly costLabels = computed(() => purchaseCostLabels(this.view(), this.supplier()));
 
-  loadingPoint(): string {
-    const supplier = this.supplier();
-    return supplier?.portOfLoading || supplier?.city || this.originCountry() || 'Nog te kiezen';
+  usdToEurRate(): number {
+    return effectiveUsdToEur(this.view()?.order);
   }
 
   photoOf(productId: number): string | null {

@@ -100,12 +100,12 @@ export type ShippingPalletAction =
         <section class="calculation" aria-labelledby="pallet-result-title">
           <div class="calculation__head">
             <div>
-              <span class="eyebrow">Berekening</span>
-              <h3 id="pallet-result-title">
-                {{ palletCount() }} {{ palletCount() === 1 ? 'pallet' : 'pallets' }} nodig
-              </h3>
+              <span class="eyebrow">Voorstel</span>
+              <h3 id="pallet-result-title">Automatische indeling</h3>
             </div>
-            <span class="calculation__status">serverberekend</span>
+            <span class="calculation__status">
+              {{ palletCount() }} {{ palletCount() === 1 ? 'pallet' : 'pallets' }}
+            </span>
           </div>
           <dl class="result-grid">
             <div><dt>Pallets</dt><dd>{{ palletCount() | num }}</dd></div>
@@ -117,12 +117,12 @@ export type ShippingPalletAction =
             begrensd door gewicht. De pallet van {{ palletBaseHeightCm() | num }} cm telt mee.
           </p>
 
-          <details class="assumptions">
+          <details class="pallet-settings">
             <summary>
-              <span>Uitgangspunten</span>
-              <small>{{ palletProfileLabel() }} · {{ maxPalletHeightCm() | num }} cm</small>
+              <span>{{ palletProfileLabel() }}</span>
+              <small>Pallettype · max. {{ maxPalletHeightCm() | num }} cm</small>
             </summary>
-            <div class="assumptions__body">
+            <div class="pallet-settings__body">
               <div class="field-row">
                 <label for="shipping-pallet-profile">Pallettype</label>
                 <select id="shipping-pallet-profile" class="select" [value]="palletProfile()"
@@ -177,8 +177,8 @@ export type ShippingPalletAction =
           <details class="manual-layout">
             <summary>
               <span>
-                <strong>Handmatig indelen</strong>
-                <small>Alleen nodig als het magazijn anders stapelt</small>
+                <strong>Zelf aanpassen</strong>
+                <small>Begin met het automatische voorstel en pas alleen uitzonderingen aan</small>
               </span>
               @if (view().order.pallets.length) {
                 <span class="layout-badge" [class.layout-badge--warn]="!layoutOk()">
@@ -189,10 +189,13 @@ export type ShippingPalletAction =
             <div class="manual-layout__body">
               @if (!view().order.pallets.length) {
                 <div class="empty-layout">
-                  <p>De automatische uitkomst blijft actief totdat je zelf pallets aanmaakt.</p>
+                  <p>
+                    Neem de automatische indeling over als startvoorstel. Daarna kun je dozen
+                    verplaatsen, pallets splitsen of een gemeten hoogte invullen.
+                  </p>
                   <button class="btn btn--primary btn--block" type="button"
                           [disabled]="!canEdit()" (click)="action.emit({ type: 'auto-layout' })">
-                    Automatisch voorvullen
+                    Voorstel overnemen
                   </button>
                   <button class="btn btn--block mt-8" type="button" [disabled]="!canEdit()"
                           (click)="action.emit({ type: 'add-pallet' })">Lege pallet toevoegen</button>
@@ -303,9 +306,11 @@ export type ShippingPalletAction =
                         (click)="action.emit({ type: 'add-pallet' })">+ Pallet toevoegen</button>
                 <div class="layout-actions">
                   <button type="button" [disabled]="!canEdit()"
-                          (click)="action.emit({ type: 'auto-layout' })">Opnieuw voorvullen</button>
+                          title="Vervang je wijzigingen door een nieuw automatisch startvoorstel"
+                          (click)="action.emit({ type: 'auto-layout' })">Startindeling herstellen</button>
                   <button type="button" [disabled]="!canEdit()"
-                          (click)="action.emit({ type: 'clear-layout' })">Automatisch gebruiken</button>
+                          title="Verwijder de eigen indeling en gebruik voortaan de berekende uitkomst"
+                          (click)="action.emit({ type: 'clear-layout' })">Zelf aanpassen stoppen</button>
                 </div>
               }
             </div>
@@ -409,7 +414,7 @@ export type ShippingPalletAction =
               <small>Het tarief wordt bewaard. Zet ‘Vracht later bepalen’ uit zodra het klaar is.</small>
             } @else {
               <small>
-                Serverberekend met het exacte omdoosvolume:
+                Op basis van het exacte omdoosvolume:
                 {{ view().priced.totals.freight | eur }} in de offerte.
               </small>
             }
@@ -481,14 +486,14 @@ export type ShippingPalletAction =
 
   `, `
 
-    .assumptions,.manual-layout,.pallet-card { margin-top:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden }
+    .pallet-settings,.manual-layout,.pallet-card { margin-top:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden }
     summary { list-style:none;cursor:pointer }
     summary::-webkit-details-marker { display:none }
-    .assumptions>summary,.manual-layout>summary { min-height:48px;padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11.5px;font-weight:680 }
-    .assumptions>summary:after,.manual-layout>summary:after { content:'⌄';color:var(--muted);font-size:14px;transition:transform .18s }
-    .assumptions[open]>summary:after,.manual-layout[open]>summary:after { transform:rotate(180deg) }
-    .assumptions>summary small { overflow:hidden;flex:1;color:var(--muted);font-size:9.5px;font-weight:520;text-align:right;text-overflow:ellipsis;white-space:nowrap }
-    .assumptions__body,.manual-layout__body { padding:11px;border-top:1px solid var(--line);background:var(--surface) }
+    .pallet-settings>summary,.manual-layout>summary { min-height:48px;padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11.5px;font-weight:680 }
+    .pallet-settings>summary:after,.manual-layout>summary:after { content:'⌄';color:var(--muted);font-size:14px;transition:transform .18s }
+    .pallet-settings[open]>summary:after,.manual-layout[open]>summary:after { transform:rotate(180deg) }
+    .pallet-settings>summary small { overflow:hidden;flex:1;color:var(--muted);font-size:9.5px;font-weight:520;text-align:right;text-overflow:ellipsis;white-space:nowrap }
+    .pallet-settings__body,.manual-layout__body { padding:11px;border-top:1px solid var(--line);background:var(--surface) }
     .field-row { display:grid;gap:5px }
     .field-row+* { margin-top:10px }
     label { font-size:11px;font-weight:680 }
@@ -543,7 +548,8 @@ export type ShippingPalletAction =
     .add-product { margin-top:8px }
     .pallet-card__actions { padding:3px 8px;display:grid;grid-template-columns:40px 40px 1fr auto;align-items:center;border-top:1px solid var(--line) }
     .pallet-card__actions .danger-action { color:var(--danger) }
-    .layout-actions { margin-top:4px;display:flex;justify-content:space-between;gap:8px }
+    .layout-actions { margin-top:4px;display:grid;grid-template-columns:1fr 1fr;gap:4px }
+    .layout-actions button { min-height:44px;line-height:1.25 }
 
   `, `
 
@@ -575,6 +581,7 @@ export type ShippingPalletAction =
       .result-grid>div { display:flex;align-items:center;justify-content:space-between;text-align:left }
       .result-grid dd { margin:0 }
       .height-row,.height-row--pallet,.price-input { grid-template-columns:1fr }
+      .layout-actions { grid-template-columns:1fr }
       .price-input>small { grid-column:1 }
       .height-input,.money-input { width:100% }
       .height-input input,.money-input input { flex:1 }

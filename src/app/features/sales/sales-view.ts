@@ -6,7 +6,8 @@ import { Privacy } from '../../core/api/privacy';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import {
-  Country, Customer, PricedLine, QuoteEvent, QuoteRevision, QuoteStatus, SalesOrderView,
+  Country, Customer, CustomerPortalLink, PricedLine, QuoteEvent, QuoteRevision, QuoteStatus,
+  SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
@@ -119,10 +120,20 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   <span class="section-kicker">Orderinhoud</span>
                   <h2 id="sales-lines-title">Producten</h2>
                 </div>
-                <span class="section-count">
-                  {{ data.priced.lines.length }}
-                  {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}
-                </span>
+                <div class="line-head-tools">
+                  @if (privacy.showPurchase()) {
+                    <div class="profit-mode" role="group" aria-label="Winstbedrag tonen per stuk of per regel">
+                      <button type="button" [class.profit-mode__active]="profitMode() === 'UNIT'"
+                              (click)="profitMode.set('UNIT')">Per stuk</button>
+                      <button type="button" [class.profit-mode__active]="profitMode() === 'LINE'"
+                              (click)="profitMode.set('LINE')">Hele regel</button>
+                    </div>
+                  }
+                  <span class="section-count">
+                    {{ data.priced.lines.length }}
+                    {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}
+                  </span>
+                </div>
               </header>
 
               <div class="product-lines">
@@ -149,10 +160,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     <div class="product-line__amount">
                       <span>Netto</span>
                       <strong>{{ line.net | eur: 2 }}</strong>
-                      @if (line.discountPct) {
-                        <small>− {{ line.discountPct | pct: 1 }}</small>
-                      }
                     </div>
+                    @if (line.discountPct) {
+                      <div class="line-discount">
+                        <span>Regelkorting <b>{{ line.discountPct | pct: 1 }}</b></span>
+                        <strong>− {{ line.discountAmount | eur: 2 }}</strong>
+                      </div>
+                    }
                     <div class="delivery-line" [class.delivery-line--open]="deliveryOpen(line, data)">
                       <span class="delivery-line__dot" aria-hidden="true"></span>
                       <span>Levering</span>
@@ -160,10 +174,26 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     </div>
                     @if (privacy.showPurchase()) {
                       <div class="line-profit">
-                        <span>Intern · totale regelwinst</span>
-                        <strong [class.negative]="line.marginEur < 0">
-                          {{ line.marginEur | eur: 2 }} · {{ line.marginPct | pct: 1 }}
-                        </strong>
+                        <button class="line-profit__toggle" type="button"
+                                [attr.aria-expanded]="profitExpanded($index)"
+                                [attr.aria-controls]="'line-profit-' + $index"
+                                (click)="toggleProfit($index)">
+                          <span>Interne winst · {{ profitMode() === 'UNIT' ? 'per stuk' : 'hele regel' }}</span>
+                          <strong [class.negative]="line.marginEur < 0">
+                            {{ profitAmount(line) | eur: 2 }}
+                            <span class="line-profit__chevron" aria-hidden="true"
+                                  [class.line-profit__chevron--open]="profitExpanded($index)">⌄</span>
+                          </strong>
+                        </button>
+                        @if (profitExpanded($index)) {
+                          <dl class="line-profit__detail" [id]="'line-profit-' + $index">
+                            <div><dt>Verkoop na regelkorting</dt><dd>{{ profitNet(line) | eur: 2 }}</dd></div>
+                            <div><dt>Kostprijs</dt><dd>− {{ profitCost(line) | eur: 2 }}</dd></div>
+                            <div class="line-profit__result">
+                              <dt>Winst</dt><dd [class.negative]="line.marginEur < 0">{{ profitAmount(line) | eur: 2 }}</dd>
+                            </div>
+                          </dl>
+                        }
                       </div>
                     }
                   </article>
@@ -256,12 +286,25 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <div class="totals-profit">
                   <span>Alleen intern</span>
                   <div><b>Winst</b><strong [class.negative]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 2 }}</strong></div>
-                  <small>{{ data.priced.totals.marginPct | pct: 1 }} van het netto goederenbedrag</small>
+                  <small>Goederenwinst vóór vrachtkosten</small>
                 </div>
               }
-              <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
-                {{ actionLabel() }}
-              </a>
+              <div class="manage-actions">
+                <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
+                  {{ actionLabel() }}
+                </a>
+                <a class="btn btn--block" [routerLink]="['/sales', data.order.id, 'customer-preview']">
+                  Klantweergave openen
+                </a>
+                @if (portalLink()?.available && portalLink()?.url) {
+                  <button class="btn btn--block" type="button" [disabled]="copyingLink()"
+                          (click)="copyCustomerLink()">
+                    {{ copyingLink() ? 'Kopiëren…' : 'Klantlink kopiëren' }}
+                  </button>
+                } @else if (data.order.status === 'CONCEPT' && data.order.sentAt) {
+                  <p class="link-explainer">De bestaande klantlink blijft verborgen tot deze versie opnieuw is verstuurd.</p>
+                }
+              </div>
             </section>
           </aside>
         </div>
@@ -310,6 +353,8 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .section-card__head { min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line) }
     .section-card h2,.totals-card h2 { margin:2px 0 0;font-size:15px;letter-spacing:-.01em }
     .section-count,.delivery-state { flex:0 0 auto;padding:5px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:700 }
+    .line-head-tools { display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap }
+    .profit-mode { display:flex;padding:2px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2) }.profit-mode button { min-height:25px;border:0;border-radius:7px;background:transparent;padding:0 7px;color:var(--muted);font-size:9px;font-weight:720;cursor:pointer }.profit-mode .profit-mode__active { background:#fff;color:var(--ink);box-shadow:0 1px 4px rgb(39 33 31/.1) }
     .delivery-state { background:var(--ok-soft);color:var(--ok) }.delivery-state--open { background:var(--warn-soft);color:var(--warn) }
   `, `
     .product-lines { padding:10px }.product-line { display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;padding:11px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2) }.product-line+.product-line { margin-top:9px }
@@ -317,9 +362,12 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .product-line__copy { min-width:0 }.product-line h3 { overflow:hidden;margin:1px 0 0;font-size:12.5px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }.product-line__sku { overflow:hidden;margin:3px 0 0;color:var(--muted);font:9.5px/1.2 var(--mono);text-overflow:ellipsis;white-space:nowrap }
     .product-line__meta { display:flex;flex-wrap:wrap;gap:3px 9px;margin-top:7px;color:var(--muted);font-size:10px }.product-line__meta b { color:var(--ink) }
     .product-line__amount { min-width:72px;text-align:right }.product-line__amount span,.product-line__amount small { display:block;color:var(--muted);font-size:9px }.product-line__amount strong { display:block;margin-top:2px;font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap }
-    .delivery-line,.line-profit { grid-column:1/-1;display:flex;align-items:center;gap:6px;padding-top:9px;border-top:1px solid var(--line);font-size:10px }.delivery-line>span:nth-child(2),.line-profit span { color:var(--muted) }.delivery-line strong,.line-profit strong { margin-left:auto;text-align:right }
+    .delivery-line,.line-discount,.line-profit { grid-column:1/-1 }.delivery-line,.line-discount { display:flex;align-items:center;gap:6px;padding-top:9px;border-top:1px solid var(--line);font-size:10px }.delivery-line>span:nth-child(2) { color:var(--muted) }.delivery-line strong,.line-discount strong { margin-left:auto;text-align:right }
     .delivery-line__dot { width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft) }.delivery-line--open .delivery-line__dot { background:var(--warn);box-shadow:0 0 0 3px var(--warn-soft) }
-    .line-profit { padding:7px 9px;border:0;border-radius:9px;background:var(--rose-soft);color:var(--rose-dark) }.negative { color:var(--danger)!important }
+    .line-discount { margin-top:-2px;padding:7px 9px;border:0;border-radius:9px;background:var(--gold-soft);color:var(--ink-2) }.line-discount span { color:var(--muted) }.line-discount b { color:var(--ink-2) }.line-discount strong { color:#986b00 }
+    .line-profit { overflow:hidden;border:1px solid var(--rose-line);border-radius:10px;background:var(--rose-soft);color:var(--rose-dark) }.line-profit__toggle { width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;padding:7px 9px;color:inherit;font:inherit;font-size:10px;cursor:pointer;text-align:left }.line-profit__toggle>span { color:var(--rose-dark);font-weight:720 }.line-profit__toggle strong { display:flex;align-items:center;gap:7px;margin-left:auto;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap }.line-profit__chevron { display:inline-block;color:var(--rose-dark)!important;font-size:15px;line-height:1;transition:transform .16s ease }.line-profit__chevron--open { transform:rotate(180deg) }
+    .line-profit__detail { margin:0;padding:2px 9px 8px;border-top:1px solid var(--rose-line) }.line-profit__detail>div { display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgb(180 91 112/.12) }.line-profit__detail>div:last-child { border-bottom:0 }.line-profit__detail dt { color:var(--muted);font-size:9.5px }.line-profit__detail dd { margin:0;color:var(--ink-2);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums }.line-profit__result dt,.line-profit__result dd { color:var(--rose-dark);font-weight:800 }
+    .negative { color:var(--danger)!important }
     .products-empty { padding:36px 18px;text-align:center;color:var(--muted) }.products-empty>span { display:block;font-size:32px;opacity:.55 }.products-empty strong { display:block;margin-top:6px;color:var(--ink-2);font-size:13px }.products-empty p { margin:4px 0 0;font-size:11.5px }
     .detail-grid { margin:0;padding:5px 14px 10px }.detail-grid>div { display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);align-items:baseline;gap:12px;padding:9px 0;border-bottom:1px solid var(--line) }.detail-grid>div:last-child { border:0 }
     .detail-grid dt { color:var(--muted);font-size:11px }.detail-grid dd { min-width:0;margin:0;color:var(--ink-2);font-size:12px;font-weight:650;overflow-wrap:anywhere;text-align:right }.detail-grid .text-value { white-space:pre-line;line-height:1.5 }.detail-grid__internal { margin-inline:-6px;padding-inline:6px!important;border-radius:9px;background:var(--rose-soft) }
@@ -331,8 +379,9 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .totals-list__main { margin-top:4px;padding:12px 0!important;border-top:1px solid var(--line) }.totals-list__main dt { color:var(--ink)!important;font-weight:760 }.totals-list__main dt small { display:block;margin-top:1px;color:var(--muted);font-size:8.5px;font-weight:550 }.totals-list__main dd { font-size:17px!important }
     .totals-list__incl { border-bottom:0!important }.totals-list__incl dt,.totals-list__incl dd { color:var(--ink-2);font-weight:730 }
     .totals-profit { margin:10px 0 12px;padding:10px;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft) }.totals-profit>span { color:var(--rose-dark);font-size:8.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase }.totals-profit>div { display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:3px }.totals-profit b { font-size:11px }.totals-profit strong { color:var(--ok);font-size:14px;font-variant-numeric:tabular-nums }.totals-profit small { display:block;margin-top:3px;color:var(--muted);font-size:9.5px }
+    .manage-actions { display:grid;gap:7px }.manage-actions .btn { margin:0 }.link-explainer { margin:1px 3px 0;color:var(--muted);font-size:9.5px;line-height:1.4;text-align:center }
     .sales-side { min-width:0 }.load-error { max-width:520px;margin:28px auto!important;padding:34px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:center;box-shadow:var(--sh-1) }.load-error>span { display:grid;width:46px;height:46px;margin:0 auto 11px;place-items:center;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:800 }.load-error h1 { font-size:17px }.load-error p { margin:5px 0 15px;color:var(--muted);font-size:12px }.loading-grid { display:grid;gap:12px;margin-top:12px }
-    @media(max-width:390px) { .sales-hero { padding:15px }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.product-line { grid-template-columns:46px minmax(0,1fr) }.product-line__photo { width:46px;height:46px }.product-line__amount { grid-column:2;display:flex;align-items:baseline;justify-content:space-between;text-align:left }.product-line__amount span { display:inline }.product-line__amount small { margin-left:auto }.revision-alert { padding:12px } }
+    @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.sales-hero { padding:15px }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.product-line { grid-template-columns:46px minmax(0,1fr) }.product-line__photo { width:46px;height:46px }.product-line__amount { grid-column:2;display:flex;align-items:baseline;justify-content:space-between;text-align:left }.product-line__amount span { display:inline }.revision-alert { padding:12px } }
     @media(min-width:760px) { .sales-hero { padding:22px }.hero-facts { max-width:700px }.revision-alert { grid-template-columns:auto minmax(0,1fr) auto;align-items:center }.revision-alert .btn { grid-column:auto }.product-line { grid-template-columns:60px minmax(0,1fr) 120px;padding:13px }.product-line__photo { width:60px;height:60px }.detail-grid { display:grid;grid-template-columns:1fr 1fr;gap:0 24px }.detail-grid__wide { grid-column:1/-1 }.loading-grid { grid-template-columns:1fr 1fr } }
     @media(min-width:1000px) { .sales-layout { grid-template-columns:minmax(0,1fr) 310px;align-items:start }.sales-side { position:sticky;top:78px }.sales-main { grid-template-columns:1fr 1fr }.products-card,.history-card { grid-column:1/-1 }.detail-grid { grid-template-columns:1fr }.sales-hero__top { align-items:center }.sales-hero h1 { max-width:700px }.sales-side .btn { min-height:46px } }
   `],
@@ -348,9 +397,13 @@ export class SalesView {
   readonly countries = signal<Country[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly history = signal<QuoteEvent[]>([]);
+  readonly portalLink = signal<CustomerPortalLink | null>(null);
+  readonly profitMode = signal<'UNIT' | 'LINE'>('UNIT');
+  readonly expandedProfitLines = signal<ReadonlySet<number>>(new Set());
   readonly loading = signal(true);
   readonly loadError = signal('');
   readonly downloading = signal(false);
+  readonly copyingLink = signal(false);
 
   readonly customer = computed(() => {
     const customerId = this.view()?.order.customerId;
@@ -383,19 +436,23 @@ export class SalesView {
     this.loading.set(true);
     this.loadError.set('');
     this.view.set(null);
+    this.portalLink.set(null);
+    this.expandedProfitLines.set(new Set());
     try {
-      const [view, customers, countries, revisions, history] = await Promise.all([
+      const [view, customers, countries, revisions, history, portalLink] = await Promise.all([
         this.sales.order(orderId),
         this.sales.customers(),
         this.sales.countries(),
         this.sales.revisionsFor(orderId).catch(() => [] as QuoteRevision[]),
         this.sales.history(orderId).catch(() => [] as QuoteEvent[]),
+        this.sales.portalLink(orderId).catch(() => null),
       ]);
       this.view.set(view);
       this.customers.set(customers);
       this.countries.set(countries);
       this.revisions.set(revisions);
       this.history.set(history);
+      this.portalLink.set(portalLink);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
     } finally {
@@ -480,6 +537,37 @@ export class SalesView {
     return `${value >= 0 ? '+' : '−'} ${formatted}`;
   }
 
+  profitExpanded(index: number): boolean {
+    return this.expandedProfitLines().has(index);
+  }
+
+  toggleProfit(index: number): void {
+    this.expandedProfitLines.update((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  profitAmount(line: PricedLine): number {
+    return this.profitMode() === 'UNIT' && line.quantity > 0
+      ? line.marginEur / line.quantity
+      : line.marginEur;
+  }
+
+  profitNet(line: PricedLine): number {
+    return this.profitMode() === 'UNIT' && line.quantity > 0
+      ? line.netUnitPrice
+      : line.net;
+  }
+
+  profitCost(line: PricedLine): number {
+    return this.profitMode() === 'UNIT' && line.quantity > 0
+      ? line.landedUnitCost
+      : line.costTotal;
+  }
+
   label = (status: QuoteStatus) => STATUS_LABEL[status];
   cls = statusClass;
 
@@ -494,6 +582,20 @@ export class SalesView {
       this.ui.toast(messageOf(failure, 'PDF downloaden mislukt'), 'err');
     } finally {
       this.downloading.set(false);
+    }
+  }
+
+  async copyCustomerLink(): Promise<void> {
+    const link = this.portalLink();
+    if (!link?.available || !link.url || this.copyingLink()) return;
+    this.copyingLink.set(true);
+    try {
+      await navigator.clipboard.writeText(link.url);
+      this.ui.toast('Klantlink gekopieerd');
+    } catch {
+      this.ui.toast('Klantlink kon niet worden gekopieerd', 'err');
+    } finally {
+      this.copyingLink.set(false);
     }
   }
 }

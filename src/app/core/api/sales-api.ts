@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE, api } from './api.config';
 import {
-  CompanyProfile, Country, Customer, DiscountTier, FreightPricingStrategy, LanguageCode,
+  CompanyProfile, Country, Customer, CustomerPortalLink, DiscountTier, FreightPricingStrategy, LanguageCode,
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
   SalesOrderView,
 } from './models';
@@ -137,10 +137,21 @@ export class SalesApi {
       api(`/api/sales-orders/${id}/packing-slip`), { responseType: 'blob' }));
   }
 
-  portalToken(id: number): Promise<{ token?: string; status?: string }> {
+  /**
+   * Server-owned public URL, only present for a genuinely sent and currently
+   * visible customer portal. Never derive this URL from a token in the UI.
+   */
+  portalLink(id: number): Promise<CustomerPortalLink> {
     return firstValueFrom(
-      this.http.get<{ token?: string; status?: string }>(
+      this.http.get<CustomerPortalLink>(
         api(`/api/sales-orders/${id}/portal-link`)));
+  }
+
+  /** Customer-safe read-only projection, protected by the normal admin guard. */
+  customerPreview(id: number, language?: LanguageCode): Promise<PortalQuote> {
+    const query = language ? `?language=${encodeURIComponent(language)}` : '';
+    return firstValueFrom(this.http.get<PortalQuote>(
+      api(`/api/sales-orders/${id}/customer-preview${query}`)));
   }
 
   /* -------------------------------------------------------- wijzigingen */

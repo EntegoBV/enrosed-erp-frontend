@@ -8,8 +8,8 @@ import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
-  Country, Customer, FreightPricingStrategy, LANGUAGES, LanguageCode, MarkupMode, Product,
-  QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
+  Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
+  MarkupMode, Product, QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -458,56 +458,60 @@ import {
                   </div>
                   <div class="order-line__amount">
                     <strong>{{ line.net | eur }}</strong>
-                    @if (line.discountPct) { <span>−{{ line.discountPct | pct: 1 }}</span> }
-                  </div>
-                </div>
-
-                <div class="quantity-editor">
-                  <div class="field">
-                    <label [attr.for]="'q-' + line.productId">Aantal stuks</label>
-                    <input class="input num" [id]="'q-' + line.productId" type="number"
-                           min="0" step="1" inputmode="numeric" [disabled]="!canEdit()"
-                           [ngModel]="lineDraft()[line.productId] ?? line.quantity"
-                           (ngModelChange)="setLineQuantity(line.productId, +$event)" />
-                    @if (linePending()[line.productId]; as to) {
-                      <span class="hint warn-text" role="status">
-                        Volle doos: wordt <b>{{ to | num }} stuks</b>
-                      </span>
+                    @if (line.discountPct) {
+                      <span>Regelkorting −{{ line.discountPct | pct: 1 }}</span>
                     }
                   </div>
-                  @if (line.nextTierAtQuantity) {
-                    <div class="tier-nudge">
-                      <span aria-hidden="true">↗</span>
-                      <span>Nog <b>{{ line.nextTierAtQuantity - line.quantity | num }}</b> stuks voor {{ line.nextTierPercent | pct: 0 }} korting</span>
-                    </div>
-                  }
                 </div>
 
-                <details class="line-pricing">
-                  <summary>
-                    <span>Prijs aanpassen</span>
-                    <span>{{ line.unitPrice | eur: 2 }} / stuk@if (line.manualPercent) { · {{ line.manualPercent | pct: 1 }} extra }</span>
-                  </summary>
-                  <div class="line-pricing__fields">
+                <div class="line-quick-controls">
+                  <div class="quantity-editor">
                     <div class="field">
-                      <label [attr.for]="'p-' + line.productId">Stukprijs</label>
-                      <input class="input num" [id]="'p-' + line.productId" type="number"
-                             min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
-                             [ngModel]="line.unitPrice"
-                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
-                    </div>
-                    <div class="field">
-                      <label [attr.for]="'d-' + line.productId">Extra korting</label>
-                      <div class="input-affix">
-                        <input class="input num" [id]="'d-' + line.productId" type="number"
-                               min="0" max="100" step="0.5" inputmode="decimal"
-                               [disabled]="!canEdit()" [ngModel]="line.manualPercent"
-                               (ngModelChange)="setLine(line.productId, { manualDiscountPct: +$event })" />
-                        <span class="input-affix__suffix">%</span>
-                      </div>
+                      <label [attr.for]="'q-' + line.productId">Aantal stuks</label>
+                      <input class="input num" [id]="'q-' + line.productId" type="number"
+                             min="0" step="1" inputmode="numeric" [disabled]="!canEdit()"
+                             [ngModel]="lineDraft()[line.productId] ?? line.quantity"
+                             (ngModelChange)="setLineQuantity(line.productId, +$event)" />
+                      @if (linePending()[line.productId]; as to) {
+                        <span class="hint warn-text" role="status">
+                          Volle doos: wordt <b>{{ to | num }} stuks</b>
+                        </span>
+                      }
                     </div>
                   </div>
-                </details>
+
+                  <details class="line-pricing">
+                    <summary>
+                      <span>Prijs aanpassen</span>
+                      <span>{{ line.unitPrice | eur: 2 }} / stuk@if (line.manualPercent) { · {{ line.manualPercent | pct: 1 }} extra }</span>
+                    </summary>
+                    <div class="line-pricing__fields">
+                      <div class="field">
+                        <label [attr.for]="'p-' + line.productId">Stukprijs</label>
+                        <input class="input num" [id]="'p-' + line.productId" type="number"
+                               min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
+                               [ngModel]="line.unitPrice"
+                               (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
+                      </div>
+                      <div class="field">
+                        <label [attr.for]="'d-' + line.productId">Extra korting</label>
+                        <div class="input-affix">
+                          <input class="input num" [id]="'d-' + line.productId" type="number"
+                                 min="0" max="100" step="0.5" inputmode="decimal"
+                                 [disabled]="!canEdit()" [ngModel]="line.manualPercent"
+                                 (ngModelChange)="setLine(line.productId, { manualDiscountPct: +$event })" />
+                          <span class="input-affix__suffix">%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+                @if (line.nextTierAtQuantity) {
+                  <div class="tier-nudge">
+                    <span aria-hidden="true">↗</span>
+                    <span>Nog <b>{{ line.nextTierAtQuantity - line.quantity | num }}</b> stuks voor {{ line.nextTierPercent | pct: 0 }} korting</span>
+                  </div>
+                }
 
                 <div class="delivery order-line__delivery">
                   <div class="delivery-row">
@@ -527,14 +531,21 @@ import {
                       }
                     </span>
                     <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
-                            [attr.aria-label]="'Leverweek wijzigen voor ' + line.description"
+                            [attr.aria-label]="editingDelivery() === line.productId
+                              ? 'Leverweek sluiten voor ' + line.description
+                              : (!line.inStock && !line.deliveryWeek
+                                ? 'Leverweek invullen voor ' + line.description
+                                : 'Leverweek wijzigen voor ' + line.description)"
                             [attr.aria-expanded]="editingDelivery() === line.productId"
+                            [attr.aria-controls]="'delivery-week-' + line.productId"
                             (click)="toggleDelivery(line.productId)">
-                      {{ editingDelivery() === line.productId ? 'Sluiten' : 'Wijzigen' }}
+                      {{ editingDelivery() === line.productId
+                          ? 'Sluiten'
+                          : (!line.inStock && !line.deliveryWeek ? 'Invullen' : 'Wijzigen') }}
                     </button>
                   </div>
-                  @if (!line.inStock || editingDelivery() === line.productId) {
-                    <div class="delivery-week">
+                  @if (editingDelivery() === line.productId) {
+                    <div class="delivery-week" [id]="'delivery-week-' + line.productId">
                       <div class="field">
                         <label [attr.for]="'w-' + line.productId">Beloofde leverweek <span class="opt"></span></label>
                         <app-week-field [fieldId]="'w-' + line.productId"
@@ -547,49 +558,51 @@ import {
                 </div>
 
                 @if (privacy.showPurchase()) {
-                  <div class="line-internal" role="group"
-                       [attr.aria-labelledby]="'line-margin-title-' + line.productId">
-                    <div class="line-internal__head">
-                      <div>
+                  <details class="line-internal">
+                    <summary class="line-internal__summary">
+                      <span class="line-internal__title">
                         <span class="line-internal__privacy">Alleen intern</span>
-                        <strong [id]="'line-margin-title-' + line.productId">Rendabiliteit per stuk</strong>
-                      </div>
-                      <span class="line-internal__percentage"
-                            [class.line-internal__percentage--good]="line.marginPct >= 25"
-                            [class.line-internal__percentage--danger]="line.marginPct < 10">
-                        {{ line.marginPct | pct: 1 }} marge
+                        <strong>Rendabiliteit per stuk</strong>
                       </span>
-                    </div>
-
-                    <dl class="line-internal__units">
-                      <div>
-                        <dt>Netto verkoop</dt>
-                        <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ stuk</small></dd>
-                      </div>
-                      <div>
-                        <dt>Gelande kost</dt>
-                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
-                      </div>
-                      <div class="line-internal__unit-margin"
-                           [class.line-internal__unit-margin--good]="line.marginPct >= 25"
-                           [class.line-internal__unit-margin--danger]="line.marginPct < 10">
-                        <dt>Marge per stuk</dt>
-                        <dd>{{ marginPerUnit(line) | eur: 4 }}<small>/ stuk</small></dd>
-                      </div>
-                    </dl>
-
-                    <div class="line-internal__total">
-                      <span>
-                        Totale regelmarge
-                        <small>{{ line.quantity | num }} stuks, na regelkorting</small>
+                      <span class="line-internal__profit"
+                            [class.line-internal__profit--negative]="marginPerUnit(line) < 0">
+                        {{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }}
+                        {{ absolute(marginPerUnit(line)) | eur: 2 }} / stuk
                       </span>
-                      <strong [class.ok-text]="line.marginPct >= 25"
-                              [class.danger-text]="line.marginPct < 10">{{ line.marginEur | eur }}</strong>
+                    </summary>
+
+                    <div class="line-internal__body">
+                      <dl class="line-internal__units">
+                        <div>
+                          <dt>Netto verkoop</dt>
+                          <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ stuk</small></dd>
+                        </div>
+                        <div>
+                          <dt>Gelande kost</dt>
+                          <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
+                        </div>
+                        <div class="line-internal__unit-profit"
+                             [class.line-internal__unit-profit--negative]="marginPerUnit(line) < 0">
+                          <dt>{{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }} per stuk</dt>
+                          <dd>{{ absolute(marginPerUnit(line)) | eur: 2 }}<small>/ stuk</small></dd>
+                        </div>
+                      </dl>
+
+                      <div class="line-internal__total">
+                        <span>
+                          Totale regel{{ line.marginEur < 0 ? 'verlies' : 'winst' }}
+                          <small>{{ line.quantity | num }} stuks, na regelkorting</small>
+                        </span>
+                        <strong [class.ok-text]="line.marginEur >= 0"
+                                [class.danger-text]="line.marginEur < 0">
+                          {{ absolute(line.marginEur) | eur: 2 }}
+                        </strong>
+                      </div>
+                      <p class="line-internal__note">
+                        Vóór orderkorting en vracht; de definitieve winst staat bij Controleren.
+                      </p>
                     </div>
-                    <p class="line-internal__note">
-                      Vóór orderkorting en vracht; de definitieve winst staat bij Controleren.
-                    </p>
-                  </div>
+                  </details>
                 }
 
                 <div class="order-line__foot">
@@ -613,13 +626,13 @@ import {
           </div>
         </section>
 
-        <!-- ==================================== delivery and freight -->
+        <!-- ==================================== transport and delivery -->
         <section class="card logistics-card" id="quote-logistics" aria-labelledby="logistics-title">
           <div class="section-card-head">
             <div class="section-heading">
               <span class="section-heading__number">3</span>
               <div>
-                <h2 id="logistics-title">Levering &amp; vracht</h2>
+                <h2 id="logistics-title">Transport &amp; levering</h2>
                 <p>{{ palletSummary() }}</p>
               </div>
             </div>
@@ -630,47 +643,38 @@ import {
                 {{ isLooseCartons(data) ? '▤' : '▦' }}
               </div>
               <div class="logistics-option__copy">
-                <strong>Verzendindeling</strong>
+                <strong>Transport</strong>
                 <span>
                   @if (isLooseCartons(data)) {
                     {{ data.priced.totals.cbm | cbm }} · losse dozen
                   } @else {
-                    {{ data.order.pallets.length ? 'Handmatig verdeeld' : 'Automatisch berekend' }}
+                    {{ data.order.pallets.length ? 'Zelf ingedeeld' : 'Automatische indeling' }}
                   }
                 </span>
+                @if (data.order.freight === 'TE_BEPALEN') {
+                  <span class="danger-text">Vrachtprijs nog te bepalen</span>
+                } @else {
+                  <span>{{ freightStrategyLabel(data) }} · {{ data.priced.totals.freight | eur }}</span>
+                }
               </div>
               @if (!isLooseCartons(data) && data.order.pallets.length) {
                 <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
                   {{ layoutOk() ? 'compleet' : 'nakijken' }}
                 </span>
               }
-              <button class="btn btn--sm" type="button" [disabled]="!canEdit()"
-                      (click)="palletSheet.set(true)">
-                Aanpassen
+              <button class="btn btn--sm" type="button" [disabled]="!canEditTerms()"
+                      (click)="canEdit() ? palletSheet.set(true) : freightOpen.set(!freightOpen())"
+                      [attr.aria-expanded]="canEdit() ? palletSheet() : freightOpen()"
+                      [attr.aria-haspopup]="canEdit() ? 'dialog' : null"
+                      [attr.aria-controls]="canEdit() ? null : 'freight-options'">
+                {{ !canEdit() && freightOpen() ? 'Sluiten' : 'Aanpassen' }}
               </button>
+
               @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
                 <div class="logistics-option__warning">
                   {{ data.priced.totals.unassignedCartons }} dozen zijn nog niet toegewezen.
                 </div>
               }
-            </div>
-
-            <div class="logistics-option logistics-option--freight">
-              <div class="logistics-option__icon" aria-hidden="true">↗</div>
-              <div class="logistics-option__copy">
-                <strong>Vracht</strong>
-                @if (data.order.freight === 'TE_BEPALEN') {
-                  <span class="danger-text">Nog te bepalen</span>
-                } @else {
-                  <span>{{ freightStrategyLabel(data) }} · {{ data.priced.totals.freight | eur }}</span>
-                }
-              </div>
-              <button class="btn btn--sm" type="button" [disabled]="!canEditTerms()"
-                      (click)="canEdit() ? palletSheet.set(true) : freightOpen.set(!freightOpen())"
-                      [attr.aria-expanded]="!canEdit() && freightOpen()"
-                      aria-controls="freight-options">
-                {{ !canEdit() && freightOpen() ? 'Sluiten' : 'Aanpassen' }}
-              </button>
 
               @if (!canEdit() && freightOpen()) {
                 <div class="freight-options" id="freight-options">
@@ -856,11 +860,18 @@ import {
                 @for (issue of sendIssues(); track issue) { <li>{{ issue }}</li> }
               </ul>
             }
-            @if (data.order.portalToken) {
-              <div class="status-actions">
-                <button class="btn" type="button" (click)="copyLink()">Klantlink kopiëren</button>
-              </div>
-            }
+            <div class="status-actions">
+              <button class="btn" type="button" (click)="openCustomerPreview()">
+                Klantweergave openen
+              </button>
+              @if (customerPortalLink(); as portalLink) {
+                @if (portalLink.available && portalLink.url) {
+                  <button class="btn" type="button" (click)="copyLink()">
+                    Klantlink kopiëren
+                  </button>
+                }
+              }
+            </div>
             @if (canDelete()) {
               <button class="delete-draft" type="button" (click)="remove()">
                 Dit concept verwijderen
@@ -915,7 +926,7 @@ import {
       }
 
       @if (palletSheet()) {
-        <app-sheet title="Verzendindeling" [wide]="true" (closed)="palletSheet.set(false)">
+        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="palletSheet.set(false)">
           <div body>
             @if (view(); as data) {
               <app-shipping-planner
@@ -1040,6 +1051,8 @@ import {
     .reference-alert .btn,.quote-lock .btn { min-height:44px;margin-left:auto }
     .revision-card { border-color:color-mix(in srgb,var(--gold) 48%,var(--line)) }
 
+  `, `
+
     .workflow-layout { position:relative }
     .workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:5px;border:1px solid var(--line);border-radius:16px;background:rgb(255 255 255/.92);box-shadow:0 5px 18px rgb(26 22 20/.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px) }
     .workflow-nav button { min-width:0;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 2px;border:0;border-radius:11px;background:transparent;color:var(--muted);font-size:10px;font-weight:670;cursor:pointer }
@@ -1098,11 +1111,14 @@ import {
     .order-line__amount { display:flex;flex-direction:column;align-items:flex-end }
     .order-line__amount strong { font-size:14px;font-variant-numeric:tabular-nums }
     .order-line__amount span { color:var(--ok);font-size:10px }
-    .quantity-editor { margin-top:14px }
-    .quantity-editor .field { margin-bottom:8px }
-    .quantity-editor .input { min-height:48px;font-size:18px;font-weight:680 }
-    .tier-nudge { padding:8px 10px;display:flex;gap:8px;border-radius:10px;background:var(--gold-soft);color:#78591f;font-size:11.5px }
-    .line-pricing { margin-top:10px }
+    .line-quick-controls { margin-top:10px;display:grid;grid-template-columns:minmax(108px,.42fr) minmax(0,1fr);gap:8px;align-items:start }
+    .quantity-editor .field { margin:0 }
+    .quantity-editor .input { min-height:44px;font-size:15px;font-weight:680 }
+    .tier-nudge { margin-top:8px;padding:8px 10px;display:flex;gap:8px;border-radius:10px;background:var(--gold-soft);color:#78591f;font-size:11px }
+    .line-pricing { margin:0 }
+    .line-pricing[open] { grid-column:1/-1 }
+    .line-pricing summary { min-height:44px;padding:8px 9px }
+    .line-pricing summary>span:last-child { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
     .line-pricing__fields { display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 10px 0;border-top:1px solid var(--line);background:var(--surface) }
     .order-line__delivery { margin-top:10px;padding:10px }
     .delivery-row { display:flex;align-items:center;gap:8px }
@@ -1113,21 +1129,25 @@ import {
     .delivery-week { margin-top:10px;padding-top:10px;border-top:1px solid var(--line) }
     .delivery-week .field { margin:0 }
     .line-internal { margin-top:10px;border:1px solid #e8d3ae;border-radius:13px;background:var(--surface);overflow:hidden }
-    .line-internal__head { min-height:54px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid #ecdcbf;background:var(--warn-soft) }
-    .line-internal__head>div { min-width:0;display:flex;flex-direction:column;gap:2px }
-    .line-internal__head strong { color:var(--ink);font-size:12px;line-height:1.25 }
+    .line-internal__summary { min-height:50px;padding:8px 10px;display:grid;grid-template-columns:minmax(0,1fr) auto 16px;gap:8px;align-items:center;background:var(--warn-soft);cursor:pointer;list-style:none }
+    .line-internal__summary::-webkit-details-marker { display:none }
+    .line-internal__summary:after { content:'⌄';color:var(--muted);font-size:14px;transition:transform .18s }
+    .line-internal[open] .line-internal__summary:after { transform:rotate(180deg) }
+    .line-internal__title { min-width:0;display:flex;flex-direction:column;gap:1px }
+    .line-internal__title strong { overflow:hidden;color:var(--ink);font-size:11.5px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }
     .line-internal__privacy { color:var(--warn);font-size:8.5px;font-weight:780;letter-spacing:.075em;text-transform:uppercase }
-    .line-internal__percentage { flex:none;padding:5px 7px;border-radius:999px;background:var(--surface);color:var(--warn);font-size:10px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap }
-    .line-internal__percentage--good { background:var(--ok-soft);color:var(--ok) }
-    .line-internal__percentage--danger { background:var(--danger-soft);color:var(--danger) }
+    .line-internal__profit { flex:none;padding:5px 7px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:9.5px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap }
+    .line-internal__profit--negative { background:var(--danger-soft);color:var(--danger) }
+    .line-internal__body { border-top:1px solid #ecdcbf }
     .line-internal__units { margin:0;padding:9px;display:grid;grid-template-columns:1fr 1fr;gap:7px }
     .line-internal__units>div { min-width:0;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2) }
     .line-internal__units dt { color:var(--muted);font-size:9.5px;line-height:1.25 }
     .line-internal__units dd { margin:3px 0 0;color:var(--ink);font-size:14px;font-weight:720;font-variant-numeric:tabular-nums;line-height:1.2 }
     .line-internal__units dd small { margin-left:3px;color:var(--muted);font-size:8.5px;font-weight:560 }
-    .line-internal__units .line-internal__unit-margin { grid-column:1/-1;border-color:var(--rose-line);background:var(--rose-soft) }
-    .line-internal__unit-margin--good dd { color:var(--ok) }
-    .line-internal__unit-margin--danger dd { color:var(--danger) }
+    .line-internal__units .line-internal__unit-profit { grid-column:1/-1;border-color:#c6e5d5;background:var(--ok-soft) }
+    .line-internal__unit-profit dd { color:var(--ok) }
+    .line-internal__units .line-internal__unit-profit--negative { border-color:#efcac6;background:var(--danger-soft) }
+    .line-internal__unit-profit--negative dd { color:var(--danger) }
     .line-internal__total { margin:0 9px;padding:10px 2px 9px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line) }
     .line-internal__total>span { min-width:0;display:flex;flex-direction:column;color:var(--ink);font-size:11px;font-weight:680 }
     .line-internal__total small { margin-top:1px;color:var(--muted);font-size:9px;font-weight:520 }
@@ -1140,12 +1160,15 @@ import {
     .products-empty h3 { font-size:16px }
     .products-empty p { max-width:340px;margin:4px auto 16px;color:var(--muted);font-size:12.5px }
 
-    .logistics-grid { padding:10px;display:grid;gap:8px;background:var(--surface-2) }
+  `, `
+
+    .logistics-grid { padding:10px;background:var(--surface-2) }
     .logistics-option { display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:9px;align-items:center;padding:11px;border:1px solid var(--line);border-radius:14px;background:var(--surface) }
     .logistics-option__icon { width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:var(--surface-2);color:var(--muted);font-size:17px }
     .logistics-option__copy { min-width:0;display:flex;flex-direction:column }
     .logistics-option__copy strong { font-size:13px }
     .logistics-option__copy span { overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap }
+    .logistics-option__copy .danger-text { color:var(--danger) }
     .logistics-option .badge { grid-column:2;justify-self:start }
     .logistics-option>.btn { min-height:44px }
     .logistics-option__warning { grid-column:1/-1;padding:8px 10px;border-radius:9px;background:var(--warn-soft);color:var(--warn);font-size:11.5px }
@@ -1214,11 +1237,10 @@ import {
       .workflow-nav button { flex-direction:row;gap:7px;font-size:11.5px }
       .product-lines,.logistics-grid { padding:14px }
       .order-line { padding:16px }
-      .quantity-editor { display:grid;grid-template-columns:minmax(220px,1fr) 1fr;gap:12px;align-items:end }
-      .tier-nudge { min-height:48px;margin-bottom:8px;align-items:center }
+      .line-quick-controls { grid-template-columns:180px minmax(0,1fr);gap:10px }
+      .tier-nudge { align-items:center }
       .line-internal__units { grid-template-columns:repeat(3,minmax(0,1fr)) }
-      .line-internal__units .line-internal__unit-margin { grid-column:auto }
-      .logistics-grid { grid-template-columns:1fr 1fr }
+      .line-internal__units .line-internal__unit-profit { grid-column:auto }
     }
     @media(min-width:1024px) {
       #quote-setup,#order-lines,#quote-logistics,#quote-check,#quote-status { scroll-margin-top:calc(var(--appbar-h) + 28px) }
@@ -1281,6 +1303,7 @@ export class SalesEditor {
   readonly countries = signal<Country[]>([]);
   readonly products = signal<Product[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
+  readonly customerPortalLink = signal<CustomerPortalLink | null>(null);
 
   readonly picking = signal(false);
   readonly sendSheet = signal(false);
@@ -1346,6 +1369,7 @@ export class SalesEditor {
     this.loading.set(true);
     this.loadError.set('');
     this.view.set(null);
+    this.customerPortalLink.set(null);
     try {
       const [view, revisions] = await Promise.all([
         this.sales.order(orderId), this.sales.revisionsFor(orderId),
@@ -1353,11 +1377,20 @@ export class SalesEditor {
       this.view.set(view);
       this.revisions.set(revisions);
       void this.loadHistory(orderId);
+      void this.loadCustomerPortalLink(orderId);
     } catch (failure: unknown) {
       this.view.set(null);
       this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async loadCustomerPortalLink(orderId: number): Promise<void> {
+    try {
+      this.customerPortalLink.set(await this.sales.portalLink(orderId));
+    } catch {
+      this.customerPortalLink.set(null);
     }
   }
 
@@ -1492,6 +1525,10 @@ export class SalesEditor {
    */
   marginPerUnit(line: PricedLine): number {
     return line.quantity > 0 ? line.marginEur / line.quantity : 0;
+  }
+
+  absolute(value: number): number {
+    return Math.abs(value);
   }
 
   /* --------------------------------------------------------- mutating */
@@ -1733,8 +1770,10 @@ export class SalesEditor {
     const data = this.view();
     if (!data || this.busy()) return;
     this.busy.set(true);
+    this.customerPortalLink.set(null);
     try {
       this.view.set(await this.sales.reopenQuote(data.order.id));
+      void this.loadCustomerPortalLink(data.order.id);
       this.ui.toast('Offerte staat weer op concept');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Heropenen mislukt'), 'err');
@@ -1908,11 +1947,15 @@ export class SalesEditor {
   }
 
   async copyLink(): Promise<void> {
-    const token = this.view()?.order.portalToken;
-    if (!token) return;
-    const link = `${location.origin}/offerte/${token}`;
-    await navigator.clipboard.writeText(link);
+    const portalLink = this.customerPortalLink();
+    if (!portalLink?.available || !portalLink.url) return;
+    await navigator.clipboard.writeText(portalLink.url);
     this.ui.toast('Klantlink gekopieerd');
+  }
+
+  openCustomerPreview(): void {
+    const orderId = this.view()?.order.id;
+    if (orderId != null) void this.router.navigate(['/sales', orderId, 'customer-preview']);
   }
 
   /* ---------------------------------------------------------- changes */
@@ -1938,7 +1981,9 @@ export class SalesEditor {
         confirmLabel: thenEdit ? 'Overnemen en bijsturen' : 'Overnemen',
       },
       async () => {
+        this.customerPortalLink.set(null);
         this.view.set(await this.sales.approveRevision(revision.id, 'Verkoop', ''));
+        void this.loadCustomerPortalLink(revision.salesOrderId);
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
         /* The tab counter and the bell must drop this immediately. */
         void this.work.refresh();
