@@ -125,8 +125,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <span class="spacer"></span>
                 <div class="market-row__value num">
                   {{ fxValue(rates.latestUsd, flipUsd()) | num: 4 }}</div>
-                <span class="badge" [class]="fxPct(rates.usd, flipUsd()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                  {{ fxPct(rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates.usd, flipUsd()) | num: 1 }}% · 1 mnd
+                <span class="badge" [class]="fxPct(rates, rates.usd, flipUsd()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates, rates.usd, flipUsd()) >= 0 ? '+' : '' }}{{ fxPct(rates, rates.usd, flipUsd()) | num: 1 }}% · 1 mnd
                 </span>
               </div>
               <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(rates.usd), flipUsd())"
@@ -146,8 +146,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <span class="spacer"></span>
                 <div class="market-row__value num">
                   {{ fxValue(rates.latestCny, flipCny()) | num: 4 }}</div>
-                <span class="badge" [class]="fxPct(rates.cny, flipCny()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                  {{ fxPct(rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates.cny, flipCny()) | num: 1 }}% · 1 mnd
+                <span class="badge" [class]="fxPct(rates, rates.cny, flipCny()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates, rates.cny, flipCny()) >= 0 ? '+' : '' }}{{ fxPct(rates, rates.cny, flipCny()) | num: 1 }}% · 1 mnd
                 </span>
               </div>
               <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(rates.cny), flipCny())"
@@ -170,8 +170,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 <span class="spacer"></span>
                 <div class="market-row__value num">
                   {{ fxValue(latestCross(rates), flipCross()) | num: 4 }}</div>
-                <span class="badge" [class]="fxPct(crossOf(rates), flipCross()) >= 0 ? 'badge--ok' : 'badge--warn'">
-                  {{ fxPct(crossOf(rates), flipCross()) >= 0 ? '+' : '' }}{{ fxPct(crossOf(rates), flipCross()) | num: 1 }}% · 1 mnd
+                <span class="badge" [class]="fxPct(rates, crossOf(rates), flipCross()) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates, crossOf(rates), flipCross()) >= 0 ? '+' : '' }}{{ fxPct(rates, crossOf(rates), flipCross()) | num: 1 }}% · 1 mnd
                 </span>
               </div>
               <app-sparkline class="fx-chart" [values]="fxSeries(chartSlice(crossOf(rates)), flipCross())"
@@ -445,7 +445,7 @@ export class Dashboard {
      euro buy". */
   readonly flipUsd = signal(false);
   readonly flipCny = signal(false);
-  readonly analysisMonths = signal<3 | 6 | 12>(3);
+  readonly analysisMonths = signal<1 | 3 | 6 | 12>(1);
 
   readonly historyRoute = signal<{ code: string; label: string; unit: string } | null>(null);
 
@@ -457,14 +457,12 @@ export class Dashboard {
     return flipped ? series.map((value) => 1 / value) : series;
   }
 
-  /**
-   * Change over the past month (~22 working days), matching the hint's
-   * horizon - the chart tells the half-year story, the number tells what
-   * changed since the last container was priced.
-   */
-  fxPct(series: number[], flipped: boolean): number {
-    const values = this.fxSeries(series, flipped).slice(-23);
-    return ((values[values.length - 1] - values[0]) / values[0]) * 100;
+  /** Calendar-month change, using the same ECB baseline as the analysis. */
+  fxPct(rates: FxSeries, series: number[], flipped: boolean): number {
+    const baseline = this.baselineIndex(rates, 1);
+    if (baseline === null || series.length !== rates.dates.length) return 0;
+    const values = this.fxSeries(series, flipped);
+    return ((values[values.length - 1] - values[baseline]) / values[baseline]) * 100;
   }
 
   /**
@@ -616,7 +614,7 @@ export class Dashboard {
   }
 
   /** The last published ECB day on or before the calendar baseline. */
-  private baselineIndex(rates: FxSeries, months: 3 | 6 | 12): number | null {
+  private baselineIndex(rates: FxSeries, months: 1 | 3 | 6 | 12): number | null {
     if (rates.dates.length < 2 || rates.dates.length !== rates.usd.length ||
         rates.dates.length !== rates.cny.length) return null;
 
@@ -643,13 +641,14 @@ export class Dashboard {
     if (baseline < 0) return null;
 
     /* A weekend/holiday gap is expected; an old, sparse observation is not
-       a truthful three-, six- or twelve-month comparison. */
+       a truthful one-, three-, six- or twelve-month comparison. */
     const chosen = new Date(`${rates.dates[baseline]}T00:00:00Z`);
     const maxGapMs = 10 * 24 * 60 * 60 * 1000;
     return target.getTime() - chosen.getTime() <= maxGapMs ? baseline : null;
   }
 
-  private analysisPeriod(months: 3 | 6 | 12): string {
+  private analysisPeriod(months: 1 | 3 | 6 | 12): string {
+    if (months === 1) return 'een maand';
     if (months === 3) return 'drie maanden';
     if (months === 6) return 'zes maanden';
     return 'twaalf maanden';
@@ -671,7 +670,7 @@ export class Dashboard {
   analysis(rates: FxSeries): {
     verdict: string; tone: string; lead: string; lines: string[];
     horizons: {
-      label: string; months: 3 | 6 | 12; pct: number | null;
+      label: string; months: 1 | 3 | 6 | 12; pct: number | null;
     }[];
   } | null {
     if (rates.usd.length < 2) return null;
@@ -679,6 +678,7 @@ export class Dashboard {
         value.toFixed(decimals).replace('.', ',');
 
     const definitions = [
+      { label: '1 mnd', months: 1 as const },
       { label: '3 mnd', months: 3 as const },
       { label: '6 mnd', months: 6 as const },
       { label: '12 mnd', months: 12 as const },
@@ -698,6 +698,7 @@ export class Dashboard {
     const selectedMonths = this.analysisMonths();
     const selected = contexts.find((context) => context.months === selectedMonths);
     const period = this.analysisPeriod(selectedMonths);
+    const rangePeriod = selectedMonths === 1 ? 'maand' : period;
 
     if (!selected || selected.index === null || selected.pct === null) {
       return {
@@ -737,10 +738,10 @@ export class Dashboard {
     }
 
     if (rangePos >= 0.85) {
-      lines.push(`In de afgelopen ${period} staat de euro nu dicht bij zijn sterkste ` +
+      lines.push(`In de afgelopen ${rangePeriod} staat de euro nu dicht bij zijn sterkste ` +
           `punt tegenover de dollar.`);
     } else if (rangePos <= 0.15) {
-      lines.push(`In de afgelopen ${period} staat de euro nu dicht bij zijn zwakste ` +
+      lines.push(`In de afgelopen ${rangePeriod} staat de euro nu dicht bij zijn zwakste ` +
           `punt tegenover de dollar.`);
     }
 
