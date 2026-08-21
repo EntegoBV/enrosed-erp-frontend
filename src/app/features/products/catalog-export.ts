@@ -2,15 +2,12 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  ElementRef,
   computed,
   effect,
   inject,
   signal,
-  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import {
   CatalogApi,
   CatalogExportRequest,
@@ -38,8 +35,6 @@ interface CatalogBuilderState extends CatalogBrochureDraft {
   includePhotos: boolean;
   selectedIds: number[];
 }
-
-type RenderAction = 'preview' | 'download';
 
 const DEFAULT_BROCHURE: CatalogBrochureDraft = {
   photosPerProduct: 4,
@@ -144,9 +139,8 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
             </div>
           </section>
 
-          @if (layout() === 'BROCHURE') {
+          @if (layout() === 'BROCHURE' && desktop()) {
             <app-catalog-brochure-settings
-              [desktop]="desktop()"
               [disabled]="busy()"
               [includePhotos]="includePhotos()"
               [selectedFamilyCount]="selectedFamilyCount()"
@@ -172,7 +166,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
             <section class="card render-status" role="status" aria-live="polite">
               <span class="render-status__mark" aria-hidden="true"></span>
               <div>
-                <b>{{ previewing() ? 'PDF-preview wordt opgebouwd' : 'PDF wordt voorbereid' }}</b>
+                <b>PDF wordt opgebouwd</b>
                 <small>Bij een grote productselectie kan dit enkele minuten duren. Laat dit scherm open.</small>
               </div>
             </section>
@@ -188,24 +182,6 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
                       (click)="retryRender()">Opnieuw proberen</button>
             </section>
           }
-
-          @if (previewUrl(); as url) {
-            <section class="card pdf-preview" aria-labelledby="pdf-preview-title">
-              <div class="card__head">
-                <div>
-                  <h2 id="pdf-preview-title" tabindex="-1" #previewHeading>PDF-preview</h2>
-                  <p>Download gebruikt deze reeds gemaakte PDF; er wordt niet opnieuw gerenderd.</p>
-                </div>
-                <button class="btn btn--sm" type="button" (click)="clearPreview()">Sluiten</button>
-              </div>
-              <iframe [src]="url" title="Preview van de catalogus-pdf"></iframe>
-            </section>
-          } @else if (desktop() && !busy() && !renderError()) {
-            <section class="card preview-empty" aria-label="PDF-preview">
-              <span aria-hidden="true">PDF</span>
-              <div><b>Nog geen preview</b><small>Controleer je selectie en kies PDF bekijken.</small></div>
-            </section>
-          }
         </div>
       </fieldset>
     </div>
@@ -218,13 +194,9 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
         <div class="action-bar__value">{{ selected().size }} product(en)</div>
       </div>
       <div class="catalog-action__buttons">
-        <button class="btn" type="button"
-                [disabled]="!canExport() || busy()" (click)="preview()">
-          {{ previewing() ? 'Preview laden…' : 'PDF bekijken' }}
-        </button>
         <button class="btn btn--primary" type="button"
                 [disabled]="!canExport() || busy()" (click)="download()">
-          {{ downloading() ? 'Downloaden…' : 'Download' }}
+          {{ downloading() ? 'PDF maken…' : 'PDF maken & downloaden' }}
         </button>
       </div>
       <span class="sr-only" aria-live="polite">{{ actionStatus() }}</span>
@@ -285,22 +257,6 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     .render-error small { color: var(--danger); }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .pdf-preview iframe {
-      display: block; width: 100%; height: 68dvh; min-height: 480px;
-      border: 0; background: #4a4a4a;
-    }
-    .preview-empty {
-      display: flex; min-height: 110px; align-items: center; justify-content: center;
-      gap: 12px; padding: 18px; color: var(--muted);
-    }
-    .preview-empty > span {
-      padding: 8px; border: 1px solid var(--line); border-radius: 8px;
-      color: var(--rose); font-size: 10px; font-weight: 800;
-    }
-    .preview-empty div { display: grid; gap: 2px; }
-    .preview-empty b { color: var(--ink-2); font-size: 12px; }
-    .preview-empty small { font-size: 10px; }
-
     .catalog-action__buttons { display: flex; gap: 7px; }
     .catalog-action__buttons .btn { min-height: 42px; padding-inline: 12px; white-space: nowrap; }
 
@@ -329,17 +285,11 @@ export class CatalogExport {
 
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
-  private readonly sanitizer = inject(DomSanitizer);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly previewHeading = viewChild<ElementRef<HTMLElement>>('previewHeading');
   private mediaQuery: MediaQueryList | null = null;
-  private previewObjectUrl: string | null = null;
-  private cachedBlob: Blob | null = null;
-  private cachedRequestKey: string | null = null;
   private storedSelection: number[] | null = null;
   private selectionInitialized = false;
   private destroyed = false;
-  private lastRenderAction: RenderAction = 'preview';
 
   readonly layout = signal<CatalogLayout>('SIMPLE');
   readonly language = signal<LanguageCode>('NL');
@@ -354,18 +304,15 @@ export class CatalogExport {
   readonly loading = signal(true);
   readonly loadError = signal<string | null>(null);
   readonly dataReady = signal(false);
-  readonly previewing = signal(false);
   readonly downloading = signal(false);
   readonly renderError = signal<string | null>(null);
-  readonly previewUrl = signal<SafeResourceUrl | null>(null);
   readonly desktop = signal(false);
 
-  readonly busy = computed(() => this.previewing() || this.downloading());
+  readonly busy = computed(() => this.downloading());
   readonly canExport = computed(() =>
     this.dataReady() && this.selected().size > 0 && !this.loadError());
   readonly actionStatus = computed(() => {
-    if (this.previewing()) return 'PDF-preview wordt gemaakt. Dit kan enkele minuten duren.';
-    if (this.downloading()) return 'PDF wordt voorbereid voor downloaden.';
+    if (this.downloading()) return 'PDF wordt gemaakt. Dit kan enkele minuten duren.';
     return this.renderError() ?? '';
   });
   readonly selectedFamilyCount = computed(() => {
@@ -407,13 +354,12 @@ export class CatalogExport {
     let previousRequest = '';
     effect(() => {
       const currentRequest = this.requestKey();
-      if (previousRequest && previousRequest !== currentRequest) this.invalidatePdf();
+      if (previousRequest && previousRequest !== currentRequest) this.renderError.set(null);
       previousRequest = currentRequest;
     });
 
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
-      this.invalidatePdf();
       if (this.mediaQuery) this.mediaQuery.removeEventListener('change', this.handleDesktopChange);
     });
   }
@@ -443,7 +389,7 @@ export class CatalogExport {
           new Set([...current].filter((id) => available.has(id))));
       }
       this.dataReady.set(true);
-      this.invalidatePdf();
+      this.renderError.set(null);
     } catch (failure) {
       if (!this.destroyed) {
         this.loadError.set(messageOf(
@@ -456,36 +402,14 @@ export class CatalogExport {
     }
   }
 
-  async preview(): Promise<void> {
-    if (!this.canExport() || this.busy()) return;
-    const request = this.buildRequest();
-    const key = JSON.stringify(request);
-    this.lastRenderAction = 'preview';
-    this.renderError.set(null);
-    this.previewing.set(true);
-    try {
-      const blob = await this.pdfFor(request, key);
-      if (this.destroyed || key !== this.requestKey()) return;
-      this.setPreview(blob);
-      setTimeout(() => {
-        if (!this.destroyed) this.previewHeading()?.nativeElement.focus();
-      });
-    } catch (failure) {
-      if (!this.destroyed) this.handleRenderFailure(failure, 'PDF-preview maken mislukt');
-    } finally {
-      if (!this.destroyed) this.previewing.set(false);
-    }
-  }
-
   async download(): Promise<void> {
     if (!this.canExport() || this.busy()) return;
     const request = this.buildRequest();
     const key = JSON.stringify(request);
-    this.lastRenderAction = 'download';
     this.renderError.set(null);
     this.downloading.set(true);
     try {
-      const blob = await this.pdfFor(request, key);
+      const blob = await this.catalog.exportCatalog(request);
       if (this.destroyed || key !== this.requestKey()) return;
       saveBlob(
         blob,
@@ -501,24 +425,7 @@ export class CatalogExport {
 
   retryRender(): void {
     if (this.busy()) return;
-    if (this.lastRenderAction === 'download') void this.download();
-    else void this.preview();
-  }
-
-  clearPreview(): void {
-    if (this.previewObjectUrl !== null) URL.revokeObjectURL(this.previewObjectUrl);
-    this.previewObjectUrl = null;
-    this.previewUrl.set(null);
-  }
-
-  private async pdfFor(request: CatalogExportRequest, key: string): Promise<Blob> {
-    if (this.cachedBlob && this.cachedRequestKey === key) return this.cachedBlob;
-    const blob = await this.catalog.exportCatalog(request);
-    if (!this.destroyed && key === this.requestKey()) {
-      this.cachedBlob = blob;
-      this.cachedRequestKey = key;
-    }
-    return blob;
+    void this.download();
   }
 
   private buildRequest(): CatalogExportRequest {
@@ -546,20 +453,6 @@ export class CatalogExport {
           }
         : undefined,
     };
-  }
-
-  private setPreview(blob: Blob): void {
-    this.clearPreview();
-    const url = URL.createObjectURL(blob);
-    this.previewObjectUrl = url;
-    this.previewUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(url));
-  }
-
-  private invalidatePdf(): void {
-    this.clearPreview();
-    this.cachedBlob = null;
-    this.cachedRequestKey = null;
-    this.renderError.set(null);
   }
 
   private handleRenderFailure(failure: unknown, toastFallback: string): void {

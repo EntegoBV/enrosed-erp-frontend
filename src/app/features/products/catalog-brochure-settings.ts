@@ -23,16 +23,7 @@ export interface CatalogBrochureDraft {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule],
   template: `
-    @if (!desktop()) {
-      <div class="mobile-layout-note" role="note">
-        <span aria-hidden="true">↗</span>
-        <div>
-          <b>Brochure maken werkt ook op mobiel</b>
-          <small>Producten en basisinstellingen kies je hier. Pagina-opmaak wijzig je op desktop.</small>
-        </div>
-      </div>
-    } @else {
-      <section class="card" aria-labelledby="brochure-layout-title">
+    <section class="card" aria-labelledby="brochure-layout-title">
         <div class="card__head">
           <div>
             <h2 id="brochure-layout-title">Pagina-opmaak</h2>
@@ -102,9 +93,9 @@ export interface CatalogBrochureDraft {
             </label>
           </div>
         </div>
-      </section>
+    </section>
 
-      <section class="card page-plan" aria-labelledby="page-plan-title">
+    <section class="card page-plan" aria-labelledby="page-plan-title">
         <div class="card__head">
           <div>
             <h2 id="page-plan-title">Pagina-opbouw</h2>
@@ -116,8 +107,7 @@ export interface CatalogBrochureDraft {
             <li><span>{{ $index + 1 }}</span>{{ page }}</li>
           }
         </ol>
-      </section>
-    }
+    </section>
   `,
   styles: `
     :host { display: grid; min-width: 0; gap: 12px; }
@@ -125,14 +115,6 @@ export interface CatalogBrochureDraft {
     .card__head p { margin-top: 2px; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
     .field > span { color: var(--ink-2); font-size: 11.5px; font-weight: 650; }
     .field > span > small { color: var(--muted); font-size: 9px; font-weight: 500; }
-    .mobile-layout-note {
-      display: flex; gap: 10px; padding: 11px 12px; border: 1px solid var(--rose-line);
-      border-radius: var(--r-sm); background: var(--rose-soft); color: var(--ink-2);
-    }
-    .mobile-layout-note > span { color: var(--rose); font-size: 18px; }
-    .mobile-layout-note div { display: grid; gap: 2px; }
-    .mobile-layout-note b { font-size: 11.5px; }
-    .mobile-layout-note small { color: var(--muted); font-size: 10px; line-height: 1.4; }
     .brochure-fields { display: grid; gap: 0 10px; }
     .page-toggles { display: grid; gap: 6px; margin-top: 4px; }
     .page-toggles > span {
@@ -166,7 +148,6 @@ export interface CatalogBrochureDraft {
   `,
 })
 export class CatalogBrochureSettings {
-  readonly desktop = input(false);
   readonly includePhotos = input(true);
   readonly selectedFamilyCount = input(0);
   readonly disabled = input(false);
