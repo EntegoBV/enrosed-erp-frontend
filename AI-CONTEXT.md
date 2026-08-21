@@ -106,6 +106,22 @@ weekly by the backend's Drewry scrape).
 - Editor behind Bewerken; EXW price with currency select; CSV
   master-data and translations import/export live in Settings.
 
+### Translation workspace (Codex, 2026-08-21)
+- Settings → translation workspace (`content-translation-workspace.ts`):
+  site copy, legal pages and category texts per language, 8 languages,
+  saved through the revisioned content-translation endpoints. The
+  `website-sync-status.ts` badge shows the rebuild outbox state
+  (NOT_CONFIGURED / QUEUED / TRIGGERED / LIVE / FAILED_OR_STALE) and keeps
+  polling while Vercel builds.
+- Products: `product-translation-editor.ts` (+ adapter) edits a product's
+  name/colour/size per language against the strict-language contract;
+  the publication editor lists every missing path before a family may go
+  READY/PUBLISHED. Exports can be made per locale, strictly.
+- Category saves carry the server `revision`; a stale one is refused
+  with "Categorie is intussen gewijzigd" - reload, do not retry blindly.
+- `unsaved-changes.guard.ts` protects the workspace from navigating away
+  with dirty edits; `desktop-viewport.ts` keeps the workspace desktop-only.
+
 ### Portal (customer-facing, calm colours)
 Quote view in the customer's language (texts from the backend bundle),
 carton rounding parity with the backend, digital signing, change
