@@ -4,6 +4,20 @@ import {
 } from '../../core/api/models';
 import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
+/** Canonical B × D labels; also upgrades the two historical D × B values. */
+export function normalizeManualPalletType(value: string): string {
+  const trimmed = value.trim();
+  const key = trimmed.toLocaleLowerCase('nl-BE').replace(/\s+/g, '').replace(/x/g, '×');
+  if (key === 'blokpallet120×100' || key === 'blokpallet100×120') {
+    return 'Blokpallet 120×100';
+  }
+  if (key === 'halvepallet80×60' || key === 'halvepallet60×80') {
+    return 'Halve pallet 80×60';
+  }
+  if (key === 'europallet' || key === 'europallet120×80') return 'Europallet';
+  return trimmed;
+}
+
 /**
  * The shipping fields added to an order by the logistics contract.
  * They deliberately remain separate from pricing and from the manual pallet
@@ -141,9 +155,9 @@ export type ShippingPalletAction =
                 <select id="shipping-pallet-profile" class="select" [value]="palletProfile()"
                         [disabled]="!canEdit()"
                         (change)="setPalletProfile($any($event.target).value)">
-                  <option value="EURO_120X80">Europallet · 120 × 80 cm</option>
-                  <option value="BLOCK_120X100">Blokpallet · 120 × 100 cm</option>
-                  <option value="HALF_80X60">Halve pallet · 80 × 60 cm</option>
+                  <option value="EURO_120X80">Europallet · B × D · 120 × 80 cm</option>
+                  <option value="BLOCK_120X100">Blokpallet · B × D · 120 × 100 cm</option>
+                  <option value="HALF_80X60">Halve pallet · B × D · 80 × 60 cm</option>
                 </select>
               </div>
               <div class="height-row">
@@ -282,12 +296,13 @@ export type ShippingPalletAction =
                       </div>
                       <div class="field-row">
                         <label [for]="'pallet-type-' + pi">Pallettype voor deze pallet</label>
-                        <select class="select" [id]="'pallet-type-' + pi" [value]="pallet.type"
+                        <select class="select" [id]="'pallet-type-' + pi"
+                                [value]="displayPalletType(pallet.type)"
                                 [disabled]="!canEdit()"
                                 (change)="setPalletType(pi, $any($event.target).value)">
-                          <option value="Europallet">Europallet · 120 × 80</option>
-                          <option value="Blokpallet 100×120">Blokpallet · 120 × 100</option>
-                          <option value="Halve pallet 60×80">Halve pallet · 80 × 60</option>
+                          <option value="Europallet">Europallet · B × D · 120 × 80</option>
+                          <option value="Blokpallet 120×100">Blokpallet · B × D · 120 × 100</option>
+                          <option value="Halve pallet 80×60">Halve pallet · B × D · 80 × 60</option>
                         </select>
                       </div>
                       <div class="height-row height-row--pallet">
@@ -371,7 +386,7 @@ export type ShippingPalletAction =
             <div><dt>Gewicht</dt><dd>{{ view().priced.totals.weightKg | num }} <small>kg</small></dd></div>
           </dl>
           <p class="formula-note">
-            Per product: buitenmaat omdoos × aantal volle dozen. Palletmaten en
+            Per product: buitenmaat omdoos (B × D × H) × aantal volle dozen. Palletmaten en
             pallethoogte tellen in deze keuze niet mee.
           </p>
           @if (missingCartonDimensions().length) {
@@ -739,9 +754,9 @@ export class ShippingPlanner {
 
   palletProfileLabel(): string {
     return {
-      EURO_120X80: 'Euro 120 × 80',
-      BLOCK_120X100: 'Blok 120 × 100',
-      HALF_80X60: 'Half 80 × 60',
+      EURO_120X80: 'Euro · B × D · 120 × 80',
+      BLOCK_120X100: 'Blok · B × D · 120 × 100',
+      HALF_80X60: 'Half · B × D · 80 × 60',
     }[this.palletProfile()];
   }
 
@@ -861,8 +876,18 @@ export class ShippingPlanner {
     if (this.canEdit()) this.action.emit({ type: 'rename-pallet', index, label: label.trim() });
   }
 
+  displayPalletType(value: string): string {
+    return normalizeManualPalletType(value);
+  }
+
   setPalletType(index: number, palletType: string): void {
-    if (this.canEdit()) this.action.emit({ type: 'set-pallet-type', index, palletType });
+    if (this.canEdit()) {
+      this.action.emit({
+        type: 'set-pallet-type',
+        index,
+        palletType: normalizeManualPalletType(palletType),
+      });
+    }
   }
 
   setPalletHeight(index: number, raw: string): void {

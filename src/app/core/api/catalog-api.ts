@@ -31,13 +31,39 @@ export class CatalogApi {
   }
 
   updateProduct(id: number, product: Product): Promise<Product> {
-    return firstValueFrom(this.http.put<Product>(api(`/api/products/${id}`), product));
+    return firstValueFrom(
+      this.http.put<Product>(api(`/api/products/${id}`), this.productWriteBody(product)));
   }
 
-  /** Copies a product, usually to make the same style in another colour. */
-  duplicateProduct(id: number, colour: string): Promise<Product> {
+  /** Explicit move or unlink; null is intentional on this dedicated endpoint. */
+  assignProductFamily(id: number, familyId: number | null): Promise<Product> {
+    return firstValueFrom(this.http.put<Product>(
+      api(`/api/products/${id}/family`),
+      { familyId },
+    ));
+  }
+
+  /** Empty strings explicitly clear optional variant fields on backward-compatible writes. */
+  private productWriteBody(product: Product): Product {
+    return {
+      ...product,
+      colourHex: product.colourHex ?? '',
+      variantSize: product.variantSize ?? '',
+    };
+  }
+
+  /** Copies a product into another colour/size combination. */
+  duplicateProduct(
+    id: number,
+    variant: { colour: string | null; colourHex: string | null; variantSize: string | null },
+  ): Promise<Product> {
+    const body = {
+      colour: variant.colour ?? '',
+      colourHex: variant.colourHex ?? '',
+      variantSize: variant.variantSize ?? '',
+    };
     return firstValueFrom(
-      this.http.post<Product>(api(`/api/products/${id}/duplicate`), { colour }));
+      this.http.post<Product>(api(`/api/products/${id}/duplicate`), body));
   }
 
   deleteProduct(id: number): Promise<void> {
@@ -68,13 +94,13 @@ export class CatalogApi {
   uploadProductFamilyImage(
     familyId: number,
     file: File,
-    variantExternalId?: string | null,
-    variantColor?: string | null,
+    variantProductId?: number | null,
   ): Promise<ProductFamily> {
     const form = new FormData();
     form.append('file', file, file.name);
-    if (variantExternalId) form.append('variantExternalId', variantExternalId);
-    if (variantColor) form.append('variantColor', variantColor);
+    if (variantProductId !== null && variantProductId !== undefined) {
+      form.append('variantProductId', String(variantProductId));
+    }
     return firstValueFrom(this.http.post<ProductFamily>(
       api(`/api/product-families/${familyId}/images`), form));
   }
@@ -97,6 +123,17 @@ export class CatalogApi {
   ): Promise<ProductFamily> {
     return firstValueFrom(this.http.put<ProductFamily>(
       api(`/api/product-families/${familyId}/images/${imageId}/alt`), { language, alt }));
+  }
+
+  updateProductFamilyImageVariant(
+    familyId: number,
+    imageId: number,
+    variantProductId: number | null,
+  ): Promise<ProductFamily> {
+    return firstValueFrom(this.http.put<ProductFamily>(
+      api(`/api/product-families/${familyId}/images/${imageId}/variant`),
+      { variantProductId },
+    ));
   }
 
   checkBarcode(value: string): Promise<{ valid: boolean; message: string }> {

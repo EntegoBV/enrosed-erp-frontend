@@ -67,6 +67,10 @@ export interface Product {
   dimensions: Dimensions;
   /** Colour of the article; first of what may become product options. */
   colour: string | null;
+  /** Optional exact swatch for this variant, stored as #RRGGBB. */
+  colourHex: string | null;
+  /** Human-readable size option such as S, 30 cm or XL. */
+  variantSize: string | null;
   /** Customer-facing base copy; translated variants live in texts. */
   description: string | null;
   categoryId: number | null;
@@ -135,6 +139,8 @@ export interface ProductFamilyImage {
   largeWidthPx: number | null;
   largeHeightPx: number | null;
   position: number;
+  /** Product variant this image belongs to; null means the whole family. */
+  variantProductId: number | null;
   variantExternalId: string | null;
   variantColor: string | null;
   altTextSource: string | null;
@@ -215,10 +221,24 @@ export interface ProductCollection {
   id: number;
   key: string;
   name: string;
+  mobileName: string | null;
   eyebrow: string | null;
   description: string | null;
   position: number;
+  featuredProductId: number | null;
   primary: boolean;
+}
+
+export interface ProductFamilyMember {
+  productId: number;
+  canonicalVariantKey: string | null;
+  sku: string | null;
+  name: string;
+  colour: string | null;
+  colourHex: string | null;
+  size: string | null;
+  position: number;
+  active: boolean;
 }
 
 /**
@@ -236,6 +256,8 @@ export interface ProductFamily {
   collectionKey: string | null;
   collections: ProductCollection[];
   productPosition: number;
+  /** Variant whose image represents this family on listing cards. */
+  cardFeaturedProductId: number | null;
   tags: string[];
   websiteStatus: PublicationStatus;
   orderAppStatus: PublicationStatus;
@@ -259,6 +281,8 @@ export interface ProductFamily {
   provenance: ProductFieldProvenance[];
   conflicts: ProductSourceConflict[];
   publicationIssues: string[];
+  /** Read-only projection of the operational products linked to this family. */
+  members: ProductFamilyMember[];
   variantCount: number;
 }
 
@@ -266,8 +290,14 @@ export interface Category {
   id: number | null;
   code: string;
   name: string;
+  /** Short label used where mobile navigation has limited space. */
+  mobileName: string | null;
+  /** Optional small line shown above the category title on the public website. */
+  eyebrow: string | null;
   description: string | null;
   position: number;
+  /** Operational SKU used for this collection's promotional visual. */
+  featuredProductId: number | null;
 }
 
 export interface HsCode {

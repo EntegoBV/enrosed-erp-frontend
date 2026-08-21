@@ -30,6 +30,7 @@ import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
+import { ProductFamilyImageVariantChange } from './product-family-gallery';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -37,7 +38,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null },
-    colour: '', description: '', categoryId: null, supplierId, active: true,
+    colour: '', colourHex: null, variantSize: null,
+    description: '', categoryId: null, supplierId, active: true,
     familyKey: '', publicHandle: '', websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
     barcodeInner: '', barcodeOuter: '', hsCode: '',
     carton: { lengthCm: null, widthCm: null, heightCm: null, piecesPerCarton: 1, weightKg: null },
@@ -157,26 +159,56 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </select>
               <span class="hint">Vaste lijst; beheer je bij Instellingen.</span>
             </div>
-            <div class="field span-2">
-              <label for="p-colour">Kleur <span class="opt"></span></label>
-              <select class="select" id="p-colour" [ngModel]="colourChoice()"
-                      (ngModelChange)="pickColour($event)">
-                <option value="">Geen kleur</option>
-                @for (option of standardColours; track option) {
-                  <option [value]="option">{{ option }}</option>
-                }
-                <option value="__other__">Anders…</option>
-              </select>
-              @if (customColour() || colourChoice() === '__other__') {
-                <input class="input mt-8" aria-label="Eigen kleur"
-                       placeholder="Eigen kleur…" [ngModel]="draft().colour"
-                       (ngModelChange)="patch({ colour: $event })" />
-              }
-              <span class="hint">
-                Kleuren uit de lijst worden op offertes en in de catalogus
-                <b>automatisch vertaald</b>; een eigen kleur vertaal je via het Excel-bestand.
-              </span>
-            </div>
+            <fieldset class="measure-group variant-fields span-2">
+              <legend>Variant</legend>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="p-colour">Kleur <span class="opt"></span></label>
+                  <div class="colour-control">
+                    <select class="select" id="p-colour" [ngModel]="colourChoice()"
+                            (ngModelChange)="pickColour($event)">
+                      <option value="">Geen kleur</option>
+                      @for (option of standardColours; track option) {
+                        <option [value]="option">{{ option }}</option>
+                      }
+                      <option value="__other__">Anders…</option>
+                    </select>
+                    <label class="colour-swatch-picker" title="Optionele exacte kleurstaal">
+                      <input class="sr-only" type="color"
+                             [value]="pickerColour(draft().colourHex)"
+                             (input)="setProductColourHex($event)" />
+                      @if (draft().colourHex) {
+                        <i [style.backgroundColor]="draft().colourHex" aria-hidden="true"></i>
+                        <span>{{ draft().colourHex }}</span>
+                      } @else {
+                        <span>+ Staal</span>
+                      }
+                    </label>
+                    @if (draft().colourHex) {
+                      <button class="btn btn--sm" type="button" title="Kleurstaal wissen"
+                              style="width:38px;padding:0"
+                              aria-label="Kleurstaal wissen" (click)="patch({ colourHex: null })">×</button>
+                    }
+                  </div>
+                  @if (customColour() || colourChoice() === '__other__') {
+                    <input class="input mt-8" aria-label="Eigen kleur"
+                           placeholder="Eigen kleur…" [ngModel]="draft().colour"
+                           (ngModelChange)="setProductColour($event)" />
+                  }
+                </div>
+                <div class="field">
+                  <label for="p-variant-size">Maat <span class="opt"></span></label>
+                  <input class="input" id="p-variant-size" maxlength="80"
+                         placeholder="Bijv. S, XL of 30 cm"
+                         [ngModel]="draft().variantSize"
+                         (ngModelChange)="patch({ variantSize: emptyToNull($event) })" />
+                </div>
+              </div>
+              <p>
+                Kleur en maat onderscheiden varianten binnen dezelfde familie. De kleurstaal is
+                optioneel en helpt later bij websitefilters.
+              </p>
+            </fieldset>
             <div class="field span-2">
               <label for="p-description">Omschrijving op offerte <span class="opt"></span></label>
               <textarea class="textarea" id="p-description" rows="3"
@@ -199,7 +231,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <legend>Productafmeting</legend>
             <div class="measure-grid">
               <label class="measure-field">
-                <span>Lengte</span>
+                <span>Breedte</span>
                 <span class="measure-field__control">
                   <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
                          [ngModel]="draft().dimensions.lengthCm"
@@ -208,7 +240,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 </span>
               </label>
               <label class="measure-field">
-                <span>Breedte</span>
+                <span>Diepte</span>
                 <span class="measure-field__control">
                   <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
                          [ngModel]="draft().dimensions.widthCm"
@@ -245,7 +277,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <section class="card editor-section" id="media" aria-labelledby="media-title">
         <div class="card__head section-head">
           <span class="section-head__number">02</span>
-          <div><h2 id="media-title">Foto's</h2><p>De eerste foto wordt overal de hoofdfoto</p></div>
+          <div><h2 id="media-title">Foto's</h2><p>Per variant · voor ERP en orderregels</p></div>
           <span class="spacer"></span>
           <span class="badge badge--neutral">{{ photoCount() }}</span>
         </div>
@@ -253,6 +285,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <app-photo-manager
             [productId]="draft().id"
             [photos]="draft().photos"
+            [disabled]="saving()"
             (changed)="onPhotosChanged($event)"
           />
         </div>
@@ -269,7 +302,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <legend>Kartonafmeting</legend>
             <div class="measure-grid">
               <label class="measure-field">
-                <span>Lengte</span>
+                <span>Breedte</span>
                 <span class="measure-field__control">
                   <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
                          [ngModel]="draft().carton.lengthCm"
@@ -278,7 +311,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 </span>
               </label>
               <label class="measure-field">
-                <span>Breedte</span>
+                <span>Diepte</span>
                 <span class="measure-field__control">
                   <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
                          [ngModel]="draft().carton.widthCm"
@@ -499,11 +532,13 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         [family]="family()"
         [families]="families()"
         [categories]="categories()"
+        [busy]="saving() || photoUploading()"
         (familyChange)="onFamilyChange($event)"
         (familyIdChange)="selectFamily($event)"
         (createFamilyRequested)="startNewFamily()"
         (imageUploadRequested)="uploadFamilyImage($event)"
         (imageDeleteRequested)="removeFamilyImage($event)"
+        (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
       />
 
       <div class="editor-actions">
@@ -515,7 +550,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         @if (!isNew()) {
           <button class="btn btn--block" type="button"
                   [disabled]="saving() || photoUploading()" (click)="startCopy()">
-            Kopiëren als kleurvariant
+            Kopiëren als variant
           </button>
           <details class="danger-zone">
             <summary>Geavanceerde acties</summary>
@@ -531,7 +566,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </div>
 
       @if (copying()) {
-        <app-sheet title="Nieuwe kleurvariant" (closed)="closeCopySheet()">
+        <app-sheet title="Nieuwe variant" (closed)="closeCopySheet()">
           <div body class="variant-copy">
             <section class="variant-copy__source" aria-label="Bronproduct">
               <span class="variant-copy__eyebrow">Kopie van · laatst opgeslagen</span>
@@ -539,6 +574,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <div>
                 @if (copySource().sku) { <span class="mono">{{ copySource().sku }}</span> }
                 <span>{{ copySource().colour || 'Geen kleur' }}</span>
+                @if (copySource().variantSize) { <span>{{ copySource().variantSize }}</span> }
               </div>
               <small>
                 @if (copySource().familyKey) {
@@ -550,7 +586,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </section>
 
             <p class="variant-copy__explanation">
-              Maten, verpakking en prijzen gaan mee. De nieuwe variant start met
+              Productafmetingen, verpakking en prijzen gaan mee. De nieuwe variant start met
               <b>0 voorraad</b>; foto's, barcodes en publicatiestatussen gaan niet mee.
             </p>
 
@@ -572,6 +608,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   @for (variant of copyVariants(); track variant.id) {
                     <span class="badge badge--neutral variant-chip">
                       {{ variant.colour || 'Geen kleur' }}
+                      @if (variant.variantSize) { <span>· {{ variant.variantSize }}</span> }
                       @if (variant.sku) { <small class="mono">{{ variant.sku }}</small> }
                     </span>
                   }
@@ -579,18 +616,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </div>
             }
 
+            <div class="variant-copy__options">
             <div class="field variant-copy__field">
-              <label class="req" for="copy-colour">Nieuwe kleur</label>
+              <label for="copy-colour">Kleur <span class="opt"></span></label>
               <select class="select" id="copy-colour" data-initial-focus
                       [ngModel]="copyColourChoice()"
                       (ngModelChange)="pickCopyColour($event)"
-                      [attr.aria-invalid]="copyColourConflict() ? 'true' : null"
-                      aria-describedby="copy-colour-help">
-                <option value="" disabled>Kies een kleur…</option>
+                      [attr.aria-invalid]="copyVariantConflict() ? 'true' : null"
+                      aria-describedby="copy-variant-help">
+                <option value="">Geen kleur</option>
                 @for (option of standardColours; track option) {
-                  <option [value]="option" [disabled]="colourUnavailable(option)">
-                    {{ option }}{{ colourOptionNote(option) }}
-                  </option>
+                  <option [value]="option">{{ option }}</option>
                 }
                 <option value="__other__">Andere kleur invoeren…</option>
               </select>
@@ -598,16 +634,45 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <input class="input" aria-label="Andere kleur voor de nieuwe variant"
                        placeholder="Bijv. Terracotta" maxlength="80" autocomplete="off"
                        [ngModel]="copyColour()"
-                       (ngModelChange)="copyColour.set($event)" />
+                       (ngModelChange)="setCopyColour($event)" />
               }
-              @if (copyColourConflict(); as conflict) {
-                <span class="hint danger-text" id="copy-colour-help">{{ conflict }}</span>
-              } @else {
-                <span class="hint" id="copy-colour-help">
-                  Kies een vaste kleur voor automatische vertaling, of voer een eigen kleur in.
-                </span>
-              }
+              <div style="display:flex;gap:6px">
+                <label class="colour-swatch-picker" title="Optionele exacte kleurstaal">
+                  <input class="sr-only" type="color"
+                         [value]="pickerColour(copyColourHex())"
+                         (input)="setCopyColourHex($event)" />
+                  @if (copyColourHex()) {
+                    <i [style.backgroundColor]="copyColourHex()" aria-hidden="true"></i>
+                    <span>{{ copyColourHex() }}</span>
+                  } @else {
+                    <span>+ Kleurstaal</span>
+                  }
+                </label>
+                @if (copyColourHex()) {
+                  <button class="btn btn--sm" type="button" aria-label="Kleurstaal wissen"
+                          style="width:38px;padding:0"
+                          title="Kleurstaal wissen" (click)="copyColourHex.set(null)">×</button>
+                }
+              </div>
             </div>
+
+            <div class="field variant-copy__field">
+              <label for="copy-size">Maat <span class="opt"></span></label>
+              <input class="input" id="copy-size" maxlength="80"
+                     placeholder="Bijv. S, XL of 30 cm"
+                     [ngModel]="copySize()" (ngModelChange)="copySize.set($event)"
+                     [attr.aria-invalid]="copyVariantConflict() ? 'true' : null"
+                     aria-describedby="copy-variant-help" />
+            </div>
+            </div>
+
+            @if (copyVariantConflict(); as conflict) {
+              <span class="hint danger-text" id="copy-variant-help">{{ conflict }}</span>
+            } @else {
+              <span class="hint" id="copy-variant-help">
+                Pas kleur, maat of beide aan. Dezelfde kleur kan in meerdere maten bestaan.
+              </span>
+            }
 
             @if (!copySource().familyKey) {
               <div class="alert alert--info variant-copy__family-note">
@@ -682,6 +747,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       border-radius: 50%; background: var(--muted-2); content: ''; }
     .channel-dot--live { color: var(--ok); }
     .channel-dot--live::before { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+
 
     .measure-group {
       min-width: 0; margin: 2px 0 16px; padding: 12px; border: 1px solid var(--line);
@@ -814,13 +880,30 @@ export class ProductEditor {
     if (choice === '__other__') {
       const current = this.draft().colour ?? '';
       if ((this.standardColours as readonly string[]).includes(current)) {
-        this.patch({ colour: '' });
+        this.patch({ colour: '', colourHex: null });
       }
       this.customColour.set(true);
       return;
     }
     this.customColour.set(false);
-    this.patch({ colour: choice });
+    this.setProductColour(choice);
+  }
+
+  setProductColour(colour: string): void {
+    const changed = this.normalizeColour(colour) !== this.normalizeColour(this.draft().colour);
+    this.patch({ colour, ...(changed ? { colourHex: null } : {}) });
+  }
+
+  emptyToNull(value: string | null | undefined): string | null {
+    return value?.trim() || null;
+  }
+
+  pickerColour(value: string | null | undefined): string {
+    return /^#[0-9a-f]{6}$/i.test(value ?? '') ? value! : '#b01f3f';
+  }
+
+  setProductColourHex(event: Event): void {
+    this.patch({ colourHex: this.colourFromPicker(event) });
   }
 
   readonly draft = signal<Product>(blankProduct(null, 'USD'));
@@ -830,6 +913,7 @@ export class ProductEditor {
   readonly families = signal<ProductFamily[]>([]);
   readonly family = signal<ProductFamily | null>(null);
   private readonly savedFamily = signal<ProductFamily | null>(null);
+  private readonly savedProductFamilyId = signal<number | null>(null);
   readonly familyDirty = computed(() =>
     JSON.stringify(this.family()) !== JSON.stringify(this.savedFamily()));
   readonly saving = signal(false);
@@ -838,6 +922,8 @@ export class ProductEditor {
   private readonly lastMarkupPct = signal(45);
   readonly copying = signal(false);
   readonly copyColour = signal('');
+  readonly copyColourHex = signal<string | null>(null);
+  readonly copySize = signal('');
   readonly copyCustomColour = signal(false);
   readonly copyProducts = signal<Product[]>([]);
   readonly copyVariantLoading = signal(false);
@@ -865,17 +951,18 @@ export class ProductEditor {
         : product.familyKey?.trim().toLocaleLowerCase('nl-BE') === familyKey));
   });
 
-  readonly copyColourConflict = computed(() => {
+  readonly copyVariantConflict = computed(() => {
     const colour = this.copyColour().trim();
-    if (!colour) return null;
-    const normalized = this.normalizeColour(colour);
-    if (normalized === this.normalizeColour(this.copySource().colour)) {
-      return 'Kies een andere kleur dan die van het bronproduct.';
+    const size = this.copySize().trim();
+    const source = this.copySource();
+    if (this.sameVariantCombination(colour, size, source)) {
+      return 'Pas de kleur of maat aan ten opzichte van het bronproduct.';
     }
     const duplicate = this.copyVariants().find((variant) =>
-      this.normalizeColour(variant.colour) === normalized);
+      this.sameVariantCombination(colour, size, variant));
     if (duplicate) {
-      return `${colour} bestaat al in deze productfamilie${duplicate.sku ? ` (${duplicate.sku})` : ''}.`;
+      const label = [colour || 'Geen kleur', size || 'Geen maat'].join(' · ');
+      return `${label} bestaat al in deze productfamilie${duplicate.sku ? ` (${duplicate.sku})` : ''}.`;
     }
     return null;
   });
@@ -885,8 +972,7 @@ export class ProductEditor {
     && !this.photoUploading()
     && !this.copyVariantLoading()
     && !this.copyVariantCheckFailed()
-    && !!this.copyColour().trim()
-    && !this.copyColourConflict());
+    && !this.copyVariantConflict());
 
   constructor() {
     void this.loadReference();
@@ -895,6 +981,7 @@ export class ProductEditor {
       const routeId = this.id();
       if (routeId && routeId !== 'new') {
         void this.catalog.product(+routeId).then((product) => {
+          this.savedProductFamilyId.set(product.familyId ?? null);
           this.draft.set(product);
           this.syncPriceStrategy(product);
           void this.loadFamilyForProduct(product);
@@ -948,6 +1035,7 @@ export class ProductEditor {
       const supplierId = this.supplier() ? +this.supplier() : (suppliers[0]?.id ?? null);
       const currency = suppliers.find((s) => s.id === supplierId)?.currency ?? 'USD';
       this.draft.set(blankProduct(supplierId, currency));
+      this.savedProductFamilyId.set(null);
       this.priceStrategy.set('MARKUP');
       this.lastMarkupPct.set(45);
     }
@@ -1076,6 +1164,7 @@ export class ProductEditor {
       collectionKey: null,
       collections: [],
       productPosition: this.families().length,
+      cardFeaturedProductId: null,
       tags: [],
       websiteStatus: 'DRAFT',
       orderAppStatus: 'DRAFT',
@@ -1097,6 +1186,7 @@ export class ProductEditor {
       provenance: [],
       conflicts: [],
       publicationIssues: [],
+      members: [],
       variantCount: 1,
     };
     this.family.set(family);
@@ -1126,8 +1216,7 @@ export class ProductEditor {
       const saved = await this.catalog.uploadProductFamilyImage(
         familyId,
         file,
-        this.draft().canonicalVariantKey,
-        this.draft().colour,
+        this.currentFamilyMemberId(),
       );
       this.replaceFamily(saved);
       this.ui.toast('Websitefoto toegevoegd');
@@ -1164,6 +1253,39 @@ export class ProductEditor {
     );
   }
 
+  async linkFamilyImageVariant(change: ProductFamilyImageVariantChange): Promise<void> {
+    if (this.saving()) return;
+    this.saving.set(true);
+    try {
+      await this.persistFamilyDraft();
+      const familyId = this.family()?.id;
+      if (familyId === null || familyId === undefined) {
+        throw new Error('Sla de productfamilie eerst op');
+      }
+      const saved = await this.catalog.updateProductFamilyImageVariant(
+        familyId,
+        change.imageId,
+        change.variantProductId,
+      );
+      this.replaceFamily(saved);
+      this.ui.toast(change.variantProductId === null
+        ? 'Foto geldt nu voor alle varianten'
+        : 'Foto aan variant gekoppeld');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Foto koppelen aan variant mislukt'), 'err');
+      const familyId = this.family()?.id;
+      if (familyId !== null && familyId !== undefined) {
+        try {
+          this.replaceFamily(await this.catalog.productFamily(familyId));
+        } catch {
+          /* The save error above remains the useful feedback. */
+        }
+      }
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
   private replaceFamily(family: ProductFamily): void {
     this.setFamilyDraft(family);
     this.families.update((families) => families.some((item) => item.id === family.id)
@@ -1174,6 +1296,15 @@ export class ProductEditor {
       familyKey: family.familyKey,
       ...this.variantPublicationFields(),
     });
+  }
+
+  /** Never attach an upload to a SKU until the family projection confirms membership. */
+  private currentFamilyMemberId(): number | null {
+    const productId = this.draft().id;
+    if (productId === null) return null;
+    return this.family()?.members.some((member) => member.productId === productId)
+      ? productId
+      : null;
   }
 
   private slug(value: string): string {
@@ -1267,35 +1398,33 @@ export class ProductEditor {
   pickCopyColour(choice: string): void {
     if (choice === '__other__') {
       this.copyCustomColour.set(true);
-      this.copyColour.set('');
+      this.setCopyColour('');
       return;
     }
     this.copyCustomColour.set(false);
-    this.copyColour.set(choice);
+    this.setCopyColour(choice);
   }
 
-  colourUnavailable(colour: string): boolean {
-    const normalized = this.normalizeColour(colour);
-    return normalized === this.normalizeColour(this.copySource().colour)
-      || this.copyVariants().some((variant) =>
-        this.normalizeColour(variant.colour) === normalized);
+  setCopyColour(colour: string): void {
+    const changed = this.normalizeColour(colour) !== this.normalizeColour(this.copyColour());
+    this.copyColour.set(colour);
+    if (changed) this.copyColourHex.set(null);
   }
 
-  colourOptionNote(colour: string): string {
-    if (this.normalizeColour(colour) === this.normalizeColour(this.copySource().colour)) {
-      return ' — huidige kleur';
-    }
-    if (this.copyVariants().some((variant) =>
-      this.normalizeColour(variant.colour) === this.normalizeColour(colour))) {
-      return ' — bestaat al';
-    }
-    return '';
+  setCopyColourHex(event: Event): void {
+    this.copyColourHex.set(this.colourFromPicker(event));
   }
 
   startCopy(): void {
     if (this.photoUploading()) return;
-    this.copyColour.set('');
-    this.copyCustomColour.set(false);
+    const source = this.draft();
+    const colour = source.colour ?? '';
+    this.copyColour.set(colour);
+    this.copyColourHex.set(source.colourHex ?? null);
+    this.copySize.set(source.variantSize ?? '');
+    this.copyCustomColour.set(
+      !!colour && !(this.standardColours as readonly string[]).includes(colour),
+    );
     this.copyProducts.set([]);
     this.copyVariantCheckFailed.set(false);
     this.copying.set(true);
@@ -1322,18 +1451,18 @@ export class ProductEditor {
   /** Makes the copy and jumps straight to it, ready to adjust. */
   async copy(): Promise<void> {
     const source = this.draft();
-    if (!this.copyColour().trim()) {
-      this.ui.toast('Vul een kleur in', 'err');
-      return;
-    }
-    const conflict = this.copyColourConflict();
+    const conflict = this.copyVariantConflict();
     if (conflict) {
       this.ui.toast(conflict, 'err');
       return;
     }
     this.saving.set(true);
     try {
-      const copy = await this.catalog.duplicateProduct(source.id!, this.copyColour().trim());
+      const copy = await this.catalog.duplicateProduct(source.id!, {
+        colour: this.copyColour().trim(),
+        colourHex: this.copyColourHex() ?? '',
+        variantSize: this.copySize().trim(),
+      });
       this.copying.set(false);
       this.ui.toast(`${copy.sku} aangemaakt — vul de barcodes en foto's nog aan`);
       await this.router.navigate(['/products', copy.id, 'edit']);
@@ -1346,6 +1475,19 @@ export class ProductEditor {
 
   private normalizeColour(value: string | null | undefined): string {
     return (value ?? '').trim().toLocaleLowerCase('nl-BE');
+  }
+
+  private normalizeSize(value: string | null | undefined): string {
+    return (value ?? '').trim().toLocaleLowerCase('nl-BE');
+  }
+
+  private sameVariantCombination(colour: string, size: string, product: Product): boolean {
+    return this.normalizeColour(colour) === this.normalizeColour(product.colour)
+      && this.normalizeSize(size) === this.normalizeSize(product.variantSize);
+  }
+
+  private colourFromPicker(event: Event): string {
+    return (event.target as HTMLInputElement).value.toUpperCase();
   }
 
   async save(): Promise<void> {
@@ -1369,6 +1511,7 @@ export class ProductEditor {
       if (!saved) return;
 
       this.draft.set(saved);
+      this.savedProductFamilyId.set(saved.familyId ?? null);
       this.ui.toast(wasNew
         ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
         : 'Opgeslagen');
@@ -1448,6 +1591,7 @@ export class ProductEditor {
       orderAppStatus: product.orderAppStatus === 'PUBLISHED' ? 'DRAFT' : product.orderAppStatus,
     };
     const created = await this.catalog.createProduct(staged);
+    this.savedProductFamilyId.set(created.familyId ?? null);
     this.draft.set({
       ...created,
       websiteStatus: product.websiteStatus,
@@ -1467,6 +1611,7 @@ export class ProductEditor {
       ...product,
       id: created.id,
       sku: created.sku,
+      familyId: null,
       photos: this.draft().photos,
     });
   }
@@ -1477,7 +1622,17 @@ export class ProductEditor {
   ): Promise<Product | null> {
     if (product.id === null) return null;
     if (!await this.flushPendingPhotos(photoManager, product.id, false)) return null;
-    return this.catalog.updateProduct(product.id, product);
+    const desiredFamilyId = product.familyId ?? null;
+    const familyChanged = desiredFamilyId !== this.savedProductFamilyId();
+    const movesToFamily = familyChanged && desiredFamilyId !== null;
+    const updated = await this.catalog.updateProduct(product.id, {
+      ...product,
+      /* A non-null family move belongs in the same transaction as the product edits.
+         Null on the ordinary PUT preserves the current family; unlink is explicit below. */
+      familyId: movesToFamily ? desiredFamilyId : null,
+    });
+    if (!familyChanged || desiredFamilyId !== null) return updated;
+    return this.catalog.assignProductFamily(product.id, null);
   }
 
   private async flushPendingPhotos(
@@ -1486,7 +1641,7 @@ export class ProductEditor {
     newlyCreated: boolean,
   ): Promise<boolean> {
     if (!photoManager?.pendingCount()) return true;
-    const uploads = await photoManager.uploadPending(productId);
+    const uploads = await photoManager.uploadPending(productId, true);
     if (!uploads.remaining) return true;
 
     this.ui.toast(

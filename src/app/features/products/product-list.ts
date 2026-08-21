@@ -102,6 +102,7 @@ import { messageOf } from '../../core/api/errors';
                 <div class="list-item__meta">
                   {{ product.sku }} · {{ sizeLabel(product) }}
                   @if (product.colour) { · {{ product.colour }} }
+                  @if (product.variantSize) { · {{ product.variantSize }} }
                 </div>
                 @if (familyFor(product); as family) {
                   <div class="list-item__family">
@@ -319,7 +320,7 @@ export class ProductList {
       if (status === 'INACTIVE' && product.active) return false;
       if (!needle) return true;
       return [
-        product.sku, product.name, product.colour,
+        product.sku, product.name, product.colour, product.variantSize,
         product.barcodeInner, product.barcodeOuter, product.hsCode,
         this.familyFor(product)?.name, this.familyFor(product)?.familyKey,
       ].join(' ').toLowerCase().includes(needle);
@@ -431,7 +432,7 @@ export class ProductList {
   sizeLabel(product: Product): string {
     const { lengthCm, widthCm, heightCm } = product.dimensions;
     if (!lengthCm && !widthCm && !heightCm) return 'geen afmeting';
-    return `${trim(lengthCm)} × ${trim(widthCm)} × ${trim(heightCm)} cm`;
+    return `B × D × H ${dimension(lengthCm)} × ${dimension(widthCm)} × ${dimension(heightCm)} cm`;
   }
 
   /** The active price strategy is calculated once by the backend. */
@@ -481,6 +482,6 @@ export class ProductList {
   }
 }
 
-function trim(value: number | null): string {
-  return value === null ? '0' : String(value);
+function dimension(value: number | null): string {
+  return value !== null && value > 0 ? String(value) : '—';
 }

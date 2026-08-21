@@ -42,7 +42,7 @@ export interface ProductDraft {
             class="input"
             type="search"
             inputmode="search"
-            placeholder="Zoek op naam, kleur, SKU of barcode…"
+            placeholder="Zoek op naam, kleur, maat, SKU of barcode…"
             [ngModel]="query()"
             (ngModelChange)="query.set($event)"
           />
@@ -59,24 +59,24 @@ export interface ProductDraft {
                    (ngModelChange)="draftName.set($event)" />
           </div>
           <div class="field">
-            <label for="qc-size">Afmeting product (l × b × h cm) <span class="opt"></span></label>
+            <label for="qc-size">Afmeting product (B × D × H cm) <span class="opt"></span></label>
             <div class="dims-row" id="qc-size">
-              <input class="input num right" type="number" min="0" placeholder="l"
+              <input class="input num right" type="number" min="0" placeholder="B"
                      [ngModel]="draftL()" (ngModelChange)="draftL.set($event)" />
-              <input class="input num right" type="number" min="0" placeholder="b"
+              <input class="input num right" type="number" min="0" placeholder="D"
                      [ngModel]="draftW()" (ngModelChange)="draftW.set($event)" />
-              <input class="input num right" type="number" min="0" placeholder="h"
+              <input class="input num right" type="number" min="0" placeholder="H"
                      [ngModel]="draftH()" (ngModelChange)="draftH.set($event)" />
             </div>
           </div>
           <div class="field">
-            <label for="qc-carton">Omdoos (l × b × h cm) <span class="opt"></span></label>
+            <label for="qc-carton">Omdoos (B × D × H cm) <span class="opt"></span></label>
             <div class="dims-row" id="qc-carton">
-              <input class="input num right" type="number" min="0" placeholder="l"
+              <input class="input num right" type="number" min="0" placeholder="B"
                      [ngModel]="draftCL()" (ngModelChange)="draftCL.set($event)" />
-              <input class="input num right" type="number" min="0" placeholder="b"
+              <input class="input num right" type="number" min="0" placeholder="D"
                      [ngModel]="draftCW()" (ngModelChange)="draftCW.set($event)" />
-              <input class="input num right" type="number" min="0" placeholder="h"
+              <input class="input num right" type="number" min="0" placeholder="H"
                      [ngModel]="draftCH()" (ngModelChange)="draftCH.set($event)" />
             </div>
             <span class="hint">De omdoos bepaalt het volume in de container.</span>
@@ -121,7 +121,10 @@ export interface ProductDraft {
                 <div class="strong">{{ product.describedAs }}</div>
                 <div class="small muted">
                   <span class="row wrap" style="gap:5px">
-                    <span>{{ product.sku }} · {{ product.carton.piecesPerCarton }} per doos ·</span>
+                    <span>
+                      {{ product.sku }}
+                      · {{ product.carton.piecesPerCarton }} per doos ·
+                    </span>
                     <span class="stock-dot" [class]="'stock-dot--' + stockLevel(product)"></span>
                     <span>{{ stockLabel(product) }}</span>
                   </span>
@@ -195,6 +198,7 @@ export interface ProductDraft {
                   <div class="picker-item__meta">
                     {{ product.sku }}
                     @if (product.colour) { · {{ product.colour }} }
+                    @if (product.variantSize) { · {{ product.variantSize }} }
                     · {{ product.carton.piecesPerCarton }}/doos
                   </div>
                   <div class="picker-item__meta row" style="gap:5px">
@@ -207,7 +211,7 @@ export interface ProductDraft {
             } @empty {
               <div class="empty">
                 <div class="empty__title">Niets gevonden</div>
-                <div class="empty__text">Probeer een deel van de naam, de SKU of een barcode.</div>
+                <div class="empty__text">Probeer een deel van de naam, kleur, maat, SKU of barcode.</div>
                 @if (allowCreate() && query().trim().length >= 2) {
                   <!-- Straight from the gap to a new product: at a fair the
                        article in your hand often is not in the system yet. -->
@@ -362,7 +366,7 @@ export class ProductPicker implements OnDestroy {
     return all
       .filter((product) =>
         [
-          product.name, product.sku, product.colour, product.describedAs,
+          product.name, product.sku, product.colour, product.variantSize, product.describedAs,
           product.barcodeInner, product.barcodeOuter,
         ]
           .join(' ')

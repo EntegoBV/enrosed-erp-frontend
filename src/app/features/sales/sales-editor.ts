@@ -25,7 +25,7 @@ import {
 } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from './quote-status';
 import {
-  ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
+  normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
 
 /**
@@ -1522,7 +1522,8 @@ export class SalesEditor {
   }
 
   productName(productId: number): string {
-    return this.products().find((p) => p.id === productId)?.describedAs ?? '#' + productId;
+    return this.products().find((product) => product.id === productId)?.describedAs
+      ?? '#' + productId;
   }
 
   currentQuantity(productId: number): number {
@@ -2241,6 +2242,7 @@ export class SalesEditor {
       if (!custom || !custom.trim()) return;
       value = custom.trim();
     }
+    value = normalizeManualPalletType(value);
     this.mutatePallets((pallets) => {
       if (pallets[index]) pallets[index] = { ...pallets[index], type: value };
       return pallets;
@@ -2256,7 +2258,9 @@ export class SalesEditor {
     this.enqueue((order) => ({
       ...order,
       pallets: mutate(order.pallets.map((pallet) => ({
-        ...pallet, items: pallet.items.map((item) => ({ ...item })),
+        ...pallet,
+        type: normalizeManualPalletType(pallet.type),
+        items: pallet.items.map((item) => ({ ...item })),
       }))),
     }));
   }
@@ -2372,8 +2376,8 @@ export class SalesEditor {
 
   private palletTypeForProfile(profile: SalesOrder['palletProfile']): string {
     switch (profile) {
-      case 'BLOCK_120X100': return 'Blokpallet 100×120';
-      case 'HALF_80X60': return 'Halve pallet 60×80';
+      case 'BLOCK_120X100': return 'Blokpallet 120×100';
+      case 'HALF_80X60': return 'Halve pallet 80×60';
       default: return 'Europallet';
     }
   }

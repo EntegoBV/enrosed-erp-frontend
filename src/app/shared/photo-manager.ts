@@ -26,6 +26,19 @@ interface PendingPhoto {
   error: string | null;
 }
 
+type PhotoSeries = 'saved' | 'pending';
+
+interface PointerReorder {
+  kind: PhotoSeries;
+  pointerId: number;
+  sourceIndex: number;
+  startX: number;
+  startY: number;
+  lastX: number;
+  started: boolean;
+  handle: HTMLElement;
+}
+
 export interface PendingPhotoUploadResult {
   uploaded: number;
   remaining: number;
@@ -46,225 +59,336 @@ export interface PendingPhotoUploadResult {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [AuthImage],
   template: `
-    <div class="photo-gallery">
-      @for (photo of photos(); track photo.id; let i = $index) {
-        <figure class="photo-card" [class.photo-card--primary]="i === 0">
-          <div class="photo-card__preview">
-            <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" />
-            @if (i === 0) {
-              <span class="photo-card__primary">Hoofdfoto</span>
-            }
-          </div>
+    <div class="photo-manager"
+         [attr.aria-busy]="interactionDisabled()"
+         [attr.aria-disabled]="interactionDisabled()">
+    <div class="photo-toolbar">
+      <div class="photo-toolbar__copy">
+        <b>Fotovolgorde</b>
+        <span id="photo-order-help">
+          Sleep de greep of veeg erop. Met een toetsenbord gebruik je de pijltjes.
+        </span>
+      </div>
 
-          <figcaption class="photo-card__caption">
-            <span class="photo-card__name">{{ photo.originalFilename }}</span>
-            <span class="photo-card__meta">
-              @if (photo.widthPx !== null && photo.heightPx !== null) {
-                {{ photo.widthPx }} × {{ photo.heightPx }} px ·
-              }
-              {{ sizeLabel(photo.sizeBytes) }}
-            </span>
-          </figcaption>
-
-          <div class="photo-card__actions" role="group"
-               [attr.aria-label]="'Acties voor ' + photo.originalFilename">
-            @if (i > 0) {
-              <button class="photo-action" type="button" title="Eerder in de reeks"
-                      [disabled]="busy()"
-                      [attr.aria-label]="photo.originalFilename + ' eerder in de reeks'"
-                      (click)="move(i, -1)"><span aria-hidden="true">←</span> Eerder</button>
-            }
-            @if (i < photos().length - 1) {
-              <button class="photo-action" type="button" title="Later in de reeks"
-                      [disabled]="busy()"
-                      [attr.aria-label]="photo.originalFilename + ' later in de reeks'"
-                      (click)="move(i, 1)">Later <span aria-hidden="true">→</span></button>
-            }
-            <button class="photo-action" type="button"
-                    [disabled]="busy()"
-                    [attr.aria-label]="photo.originalFilename + ' downloaden'"
-                    (click)="download(photo)"><span aria-hidden="true">↓</span> Download</button>
-            <button class="photo-action photo-action--danger" type="button"
-                    [disabled]="busy()"
-                    [attr.aria-label]="photo.originalFilename + ' verwijderen'"
-                    (click)="remove(photo)"><span aria-hidden="true">×</span> Verwijder</button>
-          </div>
-        </figure>
-      }
-
-      @for (pendingPhoto of pendingPhotos(); track pendingPhoto.id; let i = $index) {
-        <figure class="photo-card photo-card--pending"
-                [class.photo-card--primary]="photos().length === 0 && i === 0"
-                [class.photo-card--failed]="pendingPhoto.status === 'failed'">
-          <div class="photo-card__preview">
-            <img [src]="pendingPhoto.previewUrl" [alt]="pendingPhoto.file.name" />
-            @if (photos().length === 0 && i === 0) {
-              <span class="photo-card__primary">Hoofdfoto</span>
-            }
-            <span class="photo-card__pending-state"
-                  [class.photo-card__pending-state--failed]="pendingPhoto.status === 'failed'">
-              @switch (pendingPhoto.status) {
-                @case ('uploading') { Uploaden… }
-                @case ('failed') { Niet geüpload }
-                @default { Klaar om op te slaan }
-              }
-            </span>
-          </div>
-
-          <figcaption class="photo-card__caption">
-            <span class="photo-card__name">{{ pendingPhoto.file.name }}</span>
-            <span class="photo-card__meta">{{ sizeLabel(pendingPhoto.file.size) }}</span>
-            @if (pendingPhoto.error) {
-              <span class="photo-card__error">{{ pendingPhoto.error }}</span>
-            }
-          </figcaption>
-
-          <div class="photo-card__actions" role="group"
-               [attr.aria-label]="'Acties voor ' + pendingPhoto.file.name">
-            @if (i > 0) {
-              <button class="photo-action" type="button" [disabled]="busy()"
-                      [attr.aria-label]="pendingPhoto.file.name + ' eerder in de reeks'"
-                      (click)="movePending(i, -1)"><span aria-hidden="true">←</span> Eerder</button>
-            }
-            @if (i < pendingPhotos().length - 1) {
-              <button class="photo-action" type="button" [disabled]="busy()"
-                      [attr.aria-label]="pendingPhoto.file.name + ' later in de reeks'"
-                      (click)="movePending(i, 1)">Later <span aria-hidden="true">→</span></button>
-            }
-            @if (i === 0 && pendingPhoto.status !== 'uploading' && productId() !== null) {
-              <button class="photo-action photo-action--retry" type="button" [disabled]="busy()"
-                      (click)="retryPendingUploads()">
-                {{ pendingPhoto.status === 'failed' ? 'Opnieuw proberen' : 'Nu uploaden' }}
-              </button>
-            }
-            <button class="photo-action photo-action--danger" type="button" [disabled]="busy()"
-                    [attr.aria-label]="pendingPhoto.file.name + ' uit de selectie verwijderen'"
-                    (click)="removePending(pendingPhoto.id)">
-              <span aria-hidden="true">×</span> Verwijder
-            </button>
-          </div>
-        </figure>
-      }
-
-      <label class="photo-add" [class.photo-add--busy]="busy()">
-        @if (busy()) {
-          <span class="photo-add__icon photo-add__icon--busy" aria-hidden="true">…</span>
-          <span><b>Foto's uploaden…</b><small>Even geduld</small></span>
-        } @else {
-          <span class="photo-add__icon" aria-hidden="true">+</span>
-          <span>
-            <b>Foto's toevoegen</b>
-            <small>
-              @if (productId() === null) {
-                Kies nu; uploaden gebeurt bij product aanmaken
-              } @else {
-                Selecteer één of meerdere bestanden
-              }
-            </small>
-          </span>
-        }
+      <label class="photo-add" [class.photo-add--busy]="interactionDisabled()">
+        <span class="photo-add__icon" aria-hidden="true">{{ interactionDisabled() ? '…' : '+' }}</span>
+        <span>{{ busy() ? 'Uploaden…' : (disabled() ? 'Opslaan…' : "Foto's toevoegen") }}</span>
         <input class="photo-add__input" type="file"
                accept="image/jpeg,image/png,image/gif,image/webp" multiple
-               [disabled]="busy()"
+               [disabled]="interactionDisabled()"
                (change)="upload($event)" />
       </label>
     </div>
 
+    @if (photos().length) {
+      <section class="photo-series" aria-labelledby="saved-photo-title">
+        <div class="photo-series__head">
+          <h3 id="saved-photo-title">Opgeslagen <span>{{ photos().length }}</span></h3>
+          <small>De eerste foto is de hoofdfoto</small>
+        </div>
+
+        <ol class="photo-strip" aria-describedby="photo-order-help">
+          @for (photo of photos(); track photo.id; let i = $index) {
+            <li class="photo-card"
+                [class.photo-card--primary]="i === 0"
+                [class.photo-card--dragging]="isDragging('saved', i)"
+                [class.photo-card--drop]="isDropTarget('saved', i)"
+                data-photo-kind="saved"
+                [attr.data-photo-index]="i">
+              <div class="photo-card__preview">
+                <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" draggable="false" />
+                @if (i === 0) {
+                  <span class="photo-card__primary">Hoofdfoto</span>
+                } @else {
+                  <span class="photo-card__position" aria-hidden="true">{{ i + 1 }}</span>
+                }
+                <button class="photo-card__handle" type="button"
+                        [disabled]="interactionDisabled() || photos().length < 2"
+                        aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+                        [attr.aria-label]="orderLabel(photo.originalFilename, i, photos().length)"
+                        (click)="announceOrderHelp(photo.originalFilename, i, photos().length)"
+                        (keydown)="orderKeydown($event, 'saved', i, photo.originalFilename)"
+                        (pointerdown)="startPointerReorder($event, 'saved', i)"
+                        (pointermove)="movePointerReorder($event)"
+                        (pointerup)="finishPointerReorder($event)"
+                        (pointercancel)="cancelPointerReorder($event)">
+                  <span aria-hidden="true">⠿</span>
+                </button>
+              </div>
+
+              <div class="photo-card__footer">
+                <span class="photo-card__copy">
+                  <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
+                  <small>
+                    @if (photo.widthPx !== null && photo.heightPx !== null) {
+                      {{ photo.widthPx }} × {{ photo.heightPx }} ·
+                    }
+                    {{ sizeLabel(photo.sizeBytes) }}
+                  </small>
+                </span>
+                <span class="photo-card__actions" role="group"
+                      [attr.aria-label]="'Acties voor ' + photo.originalFilename">
+                  <button type="button" title="Downloaden" [disabled]="interactionDisabled()"
+                          [attr.aria-label]="photo.originalFilename + ' downloaden'"
+                          (click)="download(photo)"><span aria-hidden="true">↓</span></button>
+                  <button class="danger" type="button" title="Verwijderen"
+                          [disabled]="interactionDisabled()"
+                          [attr.aria-label]="photo.originalFilename + ' verwijderen'"
+                          (click)="remove(photo)"><span aria-hidden="true">×</span></button>
+                </span>
+              </div>
+            </li>
+          }
+        </ol>
+      </section>
+    }
+
+    @if (pendingPhotos().length) {
+      <section class="photo-series photo-series--pending" aria-labelledby="pending-photo-title">
+        <div class="photo-series__head">
+          <div>
+            <h3 id="pending-photo-title">Nog niet opgeslagen <span>{{ pendingPhotos().length }}</span></h3>
+            <small>
+              @if (productId() === null) {
+                Worden geüpload zodra je het product opslaat
+              } @else {
+                Wachten om geüpload te worden
+              }
+            </small>
+          </div>
+          @if (productId() !== null && pendingPhotos()[0].status !== 'uploading') {
+            <button class="retry-button" type="button" [disabled]="interactionDisabled()"
+                    (click)="retryPendingUploads()">
+              {{ pendingPhotos()[0].status === 'failed' ? 'Opnieuw proberen' : 'Nu uploaden' }}
+            </button>
+          }
+        </div>
+
+        <ol class="photo-strip" aria-describedby="photo-order-help">
+          @for (pendingPhoto of pendingPhotos(); track pendingPhoto.id; let i = $index) {
+            <li class="photo-card photo-card--pending"
+                [class.photo-card--primary]="photos().length === 0 && i === 0"
+                [class.photo-card--failed]="pendingPhoto.status === 'failed'"
+                [class.photo-card--dragging]="isDragging('pending', i)"
+                [class.photo-card--drop]="isDropTarget('pending', i)"
+                data-photo-kind="pending"
+                [attr.data-photo-index]="i">
+              <div class="photo-card__preview">
+                <img [src]="pendingPhoto.previewUrl" [alt]="pendingPhoto.file.name" draggable="false" />
+                @if (photos().length === 0 && i === 0) {
+                  <span class="photo-card__primary">Hoofdfoto</span>
+                } @else {
+                  <span class="photo-card__position" aria-hidden="true">{{ i + 1 }}</span>
+                }
+                <span class="photo-card__state"
+                      [class.photo-card__state--failed]="pendingPhoto.status === 'failed'">
+                  @switch (pendingPhoto.status) {
+                    @case ('uploading') { Uploaden… }
+                    @case ('failed') { Mislukt }
+                    @default { Klaar }
+                  }
+                </span>
+                <button class="photo-card__handle" type="button"
+                        [disabled]="interactionDisabled() || pendingPhotos().length < 2"
+                        aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+                        [attr.aria-label]="orderLabel(pendingPhoto.file.name, i, pendingPhotos().length)"
+                        (click)="announceOrderHelp(pendingPhoto.file.name, i, pendingPhotos().length)"
+                        (keydown)="orderKeydown($event, 'pending', i, pendingPhoto.file.name)"
+                        (pointerdown)="startPointerReorder($event, 'pending', i)"
+                        (pointermove)="movePointerReorder($event)"
+                        (pointerup)="finishPointerReorder($event)"
+                        (pointercancel)="cancelPointerReorder($event)">
+                  <span aria-hidden="true">⠿</span>
+                </button>
+              </div>
+
+              <div class="photo-card__footer">
+                <span class="photo-card__copy">
+                  <b title="{{ pendingPhoto.file.name }}">{{ pendingPhoto.file.name }}</b>
+                  <small>{{ sizeLabel(pendingPhoto.file.size) }}</small>
+                  @if (pendingPhoto.error) {
+                    <small class="photo-card__error">{{ pendingPhoto.error }}</small>
+                  }
+                </span>
+                <span class="photo-card__actions">
+                  <button class="danger" type="button" title="Uit selectie verwijderen"
+                          [disabled]="interactionDisabled()"
+                          [attr.aria-label]="pendingPhoto.file.name + ' uit de selectie verwijderen'"
+                          (click)="removePending(pendingPhoto.id)">
+                    <span aria-hidden="true">×</span>
+                  </button>
+                </span>
+              </div>
+            </li>
+          }
+        </ol>
+      </section>
+    }
+
+    @if (!photos().length && !pendingPhotos().length) {
+      <div class="photo-empty">
+        <span aria-hidden="true">◇</span>
+        <div><b>Nog geen foto's</b><small>Voeg meteen meerdere bestanden toe.</small></div>
+      </div>
+    }
+
     <p class="photo-help">
-      De eerste foto is de hoofdfoto voor catalogus, website en orderapp.
-      JPEG, PNG, GIF of WebP · max. 25 MB per foto · originelen blijven in volledige kwaliteit.
+      De eerste foto is de hoofdfoto in het ERP en op orderregels. Publieke websitefoto's beheer
+      je bij Website &amp; publicatie. JPEG, PNG, GIF of WebP · max. 25 MB per foto.
     </p>
+    <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
+    </div>
   `,
   styles: `
-    .photo-gallery {
-      display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px;
+    :host { display: block; min-width: 0; }
+    .photo-manager { min-width: 0; }
+    .photo-toolbar {
+      display: flex; flex-direction: column; gap: 12px;
+      padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm);
+      background: var(--surface-2);
     }
-    .photo-card {
-      min-width: 0; margin: 0; overflow: hidden;
-      border: 1px solid var(--line); border-radius: var(--r-sm);
-      background: var(--surface); box-shadow: 0 2px 10px rgb(26 22 20 / 5%);
-    }
-    .photo-card--primary { border-color: var(--rose-line); }
-    .photo-card--pending { border-style: dashed; }
-    .photo-card--failed { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
-    .photo-card__preview {
-      position: relative; aspect-ratio: 4 / 3; overflow: hidden;
-      background: linear-gradient(145deg, var(--surface-2), #fff);
-    }
-    .photo-card__preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
-    .photo-card__primary {
-      position: absolute; left: 10px; top: 10px;
-      padding: 5px 9px; border-radius: 999px;
-      background: rgb(176 31 63 / 92%); color: #fff;
-      box-shadow: 0 3px 10px rgb(26 22 20 / 18%);
-      font-size: 10px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase;
-    }
-    .photo-card__pending-state {
-      position: absolute; right: 9px; bottom: 9px;
-      padding: 5px 8px; border: 1px solid var(--rose-line); border-radius: 999px;
-      background: rgb(255 255 255 / 92%); color: var(--rose);
-      font-size: 10px; font-weight: 750;
-    }
-    .photo-card__pending-state--failed {
-      border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
-      background: color-mix(in srgb, var(--danger) 8%, #fff); color: var(--danger);
-    }
-    .photo-card__caption {
-      display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 12px 8px;
-    }
-    .photo-card__name {
-      overflow: hidden; color: var(--ink-2); font-size: 13px; font-weight: 700;
-      text-overflow: ellipsis; white-space: nowrap;
-    }
-    .photo-card__meta { color: var(--muted); font-size: 11px; }
-    .photo-card__error { margin-top: 3px; color: var(--danger); font-size: 11px; line-height: 1.35; }
-    .photo-card__actions {
-      display: flex; flex-wrap: wrap; gap: 1px;
-      padding: 0 6px 6px; border-top: 1px solid var(--line);
-    }
-    .photo-action {
-      flex: 1 1 108px; min-height: 44px; padding: 8px 6px;
-      border: 0; border-radius: 8px; background: transparent;
-      color: var(--ink-2); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer;
-    }
-    .photo-action:active { background: var(--surface-2); }
-    .photo-action:disabled { cursor: wait; opacity: .55; }
-    .photo-action--retry { color: var(--rose); }
-    .photo-action--danger { color: var(--danger); }
+    .photo-toolbar__copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .photo-toolbar__copy b { color: var(--ink-2); font-size: 12.5px; }
+    .photo-toolbar__copy span { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
     .photo-add {
-      display: flex; align-items: center; justify-content: center; gap: 12px;
-      min-height: 88px; padding: 14px;
-      border: 1.5px dashed var(--rose-mid); border-radius: var(--r-sm);
-      background: var(--rose-soft); color: var(--ink-2); cursor: pointer;
+      position: relative; display: flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 44px; padding: 8px 13px;
+      border: 1px solid var(--rose-mid); border-radius: 10px;
+      background: var(--surface); color: var(--rose);
+      font-size: 12px; font-weight: 750; cursor: pointer;
     }
-    .photo-add:hover { border-color: var(--rose); background: color-mix(in srgb, var(--rose-soft) 82%, #fff); }
+    .photo-add:hover { border-color: var(--rose); background: var(--rose-soft); }
     .photo-add:focus-within { outline: 3px solid var(--rose-line); outline-offset: 2px; }
-    .photo-add--busy { cursor: wait; opacity: .72; }
+    .photo-add--busy { cursor: wait; opacity: .68; }
+    .photo-add__icon {
+      display: grid; width: 24px; height: 24px; place-items: center;
+      border-radius: 50%; background: var(--rose); color: #fff;
+      font-size: 17px; font-weight: 500; line-height: 1;
+    }
     .photo-add__input {
       position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
       overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
     }
-    .photo-add__icon {
-      display: grid; flex: 0 0 auto; width: 42px; height: 42px; place-items: center;
-      border-radius: 50%; background: var(--rose); color: #fff; font-size: 25px; line-height: 1;
+    .photo-series { min-width: 0; margin-top: 14px; }
+    .photo-series__head {
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
+      margin: 0 2px 7px;
     }
-    .photo-add__icon--busy { font-size: 18px; }
-    .photo-add > span:last-of-type { display: flex; flex-direction: column; gap: 2px; }
-    .photo-add b { font-size: 13.5px; }
-    .photo-add small { color: var(--muted); font-size: 11.5px; }
-    .photo-help { margin: 10px 2px 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+    .photo-series__head > div { min-width: 0; }
+    .photo-series__head h3 { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .photo-series__head h3 span {
+      display: inline-grid; min-width: 20px; min-height: 20px; padding: 0 5px; place-items: center;
+      border-radius: 999px; background: var(--surface-2); color: var(--muted);
+      font: 700 9px/1 var(--mono);
+    }
+    .photo-series__head small { display: block; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .photo-strip {
+      display: flex; gap: 9px; min-width: 0; margin: 0; padding: 2px 2px 8px;
+      overflow-x: auto; overscroll-behavior-inline: contain;
+      list-style: none; scroll-padding-inline: 2px; scroll-snap-type: inline proximity;
+      scrollbar-width: thin;
+    }
+    .photo-card {
+      position: relative; flex: 0 0 clamp(132px, 42vw, 158px); min-width: 0; overflow: hidden;
+      border: 1px solid var(--line); border-radius: var(--r-sm);
+      background: var(--surface); box-shadow: 0 2px 8px rgb(26 22 20 / 5%);
+      scroll-snap-align: start; transition: border-color .16s, opacity .16s, transform .16s;
+    }
+    .photo-card--primary { flex-basis: clamp(178px, 57vw, 220px); border-color: var(--rose-line); }
+    .photo-card--pending { border-style: dashed; }
+    .photo-card--failed { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
+    .photo-card--dragging { z-index: 2; opacity: .5; transform: scale(.97); }
+    .photo-card--drop { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-line); }
+    .photo-card__preview {
+      position: relative; aspect-ratio: 1; overflow: hidden;
+      background: linear-gradient(145deg, var(--surface-2), #fff 70%);
+    }
+    .photo-card--primary .photo-card__preview { aspect-ratio: 4 / 3; }
+    .photo-card__preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .photo-card__primary {
+      position: absolute; left: 7px; top: 7px;
+      padding: 4px 7px; border-radius: 999px;
+      background: rgb(176 31 63 / 92%); color: #fff;
+      box-shadow: 0 3px 10px rgb(26 22 20 / 18%);
+      font-size: 8.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .photo-card__position {
+      position: absolute; left: 7px; top: 7px; display: grid; width: 23px; height: 23px; place-items: center;
+      border-radius: 50%; background: rgb(255 255 255 / 92%); color: var(--ink-2);
+      box-shadow: 0 2px 7px rgb(26 22 20 / 12%); font: 750 9px/1 var(--mono);
+    }
+    .photo-card__state {
+      position: absolute; left: 7px; bottom: 7px;
+      padding: 4px 7px; border: 1px solid var(--rose-line); border-radius: 999px;
+      background: rgb(255 255 255 / 92%); color: var(--rose); font-size: 8.5px; font-weight: 750;
+    }
+    .photo-card__state--failed {
+      border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+      background: color-mix(in srgb, var(--danger) 8%, #fff); color: var(--danger);
+    }
+    .photo-card__handle {
+      position: absolute; right: 7px; top: 7px; display: grid; width: 38px; height: 38px; place-items: center;
+      border: 1px solid rgb(255 255 255 / 75%); border-radius: 11px;
+      background: rgb(35 31 29 / 76%); color: #fff; box-shadow: 0 3px 10px rgb(26 22 20 / 18%);
+      font: 800 18px/1 var(--mono); cursor: grab; touch-action: none; user-select: none;
+    }
+    .photo-card__handle:active { cursor: grabbing; }
+    .photo-card__handle:hover { background: rgb(35 31 29 / 88%); }
+    .photo-card__handle:focus-visible { outline: 3px solid var(--rose-line); outline-offset: 2px; }
+    .photo-card__handle:disabled { cursor: default; opacity: .45; }
+    .photo-card__footer {
+      display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 46px;
+      padding: 5px 5px 5px 8px; border-top: 1px solid var(--line);
+    }
+    .photo-card__copy { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
+    .photo-card__copy b {
+      overflow: hidden; color: var(--ink-2); font-size: 9.5px; font-weight: 700;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .photo-card__copy small {
+      overflow: hidden; color: var(--muted); font-size: 8.5px; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .photo-card__copy .photo-card__error { color: var(--danger); }
+    .photo-card__actions { display: flex; flex: 0 0 auto; gap: 2px; }
+    .photo-card__actions button {
+      display: grid; width: 36px; height: 36px; padding: 0; place-items: center;
+      border: 0; border-radius: 9px; background: transparent; color: var(--ink-2);
+      font: 750 17px/1 var(--mono); cursor: pointer;
+    }
+    .photo-card__actions button:hover { background: var(--surface-2); }
+    .photo-card__actions button:focus-visible { outline: 3px solid var(--rose-line); outline-offset: -2px; }
+    .photo-card__actions button:disabled { cursor: wait; opacity: .45; }
+    .photo-card__actions .danger { color: var(--danger); }
+    .retry-button {
+      flex: 0 0 auto; min-height: 36px; padding: 6px 10px;
+      border: 1px solid var(--rose-mid); border-radius: 9px; background: var(--surface);
+      color: var(--rose); font: inherit; font-size: 10px; font-weight: 750; cursor: pointer;
+    }
+    .retry-button:hover { border-color: var(--rose); background: var(--rose-soft); }
+    .retry-button:disabled { cursor: wait; opacity: .55; }
+    .photo-empty {
+      display: flex; align-items: center; gap: 10px; min-height: 68px; margin-top: 12px; padding: 10px 12px;
+      border: 1px dashed var(--line-strong); border-radius: var(--r-sm); background: var(--surface-2);
+    }
+    .photo-empty > span { color: var(--rose); font-size: 23px; }
+    .photo-empty > div { display: flex; flex-direction: column; gap: 1px; }
+    .photo-empty b { font-size: 11.5px; }
+    .photo-empty small { color: var(--muted); font-size: 10px; }
+    .photo-help { margin: 8px 2px 0; color: var(--muted); font-size: 9.5px; line-height: 1.4; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
 
     @media (min-width: 640px) {
-      .photo-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .photo-card--primary { grid-column: 1 / -1; }
-      .photo-card--primary .photo-card__preview { aspect-ratio: 16 / 8; }
-      .photo-add { min-height: 130px; }
+      .photo-toolbar { flex-direction: row; align-items: center; justify-content: space-between; padding: 10px 12px; }
+      .photo-add { flex: 0 0 auto; }
+      .photo-card { flex-basis: 150px; }
+      .photo-card--primary { flex-basis: 210px; }
     }
 
-    @media (min-width: 1100px) {
-      .photo-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .photo-card--primary { grid-column: span 2; grid-row: span 2; }
-      .photo-card--primary .photo-card__preview { aspect-ratio: 4 / 3; }
+    @media (prefers-reduced-motion: reduce) {
+      .photo-card { transition: none; }
     }
   `,
 })
@@ -273,14 +397,21 @@ export class PhotoManager {
   private readonly ui = inject(Ui);
   private readonly destroyRef = inject(DestroyRef);
   private nextPendingId = 0;
+  private pointerReorder: PointerReorder | null = null;
 
   readonly productId = input<number | null>(null);
   readonly photos = input.required<PhotoDto[]>();
+  readonly disabled = input(false);
   readonly changed = output<Product>();
 
   readonly busy = signal(false);
+  readonly interactionDisabled = computed(() => this.disabled() || this.busy());
   readonly pendingPhotos = signal<PendingPhoto[]>([]);
   readonly pendingCount = computed(() => this.pendingPhotos().length);
+  readonly draggingSeries = signal<PhotoSeries | null>(null);
+  readonly draggingIndex = signal<number | null>(null);
+  readonly dropTargetIndex = signal<number | null>(null);
+  readonly reorderAnnouncement = signal('');
 
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -290,6 +421,10 @@ export class PhotoManager {
 
   async upload(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
+    if (this.interactionDisabled()) {
+      input.value = '';
+      return;
+    }
     const files = Array.from(input.files ?? []);
     input.value = '';
     if (!files.length) return;
@@ -309,8 +444,11 @@ export class PhotoManager {
   }
 
   /** Uploads the local queue in order after the product has a server id. */
-  async uploadPending(productId: number): Promise<PendingPhotoUploadResult> {
-    if (this.busy()) {
+  async uploadPending(
+    productId: number,
+    allowWhileDisabled = false,
+  ): Promise<PendingPhotoUploadResult> {
+    if (this.busy() || (this.disabled() && !allowWhileDisabled)) {
       return { uploaded: 0, remaining: this.pendingCount() };
     }
 
@@ -341,26 +479,22 @@ export class PhotoManager {
   }
 
   async retryPendingUploads(): Promise<void> {
+    if (this.interactionDisabled()) return;
     const productId = this.productId();
     if (productId === null) return;
     this.reportUploadResult(await this.uploadPending(productId));
   }
 
   removePending(id: number): void {
-    if (!this.busy()) this.discardPending(id);
+    if (!this.interactionDisabled()) this.discardPending(id);
   }
 
   movePending(index: number, direction: -1 | 1): void {
-    if (this.busy()) return;
-    const target = index + direction;
-    const pending = [...this.pendingPhotos()];
-    if (target < 0 || target >= pending.length) return;
-    [pending[index], pending[target]] = [pending[target], pending[index]];
-    this.pendingPhotos.set(pending);
+    this.reorderPending(index, index + direction);
   }
 
   async remove(photo: PhotoDto): Promise<void> {
-    if (this.busy()) return;
+    if (this.interactionDisabled()) return;
     const productId = this.productId();
     if (productId === null) return;
     this.ui.confirm(
@@ -371,7 +505,7 @@ export class PhotoManager {
         danger: true,
       },
       async () => {
-        if (this.busy()) return;
+        if (this.interactionDisabled()) return;
         this.busy.set(true);
         try {
           this.changed.emit(await this.catalog.deletePhoto(productId, photo.id));
@@ -386,24 +520,220 @@ export class PhotoManager {
   }
 
   async move(index: number, direction: -1 | 1): Promise<void> {
-    if (this.busy()) return;
+    await this.reorderSaved(index, index + direction);
+  }
+
+  isDragging(kind: PhotoSeries, index: number): boolean {
+    return !this.interactionDisabled()
+      && this.draggingSeries() === kind && this.draggingIndex() === index;
+  }
+
+  isDropTarget(kind: PhotoSeries, index: number): boolean {
+    return !this.interactionDisabled()
+      && this.draggingSeries() === kind
+      && this.draggingIndex() !== index
+      && this.dropTargetIndex() === index;
+  }
+
+  orderLabel(filename: string, index: number, total: number): string {
+    return `Volgorde van ${filename}, positie ${index + 1} van ${total}. `
+      + 'Sleep of veeg; gebruik met een toetsenbord de pijltjes, Home of End.';
+  }
+
+  announceOrderHelp(filename: string, index: number, total: number): void {
+    this.reorderAnnouncement.set(this.orderLabel(filename, index, total));
+  }
+
+  orderKeydown(event: KeyboardEvent, kind: PhotoSeries, index: number, filename: string): void {
+    if (this.interactionDisabled()) return;
+    const total = kind === 'saved' ? this.photos().length : this.pendingPhotos().length;
+    let target = index;
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        target--;
+        break;
+      case 'ArrowRight':
+      case 'ArrowDown':
+        target++;
+        break;
+      case 'Home':
+        target = 0;
+        break;
+      case 'End':
+        target = total - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.reorder(kind, index, target, filename);
+  }
+
+  startPointerReorder(event: PointerEvent, kind: PhotoSeries, index: number): void {
+    if (this.interactionDisabled() || event.button !== 0) return;
+    event.stopPropagation();
+    const handle = event.currentTarget as HTMLElement;
+    this.pointerReorder = {
+      kind,
+      pointerId: event.pointerId,
+      sourceIndex: index,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      started: false,
+      handle,
+    };
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      this.pointerReorder = null;
+    }
+  }
+
+  movePointerReorder(event: PointerEvent): void {
+    const active = this.pointerReorder;
+    if (!active || event.pointerId !== active.pointerId) return;
+    if (this.interactionDisabled()) {
+      this.releasePointer(active);
+      this.resetPointerReorder();
+      return;
+    }
+    active.lastX = event.clientX;
+    const distance = Math.hypot(event.clientX - active.startX, event.clientY - active.startY);
+    if (!active.started && distance < 7) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (!active.started) {
+      active.started = true;
+      this.draggingSeries.set(active.kind);
+      this.draggingIndex.set(active.sourceIndex);
+      this.dropTargetIndex.set(active.sourceIndex);
+    }
+
+    const card = document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>('[data-photo-kind]');
+    if (card?.dataset['photoKind'] !== active.kind) return;
+    const target = Number(card.dataset['photoIndex']);
+    if (Number.isInteger(target)) this.dropTargetIndex.set(target);
+  }
+
+  finishPointerReorder(event: PointerEvent): void {
+    const active = this.pointerReorder;
+    if (!active || event.pointerId !== active.pointerId) return;
+    if (this.interactionDisabled()) {
+      this.releasePointer(active);
+      this.resetPointerReorder();
+      return;
+    }
+    active.lastX = event.clientX;
+    if (active.started) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const source = active.sourceIndex;
+    let target = this.dropTargetIndex() ?? source;
+    const horizontalDistance = active.lastX - active.startX;
+    if (active.started && target === source && Math.abs(horizontalDistance) >= 32) {
+      // A short swipe follows list navigation: left is previous, right is next.
+      target += horizontalDistance < 0 ? -1 : 1;
+    }
+    const filename = this.photoName(active.kind, source);
+    this.releasePointer(active);
+    this.resetPointerReorder();
+    if (active.started) this.reorder(active.kind, source, target, filename);
+  }
+
+  cancelPointerReorder(event: PointerEvent): void {
+    const active = this.pointerReorder;
+    if (!active || event.pointerId !== active.pointerId) return;
+    this.releasePointer(active);
+    this.resetPointerReorder();
+  }
+
+  private reorder(kind: PhotoSeries, source: number, target: number, filename: string): void {
+    if (this.interactionDisabled()) return;
+    const total = kind === 'saved' ? this.photos().length : this.pendingPhotos().length;
+    const boundedTarget = Math.max(0, Math.min(target, total - 1));
+    if (source === boundedTarget || source < 0 || source >= total) return;
+    if (kind === 'saved') {
+      void this.reorderSaved(source, boundedTarget, filename);
+    } else {
+      this.reorderPending(source, boundedTarget, filename);
+    }
+  }
+
+  private async reorderSaved(source: number, target: number, filename?: string): Promise<void> {
+    if (this.interactionDisabled()) return;
     const productId = this.productId();
     if (productId === null) return;
     const order = this.photos().map((photo) => photo.id);
-    const target = index + direction;
-    if (target < 0 || target >= order.length) return;
-    [order[index], order[target]] = [order[target], order[index]];
+    if (source < 0 || source >= order.length || target < 0 || target >= order.length) return;
+    const [movedPhotoId] = order.splice(source, 1);
+    order.splice(target, 0, movedPhotoId);
+    const movedName = filename ?? this.photos()[source]?.originalFilename ?? 'Foto';
     this.busy.set(true);
     try {
       this.changed.emit(await this.catalog.reorderPhotos(productId, order));
+      this.announceMoved(movedName, target, order.length, target === 0);
     } catch (failure: unknown) {
+      this.reorderAnnouncement.set(`${movedName} kon niet worden verplaatst.`);
       this.ui.toast(messageOf(failure, 'Volgorde aanpassen mislukt'), 'err');
     } finally {
       this.busy.set(false);
     }
   }
 
+  private reorderPending(source: number, target: number, filename?: string): void {
+    if (this.interactionDisabled()) return;
+    const pending = [...this.pendingPhotos()];
+    if (source < 0 || source >= pending.length || target < 0 || target >= pending.length) return;
+    const [movedPhoto] = pending.splice(source, 1);
+    pending.splice(target, 0, movedPhoto);
+    this.pendingPhotos.set(pending);
+    this.announceMoved(
+      filename ?? movedPhoto.file.name,
+      target,
+      pending.length,
+      this.photos().length === 0 && target === 0,
+    );
+  }
+
+  private announceMoved(filename: string, target: number, total: number, primary: boolean): void {
+    const position = primary ? ' en is nu de hoofdfoto' : '';
+    this.reorderAnnouncement.set(
+      `${filename} staat nu op positie ${target + 1} van ${total}${position}.`,
+    );
+  }
+
+  private photoName(kind: PhotoSeries, index: number): string {
+    return kind === 'saved'
+      ? this.photos()[index]?.originalFilename ?? 'Foto'
+      : this.pendingPhotos()[index]?.file.name ?? 'Foto';
+  }
+
+  private releasePointer(active: PointerReorder): void {
+    try {
+      if (active.handle.hasPointerCapture(active.pointerId)) {
+        active.handle.releasePointerCapture(active.pointerId);
+      }
+    } catch {
+      /* A cancelled pointer is already released by the browser. */
+    }
+  }
+
+  private resetPointerReorder(): void {
+    this.pointerReorder = null;
+    this.draggingSeries.set(null);
+    this.draggingIndex.set(null);
+    this.dropTargetIndex.set(null);
+  }
+
   async download(photo: PhotoDto): Promise<void> {
+    if (this.interactionDisabled()) return;
     const blob = await this.catalog.photoBlob(photo.downloadUrl);
     saveBlob(blob, photo.originalFilename);
   }

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import {
   Category,
   LANGUAGES,
@@ -9,8 +10,20 @@ import {
   ProductFamilyText,
   PublicationStatus,
 } from '../../core/api/models';
-import { ProductFamilyGallery } from './product-family-gallery';
+import {
+  ProductFamilyGallery,
+  ProductFamilyImageVariantChange,
+} from './product-family-gallery';
 import { ProductFamilySourceDetails } from './product-family-source-details';
+import {
+  FeaturedProductEligibility,
+  featuredProductEligibility,
+} from '../../shared/product-featured-eligibility';
+
+interface FamilyFeaturedOption {
+  member: ProductFamily['members'][number];
+  eligibility: FeaturedProductEligibility;
+}
 
 /**
  * Keeps website master data available without letting it take over the daily
@@ -20,7 +33,7 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
 @Component({
   selector: 'app-product-publication-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, ProductFamilyGallery, ProductFamilySourceDetails],
+  imports: [FormsModule, RouterLink, ProductFamilyGallery, ProductFamilySourceDetails],
   template: `
     <details class="publication" id="publication">
       <summary>
@@ -59,7 +72,11 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
         <span class="publication__chevron" aria-hidden="true">⌄</span>
       </summary>
 
-      <div class="publication__body">
+      <fieldset
+        class="publication__body"
+        [disabled]="busy()"
+        [attr.aria-busy]="busy()"
+      >
         <div class="family-picker">
           <label class="field">
             <span>Productfamilie</span>
@@ -75,10 +92,18 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
                 </option>
               }
             </select>
+            <small class="field__hint">Kies een andere familie om deze variant te verplaatsen.</small>
           </label>
-          <button class="btn btn--sm" type="button" (click)="createFamilyRequested.emit()">
-            + Nieuwe familie
-          </button>
+          <div class="family-picker__actions">
+            @if (product().familyId !== null) {
+              <button class="btn btn--sm" type="button" (click)="unlinkFamily()">
+                Loskoppelen
+              </button>
+            }
+            <button class="btn btn--sm" type="button" (click)="requestFamilyCreation()">
+              + Nieuwe familie
+            </button>
+          </div>
         </div>
 
         @if (family(); as family) {
@@ -87,10 +112,68 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
             <p>
               Je bewerkt <b>{{ family.name || family.familyKey }}</b
               >. Namen, websitefoto's, volgorde en SEO gelden voor alle
-              <b>{{ family.variantCount || 1 }} kleurvariant(en)</b>. Inkoop, voorraad, verpakking
+              <b>{{ family.variantCount || 1 }} variant(en)</b>. Inkoop, voorraad, verpakking
               en prijzen hierboven blijven per variant.
             </p>
           </div>
+
+          <section class="family-members" aria-labelledby="family-members-title">
+            <div class="family-members__head">
+              <div>
+                <h3 id="family-members-title">Varianten in deze familie</h3>
+                <p>Alleen een overzicht; elke variant behoudt eigen voorraad, prijs en verpakking.</p>
+              </div>
+              <span>{{ members().length || family.variantCount }}</span>
+            </div>
+            @if (members().length) {
+              <ul>
+                @for (member of members(); track member.productId) {
+                  <li [class.family-member--current]="member.productId === product().id">
+                    <a [routerLink]="['/products', member.productId]"
+                       [attr.aria-current]="member.productId === product().id ? 'page' : null">
+                      <span class="family-member__swatch"
+                            [style.backgroundColor]="member.colourHex || null"
+                            [class.family-member__swatch--empty]="!member.colourHex"
+                            aria-hidden="true"></span>
+                      <span class="family-member__copy">
+                        <b>{{ member.colour || 'Geen kleur' }}@if (member.size) { · {{ member.size }} }</b>
+                        <small>{{ member.sku || member.name }}</small>
+                      </span>
+                      @if (member.productId === product().id) {
+                        <span class="family-member__current">Deze variant</span>
+                      } @else if (!member.active) {
+                        <span class="family-member__inactive">Inactief</span>
+                      }
+                      <span aria-hidden="true">›</span>
+                    </a>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="family-members__empty">De varianten verschijnen hier na opslaan.</p>
+            }
+            <label class="field family-card-variant">
+              <span>Productkaartfoto</span>
+              <select class="select" [ngModel]="family.cardFeaturedProductId ?? null"
+                      [disabled]="!members().length && missingCardFeaturedProductId() === null"
+                      (ngModelChange)="patch({ cardFeaturedProductId: numberOrNull($event) })">
+                <option [ngValue]="null">Automatisch · eerste actieve variant</option>
+                @for (option of cardFeaturedOptions(); track option.member.productId) {
+                  <option [ngValue]="option.member.productId" [disabled]="!option.eligibility.eligible">
+                    {{ memberOptionLabel(option.member) }}{{ eligibilityLabel(option.eligibility) }}
+                  </option>
+                }
+                @if (missingCardFeaturedProductId() !== null) {
+                  <option [ngValue]="missingCardFeaturedProductId()" disabled>
+                    SKU #{{ missingCardFeaturedProductId() }} · geen publieke foto
+                  </option>
+                }
+              </select>
+              <small class="field__hint">
+                Bepaalt welke kleur of maat op website- en orderappkaarten wordt getoond.
+              </small>
+            </label>
+          </section>
 
           <section class="subsection" aria-labelledby="publication-channels-title">
             <div class="subsection__head">
@@ -208,7 +291,7 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
                 <select
                   class="select select--sm"
                   [ngModel]="language()"
-                  (ngModelChange)="language.set($event)"
+                  (ngModelChange)="selectLanguage($event)"
                 >
                   @for (option of languages; track option.code) {
                     <option [value]="option.code">{{ option.label }}</option>
@@ -253,7 +336,6 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
                   class="input"
                   [ngModel]="text().format"
                   (ngModelChange)="patchText({ format: $event })"
-                  placeholder="bijv. 25 × 25 × 45 cm"
                 />
               </label>
               <label class="field">
@@ -273,7 +355,7 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
             <div class="subsection__head">
               <div>
                 <h3 id="publication-merchandising-title">Plaats in de shop</h3>
-                <p>Categorie, collectie, labels en vaste volgorde.</p>
+                <p>De categorie bepaalt automatisch de hoofdcollectie.</p>
               </div>
             </div>
             <div class="form-grid">
@@ -290,24 +372,22 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
                   }
                 </select>
               </label>
-              <label class="field">
-                <span>Collectiecode</span>
-                <input
-                  class="input mono"
-                  [ngModel]="family.collectionKey"
-                  (ngModelChange)="patch({ collectionKey: emptyToNull($event) })"
-                  placeholder="bijv. display-roses"
-                />
+              <div class="field collection-readonly">
+                <span>Collecties</span>
                 @if (family.collections.length) {
                   <span class="collection-membership">
                     @for (collection of family.collections; track collection.id) {
                       <small [class.collection-membership__primary]="collection.primary">
-                        {{ collection.name }}
+                        {{ collection.mobileName || collection.name }}
+                        @if (collection.primary) { · hoofd }
                       </small>
                     }
                   </span>
+                } @else {
+                  <small class="collection-empty">Nog geen collectie gekoppeld</small>
                 }
-              </label>
+                <small class="field__hint">Wordt door de backend afgeleid van de categorie.</small>
+              </div>
               <label class="field">
                 <span>Volgorde</span>
                 <input
@@ -334,9 +414,12 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
           <app-product-family-gallery
             [family]="family"
             [language]="language()"
-            (familyChange)="familyChange.emit($event)"
-            (imageUploadRequested)="imageUploadRequested.emit($event)"
-            (imageDeleteRequested)="imageDeleteRequested.emit($event)"
+            [currentProductId]="product().id"
+            [busy]="busy()"
+            (familyChange)="updateFamily($event)"
+            (imageUploadRequested)="requestImageUpload($event)"
+            (imageDeleteRequested)="requestImageDelete($event)"
+            (imageVariantChangeRequested)="requestImageVariantChange($event)"
           />
 
           <section class="subsection" aria-labelledby="publication-seo-title">
@@ -382,7 +465,7 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
             </div>
           </div>
         }
-      </div>
+      </fieldset>
     </details>
   `,
   styles: `
@@ -392,6 +475,9 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
       scroll-margin-top: calc(var(--appbar-h) + 12px);
     }
     .publication__body {
+      min-inline-size: 0;
+      margin: 0;
+      border: 0;
       padding: 14px;
     }
     .family-picker {
@@ -403,6 +489,8 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
     .family-picker .field {
       margin: 0;
     }
+    .family-picker__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .family-picker__actions .btn { flex: 1 1 auto; }
     .family-impact {
       display: flex;
       gap: 10px;
@@ -429,6 +517,39 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
       font-size: 11.5px;
       line-height: 1.48;
     }
+    .family-members { padding: 14px 0; border-bottom: 1px solid var(--line); }
+    .family-members__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .family-members__head h3 { font-size: 12.5px; }
+    .family-members__head p { margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .family-members__head > span {
+      display: grid; min-width: 24px; height: 24px; padding: 0 6px; place-items: center;
+      border-radius: 999px; background: var(--surface-2); color: var(--muted); font: 700 9px/1 var(--mono);
+    }
+    .family-members ul { display: grid; gap: 5px; margin: 9px 0 0; padding: 0; list-style: none; }
+    .family-members li { min-width: 0; }
+    .family-members a {
+      display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
+      min-height: 46px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--surface-2); color: var(--ink-2); text-decoration: none;
+    }
+    .family-members a:hover { border-color: var(--rose-line); background: var(--rose-soft); }
+    .family-member--current a { border-color: var(--rose-line); }
+    .family-member__swatch {
+      width: 24px; height: 24px; border: 1px solid rgb(26 22 20 / 10%); border-radius: 50%;
+      box-shadow: inset 0 0 0 2px rgb(255 255 255 / 55%);
+    }
+    .family-member__swatch--empty { background: linear-gradient(135deg, #fff 45%, var(--line-strong) 46% 54%, #fff 55%); }
+    .family-member__copy { display: flex; flex-direction: column; min-width: 0; }
+    .family-member__copy b, .family-member__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .family-member__copy b { font-size: 10.5px; }
+    .family-member__copy small { margin-top: 1px; color: var(--muted); font-size: 9px; }
+    .family-member__current, .family-member__inactive {
+      padding: 3px 6px; border-radius: 999px; font-size: 8.5px; font-weight: 750; white-space: nowrap;
+    }
+    .family-member__current { background: var(--rose-soft); color: var(--rose); }
+    .family-member__inactive { background: var(--surface); color: var(--muted); }
+    .family-members__empty { margin-top: 9px; padding: 10px; border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 10px; }
+    .family-card-variant { margin: 11px 0 0; }
 
     .subsection {
       padding: 18px 0;
@@ -573,6 +694,31 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
       font-size: 11.5px;
       font-weight: 650;
     }
+    .collection-readonly {
+      align-self: stretch;
+    }
+    .collection-membership {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .collection-membership small,
+    .collection-empty {
+      width: fit-content;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 9.5px;
+      line-height: 1;
+    }
+    .collection-membership__primary {
+      border-color: var(--rose-line) !important;
+      background: var(--rose-soft) !important;
+      color: var(--rose) !important;
+      font-weight: 700;
+    }
 
     .no-family {
       display: flex;
@@ -626,6 +772,7 @@ import { ProductFamilySourceDetails } from './product-family-source-details';
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: end;
       }
+      .family-picker__actions .btn { flex: 0 0 auto; }
       .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -665,12 +812,14 @@ export class ProductPublicationEditor {
   readonly family = input<ProductFamily | null>(null);
   readonly families = input<ProductFamily[]>([]);
   readonly categories = input<Category[]>([]);
+  readonly busy = input(false);
 
   readonly familyChange = output<ProductFamily>();
   readonly familyIdChange = output<number | null>();
   readonly createFamilyRequested = output<void>();
   readonly imageUploadRequested = output<File>();
   readonly imageDeleteRequested = output<number>();
+  readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
 
   readonly languages = LANGUAGES;
   readonly language = signal<LanguageCode>('EN');
@@ -701,18 +850,90 @@ export class ProductPublicationEditor {
     () => (this.family()?.publicationIssues ?? this.product().publicationIssues ?? []).length,
   );
   readonly highlightsText = computed(() => this.text().highlights.join('\n'));
+  readonly members = computed(() => this.family()?.members ?? []);
+  readonly cardFeaturedOptions = computed<FamilyFeaturedOption[]>(() => {
+    const family = this.family();
+    if (!family) return [];
+    const selected = family.cardFeaturedProductId;
+    return this.members()
+      .map((member) => ({
+        member,
+        eligibility: featuredProductEligibility(family, member.productId, member.active),
+      }))
+      .filter((option) => option.eligibility.eligible || option.member.productId === selected);
+  });
+  readonly missingCardFeaturedProductId = computed(() => {
+    const selected = this.family()?.cardFeaturedProductId ?? null;
+    return selected !== null && !this.members().some((member) => member.productId === selected)
+      ? selected
+      : null;
+  });
+
+  memberOptionLabel(member: ProductFamily['members'][number]): string {
+    const option = [member.colour || 'Geen kleur', member.size].filter(Boolean).join(' · ');
+    return member.sku ? `${option} — ${member.sku}` : option;
+  }
+
+  eligibilityLabel(eligibility: FeaturedProductEligibility): string {
+    if (eligibility.eligible) return '';
+    return [
+      eligibility.active ? null : 'inactief',
+      eligibility.hasPublicImage ? null : 'geen publieke foto',
+    ]
+      .filter(Boolean)
+      .map((reason) => ` · ${reason}`)
+      .join('');
+  }
 
   selectFamily(value: number | string | null): void {
+    if (this.busy()) return;
     this.familyIdChange.emit(this.numberOrNull(value));
   }
 
+  unlinkFamily(): void {
+    if (this.busy()) return;
+    this.familyIdChange.emit(null);
+  }
+
+  requestFamilyCreation(): void {
+    if (this.busy()) return;
+    this.createFamilyRequested.emit();
+  }
+
+  selectLanguage(language: LanguageCode): void {
+    if (this.busy()) return;
+    this.language.set(language);
+  }
+
+  updateFamily(family: ProductFamily): void {
+    if (this.busy()) return;
+    this.familyChange.emit(family);
+  }
+
+  requestImageUpload(file: File): void {
+    if (this.busy()) return;
+    this.imageUploadRequested.emit(file);
+  }
+
+  requestImageDelete(imageId: number): void {
+    if (this.busy()) return;
+    this.imageDeleteRequested.emit(imageId);
+  }
+
+  requestImageVariantChange(change: ProductFamilyImageVariantChange): void {
+    if (this.busy()) return;
+    this.imageVariantChangeRequested.emit(change);
+  }
+
   patch(changes: Partial<ProductFamily>): void {
+    if (this.busy()) return;
     const family = this.family();
     if (!family) return;
     this.familyChange.emit({ ...family, ...changes });
   }
 
   patchText(changes: Partial<ProductFamilyText>): void {
+    if (this.busy()) return;
     const family = this.family();
     if (!family) return;
     const language = this.language();
@@ -766,10 +987,6 @@ export class ProductPublicationEditor {
     if (value === null || value === '') return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  emptyToNull(value: string | null): string | null {
-    return value?.trim() || null;
   }
 
   private blankText(language: LanguageCode): ProductFamilyText {

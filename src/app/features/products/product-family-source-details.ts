@@ -165,7 +165,7 @@ export class ProductFamilySourceDetails {
     if (value.raw) return value.raw;
     const dimensions = [value.length, value.width, value.height];
     return dimensions.some((item) => item !== null)
-      ? `${dimensions.map((item) => item ?? '—').join(' × ')} ${value.unit ?? ''}`.trim()
+      ? `B × D × H · ${dimensions.map((item) => item ?? '—').join(' × ')} ${value.unit ?? ''}`.trim()
       : 'Niet vastgelegd';
   }
 
@@ -173,7 +173,7 @@ export class ProductFamilySourceDetails {
     if (item.raw) return item.raw;
     const dimensions = [item.length, item.width, item.height];
     const size = dimensions.some((value) => value !== null)
-      ? `${dimensions.map((value) => value ?? '—').join(' × ')} ${item.dimensionUnit ?? ''}`.trim()
+      ? `B × D × H · ${dimensions.map((value) => value ?? '—').join(' × ')} ${item.dimensionUnit ?? ''}`.trim()
       : 'maat onbekend';
     return item.piecesPerPackage ? `${size} · ${item.piecesPerPackage} stuks` : size;
   }

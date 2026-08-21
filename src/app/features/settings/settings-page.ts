@@ -11,12 +11,35 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
 import {
-  CatalogImportResult, Category, CompanyProfile, DiscountTier, HsCode,
+  CatalogImportResult, Category, CompanyProfile, DiscountTier, HsCode, Product, ProductFamily,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
+import {
+  FeaturedProductEligibility,
+  familyForProduct,
+  featuredProductEligibility,
+  productBelongsToCategory,
+} from '../../shared/product-featured-eligibility';
+
+interface CategoryFeaturedOption {
+  product: Product;
+  family: ProductFamily | null;
+  eligibility: FeaturedProductEligibility;
+  inCategory: boolean;
+}
+
+const CATEGORY_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** Category codes are also public URL keys, so one canonical form is used everywhere. */
+const normalizeCategoryCode = (value: string): string => value
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
 
 /** Categorieën, douanetarieven en kortingsstaffels. */
 @Component({
@@ -316,12 +339,34 @@ import { messageOf } from '../../core/api/errors';
                          placeholder="Bijv. Geurkaarsen" />
                 </div>
                 <div class="field">
+                  <label for="category-mobile-name">Korte mobiele naam <span class="opt"></span></label>
+                  <input class="input" id="category-mobile-name" maxlength="40"
+                         [ngModel]="draft.mobileName"
+                         (ngModelChange)="updateCategoryDraft({ mobileName: $event })"
+                         placeholder="Bijv. Kaarsen" />
+                  <span class="hint">Alleen gebruikt waar de volledige naam niet netjes past.</span>
+                </div>
+                <div class="field">
+                  <label for="category-eyebrow">Bovenregel website <span class="opt"></span></label>
+                  <input class="input" id="category-eyebrow"
+                         [ngModel]="draft.eyebrow"
+                         (ngModelChange)="updateCategoryDraft({ eyebrow: $event })"
+                         placeholder="Bijv. Onze signatuur" />
+                  <span class="hint">
+                    Korte tekst boven de categorietitel op de website; leeg betekent geen bovenregel.
+                  </span>
+                </div>
+                <div class="field">
                   <label class="req" for="category-code">Code</label>
                   <input class="input mono" id="category-code" autocomplete="off"
                          [ngModel]="draft.code"
                          (ngModelChange)="updateCategoryDraft({ code: $event })"
-                         placeholder="GEURKAARSEN" />
-                  <span class="hint">Korte unieke interne code.</span>
+                         (blur)="normalizeCategoryDraftCode()"
+                         autocapitalize="none" spellcheck="false"
+                         placeholder="display-roses" />
+                  <span class="hint">
+                    Publieke URL-code met kleine letters, cijfers en streepjes. Spaties worden streepjes.
+                  </span>
                 </div>
                 <div class="field">
                   <label for="category-position">Volgorde</label>
@@ -329,6 +374,32 @@ import { messageOf } from '../../core/api/errors';
                          [ngModel]="draft.position"
                          (ngModelChange)="updateCategoryDraft({ position: +$event })" />
                   <span class="hint">Lager nummer verschijnt eerst.</span>
+                </div>
+                <div class="field">
+                  <label for="category-featured-product">Uitgelicht product <span class="opt"></span></label>
+                  <select class="select" id="category-featured-product"
+                          [ngModel]="draft.featuredProductId ?? null"
+                          [disabled]="draft.id === null"
+                          (ngModelChange)="updateCategoryDraft({ featuredProductId: numberOrNull($event) })">
+                    <option [ngValue]="null">Automatisch</option>
+                    @for (option of categoryFeaturedOptions(draft); track option.product.id) {
+                      <option [ngValue]="option.product.id" [disabled]="!categoryOptionEligible(option)">
+                        {{ productOptionLabel(option.product) }}{{ categoryEligibilityLabel(option) }}
+                      </option>
+                    }
+                    @if (missingFeaturedProductId(draft) !== null) {
+                      <option [ngValue]="missingFeaturedProductId(draft)" disabled>
+                        SKU #{{ missingFeaturedProductId(draft) }} · geen publieke foto
+                      </option>
+                    }
+                  </select>
+                  <span class="hint">
+                    @if (draft.id === null) {
+                      Sla de categorie eerst op en koppel daarna producten.
+                    } @else {
+                      Actieve SKU die deze collectie visueel vertegenwoordigt.
+                    }
+                  </span>
                 </div>
                 <div class="field category-form__description">
                   <label for="category-description">Beschrijving <span class="opt"></span></label>
@@ -342,6 +413,10 @@ import { messageOf } from '../../core/api/errors';
               @if (categoryCodeExists(draft)) {
                 <p class="category-form__error" role="alert">
                   Deze code bestaat al. Kies een unieke code.
+                </p>
+              } @else if (draft.code.trim() && !categoryCodeValid(draft)) {
+                <p class="category-form__error" role="alert">
+                  Vul minstens één letter of cijfer in voor de publieke URL-code.
                 </p>
               }
 
@@ -372,7 +447,14 @@ import { messageOf } from '../../core/api/errors';
                     } @else {
                       <p class="category-item__empty">Nog geen beschrijving</p>
                     }
-                    <span class="category-item__position">Volgorde {{ category.position }}</span>
+                    <span class="category-item__position">
+                      Volgorde {{ category.position }}
+                      @if (category.mobileName) { · mobiel „{{ category.mobileName }}” }
+                      @if (category.eyebrow) { · bovenregel „{{ category.eyebrow }}” }
+                      @if (category.featuredProductId) {
+                        · uitgelicht {{ featuredProductLabel(category.featuredProductId) }}
+                      }
+                    </span>
                   </div>
                   <div class="category-item__actions">
                     <button class="btn btn--sm" type="button"
@@ -672,6 +754,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly company = signal<CompanyProfile | null>(null);
   readonly savingCompany = signal(false);
   readonly categories = signal<Category[]>([]);
+  readonly products = signal<Product[]>([]);
+  readonly families = signal<ProductFamily[]>([]);
   readonly categoryDraft = signal<Category | null>(null);
   readonly savingCategory = signal(false);
   readonly deletingCategoryId = signal<number | null>(null);
@@ -709,13 +793,16 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 
   private async load(): Promise<void> {
-    const [categories, hsCodes, line, order, company] = await Promise.all([
-      this.catalog.categories(), this.catalog.hsCodes(),
+    const [categories, products, families, hsCodes, line, order, company] = await Promise.all([
+      this.catalog.categories(), this.catalog.products().catch(() => []),
+      this.catalog.productFamilies().catch(() => []), this.catalog.hsCodes(),
       this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
       this.sales.company(),
     ]);
     this.company.set(company);
     this.categories.set(categories);
+    this.products.set(products);
+    this.families.set(families);
     this.hsCodes.set(hsCodes);
     this.lineTiers.set(line);
     this.orderTiers.set(order);
@@ -814,7 +901,16 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     if (this.categoryDraft()) return;
     const lastPosition = Math.max(0, ...this.categories().map((category) => category.position));
     this.categoryDraft.set(
-      { id: null, code: '', name: '', description: '', position: lastPosition + 1 });
+      {
+        id: null,
+        code: '',
+        name: '',
+        mobileName: null,
+        eyebrow: null,
+        description: '',
+        position: lastPosition + 1,
+        featuredProductId: null,
+      });
   }
 
   editCategory(category: Category): void {
@@ -830,16 +926,96 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     this.categoryDraft.update((draft) => draft ? { ...draft, ...changes } : draft);
   }
 
+  normalizeCategoryDraftCode(): void {
+    this.categoryDraft.update((draft) => draft
+      ? { ...draft, code: normalizeCategoryCode(draft.code) }
+      : draft);
+  }
+
+  numberOrNull(value: number | string | null): number | null {
+    return value === null || value === '' ? null : Number(value);
+  }
+
+  categoryFeaturedOptions(category: Category): CategoryFeaturedOption[] {
+    const categoryId = category.id;
+    if (categoryId === null) return [];
+    const current = category.featuredProductId;
+    return this.products()
+      .filter((product): product is Product & { id: number } => product.id !== null)
+      .map((product) => {
+        const family = familyForProduct(this.families(), product.familyId);
+        return {
+          product,
+          family,
+          eligibility: featuredProductEligibility(family, product.id, product.active),
+          inCategory: productBelongsToCategory(
+            family,
+            product.categoryId,
+            categoryId,
+            normalizeCategoryCode(category.code),
+          ),
+        };
+      })
+      .filter((option) =>
+        (option.inCategory && option.eligibility.eligible) || option.product.id === current);
+  }
+
+  categoryOptionEligible(option: CategoryFeaturedOption): boolean {
+    return option.inCategory
+      && option.eligibility.eligible
+      && option.family?.active === true
+      && option.family.websiteStatus === 'PUBLISHED';
+  }
+
+  categoryEligibilityLabel(option: CategoryFeaturedOption): string {
+    if (this.categoryOptionEligible(option)) return '';
+    return [
+      option.inCategory ? null : 'andere categorie',
+      option.eligibility.active ? null : 'inactief',
+      option.family?.active === false ? 'familie inactief' : null,
+      option.family && option.family.websiteStatus !== 'PUBLISHED'
+        ? 'website niet gepubliceerd'
+        : null,
+      option.eligibility.hasPublicImage ? null : 'geen publieke foto',
+    ]
+      .filter(Boolean)
+      .map((reason) => ` · ${reason}`)
+      .join('');
+  }
+
+  missingFeaturedProductId(category: Category): number | null {
+    const selected = category.featuredProductId;
+    return selected !== null && !this.products().some((product) => product.id === selected)
+      ? selected
+      : null;
+  }
+
+  productOptionLabel(product: Product): string {
+    const option = [product.colour || 'Geen kleur', product.variantSize].filter(Boolean).join(' · ');
+    return product.sku ? `${product.name} · ${option} — ${product.sku}` : `${product.name} · ${option}`;
+  }
+
+  featuredProductLabel(productId: number): string {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    return product ? this.productOptionLabel(product) : `#${productId}`;
+  }
+
   categoryCodeExists(draft = this.categoryDraft()): boolean {
-    if (!draft?.code.trim()) return false;
-    const code = draft.code.trim().toLocaleUpperCase('nl-BE');
+    if (!draft) return false;
+    const code = normalizeCategoryCode(draft.code);
+    if (!code) return false;
     return this.categories().some((category) =>
-      category.id !== draft.id && category.code.trim().toLocaleUpperCase('nl-BE') === code);
+      category.id !== draft.id && normalizeCategoryCode(category.code) === code);
+  }
+
+  categoryCodeValid(draft = this.categoryDraft()): boolean {
+    if (!draft) return false;
+    return CATEGORY_CODE_PATTERN.test(normalizeCategoryCode(draft.code));
   }
 
   categoryDraftValid(): boolean {
     const draft = this.categoryDraft();
-    return !!draft?.name.trim() && !!draft.code.trim()
+    return !!draft?.name.trim() && this.categoryCodeValid(draft)
       && Number.isFinite(draft.position) && draft.position >= 0
       && !this.categoryCodeExists(draft);
   }
@@ -849,10 +1025,13 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     if (!draft || !this.categoryDraftValid()) return;
     const payload: Category = {
       ...draft,
-      code: draft.code.trim().toLocaleUpperCase('nl-BE'),
+      code: normalizeCategoryCode(draft.code),
       name: draft.name.trim(),
+      mobileName: draft.mobileName?.trim() || null,
+      eyebrow: draft.eyebrow?.trim() || null,
       description: draft.description?.trim() || '',
       position: Math.round(draft.position),
+      featuredProductId: draft.featuredProductId ?? null,
     };
     this.savingCategory.set(true);
     try {

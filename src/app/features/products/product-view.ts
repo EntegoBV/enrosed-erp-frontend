@@ -101,7 +101,15 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
               </div>
 
               <div class="hero-summary__identity">
-                @if (product.colour) { <span><b>Kleur</b>{{ product.colour }}</span> }
+                @if (product.colour) {
+                  <span>
+                    @if (product.colourHex) {
+                      <i class="variant-swatch" [style.backgroundColor]="product.colourHex" aria-hidden="true"></i>
+                    }
+                    <b>Kleur</b>{{ product.colour }}
+                  </span>
+                }
+                @if (product.variantSize) { <span><b>Maat</b>{{ product.variantSize }}</span> }
                 @if (product.sku) { <span><b>SKU</b><span class="mono">{{ product.sku }}</span></span> }
               </div>
 
@@ -158,7 +166,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
               </header>
               <dl class="detail-list">
                 <div><dt>Leverancier</dt><dd>{{ supplierName() || '—' }}</dd></div>
-                <div><dt>Afmeting</dt><dd class="num">{{ size(product.dimensions) }}</dd></div>
+                <div><dt>Afmeting (B × D × H)</dt><dd class="num">{{ size(product.dimensions) }}</dd></div>
                 <div><dt>Barcode stuk</dt><dd class="mono">{{ product.barcodeInner || '—' }}</dd></div>
                 @if (family(); as family) {
                   <div><dt>Productfamilie</dt><dd>{{ family.name }} <span class="mono">· {{ family.familyKey }}</span></dd></div>
@@ -174,7 +182,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
               </header>
               <dl class="detail-list">
-                <div><dt>Kartonafmeting</dt><dd class="num">{{ size(product.carton) }}</dd></div>
+                <div><dt>Karton (B × D × H)</dt><dd class="num">{{ size(product.carton) }}</dd></div>
                 <div><dt>Inhoud</dt><dd class="num">{{ product.carton.piecesPerCarton | num }} stuks</dd></div>
                 <div><dt>Gewicht</dt><dd class="num">
                   {{ product.carton.weightKg ? (product.carton.weightKg | num) + ' kg' : '—' }}
@@ -295,6 +303,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .hero-summary__identity > span { display: inline-flex; gap: 6px; padding: 5px 9px; border-radius: 999px;
       background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; }
     .hero-summary__identity b { color: var(--muted); font-weight: 600; }
+    .variant-swatch { width: 12px; height: 12px; border: 1px solid rgb(26 22 20 / 12%); border-radius: 50%; }
     .product-copy { margin-top: 14px; color: var(--ink-2); font-size: 13.5px; line-height: 1.6;
       white-space: pre-line; }
     .product-copy--empty { color: var(--muted); font-style: italic; }
@@ -462,8 +471,8 @@ export class ProductView {
   }
 
   size(box: { lengthCm: number | null; widthCm: number | null; heightCm: number | null }): string {
-    return box.lengthCm && box.widthCm && box.heightCm
-      ? `${box.lengthCm} × ${box.widthCm} × ${box.heightCm} cm`
-      : '—';
+    const dimensions = [box.lengthCm, box.widthCm, box.heightCm];
+    if (!dimensions.some((value) => value !== null && value > 0)) return '—';
+    return `${dimensions.map((value) => value !== null && value > 0 ? value : '—').join(' × ')} cm`;
   }
 }
