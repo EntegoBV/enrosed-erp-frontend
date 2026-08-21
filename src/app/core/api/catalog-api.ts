@@ -11,6 +11,30 @@ import {
   ProductFamily,
 } from './models';
 
+export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
+
+export interface CatalogBrochureOptions {
+  includeOverview?: boolean;
+  includeCategoryIntros?: boolean;
+  includeCustomisation?: boolean;
+  includeOrdering?: boolean;
+  includeBackCover?: boolean;
+  coverTitle?: string;
+  coverSubtitle?: string;
+}
+
+export interface CatalogExportRequest {
+  productIds: number[];
+  includePrices: boolean;
+  includePhotos: boolean;
+  title: string;
+  intro: string;
+  language: LanguageCode;
+  layout: CatalogLayout;
+  photosPerProduct?: number;
+  brochure?: CatalogBrochureOptions;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CatalogApi {
   private readonly http = inject(HttpClient);
@@ -188,15 +212,7 @@ export class CatalogApi {
   }
 
   /** The catalogue as a PDF, with a hand-picked selection. */
-  exportCatalog(request: {
-    productIds: number[];
-    includePrices: boolean;
-    includePhotos: boolean;
-    title: string;
-    intro: string;
-    /** Language of the catalogue; the fair audience decides, not our screen. */
-    language: string;
-  }): Promise<Blob> {
+  exportCatalog(request: CatalogExportRequest): Promise<Blob> {
     return firstValueFrom(
       this.http.post(api('/api/catalog/export'), request, { responseType: 'blob' }));
   }
