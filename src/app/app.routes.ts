@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/api/auth.guard';
+import { unsavedChangesGuard } from './core/guards/unsaved-changes.guard';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
@@ -96,6 +97,7 @@ export const routes: Routes = [
     /* Vóór :id, anders zou "new" als productnummer gelezen worden. */
     path: 'products/new',
     canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
       import('./features/products/product-editor').then((m) => m.ProductEditor),
   },
@@ -108,6 +110,7 @@ export const routes: Routes = [
   {
     path: 'products/:id/edit',
     canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
       import('./features/products/product-editor').then((m) => m.ProductEditor),
   },
@@ -119,6 +122,7 @@ export const routes: Routes = [
   {
     path: 'settings',
     canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
       import('./features/settings/settings-page').then((m) => m.SettingsPage),
   },

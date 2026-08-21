@@ -83,16 +83,18 @@ interface GalleryPointerReorder {
                     }
                   </select>
                 </label>
-                <label>
-                  <span class="sr-only">Alternatieve tekst voor {{ image.originalFilename }}</span>
-                  <input
-                    class="input input--sm"
-                    [ngModel]="imageAlt(image)"
-                    [disabled]="busy()"
-                    (ngModelChange)="patchImageAlt(image.id, $event)"
-                    [placeholder]="'Beschrijf de foto in ' + language()"
-                  />
-                </label>
+                @if (translationEditing()) {
+                  <label>
+                    <span class="sr-only">Alternatieve tekst voor {{ image.originalFilename }}</span>
+                    <input
+                      class="input input--sm"
+                      [ngModel]="imageAlt(image)"
+                      [disabled]="busy()"
+                      (ngModelChange)="patchImageAlt(image.id, $event)"
+                      [placeholder]="'Beschrijf de foto in ' + language()"
+                    />
+                  </label>
+                }
               </div>
               <div class="image-actions">
                 <button
@@ -296,6 +298,7 @@ export class ProductFamilyGallery {
 
   readonly family = input.required<ProductFamily>();
   readonly language = input.required<LanguageCode>();
+  readonly translationEditing = input(false);
   readonly currentProductId = input<number | null>(null);
   readonly busy = input(false);
   readonly familyChange = output<ProductFamily>();
@@ -332,7 +335,7 @@ export class ProductFamilyGallery {
   }
 
   patchImageAlt(imageId: number, alt: string): void {
-    if (this.busy()) return;
+    if (this.busy() || !this.translationEditing()) return;
     const family = this.family();
     const language = this.language();
     const images = family.images.map((image) => {

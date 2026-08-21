@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  HostListener,
   computed,
   effect,
   inject,
@@ -20,6 +21,7 @@ import {
   Product,
   ProductFamily,
   ProductFamilyText,
+  ProductPublicTranslationsSnapshot,
   Supplier,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -69,9 +71,16 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       [showBell]="false"
     >
       <button class="btn btn--primary btn--sm" type="button"
-              [disabled]="saving() || photoUploading()"
+              [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
               (click)="save()">{{ saving() ? 'Bezig…' : 'Opslaan' }}</button>
     </app-page-header>
+
+    @if (productLoadError()) {
+      <div class="content product-load-error" role="alert">
+        <span><b>Product kon niet worden geladen</b><small>{{ productLoadError() }}</small></span>
+        <button class="btn btn--sm" type="button" (click)="retryProductLoad()">Opnieuw proberen</button>
+      </div>
+    }
 
     <div class="content product-editor-page">
       <div class="editor-canvas">
@@ -179,7 +188,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             } @else {
               <app-product-variant-group class="variant-editor-group span-2"
                                          [product]="draft()" [family]="family()"
-                                         [disabled]="saving() || photoUploading()"
+                                         [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
                                          (linked)="onVariantLinked($event)" />
             }
             <div class="field span-2">
@@ -258,7 +267,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <app-photo-manager
             [productId]="draft().id"
             [photos]="draft().photos"
-            [disabled]="saving()"
+            [disabled]="saving() || translationSaving() || translationDirty()"
             (changed)="onPhotosChanged($event)"
           />
         </div>
@@ -504,26 +513,32 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         [product]="draft()"
         [family]="family()"
         [categories]="categories()"
-        [busy]="saving() || photoUploading()"
+        [busy]="saving() || photoUploading() || translationSaving()"
         [familyLoading]="familyLoading()"
         [familyLoadError]="familyLoadError()"
+        (productChange)="draft.set($event)"
         (familyChange)="onFamilyChange($event)"
         (createFamilyRequested)="startNewFamily()"
         (retryFamilyRequested)="retryFamily()"
         (imageUploadRequested)="uploadFamilyImage($event)"
         (imageDeleteRequested)="removeFamilyImage($event)"
         (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
+        (translationDirtyChange)="translationDirty.set($event)"
+        (translationSavingChange)="translationSaving.set($event)"
+        (translationsSaved)="onPublicTranslationsSaved($event)"
       />
 
       <div class="editor-actions">
         <button class="btn btn--primary btn--block" type="button"
-                [disabled]="saving() || photoUploading()" (click)="save()">
+                [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
+                (click)="save()">
           {{ isNew() && photoCount() ? "Product met foto's aanmaken" :
              (isNew() ? 'Product aanmaken' : 'Wijzigingen opslaan') }}
         </button>
         @if (!isNew()) {
           <button class="btn btn--block" type="button"
-                  [disabled]="saving() || photoUploading()" (click)="startCopy()">
+                  [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
+                  (click)="startCopy()">
             Kopiëren als variant
           </button>
           <details class="danger-zone">
@@ -531,7 +546,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div>
               <p>Staat dit product al op een order of offerte? Zet het dan inactief; gebruikte producten kunnen niet worden verwijderd.</p>
               <button class="btn btn--danger btn--block" type="button"
-                      [disabled]="saving() || photoUploading()" (click)="remove()">
+                      [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
+                      (click)="remove()">
                 Product definitief verwijderen
               </button>
             </div>
@@ -672,6 +688,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   `,
   styles: `
     .product-editor-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 260px); }
+    .product-load-error {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding-block: 10px; color: var(--danger);
+    }
+    .product-load-error > span { display: grid; gap: 2px; }
+    .product-load-error small { font-size: 10px; }
     .editor-canvas { width: 100%; max-width: 920px; margin: 0 auto; }
 
     .editor-section { scroll-margin-top: calc(var(--appbar-h) + 12px); }
@@ -862,11 +884,18 @@ export class ProductEditor {
   readonly family = signal<ProductFamily | null>(null);
   readonly familyLoading = signal(false);
   readonly familyLoadError = signal(false);
+  private familyLoadVersion = 0;
   private readonly savedFamily = signal<ProductFamily | null>(null);
   private readonly savedProductFamilyId = signal<number | null>(null);
+  private productLoadVersion = 0;
+  private activeProductId: number | null = null;
   readonly familyDirty = computed(() =>
     JSON.stringify(this.family()) !== JSON.stringify(this.savedFamily()));
   readonly saving = signal(false);
+  readonly saveError = signal<string | null>(null);
+  readonly productLoadError = signal<string | null>(null);
+  readonly translationDirty = signal(false);
+  readonly translationSaving = signal(false);
   readonly priceStrategy = signal<'MARKUP' | 'FIXED'>('MARKUP');
   private readonly priceTouched = signal(false);
   private readonly lastMarkupPct = signal(45);
@@ -917,6 +946,8 @@ export class ProductEditor {
   readonly canCopyVariant = computed(() =>
     !this.saving()
     && !this.photoUploading()
+    && !this.translationSaving()
+    && !this.translationDirty()
     && !this.copyVariantLoading()
     && !this.copyVariantCheckFailed()
     && !this.copyVariantConflict());
@@ -927,14 +958,51 @@ export class ProductEditor {
     effect(() => {
       const routeId = this.id();
       if (routeId && routeId !== 'new') {
-        void this.catalog.product(+routeId).then((product) => {
-          this.savedProductFamilyId.set(product.familyId ?? null);
-          this.draft.set(product);
-          this.syncPriceStrategy(product);
-          void this.loadFamilyForProduct(product);
-        });
+        const productId = +routeId;
+        if (this.activeProductId !== null && productId !== this.activeProductId
+            && (this.translationSaving()
+              || (this.translationDirty() && !this.confirmDiscardTranslations()))) {
+          const currentId = this.activeProductId;
+          queueMicrotask(() => void this.router.navigate(
+            ['/products', currentId, 'edit'], { replaceUrl: true }));
+          return;
+        }
+        if (productId !== this.activeProductId) void this.loadProduct(productId);
+      } else {
+        ++this.productLoadVersion;
+        this.productLoadError.set(null);
       }
     });
+  }
+
+  async retryProductLoad(): Promise<void> {
+    const productId = Number(this.id());
+    if (Number.isInteger(productId) && productId > 0) await this.loadProduct(productId);
+  }
+
+  private async loadProduct(productId: number): Promise<void> {
+    const version = ++this.productLoadVersion;
+    this.productLoadError.set(null);
+    if (this.draft().id !== productId) {
+      ++this.familyLoadVersion;
+      this.setFamilyDraft(null);
+      this.savedProductFamilyId.set(null);
+      this.translationDirty.set(false);
+      this.translationSaving.set(false);
+      this.draft.set(blankProduct(null, 'USD'));
+    }
+    try {
+      const product = await this.catalog.product(productId);
+      if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
+      this.savedProductFamilyId.set(product.familyId ?? null);
+      this.activeProductId = productId;
+      this.draft.set(product);
+      this.syncPriceStrategy(product);
+      await this.loadFamilyForProduct(product);
+    } catch (failure: unknown) {
+      if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
+      this.productLoadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
+    }
   }
 
   private async loadFamilies(): Promise<void> {
@@ -952,6 +1020,7 @@ export class ProductEditor {
   }
 
   private async loadFamilyForProduct(product: Product): Promise<void> {
+    const version = ++this.familyLoadVersion;
     const familyId = product.familyId ?? null;
     if (familyId === null) {
       this.familyLoading.set(false);
@@ -969,10 +1038,12 @@ export class ProductEditor {
       try {
         family = await this.catalog.productFamily(familyId);
       } catch {
+        if (version !== this.familyLoadVersion) return;
         family = null;
         this.familyLoadError.set(true);
       }
     }
+    if (version !== this.familyLoadVersion) return;
     if (!this.familyLoadError()) this.setFamilyDraft(family);
     this.familyLoading.set(false);
   }
@@ -1023,9 +1094,9 @@ export class ProductEditor {
   readonly readinessIssues = computed(() => {
     const family = this.family();
     const product = this.draft();
-    const publicationStarted = family !== null
-      || product.websiteStatus !== 'DRAFT'
-      || product.orderAppStatus !== 'DRAFT';
+    // Only the stable family FK/publication draft owns public state. Legacy
+    // flat statuses on an unlinked SKU must never make it look publishable.
+    const publicationStarted = family !== null;
     if (!publicationStarted) return [];
     const server = family?.publicationIssues ?? [];
     const issues: string[] = [...server];
@@ -1069,6 +1140,27 @@ export class ProductEditor {
     this.draft.update((p) => ({ ...p, carton: { ...p.carton, ...changes } }));
   }
 
+  onPublicTranslationsSaved(snapshot: ProductPublicTranslationsSnapshot): void {
+    if (this.draft().id !== snapshot.productId
+        || (this.family()?.id ?? null) !== snapshot.familyId) return;
+    this.draft.update((product) => ({
+      ...product,
+      texts: structuredClone(snapshot.productTexts),
+      publicationIssues: structuredClone(snapshot.product.publicationIssues),
+    }));
+    this.family.update((family) => family
+      ? this.mergePublicTranslations(family, snapshot)
+      : family);
+    this.savedFamily.update((family) => family
+      ? this.mergePublicTranslations(family, snapshot)
+      : family);
+    this.families.update((families) => families.map((family) =>
+      family.id === snapshot.familyId
+        ? this.mergePublicTranslations(family, snapshot)
+        : family));
+    this.translationDirty.set(false);
+  }
+
   onFamilyChange(family: ProductFamily): void {
     this.family.set(family);
     this.patch({
@@ -1079,6 +1171,7 @@ export class ProductEditor {
   }
 
   async onVariantLinked(family: ProductFamily): Promise<void> {
+    if (this.translationDirty() || this.translationSaving()) return;
     const productId = this.draft().id;
     this.replaceFamily(family);
     this.savedProductFamilyId.set(family.id);
@@ -1108,6 +1201,7 @@ export class ProductEditor {
   }
 
   startNewFamily(): void {
+    if (this.translationDirty() || this.translationSaving()) return;
     const product = this.draft();
     const category = this.categories().find((item) => item.id === product.categoryId);
     const familyKey = this.slug(product.name) || 'nieuwe-productfamilie';
@@ -1172,8 +1266,34 @@ export class ProductEditor {
     this.savedFamily.set(family ? structuredClone(family) : null);
   }
 
+  private mergePublicTranslations(
+    family: ProductFamily,
+    snapshot: ProductPublicTranslationsSnapshot,
+  ): ProductFamily {
+    if (!snapshot.family) return family;
+    const imageTranslations = new Map(snapshot.images.map((image) => [image.imageId, image]));
+    return {
+      ...family,
+      name: snapshot.family.name,
+      summary: snapshot.family.summary,
+      description: snapshot.family.description,
+      format: snapshot.family.format,
+      highlights: structuredClone(snapshot.family.highlights),
+      seoTitle: snapshot.family.seoTitle,
+      seoDescription: snapshot.family.seoDescription,
+      texts: structuredClone(snapshot.familyTexts),
+      publicationIssues: structuredClone(snapshot.family.publicationIssues),
+      images: family.images.map((image) => {
+        const translated = imageTranslations.get(image.id);
+        return translated
+          ? { ...image, altTexts: structuredClone(translated.altTexts) }
+          : image;
+      }),
+    };
+  }
+
   async uploadFamilyImage(file: File): Promise<void> {
-    if (this.saving()) return;
+    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -1197,7 +1317,7 @@ export class ProductEditor {
 
   removeFamilyImage(imageId: number): void {
     const family = this.family();
-    if (!family?.id || this.saving()) return;
+    if (!family?.id || this.saving() || this.translationDirty() || this.translationSaving()) return;
     this.ui.confirm(
       {
         title: 'Websitefoto verwijderen',
@@ -1222,7 +1342,7 @@ export class ProductEditor {
   }
 
   async linkFamilyImageVariant(change: ProductFamilyImageVariantChange): Promise<void> {
-    if (this.saving()) return;
+    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -1384,7 +1504,7 @@ export class ProductEditor {
   }
 
   startCopy(): void {
-    if (this.photoUploading()) return;
+    if (this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     const source = this.draft();
     const colour = source.colour ?? '';
     this.copyColour.set(colour);
@@ -1418,6 +1538,7 @@ export class ProductEditor {
 
   /** Makes the copy and jumps straight to it, ready to adjust. */
   async copy(): Promise<void> {
+    if (this.translationDirty() || this.translationSaving()) return;
     const source = this.draft();
     const conflict = this.copyVariantConflict();
     if (conflict) {
@@ -1459,7 +1580,13 @@ export class ProductEditor {
   }
 
   async save(): Promise<void> {
-    if (this.saving() || this.photoUploading()) return;
+    if (this.saving() || this.photoUploading() || this.translationSaving()) return;
+    if (this.translationDirty()) {
+      document.getElementById('publication')?.setAttribute('open', '');
+      document.getElementById('publication')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      this.ui.toast('Sla de vertalingen eerst op of wis die wijzigingen.', 'err');
+      return;
+    }
     if (this.priceStrategy() === 'FIXED'
         && (this.draft().fixedSalesPriceEur ?? 0) <= 0) {
       this.ui.toast('Vul een vaste verkoopprijs hoger dan € 0 in', 'err');
@@ -1468,6 +1595,7 @@ export class ProductEditor {
     }
     const wasNew = this.isNew();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
+    this.saveError.set(null);
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -1489,7 +1617,9 @@ export class ProductEditor {
       const fallback = wasNew && this.draft().id !== null
         ? 'Product is aangemaakt, maar kon nog niet volledig worden afgewerkt'
         : 'Opslaan mislukt';
-      this.ui.toast(messageOf(failure, fallback), 'err');
+      const message = messageOf(failure, fallback);
+      this.saveError.set(message);
+      this.ui.toast(message, 'err');
     } finally {
       this.saving.set(false);
     }
@@ -1630,7 +1760,7 @@ export class ProductEditor {
   }
 
   remove(): void {
-    if (this.photoUploading()) return;
+    if (this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     const product = this.draft();
     this.ui.confirm(
       {
@@ -1647,6 +1777,25 @@ export class ProductEditor {
           this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
         }
       },
+    );
+  }
+
+  canDeactivate(): boolean {
+    if (!this.translationDirty() && !this.translationSaving()) return true;
+    if (this.translationSaving()) return false;
+    return this.confirmDiscardTranslations();
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.translationDirty() && !this.translationSaving()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
+  private confirmDiscardTranslations(): boolean {
+    return window.confirm(
+      'Je hebt productvertalingen die nog niet zijn opgeslagen. Dit scherm toch verlaten?',
     );
   }
 }

@@ -413,11 +413,11 @@ export class CatalogExport {
       if (this.destroyed || key !== this.requestKey()) return;
       saveBlob(
         blob,
-        request.layout === 'BROCHURE' ? 'enrosed-brochure.pdf' : 'enrosed-catalogus.pdf',
+        `enrosed-${request.layout === 'BROCHURE' ? 'brochure' : 'catalogus'}-${request.language.toLowerCase()}.pdf`,
       );
       this.ui.toast('Catalogus gedownload');
     } catch (failure) {
-      if (!this.destroyed) this.handleRenderFailure(failure, 'Catalogus maken mislukt');
+      if (!this.destroyed) await this.handleRenderFailure(failure, 'Catalogus maken mislukt');
     } finally {
       if (!this.destroyed) this.downloading.set(false);
     }
@@ -434,6 +434,7 @@ export class CatalogExport {
       productIds: [...this.selected()].sort((a, b) => a - b),
       includePrices: this.includePrices(),
       includePhotos: this.includePhotos(),
+      strictLanguage: true,
       photosPerProduct: this.includePhotos()
         ? this.layout() === 'BROCHURE' ? brochure.photosPerProduct : 1
         : undefined,
@@ -455,11 +456,53 @@ export class CatalogExport {
     };
   }
 
-  private handleRenderFailure(failure: unknown, toastFallback: string): void {
+  private async handleRenderFailure(failure: unknown, toastFallback: string): Promise<void> {
+    const decodedFailure = await this.decodeBlobError(failure);
     const fallback = 'De PDF-rendering mislukte of duurde te lang. Probeer opnieuw of selecteer minder producten.';
-    const message = messageOf(failure, fallback);
+    const missingTranslations = this.missingTranslationMessage(decodedFailure);
+    const message = missingTranslations ?? messageOf(decodedFailure, fallback);
     this.renderError.set(message);
-    this.ui.toast(messageOf(failure, toastFallback), 'err');
+    this.ui.toast(missingTranslations ?? messageOf(decodedFailure, toastFallback), 'err');
+  }
+
+  private async decodeBlobError(failure: unknown): Promise<unknown> {
+    const response = failure as { status?: number; error?: unknown };
+    if (!(response.error instanceof Blob)) return failure;
+    try {
+      const text = await response.error.text();
+      if (!text.trim()) return failure;
+      return { status: response.status, error: JSON.parse(text) as unknown };
+    } catch {
+      return failure;
+    }
+  }
+
+  private missingTranslationMessage(failure: unknown): string | null {
+    const response = failure as {
+      status?: number;
+      error?: { message?: string; missingPaths?: unknown };
+    };
+    if (response.status !== 409) return null;
+    const paths = Array.isArray(response.error?.missingPaths)
+      ? response.error.missingPaths.filter(
+          (path): path is string => typeof path === 'string' && !!path.trim(),
+        )
+      : [];
+    if (!paths.length) {
+      return response.error?.message
+        ?? `De ${this.languageLabel()} catalogus mist nog verplichte vertalingen.`;
+    }
+    const visible = paths.slice(0, 4).join(' · ');
+    const remaining = paths.length - 4;
+    return `De ${this.languageLabel()} catalogus mist ${paths.length} verplichte `
+      + `vertaling${paths.length === 1 ? '' : 'en'}: ${visible}`
+      + (remaining > 0 ? ` · en nog ${remaining}` : '')
+      + '. Vul deze teksten in het dashboard aan en probeer opnieuw.';
+  }
+
+  private languageLabel(): string {
+    return this.languages.find((language) => language.code === this.language())?.label
+      ?? this.language();
   }
 
   private bindDesktopQuery(): void {

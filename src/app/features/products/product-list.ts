@@ -551,8 +551,7 @@ export class ProductList {
     if (this.familyLoading() || this.familyLoadError()) return [];
     const family = this.familyFor(product);
     if (family) return family.publicationIssues;
-    if (product.websiteStatus === 'DRAFT' && product.orderAppStatus === 'DRAFT') return [];
-    return product.publicationIssues ?? [];
+    return [];
   }
 
   websiteStatus(product: Product): Product['websiteStatus'] {

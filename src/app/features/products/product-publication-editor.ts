@@ -1,14 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   Category,
-  LANGUAGES,
   LanguageCode,
   Product,
   ProductFamily,
-  ProductFamilyText,
+  ProductPublicTranslationsSnapshot,
   PublicationStatus,
 } from '../../core/api/models';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   ProductFamilyGallery,
   ProductFamilyImageVariantChange,
@@ -18,6 +18,7 @@ import {
   FeaturedProductEligibility,
   featuredProductEligibility,
 } from '../../shared/product-featured-eligibility';
+import { ProductTranslationEditor } from './product-translation-editor';
 
 interface FamilyFeaturedOption {
   member: ProductFamily['members'][number];
@@ -32,7 +33,12 @@ interface FamilyFeaturedOption {
 @Component({
   selector: 'app-product-publication-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, ProductFamilyGallery, ProductFamilySourceDetails],
+  imports: [
+    FormsModule,
+    ProductFamilyGallery,
+    ProductFamilySourceDetails,
+    ProductTranslationEditor,
+  ],
   template: `
     <details class="publication" id="publication">
       <summary>
@@ -138,11 +144,31 @@ interface FamilyFeaturedOption {
                 Voor één los product kun je hier websitegegevens starten. Heb je meerdere
                 kleuren of maten, koppel ze dan eerst bij <b>Varianten</b> in dit bewerkscherm.
               </p>
+              @if (legacyFamilyKey()) {
+                <p class="legacy-family-note" role="note">
+                  Oude groepscode gevonden. Dit product is pas echt gekoppeld nadat je het via
+                  <b>Varianten</b> aan een ander product hebt gekoppeld.
+                </p>
+              }
             </div>
             <button class="btn btn--sm" type="button" (click)="requestFamilyCreation()">
               Websitegegevens starten
             </button>
           </div>
+        }
+
+        @if (!familyLoading() && !familyLoadError()) {
+          <app-product-translation-editor
+            [product]="product()"
+            [family]="family()"
+            [language]="language()"
+            [busy]="busy()"
+            [visible]="desktop.active()"
+            (languageChange)="selectLanguage($event)"
+            (dirtyChange)="setTranslationDirty($event)"
+            (savingChange)="translationSavingChange.emit($event)"
+            (saved)="translationsSaved.emit($event)"
+          />
         }
 
         @if (!familyLoading() && !familyLoadError() && family(); as family) {
@@ -249,77 +275,6 @@ interface FamilyFeaturedOption {
             </div>
           </section>
 
-          <section class="subsection" aria-labelledby="publication-copy-title">
-            <div class="subsection__head subsection__head--language">
-              <div>
-                <h3 id="publication-copy-title">Tekst voor klanten</h3>
-                <p>Alleen de gekozen taal staat open.</p>
-              </div>
-              <label>
-                <span class="sr-only">Taal van de website-informatie</span>
-                <select
-                  class="select select--sm"
-                  [ngModel]="language()"
-                  (ngModelChange)="selectLanguage($event)"
-                >
-                  @for (option of languages; track option.code) {
-                    <option [value]="option.code">{{ option.label }}</option>
-                  }
-                </select>
-              </label>
-            </div>
-            <div class="form-grid">
-              <label class="field span-2">
-                <span>Naam voor klanten</span>
-                <input
-                  class="input"
-                  [ngModel]="text().name"
-                  (ngModelChange)="patchText({ name: $event })"
-                />
-              </label>
-              <label class="field span-2">
-                <span>Korte samenvatting</span>
-                <textarea
-                  class="textarea"
-                  rows="2"
-                  maxlength="240"
-                  [ngModel]="text().summary"
-                  (ngModelChange)="patchText({ summary: $event })"
-                ></textarea>
-                <small class="field__hint"
-                  >Voor productkaarten en de intro van de detailpagina.</small
-                >
-              </label>
-              <label class="field span-2">
-                <span>Beschrijving</span>
-                <textarea
-                  class="textarea"
-                  rows="5"
-                  [ngModel]="text().description"
-                  (ngModelChange)="patchText({ description: $event })"
-                ></textarea>
-              </label>
-              <label class="field">
-                <span>Formaat</span>
-                <input
-                  class="input"
-                  [ngModel]="text().format"
-                  (ngModelChange)="patchText({ format: $event })"
-                />
-              </label>
-              <label class="field">
-                <span>Highlights</span>
-                <textarea
-                  class="textarea"
-                  rows="3"
-                  [ngModel]="highlightsText()"
-                  (ngModelChange)="patchHighlights($event)"
-                  placeholder="Eén voordeel per regel"
-                ></textarea>
-              </label>
-            </div>
-          </section>
-
           <section class="subsection" aria-labelledby="publication-merchandising-title">
             <div class="subsection__head">
               <div>
@@ -383,43 +338,14 @@ interface FamilyFeaturedOption {
           <app-product-family-gallery
             [family]="family"
             [language]="language()"
+            [translationEditing]="false"
             [currentProductId]="product().id"
-            [busy]="busy()"
+            [busy]="busy() || translationDirtyState()"
             (familyChange)="updateFamily($event)"
             (imageUploadRequested)="requestImageUpload($event)"
             (imageDeleteRequested)="requestImageDelete($event)"
             (imageVariantChangeRequested)="requestImageVariantChange($event)"
           />
-
-          <section class="subsection" aria-labelledby="publication-seo-title">
-            <div class="subsection__head">
-              <div>
-                <h3 id="publication-seo-title">Zoekresultaat</h3>
-                <p>Valt terug op naam en samenvatting wanneer je dit leeg laat.</p>
-              </div>
-            </div>
-            <div class="form-grid">
-              <label class="field span-2">
-                <span>SEO-titel</span>
-                <input
-                  class="input"
-                  maxlength="70"
-                  [ngModel]="text().seoTitle"
-                  (ngModelChange)="patchText({ seoTitle: $event })"
-                />
-              </label>
-              <label class="field span-2">
-                <span>SEO-beschrijving</span>
-                <textarea
-                  class="textarea"
-                  rows="3"
-                  maxlength="170"
-                  [ngModel]="text().seoDescription"
-                  (ngModelChange)="patchText({ seoDescription: $event })"
-                ></textarea>
-              </label>
-            </div>
-          </section>
 
           <app-product-family-source-details [product]="product()" [family]="family" />
         }
@@ -481,6 +407,10 @@ interface FamilyFeaturedOption {
       line-height: 1.4;
     }
     .model-empty > .btn { justify-self: start; }
+    .legacy-family-note {
+      margin-top: 7px !important; padding: 7px 8px; border-radius: 8px;
+      background: var(--warn-soft); color: var(--ink-2) !important;
+    }
     .family-card-variant { margin: 2px 0 0; }
     .model-load-state {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -511,12 +441,6 @@ interface FamilyFeaturedOption {
       color: var(--muted);
       font-size: 10.5px;
       line-height: 1.35;
-    }
-    .subsection__head--language {
-      align-items: flex-end;
-    }
-    .subsection__head--language .select {
-      min-width: 126px;
     }
     .form-grid {
       display: grid;
@@ -720,6 +644,8 @@ interface FamilyFeaturedOption {
   `,
 })
 export class ProductPublicationEditor {
+  readonly desktop = inject(DesktopViewport);
+
   readonly product = input.required<Product>();
   readonly family = input<ProductFamily | null>(null);
   readonly categories = input<Category[]>([]);
@@ -727,22 +653,21 @@ export class ProductPublicationEditor {
   readonly familyLoading = input(false);
   readonly familyLoadError = input(false);
 
+  readonly productChange = output<Product>();
   readonly familyChange = output<ProductFamily>();
   readonly createFamilyRequested = output<void>();
   readonly retryFamilyRequested = output<void>();
   readonly imageUploadRequested = output<File>();
   readonly imageDeleteRequested = output<number>();
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
+  readonly translationsSaved = output<ProductPublicTranslationsSnapshot>();
+  readonly translationDirtyChange = output<boolean>();
+  readonly translationSavingChange = output<boolean>();
 
-  readonly languages = LANGUAGES;
   readonly language = signal<LanguageCode>('EN');
-
-  readonly text = computed<ProductFamilyText>(() => {
-    const language = this.language();
-    return (
-      this.family()?.texts.find((item) => item.language === language) ?? this.blankText(language)
-    );
-  });
+  readonly translationDirtyState = signal(false);
+  readonly legacyFamilyKey = computed(() =>
+    this.product().familyId === null && !!this.product().familyKey?.trim());
 
   readonly familyLabel = computed(() => {
     if (this.familyLoading()) return 'Gedeelde websitegegevens laden…';
@@ -764,7 +689,6 @@ export class ProductPublicationEditor {
   readonly issueCount = computed(
     () => (this.family()?.publicationIssues ?? []).length,
   );
-  readonly highlightsText = computed(() => this.text().highlights.join('\n'));
   readonly members = computed(() => this.family()?.members ?? []);
   readonly cardFeaturedOptions = computed<FamilyFeaturedOption[]>(() => {
     const family = this.family();
@@ -838,49 +762,16 @@ export class ProductPublicationEditor {
     this.imageVariantChangeRequested.emit(change);
   }
 
+  setTranslationDirty(dirty: boolean): void {
+    this.translationDirtyState.set(dirty);
+    this.translationDirtyChange.emit(dirty);
+  }
+
   patch(changes: Partial<ProductFamily>): void {
     if (this.busy()) return;
     const family = this.family();
     if (!family) return;
     this.familyChange.emit({ ...family, ...changes });
-  }
-
-  patchText(changes: Partial<ProductFamilyText>): void {
-    if (this.busy()) return;
-    const family = this.family();
-    if (!family) return;
-    const language = this.language();
-    const existing =
-      family.texts.find((item) => item.language === language) ?? this.blankText(language);
-    const text = { ...existing, ...changes };
-    const texts = family.texts.some((item) => item.language === language)
-      ? family.texts.map((item) => (item.language === language ? text : item))
-      : [...family.texts, text];
-
-    this.familyChange.emit({
-      ...family,
-      texts,
-      ...(language === 'EN'
-        ? {
-            name: text.name ?? '',
-            summary: text.summary,
-            description: text.description,
-            format: text.format,
-            highlights: text.highlights,
-            seoTitle: text.seoTitle,
-            seoDescription: text.seoDescription,
-          }
-        : {}),
-    });
-  }
-
-  patchHighlights(value: string): void {
-    this.patchText({
-      highlights: value
-        .split(/\r?\n/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-    });
   }
 
   patchTags(value: string): void {
@@ -902,16 +793,4 @@ export class ProductPublicationEditor {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  private blankText(language: LanguageCode): ProductFamilyText {
-    return {
-      language,
-      name: null,
-      summary: null,
-      description: null,
-      format: null,
-      highlights: [],
-      seoTitle: null,
-      seoDescription: null,
-    };
-  }
 }

@@ -3,7 +3,9 @@ import {
   AfterViewInit,
   ChangeDetectionStrategy,
   Component,
+  HostListener,
   OnDestroy,
+  computed,
   inject,
   signal,
 } from '@angular/core';
@@ -17,12 +19,15 @@ import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   FeaturedProductEligibility,
   familyForProduct,
   featuredProductEligibility,
   productBelongsToCategory,
 } from '../../shared/product-featured-eligibility';
+import { CategoryTranslationEditor } from './category-translation-editor';
+import { ContentTranslationWorkspace } from './content-translation-workspace';
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -45,7 +50,12 @@ const normalizeCategoryCode = (value: string): string => value
 @Component({
   selector: 'app-settings-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader],
+  imports: [
+    CategoryTranslationEditor,
+    ContentTranslationWorkspace,
+    FormsModule,
+    PageHeader,
+  ],
   template: `
     <app-page-header title="Instellingen" subtitle="Categorieën, tarieven en staffels" />
 
@@ -149,25 +159,30 @@ const normalizeCategoryCode = (value: string): string => value
                           (ngModelChange)="patchCompany({ documentFooter: $event })"
                           placeholder="Op al onze offertes zijn onze algemene voorwaarden van toepassing."></textarea>
               </div>
-              <div class="field span-2">
-                <label for="co-foot-en">Voettekst op documenten (EN) <span class="opt"></span></label>
-                <textarea class="textarea" id="co-foot-en" [ngModel]="profile.documentFooterEn"
-                          (ngModelChange)="patchCompany({ documentFooterEn: $event })"
-                          placeholder="All our quotations are subject to our general terms and conditions."></textarea>
-                <span class="hint">
-                  Documenten in een andere taal dan Nederlands gebruiken deze; leeg = de
-                  Nederlandse tekst.
-                </span>
-              </div>
+              @if (desktop.active()) {
+                <div class="field span-2">
+                  <label for="co-foot-en">Voettekst op documenten (EN) <span class="opt"></span></label>
+                  <textarea class="textarea" id="co-foot-en" [ngModel]="profile.documentFooterEn"
+                            (ngModelChange)="patchCompany({ documentFooterEn: $event })"
+                            placeholder="All our quotations are subject to our general terms and conditions."></textarea>
+                  <span class="hint">
+                    Documenten in een andere taal dan Nederlands gebruiken deze; leeg = de
+                    Nederlandse tekst.
+                  </span>
+                </div>
+              }
             </div>
             <div class="span-2 mt-8">
               <div class="section-title" style="margin-top:0">Juridische teksten</div>
               <p class="small muted" style="margin-bottom:8px">
                 Voorwaarden en privacyverklaring staan klaar als voorstel voor Enrosed BV —
                 laat ze nakijken door je boekhouder of jurist. Klanten lezen ze op
-                <a href="/voorwaarden" target="_blank" rel="noopener">/voorwaarden</a>;
-                documenten in een andere taal dan Nederlands verwijzen naar de
-                <b>Engelse</b> versie. Leeg laten betekent: gebruik het ingebouwde voorstel.
+                <a href="/voorwaarden" target="_blank" rel="noopener">/voorwaarden</a>.
+                @if (desktop.active()) {
+                  Documenten in een andere taal dan Nederlands verwijzen naar de
+                  <b>Engelse</b> versie.
+                }
+                Leeg laten betekent: gebruik het ingebouwde voorstel.
               </p>
               <details style="margin-bottom:8px">
                 <summary class="small strong" style="cursor:pointer">
@@ -178,15 +193,17 @@ const normalizeCategoryCode = (value: string): string => value
                           (ngModelChange)="patchCompany({ termsAndConditions: $event })"
                           [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
               </details>
-              <details style="margin-bottom:8px">
-                <summary class="small strong" style="cursor:pointer">
-                  Terms and conditions (EN)
-                </summary>
-                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                          [ngModel]="profile.termsAndConditionsEn"
-                          (ngModelChange)="patchCompany({ termsAndConditionsEn: $event })"
-                          [placeholder]="'Empty = built-in draft'"></textarea>
-              </details>
+              @if (desktop.active()) {
+                <details style="margin-bottom:8px">
+                  <summary class="small strong" style="cursor:pointer">
+                    Terms and conditions (EN)
+                  </summary>
+                  <textarea class="textarea mt-8" rows="12" style="min-height:220px"
+                            [ngModel]="profile.termsAndConditionsEn"
+                            (ngModelChange)="patchCompany({ termsAndConditionsEn: $event })"
+                            [placeholder]="'Empty = built-in draft'"></textarea>
+                </details>
+              }
               <details style="margin-bottom:8px">
                 <summary class="small strong" style="cursor:pointer">
                   Privacyverklaring (NL)
@@ -196,15 +213,17 @@ const normalizeCategoryCode = (value: string): string => value
                           (ngModelChange)="patchCompany({ privacyPolicy: $event })"
                           [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
               </details>
-              <details>
-                <summary class="small strong" style="cursor:pointer">
-                  Privacy statement (EN)
-                </summary>
-                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                          [ngModel]="profile.privacyPolicyEn"
-                          (ngModelChange)="patchCompany({ privacyPolicyEn: $event })"
-                          [placeholder]="'Empty = built-in draft'"></textarea>
-              </details>
+              @if (desktop.active()) {
+                <details>
+                  <summary class="small strong" style="cursor:pointer">
+                    Privacy statement (EN)
+                  </summary>
+                  <textarea class="textarea mt-8" rows="12" style="min-height:220px"
+                            [ngModel]="profile.privacyPolicyEn"
+                            (ngModelChange)="patchCompany({ privacyPolicyEn: $event })"
+                            [placeholder]="'Empty = built-in draft'"></textarea>
+                </details>
+              }
             </div>
             <button class="btn btn--primary btn--block mt-8" type="button"
                     [disabled]="savingCompany()" (click)="saveCompany()">
@@ -221,14 +240,18 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
         <div class="card__body">
           <p class="workbook-intro">
-            Bewerk productteksten, maten, barcodes, prijzen, publicatie en vertalingen
-            in één duidelijk Excel-bestand. Kolomfilters, vaste kopregels en dropdowns
-            staan al voor je klaar.
+            Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
+            Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
+            @if (desktop.active()) {
+              Ook vertalingen staan in dezelfde export.
+            }
           </p>
 
           <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
             <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
-            <li><span>2</span><div><b>Bewerk</b><small>Producten en vertalingen staan op aparte tabbladen.</small></div></li>
+            <li><span>2</span><div><b>Bewerk</b><small>
+              Producten staan op duidelijke tabbladen.@if (desktop.active()) { Vertalingen staan apart. }
+            </small></div></li>
             <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
           </ol>
 
@@ -294,6 +317,13 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       </div>
 
+      <app-content-translation-workspace
+        [visible]="desktop.active()"
+        [syncRefreshKey]="websiteSyncRefresh()"
+        (dirtyChange)="contentTranslationDirty.set($event)"
+        (busyChange)="contentTranslationBusy.set($event)"
+      />
+
       <!-- ======================================= categorieen -->
       <div class="card settings-section category-section" id="categories">
         <div class="card__head category-section__head">
@@ -339,12 +369,28 @@ const normalizeCategoryCode = (value: string): string => value
                          placeholder="Bijv. Geurkaarsen" />
                 </div>
                 <div class="field">
+                  <label for="category-navigation-name">Korte navigatienaam (desktop) <span class="opt"></span></label>
+                  <input class="input" id="category-navigation-name" maxlength="40"
+                         [ngModel]="draft.navigationName"
+                         (ngModelChange)="updateCategoryDraft({ navigationName: $event })"
+                         placeholder="Bijv. Kaarsen" />
+                  <span class="hint">Alleen gebruikt in de hoofdnavigatie van de website op desktop.</span>
+                </div>
+                <div class="field">
                   <label for="category-mobile-name">Korte mobiele naam <span class="opt"></span></label>
                   <input class="input" id="category-mobile-name" maxlength="40"
                          [ngModel]="draft.mobileName"
                          (ngModelChange)="updateCategoryDraft({ mobileName: $event })"
                          placeholder="Bijv. Kaarsen" />
                   <span class="hint">Alleen gebruikt waar de volledige naam niet netjes past.</span>
+                </div>
+                <div class="field">
+                  <label for="category-footer-name">Naam in websitefooter <span class="opt"></span></label>
+                  <input class="input" id="category-footer-name"
+                         [ngModel]="draft.footerName"
+                         (ngModelChange)="updateCategoryDraft({ footerName: $event })"
+                         placeholder="Bijv. Geurkaarsen" />
+                  <span class="hint">Leeg gebruikt de gewone categorienaam in de websitefooter.</span>
                 </div>
                 <div class="field">
                   <label for="category-eyebrow">Bovenregel website <span class="opt"></span></label>
@@ -408,6 +454,15 @@ const normalizeCategoryCode = (value: string): string => value
                             (ngModelChange)="updateCategoryDraft({ description: $event })"
                             placeholder="Korte omschrijving voor catalogus, bestelapp en website…"></textarea>
                 </div>
+
+                @if (desktop.active()) {
+                  <app-category-translation-editor
+                    [category]="draft"
+                    [busy]="savingCategory()"
+                    [saveError]="categorySaveError()"
+                    (categoryChange)="categoryDraft.set($event)"
+                  />
+                }
               </div>
 
               @if (categoryCodeExists(draft)) {
@@ -420,11 +475,21 @@ const normalizeCategoryCode = (value: string): string => value
                 </p>
               }
 
+              @if (categoryConflict()) {
+                <div class="category-conflict" role="alert">
+                  <span>Deze categorie is intussen elders gewijzigd. Je lokale invoer is niet overschreven.</span>
+                  <button class="btn btn--sm" type="button" [disabled]="savingCategory()"
+                          (click)="reloadConflictedCategory()">
+                    Laatste versie laden
+                  </button>
+                </div>
+              }
+
               <div class="category-form__actions">
                 <button class="btn" type="button" [disabled]="savingCategory()"
                         (click)="cancelCategoryEdit()">Annuleren</button>
                 <button class="btn btn--primary" type="button"
-                        [disabled]="!categoryDraftValid() || savingCategory()"
+                        [disabled]="!categoryDraftValid() || savingCategory() || categoryConflict()"
                         (click)="saveCategory()">
                   {{ savingCategory() ? 'Opslaan…' : (draft.id === null ? 'Categorie toevoegen' : 'Wijzigingen opslaan') }}
                 </button>
@@ -449,6 +514,8 @@ const normalizeCategoryCode = (value: string): string => value
                     }
                     <span class="category-item__position">
                       Volgorde {{ category.position }}
+                      @if (category.navigationName) { · desktop „{{ category.navigationName }}” }
+                      @if (category.footerName) { · footer „{{ category.footerName }}” }
                       @if (category.mobileName) { · mobiel „{{ category.mobileName }}” }
                       @if (category.eyebrow) { · bovenregel „{{ category.eyebrow }}” }
                       @if (category.featuredProductId) {
@@ -621,6 +688,11 @@ const normalizeCategoryCode = (value: string): string => value
     .category-form__grid { display: grid; gap: 12px; }
     .category-form__description { grid-column: 1 / -1; }
     .category-form__error { margin-top: 10px; color: var(--danger); font-size: 12.5px; font-weight: 600; }
+    .category-conflict {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+      margin-top: 10px; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 10px;
+      color: var(--danger); background: var(--danger-soft); font-size: 12px; font-weight: 600;
+    }
     .category-form__actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 14px; }
     .category-form__actions .btn { width: 100%; }
     .category-list { overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-sm); }
@@ -667,10 +739,14 @@ const normalizeCategoryCode = (value: string): string => value
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
+  readonly desktop = inject(DesktopViewport);
   readonly workbookResult = signal<CatalogImportResult | null>(null);
   readonly selectedWorkbook = signal<File | null>(null);
   readonly exportingWorkbook = signal(false);
   readonly importingWorkbook = signal(false);
+  readonly contentTranslationDirty = signal(false);
+  readonly contentTranslationBusy = signal(false);
+  readonly websiteSyncRefresh = signal(0);
 
   async exportWorkbook(): Promise<void> {
     if (this.exportingWorkbook()) return;
@@ -757,7 +833,12 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly products = signal<Product[]>([]);
   readonly families = signal<ProductFamily[]>([]);
   readonly categoryDraft = signal<Category | null>(null);
+  private readonly savedCategoryDraft = signal<Category | null>(null);
+  readonly categoryDirty = computed(() =>
+    JSON.stringify(this.categoryDraft()) !== JSON.stringify(this.savedCategoryDraft()));
   readonly savingCategory = signal(false);
+  readonly categorySaveError = signal<string | null>(null);
+  readonly categoryConflict = signal(false);
   readonly deletingCategoryId = signal<number | null>(null);
   readonly hsCodes = signal<HsCode[]>([]);
   private readonly lineTiers = signal<DiscountTier[]>([]);
@@ -800,7 +881,11 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       this.sales.company(),
     ]);
     this.company.set(company);
-    this.categories.set(categories);
+    this.categories.set(categories.map((category) => ({
+      ...category,
+      revision: category.revision ?? null,
+      texts: category.texts ?? [],
+    })));
     this.products.set(products);
     this.families.set(families);
     this.hsCodes.set(hsCodes);
@@ -899,30 +984,57 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   addCategory(): void {
     if (this.categoryDraft()) return;
+    this.categorySaveError.set(null);
+    this.categoryConflict.set(false);
     const lastPosition = Math.max(0, ...this.categories().map((category) => category.position));
-    this.categoryDraft.set(
-      {
-        id: null,
-        code: '',
-        name: '',
-        mobileName: null,
-        eyebrow: null,
-        description: '',
-        position: lastPosition + 1,
-        featuredProductId: null,
-      });
+    const draft: Category = {
+      id: null,
+      revision: null,
+      code: '',
+      name: '',
+      navigationName: null,
+      footerName: null,
+      mobileName: null,
+      eyebrow: null,
+      description: '',
+      texts: [],
+      position: lastPosition + 1,
+      featuredProductId: null,
+    };
+    this.savedCategoryDraft.set(structuredClone(draft));
+    this.categoryDraft.set(draft);
   }
 
   editCategory(category: Category): void {
     if (this.categoryDraft()) return;
-    this.categoryDraft.set({ ...category });
+    this.categorySaveError.set(null);
+    this.categoryConflict.set(false);
+    const draft: Category = {
+      ...category,
+      revision: category.revision ?? null,
+      navigationName: category.navigationName ?? null,
+      footerName: category.footerName ?? null,
+      texts: (category.texts ?? []).map((text) => ({
+        ...text,
+        navigationName: text.navigationName ?? null,
+        footerName: text.footerName ?? null,
+      })),
+    };
+    this.savedCategoryDraft.set(structuredClone(draft));
+    this.categoryDraft.set(draft);
   }
 
   cancelCategoryEdit(): void {
-    if (!this.savingCategory()) this.categoryDraft.set(null);
+    if (!this.savingCategory()) {
+      this.categoryDraft.set(null);
+      this.savedCategoryDraft.set(null);
+      this.categorySaveError.set(null);
+      this.categoryConflict.set(false);
+    }
   }
 
   updateCategoryDraft(changes: Partial<Category>): void {
+    this.categorySaveError.set(null);
     this.categoryDraft.update((draft) => draft ? { ...draft, ...changes } : draft);
   }
 
@@ -1027,12 +1139,25 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       ...draft,
       code: normalizeCategoryCode(draft.code),
       name: draft.name.trim(),
+      navigationName: draft.navigationName?.trim() || null,
+      footerName: draft.footerName?.trim() || null,
       mobileName: draft.mobileName?.trim() || null,
       eyebrow: draft.eyebrow?.trim() || null,
       description: draft.description?.trim() || '',
+      texts: (draft.texts ?? []).map((text) => ({
+        ...text,
+        name: text.name?.trim() || null,
+        navigationName: text.navigationName?.trim() || null,
+        footerName: text.footerName?.trim() || null,
+        description: text.description?.trim() || null,
+        eyebrow: text.eyebrow?.trim() || null,
+        mobileName: text.mobileName?.trim() || null,
+      })),
       position: Math.round(draft.position),
       featuredProductId: draft.featuredProductId ?? null,
     };
+    this.categorySaveError.set(null);
+    this.categoryConflict.set(false);
     this.savingCategory.set(true);
     try {
       const saved = payload.id === null
@@ -1045,9 +1170,52 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         return next.sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'nl'));
       });
       this.categoryDraft.set(null);
+      this.savedCategoryDraft.set(null);
+      this.websiteSyncRefresh.update((value) => value + 1);
       this.ui.toast(payload.id === null ? 'Categorie toegevoegd' : 'Categorie opgeslagen');
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
+      const conflict = (failure as { status?: number }).status === 409;
+      const message = conflict
+        ? 'Deze categorie is intussen gewijzigd. Laad de laatste versie en controleer je aanpassing opnieuw.'
+        : messageOf(failure, 'Opslaan mislukt');
+      this.categoryConflict.set(conflict);
+      this.categorySaveError.set(message);
+      this.ui.toast(message, 'err');
+    } finally {
+      this.savingCategory.set(false);
+    }
+  }
+
+  async reloadConflictedCategory(): Promise<void> {
+    const draft = this.categoryDraft();
+    if (!draft || draft.id === null || this.savingCategory()) return;
+    this.savingCategory.set(true);
+    try {
+      const latest = (await this.catalog.categories()).find((category) => category.id === draft.id);
+      if (!latest) {
+        this.categorySaveError.set('Deze categorie bestaat niet meer. Sluit het formulier en laad Instellingen opnieuw.');
+        return;
+      }
+      const normalized: Category = {
+        ...latest,
+        revision: latest.revision ?? null,
+        navigationName: latest.navigationName ?? null,
+        footerName: latest.footerName ?? null,
+        texts: (latest.texts ?? []).map((text) => ({
+          ...text,
+          navigationName: text.navigationName ?? null,
+          footerName: text.footerName ?? null,
+        })),
+      };
+      this.categories.update((categories) => categories.map((category) =>
+        category.id === normalized.id ? normalized : category));
+      this.savedCategoryDraft.set(structuredClone(normalized));
+      this.categoryDraft.set(structuredClone(normalized));
+      this.categoryConflict.set(false);
+      this.categorySaveError.set(null);
+      this.ui.toast('Laatste categorieversie geladen');
+    } catch (failure: unknown) {
+      this.categorySaveError.set(messageOf(failure, 'Laatste categorieversie laden mislukt'));
     } finally {
       this.savingCategory.set(false);
     }
@@ -1111,6 +1279,22 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     const saved = await this.sales.saveTiers(scope, this.tiers(scope));
     (scope === 'LINE' ? this.lineTiers : this.orderTiers).set(saved);
     this.ui.toast('Staffel opgeslagen');
+  }
+
+  canDeactivate(): boolean {
+    if (this.savingCategory() || this.contentTranslationBusy()) return false;
+    if (!this.contentTranslationDirty() && !this.categoryDirty()) return true;
+    return window.confirm(
+      'Je hebt categorie- of vertaalwijzigingen die nog niet zijn opgeslagen. Dit scherm toch verlaten?',
+    );
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.contentTranslationDirty() && !this.categoryDirty()
+        && !this.savingCategory() && !this.contentTranslationBusy()) return;
+    event.preventDefault();
+    event.returnValue = '';
   }
 }
 

@@ -55,6 +55,8 @@ export interface ProductText {
   name: string | null;
   description: string | null;
   colour: string | null;
+  /** Localized merchandising label such as Small/Medium/Large; dimensions stay universal. */
+  variantSize: string | null;
 }
 
 export interface Product {
@@ -150,6 +152,32 @@ export interface ProductFamilyImage {
   variantColor: string | null;
   altTextSource: string | null;
   altTexts: ProductFamilyImageAlt[];
+}
+
+export interface ProductPublicTranslationImage {
+  imageId: number;
+  position: number;
+  altTexts: ProductFamilyImageAlt[];
+}
+
+export interface ProductPublicTranslationsSnapshot {
+  revision: string;
+  /** Null for a deliberately standalone product. */
+  familyId: number | null;
+  productId: number;
+  familyTexts: ProductFamilyText[];
+  productTexts: ProductText[];
+  images: ProductPublicTranslationImage[];
+  family: ProductFamily | null;
+  product: Product;
+}
+
+export interface ProductPublicTranslationsWrite {
+  revision: string;
+  familyId: number | null;
+  familyTexts: ProductFamilyText[];
+  productTexts: ProductText[];
+  images: ProductPublicTranslationImage[];
 }
 
 export interface ProductExternalIdentifier {
@@ -293,16 +321,99 @@ export interface ProductFamily {
 
 export interface Category {
   id: number | null;
+  /** Optimistic-lock revision returned by the server; null for a new/legacy draft. */
+  revision?: number | null;
   code: string;
   name: string;
+  /** Optional short label used in the public website's desktop navigation. */
+  navigationName?: string | null;
+  /** Optional label used for this category in the public website footer. */
+  footerName?: string | null;
   /** Short label used where mobile navigation has limited space. */
   mobileName: string | null;
   /** Optional small line shown above the category title on the public website. */
   eyebrow: string | null;
   description: string | null;
+  /** Customer-facing category copy; base fields remain the operational fallback. */
+  texts: CategoryText[];
   position: number;
   /** Operational SKU used for this collection's promotional visual. */
   featuredProductId: number | null;
+}
+
+export interface CategoryText {
+  language: LanguageCode;
+  name: string | null;
+  navigationName?: string | null;
+  footerName?: string | null;
+  description: string | null;
+  eyebrow: string | null;
+  mobileName: string | null;
+}
+
+export type ContentTranslationScope = 'WEBSITE' | 'CATALOG';
+
+export interface ContentTranslationText {
+  language: LanguageCode;
+  value: string | null;
+}
+
+export interface ContentTranslationGroup {
+  scope: ContentTranslationScope;
+  key: string;
+  label: string;
+  required: boolean;
+  /** Seeded public contract keys cannot be renamed, reclassified or deleted. */
+  system: boolean;
+  revision: number;
+  texts: ContentTranslationText[];
+  missingLanguages: LanguageCode[];
+}
+
+export interface ContentTranslationOverview {
+  languages: ContentTranslationLanguage[];
+  groups: ContentTranslationGroup[];
+}
+
+export interface ContentTranslationLanguage {
+  language: LanguageCode;
+  code: string;
+  label: string;
+}
+
+export interface ContentTranslationWrite {
+  revision: number;
+  label: string;
+  required: boolean;
+  texts: ContentTranslationText[];
+}
+
+export interface ContentTranslationCreate {
+  scope: ContentTranslationScope;
+  key: string;
+  label: string;
+  required: boolean;
+  texts: ContentTranslationText[];
+}
+
+export type WebsiteRebuildState =
+  | 'NOT_CONFIGURED'
+  | 'QUEUED'
+  | 'TRIGGERED'
+  | 'LIVE'
+  | 'FAILED_OR_STALE';
+
+/** Public-safe deploy state. Hook URLs and credentials never leave the backend. */
+export interface WebsiteRebuildStatus {
+  status: WebsiteRebuildState;
+  queuedAt: string | null;
+  lastAttemptAt: string | null;
+  hookAcceptedAt: string | null;
+  liveAt: string | null;
+  nextAttemptAt: string | null;
+  currentRevision: string | null;
+  liveRevision: string | null;
+  lastError: string | null;
 }
 
 export interface HsCode {

@@ -1246,7 +1246,7 @@ export class PurchaseEditor {
       inventoryKnown: true, sku: null, name: draft.name,
       dimensions: { lengthCm: draft.lengthCm, widthCm: draft.widthCm,
           heightCm: draft.heightCm },
-      colour: '', colourHex: null, variantSize: null,
+      colour: null, colourHex: null, variantSize: null,
       description: '', categoryId: null,
       supplierId: data.order.supplierId, active: true,
       barcodeInner: '', barcodeOuter: '', hsCode: '',

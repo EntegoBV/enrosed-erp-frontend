@@ -5,10 +5,18 @@ import { api } from './api.config';
 import {
   CatalogImportResult,
   Category,
+  ContentTranslationCreate,
+  ContentTranslationGroup,
+  ContentTranslationOverview,
+  ContentTranslationScope,
+  ContentTranslationWrite,
   HsCode,
   LanguageCode,
   Product,
   ProductFamily,
+  ProductPublicTranslationsSnapshot,
+  ProductPublicTranslationsWrite,
+  WebsiteRebuildStatus,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -27,6 +35,8 @@ export interface CatalogExportRequest {
   productIds: number[];
   includePrices: boolean;
   includePhotos: boolean;
+  /** Refuse incomplete customer copy instead of silently mixing fallback languages. */
+  strictLanguage: boolean;
   title: string;
   intro: string;
   language: LanguageCode;
@@ -168,6 +178,19 @@ export class CatalogApi {
     ));
   }
 
+  productPublicTranslations(productId: number): Promise<ProductPublicTranslationsSnapshot> {
+    return firstValueFrom(this.http.get<ProductPublicTranslationsSnapshot>(
+      api(`/api/products/${productId}/public-translations`)));
+  }
+
+  updateProductPublicTranslations(
+    productId: number,
+    request: ProductPublicTranslationsWrite,
+  ): Promise<ProductPublicTranslationsSnapshot> {
+    return firstValueFrom(this.http.put<ProductPublicTranslationsSnapshot>(
+      api(`/api/products/${productId}/public-translations`), request));
+  }
+
   checkBarcode(value: string): Promise<{ valid: boolean; message: string }> {
     return firstValueFrom(
       this.http.get<{ valid: boolean; message: string }>(
@@ -233,6 +256,50 @@ export class CatalogApi {
 
   deleteCategory(id: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/categories/${id}`)));
+  }
+
+  contentTranslations(scope: ContentTranslationScope): Promise<ContentTranslationOverview> {
+    return firstValueFrom(this.http.get<ContentTranslationOverview>(
+      api('/api/content-translations'), { params: { scope } }));
+  }
+
+  contentTranslation(scope: ContentTranslationScope, key: string): Promise<ContentTranslationGroup> {
+    return firstValueFrom(this.http.get<ContentTranslationGroup>(
+      api(`/api/content-translations/${scope}/${encodeURIComponent(key)}`)));
+  }
+
+  createContentTranslation(request: ContentTranslationCreate): Promise<ContentTranslationGroup> {
+    return firstValueFrom(this.http.post<ContentTranslationGroup>(
+      api('/api/content-translations'), request));
+  }
+
+  updateContentTranslation(
+    scope: ContentTranslationScope,
+    key: string,
+    request: ContentTranslationWrite,
+  ): Promise<ContentTranslationGroup> {
+    return firstValueFrom(this.http.put<ContentTranslationGroup>(
+      api(`/api/content-translations/${scope}/${encodeURIComponent(key)}`), request));
+  }
+
+  deleteContentTranslation(
+    scope: ContentTranslationScope,
+    key: string,
+    revision: number,
+  ): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(
+      api(`/api/content-translations/${scope}/${encodeURIComponent(key)}`),
+      { params: { revision } },
+    ));
+  }
+
+  websiteRebuildStatus(): Promise<WebsiteRebuildStatus> {
+    return firstValueFrom(this.http.get<WebsiteRebuildStatus>(api('/api/website-rebuild')));
+  }
+
+  retryWebsiteRebuild(): Promise<WebsiteRebuildStatus> {
+    return firstValueFrom(this.http.post<WebsiteRebuildStatus>(
+      api('/api/website-rebuild/retry'), null));
   }
 
   hsCodes(): Promise<HsCode[]> {
