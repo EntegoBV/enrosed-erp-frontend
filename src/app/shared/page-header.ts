@@ -78,7 +78,7 @@ import { NotificationBell } from './notification-bell';
     .appbar__titles {
       display: flex;
       min-width: 0;
-      overflow: hidden;
+      overflow: visible;
       flex-direction: column;
       justify-content: center;
       gap: 2px;
@@ -106,6 +106,21 @@ import { NotificationBell } from './notification-bell';
       white-space: nowrap;
       display: block;
       line-height: 1;
+      position: relative;
+      z-index: 1;
+    }
+    /* Keep the editable title visually compact inside the two-line header.
+       The transparent hit area provides a forgiving touch target without
+       pushing the supplier/customer subtitle down. */
+    .appbar__title-button::after {
+      content: '';
+      position: absolute;
+      z-index: 1;
+      top: 50%;
+      left: -8px;
+      width: max(calc(100% + 16px), 44px);
+      height: 44px;
+      transform: translateY(-50%);
     }
     .appbar__pencil {
       display: inline-block;

@@ -150,7 +150,7 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                     @if (family.description) { <p>{{ family.description }}</p> }
                     <small>
                       {{ family.collectionKey || family.categoryName || 'Geen collectie' }}
-                      · {{ family.variantCount }} variant(en)
+                      · {{ family.variantCount }} product(en)
                     </small>
                   </div>
                 </details>
@@ -170,8 +170,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 <div><dt>Barcode stuk</dt><dd class="mono">{{ product.barcodeInner || '—' }}</dd></div>
                 @if (family(); as family) {
                   <div><dt>Productfamilie</dt><dd>{{ family.name }} <span class="mono">· {{ family.familyKey }}</span></dd></div>
-                } @else if (product.familyKey) {
-                  <div><dt>Productfamilie</dt><dd class="mono">{{ product.familyKey }}</dd></div>
                 }
               </dl>
             </section>
@@ -403,8 +401,15 @@ export class ProductView {
     this.family()?.orderAppStatus ?? this.product()?.orderAppStatus ?? 'DRAFT');
   readonly publicationActive = computed(() =>
     this.family()?.active ?? this.product()?.active ?? false);
-  readonly publicationIssues = computed(() =>
-    this.family()?.publicationIssues ?? this.product()?.publicationIssues ?? []);
+  readonly publicationIssues = computed(() => {
+    const family = this.family();
+    if (family) return family.publicationIssues;
+    const product = this.product();
+    if (!product || (product.websiteStatus === 'DRAFT' && product.orderAppStatus === 'DRAFT')) {
+      return [];
+    }
+    return product.publicationIssues ?? [];
+  });
 
   readonly margin = computed(() => {
     const price = this.displayPrice();

@@ -10,6 +10,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
+import { messageOf } from '../../core/api/errors';
 
 @Component({
   selector: 'app-sales-list',
@@ -211,7 +212,7 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
             <div class="field">
               <label class="req" for="so-customer">Klant</label>
               <select class="select" id="so-customer" [ngModel]="chosen()"
-                      (ngModelChange)="chosen.set(+$event)">
+                      (ngModelChange)="selectCustomer($event)">
                 @for (customer of customers(); track customer.id) {
                   <option [ngValue]="customer.id">
                     {{ customer.company }} — {{ customer.city }} ({{ customer.countryCode }})
@@ -278,9 +279,14 @@ import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
             <button class="btn btn--primary" type="button" [disabled]="busy()"
                     (click)="saveNewCustomer()">Klant opslaan</button>
           } @else {
-            <button class="btn" type="button" (click)="picking.set(false)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="chosen() === null"
-                    (click)="create()">Openen</button>
+            <button class="btn" type="button" [disabled]="creating()"
+                    (click)="picking.set(false)">Annuleren</button>
+            <button class="btn btn--primary" type="button"
+                    [disabled]="loading() || creating() || chosen() === null"
+                    [attr.aria-busy]="creating()"
+                    (click)="create()">
+              {{ creating() ? 'Aanmaken…' : 'Openen' }}
+            </button>
           }
         </div>
       </app-sheet>
@@ -494,6 +500,7 @@ export class SalesList {
   readonly query = signal('');
   readonly picking = signal(false);
   readonly chosen = signal<number | null>(null);
+  readonly creating = signal(false);
   readonly loading = signal(true);
 
   readonly all = signal<SalesOrderView[]>([]);
@@ -621,14 +628,52 @@ export class SalesList {
     if (this.addingCustomer()) this.startAddCustomer();
   }
 
+  selectCustomer(value: number | null): void {
+    const customerId = Number(value);
+    this.chosen.set(Number.isInteger(customerId) && customerId > 0 ? customerId : null);
+  }
+
   async create(): Promise<void> {
+    if (this.creating()) return;
     const customerId = this.chosen();
-    if (customerId === null) return;
+    if (customerId === null) {
+      this.ui.toast('Kies eerst een klant', 'err');
+      return;
+    }
     const customer = this.customers().find((c) => c.id === customerId);
-    const view = await this.sales.createOrder(
-      customerId, customer?.countryCode ?? null, customer?.incoterm ?? 'DAP');
+    if (!customer) {
+      this.chosen.set(null);
+      this.ui.toast('De gekozen klant bestaat niet meer', 'err');
+      return;
+    }
+
+    this.creating.set(true);
+    let view: SalesOrderView;
+    try {
+      view = await this.sales.createOrder(
+        customerId, customer.countryCode, customer.incoterm || 'DAP');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Order aanmaken mislukt'), 'err');
+      this.creating.set(false);
+      return;
+    }
+
     this.picking.set(false);
-    await this.router.navigate(['/sales', view.order.id, 'edit']);
+    try {
+      const opened = await this.router.navigate(['/sales', view.order.id, 'edit']);
+      if (opened) {
+        this.creating.set(false);
+        return;
+      }
+    } catch {
+      /* Keep the freshly created order reachable below. */
+    }
+
+    this.all.update((orders) => orders.some((row) => row.order.id === view.order.id)
+      ? orders : [view, ...orders]);
+    this.creating.set(false);
+    this.ui.toast(
+      `Order ${view.order.number} is aangemaakt. Open hem vanuit het overzicht.`, 'err');
   }
 }
 

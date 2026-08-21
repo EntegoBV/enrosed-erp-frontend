@@ -107,7 +107,7 @@ import { messageOf } from '../../core/api/errors';
                 @if (familyFor(product); as family) {
                   <div class="list-item__family">
                     <span>{{ family.name || family.familyKey }}</span>
-                    <small>{{ family.variantCount }} variant(en)</small>
+                    <small>{{ family.variantCount }} product(en)</small>
                   </div>
                 }
                 @if (publicationActive(product)
@@ -398,8 +398,8 @@ export class ProductList {
     const familyMessage = family === null
       ? ''
       : family.variantCount > 1
-        ? ' Alleen deze kleurvariant/SKU wordt verwijderd; de familie en andere kleuren blijven bestaan.'
-        : ' De websitefamilie en haar content blijven bewaard, maar worden zonder variant niet gepubliceerd.';
+        ? ' Alleen dit product/SKU wordt verwijderd; de familie en andere producten blijven bestaan.'
+        : ' De websitefamilie en haar content blijven bewaard, maar worden zonder product niet gepubliceerd.';
     const historyMessage = ' Staat dit product al op een order of offerte, dan blijft het bewaard en kun je het alleen inactief zetten.';
     this.swiped.set(null);
     this.ui.confirm(
@@ -455,14 +455,14 @@ export class ProductList {
   }
 
   familyFor(product: Product): ProductFamily | null {
-    if (product.familyId != null) return this.familyMap().get(product.familyId) ?? null;
-    return product.familyKey
-      ? this.families().find((family) => family.familyKey === product.familyKey) ?? null
-      : null;
+    return product.familyId == null ? null : this.familyMap().get(product.familyId) ?? null;
   }
 
   publicationIssues(product: Product): string[] {
-    return this.familyFor(product)?.publicationIssues ?? product.publicationIssues ?? [];
+    const family = this.familyFor(product);
+    if (family) return family.publicationIssues;
+    if (product.websiteStatus === 'DRAFT' && product.orderAppStatus === 'DRAFT') return [];
+    return product.publicationIssues ?? [];
   }
 
   websiteStatus(product: Product): Product['websiteStatus'] {

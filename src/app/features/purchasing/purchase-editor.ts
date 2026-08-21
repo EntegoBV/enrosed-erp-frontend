@@ -776,6 +776,8 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                                       (overview)="openOrderView()" />
       }
     } @else {
+      <app-page-header title="Inkoop" subtitle="Inkooporder laden…"
+                       [showBack]="true" [showBell]="false" />
       <div class="content po-page">
         <div class="loading-card" role="status" aria-live="polite">
           <span class="loading-card__mark" aria-hidden="true"></span>

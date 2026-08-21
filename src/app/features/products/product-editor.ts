@@ -160,7 +160,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <span class="hint">Vaste lijst; beheer je bij Instellingen.</span>
             </div>
             <fieldset class="measure-group variant-fields span-2">
-              <legend>Variant</legend>
+              <legend>Uitvoering <span class="opt"></span></legend>
               <div class="form-grid">
                 <div class="field">
                   <label for="p-colour">Kleur <span class="opt"></span></label>
@@ -205,8 +205,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 </div>
               </div>
               <p>
-                Kleur en maat onderscheiden varianten binnen dezelfde familie. De kleurstaal is
-                optioneel en helpt later bij websitefilters.
+                Een product blijft standaard zelfstandig. Vul kleur of maat alleen in als dat
+                nuttig is; pas een productfamilie maakt er een gegroepeerde uitvoering van.
               </p>
             </fieldset>
             <div class="field span-2">
@@ -215,11 +215,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                         placeholder="Korte omschrijving voor verkoopdocumenten"
                         [ngModel]="draft().description"
                         (ngModelChange)="patch({ description: $event })"></textarea>
-              <span class="hint">Varianttekst voor offertes. Websitecopy staat apart onder Website &amp; publicatie.</span>
+              <span class="hint">Producttekst voor offertes. Websitecopy staat apart onder Website &amp; publicatie.</span>
             </div>
             <label class="switch-row span-2" for="p-active">
               <span>
-                <b>Actieve variant</b>
+                <b>Actief product</b>
                 <small>Beschikbaar voor verkoop, inkoop en de interne productkiezer.</small>
               </span>
               <input id="p-active" type="checkbox" [ngModel]="draft().active"
@@ -277,7 +277,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <section class="card editor-section" id="media" aria-labelledby="media-title">
         <div class="card__head section-head">
           <span class="section-head__number">02</span>
-          <div><h2 id="media-title">Foto's</h2><p>Per variant · voor ERP en orderregels</p></div>
+          <div><h2 id="media-title">Foto's</h2><p>Voor dit product · ERP en orderregels</p></div>
           <span class="spacer"></span>
           <span class="badge badge--neutral">{{ photoCount() }}</span>
         </div>
@@ -1009,9 +1009,6 @@ export class ProductEditor {
     let family = familyId === null
       ? null
       : this.families().find((item) => item.id === familyId) ?? null;
-    family ??= product.familyKey
-      ? this.families().find((item) => item.familyKey === product.familyKey) ?? null
-      : null;
 
     if (!family && familyId !== null) {
       try {
@@ -1063,9 +1060,13 @@ export class ProductEditor {
 
   readonly readinessIssues = computed(() => {
     const family = this.family();
-    const server = family?.publicationIssues ?? this.draft().publicationIssues ?? [];
-    if (server.length) return server;
     const product = this.draft();
+    const publicationStarted = family !== null
+      || product.websiteStatus !== 'DRAFT'
+      || product.orderAppStatus !== 'DRAFT';
+    if (!publicationStarted) return [];
+    const server = family?.publicationIssues ?? product.publicationIssues ?? [];
+    if (server.length) return server;
     const issues: string[] = [];
     if (!product.active) issues.push('Zet het product actief.');
     if (!product.name.trim()) issues.push('Vul een productnaam in.');

@@ -84,7 +84,7 @@ interface FreightHorizon {
           <div class="kpi__value">{{ productCount() }}</div>
           <div class="kpi__meta">
             @if (catalogAttention()) { {{ catalogAttention() }} families met aandacht }
-            @else { {{ variantCount() }} kleurvarianten }
+            @else { {{ skuCount() }} producten }
           </div>
         </a>
       </div>
@@ -1243,7 +1243,7 @@ export class Dashboard {
   readonly purchases = signal<PurchaseOrderView[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly productCount = signal(0);
-  readonly variantCount = signal(0);
+  readonly skuCount = signal(0);
   readonly catalogAttention = signal(0);
   readonly loading = signal(true);
 
@@ -1266,7 +1266,7 @@ export class Dashboard {
     this.purchases.set(purchases.slice(0, 5));
     this.revisions.set(revisions);
     this.productCount.set(families.length || products.length);
-    this.variantCount.set(products.length);
+    this.skuCount.set(products.length);
     this.catalogAttention.set(families.length
       ? families.filter((family) => family.active && family.publicationIssues.length > 0).length
       : products.filter((product) =>

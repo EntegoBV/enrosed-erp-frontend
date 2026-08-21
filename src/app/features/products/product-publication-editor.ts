@@ -79,7 +79,7 @@ interface FamilyFeaturedOption {
       >
         <div class="family-picker">
           <label class="field">
-            <span>Productfamilie</span>
+            <span>Productfamilie <span class="opt"></span></span>
             <select
               class="select"
               [ngModel]="product().familyId"
@@ -88,11 +88,13 @@ interface FamilyFeaturedOption {
               <option [ngValue]="null">Nog niet gekoppeld</option>
               @for (option of families(); track option.id) {
                 <option [ngValue]="option.id">
-                  {{ option.name || option.familyKey }} · {{ option.variantCount }} variant(en)
+                  {{ option.name || option.familyKey }} · {{ option.variantCount }} product(en)
                 </option>
               }
             </select>
-            <small class="field__hint">Kies een andere familie om deze variant te verplaatsen.</small>
+            <small class="field__hint">
+              Alleen nodig om producten samen te tonen of via publieke kanalen te publiceren.
+            </small>
           </label>
           <div class="family-picker__actions">
             @if (product().familyId !== null) {
@@ -112,16 +114,16 @@ interface FamilyFeaturedOption {
             <p>
               Je bewerkt <b>{{ family.name || family.familyKey }}</b
               >. Namen, websitefoto's, volgorde en SEO gelden voor alle
-              <b>{{ family.variantCount || 1 }} variant(en)</b>. Inkoop, voorraad, verpakking
-              en prijzen hierboven blijven per variant.
+              <b>{{ family.variantCount }} product(en)</b>. Inkoop, voorraad, verpakking
+              en prijzen hierboven blijven per product.
             </p>
           </div>
 
           <section class="family-members" aria-labelledby="family-members-title">
             <div class="family-members__head">
               <div>
-                <h3 id="family-members-title">Varianten in deze familie</h3>
-                <p>Alleen een overzicht; elke variant behoudt eigen voorraad, prijs en verpakking.</p>
+                <h3 id="family-members-title">Producten in deze familie</h3>
+                <p>Alleen een overzicht; elk product behoudt eigen voorraad, prijs en verpakking.</p>
               </div>
               <span>{{ members().length || family.variantCount }}</span>
             </div>
@@ -140,7 +142,7 @@ interface FamilyFeaturedOption {
                         <small>{{ member.sku || member.name }}</small>
                       </span>
                       @if (member.productId === product().id) {
-                        <span class="family-member__current">Deze variant</span>
+                        <span class="family-member__current">Dit product</span>
                       } @else if (!member.active) {
                         <span class="family-member__inactive">Inactief</span>
                       }
@@ -150,14 +152,14 @@ interface FamilyFeaturedOption {
                 }
               </ul>
             } @else {
-              <p class="family-members__empty">De varianten verschijnen hier na opslaan.</p>
+              <p class="family-members__empty">De producten verschijnen hier na opslaan.</p>
             }
             <label class="field family-card-variant">
               <span>Productkaartfoto</span>
               <select class="select" [ngModel]="family.cardFeaturedProductId ?? null"
                       [disabled]="!members().length && missingCardFeaturedProductId() === null"
                       (ngModelChange)="patch({ cardFeaturedProductId: numberOrNull($event) })">
-                <option [ngValue]="null">Automatisch · eerste actieve variant</option>
+                <option [ngValue]="null">Automatisch · het eerste actieve product</option>
                 @for (option of cardFeaturedOptions(); track option.member.productId) {
                   <option [ngValue]="option.member.productId" [disabled]="!option.eligibility.eligible">
                     {{ memberOptionLabel(option.member) }}{{ eligibilityLabel(option.eligibility) }}
@@ -185,7 +187,7 @@ interface FamilyFeaturedOption {
             <label class="switch-row">
               <span
                 ><b>Publieke familie actief</b
-                ><small>Verbergt alle kleurvarianten als dit uitstaat.</small></span
+                ><small>Verbergt alle producten in deze familie als dit uitstaat.</small></span
               >
               <input
                 type="checkbox"
@@ -457,10 +459,10 @@ interface FamilyFeaturedOption {
           <div class="no-family">
             <span aria-hidden="true">◇</span>
             <div>
-              <b>Nog niet aan een productfamilie gekoppeld</b>
+              <b>Zelfstandig product</b>
               <p>
-                Koppel een bestaande familie of maak er één. Pas daarna worden websitegegevens
-                gedeeld door alle kleuren.
+                Voor verkoop en inkoop is een familie niet nodig. Koppel alleen wanneer je
+                producten samen wilt tonen of websitegegevens wilt delen.
               </p>
             </div>
           </div>
@@ -834,7 +836,7 @@ export class ProductPublicationEditor {
   readonly familyLabel = computed(() => {
     const family = this.family();
     if (!family) return 'Apart gehouden van je dagelijkse productwerk';
-    return `${family.name || family.familyKey} · ${family.variantCount || 1} variant(en)`;
+    return `${family.name || family.familyKey} · ${family.variantCount} product(en)`;
   });
 
   readonly websiteStatus = computed<PublicationStatus>(
