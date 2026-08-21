@@ -45,14 +45,15 @@ export interface PendingPhotoUploadResult {
 }
 
 /**
- * A product's photo series.
+ * A product's effective photo series. Product-owned photos are editable;
+ * family-gallery projections stay visible but read-only.
  *
  * No rescaling: the file goes to the server as it is and comes back the
  * same. That is the difference between a photo reusable for print or a
  * webshop, and one only usable inside this app.
  *
- * The first photo is the primary one and appears in lists and on order
- * lines.
+ * The first effective photo is the primary one and appears in lists and on
+ * order lines. Reorder calls only ever send the product-owned IDs.
  */
 @Component({
   selector: 'app-photo-manager',
@@ -64,9 +65,9 @@ export interface PendingPhotoUploadResult {
          [attr.aria-disabled]="interactionDisabled()">
     <div class="photo-toolbar">
       <div class="photo-toolbar__copy">
-        <b>Fotovolgorde</b>
+        <b>Eigen productfoto’s</b>
         <span id="photo-order-help">
-          Sleep de greep of veeg erop. Met een toetsenbord gebruik je de pijltjes.
+          Voeg foto’s toe en bepaal hun volgorde met slepen, vegen of de pijltjes.
         </span>
       </div>
 
@@ -80,33 +81,33 @@ export interface PendingPhotoUploadResult {
       </label>
     </div>
 
-    @if (photos().length) {
+    @if (ownPhotos().length) {
       <section class="photo-series" aria-labelledby="saved-photo-title">
         <div class="photo-series__head">
-          <h3 id="saved-photo-title">Opgeslagen <span>{{ photos().length }}</span></h3>
-          <small>De eerste foto is de hoofdfoto</small>
+          <h3 id="saved-photo-title">Eigen productfoto’s <span>{{ ownPhotos().length }}</span></h3>
+          <small>Eigen foto’s staan vóór de websitegalerij</small>
         </div>
 
         <ol class="photo-strip" aria-describedby="photo-order-help">
-          @for (photo of photos(); track photo.id; let i = $index) {
+          @for (photo of ownPhotos(); track photo.id; let i = $index) {
             <li class="photo-card"
-                [class.photo-card--primary]="i === 0"
+                [class.photo-card--primary]="isEffectivePrimary(photo)"
                 [class.photo-card--dragging]="isDragging('saved', i)"
                 [class.photo-card--drop]="isDropTarget('saved', i)"
                 data-photo-kind="saved"
                 [attr.data-photo-index]="i">
               <div class="photo-card__preview">
                 <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" draggable="false" />
-                @if (i === 0) {
+                @if (isEffectivePrimary(photo)) {
                   <span class="photo-card__primary">Hoofdfoto</span>
                 } @else {
-                  <span class="photo-card__position" aria-hidden="true">{{ i + 1 }}</span>
+                  <span class="photo-card__position" aria-hidden="true">{{ effectivePosition(photo) }}</span>
                 }
                 <button class="photo-card__handle" type="button"
-                        [disabled]="interactionDisabled() || photos().length < 2"
+                        [disabled]="interactionDisabled() || ownPhotos().length < 2"
                         aria-keyshortcuts="ArrowLeft ArrowRight Home End"
-                        [attr.aria-label]="orderLabel(photo.originalFilename, i, photos().length)"
-                        (click)="announceOrderHelp(photo.originalFilename, i, photos().length)"
+                        [attr.aria-label]="orderLabel(photo.originalFilename, i, ownPhotos().length)"
+                        (click)="announceOrderHelp(photo.originalFilename, i, ownPhotos().length)"
                         (keydown)="orderKeydown($event, 'saved', i, photo.originalFilename)"
                         (pointerdown)="startPointerReorder($event, 'saved', i)"
                         (pointermove)="movePointerReorder($event)"
@@ -167,7 +168,7 @@ export interface PendingPhotoUploadResult {
         <ol class="photo-strip" aria-describedby="photo-order-help">
           @for (pendingPhoto of pendingPhotos(); track pendingPhoto.id; let i = $index) {
             <li class="photo-card photo-card--pending"
-                [class.photo-card--primary]="photos().length === 0 && i === 0"
+                [class.photo-card--primary]="ownPhotos().length === 0 && i === 0"
                 [class.photo-card--failed]="pendingPhoto.status === 'failed'"
                 [class.photo-card--dragging]="isDragging('pending', i)"
                 [class.photo-card--drop]="isDropTarget('pending', i)"
@@ -175,8 +176,8 @@ export interface PendingPhotoUploadResult {
                 [attr.data-photo-index]="i">
               <div class="photo-card__preview">
                 <img [src]="pendingPhoto.previewUrl" [alt]="pendingPhoto.file.name" draggable="false" />
-                @if (photos().length === 0 && i === 0) {
-                  <span class="photo-card__primary">Hoofdfoto</span>
+                @if (ownPhotos().length === 0 && i === 0) {
+                  <span class="photo-card__primary">Hoofdfoto na opslaan</span>
                 } @else {
                   <span class="photo-card__position" aria-hidden="true">{{ i + 1 }}</span>
                 }
@@ -225,6 +226,52 @@ export interface PendingPhotoUploadResult {
       </section>
     }
 
+    @if (inheritedPhotos().length) {
+      <section class="photo-series photo-series--readonly" aria-labelledby="website-photo-title">
+        <div class="photo-series__head">
+          <div>
+            <h3 id="website-photo-title">Uit websitegalerij <span>{{ inheritedPhotos().length }}</span></h3>
+            <small>Alleen-lezen · beheer deze foto’s bij Website &amp; publicatie</small>
+          </div>
+        </div>
+
+        <ol class="photo-strip" aria-label="Foto’s uit de websitegalerij">
+          @for (photo of inheritedPhotos(); track photo.id) {
+            <li class="photo-card photo-card--readonly"
+                [class.photo-card--primary]="isEffectivePrimary(photo)">
+              <div class="photo-card__preview">
+                <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" draggable="false" />
+                @if (isEffectivePrimary(photo)) {
+                  <span class="photo-card__primary">Hoofdfoto</span>
+                } @else {
+                  <span class="photo-card__position" aria-hidden="true">{{ effectivePosition(photo) }}</span>
+                }
+                <span class="photo-card__readonly">Website</span>
+              </div>
+
+              <div class="photo-card__footer">
+                <span class="photo-card__copy">
+                  <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
+                  <small>
+                    @if (photo.widthPx !== null && photo.heightPx !== null) {
+                      {{ photo.widthPx }} × {{ photo.heightPx }} ·
+                    }
+                    {{ sizeLabel(photo.sizeBytes) }}
+                  </small>
+                </span>
+                <span class="photo-card__actions" role="group"
+                      [attr.aria-label]="'Acties voor ' + photo.originalFilename">
+                  <button type="button" title="Downloaden" [disabled]="interactionDisabled()"
+                          [attr.aria-label]="photo.originalFilename + ' downloaden'"
+                          (click)="download(photo)"><span aria-hidden="true">↓</span></button>
+                </span>
+              </div>
+            </li>
+          }
+        </ol>
+      </section>
+    }
+
     @if (!photos().length && !pendingPhotos().length) {
       <div class="photo-empty">
         <span aria-hidden="true">◇</span>
@@ -233,8 +280,8 @@ export interface PendingPhotoUploadResult {
     }
 
     <p class="photo-help">
-      De eerste foto is de hoofdfoto in het ERP en op orderregels. Publieke websitefoto's beheer
-      je bij Website &amp; publicatie. JPEG, PNG, GIF of WebP · max. 25 MB per foto.
+      Eigen foto’s staan vooraan. Zonder eigen foto gebruikt het ERP de eerste foto uit de
+      websitegalerij. JPEG, PNG, GIF of WebP · max. 25 MB per foto.
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
     </div>
@@ -296,6 +343,7 @@ export interface PendingPhotoUploadResult {
     }
     .photo-card--primary { flex-basis: clamp(178px, 57vw, 220px); border-color: var(--rose-line); }
     .photo-card--pending { border-style: dashed; }
+    .photo-card--readonly { background: color-mix(in srgb, var(--surface-2) 55%, var(--surface)); }
     .photo-card--failed { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
     .photo-card--dragging { z-index: 2; opacity: .5; transform: scale(.97); }
     .photo-card--drop { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-line); }
@@ -325,6 +373,12 @@ export interface PendingPhotoUploadResult {
     .photo-card__state--failed {
       border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
       background: color-mix(in srgb, var(--danger) 8%, #fff); color: var(--danger);
+    }
+    .photo-card__readonly {
+      position: absolute; right: 7px; top: 7px; padding: 4px 7px;
+      border: 1px solid rgb(255 255 255 / 75%); border-radius: 999px;
+      background: rgb(35 31 29 / 76%); color: #fff;
+      font-size: 8.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase;
     }
     .photo-card__handle {
       position: absolute; right: 7px; top: 7px; display: grid; width: 38px; height: 38px; place-items: center;
@@ -406,6 +460,8 @@ export class PhotoManager {
 
   readonly busy = signal(false);
   readonly interactionDisabled = computed(() => this.disabled() || this.busy());
+  readonly ownPhotos = computed(() => this.photos().filter((photo) => this.isOwnPhoto(photo)));
+  readonly inheritedPhotos = computed(() => this.photos().filter((photo) => !this.isOwnPhoto(photo)));
   readonly pendingPhotos = signal<PendingPhoto[]>([]);
   readonly pendingCount = computed(() => this.pendingPhotos().length);
   readonly draggingSeries = signal<PhotoSeries | null>(null);
@@ -494,7 +550,7 @@ export class PhotoManager {
   }
 
   async remove(photo: PhotoDto): Promise<void> {
-    if (this.interactionDisabled()) return;
+    if (this.interactionDisabled() || !this.isCurrentOwnPhoto(photo)) return;
     const productId = this.productId();
     if (productId === null) return;
     this.ui.confirm(
@@ -505,7 +561,7 @@ export class PhotoManager {
         danger: true,
       },
       async () => {
-        if (this.interactionDisabled()) return;
+        if (this.interactionDisabled() || !this.isCurrentOwnPhoto(photo)) return;
         this.busy.set(true);
         try {
           this.changed.emit(await this.catalog.deletePhoto(productId, photo.id));
@@ -546,7 +602,8 @@ export class PhotoManager {
 
   orderKeydown(event: KeyboardEvent, kind: PhotoSeries, index: number, filename: string): void {
     if (this.interactionDisabled()) return;
-    const total = kind === 'saved' ? this.photos().length : this.pendingPhotos().length;
+    const total = kind === 'saved' ? this.ownPhotos().length : this.pendingPhotos().length;
+    if (index < 0 || index >= total) return;
     let target = index;
     switch (event.key) {
       case 'ArrowLeft':
@@ -573,6 +630,8 @@ export class PhotoManager {
 
   startPointerReorder(event: PointerEvent, kind: PhotoSeries, index: number): void {
     if (this.interactionDisabled() || event.button !== 0) return;
+    const total = kind === 'saved' ? this.ownPhotos().length : this.pendingPhotos().length;
+    if (index < 0 || index >= total) return;
     event.stopPropagation();
     const handle = event.currentTarget as HTMLElement;
     this.pointerReorder = {
@@ -656,7 +715,7 @@ export class PhotoManager {
 
   private reorder(kind: PhotoSeries, source: number, target: number, filename: string): void {
     if (this.interactionDisabled()) return;
-    const total = kind === 'saved' ? this.photos().length : this.pendingPhotos().length;
+    const total = kind === 'saved' ? this.ownPhotos().length : this.pendingPhotos().length;
     const boundedTarget = Math.max(0, Math.min(target, total - 1));
     if (source === boundedTarget || source < 0 || source >= total) return;
     if (kind === 'saved') {
@@ -670,11 +729,12 @@ export class PhotoManager {
     if (this.interactionDisabled()) return;
     const productId = this.productId();
     if (productId === null) return;
-    const order = this.photos().map((photo) => photo.id);
+    const ownPhotos = this.ownPhotos();
+    const order = ownPhotos.map((photo) => photo.id);
     if (source < 0 || source >= order.length || target < 0 || target >= order.length) return;
     const [movedPhotoId] = order.splice(source, 1);
     order.splice(target, 0, movedPhotoId);
-    const movedName = filename ?? this.photos()[source]?.originalFilename ?? 'Foto';
+    const movedName = filename ?? ownPhotos[source]?.originalFilename ?? 'Foto';
     this.busy.set(true);
     try {
       this.changed.emit(await this.catalog.reorderPhotos(productId, order));
@@ -698,7 +758,7 @@ export class PhotoManager {
       filename ?? movedPhoto.file.name,
       target,
       pending.length,
-      this.photos().length === 0 && target === 0,
+      this.ownPhotos().length === 0 && target === 0,
     );
   }
 
@@ -711,7 +771,7 @@ export class PhotoManager {
 
   private photoName(kind: PhotoSeries, index: number): string {
     return kind === 'saved'
-      ? this.photos()[index]?.originalFilename ?? 'Foto'
+      ? this.ownPhotos()[index]?.originalFilename ?? 'Foto'
       : this.pendingPhotos()[index]?.file.name ?? 'Foto';
   }
 
@@ -736,6 +796,25 @@ export class PhotoManager {
     if (this.interactionDisabled()) return;
     const blob = await this.catalog.photoBlob(photo.downloadUrl);
     saveBlob(blob, photo.originalFilename);
+  }
+
+  isOwnPhoto(photo: PhotoDto): boolean {
+    /* Ownership must be explicit: mixed or older payloads remain read-only. */
+    return photo.origin === 'PRODUCT' && photo.readOnly === false && photo.familyPhotoId === null;
+  }
+
+  isEffectivePrimary(photo: PhotoDto): boolean {
+    return this.photos()[0]?.id === photo.id;
+  }
+
+  effectivePosition(photo: PhotoDto): number | string {
+    const index = this.photos().findIndex((candidate) => candidate.id === photo.id);
+    return index >= 0 ? index + 1 : '—';
+  }
+
+  private isCurrentOwnPhoto(photo: PhotoDto): boolean {
+    return this.isOwnPhoto(photo)
+      && this.ownPhotos().some((candidate) => candidate.id === photo.id);
   }
 
   sizeLabel(bytes: number): string {

@@ -28,7 +28,7 @@ import {
         <h4>Bronmaten &amp; verpakking</h4>
         <dl class="technical-list">
           <div>
-            <dt>Productfamilie</dt>
+            <dt>Model</dt>
             <dd>{{ sourceDimensions() }}</dd>
           </div>
           @for (item of family().packages; track item.id || item.sourceKey) {

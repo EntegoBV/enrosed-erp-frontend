@@ -43,6 +43,14 @@ export class CatalogApi {
     ));
   }
 
+  /** Links two existing products as colour and/or size variants in one server transaction. */
+  linkProductVariant(id: number, variantProductId: number): Promise<ProductFamily> {
+    return firstValueFrom(this.http.post<ProductFamily>(
+      api(`/api/products/${id}/variants`),
+      { variantProductId },
+    ));
+  }
+
   /** Empty strings explicitly clear optional variant fields on backward-compatible writes. */
   private productWriteBody(product: Product): Product {
     return {

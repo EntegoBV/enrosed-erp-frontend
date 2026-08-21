@@ -1688,15 +1688,32 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
 .swipe__delete:active { filter: brightness(0.9); }
 .swipe__delete:disabled { cursor: wait; opacity: 0.58; }
 
+app-product-list .product-swipe-hint {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  margin: -5px 3px 8px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+app-product-list .product-swipe-hint span {
+  color: var(--rose-dark);
+  font-size: 14px;
+}
+
+.swipe:not(.swipe--desktop-action):has(.swipe__delete:focus-visible) .swipe__row {
+  transform: translateX(-76px);
+}
+
 @media (max-width: 1023px) {
-  .swipe:has(.swipe__delete:focus-visible) .swipe__row {
+  .swipe--desktop-action:has(.swipe__delete:focus-visible) .swipe__row {
     transform: translateX(-76px);
   }
 }
 
-/* On fine-pointer desktop screens the destructive action must not remain
-   hidden behind a touch-only gesture. The same modifier is shared by product
-   and purchase rows so both lists behave consistently. */
+/* Workflows that deliberately opt into a permanently visible desktop action
+   keep it at the row edge; product rows use the hidden pointer-reveal pattern. */
 @media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
   .swipe--desktop-action { display: flex; align-items: stretch; }
   .swipe--desktop-action .swipe__row {
@@ -1719,6 +1736,153 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
 
 @media (prefers-reduced-motion: reduce) {
   .swipe__row { transition: none; }
+}
+
+/* The read-only product gallery uses global styles for its pager so the
+   already substantial product-view component stays inside Angular's CSS budget. */
+app-product-view .gallery__pager {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px;
+  min-height: 44px; margin-top: 6px; align-items: center; gap: 8px;
+}
+app-product-view .gallery__step {
+  display: grid; width: 44px; height: 44px; padding: 0; place-items: center;
+  border: 1px solid var(--line); border-radius: 50%;
+  background: rgb(255 255 255 / 65%); color: var(--ink-2);
+  font-size: 27px; line-height: 1; cursor: pointer;
+}
+app-product-view .gallery__step:hover {
+  border-color: var(--rose-line); background: var(--surface); color: var(--rose-dark);
+}
+app-product-view :is(.gallery__step, .gallery__dot):focus-visible {
+  outline: 3px solid var(--rose-line); outline-offset: 2px;
+}
+app-product-view .gallery__dots {
+  display: flex; min-width: 0; flex-wrap: wrap; align-items: center;
+  justify-content: center; gap: 0;
+}
+app-product-view .gallery__dot {
+  display: grid; width: 28px; height: 28px; padding: 0; place-items: center;
+  border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+}
+app-product-view .gallery__dot::before {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: color-mix(in srgb, var(--muted) 36%, transparent);
+  transition: width .18s ease, background .18s ease; content: '';
+}
+app-product-view .gallery__dot.active::before {
+  width: 22px; border-radius: 999px; background: var(--rose);
+}
+@media (prefers-reduced-motion: reduce) {
+  app-product-view .gallery__dot::before { transition: none; }
+}
+
+app-product-view :is(app-product-variant-group, .variant-group-state) {
+  display: block;
+  margin-top: 14px;
+}
+app-product-view .variant-group-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+app-product-view .variant-group-state--error {
+  border-color: #eddcb9;
+  background: var(--warn-soft);
+  color: var(--ink-2);
+}
+app-product-view .publication-card { margin-top: 14px; }
+app-product-view .publication-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px 14px;
+  list-style: none;
+  cursor: pointer;
+}
+app-product-view .publication-card > summary::-webkit-details-marker { display: none; }
+app-product-view .publication-card__heading {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+app-product-view .publication-card__heading b { font-size: 13px; }
+app-product-view .publication-card__heading small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+app-product-view .publication-card__chev {
+  color: var(--muted);
+  transition: transform .2s ease;
+}
+app-product-view .publication-card[open] .publication-card__chev { transform: rotate(180deg); }
+app-product-view .publication-card__body {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--line);
+}
+app-product-view .publication-card .publication-strip { margin-top: 12px; }
+app-product-view .publication-loading {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+app-product-view .family-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 11px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+}
+app-product-view .family-load-error b { font-size: 12px; }
+app-product-view .family-load-error p {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+app-product-view .website-copy {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+app-product-view .website-copy > span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+app-product-view .website-copy b { font-size: 12px; }
+app-product-view .website-copy p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+app-product-view .website-copy small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
 }
 
 /* Breathing room between the pallet explainer and its two start options. */

@@ -35,6 +35,11 @@ export interface CartonDto {
 
 export interface PhotoDto {
   id: number;
+  /** Canonical family-gallery photo behind an inherited projection. */
+  familyPhotoId: number | null;
+  origin: 'PRODUCT' | 'FAMILY';
+  /** Inherited family photos remain downloadable but are edited on the family gallery. */
+  readOnly: boolean;
   originalFilename: string;
   contentType: string;
   sizeBytes: number;

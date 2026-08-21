@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -8,6 +9,16 @@ import { Category, Product, ProductFamily, Supplier } from '../../core/api/model
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { Ui } from '../../shared/ui';
+import { ProductVariantGroup } from './product-variant-group';
+
+interface GalleryPointer {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  axis: 'pending' | 'horizontal' | 'vertical';
+  stage: HTMLElement;
+}
 
 /**
  * Read-first product master. The page deliberately separates the customer
@@ -17,7 +28,10 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, EurPipe, NumPipe],
+  imports: [
+    RouterLink, AuthImage, PhotoLightbox, PageHeader, ProductVariantGroup,
+    CbmPipe, CurPipe, EurPipe, NumPipe,
+  ],
   template: `
     @if (product(); as product) {
       <app-page-header [title]="product.name" [subtitle]="headerLine()"
@@ -30,12 +44,25 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
       <div class="content product-view-page">
         <div class="product-view-canvas">
           <section class="product-hero" aria-label="Productoverzicht">
-            <div class="gallery">
+            <div class="gallery" role="region" aria-roledescription="carousel"
+                 [attr.aria-label]="product.name + ' productfoto’s'">
               @if (activePhoto(); as photo) {
-                <button class="gallery__stage" type="button" (click)="openActivePhoto()"
-                        [attr.aria-label]="'Foto ' + (activePhotoIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
+                <button class="gallery__stage" type="button"
+                        [class.gallery__stage--dragging]="galleryDragging()"
+                        [style.--gallery-drag-x]="galleryDragging() ? galleryDragX() + 'px' : null"
+                        (pointerdown)="startGalleryDrag($event)"
+                        (pointermove)="moveGalleryDrag($event)"
+                        (pointerup)="finishGalleryDrag($event)"
+                        (pointercancel)="cancelGalleryDrag($event)"
+                        (dragstart)="$event.preventDefault()"
+                        (keydown)="handleGalleryKey($event)"
+                        (click)="openActivePhoto($event)"
+                        [attr.aria-label]="'Foto ' + (activePhotoIndex() + 1) + ' van '
+                          + product.photos.length
+                          + ' vergroten. Sleep horizontaal of gebruik de pijltoetsen om te wisselen.'">
                   <img [appAuthSrc]="photo.url"
-                       [alt]="product.name + ' — foto ' + (activePhotoIndex() + 1)" />
+                       [alt]="product.name + ' — foto ' + (activePhotoIndex() + 1)"
+                       draggable="false" />
                   <span class="gallery__count">{{ activePhotoIndex() + 1 }} / {{ product.photos.length }}</span>
                   <span class="gallery__zoom" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
@@ -46,13 +73,31 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 </button>
 
                 @if (product.photos.length > 1) {
+                  <nav class="gallery__pager" aria-label="Door productfoto's bladeren">
+                    <button class="gallery__step" type="button" (click)="stepPhoto(-1)"
+                            aria-label="Vorige foto">‹</button>
+                    <div class="gallery__dots" role="group" aria-label="Fotopositie">
+                      @for (item of product.photos; track item.id) {
+                        <button class="gallery__dot" type="button"
+                                [class.active]="activePhotoIndex() === $index"
+                                [attr.aria-current]="activePhotoIndex() === $index ? 'true' : null"
+                                [attr.aria-label]="'Toon foto ' + ($index + 1) + ' van ' + product.photos.length"
+                                (click)="selectPhoto($index)"></button>
+                      }
+                    </div>
+                    <button class="gallery__step" type="button" (click)="stepPhoto(1)"
+                            aria-label="Volgende foto">›</button>
+                  </nav>
+                  <span class="sr-only" role="status" aria-live="polite">
+                    Foto {{ activePhotoIndex() + 1 }} van {{ product.photos.length }}
+                  </span>
                   <div class="gallery__thumbs" role="group" aria-label="Kies een productfoto">
                     @for (item of product.photos; track item.id) {
                       <button type="button" [class.active]="activePhotoIndex() === $index"
                               [attr.aria-pressed]="activePhotoIndex() === $index"
                               [attr.aria-label]="'Toon foto ' + ($index + 1)"
-                              (click)="activePhotoIndex.set($index)">
-                        <img [appAuthSrc]="item.url" alt="" />
+                              (click)="selectPhoto($index)">
+                        <img [appAuthSrc]="item.url" alt="" draggable="false" />
                       </button>
                     }
                   </div>
@@ -112,51 +157,20 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 @if (product.variantSize) { <span><b>Maat</b>{{ product.variantSize }}</span> }
                 @if (product.sku) { <span><b>SKU</b><span class="mono">{{ product.sku }}</span></span> }
               </div>
-
-              <div class="publication-strip">
-                <div class="publication-strip__main">
-                  <span>Publicatie</span>
-                  <strong>{{ publicationSummary() }}</strong>
-                  @if (publicHandle()) {
-                    <small class="mono">/products/{{ publicHandle() }}</small>
-                  }
-                </div>
-                <div class="publication-strip__states" aria-label="Verkoopkanalen">
-                  <span [class.live]="publicationActive() && websiteStatus() === 'PUBLISHED'">
-                    Website
-                  </span>
-                  <span [class.live]="publicationActive() && orderAppStatus() === 'PUBLISHED'">
-                    Orderapp
-                  </span>
-                </div>
-              </div>
-
-              @if (publicationIssues().length) {
-                <div class="publication-alert">
-                  <span aria-hidden="true">!</span>
-                  <div>
-                    <b>{{ publicationIssues().length }} punt(en) voor publicatie</b>
-                    <p>Open Bewerken en daarna Website &amp; publicatie om ze op te lossen.</p>
-                  </div>
-                </div>
-              }
-
-              @if (family(); as family) {
-                <details class="website-preview">
-                  <summary>Website-informatie bekijken</summary>
-                  <div>
-                    <b>{{ family.name }}</b>
-                    @if (family.summary) { <p>{{ family.summary }}</p> }
-                    @if (family.description) { <p>{{ family.description }}</p> }
-                    <small>
-                      {{ family.collectionKey || family.categoryName || 'Geen collectie' }}
-                      · {{ family.variantCount }} product(en)
-                    </small>
-                  </div>
-                </details>
-              }
             </div>
           </section>
+
+          @if (familyLoading()) {
+            <div class="variant-group-state" role="status">Modelvarianten laden…</div>
+          } @else if (familyLoadError()) {
+            <div class="variant-group-state variant-group-state--error" role="alert">
+              <span>Modelvarianten zijn niet geladen.</span>
+              <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
+            </div>
+          } @else {
+            <app-product-variant-group [product]="product" [family]="family()"
+                                       (linked)="onFamilyLinked($event)" />
+          }
 
           <div class="details-grid">
             <section class="info-card" aria-labelledby="product-details-title">
@@ -168,9 +182,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 <div><dt>Leverancier</dt><dd>{{ supplierName() || '—' }}</dd></div>
                 <div><dt>Afmeting (B × D × H)</dt><dd class="num">{{ size(product.dimensions) }}</dd></div>
                 <div><dt>Barcode stuk</dt><dd class="mono">{{ product.barcodeInner || '—' }}</dd></div>
-                @if (family(); as family) {
-                  <div><dt>Productfamilie</dt><dd>{{ family.name }} <span class="mono">· {{ family.familyKey }}</span></dd></div>
-                }
               </dl>
             </section>
 
@@ -220,12 +231,9 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
             <section class="info-card" aria-labelledby="sales-details-title">
               <header>
                 <span class="info-card__icon" aria-hidden="true">{{ privacy.showPurchase() ? '04' : '03' }}</span>
-                <div><h2 id="sales-details-title">Verkoop</h2><p>Prijs voor catalogus en orderapp</p></div>
+                <div><h2 id="sales-details-title">Verkoop</h2><p>Prijsregel en rendabiliteit</p></div>
               </header>
               <dl class="detail-list">
-                <div class="detail-list__emphasis"><dt>Verkoopprijs</dt><dd class="num">
-                  @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
-                </dd></div>
                 <div><dt>Prijsregel</dt><dd>
                   {{ hasFixedSalesPrice(product)
                     ? 'Vaste verkoopprijs'
@@ -243,6 +251,76 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
               </dl>
             </section>
           </div>
+
+          <details class="info-card publication-card">
+            <summary>
+              <span class="info-card__icon" aria-hidden="true">WEB</span>
+              <span class="publication-card__heading">
+                <b>Website &amp; publicatie</b>
+                <small>{{ publicationSummary() }}</small>
+              </span>
+              @if (!familyLoading() && !familyLoadError() && publicationIssues().length) {
+                <span class="badge badge--warn">{{ publicationIssues().length }} aandacht</span>
+              }
+              @if (familyLoadError()) {
+                <span class="badge badge--warn">niet geladen</span>
+              }
+              <span class="publication-card__chev" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="publication-card__body" aria-live="polite">
+              @if (familyLoading()) {
+                <p class="publication-loading">Publicatiestatus en varianten laden…</p>
+              } @else if (familyLoadError()) {
+                <div class="family-load-error" role="alert">
+                  <div>
+                    <b>Publicatiestatus niet geladen</b>
+                    <p>De dagelijkse productgegevens hierboven zijn wel beschikbaar.</p>
+                  </div>
+                  <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
+                </div>
+              } @else {
+                <div class="publication-strip">
+                  <div class="publication-strip__main">
+                    <span>Publieke productpagina</span>
+                    @if (publicHandle()) {
+                      <strong class="mono">/products/{{ publicHandle() }}</strong>
+                    } @else {
+                      <strong>Nog geen publieke URL</strong>
+                    }
+                  </div>
+                  <div class="publication-strip__states" aria-label="Verkoopkanalen">
+                    <span [class.live]="publicationActive() && websiteStatus() === 'PUBLISHED'">Website</span>
+                    <span [class.live]="publicationActive() && orderAppStatus() === 'PUBLISHED'">Orderapp</span>
+                  </div>
+                </div>
+
+                @if (publicationIssues().length) {
+                  <div class="publication-alert">
+                    <span aria-hidden="true">!</span>
+                    <div>
+                      <b>{{ publicationIssues().length }} punt(en) voor publicatie</b>
+                      <p>Open Bewerken en daarna Website &amp; publicatie om ze op te lossen.</p>
+                    </div>
+                  </div>
+                }
+
+                @if (family(); as family) {
+                  <div class="website-copy">
+                    <span>Websitecopy</span>
+                    <b>{{ family.name }}</b>
+                    @if (family.summary) { <p>{{ family.summary }}</p> }
+                    @if (family.description) { <p>{{ family.description }}</p> }
+                    <small>
+                      {{ family.collectionKey || family.categoryName || 'Geen collectie' }}
+                      · {{ family.variantCount }} product(en)
+                    </small>
+                  </div>
+                } @else {
+                  <p class="publication-loading">Dit product is nog niet aan een websitemodel gekoppeld.</p>
+                }
+              }
+            </div>
+          </details>
         </div>
       </div>
     }
@@ -259,9 +337,15 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .gallery__stage {
       position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; padding: 0;
       border: 1px solid rgb(26 22 20 / 7%); border-radius: 18px; background: #fff;
-      cursor: zoom-in;
+      cursor: grab; touch-action: pan-y; user-select: none;
     }
-    .gallery__stage img { width: 100%; height: 100%; object-fit: contain; }
+    .gallery__stage:active, .gallery__stage--dragging { cursor: grabbing; }
+    .gallery__stage img {
+      width: 100%; height: 100%; object-fit: contain; pointer-events: none;
+      transform: translateX(var(--gallery-drag-x, 0px));
+      transition: transform .2s cubic-bezier(.2,.8,.2,1);
+    }
+    .gallery__stage--dragging img { transition: none; }
     .gallery__stage:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
     .gallery__count, .gallery__zoom {
       position: absolute; bottom: 10px; display: inline-flex; align-items: center; justify-content: center;
@@ -270,9 +354,12 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .gallery__count { left: 10px; min-height: 28px; padding: 4px 9px; border-radius: 999px;
       font-size: 10.5px; font-weight: 700; }
     .gallery__zoom { right: 10px; width: 32px; height: 32px; border-radius: 50%; }
-    .gallery__thumbs { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+    .gallery__thumbs {
+      display: flex; gap: 7px; min-width: 0; margin-top: 2px; padding: 2px 1px 5px;
+      overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin;
+    }
     .gallery__thumbs button {
-      width: 54px; height: 54px; overflow: hidden; padding: 2px; border: 2px solid transparent;
+      flex: 0 0 54px; width: 54px; height: 54px; overflow: hidden; padding: 2px; border: 2px solid transparent;
       border-radius: 11px; background: rgb(255 255 255 / 68%); cursor: pointer;
     }
     .gallery__thumbs button.active { border-color: var(--rose); background: var(--surface); }
@@ -302,9 +389,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
       background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; }
     .hero-summary__identity b { color: var(--muted); font-weight: 600; }
     .variant-swatch { width: 12px; height: 12px; border: 1px solid rgb(26 22 20 / 12%); border-radius: 50%; }
-    .product-copy { margin-top: 14px; color: var(--ink-2); font-size: 13.5px; line-height: 1.6;
-      white-space: pre-line; }
-    .product-copy--empty { color: var(--muted); font-style: italic; }
 
     .publication-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px;
       margin-top: 16px; padding: 12px; border: 1px solid var(--rose-line);
@@ -313,8 +397,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .publication-strip__main > span { color: var(--muted); font-size: 9.5px; font-weight: 750;
       letter-spacing: .09em; text-transform: uppercase; }
     .publication-strip__main strong { font-size: 12.5px; }
-    .publication-strip__main small { overflow: hidden; color: var(--muted); font-size: 10px;
-      text-overflow: ellipsis; white-space: nowrap; }
     .publication-strip__states { flex: 0 0 auto; display: flex; flex-direction: column;
       align-items: flex-end; gap: 3px; }
     .publication-strip__states span { color: var(--muted); font-size: 10px; font-weight: 650; }
@@ -328,16 +410,6 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
       border-radius: 50%; background: var(--warn); color: #fff; font-size: 12px; font-weight: 800; }
     .publication-alert b { font-size: 11.5px; }
     .publication-alert p { margin-top: 1px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
-    .website-preview { margin-top: 9px; overflow: hidden; border: 1px solid var(--line);
-      border-radius: var(--r-sm); background: var(--surface-2); }
-    .website-preview summary { padding: 10px 12px; color: var(--ink-2); font-size: 11px;
-      font-weight: 680; cursor: pointer; }
-    .website-preview > div { padding: 0 12px 12px; }
-    .website-preview b { font-size: 12px; }
-    .website-preview p { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.5;
-      white-space: pre-line; }
-    .website-preview small { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; }
-
     .details-grid { display: grid; gap: 12px; margin-top: 14px; }
     .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);
       background: var(--surface); box-shadow: var(--sh-1); }
@@ -366,21 +438,36 @@ import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
       .hero-summary { display: flex; flex-direction: column; justify-content: center; padding: 24px; }
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     }
+    @media (prefers-reduced-motion: reduce) {
+      .gallery__stage img { transition: none; }
+    }
   `,
 })
 export class ProductView {
   readonly lightbox = signal(-1);
   readonly activePhotoIndex = signal(0);
+  readonly galleryDragging = signal(false);
+  readonly galleryDragX = signal(0);
+
+  private galleryPointer: GalleryPointer | null = null;
+  private galleryGestureHandled = false;
+  private galleryClickResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly ui = inject(Ui);
   readonly privacy = inject(Privacy);
 
   readonly product = signal<Product | null>(null);
   readonly family = signal<ProductFamily | null>(null);
+  readonly familyLoading = signal(false);
+  readonly familyLoadError = signal(false);
   private readonly categories = signal<Category[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);
+  private loadVersion = 0;
+  private linkedProductRefreshVersion = 0;
 
   readonly supplierName = computed(() =>
     this.suppliers().find((supplier) => supplier.id === this.product()?.supplierId)?.name ?? '');
@@ -393,22 +480,16 @@ export class ProductView {
     return product.computedSalesPriceEur > 0 ? product.computedSalesPriceEur : null;
   });
 
-  readonly publicHandle = computed(() =>
-    this.family()?.publicHandle || this.product()?.publicHandle || null);
-  readonly websiteStatus = computed(() =>
-    this.family()?.websiteStatus ?? this.product()?.websiteStatus ?? 'DRAFT');
-  readonly orderAppStatus = computed(() =>
-    this.family()?.orderAppStatus ?? this.product()?.orderAppStatus ?? 'DRAFT');
+  readonly publicHandle = computed(() => this.family()?.publicHandle || null);
+  readonly websiteStatus = computed(() => this.family()?.websiteStatus ?? 'DRAFT');
+  readonly orderAppStatus = computed(() => this.family()?.orderAppStatus ?? 'DRAFT');
   readonly publicationActive = computed(() =>
-    this.family()?.active ?? this.product()?.active ?? false);
+    !!this.product()?.active && (this.family()?.active ?? false));
   readonly publicationIssues = computed(() => {
+    if (this.familyLoading() || this.familyLoadError()) return [];
     const family = this.family();
     if (family) return family.publicationIssues;
-    const product = this.product();
-    if (!product || (product.websiteStatus === 'DRAFT' && product.orderAppStatus === 'DRAFT')) {
-      return [];
-    }
-    return product.publicationIssues ?? [];
+    return [];
   });
 
   readonly margin = computed(() => {
@@ -426,26 +507,192 @@ export class ProductView {
   });
 
   constructor() {
-    const id = Number(this.route.snapshot.paramMap.get('id'));
-    void Promise.all([
-      this.catalog.product(id),
-      this.catalog.categories(),
-      this.sourcing.suppliers(),
-    ]).then(([product, categories, suppliers]) => {
-      this.product.set(product);
-      this.categories.set(categories);
-      this.suppliers.set(suppliers);
-      this.activePhotoIndex.set(0);
-      if (product.familyId != null) {
-        void this.catalog.productFamily(product.familyId)
-          .then((family) => this.family.set(family))
-          .catch(() => this.family.set(null));
-      }
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const id = Number(params.get('id'));
+      if (Number.isInteger(id) && id > 0) void this.loadProduct(id);
     });
   }
 
-  openActivePhoto(): void {
+  retryFamily(): void {
+    const familyId = this.product()?.familyId;
+    if (familyId != null && !this.familyLoading()) {
+      void this.loadFamily(familyId, this.loadVersion);
+    }
+  }
+
+  private async loadProduct(id: number): Promise<void> {
+    const version = ++this.loadVersion;
+    this.product.set(null);
+    this.family.set(null);
+    this.familyLoadError.set(false);
+    this.familyLoading.set(false);
+    this.activePhotoIndex.set(0);
+    this.lightbox.set(-1);
+    this.resetGalleryPointer();
+
+    const [product, categories, suppliers] = await Promise.all([
+      this.catalog.product(id),
+      this.catalog.categories(),
+      this.sourcing.suppliers(),
+    ]);
+    if (version !== this.loadVersion) return;
+    this.product.set(product);
+    this.categories.set(categories);
+    this.suppliers.set(suppliers);
+    if (product.familyId != null) await this.loadFamily(product.familyId, version);
+  }
+
+  private async loadFamily(familyId: number, version: number): Promise<void> {
+    this.familyLoading.set(true);
+    this.familyLoadError.set(false);
+    try {
+      const family = await this.catalog.productFamily(familyId);
+      if (version !== this.loadVersion) return;
+      this.family.set(family);
+    } catch {
+      if (version !== this.loadVersion) return;
+      this.family.set(null);
+      this.familyLoadError.set(true);
+    } finally {
+      if (version === this.loadVersion) this.familyLoading.set(false);
+    }
+  }
+
+  openActivePhoto(event: MouseEvent): void {
+    if (this.galleryGestureHandled) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     this.lightbox.set(this.activePhotoIndex());
+  }
+
+  selectPhoto(index: number): void {
+    const count = this.product()?.photos.length ?? 0;
+    if (!count) return;
+    this.activePhotoIndex.set(Math.max(0, Math.min(index, count - 1)));
+  }
+
+  stepPhoto(direction: -1 | 1): void {
+    const count = this.product()?.photos.length ?? 0;
+    if (count < 2) return;
+    this.activePhotoIndex.update((index) => (index + direction + count) % count);
+  }
+
+  handleGalleryKey(event: KeyboardEvent): void {
+    const count = this.product()?.photos.length ?? 0;
+    if (count < 2) return;
+    switch (event.key) {
+      case 'ArrowLeft':
+        event.preventDefault();
+        this.stepPhoto(-1);
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        this.stepPhoto(1);
+        break;
+      case 'Home':
+        event.preventDefault();
+        this.selectPhoto(0);
+        break;
+      case 'End':
+        event.preventDefault();
+        this.selectPhoto(count - 1);
+        break;
+    }
+  }
+
+  startGalleryDrag(event: PointerEvent): void {
+    if (!event.isPrimary || event.button !== 0 || (this.product()?.photos.length ?? 0) < 2) return;
+    if (this.galleryClickResetTimer !== null) {
+      clearTimeout(this.galleryClickResetTimer);
+      this.galleryClickResetTimer = null;
+    }
+    this.galleryGestureHandled = false;
+    const stage = event.currentTarget as HTMLElement;
+    this.galleryPointer = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      axis: 'pending',
+      stage,
+    };
+    try {
+      stage.setPointerCapture(event.pointerId);
+    } catch {
+      this.galleryPointer = null;
+    }
+  }
+
+  moveGalleryDrag(event: PointerEvent): void {
+    const active = this.galleryPointer;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const dx = event.clientX - active.startX;
+    const dy = event.clientY - active.startY;
+    if (active.axis === 'pending') {
+      if (Math.hypot(dx, dy) < 8) return;
+      active.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'horizontal' : 'vertical';
+    }
+    if (active.axis !== 'horizontal') return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.galleryGestureHandled = true;
+    this.galleryDragging.set(true);
+    const limit = Math.max(70, Math.min(active.stage.clientWidth * .32, 150));
+    this.galleryDragX.set(Math.max(-limit, Math.min(limit, dx)));
+  }
+
+  finishGalleryDrag(event: PointerEvent): void {
+    const active = this.galleryPointer;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const dx = event.clientX - active.startX;
+    const moved = Math.hypot(dx, event.clientY - active.startY);
+    const horizontal = active.axis === 'horizontal';
+    if (active.axis !== 'pending' && moved >= 8) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.galleryGestureHandled = true;
+      this.deferGalleryClickRelease();
+    }
+    const threshold = Math.max(44, Math.min(active.stage.clientWidth * .14, 88));
+    this.releaseGalleryPointer(active);
+    this.resetGalleryPointer();
+    if (horizontal && Math.abs(dx) >= threshold) this.stepPhoto(dx < 0 ? 1 : -1);
+  }
+
+  cancelGalleryDrag(event: PointerEvent): void {
+    const active = this.galleryPointer;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.axis === 'horizontal') {
+      this.galleryGestureHandled = true;
+      this.deferGalleryClickRelease();
+    }
+    this.releaseGalleryPointer(active);
+    this.resetGalleryPointer();
+  }
+
+  private deferGalleryClickRelease(): void {
+    if (this.galleryClickResetTimer !== null) clearTimeout(this.galleryClickResetTimer);
+    this.galleryClickResetTimer = setTimeout(() => {
+      this.galleryGestureHandled = false;
+      this.galleryClickResetTimer = null;
+    }, 400);
+  }
+
+  private releaseGalleryPointer(active: GalleryPointer): void {
+    try {
+      if (active.stage.hasPointerCapture(active.pointerId)) {
+        active.stage.releasePointerCapture(active.pointerId);
+      }
+    } catch {
+      /* Pointer cancellation releases capture before Angular receives it. */
+    }
+  }
+
+  private resetGalleryPointer(): void {
+    this.galleryPointer = null;
+    this.galleryDragging.set(false);
+    this.galleryDragX.set(0);
   }
 
   hasFixedSalesPrice(product: Product): boolean {
@@ -455,13 +702,13 @@ export class ProductView {
   headerLine(): string {
     const product = this.product();
     if (!product) return '';
-    const price = this.displayPrice();
-    const formatted = price == null ? null : new Intl.NumberFormat('nl-BE',
-      { style: 'currency', currency: 'EUR' }).format(price);
-    return [product.sku, formatted].filter(Boolean).join(' · ');
+    return product.sku ?? '';
   }
 
   publicationSummary(): string {
+    if (this.familyLoading()) return 'Publicatiestatus laden…';
+    if (this.familyLoadError()) return 'Publicatiestatus niet geladen';
+    if (!this.family()) return 'Niet gekoppeld';
     if (!this.publicationActive()) return 'Inactief';
     const live = [
       this.websiteStatus() === 'PUBLISHED' ? 'website' : null,
@@ -473,6 +720,47 @@ export class ProductView {
       return 'Klaar om te publiceren';
     }
     return 'Concept';
+  }
+
+  onFamilyLinked(family: ProductFamily): void {
+    const currentId = this.product()?.id;
+    this.family.set(family);
+    this.familyLoadError.set(false);
+    this.product.update((product) => product ? {
+      ...product,
+      familyId: family.id,
+      familyKey: family.familyKey,
+      categoryId: family.categoryId,
+    } : product);
+    if (currentId !== null && currentId !== undefined) {
+      void this.refreshProductAfterLink(currentId, family, this.loadVersion);
+    }
+  }
+
+  private async refreshProductAfterLink(
+    productId: number,
+    family: ProductFamily,
+    routeVersion: number,
+  ): Promise<void> {
+    const refreshVersion = ++this.linkedProductRefreshVersion;
+    try {
+      const product = await this.catalog.product(productId);
+      if (routeVersion !== this.loadVersion || refreshVersion !== this.linkedProductRefreshVersion
+          || this.product()?.id !== productId) return;
+      this.product.set({
+        ...product,
+        familyId: family.id,
+        familyKey: family.familyKey,
+        categoryId: family.categoryId,
+      });
+      this.activePhotoIndex.set(0);
+      this.lightbox.set(-1);
+      this.resetGalleryPointer();
+    } catch {
+      if (routeVersion === this.loadVersion && this.product()?.id === productId) {
+        this.ui.toast('Product gekoppeld, maar de nieuwe foto’s konden niet worden geladen. Vernieuw de pagina.', 'err');
+      }
+    }
   }
 
   size(box: { lengthCm: number | null; widthCm: number | null; heightCm: number | null }): string {

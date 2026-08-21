@@ -47,24 +47,28 @@ interface FamilyFeaturedOption {
           <b>Website &amp; publicatie</b>
           <small>{{ familyLabel() }}</small>
         </span>
-        <span class="publication__summary-status">
-          <span class="channel-state" [class.channel-state--live]="websiteStatus() === 'PUBLISHED'">
-            Website
+        @if (!familyLoading() && !familyLoadError()) {
+          <span class="publication__summary-status">
+            <span class="channel-state" [class.channel-state--live]="websiteStatus() === 'PUBLISHED'">
+              Website
+            </span>
+            <span
+              class="channel-state"
+              [class.channel-state--live]="orderAppStatus() === 'PUBLISHED'"
+            >
+              Orderapp
+            </span>
+            <span
+              class="channel-state"
+              [class.channel-state--live]="catalogueStatus() === 'PUBLISHED'"
+            >
+              Catalogus
+            </span>
           </span>
-          <span
-            class="channel-state"
-            [class.channel-state--live]="orderAppStatus() === 'PUBLISHED'"
-          >
-            Orderapp
-          </span>
-          <span
-            class="channel-state"
-            [class.channel-state--live]="catalogueStatus() === 'PUBLISHED'"
-          >
-            Catalogus
-          </span>
-        </span>
-        @if (issueCount()) {
+        }
+        @if (familyLoadError()) {
+          <span class="issue-count">Niet geladen</span>
+        } @else if (issueCount()) {
           <span class="issue-count">{{ issueCount() }} punt(en)</span>
         } @else if (family()) {
           <span class="complete-count">Compleet</span>
@@ -77,82 +81,37 @@ interface FamilyFeaturedOption {
         [disabled]="busy()"
         [attr.aria-busy]="busy()"
       >
-        <div class="family-picker">
-          <label class="field">
-            <span>Productfamilie <span class="opt"></span></span>
-            <select
-              class="select"
-              [ngModel]="product().familyId"
-              (ngModelChange)="selectFamily($event)"
-            >
-              <option [ngValue]="null">Nog niet gekoppeld</option>
-              @for (option of families(); track option.id) {
-                <option [ngValue]="option.id">
-                  {{ option.name || option.familyKey }} · {{ option.variantCount }} product(en)
-                </option>
-              }
-            </select>
-            <small class="field__hint">
-              Alleen nodig om producten samen te tonen of via publieke kanalen te publiceren.
-            </small>
-          </label>
-          <div class="family-picker__actions">
-            @if (product().familyId !== null) {
-              <button class="btn btn--sm" type="button" (click)="unlinkFamily()">
-                Loskoppelen
-              </button>
-            }
-            <button class="btn btn--sm" type="button" (click)="requestFamilyCreation()">
-              + Nieuwe familie
+        @if (familyLoading()) {
+          <div class="model-load-state" role="status">Modelgegevens laden…</div>
+        } @else if (familyLoadError()) {
+          <div class="model-load-state model-load-state--error" role="alert">
+            <span>
+              <b>Modelgegevens niet geladen</b>
+              <small>Je dagelijkse productvelden blijven wel bewerkbaar.</small>
+            </span>
+            <button class="btn btn--sm" type="button" (click)="retryFamily()">
+              Opnieuw proberen
             </button>
           </div>
-        </div>
-
-        @if (family(); as family) {
+        } @else if (family(); as family) {
           <div class="family-impact" role="note">
             <span aria-hidden="true">i</span>
             <p>
-              Je bewerkt <b>{{ family.name || family.familyKey }}</b
-              >. Namen, websitefoto's, volgorde en SEO gelden voor alle
-              <b>{{ family.variantCount }} product(en)</b>. Inkoop, voorraad, verpakking
-              en prijzen hierboven blijven per product.
+              Je bewerkt websitegegevens voor model <b>{{ family.name || family.familyKey }}</b>.
+              Deze inhoud geldt voor alle <b>{{ family.variantCount }} product(en)</b>;
+              inkoop, voorraad, verpakking en prijzen blijven per product apart.
             </p>
           </div>
 
-          <section class="family-members" aria-labelledby="family-members-title">
-            <div class="family-members__head">
-              <div>
-                <h3 id="family-members-title">Producten in deze familie</h3>
-                <p>Alleen een overzicht; elk product behoudt eigen voorraad, prijs en verpakking.</p>
-              </div>
-              <span>{{ members().length || family.variantCount }}</span>
+          <section class="model-publication" aria-labelledby="model-publication-title">
+            <div>
+              <h3 id="model-publication-title">Model &amp; varianten</h3>
+              <p>Koppelen doe je rechtstreeks vanuit het productoverzicht.</p>
             </div>
-            @if (members().length) {
-              <ul>
-                @for (member of members(); track member.productId) {
-                  <li [class.family-member--current]="member.productId === product().id">
-                    <a [routerLink]="['/products', member.productId]"
-                       [attr.aria-current]="member.productId === product().id ? 'page' : null">
-                      <span class="family-member__swatch"
-                            [style.backgroundColor]="member.colourHex || null"
-                            [class.family-member__swatch--empty]="!member.colourHex"
-                            aria-hidden="true"></span>
-                      <span class="family-member__copy">
-                        <b>{{ member.colour || 'Geen kleur' }}@if (member.size) { · {{ member.size }} }</b>
-                        <small>{{ member.sku || member.name }}</small>
-                      </span>
-                      @if (member.productId === product().id) {
-                        <span class="family-member__current">Dit product</span>
-                      } @else if (!member.active) {
-                        <span class="family-member__inactive">Inactief</span>
-                      }
-                      <span aria-hidden="true">›</span>
-                    </a>
-                  </li>
-                }
-              </ul>
-            } @else {
-              <p class="family-members__empty">De producten verschijnen hier na opslaan.</p>
+            @if (product().id !== null) {
+              <a class="btn btn--sm" [routerLink]="['/products', product().id]">
+                Varianten beheren
+              </a>
             }
             <label class="field family-card-variant">
               <span>Productkaartfoto</span>
@@ -177,6 +136,23 @@ interface FamilyFeaturedOption {
             </label>
           </section>
 
+        } @else {
+          <div class="model-empty">
+            <div>
+              <b>Nog geen gedeeld websiteproduct</b>
+              <p>
+                Voor één los product kun je hier websitegegevens starten. Heb je meerdere
+                kleuren of maten, koppel dan eerst een bestaand product via het productoverzicht.
+              </p>
+            </div>
+            <button class="btn btn--sm" type="button" (click)="requestFamilyCreation()">
+              Websitegegevens starten
+            </button>
+          </div>
+        }
+
+        @if (!familyLoading() && !familyLoadError() && family(); as family) {
+
           <section class="subsection" aria-labelledby="publication-channels-title">
             <div class="subsection__head">
               <div>
@@ -186,8 +162,8 @@ interface FamilyFeaturedOption {
             </div>
             <label class="switch-row">
               <span
-                ><b>Publieke familie actief</b
-                ><small>Verbergt alle producten in deze familie als dit uitstaat.</small></span
+                ><b>Publiek model actief</b
+                ><small>Verbergt alle kleur- en maatvarianten als dit uitstaat.</small></span
               >
               <input
                 type="checkbox"
@@ -254,7 +230,7 @@ interface FamilyFeaturedOption {
             <div class="subsection__head">
               <div>
                 <h3 id="publication-identity-title">Model &amp; URL</h3>
-                <p>Stabiele identiteit van deze productfamilie.</p>
+                <p>Gedeelde naam en stabiele URL van dit model.</p>
               </div>
             </div>
             <div class="form-grid">
@@ -455,17 +431,6 @@ interface FamilyFeaturedOption {
           </section>
 
           <app-product-family-source-details [product]="product()" [family]="family" />
-        } @else {
-          <div class="no-family">
-            <span aria-hidden="true">◇</span>
-            <div>
-              <b>Zelfstandig product</b>
-              <p>
-                Voor verkoop en inkoop is een familie niet nodig. Koppel alleen wanneer je
-                producten samen wilt tonen of websitegegevens wilt delen.
-              </p>
-            </div>
-          </div>
         }
       </fieldset>
     </details>
@@ -482,17 +447,6 @@ interface FamilyFeaturedOption {
       border: 0;
       padding: 14px;
     }
-    .family-picker {
-      display: grid;
-      gap: 8px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid var(--line);
-    }
-    .family-picker .field {
-      margin: 0;
-    }
-    .family-picker__actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .family-picker__actions .btn { flex: 1 1 auto; }
     .family-impact {
       display: flex;
       gap: 10px;
@@ -519,39 +473,32 @@ interface FamilyFeaturedOption {
       font-size: 11.5px;
       line-height: 1.48;
     }
-    .family-members { padding: 14px 0; border-bottom: 1px solid var(--line); }
-    .family-members__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-    .family-members__head h3 { font-size: 12.5px; }
-    .family-members__head p { margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.35; }
-    .family-members__head > span {
-      display: grid; min-width: 24px; height: 24px; padding: 0 6px; place-items: center;
-      border-radius: 999px; background: var(--surface-2); color: var(--muted); font: 700 9px/1 var(--mono);
+    .model-publication, .model-empty {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--surface-2);
     }
-    .family-members ul { display: grid; gap: 5px; margin: 9px 0 0; padding: 0; list-style: none; }
-    .family-members li { min-width: 0; }
-    .family-members a {
-      display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
-      min-height: 46px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 10px;
-      background: var(--surface-2); color: var(--ink-2); text-decoration: none;
+    .model-publication h3, .model-empty b { font-size: 12.5px; }
+    .model-publication p, .model-empty p {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 10.5px;
+      line-height: 1.4;
     }
-    .family-members a:hover { border-color: var(--rose-line); background: var(--rose-soft); }
-    .family-member--current a { border-color: var(--rose-line); }
-    .family-member__swatch {
-      width: 24px; height: 24px; border: 1px solid rgb(26 22 20 / 10%); border-radius: 50%;
-      box-shadow: inset 0 0 0 2px rgb(255 255 255 / 55%);
+    .model-publication > .btn, .model-empty > .btn { justify-self: start; }
+    .family-card-variant { margin: 2px 0 0; }
+    .model-load-state {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      min-height: 70px; padding: 12px; border: 1px solid var(--line);
+      border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: 11px;
     }
-    .family-member__swatch--empty { background: linear-gradient(135deg, #fff 45%, var(--line-strong) 46% 54%, #fff 55%); }
-    .family-member__copy { display: flex; flex-direction: column; min-width: 0; }
-    .family-member__copy b, .family-member__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .family-member__copy b { font-size: 10.5px; }
-    .family-member__copy small { margin-top: 1px; color: var(--muted); font-size: 9px; }
-    .family-member__current, .family-member__inactive {
-      padding: 3px 6px; border-radius: 999px; font-size: 8.5px; font-weight: 750; white-space: nowrap;
-    }
-    .family-member__current { background: var(--rose-soft); color: var(--rose); }
-    .family-member__inactive { background: var(--surface); color: var(--muted); }
-    .family-members__empty { margin-top: 9px; padding: 10px; border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 10px; }
-    .family-card-variant { margin: 11px 0 0; }
+    .model-load-state span { display: grid; gap: 2px; }
+    .model-load-state small { font-size: 10px; }
+    .model-load-state--error { border-color: var(--warn); color: var(--text); }
 
     .subsection {
       padding: 18px 0;
@@ -722,34 +669,6 @@ interface FamilyFeaturedOption {
       font-weight: 700;
     }
 
-    .no-family {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      padding: 15px;
-      border: 1px dashed var(--line-strong);
-      border-radius: var(--r-sm);
-      background: var(--surface-2);
-    }
-    .no-family > span {
-      color: var(--rose);
-      font-size: 25px;
-    }
-    .no-family > div {
-      display: flex;
-      flex-direction: column;
-    }
-    .no-family b {
-      font-size: 12px;
-    }
-    .no-family p {
-      margin-top: 2px;
-      color: var(--muted);
-      font-size: 10.5px;
-      line-height: 1.4;
-    }
-
-
     @media (min-width: 700px) {
       .publication > summary {
         grid-template-columns: auto minmax(0, 1fr) auto auto auto;
@@ -770,11 +689,12 @@ interface FamilyFeaturedOption {
       .publication__body {
         padding: 18px;
       }
-      .family-picker {
+      .model-publication {
         grid-template-columns: minmax(0, 1fr) auto;
-        align-items: end;
+        align-items: start;
       }
-      .family-picker__actions .btn { flex: 0 0 auto; }
+      .model-publication .family-card-variant { grid-column: 1 / -1; }
+      .model-empty { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
       .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -812,13 +732,14 @@ interface FamilyFeaturedOption {
 export class ProductPublicationEditor {
   readonly product = input.required<Product>();
   readonly family = input<ProductFamily | null>(null);
-  readonly families = input<ProductFamily[]>([]);
   readonly categories = input<Category[]>([]);
   readonly busy = input(false);
+  readonly familyLoading = input(false);
+  readonly familyLoadError = input(false);
 
   readonly familyChange = output<ProductFamily>();
-  readonly familyIdChange = output<number | null>();
   readonly createFamilyRequested = output<void>();
+  readonly retryFamilyRequested = output<void>();
   readonly imageUploadRequested = output<File>();
   readonly imageDeleteRequested = output<number>();
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
@@ -834,22 +755,24 @@ export class ProductPublicationEditor {
   });
 
   readonly familyLabel = computed(() => {
+    if (this.familyLoading()) return 'Modelgegevens laden…';
+    if (this.familyLoadError()) return 'Modelgegevens niet geladen';
     const family = this.family();
     if (!family) return 'Apart gehouden van je dagelijkse productwerk';
     return `${family.name || family.familyKey} · ${family.variantCount} product(en)`;
   });
 
   readonly websiteStatus = computed<PublicationStatus>(
-    () => this.family()?.websiteStatus ?? this.product().websiteStatus,
+    () => this.family()?.websiteStatus ?? 'DRAFT',
   );
   readonly orderAppStatus = computed<PublicationStatus>(
-    () => this.family()?.orderAppStatus ?? this.product().orderAppStatus,
+    () => this.family()?.orderAppStatus ?? 'DRAFT',
   );
   readonly catalogueStatus = computed<PublicationStatus>(
     () => this.family()?.catalogueStatus ?? 'DRAFT',
   );
   readonly issueCount = computed(
-    () => (this.family()?.publicationIssues ?? this.product().publicationIssues ?? []).length,
+    () => (this.family()?.publicationIssues ?? []).length,
   );
   readonly highlightsText = computed(() => this.text().highlights.join('\n'));
   readonly members = computed(() => this.family()?.members ?? []);
@@ -887,19 +810,13 @@ export class ProductPublicationEditor {
       .join('');
   }
 
-  selectFamily(value: number | string | null): void {
-    if (this.busy()) return;
-    this.familyIdChange.emit(this.numberOrNull(value));
-  }
-
-  unlinkFamily(): void {
-    if (this.busy()) return;
-    this.familyIdChange.emit(null);
-  }
-
   requestFamilyCreation(): void {
     if (this.busy()) return;
     this.createFamilyRequested.emit();
+  }
+
+  retryFamily(): void {
+    if (!this.busy()) this.retryFamilyRequested.emit();
   }
 
   selectLanguage(language: LanguageCode): void {
