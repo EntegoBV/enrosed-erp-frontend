@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import {
   Category,
   LANGUAGES,
@@ -33,7 +32,7 @@ interface FamilyFeaturedOption {
 @Component({
   selector: 'app-product-publication-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, ProductFamilyGallery, ProductFamilySourceDetails],
+  imports: [FormsModule, ProductFamilyGallery, ProductFamilySourceDetails],
   template: `
     <details class="publication" id="publication">
       <summary>
@@ -82,11 +81,11 @@ interface FamilyFeaturedOption {
         [attr.aria-busy]="busy()"
       >
         @if (familyLoading()) {
-          <div class="model-load-state" role="status">Modelgegevens laden…</div>
+          <div class="model-load-state" role="status">Gedeelde websitegegevens laden…</div>
         } @else if (familyLoadError()) {
           <div class="model-load-state model-load-state--error" role="alert">
             <span>
-              <b>Modelgegevens niet geladen</b>
+              <b>Gedeelde websitegegevens niet geladen</b>
               <small>Je dagelijkse productvelden blijven wel bewerkbaar.</small>
             </span>
             <button class="btn btn--sm" type="button" (click)="retryFamily()">
@@ -97,7 +96,7 @@ interface FamilyFeaturedOption {
           <div class="family-impact" role="note">
             <span aria-hidden="true">i</span>
             <p>
-              Je bewerkt websitegegevens voor model <b>{{ family.name || family.familyKey }}</b>.
+              Je bewerkt gedeelde websitegegevens voor <b>{{ family.name || family.familyKey }}</b>.
               Deze inhoud geldt voor alle <b>{{ family.variantCount }} product(en)</b>;
               inkoop, voorraad, verpakking en prijzen blijven per product apart.
             </p>
@@ -105,14 +104,9 @@ interface FamilyFeaturedOption {
 
           <section class="model-publication" aria-labelledby="model-publication-title">
             <div>
-              <h3 id="model-publication-title">Model &amp; varianten</h3>
-              <p>Koppelen doe je rechtstreeks vanuit het productoverzicht.</p>
+              <h3 id="model-publication-title">Productkaart</h3>
+              <p>Kies welke gekoppelde variant op de productkaart wordt getoond.</p>
             </div>
-            @if (product().id !== null) {
-              <a class="btn btn--sm" [routerLink]="['/products', product().id]">
-                Varianten beheren
-              </a>
-            }
             <label class="field family-card-variant">
               <span>Productkaartfoto</span>
               <select class="select" [ngModel]="family.cardFeaturedProductId ?? null"
@@ -142,7 +136,7 @@ interface FamilyFeaturedOption {
               <b>Nog geen gedeeld websiteproduct</b>
               <p>
                 Voor één los product kun je hier websitegegevens starten. Heb je meerdere
-                kleuren of maten, koppel dan eerst een bestaand product via het productoverzicht.
+                kleuren of maten, koppel ze dan eerst bij <b>Varianten</b> in dit bewerkscherm.
               </p>
             </div>
             <button class="btn btn--sm" type="button" (click)="requestFamilyCreation()">
@@ -162,8 +156,8 @@ interface FamilyFeaturedOption {
             </div>
             <label class="switch-row">
               <span
-                ><b>Publiek model actief</b
-                ><small>Verbergt alle kleur- en maatvarianten als dit uitstaat.</small></span
+                ><b>Publieke productreeks actief</b
+                ><small>Verbergt alle gekoppelde kleur- en maatvarianten als dit uitstaat.</small></span
               >
               <input
                 type="checkbox"
@@ -176,11 +170,10 @@ interface FamilyFeaturedOption {
                 <span><b>Website</b><small>Publieke productpagina</small></span>
                 <select
                   class="select select--sm"
-                  [ngModel]="family.websiteStatus"
+                  [ngModel]="visiblePublicationStatus(family.websiteStatus)"
                   (ngModelChange)="patch({ websiteStatus: $event })"
                 >
                   <option value="DRAFT">Concept</option>
-                  <option value="READY">Klaar voor controle</option>
                   <option value="PUBLISHED">Gepubliceerd</option>
                 </select>
               </label>
@@ -188,11 +181,10 @@ interface FamilyFeaturedOption {
                 <span><b>Orderapp</b><small>Bestelbaar voor klanten</small></span>
                 <select
                   class="select select--sm"
-                  [ngModel]="family.orderAppStatus"
+                  [ngModel]="visiblePublicationStatus(family.orderAppStatus)"
                   (ngModelChange)="patch({ orderAppStatus: $event })"
                 >
                   <option value="DRAFT">Concept</option>
-                  <option value="READY">Klaar voor controle</option>
                   <option value="PUBLISHED">Gepubliceerd</option>
                 </select>
               </label>
@@ -200,11 +192,10 @@ interface FamilyFeaturedOption {
                 <span><b>Catalogus</b><small>Voor de toekomstige catalogussync</small></span>
                 <select
                   class="select select--sm"
-                  [ngModel]="family.catalogueStatus"
+                  [ngModel]="visiblePublicationStatus(family.catalogueStatus)"
                   (ngModelChange)="patch({ catalogueStatus: $event })"
                 >
                   <option value="DRAFT">Concept</option>
-                  <option value="READY">Klaar voor controle</option>
                   <option value="PUBLISHED">Gepubliceerd</option>
                 </select>
               </label>
@@ -229,13 +220,13 @@ interface FamilyFeaturedOption {
           <section class="subsection" aria-labelledby="publication-identity-title">
             <div class="subsection__head">
               <div>
-                <h3 id="publication-identity-title">Model &amp; URL</h3>
-                <p>Gedeelde naam en stabiele URL van dit model.</p>
+                <h3 id="publication-identity-title">Productnaam &amp; URL</h3>
+                <p>Gedeelde naam en stabiele URL voor alle gekoppelde varianten.</p>
               </div>
             </div>
             <div class="form-grid">
               <label class="field">
-                <span>Familiemodel</span>
+                <span>Interne groepscode</span>
                 <input
                   class="input mono"
                   [ngModel]="family.familyKey"
@@ -489,7 +480,7 @@ interface FamilyFeaturedOption {
       font-size: 10.5px;
       line-height: 1.4;
     }
-    .model-publication > .btn, .model-empty > .btn { justify-self: start; }
+    .model-empty > .btn { justify-self: start; }
     .family-card-variant { margin: 2px 0 0; }
     .model-load-state {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -690,10 +681,9 @@ interface FamilyFeaturedOption {
         padding: 18px;
       }
       .model-publication {
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr);
         align-items: start;
       }
-      .model-publication .family-card-variant { grid-column: 1 / -1; }
       .model-empty { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
       .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -755,8 +745,8 @@ export class ProductPublicationEditor {
   });
 
   readonly familyLabel = computed(() => {
-    if (this.familyLoading()) return 'Modelgegevens laden…';
-    if (this.familyLoadError()) return 'Modelgegevens niet geladen';
+    if (this.familyLoading()) return 'Gedeelde websitegegevens laden…';
+    if (this.familyLoadError()) return 'Gedeelde websitegegevens niet geladen';
     const family = this.family();
     if (!family) return 'Apart gehouden van je dagelijkse productwerk';
     return `${family.name || family.familyKey} · ${family.variantCount} product(en)`;
@@ -793,6 +783,10 @@ export class ProductPublicationEditor {
       ? selected
       : null;
   });
+
+  visiblePublicationStatus(status: PublicationStatus): 'DRAFT' | 'PUBLISHED' {
+    return status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT';
+  }
 
   memberOptionLabel(member: ProductFamily['members'][number]): string {
     const option = [member.colour || 'Geen kleur', member.size].filter(Boolean).join(' · ');

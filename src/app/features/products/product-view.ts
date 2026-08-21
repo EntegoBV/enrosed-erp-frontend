@@ -5,12 +5,10 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, Product, ProductFamily, Supplier } from '../../core/api/models';
+import { Category, Product, ProductFamily, ProductFamilyMember, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
-import { Ui } from '../../shared/ui';
-import { ProductVariantGroup } from './product-variant-group';
 
 interface GalleryPointer {
   pointerId: number;
@@ -29,8 +27,7 @@ interface GalleryPointer {
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, AuthImage, PhotoLightbox, PageHeader, ProductVariantGroup,
-    CbmPipe, CurPipe, EurPipe, NumPipe,
+    RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -161,15 +158,35 @@ interface GalleryPointer {
           </section>
 
           @if (familyLoading()) {
-            <div class="variant-group-state" role="status">Modelvarianten laden…</div>
+            <div class="variant-group-state" role="status">Varianten laden…</div>
           } @else if (familyLoadError()) {
             <div class="variant-group-state variant-group-state--error" role="alert">
-              <span>Modelvarianten zijn niet geladen.</span>
+              <span>Varianten zijn niet geladen.</span>
               <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
             </div>
-          } @else {
-            <app-product-variant-group [product]="product" [family]="family()"
-                                       (linked)="onFamilyLinked($event)" />
+          } @else if (variantMembers().length > 1) {
+            <section class="variant-links" aria-labelledby="variant-links-title">
+              <b id="variant-links-title">Varianten</b>
+              <div>
+                @for (member of variantMembers(); track member.productId) {
+                  @if (member.productId === product.id) {
+                    <span class="product-variant-link product-variant-link--current" aria-current="page">
+                      @if (member.colourHex) {
+                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                      }
+                      {{ variantMemberLabel(member) }}
+                    </span>
+                  } @else {
+                    <a class="product-variant-link" [routerLink]="['/products', member.productId]">
+                      @if (member.colourHex) {
+                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                      }
+                      {{ variantMemberLabel(member) }}
+                    </a>
+                  }
+                }
+              </div>
+            </section>
           }
 
           <div class="details-grid">
@@ -312,11 +329,11 @@ interface GalleryPointer {
                     @if (family.description) { <p>{{ family.description }}</p> }
                     <small>
                       {{ family.collectionKey || family.categoryName || 'Geen collectie' }}
-                      · {{ family.variantCount }} product(en)
+                      · geldt voor alle gekoppelde producten
                     </small>
                   </div>
                 } @else {
-                  <p class="publication-loading">Dit product is nog niet aan een websitemodel gekoppeld.</p>
+                  <p class="publication-loading">Voor dit product zijn nog geen gedeelde websitegegevens gestart.</p>
                 }
               }
             </div>
@@ -457,7 +474,6 @@ export class ProductView {
   private readonly sourcing = inject(SourcingApi);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly ui = inject(Ui);
   readonly privacy = inject(Privacy);
 
   readonly product = signal<Product | null>(null);
@@ -467,7 +483,13 @@ export class ProductView {
   private readonly categories = signal<Category[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);
   private loadVersion = 0;
-  private linkedProductRefreshVersion = 0;
+
+  readonly variantMembers = computed(() => {
+    const productId = this.product()?.id;
+    return [...(this.family()?.members ?? [])]
+      .filter((member) => member.active || member.productId === productId)
+      .sort((a, b) => a.position - b.position || a.productId - b.productId);
+  });
 
   readonly supplierName = computed(() =>
     this.suppliers().find((supplier) => supplier.id === this.product()?.supplierId)?.name ?? '');
@@ -716,51 +738,15 @@ export class ProductView {
     ].filter(Boolean);
     if (live.length) return `Live op ${live.join(' en ')}`;
     if (this.publicationIssues().length) return 'Nog niet compleet';
-    if (this.websiteStatus() === 'READY' || this.orderAppStatus() === 'READY') {
-      return 'Klaar om te publiceren';
-    }
     return 'Concept';
   }
 
-  onFamilyLinked(family: ProductFamily): void {
-    const currentId = this.product()?.id;
-    this.family.set(family);
-    this.familyLoadError.set(false);
-    this.product.update((product) => product ? {
-      ...product,
-      familyId: family.id,
-      familyKey: family.familyKey,
-      categoryId: family.categoryId,
-    } : product);
-    if (currentId !== null && currentId !== undefined) {
-      void this.refreshProductAfterLink(currentId, family, this.loadVersion);
-    }
-  }
-
-  private async refreshProductAfterLink(
-    productId: number,
-    family: ProductFamily,
-    routeVersion: number,
-  ): Promise<void> {
-    const refreshVersion = ++this.linkedProductRefreshVersion;
-    try {
-      const product = await this.catalog.product(productId);
-      if (routeVersion !== this.loadVersion || refreshVersion !== this.linkedProductRefreshVersion
-          || this.product()?.id !== productId) return;
-      this.product.set({
-        ...product,
-        familyId: family.id,
-        familyKey: family.familyKey,
-        categoryId: family.categoryId,
-      });
-      this.activePhotoIndex.set(0);
-      this.lightbox.set(-1);
-      this.resetGalleryPointer();
-    } catch {
-      if (routeVersion === this.loadVersion && this.product()?.id === productId) {
-        this.ui.toast('Product gekoppeld, maar de nieuwe foto’s konden niet worden geladen. Vernieuw de pagina.', 'err');
-      }
-    }
+  variantMemberLabel(member: ProductFamilyMember): string {
+    const variant = [member.colour, member.size]
+      .map((value) => value?.trim())
+      .filter((value): value is string => !!value)
+      .join(' · ');
+    return variant || member.name || member.sku || `Product ${member.productId}`;
   }
 
   size(box: { lengthCm: number | null; widthCm: number | null; heightCm: number | null }): string {

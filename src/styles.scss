@@ -1688,20 +1688,6 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
 .swipe__delete:active { filter: brightness(0.9); }
 .swipe__delete:disabled { cursor: wait; opacity: 0.58; }
 
-app-product-list .product-swipe-hint {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
-  margin: -5px 3px 8px;
-  color: var(--muted);
-  font-size: 10.5px;
-}
-app-product-list .product-swipe-hint span {
-  color: var(--rose-dark);
-  font-size: 14px;
-}
-
 .swipe:not(.swipe--desktop-action):has(.swipe__delete:focus-visible) .swipe__row {
   transform: translateX(-76px);
 }
@@ -1776,9 +1762,68 @@ app-product-view .gallery__dot.active::before {
   app-product-view .gallery__dot::before { transition: none; }
 }
 
-app-product-view :is(app-product-variant-group, .variant-group-state) {
+app-product-view :is(.variant-links, .variant-group-state) {
   display: block;
   margin-top: 14px;
+}
+app-product-view .variant-links {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+app-product-view .variant-links > b {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+app-product-view .variant-links > div {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+app-product-view .product-variant-link {
+  display: inline-flex;
+  min-height: 34px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.15;
+  text-decoration: none;
+}
+app-product-view a.product-variant-link:hover {
+  border-color: var(--rose-line);
+  background: var(--rose-soft);
+  color: var(--rose-dark);
+}
+app-product-view a.product-variant-link:focus-visible {
+  outline: 3px solid var(--rose-line);
+  outline-offset: 2px;
+}
+app-product-view .product-variant-link i {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 1px solid rgb(0 0 0 / 12%);
+  border-radius: 50%;
+}
+app-product-view .product-variant-link--current {
+  border-color: var(--rose-line);
+  background: var(--rose-soft);
+  color: var(--rose-dark);
 }
 app-product-view .variant-group-state {
   display: flex;

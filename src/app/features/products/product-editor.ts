@@ -9,7 +9,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Location } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -31,6 +31,7 @@ import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
 import { ProductFamilyImageVariantChange } from './product-family-gallery';
+import { ProductVariantGroup } from './product-variant-group';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -56,8 +57,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 @Component({
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, PageHeader, PhotoManager, ProductPublicationEditor, Sheet,
-            EurPipe, NumPipe, CbmPipe],
+  imports: [
+    FormsModule, PageHeader, PhotoManager, ProductPublicationEditor,
+    ProductVariantGroup, Sheet, EurPipe, NumPipe, CbmPipe,
+  ],
   template: `
     <app-page-header
       [title]="isNew() ? 'Nieuw product' : draft().name || 'Product'"
@@ -158,27 +161,27 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 nuttig is voor de keuze tussen varianten.
               </p>
             </fieldset>
-            <div class="model-link span-2">
-              <div>
-                <span>Model &amp; varianten</span>
-                <b>{{ family()?.name || draft().name || 'Nieuw product' }}</b>
-                <small>
-                  @if (family(); as model) {
-                    {{ model.members.length || model.variantCount }} gekoppelde producten ·
-                    ieder behoudt eigen voorraad, prijs en verpakking.
-                  } @else if (isNew()) {
-                    Sla eerst op; daarna kun je een bestaand product op kleur of maat koppelen.
-                  } @else {
-                    Dit product staat nog los. Koppel vanuit het productoverzicht een andere kleur of maat.
-                  }
-                </small>
+            @if (isNew()) {
+              <div class="variant-editor-card span-2">
+                <div>
+                  <span>Varianten</span>
+                  <b>Eerst dit product opslaan</b>
+                  <small>Daarna kun je hier hetzelfde product in een andere kleur of maat koppelen.</small>
+                </div>
               </div>
-              @if (!isNew()) {
-                <a class="btn btn--sm" [routerLink]="['/products', draft().id]">
-                  Varianten beheren
-                </a>
-              }
-            </div>
+            } @else if (familyLoading()) {
+              <div class="variant-editor-card span-2" role="status">Varianten laden…</div>
+            } @else if (familyLoadError()) {
+              <div class="variant-editor-card variant-editor-card--error span-2" role="alert">
+                <div><b>Varianten niet geladen</b><small>De andere productvelden blijven bewerkbaar.</small></div>
+                <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
+              </div>
+            } @else {
+              <app-product-variant-group class="variant-editor-group span-2"
+                                         [product]="draft()" [family]="family()"
+                                         [disabled]="saving() || photoUploading()"
+                                         (linked)="onVariantLinked($event)" />
+            }
             <div class="field span-2">
               <label for="p-description">Omschrijving op offerte <span class="opt"></span></label>
               <textarea class="textarea" id="p-description" rows="3"
@@ -549,9 +552,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </div>
               <small>
                 @if (copySource().familyId) {
-                  Model {{ family()?.name || copySource().name }}
+                  Variantgroep: {{ family()?.name || copySource().name }}
                 } @else {
-                  Nog niet aan een model gekoppeld
+                  Nog geen varianten gekoppeld
                 }
               </small>
             </section>
@@ -574,7 +577,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </div>
             } @else if (copyVariants().length) {
               <div class="variant-copy__existing">
-                <span class="tiny muted">Bestaat al in dit model</span>
+                <span class="tiny muted">Bestaat al bij de gekoppelde producten</span>
                 <div>
                   @for (variant of copyVariants(); track variant.id) {
                     <span class="badge badge--neutral variant-chip">
@@ -648,9 +651,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             @if (!copySource().familyId) {
               <div class="alert alert--info variant-copy__family-note">
                 <span class="alert__icon" aria-hidden="true">i</span>
-                <p><b>Nog geen modelgroep</b><br />
-                  De kopie wordt wel gemaakt. Koppel daarna één product aan het andere via
-                  Product koppelen; de modelgroep wordt dan automatisch aangemaakt.</p>
+                <p><b>Nog geen variantgroep</b><br />
+                  De kopie wordt wel gemaakt. Open daarna de kopie en kies bij Gekoppelde
+                  producten voor Product koppelen.</p>
               </div>
             }
           </div>
@@ -688,16 +691,18 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     }
     .measure-group legend { padding: 0 5px; color: var(--ink-2); font-size: 12.5px; font-weight: 650; }
     .measure-group > p { margin-top: 7px; color: var(--muted); font-size: 11.5px; }
-    .model-link {
+    .variant-editor-card {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       margin-top: -4px; padding: 11px 12px; border: 1px solid var(--line);
       border-radius: var(--r-sm); background: var(--surface-2);
     }
-    .model-link > div { display: grid; gap: 2px; min-width: 0; }
-    .model-link span { color: var(--brand); font-size: 9.5px; font-weight: 750;
+    .variant-editor-group { display: block; margin-top: -4px; }
+    .variant-editor-card--error { border-color: #eddcb9; background: var(--warn-soft); }
+    .variant-editor-card > div { display: grid; gap: 2px; min-width: 0; }
+    .variant-editor-card span { color: var(--brand); font-size: 9.5px; font-weight: 750;
       letter-spacing: .06em; text-transform: uppercase; }
-    .model-link b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
-    .model-link small { color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+    .variant-editor-card b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+    .variant-editor-card small { color: var(--muted); font-size: 10.5px; line-height: 1.35; }
     .measure-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
     .measure-field { min-width: 0; display: flex; flex-direction: column; gap: 4px; color: var(--muted);
       font-size: 10.5px; font-weight: 650; }
@@ -790,8 +795,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       .variant-copy__source { padding: 16px; }
     }
     @media (max-width: 520px) {
-      .model-link { align-items: stretch; flex-direction: column; }
-      .model-link .btn { align-self: flex-start; }
+      .variant-editor-card { align-items: stretch; flex-direction: column; }
+      .variant-editor-card .btn { align-self: flex-start; }
     }
   `,
 })
@@ -904,7 +909,7 @@ export class ProductEditor {
       this.sameVariantCombination(colour, size, variant));
     if (duplicate) {
       const label = [colour || 'Geen kleur', size || 'Geen maat'].join(' · ');
-      return `${label} bestaat al in dit model${duplicate.sku ? ` (${duplicate.sku})` : ''}.`;
+      return `${label} bestaat al bij de gekoppelde producten${duplicate.sku ? ` (${duplicate.sku})` : ''}.`;
     }
     return null;
   });
@@ -1028,9 +1033,9 @@ export class ProductEditor {
     if (!product.name.trim()) issues.push('Vul een productnaam in.');
     if (!product.categoryId) issues.push('Kies een categorie.');
     if (!family) {
-      issues.push('Start gedeelde websitegegevens voor dit model.');
+      issues.push('Start gedeelde websitegegevens voor deze productreeks.');
     } else {
-      if (!family.name.trim()) issues.push('Vul de publieke modelnaam in.');
+      if (!family.name.trim()) issues.push('Vul de publieke productnaam in.');
       if (!family.publicHandle.trim()) issues.push('Vul een stabiele publieke URL in.');
       if (!family.images.length) issues.push('Voeg minstens één publieke productfoto toe.');
     }
@@ -1071,6 +1076,35 @@ export class ProductEditor {
       familyKey: family.familyKey,
       ...this.variantPublicationFields(),
     });
+  }
+
+  async onVariantLinked(family: ProductFamily): Promise<void> {
+    const productId = this.draft().id;
+    this.replaceFamily(family);
+    this.savedProductFamilyId.set(family.id);
+    if (productId === null) return;
+
+    this.saving.set(true);
+    try {
+      const serverProduct = await this.catalog.product(productId);
+      this.draft.update((current) => ({
+        ...current,
+        familyId: family.id,
+        familyKey: family.familyKey,
+        categoryId: family.categoryId,
+        canonicalVariantKey: serverProduct.canonicalVariantKey,
+        variantPosition: serverProduct.variantPosition,
+        photos: serverProduct.photos,
+        publicationIssues: serverProduct.publicationIssues,
+        describedAs: serverProduct.describedAs,
+        cartonCbm: serverProduct.cartonCbm,
+        pieceCbm: serverProduct.pieceCbm,
+      }));
+    } catch {
+      this.ui.toast('Variant gekoppeld, maar de bijgewerkte productgegevens konden niet worden geladen.', 'err');
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   startNewFamily(): void {

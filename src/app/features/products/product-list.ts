@@ -6,9 +6,10 @@ import { AuthImage } from '../../core/api/auth-image';
 import { Category, Product, ProductFamily } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { EurPipe, NumPipe } from '../../shared/pipes';
+import { EurPipe } from '../../shared/pipes';
 import { escapeHtml, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
+import { Privacy } from '../../core/api/privacy';
 
 interface ProductSwipe {
   pointerId: number;
@@ -23,7 +24,7 @@ interface ProductSwipe {
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NumPipe],
+  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe],
   template: `
     <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
       <a class="btn btn--sm" routerLink="/catalog-export">Catalogus PDF</a>
@@ -89,11 +90,6 @@ interface ProductSwipe {
         }
       </section>
 
-      <p class="product-swipe-hint">
-        <span aria-hidden="true">←</span>
-        Sleep een product naar links voor verwijderen
-      </p>
-
       <div class="card">
         <div class="list">
           @for (product of filtered(); track product.id) {
@@ -125,13 +121,6 @@ interface ProductSwipe {
                     }
                   </div>
                   <div class="product-row__badges">
-                    @if (familyFor(product); as family) {
-                      @if (family.variantCount > 1) {
-                        <span class="master-chip master-chip--variant">
-                          {{ family.variantCount }} varianten
-                        </span>
-                      }
-                    }
                     @if (attentionLabel(product); as attention) {
                       <span class="master-chip"
                             [class.master-chip--muted]="!product.active"
@@ -141,24 +130,26 @@ interface ProductSwipe {
                     }
                   </div>
                 </div>
-                <div class="product-row__facts">
-                  <span class="mono">{{ product.sku || 'Geen SKU' }}</span>
-                  @if (product.inventoryKnown) {
-                    <span [class.warn-text]="product.stockQuantity <= 0">
-                      {{ product.stockQuantity | num }} op voorraad
-                    </span>
-                  } @else {
-                    <span>Voorraad onbekend</span>
-                  }
-                  <span>{{ product.carton.piecesPerCarton | num }} st/doos</span>
-                  <span>{{ sizeLabel(product) }}</span>
-                </div>
+                <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
               </div>
-              <div class="list-item__end">
-                @if (salesPrice(product); as price) {
-                  <div class="strong num">{{ price | eur }}</div>
-                } @else {
-                  <div class="strong muted">—</div>
+              <div class="list-item__end product-row__prices">
+                <div>
+                  <span>Verkoopprijs</span>
+                  @if (salesPrice(product); as price) {
+                    <strong class="num">{{ price | eur }}</strong>
+                  } @else {
+                    <strong class="muted">—</strong>
+                  }
+                </div>
+                @if (privacy.showPurchase()) {
+                  <div>
+                    <span>Inkoopprijs</span>
+                    @if (purchasePrice(product); as price) {
+                      <strong class="num">{{ price | eur }}</strong>
+                    } @else {
+                      <strong class="muted">—</strong>
+                    }
+                  </div>
                 }
               </div>
               <span class="list-item__chev">›</span>
@@ -272,9 +263,12 @@ interface ProductSwipe {
     .product-row__title span { flex: 0 1 auto; overflow: hidden; color: var(--muted);
       font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .product-row__badges { display: flex; flex: 0 0 auto; gap: 4px; }
-    .product-row__facts { display: flex; min-width: 0; flex-wrap: wrap; gap: 2px 0;
-      margin-top: 4px; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
-    .product-row__facts span + span::before { margin: 0 6px; color: var(--muted-2); content: '·'; }
+    .product-row__sku { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
+    .product-row__prices { display: grid; gap: 4px; min-width: 78px; }
+    .product-row__prices > div { display: grid; }
+    .product-row__prices span { color: var(--muted); font-size: 8px; font-weight: 700;
+      letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
+    .product-row__prices strong { font-size: 11.5px; line-height: 1.3; }
     .swipe--dragging { user-select: none; }
     .swipe--dragging .swipe__row {
       transform: translateX(var(--swipe-offset, 0px)); transition: none; cursor: grabbing;
@@ -282,7 +276,6 @@ interface ProductSwipe {
     .master-chip { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 18px;
       padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 750;
       letter-spacing: .03em; text-transform: uppercase; }
-    .master-chip--variant { color: var(--ink-2); background: var(--surface-2); }
     .master-chip--warn { color: var(--warn); background: var(--warn-soft); }
     .master-chip--muted { color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); }
   `,
@@ -290,6 +283,7 @@ interface ProductSwipe {
 export class ProductList {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
+  readonly privacy = inject(Privacy);
 
   readonly query = signal('');
   readonly categoryFilter = signal<number | null>(null);
@@ -493,7 +487,7 @@ export class ProductList {
     const familyMessage = family === null
       ? ''
       : family.variantCount > 1
-        ? ' Alleen dit product/SKU wordt verwijderd; het model en de andere producten blijven bestaan.'
+        ? ' Alleen dit product/SKU wordt verwijderd; de andere gekoppelde producten en gedeelde websitegegevens blijven bestaan.'
         : ' De gedeelde websitegegevens blijven bewaard, maar worden zonder product niet gepubliceerd.';
     const historyMessage = ' Staat dit product al op een order of offerte, dan blijft het bewaard en kun je het alleen inactief zetten.';
     this.swiped.set(null);
@@ -524,15 +518,15 @@ export class ProductList {
     );
   }
 
-  sizeLabel(product: Product): string {
-    const { lengthCm, widthCm, heightCm } = product.dimensions;
-    if (!lengthCm && !widthCm && !heightCm) return 'geen afmeting';
-    return `B × D × H ${dimension(lengthCm)} × ${dimension(widthCm)} × ${dimension(heightCm)} cm`;
-  }
-
   /** The active price strategy is calculated once by the backend. */
   salesPrice(product: Product): number | null {
     return product.computedSalesPriceEur > 0 ? product.computedSalesPriceEur : null;
+  }
+
+  purchasePrice(product: Product): number | null {
+    return product.landedCostEur !== null && product.landedCostEur > 0
+      ? product.landedCostEur
+      : null;
   }
 
   variantLabel(product: Product): string | null {
@@ -572,8 +566,4 @@ export class ProductList {
   publicationActive(product: Product): boolean {
     return product.active && (this.familyFor(product)?.active ?? false);
   }
-}
-
-function dimension(value: number | null): string {
-  return value !== null && value > 0 ? String(value) : '—';
 }

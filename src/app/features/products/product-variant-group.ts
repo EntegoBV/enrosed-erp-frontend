@@ -17,7 +17,7 @@ import { Sheet, Ui } from '../../shared/ui';
 
 /**
  * Daily product-to-product variant workflow. ProductFamily remains the
- * canonical shared model behind the scenes, but users only select a product.
+ * canonical shared record behind the scenes, but users only select a product.
  */
 @Component({
   selector: 'app-product-variant-group',
@@ -27,18 +27,18 @@ import { Sheet, Ui } from '../../shared/ui';
     <section class="variant-group" aria-labelledby="variant-group-title">
       <div class="variant-group__head">
         <div>
-          <span class="variant-group__eyebrow">Model</span>
-          <h2 id="variant-group-title">{{ modelName() }}</h2>
+          <span class="variant-group__eyebrow">Varianten</span>
+          <h2 id="variant-group-title">Gekoppelde producten</h2>
           <p>
             @if (family(); as group) {
               {{ activeMembers().length }} product{{ activeMembers().length === 1 ? '' : 'en' }}
-              · varianten op kleur of maat
+              · ieder met eigen voorraad, prijs en verpakking
             } @else {
-              Dit product staat nog los.
+              Nog geen andere kleur- of maatvariant gekoppeld.
             }
           </p>
         </div>
-        <button class="btn btn--sm" type="button" [disabled]="!canStart()"
+        <button class="btn btn--sm" type="button" [disabled]="!canStart() || disabled()"
                 (click)="openPicker()">
           Product koppelen
         </button>
@@ -85,7 +85,7 @@ import { Sheet, Ui } from '../../shared/ui';
       <app-sheet title="Product koppelen" [wide]="true" (closed)="closePicker()">
         <div body>
           <p class="picker-intro">
-            Kies hetzelfde model in een andere kleur of maat. Voorraad, inkoop,
+            Kies hetzelfde product in een andere kleur of maat. Voorraad, inkoop,
             verkoop en verpakking blijven per product apart.
           </p>
           <label class="picker-search">
@@ -111,7 +111,7 @@ import { Sheet, Ui } from '../../shared/ui';
                 <button class="candidate" type="button"
                         [class.candidate--selected]="selected()?.id === candidate.id"
                         [attr.aria-pressed]="selected()?.id === candidate.id"
-                        [disabled]="!!reason || linking()"
+                        [disabled]="!!reason || linking() || disabled()"
                         (click)="selected.set(candidate)">
                   @if (candidate.photos[0]; as photo) {
                     <img [appAuthSrc]="photo.url" [alt]="candidate.name" />
@@ -125,7 +125,7 @@ import { Sheet, Ui } from '../../shared/ui';
                       · {{ optionLabel(candidate.colour, candidate.variantSize) }}
                     </small>
                     @if (candidate.familyId && familyMap().get(candidate.familyId); as group) {
-                      <small>Model: {{ group.name }}</small>
+                      <small>Al gekoppeld aan: {{ group.name }}</small>
                     }
                     @if (reason) {
                       <em>{{ reason }}</em>
@@ -149,7 +149,7 @@ import { Sheet, Ui } from '../../shared/ui';
             Annuleren
           </button>
           <button class="btn btn--primary" type="button"
-                  [disabled]="!selected() || linking()" (click)="linkSelected()">
+                  [disabled]="!selected() || linking() || disabled()" (click)="linkSelected()">
             {{ linking() ? 'Koppelen…' : 'Koppelen' }}
           </button>
         </div>
@@ -235,6 +235,7 @@ export class ProductVariantGroup {
 
   readonly product = input.required<Product>();
   readonly family = input<ProductFamily | null>(null);
+  readonly disabled = input(false);
   readonly linked = output<ProductFamily>();
 
   readonly pickerOpen = signal(false);
@@ -254,9 +255,9 @@ export class ProductVariantGroup {
       .filter((member) => member.active)
       .sort((a, b) => a.position - b.position || a.productId - b.productId),
   );
-  readonly modelName = computed(() => this.family()?.name?.trim() || this.product().name);
   readonly canStart = computed(() =>
-    this.product().id !== null && this.hasOption(this.product()) && !this.linking(),
+    this.product().id !== null && this.hasOption(this.product())
+      && !this.linking() && !this.disabled(),
   );
   readonly filteredCandidates = computed(() => {
     const needle = this.normalized(this.query());
@@ -286,7 +287,7 @@ export class ProductVariantGroup {
   });
 
   openPicker(): void {
-    if (!this.canStart()) return;
+    if (!this.canStart() || this.disabled()) return;
     this.query.set('');
     this.selected.set(null);
     this.pickerOpen.set(true);
@@ -325,7 +326,7 @@ export class ProductVariantGroup {
     const currentFamilyId = current.familyId;
     if (currentFamilyId !== null && candidate.familyId === currentFamilyId) return 'Al gekoppeld.';
     if (currentFamilyId !== null && candidate.familyId !== null
-        && candidate.familyId !== currentFamilyId) return 'Hoort al bij een ander model.';
+        && candidate.familyId !== currentFamilyId) return 'Hoort al bij een andere variantgroep.';
     if (current.categoryId !== null && candidate.categoryId !== null
         && current.categoryId !== candidate.categoryId) return 'Andere categorie.';
 
@@ -340,7 +341,7 @@ export class ProductVariantGroup {
       const incomingOption = currentFamilyId !== null ? candidateOption : currentOption;
       if (targetFamily.members.some((member) => member.active
           && this.optionKey(member.colour, member.size) === incomingOption)) {
-        return 'Deze kleur en maat bestaan al in dat model.';
+        return 'Deze kleur en maat bestaan al bij de gekoppelde producten.';
       }
     }
     return null;
@@ -349,14 +350,14 @@ export class ProductVariantGroup {
   async linkSelected(): Promise<void> {
     const currentId = this.product().id;
     const candidate = this.selected();
-    if (currentId === null || candidate?.id === null || candidate?.id === undefined
+    if (this.disabled() || currentId === null || candidate?.id === null || candidate?.id === undefined
         || this.candidateReason(candidate)) return;
     this.linking.set(true);
     try {
       const family = await this.catalog.linkProductVariant(currentId, candidate.id);
       this.families.update((items) => [family, ...items.filter((item) => item.id !== family.id)]);
       this.linked.emit(family);
-      this.ui.toast(`${candidate.name} is gekoppeld aan ${family.name}`, 'ok');
+      this.ui.toast(`${candidate.name} is als variant gekoppeld`, 'ok');
       this.pickerOpen.set(false);
       this.selected.set(null);
     } catch (failure) {

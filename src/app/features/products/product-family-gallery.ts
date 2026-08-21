@@ -46,7 +46,7 @@ interface GalleryPointerReorder {
 
       @if (!currentProductIsMember()) {
         <p class="membership-hint" role="note">
-          Sla dit product eerst op in dit model om een foto specifiek aan deze variant te koppelen.
+          Sla dit product eerst op in deze variantgroep om een foto specifiek aan deze variant te koppelen.
           Tot dan geldt een nieuwe foto voor alle varianten.
         </p>
       }
@@ -114,7 +114,7 @@ interface GalleryPointerReorder {
           <span aria-hidden="true">◇</span>
           <div>
             <b>Nog geen publieke foto's</b
-            ><small>De migratie koppelt de bronfoto's aan dit model.</small>
+            ><small>De migratie koppelt de bronfoto's aan deze productreeks.</small>
           </div>
         </div>
       }
