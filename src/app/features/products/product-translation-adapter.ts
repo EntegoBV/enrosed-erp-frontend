@@ -19,6 +19,7 @@ export interface TranslationGap {
   label: string;
 }
 
+
 export function familyText(family: ProductFamily, language: LanguageCode): ProductFamilyText {
   return family.texts.find((item) => item.language === language) ?? blankFamilyText(language);
 }

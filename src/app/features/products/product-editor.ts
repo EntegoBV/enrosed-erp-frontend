@@ -7,8 +7,7 @@ import {
   inject,
   input,
   signal,
-  viewChild,
-} from '@angular/core';
+  viewChild, untracked } from '@angular/core';
 import { Location } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -955,23 +954,30 @@ export class ProductEditor {
   constructor() {
     void this.loadReference();
     void this.loadFamilies();
+    /* React to the route id only. Everything else runs untracked: loadProduct
+       reads and writes draft/translation signals synchronously, and with
+       those as dependencies the effect re-ran on its own writes before
+       activeProductId was set - an endless stream of GET /api/products/:id
+       until the browser ran out of sockets. */
     effect(() => {
       const routeId = this.id();
-      if (routeId && routeId !== 'new') {
-        const productId = +routeId;
-        if (this.activeProductId !== null && productId !== this.activeProductId
-            && (this.translationSaving()
-              || (this.translationDirty() && !this.confirmDiscardTranslations()))) {
-          const currentId = this.activeProductId;
-          queueMicrotask(() => void this.router.navigate(
-            ['/products', currentId, 'edit'], { replaceUrl: true }));
-          return;
+      untracked(() => {
+        if (routeId && routeId !== 'new') {
+          const productId = +routeId;
+          if (this.activeProductId !== null && productId !== this.activeProductId
+              && (this.translationSaving()
+                || (this.translationDirty() && !this.confirmDiscardTranslations()))) {
+            const currentId = this.activeProductId;
+            queueMicrotask(() => void this.router.navigate(
+              ['/products', currentId, 'edit'], { replaceUrl: true }));
+            return;
+          }
+          if (productId !== this.activeProductId) void this.loadProduct(productId);
+        } else {
+          ++this.productLoadVersion;
+          this.productLoadError.set(null);
         }
-        if (productId !== this.activeProductId) void this.loadProduct(productId);
-      } else {
-        ++this.productLoadVersion;
-        this.productLoadError.set(null);
-      }
+      });
     });
   }
 
