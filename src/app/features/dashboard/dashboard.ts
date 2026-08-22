@@ -246,7 +246,7 @@ interface FreightHorizon {
         </div>
         <div class="card__body">
 
-          <div class="fown">
+          <div class="fown fown--top">
             <div class="fown__head">
               <span class="label">Jouw offertes</span>
               <span class="spacer"></span>
