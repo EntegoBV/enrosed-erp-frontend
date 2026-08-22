@@ -27,6 +27,18 @@ export interface Dimensions {
 
 export type PackagingKind = 'NONE' | 'GIFT_BOX' | 'DISPLAY';
 
+/** One line in the stock book: what changed, to what, why and by whom. */
+export interface StockMovement {
+  id: number;
+  at: string;
+  delta: number;
+  quantityAfter: number;
+  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION';
+  kindLabel: string;
+  reference: string | null;
+  actor: string | null;
+}
+
 /** Gift box or display the product is sold in, with its own outer size. */
 export interface Packaging {
   kind: PackagingKind;

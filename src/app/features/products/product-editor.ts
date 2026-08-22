@@ -10,16 +10,17 @@ import {
   signal,
   viewChild, untracked } from '@angular/core';
 import { Location } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
+import { DecimalInput } from '../../shared/decimal-input';
 import { Privacy } from '../../core/api/privacy';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
-import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { CbmPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
@@ -48,12 +49,28 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   };
 }
 
+/**
+ * The default order of the catalogue list: category after category in the
+ * categories' own order (no category last), names A-Z inside each. Stepping
+ * through the editor then follows what the eye just saw in the list.
+ */
+function orderLikeTheList(products: Product[], categories: Category[]): Product[] {
+  const rank = new Map(categories.map((category, index) => [category.id, index]));
+  const byName = (a: Product, b: Product) =>
+    a.name.localeCompare(b.name, 'nl', { numeric: true, sensitivity: 'base' })
+    || (a.sku ?? '').localeCompare(b.sku ?? '', 'nl', { numeric: true });
+  return [...products].sort((a, b) =>
+    ((a.categoryId == null ? Infinity : rank.get(a.categoryId) ?? Infinity)
+      - (b.categoryId == null ? Infinity : rank.get(b.categoryId) ?? Infinity))
+    || byName(a, b));
+}
+
 @Component({
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, PageHeader, PhotoManager, ProductPublicationEditor,
-    ProductVariantGroup, Sheet, EurPipe, NumPipe, CbmPipe,
+    ProductVariantGroup, Sheet, EurPipe, NumPipe, CbmPipe, DateTimeNlPipe, DecimalInput, RouterLink,
   ],
   template: `
     <app-page-header
@@ -62,6 +79,21 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       [showBack]="true"
       [showBell]="false"
     >
+      <!-- Desktop: step through the catalogue without going back to the
+           list. The unsaved-changes guard still asks before leaving. -->
+      @if (!isNew() && neighbours(); as around) {
+        <span class="product-nav" role="group" aria-label="Vorig of volgend product">
+          <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
+             [routerLink]="around.previous ? ['/products', around.previous.id, 'edit'] : null"
+             [attr.aria-disabled]="!around.previous"
+             [title]="around.previous ? 'Vorige: ' + around.previous.name : 'Dit is het eerste product'">‹</a>
+          <small class="product-nav__pos">{{ around.index + 1 }}/{{ around.total }}</small>
+          <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
+             [routerLink]="around.next ? ['/products', around.next.id, 'edit'] : null"
+             [attr.aria-disabled]="!around.next"
+             [title]="around.next ? 'Volgende: ' + around.next.name : 'Dit is het laatste product'">›</a>
+        </span>
+      }
       <button class="btn btn--primary btn--sm" type="button"
               [disabled]="saving() || photoUploading() || translationSaving()"
               (click)="save()">{{ saving() ? 'Bezig…' : (photoUploading() ? 'Foto’s…' : (savedHere() ? 'Opnieuw opslaan' : 'Opslaan')) }}</button>
@@ -220,7 +252,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="measure-field">
                 <span>Breedte</span>
                 <span class="measure-field__control">
-                  <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                  <input class="input num right" appDecimal
                          [ngModel]="draft().dimensions.lengthCm"
                          (ngModelChange)="patchDimensions({ lengthCm: num($event) })" />
                   <small>cm</small>
@@ -229,7 +261,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="measure-field">
                 <span>Diepte</span>
                 <span class="measure-field__control">
-                  <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                  <input class="input num right" appDecimal
                          [ngModel]="draft().dimensions.widthCm"
                          (ngModelChange)="patchDimensions({ widthCm: num($event) })" />
                   <small>cm</small>
@@ -238,7 +270,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="measure-field">
                 <span>Hoogte</span>
                 <span class="measure-field__control">
-                  <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                  <input class="input num right" appDecimal
                          [ngModel]="draft().dimensions.heightCm"
                          (ngModelChange)="patchDimensions({ heightCm: num($event) })" />
                   <small>cm</small>
@@ -264,7 +296,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <label class="measure-field">
                   <span>Breedte</span>
                   <span class="measure-field__control">
-                    <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                    <input class="input num right" appDecimal
                            [ngModel]="draft().packaging.dimensions.lengthCm"
                            (ngModelChange)="patchPackagingDimensions({ lengthCm: num($event) })" />
                     <small>cm</small>
@@ -273,7 +305,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <label class="measure-field">
                   <span>Diepte</span>
                   <span class="measure-field__control">
-                    <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                    <input class="input num right" appDecimal
                            [ngModel]="draft().packaging.dimensions.widthCm"
                            (ngModelChange)="patchPackagingDimensions({ widthCm: num($event) })" />
                     <small>cm</small>
@@ -282,7 +314,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <label class="measure-field">
                   <span>Hoogte</span>
                   <span class="measure-field__control">
-                    <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                    <input class="input num right" appDecimal
                            [ngModel]="draft().packaging.dimensions.heightCm"
                            (ngModelChange)="patchPackagingDimensions({ heightCm: num($event) })" />
                     <small>cm</small>
@@ -343,7 +375,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="measure-field">
                 <span>Breedte</span>
                 <span class="measure-field__control">
-                  <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                  <input class="input num right" appDecimal
                          [ngModel]="draft().carton.lengthCm"
                          (ngModelChange)="patchCarton({ lengthCm: num($event) })" />
                   <small>cm</small>
@@ -352,7 +384,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="measure-field">
                 <span>Diepte</span>
                 <span class="measure-field__control">
-                  <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                  <input class="input num right" appDecimal
                          [ngModel]="draft().carton.widthCm"
                          (ngModelChange)="patchCarton({ widthCm: num($event) })" />
                   <small>cm</small>
@@ -361,7 +393,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="measure-field">
                 <span>Hoogte</span>
                 <span class="measure-field__control">
-                  <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                  <input class="input num right" appDecimal
                          [ngModel]="draft().carton.heightCm"
                          (ngModelChange)="patchCarton({ heightCm: num($event) })" />
                   <small>cm</small>
@@ -379,7 +411,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div class="field">
               <label for="p-weight">Gewicht per karton <span class="opt"></span></label>
               <div class="input-affix">
-                <input class="input num right" id="p-weight" type="number" min="0" step="0.5"
+                <input class="input num right" id="p-weight" appDecimal
                        inputmode="decimal" [ngModel]="draft().carton.weightKg"
                        (ngModelChange)="patchCarton({ weightKg: num($event) })" />
                 <span class="input-affix__suffix">kg</span>
@@ -401,6 +433,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <b>{{ cartonCbm() | cbm }} per doos</b> ({{ pieceCbm() | num: 5 }} m³ per stuk).
             </div>
           </div>
+
         </div>
       </section>
 
@@ -415,7 +448,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <div class="form-grid">
             <div class="field">
               <label class="req" for="p-exw">EXW prijs</label>
-              <input class="input num right" id="p-exw" type="number" min="0" step="0.01"
+              <input class="input num right" id="p-exw" appDecimal
                      inputmode="decimal" [ngModel]="draft().exwPrice"
                      (ngModelChange)="patch({ exwPrice: +$event })" />
             </div>
@@ -431,7 +464,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div class="field">
               <label for="p-extra">Extra kost per stuk <span class="opt"></span></label>
               <div class="input-affix">
-                <input class="input num right" id="p-extra" type="number" min="0" step="0.01"
+                <input class="input num right" id="p-extra" appDecimal
                        inputmode="decimal" [ngModel]="draft().extraUnitCost"
                        (ngModelChange)="patch({ extraUnitCost: +$event })" />
                 <span class="input-affix__suffix">{{ draft().exwCurrency }}</span>
@@ -512,7 +545,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div class="field">
               <label class="req" for="p-price">Vaste verkoopprijs per stuk</label>
               <div class="input-affix">
-                <input class="input num right" id="p-price" type="number" min="0" step="0.01"
+                <input class="input num right" id="p-price" appDecimal
                        inputmode="decimal" [ngModel]="draft().fixedSalesPriceEur"
                        [placeholder]="draft().landedCostEur
                          ? 'kostprijs ' + (draft().landedCostEur | eur: 2) : ''"
@@ -558,6 +591,70 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               }
             </dl>
           </div>
+        </div>
+      </section>
+
+      <!-- ======================================== stock -->
+      <!-- Stock lives apart from the product form: purchase receipts feed
+           it, a recount corrects it on the spot, and the book below says
+           where every figure came from. -->
+      <section class="card editor-section" id="stock" aria-labelledby="stock-title">
+        <div class="card__head section-head">
+          <h2 id="stock-title">Voorraad</h2>
+          <span class="spacer"></span>
+          @if (!isNew() && draft().inventoryKnown) {
+            <strong class="num stock-now">{{ draft().stockQuantity | num }} stuks</strong>
+          }
+        </div>
+        <div class="card__body">
+          @if (isNew()) {
+            <p class="hint">Voorraad komt er zodra het product is aangemaakt.</p>
+          } @else {
+            @if (!draft().inventoryKnown) {
+              <p class="hint">Voorraad nog onbekend - zet hem met een telling.</p>
+            }
+            @if (stockEditing()) {
+              <div class="stock-edit">
+                <label class="sr-only" for="p-stock">Nieuw aantal stuks</label>
+                <input class="input num right" id="p-stock" type="number" min="0" step="1" inputmode="numeric"
+                       [ngModel]="stockDraft()" (ngModelChange)="stockDraft.set($event)"
+                       (keydown.enter)="saveStock()" (keydown.escape)="stockEditing.set(false)" />
+                <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
+                        (click)="saveStock()">{{ stockSaving() ? 'Bezig…' : 'Voorraad opslaan' }}</button>
+                <button class="btn btn--sm" type="button" (click)="stockEditing.set(false)">Annuleren</button>
+              </div>
+              <span class="hint">Geteld? Vul het werkelijke aantal in; dit wordt meteen bewaard, los van Opslaan.</span>
+            } @else {
+              <div class="stock-edit">
+                <button class="btn btn--sm" type="button" (click)="startStockEdit()">Voorraad corrigeren</button>
+                <span class="hint">Groeit vanzelf wanneer een inkooporder op Ontvangen gaat.</span>
+              </div>
+            }
+
+            <h3 class="stock-history__title">Geschiedenis</h3>
+            @if (stockHistory(); as history) {
+              @if (history.length) {
+                <ol class="stock-history">
+                  @for (move of history; track move.id) {
+                    <li>
+                      <span class="stock-history__delta num" [class.stock-history__delta--minus]="move.delta < 0">
+                        {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
+                      </span>
+                      <span class="stock-history__what">
+                        <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
+                        <small>{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
+                      </span>
+                      <span class="stock-history__after num">= {{ move.quantityAfter | num }}</span>
+                    </li>
+                  }
+                </ol>
+              } @else {
+                <p class="hint">Nog geen bewegingen geboekt. Alles wat vanaf nu binnenkomt of geteld wordt, staat hier.</p>
+              }
+            } @else {
+              <p class="hint">Geschiedenis laden…</p>
+            }
+          }
         </div>
       </section>
 
@@ -872,7 +969,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       .editor-canvas[data-tab="media"] #media,
       .editor-canvas[data-tab="packaging"] #packaging,
       .editor-canvas[data-tab="purchasing"] #purchasing,
-      .editor-canvas[data-tab="sales"] #sales { display: block; }
+      .editor-canvas[data-tab="sales"] #sales,
+      .editor-canvas[data-tab="stock"] #stock { display: block; }
       .editor-canvas:not([data-tab="publication"]) .editor-mobile-note { display: none; }
     }
     @media (min-width: 1024px) {
@@ -934,6 +1032,29 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .readiness ul { margin: 10px 0 0; padding-left: 22px; color: var(--ink-2); font-size: 13px; }
     .readiness li + li { margin-top: 4px; }
 
+    /* Desktop idiom only (the rail breakpoint); a phone has no room next
+       to Opslaan and goes back to the list anyway. */
+    .product-nav { display: none; align-items: center; gap: 4px; margin-right: 6px; }
+    @media (min-width: 680px) { .product-nav { display: inline-flex; } }
+    .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
+    .product-nav__btn--off { opacity: .35; pointer-events: none; }
+    .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
+      font-variant-numeric: tabular-nums; }
+    .stock-now { font-size: 16px; }
+    .stock-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .stock-edit .input { width: 120px; }
+    .stock-history__title { margin: 18px 0 6px; color: var(--muted); font-size: 11px; font-weight: 750;
+      letter-spacing: .06em; text-transform: uppercase; }
+    .stock-history { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+    .stock-history li { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .stock-history__delta { font-weight: 750; color: var(--ok, #2e7d4f); }
+    .stock-history__delta--minus { color: var(--danger); }
+    .stock-history__what { display: grid; min-width: 0; }
+    .stock-history__what b { font-weight: 650; font-size: 13px; }
+    .stock-history__what small { color: var(--muted); font-size: 11.5px; }
+    .stock-history__after { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
     .price-preview {
       display: flex; align-items: flex-end; justify-content: space-between; gap: 14px;
       margin-top: 2px; padding: 15px; border-radius: var(--r-sm);
@@ -1175,6 +1296,7 @@ export class ProductEditor implements OnDestroy {
       { id: 'packaging', label: 'Omdoos' },
       { id: 'purchasing', label: 'Inkoop' },
       { id: 'sales', label: 'Verkoop' },
+      { id: 'stock', label: 'Voorraad' },
       { id: 'publication', label: 'Website' },
     ];
     return this.privacy.showPurchase() ? list : list.filter((t) => t.id !== 'purchasing');
@@ -1239,6 +1361,21 @@ export class ProductEditor implements OnDestroy {
 
   /** Colours already in use on other products, with the swatch they carry. */
   private readonly usedColours = signal<Map<string, string | null>>(new Map());
+
+  /** Every product in the order the catalogue list shows them by default. */
+  private readonly catalogueOrder = signal<Product[]>([]);
+  readonly neighbours = computed(() => {
+    const id = this.draft().id;
+    const order = this.catalogueOrder();
+    if (id === null || !order.length) return null;
+    const index = order.findIndex((product) => product.id === id);
+    if (index < 0) return null;
+    return {
+      index, total: order.length,
+      previous: index > 0 ? order[index - 1] : null,
+      next: index < order.length - 1 ? order[index + 1] : null,
+    };
+  });
 
   /**
    * The pick-list: the standard colours, then every colour typed once on
@@ -1339,6 +1476,59 @@ export class ProductEditor implements OnDestroy {
   readonly copyProducts = signal<Product[]>([]);
   readonly copyVariantLoading = signal(false);
   readonly copyVariantCheckFailed = signal(false);
+  readonly stockHistory = signal<StockMovement[] | null>(null);
+
+  private async loadStockHistory(productId: number): Promise<void> {
+    this.stockHistory.set(null);
+    try {
+      this.stockHistory.set(await this.catalog.stockMovements(productId));
+    } catch {
+      this.stockHistory.set([]);
+    }
+  }
+
+  readonly stockEditing = signal(false);
+  readonly stockDraft = signal<number | null>(null);
+  readonly stockSaving = signal(false);
+
+  startStockEdit(): void {
+    this.stockDraft.set(this.draft().inventoryKnown ? this.draft().stockQuantity : 0);
+    this.stockEditing.set(true);
+    setTimeout(() => document.getElementById('p-stock')?.focus());
+  }
+
+  async saveStock(): Promise<void> {
+    const id = this.draft().id;
+    const quantity = this.stockDraft();
+    if (id === null || this.stockSaving()) return;
+    if (quantity === null || !Number.isInteger(Number(quantity)) || Number(quantity) < 0) {
+      this.ui.toast('Geef een heel aantal stuks op (0 of meer).', 'err');
+      return;
+    }
+    this.stockSaving.set(true);
+    try {
+      const saved = await this.catalog.setStock(id, Number(quantity));
+      /* Only the stock figures change; the rest of the form keeps the
+         user's unsaved edits. */
+      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      /* The baseline follows, or the form would count a saved stock figure
+         as an unsaved change and nag on leaving. */
+      const baseline = this.baseline();
+      if (baseline) {
+        const parsed = JSON.parse(baseline) as Product;
+        this.baseline.set(JSON.stringify(
+          { ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      }
+      this.stockEditing.set(false);
+      this.ui.toast(`Voorraad gezet op ${saved.stockQuantity}`, 'ok');
+      void this.loadStockHistory(id);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Voorraad aanpassen mislukt'), 'err');
+    } finally {
+      this.stockSaving.set(false);
+    }
+  }
+
   readonly innerCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly outerCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly packagingCheck = signal<{ valid: boolean; message: string } | null>(null);
@@ -1439,6 +1629,7 @@ export class ProductEditor implements OnDestroy {
       this.savedProductFamilyId.set(product.familyId ?? null);
       this.activeProductId = productId;
       this.draft.set(product);
+      void this.loadStockHistory(productId);
       this.syncPriceStrategy(product);
       this.markClean();
       await this.loadFamilyForProduct(product);
@@ -1513,6 +1704,7 @@ export class ProductEditor implements OnDestroy {
       }
     }
     this.usedColours.set(used);
+    this.catalogueOrder.set(orderLikeTheList(allProducts, categories));
 
     if (!this.id() || this.id() === 'new') {
       const supplierId = this.supplier() ? +this.supplier() : (suppliers[0]?.id ?? null);
@@ -2114,6 +2306,7 @@ export class ProductEditor implements OnDestroy {
         return;
       }
       this.savedHere.set(true);
+      if (saved.id !== null) void this.loadStockHistory(saved.id);
       if (wasNew && saved.id !== null) {
         await this.router.navigate(['/products', saved.id, 'edit'],
           { replaceUrl: true, state: { savedHere: true } });

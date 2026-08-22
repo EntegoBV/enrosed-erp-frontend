@@ -3,20 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  CatalogImportResult,
-  Category,
-  ContentTranslationCreate,
-  ContentTranslationGroup,
-  ContentTranslationOverview,
-  ContentTranslationScope,
-  ContentTranslationWrite,
-  HsCode,
-  LanguageCode,
-  Product,
-  ProductFamily,
-  ProductPublicTranslationsSnapshot,
-  ProductPublicTranslationsWrite,
-  WebsiteRebuildStatus,
+  CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, WebsiteRebuildStatus, StockMovement,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -189,6 +176,16 @@ export class CatalogApi {
   ): Promise<ProductPublicTranslationsSnapshot> {
     return firstValueFrom(this.http.put<ProductPublicTranslationsSnapshot>(
       api(`/api/products/${productId}/public-translations`), request));
+  }
+
+  /** Manual stock correction after a recount; the product PUT leaves stock alone. */
+  setStock(productId: number, quantity: number): Promise<Product> {
+    return firstValueFrom(
+      this.http.post<Product>(api(`/api/products/${productId}/stock`), { quantity }));
+  }
+
+  stockMovements(productId: number): Promise<StockMovement[]> {
+    return firstValueFrom(this.http.get<StockMovement[]>(api(`/api/products/${productId}/stock-movements`)));
   }
 
   /** Check digit plus uniqueness; the product being edited may keep its own codes. */
