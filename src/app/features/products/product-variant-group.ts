@@ -24,7 +24,7 @@ import { Sheet, Ui } from '../../shared/ui';
           <h2 id="variant-group-title">Gekoppelde producten</h2>
           <p>
             @if (family(); as group) {
-              {{ activeMembers().length }} product{{ activeMembers().length === 1 ? '' : 'en' }}
+              {{ siblings().length ? siblings().length + ' andere variant' + (siblings().length === 1 ? '' : 'en') : 'Reeks zonder andere varianten' }}
               · ieder met eigen voorraad, prijs en verpakking
             } @else {
               Nog geen andere kleur- of maatvariant gekoppeld.
@@ -68,11 +68,10 @@ import { Sheet, Ui } from '../../shared/ui';
           <!-- A sibling chip opens a small peek, not another page: you
                can look at the red one without saving and leaving this
                product first. -->
-          @for (member of activeMembers(); track member.productId) {
+          <!-- Only the siblings: this product is the page you are on. -->
+          @for (member of siblings(); track member.productId) {
             <button class="variant-chip" type="button"
-                    [class.variant-chip--current]="member.productId === product().id"
                     [class.variant-chip--peek]="peekId() === member.productId"
-                    [attr.aria-current]="member.productId === product().id ? 'page' : null"
                     [attr.aria-expanded]="peekId() === member.productId"
                     (click)="togglePeek(member.productId)">
               @if (member.colourHex) {
@@ -85,17 +84,9 @@ import { Sheet, Ui } from '../../shared/ui';
               </span>
             </button>
           }
-        } @else {
-          <span class="variant-chip variant-chip--current">
-            @if (product().colourHex) {
-              <span class="variant-chip__swatch" [style.background]="product().colourHex"
-                    aria-hidden="true"></span>
-            }
-            <span>
-              <b>{{ optionLabel(product().colour, product().variantSize) }}</b>
-              <small>{{ product().sku || 'Huidig product' }}</small>
-            </span>
-          </span>
+          @if (!siblings().length) {
+            <span class="variant-group__none">Nog geen andere kleur of maat in deze reeks.</span>
+          }
         }
       </div>
 
@@ -252,7 +243,7 @@ import { Sheet, Ui } from '../../shared/ui';
     .variant-peek__photo--empty { display: flex; align-items: center; justify-content: center; color: var(--muted); }
     .variant-peek__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .variant-peek__body small { font-size: 12px; color: var(--muted); }
-    .variant-chip--current { border-color: var(--brand); box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 35%, transparent); }
+    .variant-group__none { color: var(--muted); font-size: 12.5px; }
     .variant-chip__swatch { width: 18px; height: 18px; border: 1px solid rgb(0 0 0 / .14); border-radius: 50%; flex: none; }
     .variant-chip span:last-child { display: grid; gap: 1px; }
     .variant-chip b { font-size: 12px; }
@@ -370,6 +361,8 @@ export class ProductVariantGroup {
       .filter((member) => member.active)
       .sort((a, b) => a.position - b.position || a.productId - b.productId),
   );
+  readonly siblings = computed(() =>
+    this.activeMembers().filter((member) => member.productId !== this.product().id));
   readonly canStart = computed(() =>
     (this.product().id !== null || this.deferred()) && this.hasOption(this.product())
       && !this.linking() && !this.disabled(),

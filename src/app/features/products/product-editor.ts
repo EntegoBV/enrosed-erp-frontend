@@ -939,12 +939,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
             }
 
             @if (!copySource().familyId) {
-              <div class="alert alert--info variant-copy__family-note">
-                <span class="alert__icon" aria-hidden="true">i</span>
-                <p><b>Nog geen variantgroep</b><br />
-                  De kopie wordt wel gemaakt. Open daarna de kopie en kies bij Gekoppelde
-                  producten voor Product koppelen.</p>
-              </div>
+              <p class="hint">De kopie wordt meteen als variant aan dit product gekoppeld.</p>
             }
           </div>
           <div foot style="display:contents">
@@ -2365,7 +2360,7 @@ export class ProductEditor implements OnDestroy {
         variantSize: this.copySize().trim(),
       });
       this.copying.set(false);
-      this.ui.toast(`${copy.sku} aangemaakt — vul de barcodes en foto's nog aan`);
+      this.ui.toast(`${copy.sku} aangemaakt en gekoppeld — vul de barcodes en foto's nog aan`);
       await this.router.navigate(['/products', copy.id, 'edit']);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Kopiëren mislukt'), 'err');
