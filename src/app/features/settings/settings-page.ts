@@ -568,9 +568,10 @@ const normalizeCategoryCode = (value: string): string => value
               <div class="row" style="margin-bottom:8px">
                 <input class="input input--sm mono" style="max-width:140px" aria-label="HS-code"
                        [ngModel]="code.code" (ngModelChange)="code.code = $event" />
-                <input class="input input--sm num right" style="max-width:80px" type="number"
-                       step="0.5" aria-label="Invoerrecht" [ngModel]="code.dutyRatePct"
-                       (ngModelChange)="code.dutyRatePct = +$event" />
+                <input class="input input--sm num right" style="max-width:80px" type="text"
+                       inputmode="decimal" aria-label="Invoerrecht"
+                       [value]="pctText(code.dutyRatePct)"
+                       (change)="code.dutyRatePct = pctValue($any($event.target).value)" />
                 <span class="small muted">%</span>
                 <button class="btn btn--sm" type="button" (click)="saveHsCode(code)">✓</button>
                 <button class="btn btn--sm btn--danger" type="button"
@@ -604,9 +605,9 @@ const normalizeCategoryCode = (value: string): string => value
                        aria-label="Vanaf aantal" [ngModel]="tier.minQuantity"
                        (ngModelChange)="tier.minQuantity = +$event" />
                 <span class="small muted">st →</span>
-                <input class="input input--sm num right" type="number" step="0.5"
-                       aria-label="Percentage" [ngModel]="tier.percent"
-                       (ngModelChange)="tier.percent = +$event" />
+                <input class="input input--sm num right" type="text" inputmode="decimal"
+                       aria-label="Percentage" [value]="pctText(tier.percent)"
+                       (change)="tier.percent = pctValue($any($event.target).value)" />
                 <span class="small muted">%</span>
                 <button class="btn btn--sm btn--danger" type="button"
                         (click)="removeTier(scope.key, $index)">✕</button>
@@ -1277,6 +1278,17 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   /** Codes as loaded from the server; anything else is an unsaved draft. */
   private savedHsCodes = new Set<string>();
+
+  /* Percentages are typed the Belgian way, with a comma. A number input
+     refuses "6,5" on most keyboards; a decimal text field accepts both. */
+  pctText(value: number | null | undefined): string {
+    return value == null ? '' : String(value).replace('.', ',');
+  }
+
+  pctValue(raw: string): number {
+    const parsed = parseFloat(String(raw).trim().replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
 
   removeHsCode(code: HsCode): void {
     /* A freshly added row has nothing on the server yet: drop it locally,
