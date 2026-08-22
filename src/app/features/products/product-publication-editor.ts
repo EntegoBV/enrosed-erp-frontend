@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   Category,
@@ -661,6 +661,20 @@ export class ProductPublicationEditor {
   readonly imageDeleteRequested = output<number>();
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
   readonly translationsSaved = output<ProductPublicTranslationsSnapshot>();
+
+  private readonly translationEditor = viewChild(ProductTranslationEditor);
+
+  /**
+   * Saves pending website translations on behalf of the product's own
+   * Opslaan - one button saves everything that is open. Resolves true
+   * when nothing is left dirty (including when there was nothing to do).
+   */
+  async saveTranslations(): Promise<boolean> {
+    const editor = this.translationEditor();
+    if (!editor || !editor.dirty()) return true;
+    await editor.save();
+    return !editor.dirty();
+  }
   readonly translationDirtyChange = output<boolean>();
   readonly translationSavingChange = output<boolean>();
 
