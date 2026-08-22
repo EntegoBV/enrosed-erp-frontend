@@ -18,6 +18,7 @@ import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, 
 import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Privacy } from '../../core/api/privacy';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -110,7 +111,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
          desktop: a jump list whose highlight follows the scroll. -->
     <nav class="subnav" aria-label="Onderdelen">
       <div class="subnav__rail">
-        @for (tab of tabs(); track tab.id) {
+        @for (tab of visibleTabs(); track tab.id) {
           <button type="button" [class.active]="activeTab() === tab.id"
                   [attr.aria-current]="activeTab() === tab.id ? 'location' : null"
                   (click)="showTab(tab.id)">{{ tab.label }}</button>
@@ -640,10 +641,14 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
                 <ol class="stock-history">
                   @for (move of history; track move.id) {
                     <li class="swipe stock-history__item" [class.swipe--open]="moveSwiped() === move.id"
-                        [class.stock-history__item--leaving]="moveDeleting() === move.id">
+                        [class.swipe--dragging]="moveDragging() === move.id"
+                        [class.stock-history__item--leaving]="moveDeleting() === move.id"
+                        [style.--swipe-offset]="moveDragging() === move.id ? moveOffset() + 'px' : null">
                       <div class="swipe__row stock-history__row"
                            (touchstart)="moveSwipeStart($event, move.id)"
                            (touchmove)="moveSwipeMove($event, move)"
+                           (touchend)="moveSwipeEnd(move)"
+                           (touchcancel)="moveSwipeEnd(move)"
                            (click)="moveSwiped() !== null && moveSwiped.set(null)">
                         <span class="stock-history__delta num" [class.stock-history__delta--minus]="move.delta < 0">
                           {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
@@ -704,7 +709,6 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
         (translationsSaved)="onPublicTranslationsSaved($event)"
       />
       </div>
-      <p class="editor-mobile-note">Website &amp; publicatie bewerk je op desktop.</p>
 
       <div class="editor-actions">
         <!-- Phone: walk the sections with Volgende, save at the end (the
@@ -979,9 +983,6 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     }
     .select--status-off { background-color: var(--surface-2); color: var(--muted); }
     .variant-pending { border-color: var(--rose-soft); background: var(--rose-soft); }
-    .editor-mobile-note {
-      color: var(--muted); font-size: 13px; text-align: center; padding: 18px 0 6px;
-    }
     /* Phone: only the active section is in the DOM flow; desktop: all. */
     @media (max-width: 1023px) {
       /* Deleting lives on the list (swipe left) - no danger zone on a
@@ -995,10 +996,6 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
       .editor-canvas[data-tab="purchasing"] #purchasing,
       .editor-canvas[data-tab="sales"] #sales,
       .editor-canvas[data-tab="stock"] #stock { display: block; }
-      .editor-canvas:not([data-tab="publication"]) .editor-mobile-note { display: none; }
-    }
-    @media (min-width: 1024px) {
-      .editor-mobile-note { display: none; }
     }
 
     .editor-section { scroll-margin-top: calc(var(--appbar-h) + 12px); }
@@ -1071,7 +1068,12 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
       letter-spacing: .06em; text-transform: uppercase; }
     .stock-history { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
     .stock-history__item { border-bottom: 1px solid var(--line); }
-    .stock-history__item--leaving { opacity: .4; }
+    /* The row follows the finger all the way; past the threshold it
+       slides out entirely instead of parking halfway. */
+    .stock-history__item.swipe--dragging .swipe__row {
+      transform: translateX(var(--swipe-offset, 0px)); transition: none; }
+    .stock-history__item--leaving .swipe__row { transform: translateX(-110%); opacity: .3;
+      transition: transform .2s ease, opacity .2s ease; }
     .stock-history__row { display: grid; grid-template-columns: 64px 1fr auto auto; align-items: center;
       gap: 10px; padding: 8px 0; }
     /* Desktop: the bin sits at the row's edge and shows on hover; a mouse
@@ -1181,6 +1183,10 @@ export class ProductEditor implements OnDestroy {
 
   /** Phone flow: the tabs you can actually complete on a phone. */
   readonly phoneTabs = computed(() => this.tabs().filter((t) => t.id !== 'publication'));
+  /* Website only exists on a desktop screen; below that the tab is just
+     a dead end, so it is not offered. */
+  private readonly desktop = inject(DesktopViewport);
+  readonly visibleTabs = computed(() => this.desktop.active() ? this.tabs() : this.phoneTabs());
   readonly isLastPhoneTab = computed(() => {
     const list = this.phoneTabs();
     return list.findIndex((t) => t.id === this.activeTab()) >= list.length - 1;
@@ -1393,6 +1399,8 @@ export class ProductEditor implements OnDestroy {
   readonly privacy = inject(Privacy);
 
   readonly id = input<string>('');
+  /** ?tab=stock opens that section straight away (the view page links here). */
+  readonly tab = input<string>('');
   readonly supplier = input<string>('');
   readonly returnTo = input<string>('');
 
@@ -1531,10 +1539,15 @@ export class ProductEditor implements OnDestroy {
   private moveTouchY = 0;
   private moveSwipeHandled = false;
 
+  readonly moveDragging = signal<number | null>(null);
+  readonly moveOffset = signal(0);
+  private moveHorizontal = false;
+
   moveSwipeStart(event: TouchEvent, id: number): void {
     this.moveTouchX = event.touches[0].clientX;
     this.moveTouchY = event.touches[0].clientY;
     this.moveSwipeHandled = false;
+    this.moveHorizontal = false;
     if (this.moveSwiped() !== null && this.moveSwiped() !== id) this.moveSwiped.set(null);
   }
 
@@ -1542,14 +1555,28 @@ export class ProductEditor implements OnDestroy {
     if (this.moveSwipeHandled) return;
     const dx = event.touches[0].clientX - this.moveTouchX;
     const dy = event.touches[0].clientY - this.moveTouchY;
-    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    if (dx < -140) {
+    if (!this.moveHorizontal) {
+      if (Math.hypot(dx, dy) < 8 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      this.moveHorizontal = true;
+      this.moveDragging.set(move.id);
+    }
+    /* Already open: the finger starts from the parked position. */
+    const base = this.moveSwiped() === move.id ? -76 : 0;
+    this.moveOffset.set(Math.min(0, base + dx));
+  }
+
+  moveSwipeEnd(move: StockMovement): void {
+    if (this.moveDragging() !== move.id) return;
+    const offset = this.moveOffset();
+    this.moveDragging.set(null);
+    this.moveOffset.set(0);
+    if (offset < -140) {
       this.moveSwipeHandled = true;
       void this.deleteMove(move);
       return;
     }
-    if (dx < -24) { this.moveSwiped.set(move.id); return; }
-    if (dx > 24) { this.moveSwipeHandled = true; this.moveSwiped.set(null); }
+    this.moveSwipeHandled = true;
+    this.moveSwiped.set(offset < -40 ? move.id : null);
   }
 
   async deleteMove(move: StockMovement): Promise<void> {
@@ -1711,6 +1738,10 @@ export class ProductEditor implements OnDestroy {
       this.activeProductId = productId;
       this.draft.set(product);
       void this.loadStockHistory(productId);
+      const wanted = this.tab();
+      if (wanted && this.tabs().some((item) => item.id === wanted)) {
+        setTimeout(() => this.showTab(wanted), 50);
+      }
       this.syncPriceStrategy(product);
       this.markClean();
       await this.loadFamilyForProduct(product);

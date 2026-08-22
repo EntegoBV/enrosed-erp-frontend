@@ -5,10 +5,10 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, Product, ProductFamily, ProductFamilyMember, Supplier } from '../../core/api/models';
+import { Category, Product, ProductFamily, ProductFamilyMember, StockMovement, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
-import { CbmPipe, CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
 interface GalleryPointer {
   pointerId: number;
@@ -27,7 +27,7 @@ interface GalleryPointer {
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, EurPipe, NumPipe,
+    RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -128,8 +128,11 @@ interface GalleryPointer {
                   }
                   <small>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kostprijs + opslag' }}</small>
                 </div>
-                <div>
-                  <span>Voorraad</span>
+                <!-- The stock tile opens the stock book below it: where the
+                     figure came from, without leaving the page. -->
+                <button class="stock-tile" type="button" [class.stock-tile--open]="stockOpen()"
+                        [attr.aria-expanded]="stockOpen()" (click)="toggleStock(product)">
+                  <span>Voorraad <i class="stock-tile__chev" aria-hidden="true"></i></span>
                   @if (product.inventoryKnown) {
                     <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
                       {{ product.stockQuantity | num }}
@@ -139,8 +142,37 @@ interface GalleryPointer {
                     <strong>—</strong>
                     <small>nog niet bevestigd</small>
                   }
-                </div>
+                </button>
               </div>
+
+              @if (stockOpen()) {
+                <div class="stock-book" role="region" aria-label="Voorraadgeschiedenis">
+                  @if (stockHistory(); as history) {
+                    @if (history.length) {
+                      <ol>
+                        @for (move of history; track move.id) {
+                          <li>
+                            <span class="stock-book__delta num" [class.stock-book__delta--minus]="move.delta < 0">
+                              {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
+                            </span>
+                            <span class="stock-book__what">
+                              <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
+                              <small>{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
+                            </span>
+                            <span class="stock-book__after num">= {{ move.quantityAfter | num }}</span>
+                          </li>
+                        }
+                      </ol>
+                    } @else {
+                      <p class="hint">Nog geen bewegingen geboekt.</p>
+                    }
+                  } @else {
+                    <p class="hint">Geschiedenis laden…</p>
+                  }
+                  <a class="stock-book__edit" [routerLink]="['/products', product.id, 'edit']"
+                     [queryParams]="{ tab: 'stock' }">Voorraad corrigeren ›</a>
+                </div>
+              }
 
               <div class="hero-summary__identity">
                 @if (product.colour) {
@@ -393,14 +425,36 @@ interface GalleryPointer {
     .hero-summary__topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .hero-summary__category { overflow: hidden; color: var(--muted); font-size: 11.5px;
       text-overflow: ellipsis; white-space: nowrap; }
-    .hero-summary__price-stock { display: grid; grid-template-columns: 1.35fr .65fr; gap: 9px; margin-top: 14px; }
-    .hero-summary__price-stock > div { min-width: 0; display: flex; flex-direction: column; padding: 13px;
+    /* Two equal tiles: "10.000" with its chevron needs as much room as a price. */
+    .hero-summary__price-stock { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
+    .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; padding: 13px;
       border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
     .hero-summary__price-stock span { color: var(--muted); font-size: 10px; font-weight: 700;
       letter-spacing: .07em; text-transform: uppercase; }
     .hero-summary__price-stock strong { overflow: hidden; margin-top: 1px; font-size: 22px;
       line-height: 1.25; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
     .hero-summary__price-stock small { color: var(--muted); font-size: 10.5px; }
+    .stock-tile { font: inherit; text-align: left; cursor: pointer; color: inherit;
+      -webkit-appearance: none; appearance: none; margin: 0; }
+    .stock-tile:active { filter: brightness(.97); }
+    .stock-tile__chev { display: inline-block; width: 6px; height: 6px; margin-left: 4px;
+      border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+      transform: translateY(-2px) rotate(45deg); transition: transform .15s ease; }
+    .stock-tile--open .stock-tile__chev { transform: translateY(1px) rotate(-135deg); }
+    .stock-book { margin-top: 9px; padding: 4px 13px 10px; border: 1px solid var(--line);
+      border-radius: var(--r-sm); background: var(--surface-2); }
+    .stock-book ol { list-style: none; margin: 0; padding: 0; }
+    .stock-book li { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .stock-book li:last-child { border-bottom: 0; }
+    .stock-book__delta { font-weight: 750; color: var(--ok, #2e7d4f); }
+    .stock-book__delta--minus { color: var(--danger); }
+    .stock-book__what { display: grid; min-width: 0; }
+    .stock-book__what b { font-weight: 650; font-size: 12.5px; }
+    .stock-book__what small { color: var(--muted); font-size: 11px; }
+    .stock-book__after { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .stock-book__edit { display: inline-block; margin-top: 8px; color: var(--rose-dark);
+      font-size: 12.5px; font-weight: 650; text-decoration: none; }
     .hero-summary__identity { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
     .hero-summary__identity > span { display: inline-flex; gap: 6px; padding: 5px 9px; border-radius: 999px;
       background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; }
@@ -477,6 +531,20 @@ export class ProductView {
   readonly privacy = inject(Privacy);
 
   readonly product = signal<Product | null>(null);
+
+  /* The stock book, fetched the first time the tile is opened. */
+  readonly stockOpen = signal(false);
+  readonly stockHistory = signal<StockMovement[] | null>(null);
+
+  toggleStock(product: Product): void {
+    const open = !this.stockOpen();
+    this.stockOpen.set(open);
+    if (open && this.stockHistory() === null && product.id !== null) {
+      this.catalog.stockMovements(product.id)
+        .then((history) => this.stockHistory.set(history))
+        .catch(() => this.stockHistory.set([]));
+    }
+  }
   readonly family = signal<ProductFamily | null>(null);
   readonly familyLoading = signal(false);
   readonly familyLoadError = signal(false);
