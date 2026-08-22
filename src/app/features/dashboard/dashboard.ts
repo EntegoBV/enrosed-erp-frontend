@@ -278,6 +278,11 @@ interface FreightHorizon {
           </div>
 
 
+          <div class="fown__head">
+            <span class="label">Marktprijzen online</span>
+            <span class="spacer"></span>
+            <span class="tiny muted">automatisch · wekelijks</span>
+          </div>
           <div class="ftiles">
             @for (bench of dollarBenchmarks; track bench.code) {
               <button class="ftile ftile--btn" type="button"
