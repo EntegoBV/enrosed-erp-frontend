@@ -143,7 +143,7 @@ interface ProductSwipe {
                 </div>
                 @if (privacy.showPurchase()) {
                   <div>
-                    <span>Inkoopprijs</span>
+                    <span>Kostprijs</span>
                     @if (purchasePrice(product); as price) {
                       <strong class="num">{{ price | eur }}</strong>
                     } @else {

@@ -433,21 +433,21 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
         <div class="card__body">
           <fieldset class="price-method">
-            <legend>Hoe wil je de verkoopprijs bepalen?</legend>
+            <legend>Catalogusprijs</legend>
             <div class="price-method__options" role="group" aria-label="Prijsstrategie">
+              <button type="button"
+                      [class.price-method__active]="priceStrategy() === 'FIXED'"
+                      [attr.aria-pressed]="priceStrategy() === 'FIXED'"
+                      (click)="setPriceStrategy('FIXED')">
+                <b>Vaste verkoopprijs per stuk</b>
+                <small>Blijft hetzelfde bedrag</small>
+              </button>
               <button type="button"
                       [class.price-method__active]="priceStrategy() === 'MARKUP'"
                       [attr.aria-pressed]="priceStrategy() === 'MARKUP'"
                       (click)="setPriceStrategy('MARKUP')">
                 <b>Kostprijs + opslag</b>
                 <small>Beweegt mee met je kostprijs</small>
-              </button>
-              <button type="button"
-                      [class.price-method__active]="priceStrategy() === 'FIXED'"
-                      [attr.aria-pressed]="priceStrategy() === 'FIXED'"
-                      (click)="setPriceStrategy('FIXED')">
-                <b>Vaste verkoopprijs</b>
-                <small>Blijft hetzelfde bedrag</small>
               </button>
             </div>
           </fieldset>
@@ -497,7 +497,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           }
           <div class="price-preview">
             <div>
-              <span class="price-preview__label">Catalogusprijs</span>
+              <span class="price-preview__label">Catalogusprijs per stuk</span>
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
             </div>
@@ -1241,9 +1241,12 @@ export class ProductEditor implements OnDestroy {
       const currency = suppliers.find((s) => s.id === supplierId)?.currency ?? 'USD';
       this.draft.set(blankProduct(supplierId, currency));
       this.savedProductFamilyId.set(null);
-      this.priceStrategy.set('MARKUP');
-      this.markClean();
+      /* New products open on a fixed price (how fair deals are agreed);
+         the 45% markup stays remembered for a tap to the other option. */
       this.lastMarkupPct.set(45);
+      this.priceStrategy.set('FIXED');
+      this.patch({ markupPct: 0 });
+      this.markClean();
     }
   }
 
@@ -1617,6 +1620,14 @@ export class ProductEditor implements OnDestroy {
   private syncPriceStrategy(product: Product): void {
     this.priceTouched.set(false);
     if (product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0) {
+      this.priceStrategy.set('FIXED');
+      if (product.markupPct !== 0) this.patch({ markupPct: 0 });
+      return;
+    }
+    /* A brand-new product opens on a fixed price - that is how prices
+       are agreed at the fair; markup stays one tap away. */
+    if (product.id === null) {
+      this.lastMarkupPct.set(product.markupPct ?? 0);
       this.priceStrategy.set('FIXED');
       if (product.markupPct !== 0) this.patch({ markupPct: 0 });
       return;
