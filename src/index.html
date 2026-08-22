@@ -4,14 +4,22 @@
   <meta charset="utf-8">
   <title>Enrosed — Sales &amp; Sourcing</title>
   <base href="/">
-  <!-- viewport-fit=cover zodat de tabbalk tot in de safe area van de iPhone loopt -->
+  <!-- viewport-fit=cover so the tab bar runs into the iPhone's safe area -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#17120f">
+  <meta name="theme-color" content="#ffffff">
+
+  <!-- Installable web app. On an iPhone "Zet op beginscherm" then opens it
+       full screen, without Safari's address bar and tabs. Safari reads
+       display:standalone from the manifest; the apple-* tags cover older
+       iOS versions and set the home-screen name and icon. -->
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Enrosed">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="icon" type="image/png" href="logo.png">
-  <link rel="apple-touch-icon" href="logo.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 </head>
 <body>
   <app-root></app-root>
