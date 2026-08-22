@@ -237,6 +237,13 @@ export class ProductVariantGroup {
   readonly family = input<ProductFamily | null>(null);
   readonly disabled = input(false);
   readonly linked = output<ProductFamily>();
+  /**
+   * Deferred mode for a product that has no id yet: the chosen sibling is
+   * handed to the editor, which links it the moment the product exists.
+   * The link itself is a server transaction needing both ids.
+   */
+  readonly deferred = input(false);
+  readonly pending = output<Product>();
 
   readonly pickerOpen = signal(false);
   readonly loading = signal(false);
@@ -256,7 +263,7 @@ export class ProductVariantGroup {
       .sort((a, b) => a.position - b.position || a.productId - b.productId),
   );
   readonly canStart = computed(() =>
-    this.product().id !== null && this.hasOption(this.product())
+    (this.product().id !== null || this.deferred()) && this.hasOption(this.product())
       && !this.linking() && !this.disabled(),
   );
   readonly filteredCandidates = computed(() => {
@@ -350,8 +357,16 @@ export class ProductVariantGroup {
   async linkSelected(): Promise<void> {
     const currentId = this.product().id;
     const candidate = this.selected();
-    if (this.disabled() || currentId === null || candidate?.id === null || candidate?.id === undefined
+    if (this.disabled() || candidate?.id === null || candidate?.id === undefined
         || this.candidateReason(candidate)) return;
+    if (currentId === null) {
+      /* No id yet: park the choice with the editor; it links after create. */
+      this.pending.emit(candidate);
+      this.ui.toast(`Wordt aan ${candidate.name} gekoppeld zodra het product is aangemaakt`);
+      this.pickerOpen.set(false);
+      this.selected.set(null);
+      return;
+    }
     this.linking.set(true);
     try {
       const family = await this.catalog.linkProductVariant(currentId, candidate.id);

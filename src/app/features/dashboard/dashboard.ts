@@ -236,214 +236,131 @@ interface FreightHorizon {
         <app-skeleton kind="card" [rows]="1" />
       }
 
+      <!-- Freight, phone-first: two dollar tiles you can quote from, one
+           real trend chart in the same idiom as the FX card (months and
+           horizons), and our own lanes as tappable tiles. -->
       <div class="card mt-12">
         <div class="card__head"><h2>Containervracht</h2>
           <span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="openRateSheet()"
-                  aria-label="Forwarderofferte voor containervracht noteren">+ Tarief</button>
+          <span class="tiny muted">USD per 40ft</span>
         </div>
         <div class="card__body">
-          <div class="market-hint" style="margin:0 0 8px" role="note">
-            <strong>Eigen offerte = jouw prijs.</strong> De grafieken eronder tonen
-            de marktrichting. Indexpunten zijn geen USD-vrachtprijs; datum, bereik en
-            bron blijven daarom altijd zichtbaar.
-          </div>
 
-          <!-- The licensed USD benchmark is useful context, but never gets
-               mixed into a port's own forwarder quote. -->
-          @if (sourceFor('WCI SHA-RTM'); as wci) {
-            <section class="freight-benchmark" aria-label="Shanghai naar Rotterdam marktbenchmark">
-              <div class="freight-benchmark__head">
-                <div>
-                  <div class="market-row__label">Shanghai → Rotterdam</div>
-                  <div class="tiny muted">Aparte USD-benchmark · geen eigen offerte</div>
-                </div>
-                <span class="source-state" [class]="sourceStateClass(wci.state)">
-                  {{ sourceStateLabel(wci.state) }}
-                </span>
-              </div>
-              @if (latestFor(wci.code); as latest) {
-                <button class="freight-benchmark__value" type="button"
-                        (click)="openHistory(wci.code,
-                          'Shanghai → Rotterdam · USD-benchmark per 40ft', 'USD ')">
-                  <span class="market-row__value num">USD {{ latest.usdPerContainer | num: 0 }}</span>
-                  <span class="freight-open-label">Alle noteringen <span aria-hidden="true">›</span></span>
-                </button>
-              } @else {
-                <div class="freight-benchmark__empty">Nog geen marktdata ontvangen</div>
-              }
-              <div class="freight-analysis-card">
-                <div class="freight-chart-panel" role="img"
-                     [attr.aria-label]="chartAriaLabel(wci.code, 'Shanghai naar Rotterdam')">
-                  <div class="freight-chart-panel__head">
-                    <strong>Marktverloop</strong>
-                    <span>{{ observationLabel(wci.code) }}</span>
-                  </div>
-                  @if (seriesFor(wci.code).length > 1) {
-                    <app-sparkline class="freight-chart"
-                                   [values]="seriesFor(wci.code)" [width]="640" [height]="88" />
-                    <div class="freight-chart-axis">
-                      <span>{{ firstDateLabel(wci.code) }}</span>
-                      <span>{{ latestDateLabel(wci.code) }}</span>
-                    </div>
-                  } @else {
-                    <div class="freight-chart-empty">
-                      <span class="freight-chart-empty__line"></span>
-                      <span>{{ seriesFor(wci.code).length ? 'Nog een tweede meetpunt nodig voor de grafiek' : 'Grafiek verschijnt bij de eerste noteringen' }}</span>
-                    </div>
-                  }
-                </div>
-                <div class="freight-horizons" aria-label="Prijsverschil per periode">
-                  @for (h of rateHorizons(wci.code); track h.label) {
-                    <div class="freight-horizon">
-                      <span class="freight-horizon__label">{{ h.label }}</span>
-                      @if (h.pct !== null) {
-                        <strong [class.freight-horizon__good]="h.pct <= 0"
-                                [class.freight-horizon__bad]="h.pct > 0">
-                          {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
-                        </strong>
-                        <span>{{ horizonWord(wci.code, h.pct) }}</span>
-                        <span class="freight-horizon__baseline">
-                          vs {{ horizonBaselineLabel(h) }}
-                        </span>
-                      } @else {
-                        <strong class="freight-horizon__missing">—</strong>
-                        <span>Nog te weinig data</span>
-                      }
-                    </div>
-                  }
-                </div>
-                <div class="freight-analysis-copy" aria-label="Analyse">
-                  <strong>Analyse</strong>
-                  @for (line of freightAnalysisLines(wci.code); track line) {
-                    <p>{{ line }}</p>
-                  }
-                </div>
-              </div>
-              <div class="source-meta">
-                <span>{{ wci.sourceName }}</span>
-                @if (wci.latestPublishedOn) { <span>Notering {{ wci.latestPublishedOn }}</span> }
-                @if (wci.lastCheckedAt) { <span>Gecontroleerd {{ checkedOn(wci.lastCheckedAt) }}</span> }
-                <a [href]="wci.sourceUrl" target="_blank" rel="noopener noreferrer"
-                   [attr.aria-label]="'Open bron ' + wci.sourceName">Bron</a>
-              </div>
-              @if (showSourceDetail(wci)) {
-                <div class="source-detail source-detail--benchmark">
-                  {{ sourceGuidance(wci) }}
-                </div>
-              }
-            </section>
-          }
-
-          @for (route of ownRoutes; track route.code) {
-            <section class="freight-port" [attr.aria-label]="route.label + ' naar Rotterdam'">
-              <div class="freight-port__head">
-                <div class="market-row__label">{{ route.label }} → Rotterdam</div>
-                <span class="tiny muted">40ft</span>
-              </div>
-              <button class="freight-quote" type="button"
-                      [attr.aria-label]="freightRouteAriaLabel(route)"
-                      (click)="openFreightRoute(route)">
-                <span>
-                  <span class="freight-quote__label">Eigen forwarderofferte</span>
-                @if (latestFor(route.code); as latest) {
-                    <span class="freight-quote__value num">USD {{ latest.usdPerContainer | num: 0 }}</span>
-                    <span class="tiny muted">genoteerd {{ latest.quotedOn }}</span>
+          <div class="ftiles">
+            @for (bench of dollarBenchmarks; track bench.code) {
+              <button class="ftile ftile--btn" type="button"
+                      [disabled]="!latestFor(bench.code)"
+                      (click)="openHistory(bench.code, bench.title, 'USD ')">
+                <span class="ftile__label">{{ bench.label }}</span>
+                @if (latestFor(bench.code); as latest) {
+                  <span class="ftile__value num">$ {{ latest.usdPerContainer | num: 0 }}</span>
+                  <span class="ftile__sub">{{ bench.source }} · {{ shortDate(latest.quotedOn) }}
+                    @if (indexChange(bench.code); as change) {
+                      <b [class.ok-text]="change <= 0" [class.warn-text]="change > 0">
+                        {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%</b>
+                    }
+                  </span>
                 } @else {
-                    <span class="freight-quote__empty">Nog geen offerte</span>
-                    <span class="strong">Tarief noteren <span aria-hidden="true">›</span></span>
-                }
-                </span>
-                @if (seriesFor(route.code).length > 1) {
-                  <app-sparkline class="market-row__spark" [values]="seriesFor(route.code)" />
+                  <span class="ftile__value muted">—</span>
+                  <span class="ftile__sub">{{ bench.source }} · volgt</span>
                 }
               </button>
+            }
+          </div>
 
-              @if (sourceFor(route.indexCode); as source) {
-                <div class="freight-index">
-                  <div class="freight-index__head">
-                    <span><strong>{{ route.indexName }}</strong> · marktindex, geen prijs</span>
-                    <span class="source-state" [class]="sourceStateClass(source.state)">
-                      {{ sourceStateLabel(source.state) }}
-                    </span>
-                  </div>
-                  <div class="freight-index__scope">{{ route.scopeNote }}</div>
-                  @if (latestFor(route.indexCode); as index) {
-                    <button class="freight-index__value" type="button"
-                            (click)="openHistory(route.indexCode, route.indexTitle, '')">
-                      <span class="num">{{ index.usdPerContainer | num: 0 }} ptn</span>
-                      @if (indexChange(route.indexCode) !== null) {
-                        <span class="badge" [class]="(indexChange(route.indexCode) ?? 0) <= 0 ? 'badge--ok' : 'badge--warn'">
-                          {{ (indexChange(route.indexCode) ?? 0) > 0 ? '+' : '' }}{{ (indexChange(route.indexCode) ?? 0) | num: 1 }}% {{ previousComparisonLabel(route.indexCode) }}
-                        </span>
-                      }
-                      <span class="freight-open-label">Alle noteringen <span aria-hidden="true">›</span></span>
-                    </button>
-                  } @else {
-                    <div class="freight-index__empty">Nog geen indexdata ontvangen.</div>
+          @if (trendOptions().length) {
+            <div class="ftrend">
+              <div class="ftrend__head">
+                <div>
+                  <span class="label">Marktindex</span>
+                  <div class="tiny muted">indexpunten, geen dollars — toont de richting</div>
+                </div>
+                <span class="spacer"></span>
+                <div class="ftrend__seg">
+                  @for (option of trendOptions(); track option.code) {
+                    <button type="button" [class.on]="trendCode() === option.code"
+                            (click)="trendCode.set(option.code)">{{ option.label }}</button>
                   }
-                  <div class="freight-analysis-card freight-analysis-card--index">
-                    <div class="freight-chart-panel" role="img"
-                         [attr.aria-label]="chartAriaLabel(route.indexCode, route.indexTitle)">
-                      <div class="freight-chart-panel__head">
-                        <strong>Indexverloop</strong>
-                        <span>{{ observationLabel(route.indexCode) }}</span>
-                      </div>
-                      @if (seriesFor(route.indexCode).length > 1) {
-                        <app-sparkline class="freight-chart"
-                                       [values]="seriesFor(route.indexCode)" [width]="640" [height]="88" />
-                        <div class="freight-chart-axis">
-                          <span>{{ firstDateLabel(route.indexCode) }}</span>
-                          <span>{{ latestDateLabel(route.indexCode) }}</span>
-                        </div>
-                      } @else {
-                        <div class="freight-chart-empty">
-                          <span class="freight-chart-empty__line"></span>
-                          <span>{{ seriesFor(route.indexCode).length ? 'Nog een tweede week nodig voor de grafiek' : 'Grafiek verschijnt zodra de bron data geeft' }}</span>
-                        </div>
-                      }
-                    </div>
-                    <div class="freight-horizons" aria-label="Indexverschil per periode">
-                      @for (h of rateHorizons(route.indexCode); track h.label) {
-                        <div class="freight-horizon">
-                          <span class="freight-horizon__label">{{ h.label }}</span>
-                          @if (h.pct !== null) {
-                            <strong [class.freight-horizon__good]="h.pct <= 0"
-                                    [class.freight-horizon__bad]="h.pct > 0">
-                              {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
-                            </strong>
-                            <span>{{ horizonWord(route.indexCode, h.pct) }}</span>
-                            <span class="freight-horizon__baseline">
-                              vs {{ horizonBaselineLabel(h) }}
-                            </span>
-                          } @else {
-                            <strong class="freight-horizon__missing">—</strong>
-                            <span>Nog te weinig data</span>
-                          }
-                        </div>
-                      }
-                    </div>
-                    <div class="freight-analysis-copy" aria-label="Analyse">
-                      <strong>Analyse</strong>
-                      @for (line of freightAnalysisLines(route.indexCode); track line) {
-                        <p>{{ line }}</p>
-                      }
-                    </div>
-                  </div>
-                  <div class="source-meta">
-                    <span>{{ source.referenceKind === 'EXACT_ROUTE' ? 'Exacte routereferentie' : 'Brede China–Europa-referentie' }}</span>
-                    @if (source.latestPublishedOn) { <span>Publicatie {{ source.latestPublishedOn }}</span> }
-                    @if (source.lastCheckedAt) { <span>Gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
-                    <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer"
-                       [attr.aria-label]="'Open bron ' + source.sourceName">Bron</a>
-                  </div>
-                  @if (showSourceDetail(source)) {
-                    <div class="source-detail">{{ sourceGuidance(source) }}</div>
+                </div>
+              </div>
+              @if (latestFor(trendCode()); as latest) {
+                <div class="ftrend__now">
+                  <span class="num">{{ latest.usdPerContainer | num: 0 }}</span>
+                  <span class="tiny muted">{{ trendUnit() }} · {{ shortDate(latest.quotedOn) }}</span>
+                  @if (indexChange(trendCode()); as change) {
+                    <span class="badge" [class]="change <= 0 ? 'badge--ok' : 'badge--warn'">
+                      {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%
+                    </span>
                   }
                 </div>
               }
-            </section>
+              @if (trendSeries(); as trend) {
+                <app-sparkline class="fx-chart" [values]="trend.values"
+                               [width]="320" [height]="42" />
+                <div class="fx-months">
+                  @for (tick of trendTicks(trend.dates, trend.values); track tick.pct) {
+                    <span [style.left.%]="tick.pct">{{ tick.label }}
+                      <em>{{ tick.value | num: 0 }}</em></span>
+                  }
+                </div>
+                @if (rateHorizons(trendCode()).length) {
+                  <div class="hgrid">
+                    @for (h of rateHorizons(trendCode()); track h.label) {
+                      <div class="hgrid__cell">
+                        <span class="hgrid__label">{{ h.label }}</span>
+                        @if (h.pct !== null) {
+                          <span class="hgrid__value"
+                                [class.hgrid__value--good]="h.pct <= 0"
+                                [class.hgrid__value--bad]="h.pct > 0">
+                            {{ h.pct > 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                          </span>
+                          <span class="hgrid__word">{{ h.pct > 0 ? 'duurder' : 'goedkoper' }}</span>
+                        } @else {
+                          <span class="hgrid__value muted">—</span>
+                          <span class="hgrid__word">nog geen data</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+                <p class="tiny muted ftrend__note">
+                  {{ trendLabel() }} ·
+                  <button class="linklike" type="button"
+                          (click)="openHistory(trendCode(), trendLabel(), '')">alle noteringen</button>
+                </p>
+              }
+            </div>
           }
+
+          <div class="fown">
+            <div class="fown__head">
+              <span class="label">Jouw offertes</span>
+              <span class="spacer"></span>
+              <button class="btn btn--sm" type="button" (click)="openRateSheet()">+ Tarief</button>
+            </div>
+            <div class="ftiles ftiles--3">
+              @for (route of ownRoutes; track route.code) {
+                <button class="ftile ftile--btn" type="button"
+                        [attr.aria-label]="freightRouteAriaLabel(route)"
+                        (click)="openFreightRoute(route)">
+                  <span class="ftile__label">{{ route.short }}</span>
+                  @if (latestFor(route.code); as latest) {
+                    <span class="ftile__value ftile__value--sm num">{{ '$' + (latest.usdPerContainer | num: 0) }}</span>
+                    <span class="ftile__sub">{{ shortDate(latest.quotedOn) }}
+                      @if (indexChange(route.code); as change) {
+                        <b [class.ok-text]="change <= 0" [class.warn-text]="change > 0">
+                          {{ change > 0 ? '+' : '' }}{{ change | num: 0 }}%</b>
+                      }
+                    </span>
+                  } @else {
+                    <span class="ftile__value ftile__value--add">+</span>
+                    <span class="ftile__sub">noteren</span>
+                  }
+                </button>
+              }
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -536,6 +453,28 @@ interface FreightHorizon {
             <span class="hint">Laat op vandaag staan, of noteer een oudere offerte om de
               historiek aan te vullen.</span>
           </div>
+
+          @if (historyFor(newRoute()).length) {
+            <div class="recent-rates">
+              <div class="recent-rates__head">
+                <span class="label">Eerdere offertes</span>
+                <span class="spacer"></span>
+                <button class="linklike" type="button"
+                        (click)="rateSheet.set(false); openHistory(newRoute(), routeTitle(newRoute()), 'USD ')">
+                  trend &amp; alles
+                </button>
+              </div>
+              @for (rate of historyFor(newRoute()).slice(0, 4); track rate.id) {
+                <div class="recent-rates__row">
+                  <span class="num">$ {{ rate.usdPerContainer | num: 0 }}</span>
+                  <span class="tiny muted">{{ shortDate(rate.quotedOn) }}</span>
+                  <span class="spacer"></span>
+                  <button class="pallet__tool" type="button" aria-label="Verwijderen"
+                          (click)="deleteRate(rate)">✕</button>
+                </div>
+              }
+            </div>
+          }
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="rateSheet.set(false)">Annuleren</button>
@@ -649,18 +588,48 @@ export class Dashboard {
 
   /* indexCode couples a port row to its public weekly index, so the own
      USD quote and the market's points sit side by side on one row. */
+  /** The two dollar benchmarks - prices you can put next to a quote. */
+  readonly dollarBenchmarks = [
+    { code: 'WCI SHA-RTM', label: 'Shanghai → Rotterdam', source: 'Drewry',
+      title: 'Shanghai → Rotterdam · Drewry WCI · USD per 40ft' },
+    { code: 'FBX11 CN-NEUR', label: 'China → N-Europa', source: 'Freightos',
+      title: 'China → Noord-Europa · Freightos FBX11 · USD per 40ft' },
+  ];
+
+  /** Series that can carry the trend chart, in order of preference. */
+  private readonly trendCandidates = [
+    { code: 'NCFI NINGBO', label: 'NCFI Ningbo', usd: false,
+      title: 'NCFI composiet · vertrek Ningbo · indexpunten' },
+    { code: 'CCFI CN-EUR', label: 'CCFI China', usd: false,
+      title: 'CCFI Europa-route · indexpunten' },
+    { code: 'WCI SHA-RTM', label: 'Drewry $', usd: true,
+      title: 'Shanghai → Rotterdam · Drewry WCI · USD per 40ft' },
+    { code: 'FBX11 CN-NEUR', label: 'FBX11 $', usd: true,
+      title: 'China → Noord-Europa · Freightos FBX11 · USD per 40ft' },
+  ];
+  readonly trendOptions = computed(() =>
+    this.trendCandidates.filter((option) => this.seriesFor(option.code).length > 1));
+  readonly trendCode = signal('NCFI NINGBO');
+  readonly trendLabel = computed(() =>
+    this.trendCandidates.find((option) => option.code === this.trendCode())?.title ?? '');
+  readonly trendUnit = computed(() =>
+    this.trendCandidates.find((option) => option.code === this.trendCode())?.usd ? 'USD per 40ft' : 'indexpunten');
+  /** Dated, oldest first - the chart and its month marks need both. */
+  readonly trendSeries = computed(() => {
+    const code = this.trendOptions().some((option) => option.code === this.trendCode())
+        ? this.trendCode() : this.trendOptions()[0]?.code;
+    if (!code) return null;
+    const entries = this.freightRates()
+        .filter((rate) => rate.route === code)
+        .slice().sort((a, b) => a.quotedOn.localeCompare(b.quotedOn));
+    return { dates: entries.map((e) => e.quotedOn), values: entries.map((e) => e.usdPerContainer) };
+  });
+
+  /** Our own lanes; quotes come from forwarders, typed in by hand. */
   readonly ownRoutes = [
-    { code: 'NINGBO', label: 'Ningbo', indexCode: 'NCFI NGB-EUR', indexName: 'NCFI Europa',
-      indexTitle: 'NCFI Ningbo → Europa · Hamburg/Rotterdam · indexpunten',
-      scopeNote: 'Exacte Ningbo–Europa-route met Hamburg en Rotterdam als bestemmingen.' },
-    /* Source research found no reusable exact South China-Europe series;
-       the whole-coast CCFI is the honest market context for both. */
-    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', indexCode: 'CCFI CN-EUR',
-      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten',
-      scopeNote: 'Brede China–Europa-index; geen afzonderlijke Nansha-notering.' },
-    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', indexCode: 'CCFI CN-EUR',
-      indexName: 'CCFI', indexTitle: 'CCFI Europa-route · indexpunten',
-      scopeNote: 'Brede China–Europa-index; geen afzonderlijke Yantian-notering.' },
+    { code: 'NINGBO', label: 'Ningbo', short: 'Ningbo' },
+    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', short: 'Nansha' },
+    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', short: 'Yantian' },
   ];
   readonly freightRates = signal<FreightRate[]>([]);
   readonly marketSources = signal<MarketSourceStatus[]>([]);
@@ -790,16 +759,18 @@ export class Dashboard {
     this.rateSheet.set(true);
   }
 
+  /* A tile with quotes opens the trend and full history; an empty one
+     opens the note sheet. Adding a quote always goes through + Tarief. */
   openFreightRoute(route: { code: string; label: string }): void {
     if (this.latestFor(route.code)) {
-      this.openHistory(route.code, `${route.label} → Rotterdam · USD per 40ft`, 'USD ');
+      this.openHistory(route.code, this.routeTitle(route.code), 'USD ');
       return;
     }
     this.openRateSheet(route.code);
   }
 
   freightRouteAriaLabel(route: { code: string; label: string }): string {
-    const action = this.latestFor(route.code) ? 'Historiek bekijken' : 'Tarief noteren';
+    const action = this.latestFor(route.code) ? 'Trend en historiek bekijken' : 'Tarief noteren';
     return `${action} voor ${route.label} naar Rotterdam, USD per 40ft-container`;
   }
 
@@ -954,7 +925,22 @@ export class Dashboard {
         `${this.shortDate(entries.at(-1)!.quotedOn)}, ${entries.length} meetpunten`;
   }
 
-  private shortDate(value: string): string {
+  /** Month marks for an uneven weekly series: crowded ones are dropped. */
+  trendTicks(dates: string[], values: number[]): { pct: number; label: string; value: number }[] {
+    const all = this.monthTicks(dates, values, false);
+    const kept: { pct: number; label: string; value: number }[] = [];
+    for (const tick of all) {
+      if (!kept.length || tick.pct - kept[kept.length - 1].pct >= 14) kept.push(tick);
+    }
+    return kept;
+  }
+
+  routeTitle(code: string): string {
+    const route = this.ownRoutes.find((candidate) => candidate.code === code);
+    return route ? `${route.label} → Rotterdam · USD per 40ft` : code;
+  }
+
+  shortDate(value: string): string {
     const date = new Date(`${value}T00:00:00`);
     if (Number.isNaN(date.getTime())) return value;
     return new Intl.DateTimeFormat('nl-BE', {

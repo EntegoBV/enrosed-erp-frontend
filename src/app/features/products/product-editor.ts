@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  OnDestroy,
   HostListener,
   computed,
   effect,
@@ -81,13 +82,34 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </div>
     }
 
+    <!-- Same rail as the settings page. Phone: one section at a time;
+         desktop: a jump list whose highlight follows the scroll. -->
+    <nav class="subnav" aria-label="Onderdelen">
+      <div class="subnav__rail">
+        @for (tab of tabs(); track tab.id) {
+          <button type="button" [class.active]="activeTab() === tab.id"
+                  [attr.aria-current]="activeTab() === tab.id ? 'location' : null"
+                  (click)="showTab(tab.id)">{{ tab.label }}</button>
+        }
+      </div>
+    </nav>
+
     <div class="content product-editor-page">
-      <div class="editor-canvas">
+      <div class="editor-canvas" [attr.data-tab]="activeTab()">
       <!-- ============================================ product -->
       <section class="card editor-section" id="identity" aria-labelledby="identity-title">
         <div class="card__head section-head">
-          <span class="section-head__number">01</span>
-          <div><h2 id="identity-title">Basisgegevens</h2><p>Herkenning en klantgerichte informatie</p></div>
+          <h2 id="identity-title">Basisgegevens</h2>
+          <span class="spacer"></span>
+          <!-- Active/inactive sits in the section head: it is a status, not
+               a field among the fields. -->
+          <select class="select select--status" aria-label="Productstatus"
+                  [class.select--status-off]="!draft().active"
+                  [ngModel]="draft().active ? 'actief' : 'inactief'"
+                  (ngModelChange)="patch({ active: $event === 'actief' })">
+            <option value="actief">Actief</option>
+            <option value="inactief">Inactief</option>
+          </select>
         </div>
         <div class="card__body">
           <div class="form-grid">
@@ -106,7 +128,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="req" for="p-name">Productnaam intern</label>
               <input class="input" id="p-name" [ngModel]="draft().name"
                      (ngModelChange)="patch({ name: $event })" />
-              <span class="hint">Voor verkoop, inkoop en magazijn. De publieke naam staat onder Website &amp; publicatie.</span>
             </div>
             <div class="field">
               <label for="p-category">Categorie <span class="opt"></span></label>
@@ -117,11 +138,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   <option [ngValue]="category.id">{{ category.name }}</option>
                 }
               </select>
-              <span class="hint">Vaste lijst; beheer je bij Instellingen.</span>
             </div>
-            <fieldset class="measure-group variant-fields span-2">
-              <legend>Uitvoering <span class="opt"></span></legend>
-              <div class="form-grid">
                 <div class="field">
                   <label for="p-colour">Kleur <span class="opt"></span></label>
                   <div class="colour-control">
@@ -163,20 +180,26 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                          [ngModel]="draft().variantSize"
                          (ngModelChange)="patch({ variantSize: emptyToNull($event) })" />
                 </div>
-              </div>
-              <p>
-                Een product blijft standaard zelfstandig. Vul kleur of maat alleen in als dat
-                nuttig is voor de keuze tussen varianten.
-              </p>
-            </fieldset>
             @if (isNew()) {
-              <div class="variant-editor-card span-2">
-                <div>
-                  <span>Varianten</span>
-                  <b>Eerst dit product opslaan</b>
-                  <small>Daarna kun je hier hetzelfde product in een andere kleur of maat koppelen.</small>
+              <!-- A sibling can be chosen before the product exists; the
+                   editor links it right after create, so "save first" is
+                   no longer a step the user has to know about. -->
+              <app-product-variant-group class="variant-editor-group span-2"
+                                         [product]="draft()" [family]="null"
+                                         [deferred]="true" [disabled]="saving()"
+                                         (pending)="pendingVariant.set($event)" />
+              @if (pendingVariant(); as sibling) {
+                <div class="variant-editor-card span-2 variant-pending" role="status">
+                  <div>
+                    <span>Wordt gekoppeld bij aanmaken</span>
+                    <b>{{ sibling.name }}</b>
+                    <small>{{ sibling.sku }}{{ sibling.colour ? ' · ' + sibling.colour : '' }}</small>
+                  </div>
+                  <button class="btn btn--sm" type="button" (click)="pendingVariant.set(null)">
+                    Ongedaan
+                  </button>
                 </div>
-              </div>
+              }
             } @else if (familyLoading()) {
               <div class="variant-editor-card span-2" role="status">Varianten laden…</div>
             } @else if (familyLoadError()) {
@@ -196,16 +219,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                         placeholder="Korte omschrijving voor verkoopdocumenten"
                         [ngModel]="draft().description"
                         (ngModelChange)="patch({ description: $event })"></textarea>
-              <span class="hint">Producttekst voor offertes. Websitecopy staat apart onder Website &amp; publicatie.</span>
             </div>
-            <label class="switch-row span-2" for="p-active">
-              <span>
-                <b>Actief product</b>
-                <small>Beschikbaar voor verkoop, inkoop en de interne productkiezer.</small>
-              </span>
-              <input id="p-active" type="checkbox" [ngModel]="draft().active"
-                     (ngModelChange)="patch({ active: $event })" />
-            </label>
           </div>
 
           <fieldset class="measure-group">
@@ -257,8 +271,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <!-- ============================================ foto's -->
       <section class="card editor-section" id="media" aria-labelledby="media-title">
         <div class="card__head section-head">
-          <span class="section-head__number">02</span>
-          <div><h2 id="media-title">Foto's</h2><p>Voor dit product · ERP en orderregels</p></div>
+          <h2 id="media-title">Foto's</h2>
           <span class="spacer"></span>
           <span class="badge badge--neutral">{{ photoCount() }}</span>
         </div>
@@ -275,8 +288,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <!-- ============================================ verpakking -->
       <section class="card editor-section" id="packaging" aria-labelledby="packaging-title">
         <div class="card__head section-head">
-          <span class="section-head__number">03</span>
-          <div><h2 id="packaging-title">Omdoos</h2><p>Voor bestelling, volume en logistiek</p></div>
+          <h2 id="packaging-title">Omdoos</h2>
         </div>
         <div class="card__body">
           <fieldset class="measure-group">
@@ -350,8 +362,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       @if (privacy.showPurchase()) {
       <section class="card editor-section" id="purchasing" aria-labelledby="purchasing-title">
         <div class="card__head section-head">
-          <span class="section-head__number">04</span>
-          <div><h2 id="purchasing-title">Inkoop</h2><p>Interne kostgegevens en douane</p></div>
+          <h2 id="purchasing-title">Inkoop</h2>
           <span class="spacer"></span>
           <span class="badge badge--warn">intern</span></div>
         <div class="card__body">
@@ -417,8 +428,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <!-- ============================================= sales -->
       <section class="card editor-section" id="sales" aria-labelledby="sales-title">
         <div class="card__head section-head">
-          <span class="section-head__number">{{ privacy.showPurchase() ? '05' : '04' }}</span>
-          <div><h2 id="sales-title">Verkoop</h2><p>Prijsstrategie voor alle kanalen</p></div>
+          <h2 id="sales-title">Verkoop</h2>
         </div>
         <div class="card__body">
           <fieldset class="price-method">
@@ -507,7 +517,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
       </section>
 
-      <!-- Public content stays available without crowding daily ERP fields. -->
+      <!-- Public content is desktop work: long texts, translations and
+           image curation do not belong on a phone at the fair. -->
+      <div class="editor-desktop-only" id="publication">
       <app-product-publication-editor
         [product]="draft()"
         [family]="family()"
@@ -526,6 +538,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         (translationSavingChange)="translationSaving.set($event)"
         (translationsSaved)="onPublicTranslationsSaved($event)"
       />
+      </div>
+      <p class="editor-mobile-note">Website &amp; publicatie bewerk je op desktop.</p>
 
       <div class="editor-actions">
         <button class="btn btn--primary btn--block" type="button"
@@ -694,6 +708,35 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .product-load-error > span { display: grid; gap: 2px; }
     .product-load-error small { font-size: 10px; }
     .editor-canvas { width: 100%; max-width: 920px; margin: 0 auto; }
+    .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
+    .select--status {
+      width: auto; min-height: 34px; padding: 4px 30px 4px 12px;
+      font-size: 13px; font-weight: 650;
+      background-color: var(--ok-soft, #eaf5ee); color: var(--ok, #2e7d4f);
+      border-color: transparent; border-radius: 999px;
+    }
+    .select--status-off { background-color: var(--surface-2); color: var(--muted); }
+    .variant-pending { border-color: var(--rose-soft); background: var(--rose-soft); }
+    .editor-mobile-note {
+      color: var(--muted); font-size: 13px; text-align: center; padding: 18px 0 6px;
+    }
+    /* Phone: only the active section is in the DOM flow; desktop: all. */
+    @media (max-width: 1023px) {
+      /* Deleting lives on the list (swipe left) - no danger zone on a
+         phone screen that is mostly about typing numbers. */
+      .danger-zone { display: none; }
+      .editor-canvas .editor-section,
+      .editor-canvas .editor-desktop-only { display: none; }
+      .editor-canvas[data-tab="identity"] #identity,
+      .editor-canvas[data-tab="media"] #media,
+      .editor-canvas[data-tab="packaging"] #packaging,
+      .editor-canvas[data-tab="purchasing"] #purchasing,
+      .editor-canvas[data-tab="sales"] #sales { display: block; }
+      .editor-canvas:not([data-tab="publication"]) .editor-mobile-note { display: none; }
+    }
+    @media (min-width: 1024px) {
+      .editor-mobile-note { display: none; }
+    }
 
     .editor-section { scroll-margin-top: calc(var(--appbar-h) + 12px); }
     .editor-section + .editor-section { margin-top: 16px; }
@@ -821,7 +864,76 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     }
   `,
 })
-export class ProductEditor {
+export class ProductEditor implements OnDestroy {
+  /** Which section a phone shows; on desktop the scroll spy drives it. */
+  readonly activeTab = signal('identity');
+
+  /** Sibling chosen while the product had no id; linked right after create. */
+  readonly pendingVariant = signal<Product | null>(null);
+
+  ngOnDestroy(): void {
+    window.removeEventListener('scroll', this.onScroll);
+    if (this.spyFrame) cancelAnimationFrame(this.spyFrame);
+  }
+
+  readonly tabs = computed(() => {
+    const list = [
+      { id: 'identity', label: 'Basis' },
+      { id: 'media', label: "Foto's" },
+      { id: 'packaging', label: 'Omdoos' },
+      { id: 'purchasing', label: 'Inkoop' },
+      { id: 'sales', label: 'Verkoop' },
+      { id: 'publication', label: 'Website' },
+    ];
+    return this.privacy.showPurchase() ? list : list.filter((t) => t.id !== 'purchasing');
+  });
+
+  showTab(id: string): void {
+    this.activeTab.set(id);
+    if (window.innerWidth >= 1024) {
+      /* Desktop: every section is on the page; jump to it. The spy below
+         is muted briefly so the smooth scroll does not flicker the
+         highlight through the sections it passes. */
+      this.spyMutedUntil = Date.now() + 700;
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  }
+
+  /* Scroll spy (desktop): the highlighted tab follows the section under
+     the sticky rail, like the settings page. */
+  private spyMutedUntil = 0;
+  private spyFrame = 0;
+  private readonly onScroll = () => {
+    if (this.spyFrame) return;
+    this.spyFrame = requestAnimationFrame(() => {
+      this.spyFrame = 0;
+      if (window.innerWidth < 1024 || Date.now() < this.spyMutedUntil) return;
+      /* Normally the last section whose top passed the rail owns the
+         highlight. At the very end of the page that rule sticks on the
+         section above the one you scrolled to (short sections cannot
+         reach the top), so there the section filling most of the
+         viewport wins instead. */
+      const rail = document.querySelector<HTMLElement>('.subnav');
+      const top = (rail?.getBoundingClientRect().bottom ?? 0);
+      const atEnd = window.scrollY + window.innerHeight >= document.body.scrollHeight - 2;
+      let current = this.tabs()[0].id;
+      let best = -1;
+      for (const tab of this.tabs()) {
+        const box = document.getElementById(tab.id)?.getBoundingClientRect();
+        if (!box) continue;
+        if (atEnd) {
+          const visible = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, top);
+          if (visible > best) { best = visible; current = tab.id; }
+        } else if (box.top <= top + 12) {
+          current = tab.id;
+        }
+      }
+      if (this.activeTab() !== current) this.activeTab.set(current);
+    });
+  };
+
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
@@ -952,6 +1064,7 @@ export class ProductEditor {
     && !this.copyVariantConflict());
 
   constructor() {
+    window.addEventListener('scroll', this.onScroll, { passive: true });
     void this.loadReference();
     void this.loadFamilies();
     /* React to the route id only. Everything else runs untracked: loadProduct
@@ -1695,6 +1808,17 @@ export class ProductEditor {
       orderAppStatus: product.orderAppStatus === 'PUBLISHED' ? 'DRAFT' : product.orderAppStatus,
     };
     const created = await this.catalog.createProduct(staged);
+    const sibling = this.pendingVariant();
+    if (created.id !== null && sibling?.id != null) {
+      try {
+        const family = await this.catalog.linkProductVariant(created.id, sibling.id);
+        created.familyId = family.id;
+        this.pendingVariant.set(null);
+        this.ui.toast(`Gekoppeld aan ${sibling.name}`, 'ok');
+      } catch (failure) {
+        this.ui.toast(messageOf(failure, 'Variant koppelen mislukt - het product is wel aangemaakt'), 'err');
+      }
+    }
     this.savedProductFamilyId.set(created.familyId ?? null);
     this.draft.set({
       ...created,

@@ -24,7 +24,7 @@ import { Icon } from './shared/icon';
       @if (!bare()) {
         <aside class="sidebar">
           <div class="sidebar__brand">
-            <app-brand-mark subtitle="Sales &amp; Sourcing" [onDark]="true" />
+            <app-brand-mark subtitle="Sales &amp; Sourcing" />
           </div>
           <nav class="sidebar__nav">
             <div class="sidebar__label">Overzicht</div>
