@@ -246,6 +246,38 @@ interface FreightHorizon {
         </div>
         <div class="card__body">
 
+          <div class="fown">
+            <div class="fown__head">
+              <span class="label">Jouw offertes</span>
+              <span class="spacer"></span>
+              <button class="btn btn--sm" type="button" (click)="openRateSheet()">+ Tarief</button>
+            </div>
+            <div class="ftiles ftiles--3">
+              @for (route of ownRoutes; track route.code) {
+                <button class="ftile ftile--btn" type="button"
+                        [attr.aria-label]="freightRouteAriaLabel(route)"
+                        (click)="openFreightRoute(route)">
+                  <span class="ftile__label">{{ route.port }}
+                    @if (route.city !== route.port) { <small>{{ route.city }}</small> }
+                  </span>
+                  @if (latestFor(route.code); as latest) {
+                    <span class="ftile__value ftile__value--sm num">{{ '$' + (latest.usdPerContainer | num: 0) }}</span>
+                    <span class="ftile__sub">{{ shortDate(latest.quotedOn) }}
+                      @if (indexChange(route.code); as change) {
+                        <b [class.ok-text]="change <= 0" [class.warn-text]="change > 0">
+                          {{ change > 0 ? '+' : '' }}{{ change | num: 0 }}%</b>
+                      }
+                    </span>
+                  } @else {
+                    <span class="ftile__value ftile__value--add">+</span>
+                    <span class="ftile__sub">noteren</span>
+                  }
+                </button>
+              }
+            </div>
+          </div>
+
+
           <div class="ftiles">
             @for (bench of dollarBenchmarks; track bench.code) {
               <button class="ftile ftile--btn" type="button"
@@ -331,35 +363,6 @@ interface FreightHorizon {
               }
             </div>
           }
-
-          <div class="fown">
-            <div class="fown__head">
-              <span class="label">Jouw offertes</span>
-              <span class="spacer"></span>
-              <button class="btn btn--sm" type="button" (click)="openRateSheet()">+ Tarief</button>
-            </div>
-            <div class="ftiles ftiles--3">
-              @for (route of ownRoutes; track route.code) {
-                <button class="ftile ftile--btn" type="button"
-                        [attr.aria-label]="freightRouteAriaLabel(route)"
-                        (click)="openFreightRoute(route)">
-                  <span class="ftile__label">{{ route.short }}</span>
-                  @if (latestFor(route.code); as latest) {
-                    <span class="ftile__value ftile__value--sm num">{{ '$' + (latest.usdPerContainer | num: 0) }}</span>
-                    <span class="ftile__sub">{{ shortDate(latest.quotedOn) }}
-                      @if (indexChange(route.code); as change) {
-                        <b [class.ok-text]="change <= 0" [class.warn-text]="change > 0">
-                          {{ change > 0 ? '+' : '' }}{{ change | num: 0 }}%</b>
-                      }
-                    </span>
-                  } @else {
-                    <span class="ftile__value ftile__value--add">+</span>
-                    <span class="ftile__sub">noteren</span>
-                  }
-                </button>
-              }
-            </div>
-          </div>
 
         </div>
       </div>
@@ -627,9 +630,9 @@ export class Dashboard {
 
   /** Our own lanes; quotes come from forwarders, typed in by hand. */
   readonly ownRoutes = [
-    { code: 'NINGBO', label: 'Ningbo', short: 'Ningbo' },
-    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', short: 'Nansha' },
-    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', short: 'Yantian' },
+    { code: 'NINGBO', label: 'Ningbo', port: 'Ningbo', city: 'Ningbo' },
+    { code: 'GUANGZHOU', label: 'Nansha (Guangzhou)', port: 'Nansha', city: 'Guangzhou' },
+    { code: 'SHENZHEN', label: 'Yantian (Shenzhen)', port: 'Yantian', city: 'Shenzhen' },
   ];
   readonly freightRates = signal<FreightRate[]>([]);
   readonly marketSources = signal<MarketSourceStatus[]>([]);

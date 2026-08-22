@@ -2369,7 +2369,8 @@ app-product-publication-editor .conflict-list span { color: var(--muted); }
 .ftile__label {
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.03em;
   text-transform: uppercase; color: var(--muted);
-  line-height: 1.25; min-height: 2.5em; display: flex; align-items: flex-end;
+  line-height: 1.25; min-height: 2.5em;
+  display: flex; flex-direction: column; justify-content: flex-end;
 }
 .ftile__value { font-size: 21px; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .ftile__value--add { color: var(--accent); }
@@ -2393,6 +2394,8 @@ app-product-publication-editor .conflict-list span { color: var(--muted); }
 .ftrend__note { margin: 0; line-height: 1.5; }
 
 .fown { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.fown--top { margin-top: 0; padding-top: 0; border-top: 0; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.ftile__label small { display: block; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; text-transform: none; color: var(--muted); }
 .fown__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .fown__head .btn { margin-left: auto; }
 
