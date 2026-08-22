@@ -27,6 +27,10 @@ interface ProductGroup {
   colours: { name: string; hex: string | null }[];
   sizes: string[];
   stock: number;
+  /** The variant whose figures stand for the series on the head row. */
+  lead: Product;
+  priceVaries: boolean;
+  costVaries: boolean;
 }
 
 type SortKey = 'NAME_ASC' | 'NAME_DESC' | 'SKU' | 'STOCK_DESC' | 'STOCK_ASC'
@@ -148,11 +152,24 @@ interface ProductSwipe {
                   <div class="thumb thumb--placeholder">◈</div>
                 }
                 <div class="list-item__body">
-                  <div class="product-row__title">
-                    <strong>{{ group.name }}</strong>
+                  <div class="product-row__primary">
+                    <div class="product-row__title">
+                      <strong>{{ group.name }}</strong>
+                    </div>
+                    <div class="product-row__badges">
+                      @if (groupAttention(group); as attention) {
+                        <span class="master-chip master-chip--warn"
+                              [attr.title]="groupTooltip(group)">{{ attention }}</span>
+                      }
+                    </div>
                   </div>
                   <div class="group-head__meta">
-                    <span class="group-head__count">{{ groupSummary(group) }}</span>
+                    <span class="group-head__count">
+                      {{ groupSummary(group) }}
+                      <svg class="group-head__chev" viewBox="0 0 12 12" aria-hidden="true">
+                        <path d="M2.5 4.5 6 8l3.5-3.5" />
+                      </svg>
+                    </span>
                     @if (group.colours.length) {
                       <span class="group-head__dots" aria-hidden="true">
                         @for (colour of group.colours.slice(0, 8); track colour.name) {
@@ -171,14 +188,28 @@ interface ProductSwipe {
                     <span>Voorraad</span>
                     <strong class="stock" [class.stock--empty]="!group.stock">{{ groupStock(group) }}</strong>
                   </div>
-                  @if (groupAttention(group); as attention) {
-                    <span class="master-chip master-chip--warn"
-                          [attr.title]="groupTooltip(group)">{{ attention }}</span>
-                  }
-                  <span class="group-head__toggle" aria-hidden="true">
-                    {{ isOpen(group) ? 'Sluiten' : 'Openen' }}
-                    <i class="group-head__chev">›</i>
-                  </span>
+                  <!-- Variants mostly share a price, so the head shows the
+                       lead variant's; a faint mark says when they differ. -->
+                  <div class="product-row__prices">
+                    @if (privacy.showPurchase()) {
+                      <div>
+                        <span>Kostprijs</span>
+                        @if (purchasePrice(group.lead); as price) {
+                          <strong class="num">{{ price | eur }}@if (group.costVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
+                        } @else {
+                          <strong class="muted">—</strong>
+                        }
+                      </div>
+                    }
+                    <div>
+                      <span>Catalogusprijs</span>
+                      @if (salesPrice(group.lead); as price) {
+                        <strong class="num">{{ price | eur }}@if (group.priceVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
+                      } @else {
+                        <strong class="muted">—</strong>
+                      }
+                    </div>
+                  </div>
                 </div>
               </button>
               @if (isOpen(group)) {
@@ -286,7 +317,6 @@ interface ProductSwipe {
           </div>
           </div>
         </div>
-        <span class="list-item__chev">›</span>
       </a>
       <button class="swipe__delete" type="button"
               [disabled]="deleting() !== null"
@@ -394,7 +424,7 @@ interface ProductSwipe {
       color: var(--ink-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
       white-space: nowrap; }
     .stock--empty { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
-    .product-row__prices { display: grid; gap: 4px; min-width: 78px;
+    .product-row__prices { display: grid; gap: 4px; width: 96px; box-sizing: border-box;
       padding-left: 10px; border-left: 1px solid var(--line); }
     .product-row__prices > div { display: grid; }
     .product-row__prices span { color: var(--muted); font-size: 8px; font-weight: 700;
@@ -423,15 +453,16 @@ interface ProductSwipe {
       border: 1px solid rgb(0 0 0 / 14%); display: inline-block; }
     .group-head__dots .dot--empty { border-style: dashed; }
     .group-head__dots small { color: var(--muted); font-size: 10px; margin-left: 2px; }
-    .group-head__end { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
-    .group-head__end .product-row__stock { padding-right: 12px; border-right: 1px solid var(--line); }
-    .group-head__toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
-      color: var(--muted); font-size: 11px; font-weight: 650; }
-    .group-head--open .group-head__toggle { color: var(--ink); }
-    .group-head--open .stock { background: var(--surface); }
-    .group-head__chev { font-style: normal; font-size: 18px; line-height: 1;
-      transition: transform .15s ease; transform: rotate(90deg); }
-    .group-head--open .group-head__chev { transform: rotate(-90deg); }
+    .group-head__end { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+    .varies { font-style: normal; color: var(--muted); font-size: 9px; margin-left: 3px;
+      vertical-align: top; cursor: help; }
+    /* The fold hint lives in the text line, so the figures column stays
+       aligned with every other row. */
+    .group-head__count { display: inline-flex; align-items: center; gap: 3px; }
+    .group-head__chev { width: 11px; height: 11px; fill: none; stroke: currentColor;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .7;
+      transition: transform .15s ease; }
+    .group-head--open .group-head__chev { transform: rotate(180deg); }
 
     /* The opened series: its variants sit in a tinted well with a bar on the
        left, so the eye sees at once what belongs to the head above. */
@@ -544,7 +575,7 @@ export class ProductList {
         const family = this.familyFor(product);
         group = {
           key, family, name: family?.name || product.name, products: [], photo: null,
-          colours: [], sizes: [], stock: 0,
+          colours: [], sizes: [], stock: 0, lead: product, priceVaries: false, costVaries: false,
         };
         byKey.set(key, group);
       }
@@ -560,7 +591,18 @@ export class ProductList {
     }
     const groups = [...byKey.values()];
     const compare = this.comparator();
-    for (const group of groups) group.products.sort(compare);
+    for (const group of groups) {
+      group.products.sort(compare);
+      /* The card's featured variant leads; otherwise the series' first
+         variant (position 0, usually the original colour), not whichever
+         happens to sort first. */
+      group.lead = group.products.find((p) => p.id === group.family?.cardFeaturedProductId)
+        ?? [...group.products].sort((a, b) =>
+          (a.variantPosition ?? Number.MAX_SAFE_INTEGER) - (b.variantPosition ?? Number.MAX_SAFE_INTEGER)
+          || (a.id ?? 0) - (b.id ?? 0))[0];
+      group.priceVaries = group.products.some((p) => this.salesPrice(p) !== this.salesPrice(group.lead));
+      group.costVaries = group.products.some((p) => this.purchasePrice(p) !== this.purchasePrice(group.lead));
+    }
     return groups.sort((a, b) => this.compareGroups(a, b));
   });
 
