@@ -23,6 +23,8 @@ export interface Dimensions {
   lengthCm: number | null;
   widthCm: number | null;
   heightCm: number | null;
+  /** Weight of the thing these sizes describe, in kilograms; null when unknown. */
+  weightKg?: number | null;
 }
 
 export type PackagingKind = 'NONE' | 'GIFT_BOX' | 'DISPLAY';

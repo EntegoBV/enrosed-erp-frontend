@@ -269,6 +269,20 @@ interface GalleryPointer {
               <dl class="detail-list">
                 <div><dt>Leverancier</dt><dd>{{ supplierName() || '—' }}</dd></div>
                 <div><dt>Afmeting (B × D × H)</dt><dd class="num">{{ size(product.dimensions) }}</dd></div>
+                <div><dt>Gewicht per stuk</dt><dd class="num">
+                  {{ product.dimensions.weightKg ? (product.dimensions.weightKg | num) + ' kg' : '—' }}
+                </dd></div>
+                @if (product.packaging.kind !== 'NONE') {
+                  <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} (B × D × H)</dt>
+                    <dd class="num">{{ size(product.packaging.dimensions) }}</dd></div>
+                  <div><dt>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</dt><dd class="num">
+                    {{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | num) + ' kg' : '—' }}
+                  </dd></div>
+                  @if (product.packaging.barcode) {
+                    <div><dt>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</dt>
+                      <dd class="mono">{{ product.packaging.barcode }}</dd></div>
+                  }
+                }
                 <div><dt>Barcode stuk</dt><dd class="mono">{{ product.barcodeInner || '—' }}</dd></div>
               </dl>
             </section>

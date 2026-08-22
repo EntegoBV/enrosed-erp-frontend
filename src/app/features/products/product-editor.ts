@@ -33,8 +33,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     id: null, familyId: null, canonicalVariantKey: null, canonicalBarcode: null,
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
-    dimensions: { lengthCm: null, widthCm: null, heightCm: null },
-    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null }, barcode: null },
+    dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
+    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null },
     colour: null, colourHex: null, variantSize: null,
     description: null, categoryId: null, supplierId, active: true,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -249,7 +249,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
 
           <fieldset class="measure-group">
             <legend>Productafmeting</legend>
-            <div class="measure-grid">
+            <div class="measure-grid measure-grid--4">
               <label class="measure-field">
                 <span>Breedte</span>
                 <span class="measure-field__control">
@@ -277,6 +277,15 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
                   <small>cm</small>
                 </span>
               </label>
+              <label class="measure-field">
+                <span>Gewicht</span>
+                <span class="measure-field__control">
+                  <input class="input num right" appDecimal
+                         [ngModel]="draft().dimensions.weightKg"
+                         (ngModelChange)="patchDimensions({ weightKg: num($event) })" />
+                  <small>kg</small>
+                </span>
+              </label>
             </div>
             <p>Het artikel zelf, zonder de omdoos.</p>
           </fieldset>
@@ -293,7 +302,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
               <option value="DISPLAY">Display</option>
             </select>
             @if ((draft().packaging?.kind ?? 'NONE') !== 'NONE') {
-              <div class="measure-grid mt-8">
+              <div class="measure-grid measure-grid--4 mt-8">
                 <label class="measure-field">
                   <span>Breedte</span>
                   <span class="measure-field__control">
@@ -319,6 +328,15 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
                            [ngModel]="draft().packaging.dimensions.heightCm"
                            (ngModelChange)="patchPackagingDimensions({ heightCm: num($event) })" />
                     <small>cm</small>
+                  </span>
+                </label>
+                <label class="measure-field">
+                  <span>Gewicht</span>
+                  <span class="measure-field__control">
+                    <input class="input num right" appDecimal
+                           [ngModel]="draft().packaging.dimensions.weightKg"
+                           (ngModelChange)="patchPackagingDimensions({ weightKg: num($event) })" />
+                    <small>kg</small>
                   </span>
                 </label>
               </div>
@@ -1028,6 +1046,9 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     .variant-editor-card b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
     .variant-editor-card small { color: var(--muted); font-size: 10.5px; line-height: 1.35; }
     .measure-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .measure-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    /* Four measures on a narrow phone: two rows of two, not four slivers. */
+    @media (max-width: 420px) { .measure-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .measure-field { min-width: 0; display: flex; flex-direction: column; gap: 4px; color: var(--muted);
       font-size: 10.5px; font-weight: 650; }
     .measure-field__control { min-width: 0; display: flex; align-items: stretch; }
