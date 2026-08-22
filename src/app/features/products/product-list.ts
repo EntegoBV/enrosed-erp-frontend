@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -10,6 +11,26 @@ import { EurPipe } from '../../shared/pipes';
 import { escapeHtml, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { Privacy } from '../../core/api/privacy';
+import { COLOUR_SWATCHES } from '../../core/api/geo';
+import { describePublicationIssues } from './publication-issues';
+
+/**
+ * One row in the list: a product on its own, or a series (family) that
+ * folds its colour and size variants away behind a head row.
+ */
+interface ProductGroup {
+  key: string;
+  family: ProductFamily | null;
+  name: string;
+  products: Product[];
+  photo: string | null;
+  colours: { name: string; hex: string | null }[];
+  sizes: string[];
+  stock: number;
+}
+
+type SortKey = 'NAME_ASC' | 'NAME_DESC' | 'SKU' | 'STOCK_DESC' | 'STOCK_ASC'
+  | 'PRICE_ASC' | 'PRICE_DESC' | 'COST_ASC' | 'COST_DESC';
 
 interface ProductSwipe {
   pointerId: number;
@@ -24,7 +45,7 @@ interface ProductSwipe {
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe],
+  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NgTemplateOutlet],
   template: `
     <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
       <a class="btn btn--sm" routerLink="/catalog-export">Catalogus PDF</a>
@@ -72,6 +93,24 @@ interface ProductSwipe {
               <option value="INACTIVE">Inactief</option>
             </select>
           </label>
+
+          <label class="filter-field">
+            <span class="filter-field__label">Sorteren</span>
+            <select class="select filter-field__select" aria-label="Sorteren"
+                    [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
+              <option value="NAME_ASC">Naam A–Z</option>
+              <option value="NAME_DESC">Naam Z–A</option>
+              <option value="SKU">SKU</option>
+              <option value="STOCK_DESC">Voorraad hoog → laag</option>
+              <option value="STOCK_ASC">Voorraad laag → hoog</option>
+              <option value="PRICE_ASC">Catalogusprijs laag → hoog</option>
+              <option value="PRICE_DESC">Catalogusprijs hoog → laag</option>
+              @if (privacy.showPurchase()) {
+                <option value="COST_ASC">Kostprijs laag → hoog</option>
+                <option value="COST_DESC">Kostprijs hoog → laag</option>
+              }
+            </select>
+          </label>
         </div>
 
         <div class="filter-summary" aria-live="polite">
@@ -92,83 +131,64 @@ interface ProductSwipe {
 
       <div class="card">
         <div class="list">
-          @for (product of filtered(); track product.id) {
-            <div class="swipe"
-                 [class.swipe--open]="swiped() === product.id"
-                 [class.swipe--dragging]="draggingProductId() === product.id"
-                 [style.--swipe-offset]="draggingProductId() === product.id
-                   ? swipeOffset() + 'px' : null">
-            <a class="list-item swipe__row" [class.list-item--inactive]="!product.active"
-               [routerLink]="['/products', product.id]"
-               (pointerdown)="startSwipe($event, product)"
-               (pointermove)="moveSwipe($event, product)"
-               (pointerup)="finishSwipe($event)"
-               (pointercancel)="cancelSwipe($event)"
-               (dragstart)="$event.preventDefault()"
-               (click)="blockWhenSwiped($event, product.id)">
-              @if (product.photos.length) {
-                <img class="thumb" [appAuthSrc]="product.photos[0].url" [alt]="product.name"
-                     draggable="false" />
-              } @else {
-                <div class="thumb thumb--placeholder">◈</div>
-              }
-              <div class="list-item__body">
-                <div class="product-row__primary">
+          @for (group of groups(); track group.key) {
+            @if (group.products.length === 1) {
+              <ng-container *ngTemplateOutlet="productRow; context: { $implicit: group.products[0], nested: false }" />
+            } @else {
+              <!-- The series head: one line per product range, the variants
+                   fold out below it. Less scrolling past six shades of the
+                   same vase. -->
+              <button class="list-item group-head" type="button"
+                      [class.group-head--open]="isOpen(group)"
+                      [attr.aria-expanded]="isOpen(group)"
+                      (click)="toggle(group)">
+                @if (group.photo) {
+                  <img class="thumb" [appAuthSrc]="group.photo" [alt]="group.name" draggable="false" />
+                } @else {
+                  <div class="thumb thumb--placeholder">◈</div>
+                }
+                <div class="list-item__body">
                   <div class="product-row__title">
-                    <strong>{{ product.name }}</strong>
-                    @if (variantLabel(product); as variant) {
-                      <span>· {{ variant }}</span>
-                    }
+                    <strong>{{ group.name }}</strong>
                   </div>
-                  <div class="product-row__badges">
-                    @if (attentionLabel(product); as attention) {
-                      <span class="master-chip"
-                            [class.master-chip--muted]="!product.active"
-                            [class.master-chip--warn]="product.active">
-                        {{ attention }}
+                  <div class="group-head__meta">
+                    <span class="group-head__count">{{ groupSummary(group) }}</span>
+                    @if (group.colours.length) {
+                      <span class="group-head__dots" aria-hidden="true">
+                        @for (colour of group.colours.slice(0, 8); track colour.name) {
+                          <i [style.background]="colour.hex || 'var(--surface-2)'"
+                             [class.dot--empty]="!colour.hex" [title]="colour.name"></i>
+                        }
+                        @if (group.colours.length > 8) {
+                          <small>+{{ group.colours.length - 8 }}</small>
+                        }
                       </span>
                     }
                   </div>
                 </div>
-                <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
-              </div>
-              <div class="list-item__end product-row__prices">
-                <div>
-                  <span>Verkoopprijs</span>
-                  @if (salesPrice(product); as price) {
-                    <strong class="num">{{ price | eur }}</strong>
-                  } @else {
-                    <strong class="muted">—</strong>
+                <div class="list-item__end group-head__end">
+                  <div class="product-row__stock">
+                    <span>Voorraad</span>
+                    <strong class="stock" [class.stock--empty]="!group.stock">{{ groupStock(group) }}</strong>
+                  </div>
+                  @if (groupAttention(group); as attention) {
+                    <span class="master-chip master-chip--warn"
+                          [attr.title]="groupTooltip(group)">{{ attention }}</span>
+                  }
+                  <span class="group-head__toggle" aria-hidden="true">
+                    {{ isOpen(group) ? 'Sluiten' : 'Openen' }}
+                    <i class="group-head__chev">›</i>
+                  </span>
+                </div>
+              </button>
+              @if (isOpen(group)) {
+                <div class="group-body">
+                  @for (product of group.products; track product.id) {
+                    <ng-container *ngTemplateOutlet="productRow; context: { $implicit: product, nested: true }" />
                   }
                 </div>
-                @if (privacy.showPurchase()) {
-                  <div>
-                    <span>Kostprijs</span>
-                    @if (purchasePrice(product); as price) {
-                      <strong class="num">{{ price | eur }}</strong>
-                    } @else {
-                      <strong class="muted">—</strong>
-                    }
-                  </div>
-                }
-              </div>
-              <span class="list-item__chev">›</span>
-            </a>
-            <button class="swipe__delete" type="button"
-                    [disabled]="deleting() !== null"
-                    [attr.aria-label]="'Product ' + product.name + ' verwijderen'"
-                    [attr.title]="'Product verwijderen'"
-                    (focus)="revealDelete(product.id)"
-                    (keydown.escape)="closeDelete($event)"
-                    (click)="remove(product)">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
-                   stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                   stroke-linejoin="round" aria-hidden="true" focusable="false">
-                <path d="M4 7h16" /><path d="M9 7V5h6v2" />
-                <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
-              </svg>
-            </button>
-            </div>
+              }
+            }
           } @empty {
             @if (loading()) {
               <app-skeleton kind="list" [rows]="6" />
@@ -183,6 +203,107 @@ interface ProductSwipe {
         </div>
       </div>
     </div>
+
+    <ng-template #productRow let-product let-nested="nested">
+      <div class="swipe"
+           [class.swipe--nested]="nested"
+           [class.swipe--open]="swiped() === product.id"
+           [class.swipe--dragging]="draggingProductId() === product.id"
+           [style.--swipe-offset]="draggingProductId() === product.id
+             ? swipeOffset() + 'px' : null">
+      <a class="list-item swipe__row" [class.list-item--inactive]="!product.active"
+         [class.list-item--nested]="nested"
+         [routerLink]="['/products', product.id]"
+         (pointerdown)="startSwipe($event, product)"
+         (pointermove)="moveSwipe($event, product)"
+         (pointerup)="finishSwipe($event)"
+         (pointercancel)="cancelSwipe($event)"
+         (dragstart)="$event.preventDefault()"
+         (click)="blockWhenSwiped($event, product.id)">
+        @if (product.photos.length) {
+          <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="product.photos[0].url"
+               [alt]="product.name" draggable="false" />
+        } @else {
+          <div class="thumb thumb--placeholder" [class.thumb--sm]="nested">◈</div>
+        }
+        <div class="list-item__body">
+          <div class="product-row__primary">
+            <div class="product-row__title">
+              @if (!nested) {
+                <strong>{{ product.name }}</strong>
+              }
+              @if (variantLabel(product); as variant) {
+                <span class="variant-label">
+                  @if (!nested) { · }
+                  {{ variant }}
+                  <!-- The dot only where it tells colours apart: inside an
+                       opened series. On a lone product it is just noise. -->
+                  @if (nested && colourHex(product); as hex) {
+                    <i class="colour-dot" [style.background]="hex" [title]="product.colour"></i>
+                  }
+                </span>
+              }
+            </div>
+            <div class="product-row__badges">
+              <!-- Inside a series a variant shows the points that concern
+                   it: the shared ones plus its own, never another colour's.
+                   Hovering lists them in words. -->
+              @if (attentionLabel(product, nested); as attention) {
+                <span class="master-chip"
+                      [class.master-chip--muted]="!product.active"
+                      [class.master-chip--warn]="product.active"
+                      [attr.title]="product.active ? issueTooltip(product, nested) : null">
+                  {{ attention }}
+                </span>
+              }
+            </div>
+          </div>
+          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
+        </div>
+        <div class="list-item__end product-row__end">
+          <div class="product-row__stock">
+            <span>Voorraad</span>
+            <strong class="stock" [class.stock--empty]="!product.stockQuantity">{{ stockLabel(product.stockQuantity) }}</strong>
+          </div>
+          <div class="product-row__prices">
+          @if (privacy.showPurchase()) {
+            <div>
+              <span>Kostprijs</span>
+              @if (purchasePrice(product); as price) {
+                <strong class="num">{{ price | eur }}</strong>
+              } @else {
+                <strong class="muted">—</strong>
+              }
+            </div>
+          }
+          <div>
+            <span>Catalogusprijs</span>
+            @if (salesPrice(product); as price) {
+              <strong class="num">{{ price | eur }}</strong>
+            } @else {
+              <strong class="muted">—</strong>
+            }
+          </div>
+          </div>
+        </div>
+        <span class="list-item__chev">›</span>
+      </a>
+      <button class="swipe__delete" type="button"
+              [disabled]="deleting() !== null"
+              [attr.aria-label]="'Product ' + product.name + ' verwijderen'"
+              [attr.title]="'Product verwijderen'"
+              (focus)="revealDelete(product.id)"
+              (keydown.escape)="closeDelete($event)"
+              (click)="remove(product)">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+          <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+        </svg>
+      </button>
+      </div>
+    </ng-template>
 
     <a class="fab" routerLink="/products/new">+ Product</a>
   `,
@@ -212,7 +333,7 @@ interface ProductSwipe {
     }
     .catalog-search__clear:hover { background: var(--surface-2); color: var(--ink); }
     .filter-grid {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 9px; min-width: 0; margin-top: 11px;
     }
     .filter-field { display: block; min-width: 0; }
@@ -246,7 +367,7 @@ interface ProductSwipe {
     }
     @media (min-width: 720px) {
       .catalog-tools {
-        display: grid; grid-template-columns: minmax(260px, 1fr) minmax(340px, .8fr);
+        display: grid; grid-template-columns: minmax(240px, .8fr) minmax(480px, 1.2fr);
         column-gap: 12px; align-items: end;
       }
       .filter-grid { margin-top: 0; }
@@ -264,7 +385,17 @@ interface ProductSwipe {
       font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .product-row__badges { display: flex; flex: 0 0 auto; gap: 4px; }
     .product-row__sku { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
-    .product-row__prices { display: grid; gap: 4px; min-width: 78px; }
+    .product-row__end { display: flex; align-items: center; gap: 10px; }
+    .product-row__stock { display: grid; justify-items: end; gap: 4px; }
+    .product-row__stock span { color: var(--muted); font-size: 8px; font-weight: 700;
+      letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
+    .stock { display: inline-flex; align-items: center; padding: 0 7px; min-height: 18px;
+      border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line);
+      color: var(--ink-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+      white-space: nowrap; }
+    .stock--empty { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+    .product-row__prices { display: grid; gap: 4px; min-width: 78px;
+      padding-left: 10px; border-left: 1px solid var(--line); }
     .product-row__prices > div { display: grid; }
     .product-row__prices span { color: var(--muted); font-size: 8px; font-weight: 700;
       letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
@@ -278,6 +409,41 @@ interface ProductSwipe {
       letter-spacing: .03em; text-transform: uppercase; }
     .master-chip--warn { color: var(--warn); background: var(--warn-soft); }
     .master-chip--muted { color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); }
+
+    .group-head { width: 100%; border: 0; border-bottom: 1px solid var(--line); font: inherit;
+      text-align: left; cursor: pointer; }
+    .group-head:hover { background: var(--surface-2); }
+    /* Opened: a quiet grey tint and a thin bar, the same in every theme -
+       the accent colour would shout over the whole list. */
+    .group-head--open { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted)); }
+    .group-head__meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
+    .group-head__count { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .group-head__dots { display: inline-flex; align-items: center; gap: 3px; }
+    .group-head__dots i { width: 11px; height: 11px; border-radius: 50%;
+      border: 1px solid rgb(0 0 0 / 14%); display: inline-block; }
+    .group-head__dots .dot--empty { border-style: dashed; }
+    .group-head__dots small { color: var(--muted); font-size: 10px; margin-left: 2px; }
+    .group-head__end { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+    .group-head__end .product-row__stock { padding-right: 12px; border-right: 1px solid var(--line); }
+    .group-head__toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+      color: var(--muted); font-size: 11px; font-weight: 650; }
+    .group-head--open .group-head__toggle { color: var(--ink); }
+    .group-head--open .stock { background: var(--surface); }
+    .group-head__chev { font-style: normal; font-size: 18px; line-height: 1;
+      transition: transform .15s ease; transform: rotate(90deg); }
+    .group-head--open .group-head__chev { transform: rotate(-90deg); }
+
+    /* The opened series: its variants sit in a tinted well with a bar on the
+       left, so the eye sees at once what belongs to the head above. */
+    .group-body { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted));
+      border-bottom: 1px solid var(--line); }
+    .group-body .swipe:last-child .list-item { border-bottom: 0; }
+    .list-item--nested { padding-left: 30px; min-height: 50px; background: var(--surface-2); }
+    .thumb--sm { width: 36px; height: 36px; }
+
+    .variant-label { display: inline-flex; align-items: center; gap: 5px; }
+    .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+      border: 1px solid rgb(0 0 0 / 14%); }
   `,
 })
 export class ProductList {
@@ -288,6 +454,7 @@ export class ProductList {
   readonly query = signal('');
   readonly categoryFilter = signal<number | null>(null);
   readonly statusFilter = signal<'ALL' | 'NEEDS_WORK' | 'WEBSITE' | 'ORDER_APP' | 'INACTIVE'>('ALL');
+  readonly sortKey = signal<SortKey>('NAME_ASC');
   readonly loading = signal(true);
   readonly deleting = signal<number | null>(null);
   readonly swiped = signal<number | null>(null);
@@ -361,6 +528,124 @@ export class ProductList {
       ].join(' ').toLowerCase().includes(needle);
     });
   });
+
+  /**
+   * Products folded per series. Search keeps a series open so the hit is
+   * visible; a tap on the head overrides that for this visit.
+   */
+  private readonly openOverrides = signal<Map<string, boolean>>(new Map());
+
+  readonly groups = computed<ProductGroup[]>(() => {
+    const byKey = new Map<string, ProductGroup>();
+    for (const product of this.filtered()) {
+      const key = product.familyId == null ? `p${product.id}` : `f${product.familyId}`;
+      let group = byKey.get(key);
+      if (!group) {
+        const family = this.familyFor(product);
+        group = {
+          key, family, name: family?.name || product.name, products: [], photo: null,
+          colours: [], sizes: [], stock: 0,
+        };
+        byKey.set(key, group);
+      }
+      group.products.push(product);
+      if (!group.photo && product.photos.length) group.photo = product.photos[0].url;
+      const colour = product.colour?.trim();
+      if (colour && !group.colours.some((item) => item.name === colour)) {
+        group.colours.push({ name: colour, hex: this.colourHex(product) });
+      }
+      const size = product.variantSize?.trim();
+      if (size && !group.sizes.includes(size)) group.sizes.push(size);
+      group.stock += product.stockQuantity ?? 0;
+    }
+    const groups = [...byKey.values()];
+    const compare = this.comparator();
+    for (const group of groups) group.products.sort(compare);
+    return groups.sort((a, b) => this.compareGroups(a, b));
+  });
+
+  /** Alphabetical unless told otherwise; names compare the Belgian way (é, ij). */
+  private comparator(): (a: Product, b: Product) => number {
+    const text = (pick: (p: Product) => string | null | undefined, reverse = false) =>
+      (a: Product, b: Product) => (reverse ? -1 : 1)
+        * (pick(a) ?? '').localeCompare(pick(b) ?? '', 'nl', { numeric: true, sensitivity: 'base' });
+    const num = (pick: (p: Product) => number | null, reverse = false) =>
+      (a: Product, b: Product) => {
+        const left = pick(a), right = pick(b);
+        if (left === null && right === null) return 0;
+        if (left === null) return 1;
+        if (right === null) return -1;
+        return (reverse ? -1 : 1) * (left - right);
+      };
+    switch (this.sortKey()) {
+      case 'NAME_DESC': return text((p) => p.name, true);
+      case 'SKU': return text((p) => p.sku);
+      case 'STOCK_DESC': return num((p) => p.stockQuantity ?? 0, true);
+      case 'STOCK_ASC': return num((p) => p.stockQuantity ?? 0);
+      case 'PRICE_ASC': return num((p) => this.salesPrice(p));
+      case 'PRICE_DESC': return num((p) => this.salesPrice(p), true);
+      case 'COST_ASC': return num((p) => this.purchasePrice(p));
+      case 'COST_DESC': return num((p) => this.purchasePrice(p), true);
+      default: return text((p) => p.name);
+    }
+  }
+
+  /**
+   * A series sorts by its best-placed variant, except by name, where the
+   * series name counts - the variants share it anyway.
+   */
+  private compareGroups(a: ProductGroup, b: ProductGroup): number {
+    const key = this.sortKey();
+    if (key === 'NAME_ASC' || key === 'NAME_DESC') {
+      return (key === 'NAME_DESC' ? -1 : 1)
+        * a.name.localeCompare(b.name, 'nl', { numeric: true, sensitivity: 'base' });
+    }
+    return this.comparator()(a.products[0], b.products[0]);
+  }
+
+  isOpen(group: ProductGroup): boolean {
+    return this.openOverrides().get(group.key) ?? this.query().trim().length > 0;
+  }
+
+  toggle(group: ProductGroup): void {
+    const open = this.isOpen(group);
+    this.openOverrides.update((map) => new Map(map).set(group.key, !open));
+  }
+
+  groupSummary(group: ProductGroup): string {
+    const parts: string[] = [];
+    if (group.colours.length > 1) parts.push(`${group.colours.length} kleuren`);
+    if (group.sizes.length > 1) parts.push(`${group.sizes.length} maten`);
+    return parts.length ? parts.join(' · ') : `${group.products.length} varianten`;
+  }
+
+  groupAttention(group: ProductGroup): string | null {
+    if (this.familyLoading() || this.familyLoadError()) return null;
+    const issues = group.family?.publicationIssues.length ?? 0;
+    return issues ? `${issues} aandacht` : null;
+  }
+
+  /** The product's own swatch, or the standard one for that colour name. */
+  colourHex(product: Product): string | null {
+    const colour = product.colour?.trim();
+    if (!colour) return null;
+    return product.colourHex || COLOUR_SWATCHES[colour] || null;
+  }
+
+  groupStock(group: ProductGroup): string {
+    return this.stockLabel(group.stock);
+  }
+
+  stockLabel(quantity: number | null): string {
+    return (quantity ?? 0).toLocaleString('nl-BE');
+  }
+
+  variantLabel(product: Product): string | null {
+    const parts = [product.colour, product.variantSize]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    return parts.length ? parts.join(' · ') : null;
+  }
 
   readonly hasFilters = computed(() =>
     this.query().trim().length > 0 || this.categoryFilter() !== null
@@ -529,18 +814,41 @@ export class ProductList {
       : null;
   }
 
-  variantLabel(product: Product): string | null {
-    const parts = [product.colour, product.variantSize]
-      .map((value) => value?.trim())
-      .filter((value): value is string => Boolean(value));
-    return parts.length ? parts.join(' · ') : null;
-  }
-
-  attentionLabel(product: Product): string | null {
+  attentionLabel(product: Product, ownOnly = false): string | null {
     if (!product.active) return 'Inactief';
     if (this.familyLoading() || this.familyLoadError()) return null;
-    const issueCount = this.publicationIssues(product).length;
+    const issueCount = (ownOnly ? this.variantIssues(product) : this.publicationIssues(product)).length;
     return issueCount ? `${issueCount} aandacht` : null;
+  }
+
+  /** The series' shared issues plus those naming this variant. */
+  variantIssues(product: Product): string[] {
+    const ownKey = product.canonicalVariantKey ?? String(product.id);
+    return this.publicationIssues(product).filter((issue) => {
+      const match = /\.variants\.([^.]+)\./.exec(issue);
+      return !match || match[1] === ownKey;
+    });
+  }
+
+  issueTooltip(product: Product, ownOnly: boolean): string {
+    const issues = ownOnly ? this.variantIssues(product) : this.publicationIssues(product);
+    return describePublicationIssues(issues, this.variantNames(product.familyId)).join('\n');
+  }
+
+  groupTooltip(group: ProductGroup): string {
+    return describePublicationIssues(group.family?.publicationIssues ?? [],
+      this.variantNames(group.family?.id ?? null)).join('\n');
+  }
+
+  private variantNames(familyId: number | null): Map<string, string> {
+    const names = new Map<string, string>();
+    if (familyId == null) return names;
+    for (const product of this.products()) {
+      if (product.familyId !== familyId) continue;
+      names.set(product.canonicalVariantKey ?? String(product.id),
+        this.variantLabel(product) ?? product.name);
+    }
+    return names;
   }
 
   familyFor(product: Product): ProductFamily | null {
