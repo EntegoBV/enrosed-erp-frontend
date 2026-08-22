@@ -81,6 +81,23 @@ interface ProductSwipe {
           }
         </div>
 
+        <!-- Filters and sorting fold away behind one button: the search box
+             is what you reach for; the rest is there when you need it. -->
+        <button class="filter-toggle" type="button"
+                [class.filter-toggle--active]="activeFilterCount() > 0"
+                [attr.aria-expanded]="filtersOpen()"
+                (click)="filtersOpen.set(!filtersOpen())">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" />
+          </svg>
+          <span class="hide-mobile">Filters</span>
+          @if (activeFilterCount(); as n) {
+            <b class="filter-toggle__count">{{ n }}</b>
+          }
+          <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
+        </button>
+
+        @if (filtersOpen()) {
         <div class="filter-grid">
           <label class="filter-field">
             <span class="filter-field__label">Categorie</span>
@@ -126,12 +143,16 @@ interface ProductSwipe {
           </div>
         </div>
 
-        <div class="filter-summary" aria-live="polite">
-          <span><strong>{{ filtered().length }}</strong> van {{ products().length }} producten</span>
-          @if (hasFilters()) {
-            <button class="filter-reset" type="button" (click)="resetFilters()">Filters wissen</button>
-          }
-        </div>
+        }
+
+        @if (filtersOpen() || hasFilters()) {
+          <div class="filter-summary" aria-live="polite">
+            <span><strong>{{ filtered().length }}</strong> van {{ products().length }} producten</span>
+            @if (hasFilters()) {
+              <button class="filter-reset" type="button" (click)="resetFilters()">Filters wissen</button>
+            }
+          </div>
+        }
         @if (familyLoadError()) {
           <div class="family-load-warning" role="alert">
             <span>Publicatiestatus en varianten zijn niet geladen.</span>
@@ -183,9 +204,6 @@ interface ProductSwipe {
                     </div>
                   </div>
                   <div class="group-head__meta">
-                    <span class="stock stock--inline" [class.stock--empty]="!group.stock">
-                      Voorraad {{ groupStock(group) }}
-                    </span>
                     <span class="group-head__count">
                       {{ groupSummary(group) }}
                       <svg class="group-head__chev" viewBox="0 0 12 12" aria-hidden="true">
@@ -317,14 +335,7 @@ interface ProductSwipe {
               }
             </div>
           </div>
-          <div class="product-row__sku">
-            <span class="mono">{{ product.sku || 'Geen SKU' }}</span>
-            <!-- On a phone the figures column has no room for a third
-                 number; the stock sits by the SKU instead. -->
-            <span class="stock stock--inline" [class.stock--empty]="!product.stockQuantity">
-              Voorraad {{ stockLabel(product.stockQuantity) }}
-            </span>
-          </div>
+          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
         </div>
         <div class="list-item__end product-row__end">
           <div class="product-row__stock">
@@ -383,7 +394,28 @@ interface ProductSwipe {
       position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
       overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
     }
-    .catalog-search { position: relative; display: block; min-width: 0; }
+    .catalog-search { position: relative; display: block; min-width: 0; flex: 1; }
+    .catalog-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+    .filter-toggle {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px;
+      border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface);
+      color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+    }
+    .filter-toggle:hover { background: var(--surface-2); }
+    .filter-toggle--active { border-color: var(--rose-line); color: var(--rose-dark); background: var(--rose-soft); }
+    .filter-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; }
+    .filter-toggle__count {
+      min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rose); color: #fff;
+      font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+    }
+    .filter-toggle__chev {
+      width: 7px; height: 7px; margin-left: 2px; border-right: 1.6px solid currentColor;
+      border-bottom: 1.6px solid currentColor; transform: translateY(-2px) rotate(45deg);
+      transition: transform .15s ease; opacity: .7;
+    }
+    .filter-toggle__chev--open { transform: translateY(2px) rotate(-135deg); }
+    .filter-grid, .filter-summary, .family-load-warning { flex: 1 0 100%; }
     .catalog-search__icon {
       position: absolute; z-index: 1; left: 13px; top: 50%; transform: translateY(-52%);
       width: 18px; height: 18px; color: var(--muted); fill: none; stroke: currentColor;
@@ -399,7 +431,7 @@ interface ProductSwipe {
     .catalog-search__clear:hover { background: var(--surface-2); color: var(--ink); }
     .filter-grid {
       display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-      gap: 9px; min-width: 0; margin-top: 11px;
+      gap: 9px; min-width: 0; margin-top: 2px;
     }
     .filter-sort__box {
       position: relative; display: flex; align-items: center; gap: 7px; min-height: 42px;
@@ -427,7 +459,7 @@ interface ProductSwipe {
     }
     .filter-summary {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      min-width: 0; margin-top: 10px; color: var(--muted); font-size: 12px;
+      min-width: 0; margin-top: 0; color: var(--muted); font-size: 12px;
     }
     .filter-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
     .filter-reset {
@@ -445,36 +477,26 @@ interface ProductSwipe {
       font-size: 11px; font-weight: 750; cursor: pointer;
     }
     @media (min-width: 720px) {
-      .catalog-tools {
-        display: grid; grid-template-columns: minmax(240px, .8fr) minmax(480px, 1.2fr);
-        column-gap: 12px; align-items: end;
-      }
-      .filter-grid { margin-top: 0; }
-      .filter-summary { grid-column: 1 / -1; }
+      .filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
     }
     .list-item--inactive { opacity: .66; }
     .product-row__primary {
       display: flex; min-width: 0; flex-wrap: wrap; align-items: center;
       justify-content: space-between; gap: 4px 8px;
     }
-    .product-row__title { display: flex; min-width: 0; align-items: baseline; gap: 4px; }
-    .product-row__title strong { overflow: hidden; min-width: 0; font-size: 13.5px;
+    /* Wraps: a long name takes the whole line and the colour label drops
+       under it, instead of both fighting for one line. */
+    .product-row__title { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: 2px 4px; }
+    /* A long name gives way with an ellipsis; the colour label stays whole
+       - "· Roc" told nobody anything. */
+    .product-row__title strong { flex: 0 1 auto; overflow: hidden; min-width: 0; font-size: 13.5px;
       text-overflow: ellipsis; white-space: nowrap; }
-    .product-row__title span { flex: 0 1 auto; overflow: hidden; color: var(--muted);
-      font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .product-row__title span { flex: 0 0 auto; color: var(--muted); font-size: 11px;
+      white-space: nowrap; }
     .product-row__badges { display: flex; flex: 0 0 auto; gap: 4px; }
-    .product-row__sku { display: flex; align-items: center; gap: 8px; margin-top: 4px;
-      color: var(--muted); font-size: 10.5px; }
-    .product-row__sku .stock { min-height: 16px; font-size: 10px; }
-    .product-row__end { display: flex; align-items: center; gap: 10px; }
-    /* Stock: a pill by the SKU on phones, a column beside the prices from
-       the rail breakpoint up. Done here rather than with the hide-mobile
-       utilities, whose specificity loses to these display rules. */
-    .product-row__stock { display: none; justify-items: end; gap: 4px; }
-    @media (min-width: 680px) {
-      .product-row__stock { display: grid; }
-      .stock--inline { display: none; }
-    }
+    .product-row__sku { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
+    .product-row__end { display: flex; align-items: center; gap: 8px; }
+    .product-row__stock { display: grid; justify-items: end; gap: 4px; }
     .product-row__stock span { color: var(--muted); font-size: 8px; font-weight: 700;
       letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
     .stock { display: inline-flex; align-items: center; padding: 0 7px; min-height: 18px;
@@ -482,8 +504,12 @@ interface ProductSwipe {
       color: var(--ink-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
       white-space: nowrap; }
     .stock--empty { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
-    .product-row__prices { display: grid; gap: 4px; width: 96px; box-sizing: border-box;
-      padding-left: 10px; border-left: 1px solid var(--line); }
+    .product-row__prices { display: grid; gap: 4px; width: 84px; box-sizing: border-box;
+      padding-left: 8px; border-left: 1px solid var(--line); }
+    @media (min-width: 680px) {
+      .product-row__end { gap: 10px; }
+      .product-row__prices { width: 96px; padding-left: 10px; }
+    }
     .product-row__prices > div { display: grid; }
     .product-row__prices span { color: var(--muted); font-size: 8px; font-weight: 700;
       letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
@@ -561,6 +587,12 @@ export class ProductList {
   readonly categoryFilter = signal<number | null>(null);
   readonly statusFilter = signal<'ALL' | 'NEEDS_WORK' | 'WEBSITE' | 'ORDER_APP' | 'INACTIVE'>('ALL');
   readonly sortKey = signal<SortKey>('NAME_ASC');
+  readonly filtersOpen = signal(false);
+  /** How many of category, status and sorting stand off their default. */
+  readonly activeFilterCount = computed(() =>
+    (this.categoryFilter() !== null ? 1 : 0)
+    + (!this.familyLoadError() && this.statusFilter() !== 'ALL' ? 1 : 0)
+    + (this.sortKey() !== 'NAME_ASC' ? 1 : 0));
   readonly sortOptions = computed<{ key: SortKey; label: string }[]>(() => [
     { key: 'NAME_ASC', label: 'Naam A–Z' },
     { key: 'NAME_DESC', label: 'Naam Z–A' },
@@ -822,6 +854,7 @@ export class ProductList {
     this.query.set('');
     this.categoryFilter.set(null);
     this.statusFilter.set('ALL');
+    this.sortKey.set('NAME_ASC');
   }
 
   startSwipe(event: PointerEvent, product: Product): void {
