@@ -41,6 +41,12 @@ interface ProductSection {
   groups: ProductGroup[];
 }
 
+/** Red is the house colour: it stands for a series unless told otherwise. */
+function isRed(colour: string | null | undefined): boolean {
+  const value = (colour ?? '').trim().toLowerCase();
+  return value === 'rood' || value === 'red' || value === 'rouge' || value === 'rot';
+}
+
 type SortKey = 'NAME_ASC' | 'NAME_DESC' | 'SKU' | 'STOCK_DESC' | 'STOCK_ASC'
   | 'PRICE_ASC' | 'PRICE_DESC' | 'COST_ASC' | 'COST_DESC';
 
@@ -715,13 +721,16 @@ export class ProductList {
     const compare = this.comparator();
     for (const group of groups) {
       group.products.sort(compare);
-      /* The card's featured variant leads; otherwise the series' first
-         variant (position 0, usually the original colour), not whichever
-         happens to sort first. */
+      /* The card's featured variant leads; otherwise the red one - the
+         house colour - and failing that the series' first variant, not
+         whichever happens to sort first. */
+      const byPosition = [...group.products].sort((a, b) =>
+        (a.variantPosition ?? Number.MAX_SAFE_INTEGER) - (b.variantPosition ?? Number.MAX_SAFE_INTEGER)
+        || (a.id ?? 0) - (b.id ?? 0));
       group.lead = group.products.find((p) => p.id === group.family?.cardFeaturedProductId)
-        ?? [...group.products].sort((a, b) =>
-          (a.variantPosition ?? Number.MAX_SAFE_INTEGER) - (b.variantPosition ?? Number.MAX_SAFE_INTEGER)
-          || (a.id ?? 0) - (b.id ?? 0))[0];
+        ?? byPosition.find((p) => isRed(p.colour))
+        ?? byPosition[0];
+      if (group.lead.photos.length) group.photo = group.lead.photos[0].url;
       group.priceVaries = group.products.some((p) => this.salesPrice(p) !== this.salesPrice(group.lead));
       group.costVaries = group.products.some((p) => this.purchasePrice(p) !== this.purchasePrice(group.lead));
     }

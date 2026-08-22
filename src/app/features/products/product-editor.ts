@@ -209,7 +209,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <app-product-variant-group class="variant-editor-group span-2"
                                          [product]="draft()" [family]="family()"
                                          [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
-                                         (linked)="onVariantLinked($event)" />
+                                         (linked)="onVariantLinked($event)"
+                                         (familyChange)="onFamilyChange($event)" />
             }
             <div class="field span-2">
               <label for="p-description">Omschrijving op offerte <span class="opt"></span></label>

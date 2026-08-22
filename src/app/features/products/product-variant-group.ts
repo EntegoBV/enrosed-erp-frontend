@@ -1,12 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  input,
-  output,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, signal, viewChild } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -38,6 +30,26 @@ import { Sheet, Ui } from '../../shared/ui';
               Nog geen andere kleur- of maatvariant gekoppeld.
             }
           </p>
+          @if (family(); as group) {
+            <!-- The series name, as it heads the row in the catalogue list.
+                 Set once at linking time, so it needs a quiet way to be
+                 corrected: tap, type, done. -->
+            @if (editingName()) {
+              <input #nameField class="input input--sm series-name__input" type="text"
+                     aria-label="Naam van de reeks" [ngModel]="nameDraft()"
+                     (ngModelChange)="nameDraft.set($event)"
+                     (keydown.enter)="commitName()" (keydown.escape)="cancelName()"
+                     (blur)="commitName()" />
+            } @else {
+              <button class="series-name" type="button" [disabled]="disabled()"
+                      title="Naam van de reeks aanpassen" (click)="startName(group)">
+                <span>Reeks: <b>{{ group.name || group.familyKey }}</b></span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 20h4l10-10-4-4L4 16v4z" /><path d="m13 7 4 4" />
+                </svg>
+              </button>
+            }
+          }
         </div>
         <button class="btn btn--sm" type="button" [disabled]="!canStart() || disabled()"
                 (click)="openPicker()">
@@ -196,6 +208,18 @@ import { Sheet, Ui } from '../../shared/ui';
       border-radius: var(--r);
       background: var(--surface);
     }
+    .series-name {
+      display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 2px 0;
+      border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px;
+      cursor: pointer; text-align: left;
+    }
+    .series-name b { color: var(--ink-2); font-weight: 650; }
+    .series-name svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7;
+      stroke-linecap: round; stroke-linejoin: round; opacity: .6; }
+    .series-name:hover b { text-decoration: underline dotted; }
+    .series-name:hover svg { opacity: 1; }
+    .series-name:disabled { cursor: default; }
+    .series-name__input { margin-top: 6px; max-width: 320px; font-size: 13px; }
     .variant-group__head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
     .variant-group__eyebrow {
       display: block; margin-bottom: 3px; color: var(--brand); font-size: 10px;
@@ -281,6 +305,31 @@ export class ProductVariantGroup {
   readonly family = input<ProductFamily | null>(null);
   readonly disabled = input(false);
   readonly linked = output<ProductFamily>();
+  /** The series itself changed (its name); the editor saves it with the product. */
+  readonly familyChange = output<ProductFamily>();
+
+  private readonly nameField = viewChild<ElementRef<HTMLInputElement>>('nameField');
+  readonly editingName = signal(false);
+  readonly nameDraft = signal('');
+
+  startName(group: ProductFamily): void {
+    this.nameDraft.set(group.name ?? '');
+    this.editingName.set(true);
+    setTimeout(() => this.nameField()?.nativeElement.select());
+  }
+
+  commitName(): void {
+    if (!this.editingName()) return;
+    this.editingName.set(false);
+    const group = this.family();
+    const name = this.nameDraft().trim();
+    if (!group || !name || name === group.name) return;
+    this.familyChange.emit({ ...group, name });
+  }
+
+  cancelName(): void {
+    this.editingName.set(false);
+  }
 
   /** Sibling shown in the peek card; null is closed. */
   readonly peekId = signal<number | null>(null);
