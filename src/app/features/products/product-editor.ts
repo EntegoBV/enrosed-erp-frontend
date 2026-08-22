@@ -22,8 +22,7 @@ import {
   ProductFamily,
   ProductFamilyText,
   ProductPublicTranslationsSnapshot,
-  Supplier,
-} from '../../core/api/models';
+  Supplier, LanguageCode } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { Privacy } from '../../core/api/privacy';
@@ -574,6 +573,59 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         }
       </div>
 
+      @if (publishFix(); as plan) {
+        <app-sheet title="Even invullen om op te slaan" (closed)="publishFix.set(null)">
+          <div body>
+            <p class="small muted" style="margin:0 0 12px">
+              Dit product zit in een gepubliceerde familie. Zonder deze gegevens zou de
+              website-pagina van <b>{{ plan.family }}</b> stukgaan, daarom is de wijziging
+              nog niet opgeslagen. Vul ze hier in en het gaat meteen door.
+            </p>
+            @for (item of plan.items; track item.field) {
+              <div class="fix-item">
+                <div class="fix-item__head">
+                  <b>{{ item.label }} vertalen</b>
+                  @if (item.base) {
+                    <button class="linklike" type="button" (click)="fillAll(item, item.base)">
+                      "{{ item.base }}" overal
+                    </button>
+                  }
+                </div>
+                <div class="fix-item__grid">
+                  @for (lang of item.languages; track lang) {
+                    <label class="fix-item__lang">
+                      <span>{{ lang }}</span>
+                      <input class="input input--sm" [value]="item.values[lang] ?? ''"
+                             (input)="item.values[lang] = $any($event.target).value" />
+                    </label>
+                  }
+                </div>
+              </div>
+            }
+            @if (plan.swatch) {
+              <div class="fix-item">
+                <div class="fix-item__head"><b>Kleurstaal voor "{{ draft().colour }}"</b></div>
+                <label class="fix-item__lang" style="max-width:200px">
+                  <span>Kleur</span>
+                  <input type="color" [value]="plan.swatchHex"
+                         (input)="plan.swatchHex = $any($event.target).value" />
+                </label>
+              </div>
+            }
+            @for (note of plan.notes; track note) {
+              <div class="fix-note">{{ note }}</div>
+            }
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="publishFix.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="saving()"
+                    (click)="applyPublishFix()">
+              {{ plan.items.length || plan.swatch ? 'Invullen en opslaan' : 'Sluiten' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
       @if (leaveQuestion(); as answer) {
         <app-sheet title="Wijzigingen opslaan?" (closed)="answer(null)">
           <div body>
@@ -729,6 +781,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .product-load-error small { font-size: 10px; }
     .editor-canvas { width: 100%; max-width: 920px; margin: 0 auto; }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
+    .fix-item { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+    .fix-item__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .fix-item__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+    .fix-item__lang { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .fix-item__lang span { min-width: 22px; font-weight: 700; color: var(--muted); }
+    .fix-note { font-size: 12.5px; color: var(--ink-2); padding: 6px 0; border-top: 1px solid var(--line); }
     /* Phone: Volgende until the last step, then save; the header save
        fades out while nothing changed. Desktop: always save. */
     .editor-next { display: none; }
@@ -920,6 +978,129 @@ export class ProductEditor implements OnDestroy {
     const index = list.findIndex((t) => t.id === this.activeTab());
     const next = list[Math.min(index + 1, list.length - 1)];
     if (next) this.showTab(next.id);
+  }
+
+  /* ---- publication blockers, made fixable ------------------------ */
+
+  readonly publishFix = signal<PublishFixPlan | null>(null);
+  readonly fixLanguages: LanguageCode[] = ['NL', 'FR', 'EN', 'DE', 'ES', 'PL', 'PT', 'TR'];
+
+  /**
+   * Turns the family guard's refusal ("...niet publiceerbaar: key; key")
+   * into a plan: per missing text of THIS product one row with an input
+   * per language, a swatch row when the colour sample is missing, and
+   * plain-language notes for what belongs elsewhere (family copy, other
+   * variants). Null when the message is not a publication blocker.
+   */
+  planPublishFix(message: string): PublishFixPlan | null {
+    const marker = 'niet publiceerbaar: ';
+    const at = message.indexOf(marker);
+    if (at < 0) return null;
+    const family = /productfamilie\s+(\S+)\s+niet/.exec(message)?.[1] ?? '';
+    const issues = message.slice(at + marker.length).split(';').map((i) => i.trim()).filter(Boolean);
+    const draft = this.draft();
+    /* The backend keys a variant by its canonical key, falling back to
+       the product id - mirror that so "mine" is recognised either way. */
+    const myKey = draft.canonicalVariantKey || String(draft.id ?? '');
+    const fieldLabel: Record<string, string> = { size: 'Maat', name: 'Naam', color: 'Kleur' };
+    const base: Record<string, string> = {
+      size: draft.variantSize ?? '', name: draft.name ?? '', color: draft.colour ?? '',
+    };
+    const items = new Map<string, PublishFixItem>();
+    const notes: string[] = [];
+    let swatch = false;
+    const langs = (list: Set<string>) => [...list].join(', ');
+    const others = new Map<string, Set<string>>();
+    const familyTexts = new Map<string, Set<string>>();
+
+    for (const issue of issues) {
+      const variant = /\.variants\.([^.]+)\.([A-Z]{2}|[a-z]{2})\.(size|name|color)$/i.exec(issue);
+      if (variant) {
+        const [, key, lang, field] = variant;
+        const code = lang.toUpperCase() as LanguageCode;
+        if (key === myKey) {
+          const item = items.get(field) ?? { field, label: fieldLabel[field] ?? field,
+            base: base[field] ?? '', languages: [], values: {} as Record<string, string> };
+          if (!item.languages.includes(code)) {
+            item.languages.push(code);
+            item.values[code] = item.base;
+          }
+          items.set(field, item);
+        } else {
+          const set = others.get(`${key}|${fieldLabel[field] ?? field}`) ?? new Set<string>();
+          set.add(code);
+          others.set(`${key}|${fieldLabel[field] ?? field}`, set);
+        }
+        continue;
+      }
+      const familyText = /\.([A-Z]{2}|[a-z]{2})\.(\w+)$/i.exec(issue);
+      if (issue.startsWith('website.') && familyText && !issue.includes('.variants.')) {
+        const set = familyTexts.get(familyText[2]) ?? new Set<string>();
+        set.add(familyText[1].toUpperCase());
+        familyTexts.set(familyText[2], set);
+        continue;
+      }
+      if (/Kleurstaal ontbreekt/.test(issue) && draft.colour && !draft.colourHex) { swatch = true; continue; }
+      notes.push(issue);
+    }
+    for (const [key, set] of others) {
+      const [variant, field] = key.split('|');
+      notes.push(`Variant ${variant}: ${field.toLowerCase()} nog niet vertaald in ${langs(set)} - open dat product.`);
+    }
+    for (const [field, set] of familyTexts) {
+      notes.push(`Familietekst "${field}" ontbreekt in ${langs(set)} - Website & publicatie (desktop).`);
+    }
+    if (!items.size && !swatch && !notes.length) return null;
+    return { family, items: [...items.values()], swatch, swatchHex: '#a91f32', notes };
+  }
+
+  fillAll(item: PublishFixItem, value: string): void {
+    for (const lang of item.languages) item.values[lang] = value;
+    this.publishFix.update((plan) => plan ? { ...plan } : plan);
+  }
+
+  /** Writes the filled-in texts (and swatch), then saves the product again. */
+  async applyPublishFix(): Promise<void> {
+    const plan = this.publishFix();
+    const productId = this.draft().id;
+    if (!plan) return;
+    if (productId === null) {
+      this.ui.toast('Maak het product eerst zonder familie aan; koppel daarna de variant.', 'err');
+      return;
+    }
+    this.saving.set(true);
+    try {
+      if (plan.items.length) {
+        const snapshot = await this.catalog.productPublicTranslations(productId);
+        const texts = [...snapshot.productTexts];
+        for (const item of plan.items) {
+          for (const lang of item.languages) {
+            const value = (item.values[lang] ?? '').trim();
+            if (!value) continue;
+            let text = texts.find((t) => t.language === lang);
+            if (!text) {
+              text = { language: lang, name: null, description: null, colour: null, variantSize: null };
+              texts.push(text);
+            }
+            if (item.field === 'size') text.variantSize = value;
+            else if (item.field === 'name') text.name = value;
+            else if (item.field === 'color') text.colour = value;
+          }
+        }
+        await this.catalog.updateProductPublicTranslations(productId, {
+          revision: snapshot.revision, familyId: snapshot.familyId,
+          familyTexts: snapshot.familyTexts, productTexts: texts, images: snapshot.images,
+        });
+      }
+      if (plan.swatch) this.patch({ colourHex: plan.swatchHex });
+      this.publishFix.set(null);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Invullen mislukt'), 'err');
+      return;
+    } finally {
+      this.saving.set(false);
+    }
+    await this.save();
   }
 
   /** The three-way question when leaving with unsaved work. */
@@ -1831,6 +2012,13 @@ export class ProductEditor implements OnDestroy {
         ? 'Product is aangemaakt, maar kon nog niet volledig worden afgewerkt'
         : 'Opslaan mislukt';
       const message = messageOf(failure, fallback);
+      /* A publication blocker is not a dead end: open the fix sheet with
+         the missing pieces spelled out, fillable on the spot. */
+      const plan = this.planPublishFix(message);
+      if (plan) {
+        this.publishFix.set(plan);
+        return;
+      }
       this.saveError.set(message);
       this.ui.toast(message, 'err');
     } finally {
@@ -2035,4 +2223,22 @@ export class ProductEditor implements OnDestroy {
       'Je hebt productvertalingen die nog niet zijn opgeslagen. Dit scherm toch verlaten?',
     );
   }
+}
+
+
+/** One missing text of this product, fillable per language. */
+interface PublishFixItem {
+  field: 'size' | 'name' | 'color' | string;
+  label: string;
+  base: string;
+  languages: LanguageCode[];
+  values: Record<string, string>;
+}
+
+interface PublishFixPlan {
+  family: string;
+  items: PublishFixItem[];
+  swatch: boolean;
+  swatchHex: string;
+  notes: string[];
 }
