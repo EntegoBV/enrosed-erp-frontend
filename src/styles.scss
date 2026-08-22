@@ -277,6 +277,85 @@ a { color: var(--rose); }
 /* --- zijbalk (desktop) --- */
 .sidebar { display: none; }
 
+/* From 680px the phone chrome goes: an unfolded Galaxy Fold (about 690px
+   wide) or a tablet wants the desktop idiom, not a thumb bar. Up to 1023px
+   the sidebar is a narrow rail - icon over a short label - so the content
+   keeps its room; from 1024px it is the full sidebar below. */
+@media (min-width: 680px) {
+  .shell { flex-direction: row; }
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    color: var(--ink);
+    border-right: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+  }
+  .tabbar { display: none; }
+  .appbar__back { display: none; }
+  .hide-mobile.hide-mobile { display: revert; }
+  /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
+  .hide-desktop.hide-desktop { display: none !important; }
+}
+
+@media (min-width: 680px) and (max-width: 1023.98px) {
+  .sidebar { width: 84px; flex: 0 0 84px; }
+  .sidebar__brand {
+    display: flex;
+    justify-content: center;
+    padding: 14px 8px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sidebar .sidebar__brand .brand-mark { padding: 4px; margin: 0; }
+  .sidebar .sidebar__brand .brand-mark__logo { height: 18px; max-width: 64px; }
+  .sidebar .sidebar__brand .brand-mark__sub { display: none; }
+  .sidebar__nav { padding: 6px 6px; flex: 1; overflow-y: auto; }
+  .sidebar__label { display: none; }
+  .sidebar__link {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 9px 2px 8px;
+    margin-bottom: 2px;
+    border-radius: 10px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.1;
+    text-align: center;
+  }
+  .sidebar__link:hover { background: var(--surface-2); color: var(--ink); }
+  .sidebar__link.active { background: var(--rose-soft); color: var(--rose-dark); font-weight: 700; }
+  .sidebar__icon { width: 20px; display: inline-flex; justify-content: center; }
+  .sidebar__count { position: absolute; top: 4px; right: 8px; margin: 0; }
+  .sidebar__foot { padding: 8px 6px 12px; border-top: 1px solid var(--line); text-align: center; }
+  .sidebar__user {
+    overflow: hidden;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar__logout {
+    width: 100%;
+    padding: 5px 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .content { padding: 18px 20px 60px; }
+  .appbar { padding: 0 20px; }
+}
+
 @media (min-width: 1024px) {
   .shell { flex-direction: row; }
 
@@ -336,7 +415,8 @@ a { color: var(--rose); }
   .appbar { padding: 0 26px; height: 62px; }
   .appbar__back { display: none; }
   .hide-mobile.hide-mobile { display: revert; }
-  .hide-desktop.hide-desktop { display: none; }
+  /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
+  .hide-desktop.hide-desktop { display: none !important; }
 }
 
 /* ================================================================= cards */
@@ -482,7 +562,7 @@ a { color: var(--rose); }
   gap: 8px;
   cursor: pointer;
 }
-@media (min-width: 1024px) {
+@media (min-width: 680px) {
   .fab { display: none; }
 }
 
@@ -892,14 +972,17 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
 /* On desktop the action bar stays, but next to the sidebar instead of full
    width. Hiding it there was a mistake: the page's main action — build the
    PDF, send — then existed nowhere. */
-@media (min-width: 1024px) {
+@media (min-width: 680px) {
   .action-bar {
-    left: 244px;
+    left: 96px;
     right: 12px;
     bottom: 12px;
     padding: 12px 26px;
   }
   .action-bar__value { font-size: 20px; }
+}
+@media (min-width: 1024px) {
+  .action-bar { left: 244px; }
 }
 
 /* ================================================================ tabellen */
@@ -1019,7 +1102,7 @@ table.data tfoot td {
 
 /* Pages with a fixed action bar leave room for it, on desktop too. */
 .content--with-action-bar { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
-@media (min-width: 1024px) {
+@media (min-width: 680px) {
   .content--with-action-bar { padding-bottom: 110px; }
 }
 
