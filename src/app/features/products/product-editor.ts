@@ -14,15 +14,7 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
-import {
-  Category,
-  Currency,
-  HsCode,
-  Product,
-  ProductFamily,
-  ProductFamilyText,
-  ProductPublicTranslationsSnapshot,
-  Supplier, LanguageCode } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { Privacy } from '../../core/api/privacy';
@@ -40,6 +32,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null },
+    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null } },
     colour: null, colourHex: null, variantSize: null,
     description: null, categoryId: null, supplierId, active: true,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -71,7 +64,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     >
       <button class="btn btn--primary btn--sm" type="button"
               [disabled]="saving() || photoUploading() || translationSaving()"
-              (click)="save()">{{ saving() ? 'Bezig…' : (photoUploading() ? 'Foto’s…' : 'Opslaan') }}</button>
+              (click)="save()">{{ saving() ? 'Bezig…' : (photoUploading() ? 'Foto’s…' : (savedHere() ? 'Opnieuw opslaan' : 'Opslaan')) }}</button>
     </app-page-header>
 
     @if (productLoadError()) {
@@ -253,6 +246,51 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </label>
             </div>
             <p>Het artikel zelf, zonder de omdoos.</p>
+          </fieldset>
+
+          <!-- Presentation packaging: a gift box or display is a third size,
+               between the bare article and the shipping carton. -->
+          <fieldset class="measure-group">
+            <legend>Geschenkverpakking of display</legend>
+            <select class="select" aria-label="Verpakking rondom het product"
+                    [ngModel]="draft().packaging?.kind ?? 'NONE'"
+                    (ngModelChange)="patchPackaging({ kind: $event })">
+              <option value="NONE">Geen — los artikel</option>
+              <option value="GIFT_BOX">Geschenkverpakking</option>
+              <option value="DISPLAY">Display</option>
+            </select>
+            @if ((draft().packaging?.kind ?? 'NONE') !== 'NONE') {
+              <div class="measure-grid mt-8">
+                <label class="measure-field">
+                  <span>Breedte</span>
+                  <span class="measure-field__control">
+                    <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                           [ngModel]="draft().packaging.dimensions.lengthCm"
+                           (ngModelChange)="patchPackagingDimensions({ lengthCm: num($event) })" />
+                    <small>cm</small>
+                  </span>
+                </label>
+                <label class="measure-field">
+                  <span>Diepte</span>
+                  <span class="measure-field__control">
+                    <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                           [ngModel]="draft().packaging.dimensions.widthCm"
+                           (ngModelChange)="patchPackagingDimensions({ widthCm: num($event) })" />
+                    <small>cm</small>
+                  </span>
+                </label>
+                <label class="measure-field">
+                  <span>Hoogte</span>
+                  <span class="measure-field__control">
+                    <input class="input num right" type="number" step="0.1" min="0" inputmode="decimal"
+                           [ngModel]="draft().packaging.dimensions.heightCm"
+                           (ngModelChange)="patchPackagingDimensions({ heightCm: num($event) })" />
+                    <small>cm</small>
+                  </span>
+                </label>
+              </div>
+              <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat.</p>
+            }
           </fieldset>
 
           <div class="field">
@@ -1275,6 +1313,8 @@ export class ProductEditor implements OnDestroy {
   readonly familyDirty = computed(() =>
     JSON.stringify(this.family()) !== JSON.stringify(this.savedFamily()));
   readonly saving = signal(false);
+  /** Saved at least once on this screen: the button then reads "Opnieuw opslaan". */
+  readonly savedHere = signal(history.state?.savedHere === true);
   readonly saveError = signal<string | null>(null);
   readonly productLoadError = signal<string | null>(null);
   readonly translationDirty = signal(false);
@@ -1541,6 +1581,22 @@ export class ProductEditor implements OnDestroy {
 
   patchDimensions(changes: Partial<Product['dimensions']>): void {
     this.draft.update((p) => ({ ...p, dimensions: { ...p.dimensions, ...changes } }));
+  }
+
+  patchPackaging(changes: Partial<Product['packaging']>): void {
+    this.draft.update((p) => ({ ...p, packaging: { ...this.packagingOf(p), ...changes } }));
+  }
+
+  patchPackagingDimensions(changes: Partial<Dimensions>): void {
+    this.draft.update((p) => {
+      const packaging = this.packagingOf(p);
+      return { ...p, packaging: { ...packaging, dimensions: { ...packaging.dimensions, ...changes } } };
+    });
+  }
+
+  /** Products loaded from an older API answer may not carry packaging yet. */
+  private packagingOf(product: Product): Product['packaging'] {
+    return product.packaging ?? { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null } };
   }
 
   patchCarton(changes: Partial<Product['carton']>): void {
@@ -2033,8 +2089,19 @@ export class ProductEditor implements OnDestroy {
       this.ui.toast(wasNew
         ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
         : 'Opgeslagen');
+      /* Saving keeps you on the form: the next tweak is usually seconds
+         away. A caller that sent us here with a return address (a sales
+         order creating a product) still gets its product back. */
       const back = this.returnTo();
-      await this.router.navigateByUrl(back || `/products/${saved.id}`);
+      if (back) {
+        await this.router.navigateByUrl(back);
+        return;
+      }
+      this.savedHere.set(true);
+      if (wasNew && saved.id !== null) {
+        await this.router.navigate(['/products', saved.id, 'edit'],
+          { replaceUrl: true, state: { savedHere: true } });
+      }
     } catch (failure: unknown) {
       const fallback = wasNew && this.draft().id !== null
         ? 'Product is aangemaakt, maar kon nog niet volledig worden afgewerkt'

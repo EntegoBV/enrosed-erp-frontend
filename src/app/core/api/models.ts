@@ -25,6 +25,14 @@ export interface Dimensions {
   heightCm: number | null;
 }
 
+export type PackagingKind = 'NONE' | 'GIFT_BOX' | 'DISPLAY';
+
+/** Gift box or display the product is sold in, with its own outer size. */
+export interface Packaging {
+  kind: PackagingKind;
+  dimensions: Dimensions;
+}
+
 export interface CartonDto {
   lengthCm: number | null;
   widthCm: number | null;
@@ -72,6 +80,8 @@ export interface Product {
   name: string;
   /** Dimensions of the product itself - apart from variant and outer carton. */
   dimensions: Dimensions;
+  /** Presentation packaging around the product; kind NONE when sold bare. */
+  packaging: Packaging;
   /** Colour of the article; first of what may become product options. */
   colour: string | null;
   /** Optional exact swatch for this variant, stored as #RRGGBB. */
