@@ -33,6 +33,14 @@ interface ProductGroup {
   costVaries: boolean;
 }
 
+interface ProductSection {
+  key: string;
+  /** Null when the list is not cut up: one nameless section holds all. */
+  name: string | null;
+  count: number;
+  groups: ProductGroup[];
+}
+
 type SortKey = 'NAME_ASC' | 'NAME_DESC' | 'SKU' | 'STOCK_DESC' | 'STOCK_ASC'
   | 'PRICE_ASC' | 'PRICE_DESC' | 'COST_ASC' | 'COST_DESC';
 
@@ -134,9 +142,19 @@ interface ProductSwipe {
         }
       </section>
 
-      <div class="card">
-        <div class="list">
-          @for (group of groups(); track group.key) {
+      @for (section of sections(); track section.key) {
+        <!-- One card per category, its name above the white: the eye finds
+             "Glas" faster than it reads twelve product names. -->
+        <section class="section" [style.animation-delay.ms]="$index * 40">
+          @if (section.name !== null) {
+            <h2 class="section-head">
+              <span>{{ section.name }}</span>
+              <small>{{ section.count }}</small>
+            </h2>
+          }
+          <div class="card">
+            <div class="list">
+            @for (group of section.groups; track group.key) {
             @if (group.products.length === 1) {
               <ng-container *ngTemplateOutlet="productRow; context: { $implicit: group.products[0], nested: false }" />
             } @else {
@@ -165,7 +183,7 @@ interface ProductSwipe {
                     </div>
                   </div>
                   <div class="group-head__meta">
-                    <span class="stock hide-desktop" [class.stock--empty]="!group.stock">
+                    <span class="stock stock--inline" [class.stock--empty]="!group.stock">
                       Voorraad {{ groupStock(group) }}
                     </span>
                     <span class="group-head__count">
@@ -188,7 +206,7 @@ interface ProductSwipe {
                   </div>
                 </div>
                 <div class="list-item__end group-head__end">
-                  <div class="product-row__stock hide-mobile">
+                  <div class="product-row__stock">
                     <span>Voorraad</span>
                     <strong class="stock" [class.stock--empty]="!group.stock">{{ groupStock(group) }}</strong>
                   </div>
@@ -224,7 +242,13 @@ interface ProductSwipe {
                 </div>
               }
             }
-          } @empty {
+            }
+            </div>
+          </div>
+        </section>
+      } @empty {
+        <div class="card">
+          <div class="list">
             @if (loading()) {
               <app-skeleton kind="list" [rows]="6" />
             } @else {
@@ -234,9 +258,9 @@ interface ProductSwipe {
                 <a class="btn btn--primary" routerLink="/products/new">Product toevoegen</a>
               </div>
             }
-          }
+          </div>
         </div>
-      </div>
+      }
     </div>
 
     <ng-template #productRow let-product let-nested="nested">
@@ -297,13 +321,13 @@ interface ProductSwipe {
             <span class="mono">{{ product.sku || 'Geen SKU' }}</span>
             <!-- On a phone the figures column has no room for a third
                  number; the stock sits by the SKU instead. -->
-            <span class="stock hide-desktop" [class.stock--empty]="!product.stockQuantity">
+            <span class="stock stock--inline" [class.stock--empty]="!product.stockQuantity">
               Voorraad {{ stockLabel(product.stockQuantity) }}
             </span>
           </div>
         </div>
         <div class="list-item__end product-row__end">
-          <div class="product-row__stock hide-mobile">
+          <div class="product-row__stock">
             <span>Voorraad</span>
             <strong class="stock" [class.stock--empty]="!product.stockQuantity">{{ stockLabel(product.stockQuantity) }}</strong>
           </div>
@@ -443,7 +467,14 @@ interface ProductSwipe {
       color: var(--muted); font-size: 10.5px; }
     .product-row__sku .stock { min-height: 16px; font-size: 10px; }
     .product-row__end { display: flex; align-items: center; gap: 10px; }
-    .product-row__stock { display: grid; justify-items: end; gap: 4px; }
+    /* Stock: a pill by the SKU on phones, a column beside the prices from
+       the rail breakpoint up. Done here rather than with the hide-mobile
+       utilities, whose specificity loses to these display rules. */
+    .product-row__stock { display: none; justify-items: end; gap: 4px; }
+    @media (min-width: 680px) {
+      .product-row__stock { display: grid; }
+      .stock--inline { display: none; }
+    }
     .product-row__stock span { color: var(--muted); font-size: 8px; font-weight: 700;
       letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
     .stock { display: inline-flex; align-items: center; padding: 0 7px; min-height: 18px;
@@ -467,6 +498,19 @@ interface ProductSwipe {
     .master-chip--warn { color: var(--warn); background: var(--warn-soft); }
     .master-chip--muted { color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); }
 
+    .section { animation: section-in .28s ease both; }
+    .section + .section { margin-top: 18px; }
+    @keyframes section-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { .section { animation: none; } }
+    .section-head {
+      display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px 4px;
+      color: var(--ink-2); font-size: 11.5px; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .section-head small { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0; }
     .group-head { width: 100%; border: 0; border-bottom: 1px solid var(--line); font: inherit;
       text-align: left; cursor: pointer; }
     .group-head:hover { background: var(--surface-2); }
@@ -690,6 +734,40 @@ export class ProductList {
     }
     return this.comparator()(a.products[0], b.products[0]);
   }
+
+  /**
+   * The groups cut into category sections, in the categories' own order;
+   * products without one come last. A single filtered category needs no
+   * heading, nor does a search - there the hits should stand alone.
+   */
+  readonly sections = computed<ProductSection[]>(() => {
+    const groups = this.groups();
+    if (!groups.length) return [];
+    if (this.categoryFilter() !== null || this.query().trim()) {
+      return [{ key: 'all', name: null, count: groups.length, groups }];
+    }
+    const order = new Map(this.categories().map((category, index) => [category.id, index]));
+    const byCategory = new Map<number | null, ProductSection>();
+    for (const group of groups) {
+      const categoryId = group.lead.categoryId ?? null;
+      let section = byCategory.get(categoryId);
+      if (!section) {
+        const category = this.categories().find((item) => item.id === categoryId);
+        section = {
+          key: categoryId === null ? 'none' : `c${categoryId}`,
+          name: category?.name ?? 'Zonder categorie',
+          count: 0, groups: [],
+        };
+        byCategory.set(categoryId, section);
+      }
+      section.groups.push(group);
+      section.count += group.products.length;
+    }
+    return [...byCategory.entries()]
+      .sort(([a], [b]) => (a === null ? Infinity : order.get(a) ?? Infinity)
+        - (b === null ? Infinity : order.get(b) ?? Infinity))
+      .map(([, section]) => section);
+  });
 
   isOpen(group: ProductGroup): boolean {
     return this.openOverrides().get(group.key) ?? this.query().trim().length > 0;
