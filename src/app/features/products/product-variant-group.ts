@@ -7,6 +7,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -22,7 +23,7 @@ import { Sheet, Ui } from '../../shared/ui';
 @Component({
   selector: 'app-product-variant-group',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, FormsModule, RouterLink, Sheet],
+  imports: [AuthImage, DecimalPipe, FormsModule, RouterLink, Sheet],
   template: `
     <section class="variant-group" aria-labelledby="variant-group-title">
       <div class="variant-group__head">
@@ -52,10 +53,16 @@ import { Sheet, Ui } from '../../shared/ui';
 
       <div class="variant-strip" aria-label="Productvarianten">
         @if (family(); as group) {
+          <!-- A sibling chip opens a small peek, not another page: you
+               can look at the red one without saving and leaving this
+               product first. -->
           @for (member of activeMembers(); track member.productId) {
-            <a class="variant-chip" [class.variant-chip--current]="member.productId === product().id"
-               [routerLink]="['/products', member.productId]"
-               [attr.aria-current]="member.productId === product().id ? 'page' : null">
+            <button class="variant-chip" type="button"
+                    [class.variant-chip--current]="member.productId === product().id"
+                    [class.variant-chip--peek]="peekId() === member.productId"
+                    [attr.aria-current]="member.productId === product().id ? 'page' : null"
+                    [attr.aria-expanded]="peekId() === member.productId"
+                    (click)="togglePeek(member.productId)">
               @if (member.colourHex) {
                 <span class="variant-chip__swatch" [style.background]="member.colourHex"
                       aria-hidden="true"></span>
@@ -64,7 +71,7 @@ import { Sheet, Ui } from '../../shared/ui';
                 <b>{{ optionLabel(member.colour, member.size) }}</b>
                 <small>{{ member.sku || member.name }}</small>
               </span>
-            </a>
+            </button>
           }
         } @else {
           <span class="variant-chip variant-chip--current">
@@ -79,6 +86,31 @@ import { Sheet, Ui } from '../../shared/ui';
           </span>
         }
       </div>
+
+      @if (peekId(); as id) {
+        <div class="variant-peek" role="region" aria-label="Variant in het kort">
+          @if (peek().get(id); as sibling) {
+            @if (sibling.photos[0]; as photo) {
+              <img class="variant-peek__photo" [appAuthSrc]="photo.url" alt="" />
+            } @else {
+              <div class="variant-peek__photo variant-peek__photo--empty">◈</div>
+            }
+            <div class="variant-peek__body">
+              <b>{{ sibling.name }}</b>
+              <small>{{ sibling.sku }} · {{ optionLabel(sibling.colour, sibling.variantSize) }}
+                @if (sibling.carton.piecesPerCarton) { · {{ sibling.carton.piecesPerCarton }}/doos }
+              </small>
+              <small>Voorraad {{ sibling.stockQuantity }}
+                @if (sibling.fixedSalesPriceEur) { · € {{ sibling.fixedSalesPriceEur | number: '1.2-2' }} }
+                @if (!sibling.active) { · <span class="warn-text">inactief</span> }
+              </small>
+            </div>
+            <a class="btn btn--sm" [routerLink]="['/products', sibling.id]">Openen</a>
+          } @else {
+            <span class="small muted">Laden…</span>
+          }
+        </div>
+      }
     </section>
 
     @if (pickerOpen()) {
@@ -184,6 +216,18 @@ import { Sheet, Ui } from '../../shared/ui';
       min-height: 44px; padding: 7px 10px; border: 1px solid var(--line);
       border-radius: 12px; color: inherit; background: var(--surface-2); text-decoration: none;
     }
+    .variant-chip--peek { border-color: var(--accent); }
+    .variant-peek {
+      display: flex; align-items: center; gap: 12px;
+      margin-top: 10px; padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+      animation: rise 0.2s ease;
+    }
+    .variant-peek__photo { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: none;
+      background: var(--surface-2); border: 1px solid var(--line); }
+    .variant-peek__photo--empty { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+    .variant-peek__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .variant-peek__body small { font-size: 12px; color: var(--muted); }
     .variant-chip--current { border-color: var(--brand); box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 35%, transparent); }
     .variant-chip__swatch { width: 18px; height: 18px; border: 1px solid rgb(0 0 0 / .14); border-radius: 50%; flex: none; }
     .variant-chip span:last-child { display: grid; gap: 1px; }
@@ -237,6 +281,21 @@ export class ProductVariantGroup {
   readonly family = input<ProductFamily | null>(null);
   readonly disabled = input(false);
   readonly linked = output<ProductFamily>();
+
+  /** Sibling shown in the peek card; null is closed. */
+  readonly peekId = signal<number | null>(null);
+  readonly peek = signal(new Map<number, Product>());
+
+  togglePeek(productId: number): void {
+    if (productId === this.product().id) return;
+    if (this.peekId() === productId) { this.peekId.set(null); return; }
+    this.peekId.set(productId);
+    if (!this.peek().has(productId)) {
+      void this.catalog.product(productId).then((sibling) => {
+        this.peek.update((map) => new Map(map).set(productId, sibling));
+      });
+    }
+  }
   /**
    * Deferred mode for a product that has no id yet: the chosen sibling is
    * handed to the editor, which links it the moment the product exists.

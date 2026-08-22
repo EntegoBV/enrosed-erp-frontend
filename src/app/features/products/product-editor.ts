@@ -1292,7 +1292,6 @@ export class ProductEditor implements OnDestroy {
   readonly innerCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly outerCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly photoManager = viewChild(PhotoManager);
-  private readonly publication = viewChild(ProductPublicationEditor);
   readonly photoUploading = computed(() => this.photoManager()?.busy() ?? false);
   readonly photoCount = computed(() =>
     this.draft().photos.length + (this.photoManager()?.pendingCount() ?? 0));
@@ -2017,17 +2016,6 @@ export class ProductEditor implements OnDestroy {
     const wasNew = this.isNew();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saveError.set(null);
-    /* Website translations edited alongside ERP fields ride along with
-       the same Opslaan - they are a separate endpoint, not a separate
-       chore. An existing product saves them first (before our own busy
-       flag would make that editor refuse) so the product write carries
-       the fresh texts; a new product saves them after create, once there
-       is an id to hang them on. */
-    if (!wasNew && this.translationDirty()
-        && !await (this.publication()?.saveTranslations() ?? Promise.resolve(true))) {
-      this.ui.toast('De websitevertalingen konden niet opgeslagen worden; het product is niet gewijzigd.', 'err');
-      return;
-    }
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -2041,10 +2029,6 @@ export class ProductEditor implements OnDestroy {
       this.draft.set(saved);
       this.markClean();
       this.savedProductFamilyId.set(saved.familyId ?? null);
-      if (wasNew && this.translationDirty()) {
-        this.saving.set(false);
-        await this.publication()?.saveTranslations();
-      }
       this.ui.toast(wasNew
         ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
         : 'Opgeslagen');

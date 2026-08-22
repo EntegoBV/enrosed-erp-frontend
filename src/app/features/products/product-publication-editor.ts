@@ -1,5 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { describePublicationIssues } from './publication-issues';
 import {
   Category,
   LanguageCode,
@@ -18,7 +20,6 @@ import {
   FeaturedProductEligibility,
   featuredProductEligibility,
 } from '../../shared/product-featured-eligibility';
-import { ProductTranslationEditor } from './product-translation-editor';
 
 interface FamilyFeaturedOption {
   member: ProductFamily['members'][number];
@@ -37,7 +38,7 @@ interface FamilyFeaturedOption {
     FormsModule,
     ProductFamilyGallery,
     ProductFamilySourceDetails,
-    ProductTranslationEditor,
+    RouterLink,
   ],
   template: `
     <details class="publication" id="publication">
@@ -108,33 +109,6 @@ interface FamilyFeaturedOption {
             </p>
           </div>
 
-          <section class="model-publication" aria-labelledby="model-publication-title">
-            <div>
-              <h3 id="model-publication-title">Productkaart</h3>
-              <p>Kies welke gekoppelde variant op de productkaart wordt getoond.</p>
-            </div>
-            <label class="field family-card-variant">
-              <span>Productkaartfoto</span>
-              <select class="select" [ngModel]="family.cardFeaturedProductId ?? null"
-                      [disabled]="!members().length && missingCardFeaturedProductId() === null"
-                      (ngModelChange)="patch({ cardFeaturedProductId: numberOrNull($event) })">
-                <option [ngValue]="null">Automatisch · het eerste actieve product</option>
-                @for (option of cardFeaturedOptions(); track option.member.productId) {
-                  <option [ngValue]="option.member.productId" [disabled]="!option.eligibility.eligible">
-                    {{ memberOptionLabel(option.member) }}{{ eligibilityLabel(option.eligibility) }}
-                  </option>
-                }
-                @if (missingCardFeaturedProductId() !== null) {
-                  <option [ngValue]="missingCardFeaturedProductId()" disabled>
-                    SKU #{{ missingCardFeaturedProductId() }} · geen publieke foto
-                  </option>
-                }
-              </select>
-              <small class="field__hint">
-                Bepaalt welke kleur of maat op website- en orderappkaarten wordt getoond.
-              </small>
-            </label>
-          </section>
 
         } @else {
           <div class="model-empty">
@@ -157,90 +131,111 @@ interface FamilyFeaturedOption {
           </div>
         }
 
-        @if (!familyLoading() && !familyLoadError()) {
-          <app-product-translation-editor
-            [product]="product()"
-            [family]="family()"
-            [language]="language()"
-            [busy]="busy()"
-            [visible]="desktop.active()"
-            (languageChange)="selectLanguage($event)"
-            (dirtyChange)="setTranslationDirty($event)"
-            (savingChange)="translationSavingChange.emit($event)"
-            (saved)="translationsSaved.emit($event)"
-          />
-        }
 
         @if (!familyLoading() && !familyLoadError() && family(); as family) {
 
+          <!-- One question a seller actually asks: is this on the website?
+               Orderapp and catalogue are future channels; they stay
+               reachable under "Meer" without cluttering the answer. -->
           <section class="subsection" aria-labelledby="publication-channels-title">
             <div class="subsection__head">
               <div>
-                <h3 id="publication-channels-title">Kanalen</h3>
-                <p>Maak pas live wanneer de controlepunten zijn opgelost.</p>
+                <h3 id="publication-channels-title">Op de website</h3>
+                <p>Geldt voor alle kleuren en maten van deze reeks.</p>
               </div>
-            </div>
-            <label class="switch-row">
-              <span
-                ><b>Publieke productreeks actief</b
-                ><small>Verbergt alle gekoppelde kleur- en maatvarianten als dit uitstaat.</small></span
-              >
-              <input
-                type="checkbox"
-                [ngModel]="family.active"
-                (ngModelChange)="patch({ active: $event })"
-              />
-            </label>
-            <div class="channel-grid">
-              <label class="channel-card">
-                <span><b>Website</b><small>Publieke productpagina</small></span>
-                <select
-                  class="select select--sm"
-                  [ngModel]="visiblePublicationStatus(family.websiteStatus)"
-                  (ngModelChange)="patch({ websiteStatus: $event })"
-                >
-                  <option value="DRAFT">Concept</option>
-                  <option value="PUBLISHED">Gepubliceerd</option>
-                </select>
-              </label>
-              <label class="channel-card">
-                <span><b>Orderapp</b><small>Bestelbaar voor klanten</small></span>
-                <select
-                  class="select select--sm"
-                  [ngModel]="visiblePublicationStatus(family.orderAppStatus)"
-                  (ngModelChange)="patch({ orderAppStatus: $event })"
-                >
-                  <option value="DRAFT">Concept</option>
-                  <option value="PUBLISHED">Gepubliceerd</option>
-                </select>
-              </label>
-              <label class="channel-card">
-                <span><b>Catalogus</b><small>Voor de toekomstige catalogussync</small></span>
-                <select
-                  class="select select--sm"
-                  [ngModel]="visiblePublicationStatus(family.catalogueStatus)"
-                  (ngModelChange)="patch({ catalogueStatus: $event })"
-                >
-                  <option value="DRAFT">Concept</option>
-                  <option value="PUBLISHED">Gepubliceerd</option>
-                </select>
-              </label>
+              <select class="select select--status"
+                      [class.select--status-off]="visiblePublicationStatus(family.websiteStatus) !== 'PUBLISHED'"
+                      [ngModel]="visiblePublicationStatus(family.websiteStatus)"
+                      (ngModelChange)="patch({ websiteStatus: $event })"
+                      aria-label="Zichtbaar op de website">
+                <option value="DRAFT">Nog niet zichtbaar</option>
+                <option value="PUBLISHED">Zichtbaar op de website</option>
+              </select>
             </div>
 
             @if (family.publicationIssues.length) {
               <div class="readiness" role="status">
-                <b>{{ family.publicationIssues.length }} punt(en) voor publicatie</b>
+                <div class="readiness__head">
+                  <b>Nog {{ readableIssues().length }} punt(en) voordat dit live kan</b>
+                </div>
                 <ul>
-                  @for (issue of family.publicationIssues; track issue) {
+                  @for (issue of readableIssues(); track issue) {
                     <li>{{ issue }}</li>
                   }
                 </ul>
               </div>
             } @else {
-              <div class="ready">
-                <span aria-hidden="true">✓</span> Website-informatie is compleet.
+              <div class="readiness readiness--ok" role="status">
+                <b>Alles compleet</b> — deze reeks kan live.
               </div>
             }
+
+            <div class="translations-row">
+              <div>
+                <b>Vertalingen</b>
+                <small>Naam, beschrijving, variantteksten en foto-alt-teksten in acht talen.</small>
+              </div>
+              @if (product().id !== null) {
+                <a class="btn btn--sm btn--primary" [routerLink]="['/products', product().id, 'translations']">
+                  Vertalingen bewerken
+                </a>
+              } @else {
+                <span class="small muted">Sla het product eerst op.</span>
+              }
+            </div>
+
+            <details class="more-channels">
+              <summary>Meer: orderapp, catalogus en reeks aan/uit</summary>
+              <label class="switch-row">
+                <span><b>Reeks actief</b><small>Uit = alle kleuren en maten verborgen, overal.</small></span>
+                <input type="checkbox" [ngModel]="family.active" (ngModelChange)="patch({ active: $event })" />
+              </label>
+              <div class="channel-grid">
+                <label class="channel-card">
+                  <span><b>Orderapp</b><small>Bestelbaar voor klanten (later)</small></span>
+                  <select class="select select--sm"
+                          [ngModel]="visiblePublicationStatus(family.orderAppStatus)"
+                          (ngModelChange)="patch({ orderAppStatus: $event })">
+                    <option value="DRAFT">Concept</option>
+                    <option value="PUBLISHED">Gepubliceerd</option>
+                  </select>
+                </label>
+                <label class="channel-card">
+                  <span><b>Catalogus</b><small>Catalogussync (later)</small></span>
+                  <select class="select select--sm"
+                          [ngModel]="visiblePublicationStatus(family.catalogueStatus)"
+                          (ngModelChange)="patch({ catalogueStatus: $event })">
+                    <option value="DRAFT">Concept</option>
+                    <option value="PUBLISHED">Gepubliceerd</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </section>
+
+          <section class="model-publication" aria-labelledby="model-publication-title">
+            <div>
+              <h3 id="model-publication-title">Productkaart</h3>
+              <p>De kaart in de shop en de bestelapp toont één kleur of maat van deze reeks.</p>
+            </div>
+            <label class="field family-card-variant">
+              <span>Variant op de kaart</span>
+              <select class="select" [ngModel]="family.cardFeaturedProductId ?? null"
+                      [disabled]="!members().length && missingCardFeaturedProductId() === null"
+                      (ngModelChange)="patch({ cardFeaturedProductId: numberOrNull($event) })">
+                <option [ngValue]="null">Automatisch · het eerste actieve product</option>
+                @for (option of cardFeaturedOptions(); track option.member.productId) {
+                  <option [ngValue]="option.member.productId" [disabled]="!option.eligibility.eligible">
+                    {{ memberOptionLabel(option.member) }}{{ eligibilityLabel(option.eligibility) }}
+                  </option>
+                }
+                @if (missingCardFeaturedProductId() !== null) {
+                  <option [ngValue]="missingCardFeaturedProductId()" disabled>
+                    SKU #{{ missingCardFeaturedProductId() }} · geen publieke foto
+                  </option>
+                }
+              </select>
+            </label>
           </section>
 
           <section class="subsection" aria-labelledby="publication-identity-title">
@@ -538,6 +533,20 @@ interface FamilyFeaturedOption {
       background: var(--warn-soft);
       font-size: 11.5px;
     }
+    .readiness__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+    .readiness--ok { background: var(--ok-soft, #eaf5ee); color: var(--ok, #2e7d4f); border-color: transparent; }
+    .translations-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    }
+    .translations-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .more-channels { margin-top: 12px; }
+    .more-channels summary { cursor: pointer; font-size: 12.5px; color: var(--muted); padding: 6px 0; }
+    .select--status {
+      width: auto; min-height: 34px; padding: 4px 30px 4px 12px; font-size: 13px; font-weight: 650;
+      background-color: var(--ok-soft, #eaf5ee); color: var(--ok, #2e7d4f); border-color: transparent; border-radius: 999px;
+    }
+    .select--status-off { background-color: var(--surface-2); color: var(--muted); }
     .readiness ul {
       margin: 7px 0 0;
       padding-left: 18px;
@@ -662,23 +671,22 @@ export class ProductPublicationEditor {
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
   readonly translationsSaved = output<ProductPublicTranslationsSnapshot>();
 
-  private readonly translationEditor = viewChild(ProductTranslationEditor);
-
-  /**
-   * Saves pending website translations on behalf of the product's own
-   * Opslaan - one button saves everything that is open. Resolves true
-   * when nothing is left dirty (including when there was nothing to do).
-   */
-  async saveTranslations(): Promise<boolean> {
-    const editor = this.translationEditor();
-    if (!editor || !editor.dirty()) return true;
-    await editor.save();
-    return !editor.dirty();
-  }
   readonly translationDirtyChange = output<boolean>();
   readonly translationSavingChange = output<boolean>();
 
   readonly language = signal<LanguageCode>('EN');
+
+  /** The family's blockers in plain words, variant keys replaced by names. */
+  readonly readableIssues = computed(() => {
+    const family = this.family();
+    if (!family) return [];
+    const names = new Map<string, string>();
+    for (const member of family.members ?? []) {
+      const key = member.canonicalVariantKey || String(member.productId);
+      names.set(key, [member.colour, member.size].filter(Boolean).join(' · ') || member.name || key);
+    }
+    return describePublicationIssues(family.publicationIssues, names);
+  });
   readonly translationDirtyState = signal(false);
   readonly legacyFamilyKey = computed(() =>
     this.product().familyId === null && !!this.product().familyKey?.trim());

@@ -11,6 +11,7 @@ import {
   untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { AuthImage } from '../../core/api/auth-image';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import {
@@ -38,7 +39,7 @@ import {
 @Component({
   selector: 'app-product-translation-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [AuthImage, FormsModule],
   template: `
     @if (visible()) {
     <section class="translations" aria-labelledby="product-translations-title"
@@ -159,28 +160,43 @@ import {
           <section class="translation-group" aria-labelledby="variant-translation-title">
             <div class="translation-group__head">
               <div>
-                <h4 id="variant-translation-title">{{ familyDraft() ? 'Deze kleur of maat' : 'Dit product' }}</h4>
-                <p>{{ familyDraft() ? 'Alleen voor ' + variantLabel() + '.' : 'Tekst voor dit losse product.' }}</p>
+                <h4 id="variant-translation-title">
+                  {{ familyDraft() ? 'Deze variant: ' + variantLabel() : 'Dit product' }}
+                </h4>
+                <p>
+                  {{ familyDraft()
+                    ? 'Teksten die alleen voor deze kleur en maat gelden; de familieteksten hierboven deelt ze met de andere varianten.'
+                    : 'Tekst voor dit losse product.' }}
+                </p>
               </div>
-              <span>{{ familyDraft() ? 'Variant' : 'Product' }}</span>
+              <span>{{ language() }}</span>
             </div>
             <div class="form-grid">
               <label class="field">
-                <span>{{ familyDraft() ? 'Variantnaam' : 'Productnaam' }}</span>
+                <span>{{ familyDraft() ? 'Variantnaam in ' + language() : 'Productnaam in ' + language() }}</span>
                 <input class="input" [ngModel]="variantText().name"
+                       [placeholder]="(productDraft() ?? product()).name"
                        (ngModelChange)="patchVariant({ name: $event })" />
+                <small class="field__hint">Hoe deze uitvoering op de website heet; leeg = de familienaam.</small>
               </label>
-              <label class="field">
-                <span>Kleur</span>
-                <input class="input" [ngModel]="variantText().colour"
-                       (ngModelChange)="patchVariant({ colour: $event })" />
-              </label>
-              <label class="field">
-                <span>Maat</span>
-                <input class="input" [ngModel]="variantText().variantSize"
-                       (ngModelChange)="patchVariant({ variantSize: $event })" />
-                <small class="field__hint">Vertaal woorden zoals Small of Large; codes zoals S en XL mogen gelijk blijven.</small>
-              </label>
+              @if ((productDraft() ?? product()).colour) {
+                <label class="field">
+                  <span>Kleur "{{ (productDraft() ?? product()).colour }}" in {{ language() }}</span>
+                  <input class="input" [ngModel]="variantText().colour"
+                         [placeholder]="(productDraft() ?? product()).colour ?? ''"
+                         (ngModelChange)="patchVariant({ colour: $event })" />
+                  <small class="field__hint">Het woord zoals de klant het leest, bv. Rood → Rouge.</small>
+                </label>
+              }
+              @if ((productDraft() ?? product()).variantSize) {
+                <label class="field">
+                  <span>Maat "{{ (productDraft() ?? product()).variantSize }}" in {{ language() }}</span>
+                  <input class="input" [ngModel]="variantText().variantSize"
+                         [placeholder]="(productDraft() ?? product()).variantSize ?? ''"
+                         (ngModelChange)="patchVariant({ variantSize: $event })" />
+                  <small class="field__hint">Woorden vertalen (Small → Klein); codes en afmetingen zoals S of 12x25 blijven gelijk.</small>
+                </label>
+              }
               <label class="field span-2">
                 <span>{{ familyDraft() ? 'Variantbeschrijving' : 'Productbeschrijving' }}</span>
                 <textarea class="textarea" rows="3" [ngModel]="variantText().description"
@@ -224,7 +240,7 @@ import {
             <div class="photo-alt-list">
               @for (image of images(); track image.id; let index = $index) {
                 <label class="photo-alt-row">
-                  <img [src]="image.smallUrl || image.largeUrl" alt="" />
+                  <img [appAuthSrc]="image.smallUrl || image.largeUrl" alt="" />
                   <span><b>Foto {{ index + 1 }}</b><small>{{ languageLabel() }}</small></span>
                   <input class="input" [ngModel]="imageAlt(image)"
                          (ngModelChange)="patchImageAlt(image.id, $event)"
@@ -416,12 +432,16 @@ export class ProductTranslationEditor {
   });
   readonly images = computed(() => [...(this.familyDraft()?.images ?? [])]
     .sort((left, right) => left.position - right.position));
+  /* Dirty means: different from what the form showed right after loading
+     or saving. Comparing against the raw server snapshot instead flagged
+     untouched families as changed whenever the draft carried images the
+     snapshot's translated list did not (photos without alt texts). */
+  private readonly baseline = signal<string | null>(null);
   readonly dirty = computed(() => {
-    const snapshot = this.snapshot();
     const draft = this.writeBody();
-    return !!snapshot && !!draft
-      && JSON.stringify(this.canonicalWrite(draft))
-        !== JSON.stringify(this.canonicalWrite(this.snapshotWrite(snapshot)));
+    const baseline = this.baseline();
+    return !!draft && baseline !== null
+      && JSON.stringify(this.canonicalWrite(draft)) !== baseline;
   });
 
   constructor() {
@@ -583,6 +603,8 @@ export class ProductTranslationEditor {
     this.snapshot.set(structuredClone(snapshot));
     this.familyDraft.set(family);
     this.productDraft.set(product);
+    const body = this.writeBody();
+    this.baseline.set(body ? JSON.stringify(this.canonicalWrite(body)) : null);
     this.resetSaveState();
   }
 
@@ -601,16 +623,6 @@ export class ProductTranslationEditor {
         position: image.position,
         altTexts: structuredClone(image.altTexts),
       })),
-    };
-  }
-
-  private snapshotWrite(snapshot: ProductPublicTranslationsSnapshot): ProductPublicTranslationsWrite {
-    return {
-      revision: snapshot.revision,
-      familyId: snapshot.familyId,
-      familyTexts: structuredClone(snapshot.familyTexts),
-      productTexts: structuredClone(snapshot.productTexts),
-      images: structuredClone(snapshot.images),
     };
   }
 
@@ -634,6 +646,7 @@ export class ProductTranslationEditor {
   private clear(): void {
     ++this.loadVersion;
     this.snapshot.set(null);
+    this.baseline.set(null);
     this.familyDraft.set(null);
     this.productDraft.set(null);
     this.loading.set(false);

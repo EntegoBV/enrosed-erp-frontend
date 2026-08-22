@@ -115,6 +115,12 @@ export const routes: Routes = [
       import('./features/products/product-editor').then((m) => m.ProductEditor),
   },
   {
+    path: 'products/:id/translations',
+    loadComponent: () =>
+      import('./features/products/product-translations-page').then((m) => m.ProductTranslationsPage),
+    canDeactivate: [unsavedChangesGuard],
+  },
+  {
     path: 'countries',
     canActivate: [authGuard],
     loadComponent: () => import('./features/settings/country-list').then((m) => m.CountryList),
