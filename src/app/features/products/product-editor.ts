@@ -634,17 +634,41 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
             <h3 class="stock-history__title">Geschiedenis</h3>
             @if (stockHistory(); as history) {
               @if (history.length) {
+                <!-- Swipe a line left to strike it: a short swipe shows the
+                     bin, a long one deletes at once - no question asked, the
+                     count itself never changes. -->
                 <ol class="stock-history">
                   @for (move of history; track move.id) {
-                    <li>
-                      <span class="stock-history__delta num" [class.stock-history__delta--minus]="move.delta < 0">
-                        {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
-                      </span>
-                      <span class="stock-history__what">
-                        <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
-                        <small>{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
-                      </span>
-                      <span class="stock-history__after num">= {{ move.quantityAfter | num }}</span>
+                    <li class="swipe stock-history__item" [class.swipe--open]="moveSwiped() === move.id"
+                        [class.stock-history__item--leaving]="moveDeleting() === move.id">
+                      <div class="swipe__row stock-history__row"
+                           (touchstart)="moveSwipeStart($event, move.id)"
+                           (touchmove)="moveSwipeMove($event, move)"
+                           (click)="moveSwiped() !== null && moveSwiped.set(null)">
+                        <span class="stock-history__delta num" [class.stock-history__delta--minus]="move.delta < 0">
+                          {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
+                        </span>
+                        <span class="stock-history__what">
+                          <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
+                          <small>{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
+                        </span>
+                        <span class="stock-history__after num">= {{ move.quantityAfter | num }}</span>
+                        <button class="stock-history__bin" type="button" title="Regel verwijderen"
+                                aria-label="Regel verwijderen" (click)="deleteMove(move); $event.stopPropagation()">
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                            <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+                          </svg>
+                        </button>
+                      </div>
+                      <button class="swipe__delete" type="button" [disabled]="moveDeleting() !== null"
+                              aria-label="Regel verwijderen" (click)="deleteMove(move)">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                          <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+                        </svg>
+                      </button>
                     </li>
                   }
                 </ol>
@@ -1046,8 +1070,21 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     .stock-history__title { margin: 18px 0 6px; color: var(--muted); font-size: 11px; font-weight: 750;
       letter-spacing: .06em; text-transform: uppercase; }
     .stock-history { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-    .stock-history li { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px;
-      padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .stock-history__item { border-bottom: 1px solid var(--line); }
+    .stock-history__item--leaving { opacity: .4; }
+    .stock-history__row { display: grid; grid-template-columns: 64px 1fr auto auto; align-items: center;
+      gap: 10px; padding: 8px 0; }
+    /* Desktop: the bin sits at the row's edge and shows on hover; a mouse
+       cannot swipe. */
+    .stock-history__bin { display: none; width: 28px; height: 28px; padding: 0; border: 0;
+      border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+    .stock-history__bin svg { width: 16px; height: 16px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .stock-history__bin:hover { background: var(--danger-soft, #fbe9e7); color: var(--danger); }
+    @media (hover: hover) and (pointer: fine) {
+      .stock-history__bin { display: inline-flex; align-items: center; justify-content: center; opacity: 0; }
+      .stock-history__row:hover .stock-history__bin, .stock-history__bin:focus-visible { opacity: 1; }
+    }
     .stock-history__delta { font-weight: 750; color: var(--ok, #2e7d4f); }
     .stock-history__delta--minus { color: var(--danger); }
     .stock-history__what { display: grid; min-width: 0; }
@@ -1484,6 +1521,50 @@ export class ProductEditor implements OnDestroy {
       this.stockHistory.set(await this.catalog.stockMovements(productId));
     } catch {
       this.stockHistory.set([]);
+    }
+  }
+
+  /* ---- strike a line from the stock book: swipe left, no question ---- */
+  readonly moveSwiped = signal<number | null>(null);
+  readonly moveDeleting = signal<number | null>(null);
+  private moveTouchX = 0;
+  private moveTouchY = 0;
+  private moveSwipeHandled = false;
+
+  moveSwipeStart(event: TouchEvent, id: number): void {
+    this.moveTouchX = event.touches[0].clientX;
+    this.moveTouchY = event.touches[0].clientY;
+    this.moveSwipeHandled = false;
+    if (this.moveSwiped() !== null && this.moveSwiped() !== id) this.moveSwiped.set(null);
+  }
+
+  moveSwipeMove(event: TouchEvent, move: StockMovement): void {
+    if (this.moveSwipeHandled) return;
+    const dx = event.touches[0].clientX - this.moveTouchX;
+    const dy = event.touches[0].clientY - this.moveTouchY;
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < -140) {
+      this.moveSwipeHandled = true;
+      void this.deleteMove(move);
+      return;
+    }
+    if (dx < -24) { this.moveSwiped.set(move.id); return; }
+    if (dx > 24) { this.moveSwipeHandled = true; this.moveSwiped.set(null); }
+  }
+
+  async deleteMove(move: StockMovement): Promise<void> {
+    const productId = this.draft().id;
+    if (productId === null || this.moveDeleting() !== null) return;
+    this.moveDeleting.set(move.id);
+    this.moveSwiped.set(null);
+    try {
+      await this.catalog.deleteStockMovement(productId, move.id);
+      this.stockHistory.update((history) => history?.filter((item) => item.id !== move.id) ?? null);
+      this.ui.toast(`Regel verwijderd · voorraad blijft ${this.draft().stockQuantity}`);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Regel verwijderen mislukt'), 'err');
+    } finally {
+      this.moveDeleting.set(null);
     }
   }
 

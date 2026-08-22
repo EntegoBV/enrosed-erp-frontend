@@ -184,6 +184,11 @@ export class CatalogApi {
       this.http.post<Product>(api(`/api/products/${productId}/stock`), { quantity }));
   }
 
+  deleteStockMovement(productId: number, movementId: number): Promise<void> {
+    return firstValueFrom(
+      this.http.delete<void>(api(`/api/products/${productId}/stock-movements/${movementId}`)));
+  }
+
   stockMovements(productId: number): Promise<StockMovement[]> {
     return firstValueFrom(this.http.get<StockMovement[]>(api(`/api/products/${productId}/stock-movements`)));
   }
