@@ -5,7 +5,10 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, Product, ProductFamily, ProductFamilyMember, StockMovement, Supplier } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, PurchaseOrderView, StockMovement, Supplier } from '../../core/api/models';
+
+interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; }
+interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
 import { Privacy } from '../../core/api/privacy';
 import { CbmPipe, CurPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -119,15 +122,18 @@ interface GalleryPointer {
               </div>
 
               <div class="hero-summary__price-stock">
-                <div>
-                  <span>Catalogusprijs</span>
+                <!-- The price tile opens the build-up: every euro from the
+                     factory price to the catalogue price. -->
+                <button class="stock-tile" type="button" [class.stock-tile--open]="priceOpen()"
+                        [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
+                  <span>Catalogusprijs <i class="stock-tile__chev" aria-hidden="true"></i></span>
                   @if (displayPrice(); as price) {
                     <strong class="num">{{ price | eur: 2 }}</strong>
                   } @else {
                     <strong>—</strong>
                   }
                   <small>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kostprijs + opslag' }}</small>
-                </div>
+                </button>
                 <!-- The stock tile opens the stock book below it: where the
                      figure came from, without leaving the page. -->
                 <button class="stock-tile" type="button" [class.stock-tile--open]="stockOpen()"
@@ -144,6 +150,39 @@ interface GalleryPointer {
                   }
                 </button>
               </div>
+
+              @if (priceOpen()) {
+                <div class="stock-book price-build" role="region" aria-label="Prijsopbouw">
+                  @if (privacy.showPurchase()) {
+                    @if (priceBuild(); as build) {
+                      <dl class="price-build__list">
+                        @for (row of build.rows; track row.label) {
+                          <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note">
+                            <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
+                            <dd class="num">{{ row.eur | eur: 2 }}</dd>
+                          </div>
+                        }
+                      </dl>
+                      @if (build.source) {
+                        <p class="price-build__source">
+                          Kostprijs uit calculatie <b>{{ build.source }}</b>{{ build.sourceFound ? '' : ' - die calculatie is niet meer beschikbaar, dus zonder uitsplitsing' }}.
+                        </p>
+                      } @else {
+                        <p class="price-build__source">Nog geen kostprijs uit een inkoopcalculatie; transport en invoerrechten komen erbij zodra een calculatie is toegepast.</p>
+                      }
+                    } @else {
+                      <p class="hint">Prijsopbouw laden…</p>
+                    }
+                  } @else {
+                    <dl class="price-build__list">
+                      <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs' : (product.markupPct | num) + ' % opslag op de kostprijs' }}</dd></div>
+                      <div class="price-build__sum"><dt>Catalogusprijs</dt><dd class="num">
+                        @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
+                      </dd></div>
+                    </dl>
+                  }
+                </div>
+              }
 
               @if (stockOpen()) {
                 <div class="stock-book" role="region" aria-label="Voorraadgeschiedenis">
@@ -443,6 +482,21 @@ interface GalleryPointer {
     .stock-tile--open .stock-tile__chev { transform: translateY(1px) rotate(-135deg); }
     .stock-book { margin-top: 9px; padding: 4px 13px 10px; border: 1px solid var(--line);
       border-radius: var(--r-sm); background: var(--surface-2); }
+    .price-build__list { margin: 0; padding: 0; }
+    .price-build__list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px;
+      align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); }
+    .price-build__list > div:last-child { border-bottom: 0; }
+    .price-build__list dt { color: var(--ink-2); font-size: 12px; }
+    .price-build__list dt small { display: block; color: var(--muted); font-size: 10.5px; }
+    /* Only the sums carry weight; the steps in between stay light. */
+    .price-build__list dd { margin: 0; color: var(--ink-2); font-size: 12.5px; font-weight: 500;
+      font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .price-build__sum { border-top: 1px solid var(--line-strong); margin-top: -1px; }
+    .price-build__sum dt, .price-build__sum dd { color: var(--ink); font-weight: 750; }
+    .price-build__note dt { color: var(--muted); font-weight: 500; font-size: 11.5px; }
+    .price-build__note dd { color: var(--ok, #2e7d4f); font-weight: 700; }
+    .price-build__source { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .price-build__source b { color: var(--ink-2); }
     .stock-book ol { list-style: none; margin: 0; padding: 0; }
     .stock-book li { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px;
       padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -536,6 +590,84 @@ export class ProductView {
   readonly stockOpen = signal(false);
   readonly stockHistory = signal<StockMovement[] | null>(null);
 
+  /* ---- the price, taken apart ---- */
+  readonly priceOpen = signal(false);
+  readonly priceBuild = signal<PriceBuild | null>(null);
+
+  togglePrice(product: Product): void {
+    const open = !this.priceOpen();
+    this.priceOpen.set(open);
+    if (open) this.stockOpen.set(false);
+    if (open && product.id !== null && this.priceBuild() === null && this.privacy.showPurchase()) {
+      void this.loadPriceBuild(product);
+    }
+  }
+
+  /**
+   * Rebuilds the road from factory price to catalogue price. The per-piece
+   * transport, duty and handling live on the purchase calculation the
+   * cost price came from; when that calculation is gone, the cost price
+   * is shown as one line.
+   */
+  private async loadPriceBuild(product: Product): Promise<void> {
+    const source = product.landedCostSource;
+    let line: LandedCostLine | null = null;
+    let view: PurchaseOrderView | undefined;
+    if (source) {
+      try {
+        const orders = await this.sourcing.purchaseOrders();
+        view = orders.find((item) => item.order.number === source);
+        line = view?.costing.lines.find((item) => item.productId === product.id) ?? null;
+      } catch {
+        line = null;
+      }
+    }
+    /* The same words as on the calculation, so both screens read alike. */
+    const labels = view?.costLabels;
+    if (this.product()?.id !== product.id) return;
+
+    const rows: PriceRow[] = [];
+    const per = (total: number, quantity: number) => quantity > 0 ? total / quantity : 0;
+    if (line && line.quantity > 0) {
+      rows.push({ label: 'Inkoopprijs (EXW)', hint: `${line.quantity.toLocaleString('nl-BE')} stuks in ${source}`, eur: per(line.goodsEur, line.quantity) });
+      if (line.originEur) {
+        rows.push({ label: `+ ${labels?.originCostsLabel || 'Lokale kosten bij vertrek'}`,
+          hint: `${labels?.originRoute ? labels.originRoute + ' · ' : ''}vervoer naar de haven, export, laden`,
+          eur: per(line.originEur, line.quantity) });
+      }
+      if (line.freightEur) {
+        rows.push({ label: `+ ${labels?.seaFreightLabel || 'Zeevracht'}`,
+          hint: `${labels?.seaFreightRoute ? labels.seaFreightRoute + ' · ' : ''}containerprijs verdeeld per m³`,
+          eur: per(line.freightEur, line.quantity) });
+      }
+      if (line.dutyEur || line.dutyRatePct) {
+        rows.push({ label: `+ Invoerrechten ${line.dutyRatePct} %`,
+          hint: `douane, op basis van HS-code ${product.hsCode || line.dutySource}`,
+          eur: per(line.dutyEur, line.quantity) });
+      }
+      if (line.destinationEur) {
+        rows.push({ label: `+ ${labels?.destinationCostsLabel || 'Kosten na aankomst'}`,
+          hint: 'havenkosten, inklaring en levering aan het magazijn',
+          eur: per(line.destinationEur, line.quantity) });
+      }
+      rows.push({ label: 'Kostprijs per stuk', eur: product.landedCostEur ?? line.landedUnitEur, sum: true });
+    } else if (product.landedCostEur) {
+      rows.push({ label: 'Kostprijs per stuk', hint: 'incl. transport en rechten', eur: product.landedCostEur, sum: true });
+    }
+    const price = this.displayPrice();
+    if (price !== null) {
+      if (this.hasFixedSalesPrice(product)) {
+        rows.push({ label: 'Vaste verkoopprijs', eur: price });
+      } else if (product.landedCostEur) {
+        rows.push({ label: `+ Opslag ${product.markupPct ?? 0} %`, eur: price - product.landedCostEur });
+      }
+      rows.push({ label: 'Catalogusprijs', eur: price, sum: true });
+      const margin = this.margin();
+      if (margin) rows.push({ label: `Marge per stuk · ${margin.pct} %`, eur: margin.eur, note: true });
+    }
+    this.priceBuild.set({ rows, source, sourceFound: line !== null });
+  }
+
   toggleStock(product: Product): void {
     const open = !this.stockOpen();
     this.stockOpen.set(open);
@@ -586,7 +718,8 @@ export class ProductView {
     const price = this.displayPrice();
     const landed = this.product()?.landedCostEur;
     if (price === null || landed === null || landed === undefined || landed <= 0) return null;
-    return { eur: Math.round((price - landed) * 100) / 100 };
+    const eur = Math.round((price - landed) * 100) / 100;
+    return { eur, pct: Math.round((eur / price) * 100) };
   });
 
   readonly activePhoto = computed(() => {
@@ -613,6 +746,10 @@ export class ProductView {
   private async loadProduct(id: number): Promise<void> {
     const version = ++this.loadVersion;
     this.product.set(null);
+    this.priceOpen.set(false);
+    this.priceBuild.set(null);
+    this.stockOpen.set(false);
+    this.stockHistory.set(null);
     this.family.set(null);
     this.familyLoadError.set(false);
     this.familyLoading.set(false);
