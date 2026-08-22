@@ -98,23 +98,24 @@ interface ProductSwipe {
             </select>
           </label>
 
-          <label class="filter-field">
-            <span class="filter-field__label">Sorteren</span>
-            <select class="select filter-field__select" aria-label="Sorteren"
-                    [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
-              <option value="NAME_ASC">Naam A–Z</option>
-              <option value="NAME_DESC">Naam Z–A</option>
-              <option value="SKU">SKU</option>
-              <option value="STOCK_DESC">Voorraad hoog → laag</option>
-              <option value="STOCK_ASC">Voorraad laag → hoog</option>
-              <option value="PRICE_ASC">Catalogusprijs laag → hoog</option>
-              <option value="PRICE_DESC">Catalogusprijs hoog → laag</option>
-              @if (privacy.showPurchase()) {
-                <option value="COST_ASC">Kostprijs laag → hoog</option>
-                <option value="COST_DESC">Kostprijs hoog → laag</option>
-              }
-            </select>
-          </label>
+          <!-- Sorting as a compact icon control: on a phone a third full
+               select pushed the filter bar onto a second row. -->
+          <div class="filter-field filter-sort">
+            <span class="filter-field__label" aria-hidden="true">Sorteren</span>
+            <div class="filter-sort__box">
+              <svg class="filter-sort__icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h12M4 12h8M4 17h5" /><path d="M17 10v10m0 0-3-3m3 3 3-3" />
+              </svg>
+              <span class="filter-sort__text hide-mobile">{{ sortLabel() }}</span>
+              <select class="filter-sort__native" aria-label="Sorteren"
+                      [title]="'Sorteren: ' + sortLabel()"
+                      [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
+                @for (option of sortOptions(); track option.key) {
+                  <option [value]="option.key">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
         </div>
 
         <div class="filter-summary" aria-live="polite">
@@ -164,6 +165,9 @@ interface ProductSwipe {
                     </div>
                   </div>
                   <div class="group-head__meta">
+                    <span class="stock hide-desktop" [class.stock--empty]="!group.stock">
+                      Voorraad {{ groupStock(group) }}
+                    </span>
                     <span class="group-head__count">
                       {{ groupSummary(group) }}
                       <svg class="group-head__chev" viewBox="0 0 12 12" aria-hidden="true">
@@ -184,7 +188,7 @@ interface ProductSwipe {
                   </div>
                 </div>
                 <div class="list-item__end group-head__end">
-                  <div class="product-row__stock">
+                  <div class="product-row__stock hide-mobile">
                     <span>Voorraad</span>
                     <strong class="stock" [class.stock--empty]="!group.stock">{{ groupStock(group) }}</strong>
                   </div>
@@ -289,10 +293,17 @@ interface ProductSwipe {
               }
             </div>
           </div>
-          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
+          <div class="product-row__sku">
+            <span class="mono">{{ product.sku || 'Geen SKU' }}</span>
+            <!-- On a phone the figures column has no room for a third
+                 number; the stock sits by the SKU instead. -->
+            <span class="stock hide-desktop" [class.stock--empty]="!product.stockQuantity">
+              Voorraad {{ stockLabel(product.stockQuantity) }}
+            </span>
+          </div>
         </div>
         <div class="list-item__end product-row__end">
-          <div class="product-row__stock">
+          <div class="product-row__stock hide-mobile">
             <span>Voorraad</span>
             <strong class="stock" [class.stock--empty]="!product.stockQuantity">{{ stockLabel(product.stockQuantity) }}</strong>
           </div>
@@ -363,14 +374,28 @@ interface ProductSwipe {
     }
     .catalog-search__clear:hover { background: var(--surface-2); color: var(--ink); }
     .filter-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
       gap: 9px; min-width: 0; margin-top: 11px;
     }
+    .filter-sort__box {
+      position: relative; display: flex; align-items: center; gap: 7px; min-height: 42px;
+      padding: 0 11px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+      background: var(--surface); color: var(--ink-2);
+    }
+    .filter-sort__box:hover { background: var(--surface-2); }
+    .filter-sort__icon { width: 18px; height: 18px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .filter-sort__text { font-size: 13px; font-weight: 650; white-space: nowrap; }
+    /* The real select lies invisibly over the box: the native picker opens
+       on tap, the box is just how it looks. */
+    .filter-sort__native { position: absolute; inset: 0; width: 100%; height: 100%;
+      opacity: 0; cursor: pointer; font-size: 16px; }
     .filter-field { display: block; min-width: 0; }
     .filter-field__label {
       display: block; margin: 0 0 5px 2px; color: var(--muted);
       font-size: 10px; font-weight: 750; letter-spacing: .055em; text-transform: uppercase;
     }
+    .filter-sort .filter-field__label { visibility: hidden; }
     .filter-field__select {
       display: block; min-width: 0; max-width: 100%; min-height: 42px;
       padding: 9px 30px 9px 10px; font-size: 13px; font-weight: 650;
@@ -414,7 +439,9 @@ interface ProductSwipe {
     .product-row__title span { flex: 0 1 auto; overflow: hidden; color: var(--muted);
       font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .product-row__badges { display: flex; flex: 0 0 auto; gap: 4px; }
-    .product-row__sku { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
+    .product-row__sku { display: flex; align-items: center; gap: 8px; margin-top: 4px;
+      color: var(--muted); font-size: 10.5px; }
+    .product-row__sku .stock { min-height: 16px; font-size: 10px; }
     .product-row__end { display: flex; align-items: center; gap: 10px; }
     .product-row__stock { display: grid; justify-items: end; gap: 4px; }
     .product-row__stock span { color: var(--muted); font-size: 8px; font-weight: 700;
@@ -458,11 +485,15 @@ interface ProductSwipe {
       vertical-align: top; cursor: help; }
     /* The fold hint lives in the text line, so the figures column stays
        aligned with every other row. */
-    .group-head__count { display: inline-flex; align-items: center; gap: 3px; }
-    .group-head__chev { width: 11px; height: 11px; fill: none; stroke: currentColor;
-      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .7;
-      transition: transform .15s ease; }
-    .group-head--open .group-head__chev { transform: rotate(180deg); }
+    .group-head__count { display: inline-flex; align-items: center; gap: 5px; }
+    /* A small ringed chevron: readable as "this folds open" at a glance,
+       without the weight of a button. */
+    .group-head__chev { width: 18px; height: 18px; padding: 3px; box-sizing: border-box;
+      border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface);
+      fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round;
+      stroke-linejoin: round; transition: transform .15s ease, background .15s ease; }
+    .group-head:hover .group-head__chev { background: var(--surface-2); }
+    .group-head--open .group-head__chev { transform: rotate(180deg); background: var(--surface-2); }
 
     /* The opened series: its variants sit in a tinted well with a bar on the
        left, so the eye sees at once what belongs to the head above. */
@@ -486,6 +517,21 @@ export class ProductList {
   readonly categoryFilter = signal<number | null>(null);
   readonly statusFilter = signal<'ALL' | 'NEEDS_WORK' | 'WEBSITE' | 'ORDER_APP' | 'INACTIVE'>('ALL');
   readonly sortKey = signal<SortKey>('NAME_ASC');
+  readonly sortOptions = computed<{ key: SortKey; label: string }[]>(() => [
+    { key: 'NAME_ASC', label: 'Naam A–Z' },
+    { key: 'NAME_DESC', label: 'Naam Z–A' },
+    { key: 'SKU', label: 'SKU' },
+    { key: 'STOCK_DESC', label: 'Voorraad hoog → laag' },
+    { key: 'STOCK_ASC', label: 'Voorraad laag → hoog' },
+    { key: 'PRICE_ASC', label: 'Catalogusprijs laag → hoog' },
+    { key: 'PRICE_DESC', label: 'Catalogusprijs hoog → laag' },
+    ...(this.privacy.showPurchase()
+      ? [{ key: 'COST_ASC' as const, label: 'Kostprijs laag → hoog' },
+         { key: 'COST_DESC' as const, label: 'Kostprijs hoog → laag' }]
+      : []),
+  ]);
+  readonly sortLabel = computed(() =>
+    this.sortOptions().find((option) => option.key === this.sortKey())?.label ?? 'Naam A–Z');
   readonly loading = signal(true);
   readonly deleting = signal<number | null>(null);
   readonly swiped = signal<number | null>(null);
