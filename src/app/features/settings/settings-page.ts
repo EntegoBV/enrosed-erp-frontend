@@ -236,7 +236,7 @@ const normalizeCategoryCode = (value: string): string => value
       <!-- ======================================= catalogus in Excel -->
       <div class="card settings-section workbook-card" id="catalog-data">
         <div class="card__head workbook-card__head">
-          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Catalogus in Excel</h2></div>
+          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
         </div>
         <div class="card__body">
           <p class="workbook-intro">
@@ -269,7 +269,7 @@ const normalizeCategoryCode = (value: string): string => value
               {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}
             </button>
             <button class="btn" type="button" [disabled]="importingWorkbook()"
-                    (click)="workbookFile.click()">Excel kiezen…</button>
+                    (click)="workbookFile.click()">Excel importeren…</button>
             <input #workbookFile type="file"
                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                    hidden (change)="selectWorkbook($any($event.target))" />
@@ -354,6 +354,13 @@ const normalizeCategoryCode = (value: string): string => value
                     {{ draft.id === null ? 'Voeg een categorie toe' : draft.name }}
                   </h3>
                 </div>
+                @if (draft.id !== null) {
+                  <button class="btn btn--sm btn--danger" type="button"
+                          [disabled]="savingCategory() || deletingCategoryId() === draft.id"
+                          (click)="removeCategoryDraft()">
+                    {{ deletingCategoryId() === draft.id ? 'Verwijderen…' : 'Verwijderen' }}
+                  </button>
+                }
                 <button class="category-form__close" type="button" aria-label="Bewerken annuleren"
                         [disabled]="savingCategory()" (click)="cancelCategoryEdit()">
                   Sluiten
@@ -527,11 +534,6 @@ const normalizeCategoryCode = (value: string): string => value
                     <button class="btn btn--sm" type="button"
                             [disabled]="categoryDraft() !== null || deletingCategoryId() === category.id"
                             (click)="editCategory(category)">Bewerken</button>
-                    <button class="btn btn--sm btn--danger" type="button"
-                            [disabled]="categoryDraft() !== null || deletingCategoryId() === category.id"
-                            (click)="removeCategory(category)">
-                      {{ deletingCategoryId() === category.id ? 'Verwijderen…' : 'Verwijderen' }}
-                    </button>
                   </div>
                 </article>
               }
@@ -591,6 +593,10 @@ const normalizeCategoryCode = (value: string): string => value
           <div class="card__head"><h2>{{ scope.label }}</h2><span class="spacer"></span>
             <button class="btn btn--sm" type="button" (click)="addTier(scope.key)">+</button></div>
           <div class="card__body">
+            <p class="small muted" style="margin:0 0 12px">{{ scope.hint }}</p>
+            @if (!tiers(scope.key).length) {
+              <p class="small muted">Nog geen staffel. Druk op + om een eerste grens toe te voegen.</p>
+            }
             @for (tier of tiers(scope.key); track $index) {
               <div class="row" style="margin-bottom:8px">
                 <span class="small muted" style="width:52px">vanaf</span>
@@ -606,8 +612,10 @@ const normalizeCategoryCode = (value: string): string => value
                         (click)="removeTier(scope.key, $index)">✕</button>
               </div>
             }
-            <button class="btn btn--sm btn--primary mt-8" type="button"
-                    (click)="saveTiers(scope.key)">Staffel opslaan</button>
+            @if (tiers(scope.key).length) {
+              <button class="btn btn--sm btn--primary mt-8" type="button"
+                      (click)="saveTiers(scope.key)">Staffel opslaan</button>
+            }
           </div>
         </div>
       }
@@ -823,8 +831,13 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly activeSection = signal<SettingsSectionId>('company');
 
   readonly scopes = [
-    { key: 'LINE' as const, label: 'Lijnkorting — per product' },
-    { key: 'ORDER' as const, label: 'Orderkorting — totaal order' },
+    { key: 'LINE' as const, label: 'Lijnkorting — per product',
+      hint: 'Korting op één orderregel zodra de klant van dat product een bepaald aantal '
+        + 'stuks bestelt. Vanaf 500 stuks → 5% betekent: vanaf 500 stuks van hetzelfde '
+        + 'product krijgt die regel 5% korting.' },
+    { key: 'ORDER' as const, label: 'Orderkorting — totaal order',
+      hint: 'Korting op de hele order zodra het totale aantal stuks (alle producten samen) '
+        + 'een grens haalt. Komt bovenop de lijnkorting en staat apart op de offerte.' },
   ];
 
   readonly company = signal<CompanyProfile | null>(null);
@@ -889,6 +902,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     this.products.set(products);
     this.families.set(families);
     this.hsCodes.set(hsCodes);
+    this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
     this.lineTiers.set(line);
     this.orderTiers.set(order);
   }
@@ -1221,6 +1235,13 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     }
   }
 
+  /** Delete lives inside the edit form: you look at it before you lose it. */
+  removeCategoryDraft(): void {
+    const draft = this.categoryDraft();
+    const category = this.categories().find((candidate) => candidate.id === draft?.id);
+    if (category) this.removeCategory(category);
+  }
+
   removeCategory(category: Category): void {
     this.ui.confirm(
       { title: 'Categorie verwijderen', message: `<b>${category.name}</b> verwijderen?`,
@@ -1254,7 +1275,16 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     await this.load();
   }
 
+  /** Codes as loaded from the server; anything else is an unsaved draft. */
+  private savedHsCodes = new Set<string>();
+
   removeHsCode(code: HsCode): void {
+    /* A freshly added row has nothing on the server yet: drop it locally,
+       no dialog - that was the "X does nothing" on a new tariff. */
+    if (!this.savedHsCodes.has(code.code)) {
+      this.hsCodes.update((codes) => codes.filter((candidate) => candidate !== code));
+      return;
+    }
     this.ui.confirm(
       { title: 'Tariefcode verwijderen',
         message: `<b>${code.code}</b> verwijderen? Producten vallen terug op het `

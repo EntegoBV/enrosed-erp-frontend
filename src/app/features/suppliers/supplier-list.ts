@@ -36,8 +36,14 @@ function blank(): Supplier {
       </div>
       <div class="card"><div class="list">
         @for (supplier of filtered(); track supplier.id) {
-          <button class="list-item" type="button" style="text-align:left;width:100%;border-width:0 0 1px"
-                  (click)="open(supplier)">
+          <!-- Same gesture as the purchase list: swipe left reveals delete,
+               a committed swipe asks the question straight away. -->
+          <div class="swipe" [class.swipe--open]="swiped() === supplier.id">
+          <button class="list-item swipe__row" type="button"
+                  style="text-align:left;width:100%;border-width:0 0 1px"
+                  (touchstart)="swipeStart($event, supplier.id!)"
+                  (touchmove)="swipeMove($event, supplier.id!)"
+                  (click)="openUnlessSwiped($event, supplier)">
             <div class="list-item__body">
               <div class="list-item__title">{{ supplier.name }}</div>
               <div class="list-item__meta">
@@ -55,6 +61,15 @@ function blank(): Supplier {
             </div>
             <span class="list-item__chev">›</span>
           </button>
+          <button class="swipe__delete" type="button" (click)="removeFromList(supplier)"
+                  aria-label="Leverancier verwijderen">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+              <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+            </svg>
+          </button>
+          </div>
         } @empty {
           <div class="empty"><div class="empty__title">
             @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen leveranciers gevonden }</div></div>
@@ -359,6 +374,59 @@ export class SupplierList {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /* ---- swipe to delete, the purchase-list way ---- */
+  readonly swiped = signal<number | null>(null);
+  private touchX = 0;
+  private touchY = 0;
+  private swipeHandled = false;
+
+  swipeStart(event: TouchEvent, id: number): void {
+    this.touchX = event.touches[0].clientX;
+    this.touchY = event.touches[0].clientY;
+    this.swipeHandled = false;
+    if (this.swiped() !== null && this.swiped() !== id) this.swiped.set(null);
+  }
+
+  swipeMove(event: TouchEvent, id: number): void {
+    if (this.swipeHandled) return;
+    const dx = event.touches[0].clientX - this.touchX;
+    const dy = event.touches[0].clientY - this.touchY;
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < -140) {
+      this.swipeHandled = true;
+      const supplier = this.filtered().find((candidate) => candidate.id === id);
+      if (supplier) this.removeFromList(supplier);
+      return;
+    }
+    if (dx < -24) { this.swiped.set(id); return; }
+    if (dx > 24) { this.swipeHandled = true; this.swiped.set(null); }
+  }
+
+  openUnlessSwiped(event: Event, supplier: Supplier): void {
+    if (this.swiped() !== null || this.swipeHandled) {
+      event.preventDefault();
+      if (!this.swipeHandled) this.swiped.set(null);
+      return;
+    }
+    this.open(supplier);
+  }
+
+  removeFromList(supplier: Supplier): void {
+    this.ui.confirm(
+      { title: 'Leverancier verwijderen', message: `<b>${supplier.name}</b> verwijderen?`,
+        confirmLabel: 'Verwijderen', danger: true },
+      async () => {
+        try {
+          await this.sourcing.deleteSupplier(supplier.id!);
+          this.swiped.set(null);
+          await this.load();
+          this.ui.toast('Leverancier verwijderd');
+        } catch (failure: unknown) {
+          this.ui.toast(message(failure, 'Verwijderen mislukt'), 'err');
+        }
+      });
   }
 
   remove(): void {

@@ -2410,3 +2410,8 @@ app-product-publication-editor .conflict-list span { color: var(--muted); }
 .hgrid__cur { display: flex; align-items: baseline; gap: 4px; }
 .hgrid__cur em { font-style: normal; font-size: 10px; font-weight: 800; color: var(--muted); width: 9px; }
 .hgrid__value--sm { font-size: 13.5px; }
+
+/* Settings: component hosts are custom elements - give them the same
+   breathing room as cards. */
+app-content-translation-workspace, app-website-sync-status { display: block; margin-top: 12px; }
+app-content-translation-workspace .card + * { margin-top: 12px; }

@@ -216,7 +216,10 @@ export class WebsiteSyncStatus {
       case 'NOT_CONFIGURED':
         return {
           label: 'Niet ingesteld',
-          detail: 'Automatisch bijwerken is nog niet ingesteld in de backend.',
+          detail: 'De backend kent nog geen Vercel Deploy Hook van de website. Maak er een '
+            + 'aan in Vercel (project enrosed-website-frontend → Settings → Git → Deploy '
+            + 'Hooks) en zet de URL op Railway als VERCEL_WEBSITE_DEPLOY_HOOK_URL. Daarna '
+            + 'bouwt de website zichzelf opnieuw na elke opgeslagen wijziging.',
           tone: 'muted',
         };
       case 'QUEUED':

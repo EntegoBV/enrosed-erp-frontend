@@ -1145,40 +1145,64 @@ export class Dashboard {
     const abs = (value: number) => nl(Math.abs(value));
     const gain = (value: number) => value >= 0 ? 'won' : 'verloor';
 
-    /* Why: which currency carried the move, and what that means for the
-       two kinds of suppliers. */
+    /* Why, told from our chair: we pay euro, the supplier is paid in
+       dollar or yuan. What did each agreement type do to our cost, and
+       what did it do to the supplier's own earnings (he counts in yuan)? */
     if (cnyCheaperPct === null) {
-      lines.push(`Waarom: de euro ${gain(usdCheaperPct)} ${abs(usdCheaperPct)}% tegenover ` +
-          `de dollar sinds ${baselineDate}.`);
-    } else if (usdCheaperPct >= 0 && cnyCheaperPct >= 0 || usdCheaperPct < 0 && cnyCheaperPct < 0) {
-      const better = powerPct >= 0;
-      let tail: string;
-      if (Math.abs(usdCheaperPct - cnyCheaperPct) < 0.5) {
-        tail = ' — beide munten bewogen gelijk op.';
-      } else if (Math.abs(usdCheaperPct) > Math.abs(cnyCheaperPct)) {
-        tail = better
-            ? ' — de winst zit vooral bij de dollar; de yuan verstevigde tegen de dollar ' +
-              'en yuan-leveranciers profiteerden minder.'
-            : ' — het verlies zit vooral bij de dollar; yuan-leveranciers bleven relatief ' +
-              'goedkoper.';
-      } else {
-        tail = better
-            ? ' — de winst zit vooral bij de yuan, die verzwakte tegen de dollar.'
-            : ' — het verlies zit vooral bij de yuan, die verstevigde tegen de dollar.';
-      }
-      lines.push((better
-          ? `Waarom nu beter: de euro won ${abs(usdCheaperPct)}% tegenover de dollar en ` +
-            `${abs(cnyCheaperPct)}% tegenover de yuan sinds ${baselineDate}`
-          : `Waarom toen beter: de euro stond ${abs(usdCheaperPct)}% sterker tegenover de ` +
-            `dollar en ${abs(cnyCheaperPct)}% tegenover de yuan op ${baselineDate}`) + tail);
+      lines.push(`De euro ${gain(usdCheaperPct)} ${abs(usdCheaperPct)}% tegenover de dollar ` +
+          `sinds ${baselineDate}.`);
     } else {
-      lines.push(usdCheaperPct >= 0
-          ? `Gemengd beeld: de euro won ${abs(usdCheaperPct)}% op de dollar maar verloor ` +
-            `${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate} — dollarleveranciers ` +
-            `werden goedkoper, yuan-leveranciers duurder.`
-          : `Gemengd beeld: de euro verloor ${abs(usdCheaperPct)}% op de dollar maar won ` +
-            `${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate} — yuan-leveranciers ` +
-            `werden goedkoper, dollarleveranciers duurder.`);
+      const usdBetter = usdCheaperPct >= 0;
+      const cnyBetter = cnyCheaperPct >= 0;
+      const dollarMovedMore = Math.abs(usdCheaperPct) > Math.abs(cnyCheaperPct) + 0.5;
+      const yuanMovedMore = Math.abs(cnyCheaperPct) > Math.abs(usdCheaperPct) + 0.5;
+      if (usdBetter && cnyBetter) {
+        lines.push(`Waarom nu beter: de euro won ${abs(usdCheaperPct)}% op de dollar en ` +
+            `${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate} — dezelfde EXW-prijs ` +
+            `kost je nu minder euro, in beide munten.`);
+        if (dollarMovedMore) {
+          lines.push(`De dollar zakte harder dan de yuan. Een leverancier met een ` +
+              `dollarafspraak krijgt nu minder yuan voor zijn dollars — hij verdient minder ` +
+              `en zal zijn dollarprijs willen verhogen. Bij een yuan-afspraak blijft zijn ` +
+              `opbrengst gelijk, maar jouw voordeel is daar kleiner ` +
+              `(${abs(cnyCheaperPct)}% in plaats van ${abs(usdCheaperPct)}%).`);
+        } else if (yuanMovedMore) {
+          lines.push(`De yuan zakte harder dan de dollar. Een yuan-afspraak is nu het ` +
+              `voordeligst (${abs(cnyCheaperPct)}% tegenover ${abs(usdCheaperPct)}%); een ` +
+              `leverancier met een dollarafspraak krijgt juist méér yuan per dollar en zit ` +
+              `comfortabel — daar is prijsdruk van zijn kant onwaarschijnlijk.`);
+        } else {
+          lines.push(`Dollar en yuan bewogen gelijk op: dollar- of yuan-afspraak maakt nu ` +
+              `geen verschil, en de leverancier merkt er in zijn yuan weinig van.`);
+        }
+      } else if (!usdBetter && !cnyBetter) {
+        lines.push(`Waarom toen beter: de euro verloor ${abs(usdCheaperPct)}% op de dollar ` +
+            `en ${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate} — dezelfde ` +
+            `EXW-prijs kost je nu meer euro, in beide munten.`);
+        if (dollarMovedMore) {
+          lines.push(`De dollar werd harder duurder dan de yuan. Een dollarafspraak kost je ` +
+              `nu het meest extra; die leverancier krijgt méér yuan per dollar en verdient ` +
+              `dus beter dan toen — ruimte om over zijn dollarprijs te onderhandelen. Een ` +
+              `yuan-afspraak kost ${abs(cnyCheaperPct)}% extra.`);
+        } else if (yuanMovedMore) {
+          lines.push(`De yuan werd harder duurder dan de dollar. Een yuan-afspraak kost je ` +
+              `nu het meest extra (${abs(cnyCheaperPct)}% tegenover ${abs(usdCheaperPct)}%); ` +
+              `met een dollarafspraak beperk je de schade.`);
+        } else {
+          lines.push(`Dollar en yuan werden gelijk op duurder: de munt van de afspraak ` +
+              `maakt nu geen verschil.`);
+        }
+      } else if (usdBetter) {
+        lines.push(`Gemengd: de euro won ${abs(usdCheaperPct)}% op de dollar maar verloor ` +
+            `${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate}. Een dollarafspraak ` +
+            `werd goedkoper, een yuan-afspraak duurder. De dollarleverancier krijgt minder ` +
+            `yuan per dollar — hij verdient minder en zal zijn dollarprijs willen verhogen.`);
+      } else {
+        lines.push(`Gemengd: de euro verloor ${abs(usdCheaperPct)}% op de dollar maar won ` +
+            `${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate}. Een yuan-afspraak ` +
+            `werd goedkoper, een dollarafspraak duurder. De dollarleverancier krijgt méér ` +
+            `yuan per dollar en verdient beter — daar valt over de prijs te praten.`);
+      }
     }
 
     if (rangePos >= 0.85) {
