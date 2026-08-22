@@ -194,7 +194,7 @@ interface FreightHorizon {
                  number: purchasing pays in dollars and yuan. -->
             @if (analysis(rates); as a) {
               <div class="market-analysis">
-                <div class="market-analysis__range-label">Vergelijk met</div>
+                <div class="market-analysis__range-label">Koopkracht vergeleken met</div>
                 <!-- These are controls, not passive statistics: the complete
                      buying analysis below follows the selected period. -->
                 <div class="hgrid" role="group" aria-label="Kies de analyseperiode">
@@ -206,24 +206,12 @@ interface FreightHorizon {
                             (click)="analysisMonths.set(h.months)">
                       <span class="hgrid__label">{{ h.label }}</span>
                       @if (h.pct !== null) {
-                        <span class="hgrid__cur">
-                          <em>$</em>
-                          <span class="hgrid__value hgrid__value--sm"
-                                [class.hgrid__value--good]="h.pct >= 0"
-                                [class.hgrid__value--bad]="h.pct < 0">
-                            {{ h.pct >= 0 ? '↓' : '↑' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
-                          </span>
+                        <span class="hgrid__value"
+                              [class.hgrid__value--good]="h.pct >= 0"
+                              [class.hgrid__value--bad]="h.pct < 0">
+                          {{ h.pct >= 0 ? '↑' : '↓' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
                         </span>
-                        @if (h.cny !== null) {
-                          <span class="hgrid__cur">
-                            <em>¥</em>
-                            <span class="hgrid__value hgrid__value--sm"
-                                  [class.hgrid__value--good]="h.cny >= 0"
-                                  [class.hgrid__value--bad]="h.cny < 0">
-                              {{ h.cny >= 0 ? '↓' : '↑' }}{{ (h.cny < 0 ? -h.cny : h.cny) | num: 1 }}%
-                            </span>
-                          </span>
-                        }
+                        <span class="hgrid__word">{{ h.pct >= 0 ? 'sterker' : 'zwakker' }}</span>
                       } @else {
                         <span class="hgrid__value hgrid__value--missing">—</span>
                         <span class="hgrid__word">geen data</span>
@@ -1107,9 +1095,13 @@ export class Dashboard {
     const contexts = definitions.map((definition) => {
       const index = this.baselineIndex(rates, definition.months);
       /* Positive means that one dollar (or yuan) costs fewer euros now. */
-      const pct = cheaper(index === null ? null : rates.usd[index], latestUsd);
+      const usd = cheaper(index === null ? null : rates.usd[index], latestUsd);
       const cny = cheaper(index === null ? null : rates.cny[index], latestCny);
-      return { ...definition, index, pct, cny };
+      /* One number: the euro's average buying power over our two purchase
+         currencies - half the containers are priced in dollar, half in
+         yuan, so a plain mean is the honest summary. */
+      const pct = usd === null ? null : cny === null ? usd : (usd + cny) / 2;
+      return { ...definition, index, pct, usd, cny };
     });
     const horizons = contexts.map(({ label, months, pct, cny }) => ({ label, months, pct, cny }));
     const selectedMonths = this.analysisMonths();
@@ -1131,8 +1123,9 @@ export class Dashboard {
     const baselineDate = this.analysisDate(rates.dates[baselineIndex]);
     const baselineUsd = rates.usd[baselineIndex];
     const baselineCny = rates.cny[baselineIndex];
-    const usdCheaperPct = selected.pct;
+    const usdCheaperPct = selected.usd!;
     const cnyCheaperPct = selected.cny;
+    const powerPct = selected.pct;
     const windowUsd = rates.usd.slice(baselineIndex)
         .filter((value) => Number.isFinite(value) && value > 0);
     const min = Math.min(...windowUsd);
@@ -1149,63 +1142,69 @@ export class Dashboard {
       : null;
 
     const lines: string[] = [];
-    if (Math.abs(usdCheaperPct) < 0.05) {
-      lines.push(`Dollar: minder dan 0,1% prijsverschil tegenover ${period} geleden.`);
-    } else {
-      lines.push(`Dollar: ${nl(Math.abs(usdCheaperPct))}% ` +
-          `${usdCheaperPct >= 0 ? 'goedkoper' : 'duurder'} dan ${period} geleden.`);
-    }
+    const abs = (value: number) => nl(Math.abs(value));
+    const gain = (value: number) => value >= 0 ? 'won' : 'verloor';
 
-    if (cnyCheaperPct !== null) {
-      lines.push(Math.abs(cnyCheaperPct) < 0.05
-          ? `Yuan: minder dan 0,1% prijsverschil tegenover ${period} geleden.`
-          : `Yuan: ${nl(Math.abs(cnyCheaperPct))}% ` +
-            `${cnyCheaperPct >= 0 ? 'goedkoper' : 'duurder'} dan ${period} geleden.`);
+    /* Why: which currency carried the move, and what that means for the
+       two kinds of suppliers. */
+    if (cnyCheaperPct === null) {
+      lines.push(`Waarom: de euro ${gain(usdCheaperPct)} ${abs(usdCheaperPct)}% tegenover ` +
+          `de dollar sinds ${baselineDate}.`);
+    } else if (usdCheaperPct >= 0 && cnyCheaperPct >= 0 || usdCheaperPct < 0 && cnyCheaperPct < 0) {
+      const better = powerPct >= 0;
+      let tail: string;
+      if (Math.abs(usdCheaperPct - cnyCheaperPct) < 0.5) {
+        tail = ' — beide munten bewogen gelijk op.';
+      } else if (Math.abs(usdCheaperPct) > Math.abs(cnyCheaperPct)) {
+        tail = better
+            ? ' — de winst zit vooral bij de dollar; de yuan verstevigde tegen de dollar ' +
+              'en yuan-leveranciers profiteerden minder.'
+            : ' — het verlies zit vooral bij de dollar; yuan-leveranciers bleven relatief ' +
+              'goedkoper.';
+      } else {
+        tail = better
+            ? ' — de winst zit vooral bij de yuan, die verzwakte tegen de dollar.'
+            : ' — het verlies zit vooral bij de yuan, die verstevigde tegen de dollar.';
+      }
+      lines.push((better
+          ? `Waarom nu beter: de euro won ${abs(usdCheaperPct)}% tegenover de dollar en ` +
+            `${abs(cnyCheaperPct)}% tegenover de yuan sinds ${baselineDate}`
+          : `Waarom toen beter: de euro stond ${abs(usdCheaperPct)}% sterker tegenover de ` +
+            `dollar en ${abs(cnyCheaperPct)}% tegenover de yuan op ${baselineDate}`) + tail);
+    } else {
+      lines.push(usdCheaperPct >= 0
+          ? `Gemengd beeld: de euro won ${abs(usdCheaperPct)}% op de dollar maar verloor ` +
+            `${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate} — dollarleveranciers ` +
+            `werden goedkoper, yuan-leveranciers duurder.`
+          : `Gemengd beeld: de euro verloor ${abs(usdCheaperPct)}% op de dollar maar won ` +
+            `${abs(cnyCheaperPct)}% op de yuan sinds ${baselineDate} — yuan-leveranciers ` +
+            `werden goedkoper, dollarleveranciers duurder.`);
     }
 
     if (rangePos >= 0.85) {
-      lines.push(`In de afgelopen ${rangePeriod} staat de euro nu dicht bij zijn sterkste ` +
-          `punt tegenover de dollar.`);
+      lines.push(`De euro staat nu dicht bij zijn sterkste punt van de afgelopen ${rangePeriod} ` +
+          `tegenover de dollar — de winst zit er grotendeels al in.`);
     } else if (rangePos <= 0.15) {
-      lines.push(`In de afgelopen ${rangePeriod} staat de euro nu dicht bij zijn zwakste ` +
-          `punt tegenover de dollar.`);
+      lines.push(`De euro staat nu dicht bij zijn zwakste punt van de afgelopen ${rangePeriod} ` +
+          `tegenover de dollar.`);
     }
 
-    if (yuanStrengthPct === null) {
-      lines.push(`Yuan/dollaranalyse is niet beschikbaar voor deze periode.`);
-    } else if (Math.abs(yuanStrengthPct) < 0.05) {
-      lines.push(`Yuan: minder dan 0,1% verschil tegenover de dollar over dezelfde periode.`);
-    } else {
-      lines.push(yuanStrengthPct > 0
-          ? `Yuan verstevigt ${nl(yuanStrengthPct)}% tegen de dollar over dezelfde ` +
-            `periode — het voordeel geldt vooral voor EXW in USD, minder voor CNY.`
-          : `Yuan verzwakt ${nl(Math.abs(yuanStrengthPct))}% tegen de dollar over ` +
-            `dezelfde periode — EXW in CNY werd daarmee relatief voordeliger dan EXW in USD.`);
-    }
-
-    const eurSavingPerTenK = 10000 / baselineUsd - 10000 / latestUsd;
-    const roundedSaving = Math.round(Math.abs(eurSavingPerTenK));
-    if (roundedSaving < 1) {
-      lines.push(`Per $10.000 aan inkoop is het verschil tegenover ${period} geleden minder dan € 1.`);
-    } else if (eurSavingPerTenK > 0) {
-      lines.push(`Per $10.000 aan inkoop bespaar je tegenover ${period} geleden ongeveer ` +
-          `€ ${roundedSaving.toLocaleString('nl-BE')}.`);
-    } else {
-      lines.push(`Per $10.000 aan inkoop betaal je tegenover ${period} geleden ongeveer ` +
-          `€ ${roundedSaving.toLocaleString('nl-BE')} meer.`);
-    }
-
+    /* What it means in money, per currency. */
+    const eurPerTenKUsd = 10000 / baselineUsd - 10000 / latestUsd;
+    const usdMoney = Math.round(Math.abs(eurPerTenKUsd));
+    let money = usdMoney < 1
+        ? `Per $10.000 aan inkoop: minder dan € 1 verschil`
+        : `Per $10.000 aan inkoop: ongeveer € ${usdMoney.toLocaleString('nl-BE')} ` +
+          `${eurPerTenKUsd > 0 ? 'minder' : 'meer'}`;
     if (cnyCheaperPct !== null && Number.isFinite(baselineCny) && baselineCny > 0) {
-      const perTenKCny = 10000 / baselineCny - 10000 / latestCny;
-      const rounded = Math.round(Math.abs(perTenKCny));
-      if (rounded >= 1) {
-        lines.push(perTenKCny > 0
-            ? `Per ¥10.000 aan inkoop bespaar je tegenover ${period} geleden ongeveer ` +
-              `€ ${rounded.toLocaleString('nl-BE')}.`
-            : `Per ¥10.000 aan inkoop betaal je tegenover ${period} geleden ongeveer ` +
-              `€ ${rounded.toLocaleString('nl-BE')} meer.`);
+      const eurPerTenKCny = 10000 / baselineCny - 10000 / latestCny;
+      const cnyMoney = Math.round(Math.abs(eurPerTenKCny));
+      if (cnyMoney >= 1) {
+        money += `; per ¥10.000: ongeveer € ${cnyMoney.toLocaleString('nl-BE')} ` +
+            `${eurPerTenKCny > 0 ? 'minder' : 'meer'}`;
       }
     }
+    lines.push(money + ` dan op ${baselineDate}.`);
 
     /* Freight from the WCI log, when the scraper or the owner fed it. */
     const wci = this.seriesFor('WCI SHA-RTM');
@@ -1223,31 +1222,20 @@ export class Dashboard {
     let verdict: string;
     let tone: string;
     let lead: string;
-    const word = (pct: number) => pct >= 0 ? 'goedkoper' : 'duurder';
-    const usdUp = usdCheaperPct >= 0.5;
-    const usdDown = usdCheaperPct <= -0.5;
-    const cnyUp = cnyCheaperPct !== null && cnyCheaperPct >= 0.5;
-    const cnyDown = cnyCheaperPct !== null && cnyCheaperPct <= -0.5;
-    const both = cnyCheaperPct === null
-        ? `Een dollar kost nu ${nl(Math.abs(usdCheaperPct))}% ${word(usdCheaperPct)}`
-        : `Dollar ${nl(Math.abs(usdCheaperPct))}% ${word(usdCheaperPct)}, ` +
-          `yuan ${nl(Math.abs(cnyCheaperPct))}% ${word(cnyCheaperPct)}`;
-    if ((usdUp && (cnyUp || cnyCheaperPct === null)) || (cnyUp && !usdDown && Math.abs(usdCheaperPct) < 0.5)) {
-      verdict = 'Goedkoper dan toen';
+    if (powerPct >= 0.5) {
+      verdict = 'Sterker dan toen';
       tone = 'ok';
-      lead = `${both} dan op ${baselineDate}.`;
-    } else if ((usdDown && (cnyDown || cnyCheaperPct === null)) || (cnyDown && !usdUp && Math.abs(usdCheaperPct) < 0.5)) {
-      verdict = 'Duurder dan toen';
+      lead = `Jullie koopkracht is ${nl(powerPct)}% sterker dan op ${baselineDate}` +
+          ` (gemiddeld over dollar en yuan).`;
+    } else if (powerPct <= -0.5) {
+      verdict = 'Zwakker dan toen';
       tone = 'warn';
-      lead = `${both} dan op ${baselineDate}.`;
-    } else if ((usdUp && cnyDown) || (usdDown && cnyUp)) {
-      verdict = 'Gemengd';
-      tone = 'neutral';
-      lead = `${both} dan op ${baselineDate} — kies per leverancier de munt die nu gunstig staat.`;
+      lead = `Jullie koopkracht is ${nl(Math.abs(powerPct))}% zwakker dan op ${baselineDate}` +
+          ` (gemiddeld over dollar en yuan).`;
     } else {
       verdict = 'Vrijwel gelijk';
       tone = 'neutral';
-      lead = `Dollar en yuan liggen dicht bij het niveau van ${baselineDate}.`;
+      lead = `Jullie koopkracht ligt op het niveau van ${baselineDate} (gemiddeld over dollar en yuan).`;
     }
     return { verdict, tone, lead, lines, horizons };
   }
