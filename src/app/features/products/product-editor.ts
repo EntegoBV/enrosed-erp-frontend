@@ -71,8 +71,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       [showBell]="false"
     >
       <button class="btn btn--primary btn--sm" type="button"
-              [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
-              (click)="save()">{{ saving() ? 'Bezig…' : 'Opslaan' }}</button>
+              [disabled]="saving() || photoUploading() || translationSaving()"
+              (click)="save()">{{ saving() ? 'Bezig…' : (photoUploading() ? 'Foto’s…' : 'Opslaan') }}</button>
     </app-page-header>
 
     @if (productLoadError()) {
@@ -549,7 +549,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           Volgende
         </button>
         <button class="btn btn--primary btn--block editor-save" type="button"
-                [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
+                [disabled]="saving() || photoUploading() || translationSaving()"
                 (click)="save()">
           {{ isNew() && photoCount() ? "Product met foto's aanmaken" :
              (isNew() ? 'Product aanmaken' : 'Wijzigingen opslaan') }}
@@ -1771,16 +1771,30 @@ export class ProductEditor implements OnDestroy {
 
   async save(): Promise<void> {
     if (this.saving() || this.photoUploading() || this.translationSaving()) return;
+    /* Every reason not to save is said out loud and the screen jumps to
+       the field - a greyed-out button explained nothing. */
     if (this.translationDirty()) {
-      document.getElementById('publication')?.setAttribute('open', '');
-      document.getElementById('publication')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      this.ui.toast('Sla de vertalingen eerst op of wis die wijzigingen.', 'err');
+      this.showTab('publication');
+      this.ui.toast(window.innerWidth >= 1024
+          ? 'Websitevertalingen nog niet opgeslagen: sla die eerst op of wis ze (Website & publicatie).'
+          : 'Websitevertalingen nog niet opgeslagen - dat regel je op desktop onder Website & publicatie.',
+          'err');
       return;
     }
-    if (this.priceStrategy() === 'FIXED'
-        && (this.draft().fixedSalesPriceEur ?? 0) <= 0) {
-      this.ui.toast('Vul een vaste verkoopprijs hoger dan € 0 in', 'err');
-      this.scrollToSection('sales');
+    const missing: { tab: string; field: string; label: string }[] = [];
+    if (!this.draft().supplierId) missing.push({ tab: 'identity', field: 'p-supplier', label: 'leverancier' });
+    if (!this.draft().name.trim()) missing.push({ tab: 'identity', field: 'p-name', label: 'productnaam' });
+    if ((this.draft().carton.piecesPerCarton ?? 0) <= 0) {
+      missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton' });
+    }
+    if (this.priceStrategy() === 'FIXED' && (this.draft().fixedSalesPriceEur ?? 0) <= 0) {
+      missing.push({ tab: 'sales', field: 'p-price', label: 'vaste verkoopprijs (hoger dan € 0)' });
+    }
+    if (missing.length) {
+      const first = missing[0];
+      this.ui.toast(`Nog invullen: ${missing.map((m) => m.label).join(', ')}.`, 'err');
+      this.showTab(first.tab);
+      setTimeout(() => document.getElementById(first.field)?.focus(), 250);
       return;
     }
     const wasNew = this.isNew();
