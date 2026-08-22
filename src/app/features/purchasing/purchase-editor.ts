@@ -391,7 +391,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                           @if (line.extraRevenueEur) {
                             <div class="stat-row stat-row--muted">
                               <span>
-                                Extra opbrengst
+                                Enrosed kost
                                 <small>{{ perPiece() ? 'per stuk' : 'hele regel' }}</small>
                               </span>
                               <span class="num">
@@ -532,7 +532,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                           </div>
                         </div>
                         <div class="field span-2">
-                          <label for="c-extra">Extra gewenste opbrengst <span class="opt"></span></label>
+                          <label for="c-extra">Enrosed kost <span class="opt"></span></label>
                           <div class="input-affix">
                             <input class="input num right" id="c-extra" type="number"
                                    step="100" min="0" inputmode="decimal"
@@ -626,15 +626,25 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 
                 @if (privacy.showPurchase()) {
                   <div class="cost-hero">
-                    <div>
-                      <div class="cost-hero__label">Totaal geland</div>
-                      <div class="cost-hero__value">{{ data.costing.totals.totalEur | eur }}</div>
+                    <!-- What the road adds on top of the goods - the figure a
+                         buyer negotiates on; an average per piece over mixed
+                         products said nothing. Quiet, the total is the star. -->
+                    <div class="cost-hero__aside">
+                      <div class="cost-hero__label">Bovenop de goederen</div>
+                      <div class="cost-hero__value cost-hero__value--quiet">
+                        + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}
+                      </div>
+                      <div class="cost-hero__sub">
+                        @if (data.costing.totals.goodsEur > 0) {
+                          {{ overheadPct(data.costing.totals) | num }} % van de inkoop
+                        } @else {
+                          nog geen goederen geladen
+                        }
+                      </div>
                     </div>
                     <div class="cost-hero__unit">
-                      <div class="cost-hero__label">Gemiddeld per stuk</div>
-                      <div class="cost-hero__value cost-hero__value--rose">
-                        {{ data.costing.totals.averageUnitEur | eur: 4 }}
-                      </div>
+                      <div class="cost-hero__label">Totaal geland</div>
+                      <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
                     </div>
                   </div>
 
@@ -681,7 +691,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                       </div>
                       @if (data.costing.totals.extraRevenueEur) {
                         <div class="stat-row">
-                          <span>Extra opbrengst</span>
+                          <span>Enrosed kost</span>
                           <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span>
                         </div>
                       }
@@ -1052,7 +1062,7 @@ export class PurchaseEditor {
         route: labels.originRoute },
       { field: 'allocDestination' as const, label: labels.destinationCostsLabel,
         route: '' },
-      { field: 'allocExtra' as const, label: 'Extra opbrengst',
+      { field: 'allocExtra' as const, label: 'Enrosed kost',
         route: 'Commerciële opslag per verdeelsleutel' },
     ];
   });
@@ -1151,6 +1161,11 @@ export class PurchaseEditor {
 
   stockOf(productId: number): number {
     return this.products().find((product) => product.id === productId)?.stockQuantity ?? 0;
+  }
+
+  /** Transport, duty, handling and Enrosed kost as a share of the goods. */
+  overheadPct(totals: { totalEur: number; goodsEur: number }): number {
+    return totals.goodsEur > 0 ? Math.round(((totals.totalEur - totals.goodsEur) / totals.goodsEur) * 100) : 0;
   }
 
   patch(changes: Partial<PurchaseOrder>): void {
@@ -1308,8 +1323,8 @@ export class PurchaseEditor {
       const blob = await this.sourcing.purchasePdf(data.order.id, internal);
       saveBlob(blob, `${data.order.number}${internal ? '' : '-klantweergave'}.pdf`);
       this.ui.toast(internal
-        ? 'Interne PDF gedownload — extra opbrengst als aparte regel'
-        : 'Klantweergave gedownload — extra opbrengst zit in de stukprijs');
+        ? 'Interne PDF gedownload — Enrosed kost als aparte regel'
+        : 'Klantweergave gedownload — Enrosed kost zit in de stukprijs');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'PDF maken mislukt'), 'err');
     }

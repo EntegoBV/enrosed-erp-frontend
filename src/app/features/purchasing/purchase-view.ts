@@ -245,7 +245,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                         <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
                           <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
                         @if (line.extraRevenueEur) {
-                          <div class="stat-row"><span>Extra opbrengst</span>
+                          <div class="stat-row"><span>Enrosed kost</span>
                             <span class="num">{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
                         }
                       </div>
@@ -330,15 +330,25 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 
                 <div class="cost-card__body">
                   <div class="cost-hero">
-                    <div>
-                      <div class="cost-hero__label">Totaal geland</div>
-                      <div class="cost-hero__value">{{ data.costing.totals.totalEur | eur }}</div>
+                    <!-- What the road adds on top of the goods - the figure a
+                         buyer negotiates on; an average per piece over mixed
+                         products said nothing. Quiet, the total is the star. -->
+                    <div class="cost-hero__aside">
+                      <div class="cost-hero__label">Bovenop de goederen</div>
+                      <div class="cost-hero__value cost-hero__value--quiet">
+                        + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}
+                      </div>
+                      <div class="cost-hero__sub">
+                        @if (data.costing.totals.goodsEur > 0) {
+                          {{ overheadPct(data.costing.totals) | num }} % van de inkoop
+                        } @else {
+                          nog geen goederen geladen
+                        }
+                      </div>
                     </div>
                     <div class="cost-hero__unit">
-                      <div class="cost-hero__label">Gemiddeld per stuk</div>
-                      <div class="cost-hero__value cost-hero__value--rose">
-                        {{ data.costing.totals.averageUnitEur | eur: 4 }}
-                      </div>
+                      <div class="cost-hero__label">Totaal geland</div>
+                      <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
                     </div>
                   </div>
 
@@ -369,7 +379,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                     <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
                       <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
                     @if (data.costing.totals.extraRevenueEur) {
-                      <div class="stat-row"><span>Extra opbrengst</span>
+                      <div class="stat-row"><span>Enrosed kost</span>
                         <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
                     }
                   </div>
@@ -513,6 +523,11 @@ export class PurchaseView {
     return this.perPiece() && line.quantity > 0 ? value / line.quantity : value;
   }
 
+  /** Transport, duty, handling and Enrosed kost as a share of the goods. */
+  overheadPct(totals: { totalEur: number; goodsEur: number }): number {
+    return totals.goodsEur > 0 ? Math.round(((totals.totalEur - totals.goodsEur) / totals.goodsEur) * 100) : 0;
+  }
+
   toggleLine(productId: number): void {
     this.openLine.set(this.openLine() === productId ? null : productId);
   }
@@ -584,7 +599,7 @@ export class PurchaseView {
     const blob = await this.sourcing.purchasePdf(data.order.id, internal);
     saveBlob(blob, `${data.order.number}${internal ? '' : '-klantweergave'}.pdf`);
     this.ui.toast(internal
-      ? 'Interne PDF gedownload — extra opbrengst als aparte regel'
-      : 'Klantweergave gedownload — extra opbrengst zit in de stukprijs');
+      ? 'Interne PDF gedownload — Enrosed kost als aparte regel'
+      : 'Klantweergave gedownload — Enrosed kost zit in de stukprijs');
   }
 }

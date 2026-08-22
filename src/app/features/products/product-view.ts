@@ -650,6 +650,10 @@ export class ProductView {
           hint: 'havenkosten, inklaring en levering aan het magazijn',
           eur: per(line.destinationEur, line.quantity) });
       }
+      if (line.extraRevenueEur) {
+        rows.push({ label: '+ Enrosed kost', hint: 'vast bedrag per container, verdeeld over de stuks',
+          eur: per(line.extraRevenueEur, line.quantity) });
+      }
       rows.push({ label: 'Kostprijs per stuk', eur: product.landedCostEur ?? line.landedUnitEur, sum: true });
     } else if (product.landedCostEur) {
       rows.push({ label: 'Kostprijs per stuk', hint: 'incl. transport en rechten', eur: product.landedCostEur, sum: true });
