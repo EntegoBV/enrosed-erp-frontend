@@ -501,19 +501,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
             </div>
-            <div class="price-preview__meta">
-              <span>
-                Voorraad
-                @if (draft().inventoryKnown) {
-                  <b class="num">{{ draft().stockQuantity | num }}</b>
-                } @else {
-                  <b>onbekend</b>
-                }
-              </span>
+            <!-- Two aligned rows: label left, figure right, nothing wraps. -->
+            <dl class="price-preview__meta">
+              <dt>Voorraad</dt>
+              <dd class="num">
+                @if (draft().inventoryKnown) { {{ draft().stockQuantity | num }} } @else { onbekend }
+              </dd>
               @if (privacy.showPurchase()) {
-                <span>Marge per stuk <b class="num">{{ unitMargin() | eur }}</b></span>
+                <dt>Marge per stuk</dt>
+                <dd class="num">{{ unitMargin() | eur }}</dd>
               }
-            </div>
+            </dl>
           </div>
         </div>
       </section>
@@ -834,9 +832,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       letter-spacing: .1em; text-transform: uppercase; }
     .price-preview strong { margin-top: 2px; font-size: 25px; line-height: 1.1; letter-spacing: -.025em; }
     .price-preview small { margin-top: 3px; color: #a99d96; font-size: 10.5px; }
-    .price-preview__meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
-      color: #c7bdb7; font-size: 11px; }
-    .price-preview__meta b { color: #fff; }
+    .price-preview__meta {
+      display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 4px;
+      align-items: baseline; margin: 0; flex: none;
+      color: #c7bdb7; font-size: 11px; white-space: nowrap;
+    }
+    .price-preview__meta dt { margin: 0; }
+    .price-preview__meta dd { margin: 0; color: #fff; font-weight: 700; text-align: right; }
+    .price-preview__label { white-space: nowrap; }
 
     .price-method { min-width: 0; margin: 0 0 14px; padding: 0; border: 0; }
     .price-method legend { margin-bottom: 7px; font-weight: 650; }
