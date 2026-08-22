@@ -71,6 +71,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       [showBell]="false"
     >
       <button class="btn btn--primary btn--sm" type="button"
+              [class.editor-head-save--idle]="!dirty() && !isNew()"
               [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
               (click)="save()">{{ saving() ? 'Bezig…' : 'Opslaan' }}</button>
     </app-page-header>
@@ -95,7 +96,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     </nav>
 
     <div class="content product-editor-page">
-      <div class="editor-canvas" [attr.data-tab]="activeTab()">
+      <div class="editor-canvas" [attr.data-tab]="activeTab()"
+           [class.editor-canvas--last]="isLastPhoneTab()">
       <!-- ============================================ product -->
       <section class="card editor-section" id="identity" aria-labelledby="identity-title">
         <div class="card__head section-head">
@@ -542,7 +544,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <p class="editor-mobile-note">Website &amp; publicatie bewerk je op desktop.</p>
 
       <div class="editor-actions">
-        <button class="btn btn--primary btn--block" type="button"
+        <!-- Phone: walk the sections with Volgende, save at the end (the
+             header keeps a save shortcut once something changed). Desktop
+             sees everything at once and simply saves. -->
+        <button class="btn btn--primary btn--block editor-next" type="button"
+                (click)="nextTab()">
+          Volgende
+        </button>
+        <button class="btn btn--primary btn--block editor-save" type="button"
                 [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
                 (click)="save()">
           {{ isNew() && photoCount() ? "Product met foto's aanmaken" :
@@ -567,6 +576,20 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </details>
         }
       </div>
+
+      @if (leaveQuestion(); as answer) {
+        <app-sheet title="Wijzigingen opslaan?" (closed)="answer(null)">
+          <div body>
+            <p class="small muted" style="margin:0">
+              Je hebt dit product gewijzigd maar nog niet opgeslagen.
+            </p>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn btn--quiet" type="button" (click)="answer(false)">Niet opslaan</button>
+            <button class="btn btn--primary" type="button" (click)="answer(true)">Opslaan</button>
+          </div>
+        </app-sheet>
+      }
 
       @if (copying()) {
         <app-sheet title="Nieuwe variant" (closed)="closeCopySheet()">
@@ -709,6 +732,16 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .product-load-error small { font-size: 10px; }
     .editor-canvas { width: 100%; max-width: 920px; margin: 0 auto; }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
+    /* Phone: Volgende until the last step, then save; the header save
+       fades out while nothing changed. Desktop: always save. */
+    .editor-next { display: none; }
+    @media (max-width: 1023px) {
+      .editor-next { display: block; }
+      .editor-save { display: none; }
+      .editor-canvas--last .editor-actions .editor-next { display: none; }
+      .editor-canvas--last .editor-actions .editor-save { display: block; }
+      .editor-head-save--idle { opacity: 0.45; }
+    }
     .select--status {
       width: auto; min-height: 34px; padding: 4px 30px 4px 12px;
       font-size: 13px; font-weight: 650;
@@ -867,6 +900,29 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 export class ProductEditor implements OnDestroy {
   /** Which section a phone shows; on desktop the scroll spy drives it. */
   readonly activeTab = signal('identity');
+
+  /* The draft as last loaded or saved; anything different is unsaved
+     work. JSON is crude but honest - it also catches a field typed and
+     typed back, which then correctly counts as clean. */
+  private readonly baseline = signal('');
+  readonly dirty = computed(() => JSON.stringify(this.draft()) !== this.baseline());
+  private markClean(): void { this.baseline.set(JSON.stringify(this.draft())); }
+
+  /** Phone flow: the tabs you can actually complete on a phone. */
+  readonly phoneTabs = computed(() => this.tabs().filter((t) => t.id !== 'publication'));
+  readonly isLastPhoneTab = computed(() => {
+    const list = this.phoneTabs();
+    return list.findIndex((t) => t.id === this.activeTab()) >= list.length - 1;
+  });
+  nextTab(): void {
+    const list = this.phoneTabs();
+    const index = list.findIndex((t) => t.id === this.activeTab());
+    const next = list[Math.min(index + 1, list.length - 1)];
+    if (next) this.showTab(next.id);
+  }
+
+  /** The three-way question when leaving with unsaved work. */
+  readonly leaveQuestion = signal<((keep: boolean | null) => void) | null>(null);
 
   /** Sibling chosen while the product had no id; linked right after create. */
   readonly pendingVariant = signal<Product | null>(null);
@@ -1109,6 +1165,7 @@ export class ProductEditor implements OnDestroy {
       this.translationDirty.set(false);
       this.translationSaving.set(false);
       this.draft.set(blankProduct(null, 'USD'));
+      this.markClean();
     }
     try {
       const product = await this.catalog.product(productId);
@@ -1117,6 +1174,7 @@ export class ProductEditor implements OnDestroy {
       this.activeProductId = productId;
       this.draft.set(product);
       this.syncPriceStrategy(product);
+      this.markClean();
       await this.loadFamilyForProduct(product);
     } catch (failure: unknown) {
       if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
@@ -1186,6 +1244,7 @@ export class ProductEditor implements OnDestroy {
       this.draft.set(blankProduct(supplierId, currency));
       this.savedProductFamilyId.set(null);
       this.priceStrategy.set('MARKUP');
+      this.markClean();
       this.lastMarkupPct.set(45);
     }
   }
@@ -1726,6 +1785,7 @@ export class ProductEditor implements OnDestroy {
       if (!saved) return;
 
       this.draft.set(saved);
+      this.markClean();
       this.savedProductFamilyId.set(saved.familyId ?? null);
       this.ui.toast(wasNew
         ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
@@ -1910,15 +1970,28 @@ export class ProductEditor implements OnDestroy {
     );
   }
 
-  canDeactivate(): boolean {
-    if (!this.translationDirty() && !this.translationSaving()) return true;
+  canDeactivate(): boolean | Promise<boolean> {
     if (this.translationSaving()) return false;
-    return this.confirmDiscardTranslations();
+    if (this.translationDirty()) return this.confirmDiscardTranslations();
+    if (!this.dirty() || this.saving()) return true;
+    /* Unsaved product fields: ask in our own words - save, drop, or stay. */
+    return new Promise<boolean>((resolve) => {
+      this.leaveQuestion.set(async (keep) => {
+        this.leaveQuestion.set(null);
+        if (keep === null) { resolve(false); return; }
+        if (keep) {
+          await this.save();
+          resolve(!this.dirty());
+          return;
+        }
+        resolve(true);
+      });
+    });
   }
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (!this.translationDirty() && !this.translationSaving()) return;
+    if (!this.dirty() && !this.translationDirty() && !this.translationSaving()) return;
     event.preventDefault();
     event.returnValue = '';
   }
