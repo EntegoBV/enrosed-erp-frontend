@@ -71,7 +71,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       [showBell]="false"
     >
       <button class="btn btn--primary btn--sm" type="button"
-              [class.editor-head-save--idle]="!dirty() && !isNew()"
               [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
               (click)="save()">{{ saving() ? 'Bezig…' : 'Opslaan' }}</button>
     </app-page-header>
@@ -736,11 +735,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
        fades out while nothing changed. Desktop: always save. */
     .editor-next { display: none; }
     @media (max-width: 1023px) {
+      /* Phone: Volgende until the last step; saving is the header's job. */
       .editor-next { display: block; }
       .editor-save { display: none; }
       .editor-canvas--last .editor-actions .editor-next { display: none; }
-      .editor-canvas--last .editor-actions .editor-save { display: block; }
-      .editor-head-save--idle { opacity: 0.45; }
     }
     .select--status {
       width: auto; min-height: 34px; padding: 4px 30px 4px 12px;
