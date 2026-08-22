@@ -148,9 +148,12 @@ export class Sheet implements AfterViewInit, OnDestroy {
   onBackdrop(event: MouseEvent): void {
     if (event.target !== event.currentTarget) return;
     event.stopPropagation();
-    /* A click beside the sheet does not close it: on a desktop a stray
-       click next to a half-filled supplier form used to throw the work
-       away. The cross, Annuleren and Escape remain the ways out. */
+    /* Desktop: a stray click beside a half-filled form must not throw the
+       work away - the cross, Annuleren and Escape remain the ways out.
+       Phone: tapping the dimmed area is the natural way to dismiss a
+       bottom sheet, so there it still closes. */
+    if (window.innerWidth >= 1024) return;
+    this.requestClose();
   }
 
   private focusableElements(): HTMLElement[] {
