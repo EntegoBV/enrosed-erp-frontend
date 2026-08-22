@@ -60,14 +60,27 @@ export interface PendingPhotoUploadResult {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [AuthImage],
   template: `
+    <!-- Files dragged in from the desktop land anywhere on the manager;
+         several at once queue in the order they were dropped. -->
     <div class="photo-manager"
+         [class.photo-manager--drop]="fileDropActive()"
          [attr.aria-busy]="interactionDisabled()"
-         [attr.aria-disabled]="interactionDisabled()">
+         [attr.aria-disabled]="interactionDisabled()"
+         (dragenter)="fileDragEnter($event)"
+         (dragover)="fileDragOver($event)"
+         (dragleave)="fileDragLeave($event)"
+         (drop)="fileDrop($event)">
+      @if (fileDropActive()) {
+        <div class="photo-dropzone" aria-hidden="true">
+          <b>Laat los om toe te voegen</b>
+          <span>Meerdere foto’s tegelijk mag</span>
+        </div>
+      }
     <div class="photo-toolbar">
       <div class="photo-toolbar__copy">
         <b>Eigen productfoto’s</b>
         <span id="photo-order-help">
-          Voeg foto’s toe en bepaal hun volgorde met slepen, vegen of de pijltjes.
+          Voeg foto’s toe (of sleep ze hierheen) en bepaal hun volgorde met slepen, vegen of de pijltjes.
         </span>
       </div>
 
@@ -288,7 +301,16 @@ export interface PendingPhotoUploadResult {
   `,
   styles: `
     :host { display: block; min-width: 0; }
-    .photo-manager { min-width: 0; }
+    .photo-manager { position: relative; min-width: 0; }
+    .photo-manager--drop { outline: 2px dashed var(--rose); outline-offset: 6px; border-radius: var(--r-sm); }
+    .photo-dropzone {
+      position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 2px; border-radius: var(--r-sm);
+      background: color-mix(in srgb, var(--rose-soft) 88%, transparent); color: var(--rose-dark);
+      pointer-events: none;
+    }
+    .photo-dropzone b { font-size: 15px; }
+    .photo-dropzone span { font-size: 12px; opacity: .8; }
     .photo-toolbar {
       display: flex; flex-direction: column; gap: 12px;
       padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm);
@@ -483,6 +505,47 @@ export class PhotoManager {
     }
     const files = Array.from(input.files ?? []);
     input.value = '';
+    await this.addFiles(files);
+  }
+
+  /* ---- drag files in from the desktop ---- */
+  readonly fileDropActive = signal(false);
+  private fileDragDepth = 0;
+
+  private carriesFiles(event: DragEvent): boolean {
+    return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  }
+
+  fileDragEnter(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    event.preventDefault();
+    this.fileDragDepth++;
+    if (!this.interactionDisabled()) this.fileDropActive.set(true);
+  }
+
+  fileDragOver(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = this.interactionDisabled() ? 'none' : 'copy';
+  }
+
+  fileDragLeave(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    this.fileDragDepth = Math.max(0, this.fileDragDepth - 1);
+    if (this.fileDragDepth === 0) this.fileDropActive.set(false);
+  }
+
+  async fileDrop(event: DragEvent): Promise<void> {
+    if (!this.carriesFiles(event)) return;
+    event.preventDefault();
+    this.fileDragDepth = 0;
+    this.fileDropActive.set(false);
+    if (this.interactionDisabled()) return;
+    await this.addFiles(Array.from(event.dataTransfer?.files ?? []));
+  }
+
+  /** Picker and drop share one road: check, queue, upload when the product exists. */
+  private async addFiles(files: File[]): Promise<void> {
     if (!files.length) return;
 
     const accepted = this.acceptedFiles(files);
@@ -825,6 +888,11 @@ export class PhotoManager {
 
   private acceptedFiles(files: File[]): File[] {
     const known = new Set(this.pendingPhotos().map(({ file }) => this.fileKey(file)));
+    /* Already on the product under the same name and size: almost surely the
+       same picture; the server checks the bytes for everything else. */
+    const onProduct = new Set(this.ownPhotos()
+      .filter((photo) => !photo.readOnly)
+      .map((photo) => `${photo.originalFilename}\u0000${photo.sizeBytes}`));
     const accepted: File[] = [];
     let invalid = 0;
     let tooLarge = 0;
@@ -840,7 +908,7 @@ export class PhotoManager {
         continue;
       }
       const key = this.fileKey(file);
-      if (known.has(key)) {
+      if (known.has(key) || onProduct.has(`${file.name}\u0000${file.size}`)) {
         duplicate++;
         continue;
       }
@@ -851,7 +919,7 @@ export class PhotoManager {
     const problems = [
       invalid ? `${invalid} ongeldig bestand` : '',
       tooLarge ? `${tooLarge} foto boven 25 MB` : '',
-      duplicate ? `${duplicate} dubbele foto` : '',
+      duplicate ? `${duplicate} foto staat er al` : '',
     ].filter(Boolean);
     if (problems.length) this.ui.toast(`${problems.join(' · ')} overgeslagen`, 'err');
     return accepted;
