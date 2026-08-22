@@ -29,7 +29,7 @@ import { Privacy } from '../../core/api/privacy';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
-import { STANDARD_COLOURS } from '../../core/api/geo';
+import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
 import { ProductFamilyImageVariantChange } from './product-family-gallery';
 import { ProductVariantGroup } from './product-variant-group';
@@ -1210,7 +1210,10 @@ export class ProductEditor implements OnDestroy {
 
   setProductColour(colour: string): void {
     const changed = this.normalizeColour(colour) !== this.normalizeColour(this.draft().colour);
-    this.patch({ colour, ...(changed ? { colourHex: null } : {}) });
+    /* A standard colour brings its own swatch; a hand-picked sample on the
+       same colour stays, a colour change starts from the default again. */
+    const swatch = COLOUR_SWATCHES[colour.trim()] ?? null;
+    this.patch({ colour, ...(changed ? { colourHex: swatch } : {}) });
   }
 
   emptyToNull(value: string | null | undefined): string | null {

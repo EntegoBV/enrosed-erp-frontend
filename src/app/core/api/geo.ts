@@ -148,6 +148,20 @@ export const STANDARD_COLOURS = [
 ] as const;
 
 /**
+ * Default swatch per standard colour - mirrors the backend's
+ * ColourSwatches so the sample shows the moment a colour is picked. The
+ * backend fills the same default on every write; this is feedback, not
+ * the source of truth.
+ */
+export const COLOUR_SWATCHES: Record<string, string> = {
+  Rood: '#a91f32', Roze: '#e59bb4', Fuchsia: '#c2187a', Bordeaux: '#6b1a2b',
+  Wit: '#f4f1ec', Ivoor: '#f1e9d6', Champagne: '#e8d6b3', Geel: '#f2c94c',
+  Oranje: '#ef8a2f', Groen: '#3e7d4f', Blauw: '#2f5d9e', Paars: '#6e3c9a',
+  Lila: '#b69ad6', Zwart: '#1a1614', Grijs: '#9a9a9a', Zilver: '#c0c4c9',
+  Goud: '#c9a227', Gemengd: '#d8c3c3',
+};
+
+/**
  * Standard payment terms, stored in Dutch.
  *
  * These translate automatically on quotes through the backend dictionary;
