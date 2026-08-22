@@ -66,6 +66,9 @@
 * { box-sizing: border-box; }
 
 html, body {
+  /* No double-tap zoom on iOS: a quick second tap on a button must be a
+     second tap, not a jump into the page. Pinch zoom stays possible. */
+  touch-action: manipulation;
   margin: 0;
   padding: 0;
   height: 100%;
