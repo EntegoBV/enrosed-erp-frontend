@@ -154,11 +154,11 @@ export const STANDARD_COLOURS = [
  * the source of truth.
  */
 export const COLOUR_SWATCHES: Record<string, string> = {
-  Rood: '#a91f32', Roze: '#e59bb4', Fuchsia: '#c2187a', Bordeaux: '#6b1a2b',
-  Wit: '#f4f1ec', Ivoor: '#f1e9d6', Champagne: '#e8d6b3', Geel: '#f2c94c',
-  Oranje: '#ef8a2f', Groen: '#3e7d4f', Blauw: '#2f5d9e', Paars: '#6e3c9a',
-  Lila: '#b69ad6', Zwart: '#1a1614', Grijs: '#9a9a9a', Zilver: '#c0c4c9',
-  Goud: '#c9a227', Gemengd: '#d8c3c3',
+  Rood: '#A91F32', Roze: '#E59BB4', Fuchsia: '#C2187A', Bordeaux: '#6B1A2B',
+  Wit: '#F4F1EC', Ivoor: '#F1E9D6', Champagne: '#E8D6B3', Geel: '#F2C94C',
+  Oranje: '#EF8A2F', Groen: '#3E7D4F', Blauw: '#2F5D9E', Paars: '#6E3C9A',
+  Lila: '#B69AD6', Zwart: '#1A1614', Grijs: '#9A9A9A', Zilver: '#C0C4C9',
+  Goud: '#C9A227', Gemengd: '#D8C3C3',
 };
 
 /**

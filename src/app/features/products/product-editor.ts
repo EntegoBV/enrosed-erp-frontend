@@ -141,36 +141,34 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
                 <div class="field">
                   <label for="p-colour">Kleur <span class="opt"></span></label>
+                  <!-- Compact: a dropdown with the current swatch dot in
+                       front of it. Colours typed on other products join the
+                       list; "Anders…" opens a name field. An exact sample is
+                       picked on the dot and turns the colour into a custom
+                       one on purpose - no clear button needed. -->
                   <div class="colour-control">
                     <select class="select" id="p-colour" [ngModel]="colourChoice()"
                             (ngModelChange)="pickColour($event)">
                       <option value="">Geen kleur</option>
-                      @for (option of standardColours; track option) {
+                      @for (option of standardColours(); track option) {
                         <option [value]="option">{{ option }}</option>
                       }
                       <option value="__other__">Anders…</option>
                     </select>
-                    <label class="colour-swatch-picker" title="Optionele exacte kleurstaal">
+                    <label class="colour-swatch-picker colour-dot" title="Exacte kleurstaal kiezen">
                       <input class="sr-only" type="color"
-                             [value]="pickerColour(draft().colourHex)"
+                             [value]="pickerColour(draft().colourHex || swatchFor(draft().colour || ''))"
                              (input)="setProductColourHex($event)" />
-                      @if (draft().colourHex) {
-                        <i [style.backgroundColor]="draft().colourHex" aria-hidden="true"></i>
-                        <span>{{ draft().colourHex }}</span>
-                      } @else {
-                        <span>+ Staal</span>
-                      }
+                      <i [style.backgroundColor]="draft().colour ? (draft().colourHex || swatchFor(draft().colour!)) : 'transparent'"
+                         [class.colour-dot--empty]="!draft().colour" aria-hidden="true"></i>
                     </label>
-                    @if (draft().colourHex) {
-                      <button class="btn btn--sm" type="button" title="Kleurstaal wissen"
-                              style="width:38px;padding:0"
-                              aria-label="Kleurstaal wissen" (click)="patch({ colourHex: null })">×</button>
-                    }
                   </div>
                   @if (customColour() || colourChoice() === '__other__') {
                     <input class="input mt-8" aria-label="Eigen kleur"
-                           placeholder="Eigen kleur…" [ngModel]="draft().colour"
+                           placeholder="Naam van de kleur…" [ngModel]="draft().colour"
                            (ngModelChange)="setProductColour($event)" />
+                    <span class="hint">Tik op het bolletje voor de exacte staal
+                      @if (draft().colourHex) { ({{ draft().colourHex }}) }</span>
                   }
                 </div>
                 <div class="field">
@@ -700,7 +698,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                       [attr.aria-invalid]="copyVariantConflict() ? 'true' : null"
                       aria-describedby="copy-variant-help">
                 <option value="">Geen kleur</option>
-                @for (option of standardColours; track option) {
+                @for (option of standardColours(); track option) {
                   <option [value]="option">{{ option }}</option>
                 }
                 <option value="__other__">Andere kleur invoeren…</option>
@@ -781,6 +779,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .product-load-error small { font-size: 10px; }
     .editor-canvas { width: 100%; max-width: 920px; margin: 0 auto; }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
+    .colour-control { display: flex; align-items: center; gap: 8px; }
+    .colour-control .select { flex: 1; }
+    .colour-dot { display: inline-flex; cursor: pointer; }
+    .colour-dot i {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 1px solid rgb(0 0 0 / 14%); box-shadow: inset 0 0 0 2px var(--surface);
+    }
+    .colour-dot--empty { background: repeating-linear-gradient(45deg, #eee 0 4px, #fff 4px 8px) !important; }
     .fix-item { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
     .fix-item__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
     .fix-item__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
@@ -1051,7 +1057,7 @@ export class ProductEditor implements OnDestroy {
       notes.push(`Familietekst "${field}" ontbreekt in ${langs(set)} - Website & publicatie (desktop).`);
     }
     if (!items.size && !swatch && !notes.length) return null;
-    return { family, items: [...items.values()], swatch, swatchHex: '#a91f32', notes };
+    return { family, items: [...items.values()], swatch, swatchHex: '#A91F32', notes };
   }
 
   fillAll(item: PublishFixItem, value: string): void {
@@ -1092,7 +1098,7 @@ export class ProductEditor implements OnDestroy {
           familyTexts: snapshot.familyTexts, productTexts: texts, images: snapshot.images,
         });
       }
-      if (plan.swatch) this.patch({ colourHex: plan.swatchHex });
+      if (plan.swatch) this.patch({ colourHex: plan.swatchHex.toUpperCase() });
       this.publishFix.set(null);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Invullen mislukt'), 'err');
@@ -1183,8 +1189,22 @@ export class ProductEditor implements OnDestroy {
   readonly supplier = input<string>('');
   readonly returnTo = input<string>('');
 
-  readonly standardColours = STANDARD_COLOURS;
-  /** True while a colour outside the standard list is being typed. */
+  /** Colours already in use on other products, with the swatch they carry. */
+  private readonly usedColours = signal<Map<string, string | null>>(new Map());
+
+  /**
+   * The pick-list: the standard colours, then every colour typed once on
+   * any product (Navy, Cherry Pink, …). A colour entered via "Anders…"
+   * is saved with the product and shows up here for the next one, so
+   * the list grows with the catalogue instead of forcing retyping.
+   */
+  readonly standardColours = computed<readonly string[]>(() => {
+    const extra = [...this.usedColours().keys()]
+        .filter((colour) => !(STANDARD_COLOURS as readonly string[]).includes(colour))
+        .sort((a, b) => a.localeCompare(b, 'nl'));
+    return [...STANDARD_COLOURS, ...extra];
+  });
+  /** True while a colour outside the list is being typed. */
   readonly customColour = signal(false);
 
   /** What the select should show for the current draft colour. */
@@ -1192,27 +1212,30 @@ export class ProductEditor implements OnDestroy {
     if (this.customColour()) return '__other__';
     const colour = this.draft().colour ?? '';
     if (!colour) return '';
-    return (this.standardColours as readonly string[]).includes(colour) ? colour : '__other__';
+    return this.standardColours().includes(colour) ? colour : '__other__';
   }
 
   pickColour(choice: string): void {
     if (choice === '__other__') {
       const current = this.draft().colour ?? '';
-      if ((this.standardColours as readonly string[]).includes(current)) {
+      if (this.standardColours().includes(current)) {
         this.patch({ colour: '', colourHex: null });
       }
       this.customColour.set(true);
       return;
     }
     this.customColour.set(false);
-    this.setProductColour(choice);
+    /* Choosing from the list means the list's swatch - also when the name
+       was already this one but carried a hand-picked sample. */
+    const swatch = choice ? (COLOUR_SWATCHES[choice] ?? this.usedColours().get(choice) ?? null) : null;
+    this.patch({ colour: choice, colourHex: swatch });
   }
 
   setProductColour(colour: string): void {
     const changed = this.normalizeColour(colour) !== this.normalizeColour(this.draft().colour);
     /* A standard colour brings its own swatch; a hand-picked sample on the
        same colour stays, a colour change starts from the default again. */
-    const swatch = COLOUR_SWATCHES[colour.trim()] ?? null;
+    const swatch = COLOUR_SWATCHES[colour.trim()] ?? this.usedColours().get(colour.trim()) ?? null;
     this.patch({ colour, ...(changed ? { colourHex: swatch } : {}) });
   }
 
@@ -1225,7 +1248,14 @@ export class ProductEditor implements OnDestroy {
   }
 
   setProductColourHex(event: Event): void {
+    /* An exact sample on a list colour is, by definition, no longer that
+       list colour: the chip flips to "Anders" with the name kept. */
+    if (!this.customColour() && this.colourChoice() !== '__other__') this.customColour.set(true);
     this.patch({ colourHex: this.colourFromPicker(event) });
+  }
+
+  swatchFor(colour: string): string {
+    return COLOUR_SWATCHES[colour] ?? this.usedColours().get(colour) ?? '#d9d2cc';
   }
 
   readonly draft = signal<Product>(blankProduct(null, 'USD'));
@@ -1417,12 +1447,22 @@ export class ProductEditor implements OnDestroy {
   }
 
   private async loadReference(): Promise<void> {
-    const [suppliers, categories, hsCodes] = await Promise.all([
+    const [suppliers, categories, hsCodes, allProducts] = await Promise.all([
       this.sourcing.suppliers(), this.catalog.categories(), this.catalog.hsCodes(),
+      this.catalog.products().catch(() => [] as Product[]),
     ]);
     this.suppliers.set(suppliers);
     this.categories.set(categories);
     this.hsCodes.set(hsCodes);
+    const used = new Map<string, string | null>();
+    for (const product of allProducts) {
+      const colour = product.colour?.trim();
+      if (!colour) continue;
+      if (!used.has(colour) || (!used.get(colour) && product.colourHex)) {
+        used.set(colour, product.colourHex ?? null);
+      }
+    }
+    this.usedColours.set(used);
 
     if (!this.id() || this.id() === 'new') {
       const supplierId = this.supplier() ? +this.supplier() : (suppliers[0]?.id ?? null);
@@ -1886,7 +1926,7 @@ export class ProductEditor implements OnDestroy {
     this.copyColourHex.set(source.colourHex ?? null);
     this.copySize.set(source.variantSize ?? '');
     this.copyCustomColour.set(
-      !!colour && !(this.standardColours as readonly string[]).includes(colour),
+      !!colour && !this.standardColours().includes(colour),
     );
     this.copyProducts.set([]);
     this.copyVariantCheckFailed.set(false);
