@@ -2405,3 +2405,8 @@ app-product-publication-editor .conflict-list span { color: var(--muted); }
 .recent-rates__row .num { font-weight: 700; }
 
 .ftile__value--sm { font-size: 17px; }
+
+/* Horizon tile with both purchase currencies: ↓ = cheaper in euro now. */
+.hgrid__cur { display: flex; align-items: baseline; gap: 4px; }
+.hgrid__cur em { font-style: normal; font-size: 10px; font-weight: 800; color: var(--muted); width: 9px; }
+.hgrid__value--sm { font-size: 13.5px; }

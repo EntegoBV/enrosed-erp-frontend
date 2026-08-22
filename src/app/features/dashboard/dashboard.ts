@@ -206,12 +206,24 @@ interface FreightHorizon {
                             (click)="analysisMonths.set(h.months)">
                       <span class="hgrid__label">{{ h.label }}</span>
                       @if (h.pct !== null) {
-                        <span class="hgrid__value"
-                              [class.hgrid__value--good]="h.pct >= 0"
-                              [class.hgrid__value--bad]="h.pct < 0">
-                          {{ h.pct >= 0 ? '↓' : '↑' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                        <span class="hgrid__cur">
+                          <em>$</em>
+                          <span class="hgrid__value hgrid__value--sm"
+                                [class.hgrid__value--good]="h.pct >= 0"
+                                [class.hgrid__value--bad]="h.pct < 0">
+                            {{ h.pct >= 0 ? '↓' : '↑' }}{{ (h.pct < 0 ? -h.pct : h.pct) | num: 1 }}%
+                          </span>
                         </span>
-                        <span class="hgrid__word">{{ h.pct >= 0 ? 'goedkoper' : 'duurder' }}</span>
+                        @if (h.cny !== null) {
+                          <span class="hgrid__cur">
+                            <em>¥</em>
+                            <span class="hgrid__value hgrid__value--sm"
+                                  [class.hgrid__value--good]="h.cny >= 0"
+                                  [class.hgrid__value--bad]="h.cny < 0">
+                              {{ h.cny >= 0 ? '↓' : '↑' }}{{ (h.cny < 0 ? -h.cny : h.cny) | num: 1 }}%
+                            </span>
+                          </span>
+                        }
                       } @else {
                         <span class="hgrid__value hgrid__value--missing">—</span>
                         <span class="hgrid__word">geen data</span>
@@ -1070,7 +1082,7 @@ export class Dashboard {
   analysis(rates: FxSeries): {
     verdict: string; tone: string; lead: string; lines: string[];
     horizons: {
-      label: string; months: 1 | 3 | 6 | 12; pct: number | null;
+      label: string; months: 1 | 3 | 6 | 12; pct: number | null; cny: number | null;
     }[];
   } | null {
     if (rates.usd.length < 2) return null;
@@ -1085,16 +1097,21 @@ export class Dashboard {
     ];
     const latestIndex = rates.usd.length - 1;
     const latestUsd = rates.usd[latestIndex];
+    const latestCny = rates.cny[latestIndex];
+    /* We pay in euro but the EXW price is agreed in dollar OR yuan, so
+       every horizon answers the question for both currencies. */
+    const cheaper = (baseline: number | null, latest: number) =>
+        baseline !== null && Number.isFinite(baseline) && baseline > 0
+          && Number.isFinite(latest) && latest > 0
+          ? (1 - baseline / latest) * 100 : null;
     const contexts = definitions.map((definition) => {
       const index = this.baselineIndex(rates, definition.months);
-      const baselineUsd = index === null ? null : rates.usd[index];
-      const valid = baselineUsd !== null && Number.isFinite(baselineUsd) &&
-          baselineUsd > 0 && Number.isFinite(latestUsd) && latestUsd > 0;
-      /* Positive means that one dollar literally costs fewer euros now. */
-      const pct = valid ? (1 - baselineUsd! / latestUsd) * 100 : null;
-      return { ...definition, index, pct };
+      /* Positive means that one dollar (or yuan) costs fewer euros now. */
+      const pct = cheaper(index === null ? null : rates.usd[index], latestUsd);
+      const cny = cheaper(index === null ? null : rates.cny[index], latestCny);
+      return { ...definition, index, pct, cny };
     });
-    const horizons = contexts.map(({ label, months, pct }) => ({ label, months, pct }));
+    const horizons = contexts.map(({ label, months, pct, cny }) => ({ label, months, pct, cny }));
     const selectedMonths = this.analysisMonths();
     const selected = contexts.find((context) => context.months === selectedMonths);
     const period = this.analysisPeriod(selectedMonths);
@@ -1113,7 +1130,9 @@ export class Dashboard {
     const baselineIndex = selected.index;
     const baselineDate = this.analysisDate(rates.dates[baselineIndex]);
     const baselineUsd = rates.usd[baselineIndex];
+    const baselineCny = rates.cny[baselineIndex];
     const usdCheaperPct = selected.pct;
+    const cnyCheaperPct = selected.cny;
     const windowUsd = rates.usd.slice(baselineIndex)
         .filter((value) => Number.isFinite(value) && value > 0);
     const min = Math.min(...windowUsd);
@@ -1135,6 +1154,13 @@ export class Dashboard {
     } else {
       lines.push(`Dollar: ${nl(Math.abs(usdCheaperPct))}% ` +
           `${usdCheaperPct >= 0 ? 'goedkoper' : 'duurder'} dan ${period} geleden.`);
+    }
+
+    if (cnyCheaperPct !== null) {
+      lines.push(Math.abs(cnyCheaperPct) < 0.05
+          ? `Yuan: minder dan 0,1% prijsverschil tegenover ${period} geleden.`
+          : `Yuan: ${nl(Math.abs(cnyCheaperPct))}% ` +
+            `${cnyCheaperPct >= 0 ? 'goedkoper' : 'duurder'} dan ${period} geleden.`);
     }
 
     if (rangePos >= 0.85) {
@@ -1169,6 +1195,18 @@ export class Dashboard {
           `€ ${roundedSaving.toLocaleString('nl-BE')} meer.`);
     }
 
+    if (cnyCheaperPct !== null && Number.isFinite(baselineCny) && baselineCny > 0) {
+      const perTenKCny = 10000 / baselineCny - 10000 / latestCny;
+      const rounded = Math.round(Math.abs(perTenKCny));
+      if (rounded >= 1) {
+        lines.push(perTenKCny > 0
+            ? `Per ¥10.000 aan inkoop bespaar je tegenover ${period} geleden ongeveer ` +
+              `€ ${rounded.toLocaleString('nl-BE')}.`
+            : `Per ¥10.000 aan inkoop betaal je tegenover ${period} geleden ongeveer ` +
+              `€ ${rounded.toLocaleString('nl-BE')} meer.`);
+      }
+    }
+
     /* Freight from the WCI log, when the scraper or the owner fed it. */
     const wci = this.seriesFor('WCI SHA-RTM');
     if (wci.length > 1) {
@@ -1185,18 +1223,31 @@ export class Dashboard {
     let verdict: string;
     let tone: string;
     let lead: string;
-    if (usdCheaperPct >= 0.5) {
+    const word = (pct: number) => pct >= 0 ? 'goedkoper' : 'duurder';
+    const usdUp = usdCheaperPct >= 0.5;
+    const usdDown = usdCheaperPct <= -0.5;
+    const cnyUp = cnyCheaperPct !== null && cnyCheaperPct >= 0.5;
+    const cnyDown = cnyCheaperPct !== null && cnyCheaperPct <= -0.5;
+    const both = cnyCheaperPct === null
+        ? `Een dollar kost nu ${nl(Math.abs(usdCheaperPct))}% ${word(usdCheaperPct)}`
+        : `Dollar ${nl(Math.abs(usdCheaperPct))}% ${word(usdCheaperPct)}, ` +
+          `yuan ${nl(Math.abs(cnyCheaperPct))}% ${word(cnyCheaperPct)}`;
+    if ((usdUp && (cnyUp || cnyCheaperPct === null)) || (cnyUp && !usdDown && Math.abs(usdCheaperPct) < 0.5)) {
       verdict = 'Goedkoper dan toen';
       tone = 'ok';
-      lead = `Een dollar kost nu ${nl(usdCheaperPct)}% minder euro dan op ${baselineDate}.`;
-    } else if (usdCheaperPct <= -0.5) {
+      lead = `${both} dan op ${baselineDate}.`;
+    } else if ((usdDown && (cnyDown || cnyCheaperPct === null)) || (cnyDown && !usdUp && Math.abs(usdCheaperPct) < 0.5)) {
       verdict = 'Duurder dan toen';
       tone = 'warn';
-      lead = `Een dollar kost nu ${nl(Math.abs(usdCheaperPct))}% meer euro dan op ${baselineDate}.`;
+      lead = `${both} dan op ${baselineDate}.`;
+    } else if ((usdUp && cnyDown) || (usdDown && cnyUp)) {
+      verdict = 'Gemengd';
+      tone = 'neutral';
+      lead = `${both} dan op ${baselineDate} — kies per leverancier de munt die nu gunstig staat.`;
     } else {
       verdict = 'Vrijwel gelijk';
       tone = 'neutral';
-      lead = `De dollarkosten liggen dicht bij het niveau van ${baselineDate}.`;
+      lead = `Dollar en yuan liggen dicht bij het niveau van ${baselineDate}.`;
     }
     return { verdict, tone, lead, lines, horizons };
   }
