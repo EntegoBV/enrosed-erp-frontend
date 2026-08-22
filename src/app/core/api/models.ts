@@ -31,6 +31,8 @@ export type PackagingKind = 'NONE' | 'GIFT_BOX' | 'DISPLAY';
 export interface Packaging {
   kind: PackagingKind;
   dimensions: Dimensions;
+  /** EAN on the gift box or display itself, when it is scanned apart from the article. */
+  barcode: string | null;
 }
 
 export interface CartonDto {

@@ -32,7 +32,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null },
-    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null } },
+    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null }, barcode: null },
     colour: null, colourHex: null, variantSize: null,
     description: null, categoryId: null, supplierId, active: true,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -290,6 +290,15 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 </label>
               </div>
               <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat.</p>
+              <div class="field mt-8">
+                <label for="p-packaging-barcode">Barcode op de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }} <span class="opt"></span></label>
+                <input class="input mono" id="p-packaging-barcode" inputmode="numeric"
+                       [ngModel]="draft().packaging.barcode" placeholder="EAN-13"
+                       (ngModelChange)="patchPackaging({ barcode: $event }); check($event, 'packaging')" />
+                @if (packagingCheck(); as result) {
+                  <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
+                }
+              </div>
             }
           </fieldset>
 
@@ -1332,6 +1341,7 @@ export class ProductEditor implements OnDestroy {
   readonly copyVariantCheckFailed = signal(false);
   readonly innerCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly outerCheck = signal<{ valid: boolean; message: string } | null>(null);
+  readonly packagingCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly photoManager = viewChild(PhotoManager);
   readonly photoUploading = computed(() => this.photoManager()?.busy() ?? false);
   readonly photoCount = computed(() =>
@@ -1596,7 +1606,8 @@ export class ProductEditor implements OnDestroy {
 
   /** Products loaded from an older API answer may not carry packaging yet. */
   private packagingOf(product: Product): Product['packaging'] {
-    return product.packaging ?? { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null } };
+    return product.packaging
+      ?? { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null }, barcode: null };
   }
 
   patchCarton(changes: Partial<Product['carton']>): void {
@@ -1942,11 +1953,16 @@ export class ProductEditor implements OnDestroy {
     }
   }
 
-  /** Lets the server verify the check digit — one place where that rule lives. */
-  async check(value: string, which: 'inner' | 'outer'): Promise<void> {
-    const target = which === 'inner' ? this.innerCheck : this.outerCheck;
+  /**
+   * Lets the server verify the check digit and whether the code is still
+   * free - one place where those rules live. A taken code names the
+   * product and level it sits on.
+   */
+  async check(value: string, which: 'inner' | 'outer' | 'packaging'): Promise<void> {
+    const target = which === 'inner' ? this.innerCheck
+      : which === 'outer' ? this.outerCheck : this.packagingCheck;
     if (!value) { target.set(null); return; }
-    target.set(await this.catalog.checkBarcode(value));
+    target.set(await this.catalog.checkBarcode(value, this.draft().id));
   }
 
   copyColourChoice(): string {

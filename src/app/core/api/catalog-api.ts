@@ -191,10 +191,13 @@ export class CatalogApi {
       api(`/api/products/${productId}/public-translations`), request));
   }
 
-  checkBarcode(value: string): Promise<{ valid: boolean; message: string }> {
+  /** Check digit plus uniqueness; the product being edited may keep its own codes. */
+  checkBarcode(value: string, excludeProductId: number | null = null): Promise<{ valid: boolean; message: string }> {
+    const params: Record<string, string> = { value };
+    if (excludeProductId !== null) params['excludeProductId'] = String(excludeProductId);
     return firstValueFrom(
       this.http.get<{ valid: boolean; message: string }>(
-        api('/api/products/barcode-check'), { params: { value } }));
+        api('/api/products/barcode-check'), { params }));
   }
 
   /* -------------------------------------------------------------- fotos */
