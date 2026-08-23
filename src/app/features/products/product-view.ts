@@ -141,7 +141,7 @@ interface GalleryPointer {
                      figure came from, without leaving the page. -->
                 <button class="stock-tile" type="button" [class.stock-tile--open]="stockOpen()"
                         [attr.aria-expanded]="stockOpen()" (click)="toggleStock()">
-                  <span>Voorraad <i class="stock-tile__chev hide-desktop" aria-hidden="true"></i></span>
+                  <span>Voorraad <i class="stock-tile__chev" aria-hidden="true"></i></span>
                   @if (stockLevels(); as levels) {
                     <strong class="num" [class.warn-text]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
                     <small>{{ stockSummary() }}@if (expected(); as exp) { <a class="expected expected--line" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
@@ -157,16 +157,19 @@ interface GalleryPointer {
                 </button>
               </div>
 
-              <!-- Desktop: the build-up unfolds right under the price it explains. -->
+              <!-- Desktop: the build-up or the stock book unfolds right under
+                   the tile it explains; closed, the hero stays one screen. -->
               @if (priceOpen() && desktop.active()) {
                 <ng-container *ngTemplateOutlet="priceBuildTpl" />
+              }
+              @if (stockOpen() && desktop.active()) {
+                <div class="stock-rows stock-rows--fold" aria-label="Voorraad per locatie">
+                  <ng-container *ngTemplateOutlet="stockRowsTpl" />
+                </div>
               }
 
               <!-- Where it lies and what happened lately: plain rows, the way
                    the catalogue list reads, no box to open first. -->
-              <div class="stock-rows hide-mobile" aria-label="Voorraad per locatie">
-                <ng-container *ngTemplateOutlet="stockRowsTpl" />
-              </div>
               <ng-template #stockRowsTpl>
                 @if (stockLevels(); as levels) {
                   @for (level of levels; track level.locationId) {
@@ -661,9 +664,13 @@ interface GalleryPointer {
     .detail-list__emphasis dt, .detail-list__emphasis dd { color: var(--ink); font-weight: 750; }
 
     @media (min-width: 680px) {
-      .product-hero { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); }
-      .gallery { padding: 16px; }
-      .hero-summary { display: flex; flex-direction: column; justify-content: center; padding: 24px; }
+      /* The photo is a fixed, modest column that keeps its own height; the
+         summary beside it decides nothing about its size any more. */
+      .product-hero { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
+      .gallery { padding: 16px; align-self: start; }
+      .gallery__stage { aspect-ratio: 1; }
+      .hero-summary { display: flex; flex-direction: column; justify-content: flex-start; padding: 20px 24px; }
+      .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     }
     @media (prefers-reduced-motion: reduce) {
