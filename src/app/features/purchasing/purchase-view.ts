@@ -468,7 +468,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 
     @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}}
     @media(min-width: 680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
-    @media(min-width: 680px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.72fr);gap:16px}.view-sidebar{margin-top:0}}
+    @media(min-width:1000px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.72fr);gap:16px;align-items:start}.view-sidebar{margin-top:0;position:sticky;top:calc(var(--appbar-h) + 12px);max-height:calc(100vh - var(--appbar-h) - 24px);overflow-y:auto;overscroll-behavior:contain}}
   `],
 })
 export class PurchaseView {

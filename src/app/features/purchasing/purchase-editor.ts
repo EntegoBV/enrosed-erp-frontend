@@ -932,7 +932,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
     @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(3,1fr)}.line-breakdown summary{display:flex}.line-breakdown__value{padding-top:0}}
     @media(min-width: 680px){:is(.section-toggle,.section-heading){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px 18px}.order-fields{grid-template-columns:repeat(6,minmax(0,1fr))}.order-fields>.field{grid-column:span 3}.order-fields>.order-route-field{grid-column:span 2}.order-fields>.span-2{grid-column:1/-1}}
-    @media(min-width: 680px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.7fr);gap:16px}.purchase-summary{margin-top:0}}
+    @media(min-width:1000px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.7fr);gap:16px;align-items:start}.purchase-summary{margin-top:0;position:sticky;top:calc(var(--appbar-h) + 12px);max-height:calc(100vh - var(--appbar-h) - 24px);overflow-y:auto;overscroll-behavior:contain}}
   `]
 })
 export class PurchaseEditor {
