@@ -685,6 +685,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 }
 
                 @if (privacy.showPurchase()) {
+                  <!-- DDP: the sum below already ends on the landed total; this box
+                       would only repeat it. -->
+                  @if (!isDdp()) {
                   <div class="cost-hero">
                     <!-- What the road adds on top of the goods - the figure a
                          buyer negotiates on; an average per piece over mixed
@@ -704,11 +707,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       </div>
                     </div>
                     }
-                    <div class="cost-hero__unit" [class.cost-hero__unit--alone]="isDdp()">
+                    <div class="cost-hero__unit">
                       <div class="cost-hero__label">Totaal geland</div>
                       <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
                     </div>
                   </div>
+                  }
 
                   <div class="cost-summary">
                     <div class="cost-summary__group">

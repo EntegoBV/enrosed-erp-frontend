@@ -311,6 +311,9 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                 </div>
 
                 <div class="cost-card__body">
+                  <!-- DDP: the sum below already ends on the landed total; this box
+                       would only repeat it. -->
+                  @if (!isDdp()) {
                   <div class="cost-hero">
                     <!-- What the road adds on top of the goods - the figure a
                          buyer negotiates on; an average per piece over mixed
@@ -330,11 +333,12 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                       </div>
                     </div>
                     }
-                    <div class="cost-hero__unit" [class.cost-hero__unit--alone]="isDdp()">
+                    <div class="cost-hero__unit">
                       <div class="cost-hero__label">Totaal geland</div>
                       <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
                     </div>
                   </div>
+                  }
 
                   <div class="cost-stage">
                     <span class="cost-stage__label">{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</span>
