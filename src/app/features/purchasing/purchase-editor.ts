@@ -360,7 +360,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                             </select>
                           </div>
                           @if ((orderLine(line.productId)?.priceBasis ?? 'EXW') === 'DDP') {
-                            <span class="hint">Geleverd incl. rechten: transport, lokale kosten en invoerrechten zitten al in deze prijs en worden niet bijgerekend.</span>
+                            <span class="hint">Geleverd incl. rechten: transport, lokale kosten en invoerrechten zitten al in de prijs. Geldt voor de hele container.</span>
                           } @else {
                             <span class="hint">Af fabriek: transport, lokale kosten en invoerrechten komen er in de calculatie bij. Leeg gebruikt de actuele prijs van het product.</span>
                           }
@@ -471,7 +471,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                   <span class="section-step" aria-hidden="true">3</span>
                   <span class="section-title-block">
                     <span class="section-kicker">Doorrekenen</span>
-                    <span class="section-name">Transport, invoer &amp; koers</span>
+                    <span class="section-name">{{ isDdp() ? 'DDP & koers' : 'Transport, invoer & koers' }}</span>
                     @if (!sectionOpen('costs')) {
                       <span class="section-summary">{{ costsSummary() }}</span>
                     }
@@ -516,11 +516,12 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                       <div class="cost-group__intro">
                         <div>
                           <span class="cost-group__step">B</span>
-                          <h3 id="route-costs-title">Van fabriek tot magazijn</h3>
+                          <h3 id="route-costs-title">{{ isDdp() ? 'Geleverd incl. rechten' : 'Van fabriek tot magazijn' }}</h3>
                         </div>
-                        <p>Kosten vóór de EU-grens tellen mee in de douanewaarde.</p>
+                        <p>{{ isDdp() ? 'De afgesproken prijzen zijn DDP: transport, lokale kosten en invoerrechten zitten erin en worden niet bijgerekend.' : 'Kosten vóór de EU-grens tellen mee in de douanewaarde.' }}</p>
                       </div>
                       <div class="form-grid">
+                        @if (!isDdp()) {
                         <div class="field">
                           <label class="req" for="c-freight">{{ costLabels().seaFreightLabel }}</label>
                           <div class="input-affix">
@@ -573,6 +574,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                             <span class="input-affix__suffix">%</span>
                           </div>
                         </div>
+                        }
                         <div class="field span-2">
                           <label for="c-extra">Enrosed kost <span class="opt"></span></label>
                           <div class="input-affix">
@@ -693,13 +695,14 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 
                   <div class="cost-summary">
                     <div class="cost-summary__group">
-                      <span class="cost-section">1 · Tot de EU-grens</span>
+                      <span class="cost-section">{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</span>
                       <div class="stat-row">
-                        <span>Goederen
-                          <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small>
+                        <span>{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}
+                          <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</small>
                         </span>
                         <span class="num">{{ data.costing.totals.goodsEur | eur }}</span>
                       </div>
+                      @if (!isDdp()) {
                       @if (data.costing.totals.originEur) {
                         <div class="stat-row">
                           <span>{{ costLabels().originCostsLabel }}
@@ -718,10 +721,12 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                         <span>Douanewaarde</span>
                         <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span>
                       </div>
+                      }
                     </div>
 
                     <div class="cost-summary__group">
-                      <span class="cost-section">2 · Invoer &amp; aankomst</span>
+                      <span class="cost-section">{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</span>
+                      @if (!isDdp()) {
                       <div class="stat-row">
                         <span>Invoerrechten
                           <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
@@ -732,6 +737,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                         <span>{{ costLabels().destinationCostsLabel }}</span>
                         <span class="num">{{ data.costing.totals.destinationEur | eur }}</span>
                       </div>
+                      }
                       @if (data.costing.totals.extraRevenueEur) {
                         <div class="stat-row">
                           <span>Enrosed kost</span>
@@ -933,6 +939,7 @@ export class PurchaseEditor {
   costsSummary(): string {
     const data = this.view();
     if (!data) return '';
+    if (this.isDdp()) return `1 USD = ${effectiveUsdToEur(data.order)} EUR · DDP, transport en rechten inbegrepen`;
     return `1 USD = ${effectiveUsdToEur(data.order)} EUR · vracht $${data.order.freightUsd}`;
   }
 
@@ -1112,6 +1119,9 @@ export class PurchaseEditor {
 
   readonly allocationKeys = computed(() => {
     const labels = this.costLabels();
+    const extra = { field: 'allocExtra' as const, label: 'Enrosed kost',
+      route: 'Commerciële opslag per verdeelsleutel' };
+    if (this.isDdp()) return [extra];
     return [
       { field: 'allocFreight' as const, label: labels.seaFreightLabel,
         route: labels.seaFreightRoute },
@@ -1119,8 +1129,7 @@ export class PurchaseEditor {
         route: labels.originRoute },
       { field: 'allocDestination' as const, label: labels.destinationCostsLabel,
         route: '' },
-      { field: 'allocExtra' as const, label: 'Enrosed kost',
-        route: 'Commerciële opslag per verdeelsleutel' },
+      extra,
     ];
   });
 
@@ -1280,9 +1289,21 @@ export class PurchaseEditor {
     this.setLine(productId, { exwCurrency: currency });
   }
 
+  /**
+   * DDP is how a supplier quotes a whole container, not one line: choosing
+   * it on any line sets every line, and the transport section steps aside.
+   */
   setPriceBasis(productId: number, basis: 'EXW' | 'DDP'): void {
-    this.setLine(productId, { priceBasis: basis });
+    this.enqueue((order) => ({
+      ...order,
+      lines: order.lines.map((line) => ({ ...line, priceBasis: basis })),
+    }));
   }
+
+  readonly isDdp = computed(() => {
+    const lines = this.view()?.order.lines ?? [];
+    return lines.length > 0 && lines.every((line) => (line.priceBasis ?? 'EXW') === 'DDP');
+  });
 
   private setLine(productId: number, patch: Partial<PurchaseOrderLine>): void {
     this.enqueue((order) => ({

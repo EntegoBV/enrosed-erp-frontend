@@ -323,10 +323,11 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                   </div>
 
                   <div class="cost-stage">
-                    <span class="cost-stage__label">1 · Tot de EU-grens</span>
-                    <div class="stat-row"><span>Goederen
-                      <small>{{ data.costing.totals.goodsUsd | num: 2 }} USD</small>
+                    <span class="cost-stage__label">{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</span>
+                    <div class="stat-row"><span>{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}
+                      <small>{{ data.costing.totals.goodsUsd | num: 2 }} USD{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</small>
                     </span><span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
+                    @if (!isDdp()) {
                     @if (data.costing.totals.originEur) {
                       <div class="stat-row"><span>{{ costLabels().originCostsLabel }}
                         <small>{{ costLabels().originRoute }}</small>
@@ -339,15 +340,18 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                       <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
                     <div class="stat-row cost-stage__subtotal"><span>Douanewaarde</span>
                       <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
+                    }
                   </div>
 
                   <div class="cost-stage">
-                    <span class="cost-stage__label">2 · Invoer &amp; aankomst</span>
+                    <span class="cost-stage__label">{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</span>
+                    @if (!isDdp()) {
                     <div class="stat-row"><span>Invoerrechten
                       <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
                     </span><span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
                     <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
                       <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
+                    }
                     @if (data.costing.totals.extraRevenueEur) {
                       <div class="stat-row"><span>Enrosed kost</span>
                         <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
@@ -503,6 +507,12 @@ export class PurchaseView {
   amt(value: number, line: { quantity: number }): number {
     return this.perPiece() && line.quantity > 0 ? value / line.quantity : value;
   }
+
+  /** Every line priced delivered duty paid: the road and the customs are in the price. */
+  readonly isDdp = computed(() => {
+    const lines = this.view()?.order.lines ?? [];
+    return lines.length > 0 && lines.every((line) => (line.priceBasis ?? 'EXW') === 'DDP');
+  });
 
   /** Transport, duty, handling and Enrosed kost as a share of the goods. */
   overheadPct(totals: { totalEur: number; goodsEur: number }): number {
