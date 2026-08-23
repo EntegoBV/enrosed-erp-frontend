@@ -821,6 +821,9 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
 }
 .meter__fill--ok { background: var(--ok); }
 .meter__fill--warn { background: var(--warn); }
+/* A well-filled container is the goal: from 97 % the bar turns green. */
+.meter__fill--full { background: var(--ok); }
+.fill-pct--full { color: var(--ok); }
 .meter__labels {
   display: flex;
   justify-content: space-between;

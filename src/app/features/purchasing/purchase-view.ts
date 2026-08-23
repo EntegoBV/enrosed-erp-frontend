@@ -9,7 +9,9 @@ import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
-import { Product, PurchaseOrderView, Supplier } from '../../core/api/models';
+import {
+  Product, PurchaseOrderView, Supplier, StockLocation,
+} from '../../core/api/models';
 import { containerLabel } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
@@ -121,6 +123,18 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
               <span>Volume</span>
               <strong>{{ data.costing.totals.cbm | cbm }}</strong>
             </div>
+            <div class="overview-fact">
+              <span>Lossen op</span>
+              <strong>{{ receivingLocationName(data.order.receivingLocationId) }}</strong>
+            </div>
+            <div class="overview-fact overview-fact--total">
+              <span>Totaal geland</span>
+              @if (showMoney()) {
+                <strong>{{ data.costing.totals.totalEur | eur }}</strong>
+              } @else {
+                <strong class="muted">—</strong>
+              }
+            </div>
           </div>
         </section>
 
@@ -133,7 +147,8 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                 <p>{{ fill.containerCode }} · {{ fill.usedCbm | cbm }} van {{ fill.capacityCbm | cbm }}</p>
               </div>
               <strong class="capacity-card__percentage"
-                      [class.capacity-card__percentage--over]="fill.overflowCbm > 0">
+                      [class.capacity-card__percentage--over]="fill.overflowCbm > 0"
+                      [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">
                 {{ fill.fillPercent | pct: 0 }}
               </strong>
             </div>
@@ -141,6 +156,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                  aria-label="Containervulling" aria-valuemin="0" aria-valuemax="100"
                  [attr.aria-valuenow]="fill.fillPercent">
               <div class="meter__fill" [class.meter__fill--warn]="fill.overflowCbm > 0"
+                   [class.meter__fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
                    [style.width.%]="fillWidth(fill.fillPercent)"></div>
             </div>
             <div class="capacity-card__footer">
@@ -446,6 +462,8 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
     .route-stop span:last-child{display:flex;min-width:0;flex-direction:column}.route-stop small{color:var(--muted);font-size:9px;text-transform:uppercase}.route-stop strong{overflow:hidden;max-width:116px;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
     .route-strip__line{height:1px;min-width:18px;flex:1;background:linear-gradient(90deg,var(--rose-line),var(--rose))}
     .journey-stepper{margin:0 0 15px}.overview-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
+    .overview-fact--total strong{color:var(--rose-dark)}
+    .capacity-card__percentage.fill-pct--full{color:var(--ok)}
     .overview-fact{min-width:0;padding:9px 10px;background:var(--surface)}.overview-fact span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.overview-fact strong{display:block;overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 
     .capacity-card{margin-bottom:12px;padding:14px;overflow:hidden}.capacity-card__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.capacity-card h2{font-size:16px}.capacity-card__top p{color:var(--muted);font-size:11px}.capacity-card__percentage{color:var(--rose);font-size:25px;line-height:1}.capacity-card__percentage--over{color:var(--danger)}
@@ -471,7 +489,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
     .safe-card{display:flex;align-items:flex-start;gap:10px;padding:14px}.safe-card__icon{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:760}.safe-card h2{font-size:14px}.safe-card p{color:var(--muted);font-size:11px}
     .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
 
-    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(4,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}}
+    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}}
     @media(min-width:700px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
     @media(min-width:1000px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.72fr);gap:16px}.view-sidebar{margin-top:0}}
   `],
@@ -511,9 +529,17 @@ export class PurchaseView {
     void this.load(id);
   }
 
+  readonly stockLocations = signal<StockLocation[]>([]);
+  receivingLocationName(id: number | null | undefined): string {
+    const locations = this.stockLocations();
+    const main = locations.find((location) => location.code === 'MAIN') ?? locations[0];
+    return locations.find((location) => location.id === (id ?? main?.id))?.name ?? 'Magazijn';
+  }
+
   private async load(id: number): Promise<void> {
     const [view, products, suppliers] = await Promise.all([
       this.sourcing.purchaseOrder(id), this.catalog.products(), this.sourcing.suppliers()]);
+    this.catalog.stockLocations().then((locations) => this.stockLocations.set(locations)).catch(() => undefined);
     this.view.set(view);
     this.products.set(products);
     this.suppliers.set(suppliers);

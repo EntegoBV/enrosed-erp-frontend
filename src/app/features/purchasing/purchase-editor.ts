@@ -132,7 +132,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
             <div class="po-fact">
               <span class="po-fact__label">Lading</span>
               @if (data.costing.containerFill; as fill) {
-                <strong>{{ fill.fillPercent | num: 0 }}% · {{ data.costing.totals.pieces | num }} st</strong>
+                <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | num: 0 }}% · {{ data.costing.totals.pieces | num }} st</strong>
               } @else {
                 <strong>{{ data.costing.totals.pieces | num }} st</strong>
               }
@@ -631,7 +631,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                       <span class="fill-overview__label">
                         {{ containerLabel(data.order.containerType) }}
                       </span>
-                      <strong>{{ fill.fillPercent | num: 0 }}%</strong>
+                      <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | num: 0 }}%</strong>
                     </div>
                     <span>{{ fill.usedCbm | cbm }} van {{ fill.capacityCbm }} m³</span>
                   </div>
@@ -640,7 +640,8 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                        aria-valuemin="0" aria-valuemax="100"
                        [attr.aria-valuenow]="fill.fillPercent">
                     <div class="meter__fill"
-                         [class.meter__fill--warn]="fill.fillPercent > 97"
+                         [class.meter__fill--warn]="fill.overflowCbm > 0"
+                         [class.meter__fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
                          [style.width.%]="fill.fillPercent"></div>
                   </div>
                   @if (fill.overflowCbm > 0) {
@@ -840,6 +841,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
     .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok)}.overview-stepper{margin:16px 0}
     .po-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
     .po-fact--total strong{color:var(--rose-dark)}
+    .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}
     .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
