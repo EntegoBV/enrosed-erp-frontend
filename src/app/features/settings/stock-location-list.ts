@@ -17,21 +17,20 @@ import { Sheet, Ui } from '../../shared/ui';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader, Sheet],
   template: `
-    <app-page-header title="Voorraadlocaties" subtitle="Waar je voorraad ligt en verkoopt">
+    <app-page-header [showBack]="true" backTo="/more" title="Voorraadlocaties" subtitle="Waar je voorraad ligt en verkoopt">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
         + Locatie
       </button>
     </app-page-header>
 
     <div class="content">
-      <div class="alert alert--info">
-        <span class="alert__icon">ℹ</span>
-        <div>
-          Website, portaal en offertes tellen alleen de voorraad van locaties die <b>ter beschikking staan voor alle
-          verkoopkanalen</b> (normaal: het magazijn). Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die
-          daar ter plaatse verkocht wordt.
+      <details class="explainer">
+        <summary>Welke voorraad telt waar?</summary>
+        <div class="explainer__body">
+          <p>Website, portaal en offertes tellen alleen de voorraad van locaties die <b>ter beschikking staan voor alle verkoopkanalen</b> - normaal het magazijn.</p>
+          <p>Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die daar ter plaatse verkocht wordt; die telt niet mee voor de website. Verplaatsen tussen locaties doe je onder Voorraad.</p>
         </div>
-      </div>
+      </details>
 
       <div class="card mt-12"><div class="list">
         @for (location of locations(); track location.id) {

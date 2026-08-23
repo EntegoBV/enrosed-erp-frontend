@@ -263,6 +263,14 @@ a { color: var(--rose); }
 .tabbar__item.active { color: var(--rose); }
 .tabbar__item.active .tabbar__icon { transform: translateY(-1px); }
 .tabbar__item .tabbar__icon { transition: transform 0.15s ease; }
+/* The active tab sits on a soft pill of its own colour, the way the iOS 26
+   tab bar marks where you are without a hard underline. */
+.tabbar__item { position: relative; }
+.tabbar__item::before { content: ''; position: absolute; inset: 6px 4px; border-radius: 14px;
+  background: color-mix(in srgb, var(--rose) 12%, transparent); opacity: 0; transform: scale(.85);
+  transition: opacity .18s ease, transform .18s ease; }
+.tabbar__item.active::before { opacity: 1; transform: none; }
+.tabbar__item > * { position: relative; }
 
 /* --- zijbalk (desktop) --- */
 .sidebar { display: none; }
@@ -546,7 +554,7 @@ a { color: var(--rose); }
   border: 0;
   font-size: 15px;
   font-weight: 650;
-  box-shadow: 0 6px 20px rgb(176 31 63 / 35%);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--rose) 38%, transparent);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1232,6 +1240,31 @@ table.data tfoot td {
 }
 .stepper__line--done { background: var(--ok); }
 
+/* On a phone the steps stand side by side in equal columns with the label
+   under the dot: the inline form wrapped the last step onto its own line. */
+@media (max-width: 679px) {
+  .stepper { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr auto; align-items: start; gap: 0; }
+  .stepper__step { flex-direction: column; justify-items: center; text-align: center; gap: 5px; min-width: 0; }
+  .stepper__label { font-size: 11px; line-height: 1.15; }
+  .stepper__line { align-self: start; margin-top: 10px; min-width: 8px; margin-inline: -10px; }
+}
+
+/* A short "how does this work" that folds away: the explanation is there for
+   whoever needs it and takes one line from everyone else. */
+.explainer { margin: 0 0 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.explainer summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; color: var(--ink-2);
+  font-size: 13px; font-weight: 650; cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent; }
+.explainer summary::-webkit-details-marker { display: none; }
+.explainer summary::before { content: 'i'; display: inline-grid; place-items: center; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--rose-soft); color: var(--rose-dark); font-size: 11px; font-weight: 800;
+  font-style: italic; font-family: Georgia, serif; flex: none; }
+.explainer summary::after { content: ''; width: 7px; height: 7px; margin-left: auto; border-right: 1.6px solid var(--muted);
+  border-bottom: 1.6px solid var(--muted); transform: rotate(45deg); transition: transform .15s ease; }
+.explainer[open] summary::after { transform: rotate(-135deg); }
+.explainer__body { padding: 0 12px 12px 38px; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
+.explainer__body p { margin: 0 0 6px; }
+.explainer__body p:last-child { margin-bottom: 0; }
+
 /* Counter dot on the Verkoop tab and in the sidebar. */
 .tabbar__icon { position: relative; display: inline-block; }
 .tabbar__count {
@@ -1518,8 +1551,11 @@ table.data tfoot td {
   position: absolute; right: -14px; bottom: -18px;
   width: 110px; height: 110px; opacity: 0.14; pointer-events: none;
 }
+/* The hero tile wears the accent colour, whichever palette is chosen. */
 .kpi--dark { position: relative; overflow: hidden;
-  background: linear-gradient(135deg, #241a17 0%, #3a2024 55%, #4d222c 100%); }
+  background: linear-gradient(135deg, var(--rose-dark) 0%, var(--rose) 70%, var(--rose-mid) 100%);
+  border-color: var(--rose-dark); }
+.kpi--dark .kpi__label, .kpi--dark .kpi__meta { color: rgb(255 255 255 / 72%); }
 
 /* KPI tiles double as links; keep them reading as tiles. */
 a.kpi { text-decoration: none; color: inherit; display: block; }

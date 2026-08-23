@@ -43,7 +43,7 @@ interface StockGroup {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet],
   template: `
-    <app-page-header title="Voorraad" [subtitle]="subtitle()">
+    <app-page-header [showBack]="true" backTo="/more" title="Voorraad" [subtitle]="subtitle()">
       @if (!counting()) {
         <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="startCount()">Telling</button>
       }

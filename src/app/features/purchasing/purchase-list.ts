@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -28,17 +28,29 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     </app-page-header>
 
     <div class="content">
-      <div class="alert alert--info">
-        <span class="alert__icon">ℹ</span>
-        <div>
-          Inkoop gaat per container. Hier wordt de <b>kostprijs per stuk</b> berekend: EXW in
-          USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de
-          kosten vanaf de aankomsthaven.
+      <!-- The explanation folds away: one line for whoever knows the drill. -->
+      <details class="explainer">
+        <summary>Hoe werkt inkoop?</summary>
+        <div class="explainer__body">
+          <p>Inkoop gaat per container. Per calculatie wordt de <b>kostprijs per stuk</b> berekend: de afgesproken prijs in USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de kosten vanaf de aankomsthaven.</p>
+          <p>Een order loopt van <b>Concept</b> (rekenen) naar <b>Besteld</b> (vastgelegd bij de leverancier), <b>Vertrokken</b> (op de boot) en <b>Ontvangen</b> (geteld en in voorraad). Het oranje bolletje zegt wat er nog van jou nodig is.</p>
         </div>
+      </details>
+
+      <!-- One tap narrows the list to a stage: "what is on the water" is
+           the question you come here with. -->
+      <div class="chip-rail" role="tablist" aria-label="Filter op status">
+        @for (option of statusOptions; track option.key) {
+          <button class="chip" type="button" role="tab" [class.chip--on]="statusFilter() === option.key"
+                  [attr.aria-selected]="statusFilter() === option.key" (click)="statusFilter.set(option.key)">
+            {{ option.label }}
+            @if (countFor(option.key); as n) { <small>{{ n }}</small> }
+          </button>
+        }
       </div>
 
       <div class="card mt-12"><div class="list">
-        @for (row of orders(); track row.order.id) {
+        @for (row of filtered(); track row.order.id) {
           <!-- iOS pattern: swipe the row left to reveal delete - no need to
                open a calculation just to get rid of it. -->
           <div class="swipe swipe--desktop-action"
@@ -49,20 +61,15 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                (touchend)="swipeEnd()"
                (click)="blockWhenSwiped($event)">
             <div class="list-item__body">
-              <div class="list-item__title">
-                @if (row.order.alias) {
-                  {{ row.order.alias }}
-                  <span class="muted small">· {{ row.order.number }}</span>
-                } @else {
-                  {{ row.order.number }} — {{ supplierName(row.order.supplierId) }}
-                }
-              </div>
-              <!-- A nickname says which container; the supplier still says whose. -->
-              @if (row.order.alias) {
-                <div class="list-item__meta">{{ supplierName(row.order.supplierId) }}</div>
-              }
+              <!-- The nickname or the supplier leads; the number is the small
+                   print. A phone has no room for both on one line. -->
+              <div class="list-item__title">{{ row.order.alias || supplierName(row.order.supplierId) }}</div>
               <div class="list-item__meta">
-                {{ row.order.orderDate | dateNl }} · {{ containerLabel(row.order.containerType) }} ·
+                <b class="po-row__number">{{ row.order.number }}</b>@if (row.order.alias) { · {{ supplierName(row.order.supplierId) }}}
+                · {{ row.order.orderDate | dateNl }}
+              </div>
+              <div class="list-item__meta hide-mobile">
+                {{ containerLabel(row.order.containerType) }} ·
                 {{ row.costing.totals.cartons | num }} kartons ·
                 {{ row.costing.totals.cbm | cbm }}
               </div>
@@ -162,6 +169,15 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     }
   `,
   styles: [`
+    .po-row__number { color: var(--ink-2); font-weight: 650; }
+    .chip-rail { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .chip-rail::-webkit-scrollbar { display: none; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; flex: none; min-height: 34px; padding: 0 12px;
+      border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
+      font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .chip small { color: var(--muted); font-size: 11px; font-weight: 650; }
+    .chip--on { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+    .chip--on small { color: var(--rose-dark); }
     .list-item__status { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
     .attention-dot { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
       border-radius: 999px; background: var(--warn); color: #fff; font-size: 11px; font-weight: 800;
@@ -183,6 +199,22 @@ export class PurchaseList {
   private readonly ui = inject(Ui);
 
   readonly orders = signal<PurchaseOrderView[]>([]);
+  readonly statusOptions: { key: string; label: string }[] = [
+    { key: 'ALL', label: 'Alle' }, { key: 'CONCEPT', label: 'Concept' }, { key: 'BESTELD', label: 'Besteld' },
+    { key: 'ONDERWEG', label: 'Vertrokken' }, { key: 'ONTVANGEN', label: 'Ontvangen' }, { key: 'ATTENTION', label: 'Actie vereist' },
+  ];
+  readonly statusFilter = signal('ALL');
+  readonly filtered = computed(() => {
+    const key = this.statusFilter();
+    if (key === 'ALL') return this.orders();
+    if (key === 'ATTENTION') return this.orders().filter((row) => row.attention?.length);
+    return this.orders().filter((row) => row.order.status === key);
+  });
+  countFor(key: string): number {
+    if (key === 'ALL') return 0;
+    if (key === 'ATTENTION') return this.orders().filter((row) => row.attention?.length).length;
+    return this.orders().filter((row) => row.order.status === key).length;
+  }
   readonly suppliers = signal<Supplier[]>([]);
   readonly loading = signal(true);
   readonly picking = signal(false);

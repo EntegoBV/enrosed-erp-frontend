@@ -471,6 +471,12 @@ interface GalleryPointer {
       transition: transform .2s cubic-bezier(.2,.8,.2,1);
     }
     .gallery__stage--dragging img { transition: none; }
+    /* A phone: the photo takes a third of the screen, not the whole of it -
+       the price and the stock are what you opened the page for. */
+    @media (max-width: 679px) {
+      .gallery { padding: 8px; }
+      .gallery__stage { aspect-ratio: 4 / 3; max-height: 290px; }
+    }
     .gallery__stage:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
     .gallery__count, .gallery__zoom {
       position: absolute; bottom: 10px; display: inline-flex; align-items: center; justify-content: center;

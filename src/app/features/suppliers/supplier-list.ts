@@ -21,7 +21,7 @@ function blank(): Supplier {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Skeleton, FormsModule, PageHeader, Sheet, SupplierAddress],
   template: `
-    <app-page-header title="Leveranciers" [subtitle]="suppliers().length + ' leveranciers'">
+    <app-page-header [showBack]="true" backTo="/more" title="Leveranciers" [subtitle]="suppliers().length + ' leveranciers'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
         + Nieuw
       </button>

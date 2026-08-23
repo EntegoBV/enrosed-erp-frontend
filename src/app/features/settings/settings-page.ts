@@ -58,7 +58,7 @@ const normalizeCategoryCode = (value: string): string => value
     PageHeader,
   ],
   template: `
-    <app-page-header title="Instellingen" subtitle="Categorieën, tarieven en staffels" />
+    <app-page-header [showBack]="true" backTo="/more" title="Instellingen" subtitle="Categorieën, tarieven en staffels" />
 
     <nav class="settings-nav" aria-label="Snel naar instelling">
       <div class="settings-nav__rail">
@@ -75,8 +75,8 @@ const normalizeCategoryCode = (value: string): string => value
 
     <div class="content settings-content">
       <!-- ======================================= bedrijfsgegevens -->
-      <div class="card settings-section" id="company">
-        <div class="card__head"><h2>Onze bedrijfsgegevens</h2></div>
+      <div [class.settings-section--folded]="folded('company')" class="card settings-section" id="company">
+        <div (click)="toggleSection('company', $event)" class="card__head settings-head"><h2>Onze bedrijfsgegevens</h2></div>
         <div class="card__body">
           <p class="small muted" style="margin-bottom:12px">
             Deze gegevens komen op elke offerte, factuur en catalogus. Het BTW-nummer hoort
@@ -234,8 +234,8 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       </div>
 
-      <div class="card settings-section category-section" id="categories">
-        <div class="card__head category-section__head">
+      <div [class.settings-section--folded]="folded('categories')" class="card settings-section category-section" id="categories">
+        <div (click)="toggleSection('categories', $event)" class="card__head settings-head category-section__head">
           <div>
             <h2 id="categories-title">Productcategorieën</h2>
             <span class="category-count">
@@ -460,8 +460,8 @@ const normalizeCategoryCode = (value: string): string => value
       </div>
 
       <!-- ======================================= douanetarieven -->
-      <div class="card settings-section" id="duties">
-        <div class="card__head"><h2>Douanetarieven</h2><span class="spacer"></span>
+      <div [class.settings-section--folded]="folded('duties')" class="card settings-section" id="duties">
+        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2><span class="spacer"></span>
           <button class="btn btn--sm" type="button" (click)="addHsCode()">+</button></div>
         <div class="card__body">
           <div class="alert alert--warn" style="margin-bottom:14px">
@@ -499,8 +499,9 @@ const normalizeCategoryCode = (value: string): string => value
 
       <!-- ======================================= staffels -->
       @for (scope of scopes; track scope.key) {
-        <div class="card settings-section" [id]="scope.key === 'LINE' ? 'discounts' : 'order-discounts'">
-          <div class="card__head"><h2>{{ scope.label }}</h2><span class="spacer"></span>
+        <div class="card settings-section" [class.settings-section--folded]="folded(scope.key === 'LINE' ? 'discounts' : 'order-discounts')"
+             [id]="scope.key === 'LINE' ? 'discounts' : 'order-discounts'">
+          <div (click)="toggleSection(scope.key === 'LINE' ? 'discounts' : 'order-discounts', $event)" class="card__head settings-head"><h2>{{ scope.label }}</h2><span class="spacer"></span>
             <button class="btn btn--sm" type="button" (click)="addTier(scope.key)">+</button></div>
           <div class="card__body">
             <p class="small muted" style="margin:0 0 12px">{{ scope.hint }}</p>
@@ -530,8 +531,8 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       }
       <!-- ======================================= catalogus in Excel -->
-      <div class="card settings-section workbook-card" id="catalog-data">
-        <div class="card__head workbook-card__head">
+      <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
+        <div (click)="toggleSection('catalog-data', $event)" class="card__head settings-head workbook-card__head">
           <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
         </div>
         <div class="card__body">
@@ -623,8 +624,8 @@ const normalizeCategoryCode = (value: string): string => value
       <!-- ======================================= categorieen -->
 
       <!-- ======================================= weergave -->
-      <div class="card settings-section" id="appearance">
-        <div class="card__head"><h2>Weergave</h2></div>
+      <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance">
+        <div (click)="toggleSection('appearance', $event)" class="card__head settings-head"><h2>Weergave</h2></div>
         <div class="card__body">
           <p class="small muted" style="margin-bottom:12px">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
           <div class="theme-picker" role="radiogroup" aria-label="Kleurschema">
@@ -666,6 +667,20 @@ const normalizeCategoryCode = (value: string): string => value
     .settings-content { padding-top: 12px; }
     .settings-section { scroll-margin-top: 109px; }
     .workbook-card { overflow: hidden; }
+    /* Phone: the settings page reads as a grouped list - one section open,
+       the rest a row with a chevron, the way iOS keeps a long settings
+       screen short. On desktop everything stays open. */
+    @media (max-width: 679px) {
+      .settings-head { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+      .settings-head::after { content: ''; width: 8px; height: 8px; margin-left: auto; flex: none;
+        border-right: 1.8px solid var(--muted); border-bottom: 1.8px solid var(--muted);
+        transform: rotate(45deg); transition: transform .15s ease; }
+      .settings-head .spacer { display: none; }
+      .settings-section--folded .settings-head::after { transform: rotate(-45deg); }
+      .settings-section--folded .card__body { display: none; }
+      .settings-section--folded .settings-head .btn { display: none; }
+      .settings-section + .settings-section { margin-top: 10px; }
+    }
     .theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
     .theme-picker__option { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
       border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
@@ -860,6 +875,17 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     { id: 'appearance', label: 'Weergave' },
   ] as const;
   readonly activeSection = signal<SettingsSectionId>('company');
+  /** Phone: the one section that is unfolded; desktop shows them all. */
+  readonly openSection = signal<string>('company');
+  folded(section: string): boolean {
+    return !this.desktop.active() && this.openSection() !== section;
+  }
+  toggleSection(section: string, event: Event): void {
+    if (this.desktop.active()) return;
+    /* A button or field in the head does its own job; the head only folds on the bare row. */
+    if ((event.target as HTMLElement).closest('button, a, input, select, label')) return;
+    this.openSection.set(this.openSection() === section ? '' : section);
+  }
 
   readonly scopes = [
     { key: 'LINE' as const, label: 'Lijnkorting — per product',
@@ -966,6 +992,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     if (!view || !target) return;
 
     this.activeSection.set(section);
+    this.openSection.set(section);
     this.revealActiveNavButton(section);
     const nav = this.document.querySelector<HTMLElement>('.settings-nav');
     const stickyBottom = nav?.getBoundingClientRect().bottom ?? 0;

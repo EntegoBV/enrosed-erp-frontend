@@ -16,20 +16,20 @@ function blank(): Country {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader, Sheet],
   template: `
-    <app-page-header title="Landen & vracht" subtitle="Minimum order en palletvracht per land">
+    <app-page-header [showBack]="true" backTo="/more" title="Landen & vracht" subtitle="Minimum order en palletvracht per land">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
         + Land
       </button>
     </app-page-header>
 
     <div class="content">
-      <div class="alert alert--info">
-        <span class="alert__icon">ℹ</span>
-        <div>
-          Verkoop gaat op pallets over de weg:
-          <code>max(pallets × tarief, minimum) + administratie</code>.
+      <details class="explainer">
+        <summary>Hoe wordt vracht berekend?</summary>
+        <div class="explainer__body">
+          <p>Verkoop gaat op pallets over de weg. Per land staat een tarief per pallet, een minimum per zending en een vaste administratiekost.</p>
+          <p>Vracht = <b>pallets × tarief</b>, maar nooit minder dan het <b>minimum</b>, plus de <b>administratie</b>. Onder het minimum orderbedrag kan een klant uit dat land niet bestellen.</p>
         </div>
-      </div>
+      </details>
 
       <div class="search-bar mt-12">
         <input class="input" type="search" placeholder="Zoek op land of landcode…"

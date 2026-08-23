@@ -15,7 +15,7 @@ import { Ui } from '../../shared/ui';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader],
   template: `
-    <app-page-header title="EAN-codes" [subtitle]="free().length + ' vrije code' + (free().length === 1 ? '' : 's')" />
+    <app-page-header [showBack]="true" backTo="/more" title="EAN-codes" [subtitle]="free().length + ' vrije code' + (free().length === 1 ? '' : 's')" />
 
     <div class="content">
       <div class="card">

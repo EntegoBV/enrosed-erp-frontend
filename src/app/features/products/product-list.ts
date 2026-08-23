@@ -12,6 +12,7 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { escapeHtml, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { COLOUR_SWATCHES } from '../../core/api/geo';
+import { Icon } from '../../shared/icon';
 import { describePublicationIssues } from './publication-issues';
 
 /**
@@ -63,10 +64,12 @@ interface ProductSwipe {
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet],
+  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet],
   template: `
     <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
-      <a class="btn btn--sm" routerLink="/catalog-export">Catalogus PDF</a>
+      <a class="btn btn--sm btn--icon-mobile" routerLink="/catalog-export" title="Catalogus PDF" aria-label="Catalogus PDF">
+        <app-icon name="pdf" [size]="18" /><span class="hide-mobile">Catalogus PDF</span>
+      </a>
       <a class="btn btn--primary btn--sm hide-mobile" routerLink="/products/new">+ Nieuw</a>
     </app-page-header>
 
@@ -245,7 +248,7 @@ interface ProductSwipe {
                   <!-- Variants mostly share a price, so the head shows the
                        lead variant's; a faint mark says when they differ. -->
                   <div class="product-row__prices">
-                    <div>
+                    <div class="hide-mobile">
                       <span>Kostprijs</span>
                       @if (purchasePrice(group.lead); as price) {
                         <strong class="num">{{ price | eur }}@if (group.costVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
@@ -347,7 +350,7 @@ interface ProductSwipe {
               }
             </div>
           </div>
-          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
+          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}@if (purchasePrice(product); as price) {<span class="product-row__cost hide-desktop"> · kost {{ price | eur }}</span>}</div>
         </div>
         <div class="list-item__end product-row__end">
           <div class="product-row__stock" [attr.title]="stockBreakdown(product)">
@@ -365,7 +368,7 @@ interface ProductSwipe {
             }
           </div>
           <div class="product-row__prices">
-          <div>
+          <div class="hide-mobile">
             <span>Kostprijs</span>
             @if (purchasePrice(product); as price) {
               <strong class="num">{{ price | eur }}</strong>
@@ -599,6 +602,26 @@ interface ProductSwipe {
     .variant-label { display: inline-flex; align-items: center; gap: 5px; }
     .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block;
       border: 1px solid rgb(0 0 0 / 14%); }
+
+    /* ---- phone: declared last so it wins over the rules above ---- */
+    /* Phone: the figure column is narrow; "te verwachten" wraps instead of
+       running into the colour dots. */
+    @media (max-width: 679px) {
+      .stock-expected { white-space: normal; max-width: 82px; text-align: right; line-height: 1.2; }
+      .product-row__cost { font-family: var(--font); color: var(--ink-2); font-weight: 650; }
+      /* One narrow column on the right: the stock pill with the catalogue
+         price under it; the labels go, the shapes say what they are. The
+         name gets the width back. */
+      .group-head__end, .product-row__end { flex-direction: column; align-items: flex-end; gap: 3px; width: 88px; flex: none; }
+      .product-row__stock span, .product-row__prices span { display: none; }
+      .product-row__prices { width: auto; padding: 0; border: 0; }
+      .product-row__prices strong { font-size: 12.5px; }
+      /* Scoped rule: the component's own child selector outranks the global utility. */
+      .product-row__prices .hide-mobile { display: none; }
+      .group-head__end { gap: 3px; }
+      .product-row__sku { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .btn--icon-mobile { min-width: 40px; padding: 0 10px; }
+    }
   `,
 })
 export class ProductList {

@@ -9,6 +9,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Location } from '@angular/common';
+import { Router } from '@angular/router';
 import { Title } from '@angular/platform-browser';
 import { BrandMark } from './brand-mark';
 import { NotificationBell } from './notification-bell';
@@ -147,6 +148,8 @@ export class PageHeader {
   readonly title = input.required<string>();
   readonly subtitle = input('');
   readonly showBack = input(false);
+  /** Where back goes when the page was opened directly (no history to return to). */
+  readonly backTo = input<string | null>(null);
   /**
    * The bell belongs on overview screens, not on every detail screen.
    * On a quote you are editing it is only a distraction.
@@ -162,6 +165,7 @@ export class PageHeader {
 
   constructor(
     private readonly location: Location,
+    private readonly router: Router,
     private readonly documentTitle: Title,
   ) {
     effect(() => {
@@ -190,6 +194,8 @@ export class PageHeader {
   }
 
   back(): void {
+    const fallback = this.backTo();
+    if (fallback && window.history.length <= 1) { void this.router.navigateByUrl(fallback); return; }
     this.location.back();
   }
 }
