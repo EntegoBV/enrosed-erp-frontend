@@ -602,6 +602,14 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         </span>
                       </summary>
                       <div class="form-grid allocation-settings__body">
+                        <!-- A series is one product to the buyer: its colours and
+                             sizes land at one and the same unit cost. -->
+                        <label class="switch-row span-2">
+                          <span><b>Varianten als één product</b>
+                            <small>Kleuren en maten van dezelfde reeks krijgen samen één kostprijs per stuk; de aantallen worden opgeteld.</small></span>
+                          <input type="checkbox" [ngModel]="data.order.groupVariants ?? true"
+                                 (ngModelChange)="patch({ groupVariants: $event })" />
+                        </label>
                         @for (key of allocationKeys(); track key.field) {
                           <div class="field">
                             <label [attr.for]="'a-' + key.field">{{ key.label }}</label>
@@ -898,6 +906,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .products-card{overflow:visible}:is(.products-card .section-heading,.summary-heading){border-bottom:1px solid var(--line)}.add-product{flex:none;min-height:40px;padding-inline:11px}
     .po-line{padding:14px;border-bottom:1px solid var(--line)}.po-line:last-child{border:0}.po-line__head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
     .po-line__index{width:24px;color:var(--muted);font-size:11px;text-align:center}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
+    .switch-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:4px 0 10px;cursor:pointer;border-bottom:1px solid var(--line);margin-bottom:4px}.switch-row>span{display:flex;flex-direction:column;gap:2px;min-width:0}.switch-row b{font-size:13px}.switch-row small{color:var(--muted);font-size:11.5px;line-height:1.35}.switch-row input{width:20px;height:20px;flex:none;accent-color:var(--rose)}
     .line-remove{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}.line-remove:active{background:var(--danger-soft);color:var(--danger)}:is(.line-currency,.cost-currency){min-width:74px;border-radius:0}.line-basis{min-width:72px;border-radius:0 var(--r-sm) var(--r-sm) 0;border-left:0}
 
     :is(.line-breakdown,.allocation-settings){overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--surface)}

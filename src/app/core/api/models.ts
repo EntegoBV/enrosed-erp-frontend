@@ -635,6 +635,8 @@ export interface PurchaseOrder {
   destinationPort: string;
   /** Stock location the container is unloaded at; null = the warehouse. */
   receivingLocationId?: number | null;
+  /** Variants of one series share out costs as one product; null = on. */
+  groupVariants?: boolean | null;
   notes: string;
   lines: PurchaseOrderLine[];
 }
