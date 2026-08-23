@@ -131,7 +131,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
             </div>
             <div class="po-fact">
               <span class="po-fact__label">Lading</span>
-              @if (data.costing.containerFill; as fill) {
+              @if (!isDdp() && data.costing.containerFill; as fill) {
                 <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | num: 0 }}% · {{ data.costing.totals.pieces | num }} st</strong>
               } @else {
                 <strong>{{ data.costing.totals.pieces | num }} st</strong>
@@ -639,7 +639,17 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
               </div>
 
               <div class="summary-body">
-                @if (data.costing.containerFill; as fill) {
+                @if (isDdp()) {
+                  <!-- DDP: the supplier's container, not ours - how full it is
+                       is their concern; what we get is the volume and the count. -->
+                  <div class="fill-overview">
+                    <div>
+                      <span class="fill-overview__label">Geleverd DDP</span>
+                      <strong>{{ data.costing.totals.pieces | num }} st</strong>
+                    </div>
+                    <span>{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen</span>
+                  </div>
+                } @else if (data.costing.containerFill; as fill) {
                   <div class="fill-overview">
                     <div>
                       <span class="fill-overview__label">

@@ -137,7 +137,19 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
           </div>
         </section>
 
-        @if (data.costing.containerFill; as fill) {
+        @if (isDdp()) {
+          <!-- DDP: the supplier's container - its fill is their concern. -->
+          <section class="card capacity-card" aria-label="Lading">
+            <div class="capacity-card__top">
+              <div>
+                <span class="section-kicker">Lading</span>
+                <h2>Geleverd DDP</h2>
+                <p>{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen · transport en rechten in de prijs</p>
+              </div>
+              <strong class="capacity-card__percentage">{{ data.costing.totals.pieces | num }} st</strong>
+            </div>
+          </section>
+        } @else if (data.costing.containerFill; as fill) {
           <section class="card capacity-card" aria-labelledby="container-fill-title">
             <div class="capacity-card__top">
               <div>
