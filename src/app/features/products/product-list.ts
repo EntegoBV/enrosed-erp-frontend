@@ -248,7 +248,7 @@ interface ProductSwipe {
                   <!-- Variants mostly share a price, so the head shows the
                        lead variant's; a faint mark says when they differ. -->
                   <div class="product-row__prices">
-                    <div class="hide-mobile">
+                    <div>
                       <span>Kostprijs</span>
                       @if (purchasePrice(group.lead); as price) {
                         <strong class="num">{{ price | eur }}@if (group.costVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
@@ -350,7 +350,7 @@ interface ProductSwipe {
               }
             </div>
           </div>
-          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}@if (purchasePrice(product); as price) {<span class="product-row__cost hide-desktop"> · kost {{ price | eur }}</span>}</div>
+          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
         </div>
         <div class="list-item__end product-row__end">
           <div class="product-row__stock" [attr.title]="stockBreakdown(product)">
@@ -368,7 +368,7 @@ interface ProductSwipe {
             }
           </div>
           <div class="product-row__prices">
-          <div class="hide-mobile">
+          <div>
             <span>Kostprijs</span>
             @if (purchasePrice(product); as price) {
               <strong class="num">{{ price | eur }}</strong>
@@ -603,23 +603,9 @@ interface ProductSwipe {
     .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block;
       border: 1px solid rgb(0 0 0 / 14%); }
 
-    /* ---- phone: declared last so it wins over the rules above ---- */
-    /* Phone: the figure column is narrow; "te verwachten" wraps instead of
-       running into the colour dots. */
+    /* Phone: "te verwachten" wraps instead of running into the colour dots. */
     @media (max-width: 679px) {
       .stock-expected { white-space: normal; max-width: 82px; text-align: right; line-height: 1.2; }
-      .product-row__cost { font-family: var(--font); color: var(--ink-2); font-weight: 650; }
-      /* One narrow column on the right: the stock pill with the catalogue
-         price under it; the labels go, the shapes say what they are. The
-         name gets the width back. */
-      .group-head__end, .product-row__end { flex-direction: column; align-items: flex-end; gap: 3px; width: 88px; flex: none; }
-      .product-row__stock span, .product-row__prices span { display: none; }
-      .product-row__prices { width: auto; padding: 0; border: 0; }
-      .product-row__prices strong { font-size: 12.5px; }
-      /* Scoped rule: the component's own child selector outranks the global utility. */
-      .product-row__prices .hide-mobile { display: none; }
-      .group-head__end { gap: 3px; }
-      .product-row__sku { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .btn--icon-mobile { min-width: 40px; padding: 0 10px; }
     }
   `,

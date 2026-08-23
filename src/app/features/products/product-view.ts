@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -10,7 +11,8 @@ import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
-import { Ui } from '../../shared/ui';
+import { Sheet, Ui } from '../../shared/ui';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
@@ -31,7 +33,7 @@ interface GalleryPointer {
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -137,8 +139,9 @@ interface GalleryPointer {
                 </button>
                 <!-- The stock tile opens the stock book below it: where the
                      figure came from, without leaving the page. -->
-                <div class="stock-tile">
-                  <span>Voorraad</span>
+                <button class="stock-tile" type="button" [class.stock-tile--open]="stockOpen()"
+                        [attr.aria-expanded]="stockOpen()" (click)="toggleStock()">
+                  <span>Voorraad <i class="stock-tile__chev hide-desktop" aria-hidden="true"></i></span>
                   @if (stockLevels(); as levels) {
                     <strong class="num" [class.warn-text]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
                     <small>{{ stockSummary() }}@if (expected(); as exp) { · <a class="expected" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
@@ -151,12 +154,20 @@ interface GalleryPointer {
                     <strong>—</strong>
                     <small>nog niet bevestigd</small>
                   }
-                </div>
+                </button>
               </div>
+
+              <!-- Desktop: the build-up unfolds right under the price it explains. -->
+              @if (priceOpen() && desktop.active()) {
+                <ng-container *ngTemplateOutlet="priceBuildTpl" />
+              }
 
               <!-- Where it lies and what happened lately: plain rows, the way
                    the catalogue list reads, no box to open first. -->
-              <div class="stock-rows" aria-label="Voorraad per locatie">
+              <div class="stock-rows hide-mobile" aria-label="Voorraad per locatie">
+                <ng-container *ngTemplateOutlet="stockRowsTpl" />
+              </div>
+              <ng-template #stockRowsTpl>
                 @if (stockLevels(); as levels) {
                   @for (level of levels; track level.locationId) {
                     <div class="stock-row">
@@ -169,6 +180,7 @@ interface GalleryPointer {
                   }
                 }
                 @if (recentMoves(); as moves) {
+                  @if (moves.length) { <div class="stock-rows__head">Laatste bewegingen</div> }
                   @for (move of moves; track move.id) {
                     <div class="stock-row stock-row--move">
                       <span class="stock-row__where">
@@ -185,9 +197,9 @@ interface GalleryPointer {
                   <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'demo' }">Demo</a>
                   <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Hele geschiedenis ›</a>
                 </div>
-              </div>
+              </ng-template>
 
-              @if (priceOpen()) {
+              <ng-template #priceBuildTpl>
                 <div class="stock-book price-build" role="region" aria-label="Prijsopbouw">
                   @if (priceBuild(); as build) {
                     <dl class="price-build__list">
@@ -210,7 +222,7 @@ interface GalleryPointer {
                     <p class="hint">Prijsopbouw laden…</p>
                   }
                 </div>
-              }
+              </ng-template>
 
               <div class="hero-summary__identity">
                 @if (product.colour) {
@@ -448,6 +460,30 @@ interface GalleryPointer {
           </details>
         </div>
       </div>
+      <!-- Phone: the build-up and the stock book come up as sheets, not
+           somewhere further down the page. -->
+      @if (priceOpen() && !desktop.active()) {
+        <app-sheet title="Prijsopbouw" (closed)="priceOpen.set(false)">
+          <div body><ng-container *ngTemplateOutlet="priceBuildTpl" /></div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="priceOpen.set(false)">Sluiten</button>
+          </div>
+        </app-sheet>
+      }
+      @if (stockOpen() && !desktop.active()) {
+        <app-sheet title="Voorraad" (closed)="stockOpen.set(false)">
+          <div body>
+            <p class="hint">{{ stockTotal() | num }} stuks@if (stockSummary()) { · {{ stockSummary() }}}</p>
+            <div class="stock-rows stock-rows--sheet"><ng-container *ngTemplateOutlet="stockRowsTpl" /></div>
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="stockOpen.set(false)">Sluiten</button>
+          </div>
+        </app-sheet>
+      }
+
     }
   `,
   styles: `
@@ -509,8 +545,12 @@ interface GalleryPointer {
       text-overflow: ellipsis; white-space: nowrap; }
     /* Two equal tiles: "10.000" with its chevron needs as much room as a price. */
     .hero-summary__price-stock { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
-    .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; padding: 13px;
-      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+    .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 13px;
+      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font: inherit; color: inherit; cursor: pointer; }
+    .stock-rows--sheet { margin-top: 4px; }
+    .stock-rows__head { padding: 10px 2px 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+    .stock-rows--sheet .stock-row__actions { gap: 8px; padding-top: 12px; }
+    .stock-rows--sheet .stock-row__actions a { padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 12.5px; }
     .hero-summary__price-stock span { color: var(--muted); font-size: 10px; font-weight: 700;
       letter-spacing: .07em; text-transform: uppercase; }
     .hero-summary__price-stock strong { overflow: hidden; margin-top: 1px; font-size: 22px;
@@ -663,6 +703,12 @@ export class ProductView {
 
   /* ---- the price, taken apart ---- */
   readonly priceOpen = signal(false);
+  readonly desktop = inject(DesktopViewport);
+  toggleStock(): void {
+    const open = !this.stockOpen();
+    this.stockOpen.set(open);
+    if (open) this.priceOpen.set(false);
+  }
   readonly priceBuild = signal<PriceBuild | null>(null);
 
   togglePrice(product: Product): void {
