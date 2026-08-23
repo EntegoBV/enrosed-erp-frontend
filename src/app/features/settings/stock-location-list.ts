@@ -27,8 +27,9 @@ import { Sheet, Ui } from '../../shared/ui';
       <div class="alert alert--info">
         <span class="alert__icon">ℹ</span>
         <div>
-          Het <b>magazijn</b> is wat de website en het portaal als voorraad tonen. Een
-          <b>verkooppunt</b> (bv. TICA) heeft eigen voorraad die daar ter plaatse verkocht wordt.
+          Webklanten en portaalklanten zien alleen de voorraad van locaties die <b>online verkoopbaar</b> zijn
+          (normaal: het magazijn). Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die daar ter plaatse
+          verkocht wordt en online niet meetelt.
         </div>
       </div>
 
@@ -44,7 +45,7 @@ import { Sheet, Ui } from '../../shared/ui';
               </div>
             </div>
             <div class="list-item__end location-flags">
-              @if (location.countsForWebsite) { <span class="badge badge--ok">website</span> }
+              @if (location.countsForWebsite) { <span class="badge badge--ok">online verkoopbaar</span> }
               @if (!location.active) { <span class="badge">inactief</span> }
             </div>
             <span class="list-item__chev">›</span>
@@ -79,9 +80,10 @@ import { Sheet, Ui } from '../../shared/ui';
             <label class="row" style="gap:8px;cursor:pointer">
               <input type="checkbox" [ngModel]="draft().countsForWebsite"
                      (ngModelChange)="patch({ countsForWebsite: $event })" />
-              <span>Telt mee voor website en portaal</span>
+              <span>Online verkoopbaar</span>
             </label>
-            <span class="hint">Aan voor het magazijn; uit voor een stand waar je ter plaatse verkoopt.</span>
+            <span class="hint">Aan: wat hier ligt, zien webklanten en portaalklanten als beschikbare voorraad.
+              Uit: deze voorraad wordt alleen ter plaatse verkocht (bv. een TICA-stand) en telt online niet mee.</span>
           </div>
           @if (!isMain()) {
             <div class="field span-2">

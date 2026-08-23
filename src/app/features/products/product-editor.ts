@@ -666,7 +666,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
                   <li [class.stock-levels__row--editing]="stockEditing() === level.locationId">
                     <span class="stock-levels__where">
                       <b>{{ level.name }}</b>
-                      <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · telt mee voor de website' : '' }}</small>
+                      <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · online verkoopbaar' : '' }}</small>
                     </span>
                     @if (stockEditing() === level.locationId) {
                       <span class="stock-levels__edit">

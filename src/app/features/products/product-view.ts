@@ -197,7 +197,7 @@ interface GalleryPointer {
                       <ul class="stock-book__levels">
                         @for (level of levels; track level.locationId) {
                           <li>
-                            <span>{{ level.name }}@if (level.countsForWebsite) { <small>website</small> }</span>
+                            <span>{{ level.name }}@if (level.countsForWebsite) { <small>online</small> }</span>
                             <b class="num" [class.muted]="!level.quantity">{{ level.quantity | num }}</b>
                           </li>
                         }
