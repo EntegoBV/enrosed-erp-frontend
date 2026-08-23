@@ -14,7 +14,6 @@ import {
 } from '../../core/api/models';
 import { containerLabel } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
-import { SupplierAddress } from '../../shared/supplier-address';
 import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 
 /**
@@ -28,7 +27,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            SupplierAddress, EurPipe, NumPipe, PctPipe],
+            EurPipe, NumPipe, PctPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -178,12 +177,11 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
           <main class="view-main">
             <section class="card products-card" aria-labelledby="purchase-products-title">
               <div class="section-heading">
-                <span class="section-number" aria-hidden="true">1</span>
                 <span class="section-heading__copy">
                   <span class="section-kicker">Lading</span>
                   <h2 id="purchase-products-title">Productregels</h2>
                   <span>{{ data.costing.totals.pieces | num }} st ·
-                    {{ data.costing.totals.cartons | num }} dozen</span>
+                    {{ data.costing.totals.cartons | num }} dozen@if (showMoney()) { · 1 USD = {{ usdToEurRate() | num: 4 }} EUR}</span>
                 </span>
                 @if (showMoney() && data.costing.lines.length) {
                   <div class="per-toggle" role="group" aria-label="Kostopbouw tonen als">
@@ -281,56 +279,12 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
               </div>
             </section>
 
-            <section class="card details-card" aria-labelledby="purchase-details-title">
-              <div class="section-heading">
-                <span class="section-number" aria-hidden="true">2</span>
-                <span class="section-heading__copy">
-                  <span class="section-kicker">Route &amp; afspraak</span>
-                  <h2 id="purchase-details-title">Ordergegevens</h2>
-                  <span>{{ costLabels().seaFreightRoute }}</span>
-                </span>
-              </div>
-              <div class="details-grid">
-                <div class="detail-item detail-item--supplier">
-                  <span>Leverancier</span>
-                  <strong>{{ supplierName() }}</strong>
-                  @if (showMoney()) {
-                    <app-supplier-address [supplier]="supplier()" />
-                    @if (supplier()?.contact) { <small>Contact: {{ supplier()?.contact }}</small> }
-                  }
-                </div>
-                <div class="detail-item">
-                  <span>Orderdatum</span>
-                  <strong>{{ data.order.orderDate | dateNl }}</strong>
-                </div>
-                <div class="detail-item">
-                  <span>Vertrekhaven</span>
-                  <strong>{{ costLabels().loadingPort }}</strong>
-                  <small>{{ costLabels().originCountry }}</small>
-                </div>
-                <div class="detail-item">
-                  <span>Aankomsthaven</span>
-                  <strong>{{ costLabels().destinationPort }}</strong>
-                </div>
-                <div class="detail-item">
-                  <span>Container</span>
-                  <strong>{{ containerLabel(data.order.containerType) }}</strong>
-                </div>
-                @if (showMoney()) {
-                  <div class="detail-item internal-detail">
-                    <span>USD → EUR koers</span>
-                    <strong class="num">1 USD = {{ usdToEurRate() | num: 4 }} EUR</strong>
-                    <small>Alleen intern zichtbaar</small>
-                  </div>
-                }
-                @if (data.order.notes) {
-                  <div class="detail-item detail-item--wide">
-                    <span>Notitie</span>
-                    <strong class="detail-note">{{ data.order.notes }}</strong>
-                  </div>
-                }
-              </div>
-            </section>
+            @if (data.order.notes) {
+              <section class="card note-card" aria-label="Notitie">
+                <span class="section-kicker">Notitie</span>
+                <p class="detail-note">{{ data.order.notes }}</p>
+              </section>
+            }
           </main>
 
           <aside class="view-sidebar" aria-label="Samenvatting en acties">
@@ -463,6 +417,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
     .route-strip__line{height:1px;min-width:18px;flex:1;background:linear-gradient(90deg,var(--rose-line),var(--rose))}
     .journey-stepper{margin:0 0 15px}.overview-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
     .overview-fact--total strong{color:var(--rose-dark)}
+    .note-card{padding:12px 16px}.note-card .detail-note{margin-top:4px;color:var(--ink-2);font-size:12.5px;white-space:pre-wrap}
     .capacity-card__percentage.fill-pct--full{color:var(--ok)}
     .overview-fact{min-width:0;padding:9px 10px;background:var(--surface)}.overview-fact span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.overview-fact strong{display:block;overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 
