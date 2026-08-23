@@ -804,6 +804,8 @@ export interface PurchaseOrderView {
   /** Optional while a cached/older backend response is still in the browser. */
   costLabels?: PurchaseCostLabels;
   payable?: Payable;
+  /** What the order waits on from us, in words; empty when nothing. */
+  attention?: string[];
 }
 
 /* ----------------------------------------------------------------- sales */

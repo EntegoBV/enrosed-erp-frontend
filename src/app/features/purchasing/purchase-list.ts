@@ -69,7 +69,15 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             </div>
             <div class="list-item__end">
               <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
-              <span class="badge badge--neutral">{{ statusLabel(row.order.status) }}</span>
+              <span class="list-item__status">
+                @if (row.attention?.length) {
+                  <!-- A box on the water without tracking, an instalment that
+                       fell due: the number says how many things wait on us. -->
+                  <span class="attention-dot" [attr.title]="row.attention!.join(' · ')"
+                        [attr.aria-label]="row.attention!.length + ' actie(s) vereist: ' + row.attention!.join(', ')">{{ row.attention!.length }}</span>
+                }
+                <span class="badge badge--neutral">{{ statusLabel(row.order.status) }}</span>
+              </span>
             </div>
             <span class="list-item__chev">›</span>
             </a>
