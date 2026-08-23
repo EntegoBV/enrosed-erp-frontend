@@ -334,7 +334,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 
                       @if (privacy.showPurchase()) {
                         <div class="field">
-                          <label [attr.for]="'exw-' + line.productId">Afgesproken EXW-prijs</label>
+                          <label [attr.for]="'exw-' + line.productId">Afgesproken prijs per stuk</label>
                           <div class="input-affix">
                             <input class="input num right" [id]="'exw-' + line.productId"
                                    type="number" min="0" step="0.01" inputmode="decimal"
@@ -343,15 +343,27 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                                      ? (line.goodsUsd / line.quantity | num: 4) : ''"
                                    (ngModelChange)="setExwPrice(line.productId, $event)" />
                             <select class="input-affix__suffix line-currency"
-                                    aria-label="Munt EXW-prijs"
+                                    aria-label="Munt van de prijs"
                                     [ngModel]="orderLine(line.productId)?.exwCurrency ?? 'USD'"
                                     (ngModelChange)="setExwCurrency(line.productId, $event)">
                               <option value="USD">USD</option>
                               <option value="CNY">CNY</option>
                               <option value="EUR">EUR</option>
                             </select>
+                            <!-- What the price covers decides what the calculation adds. -->
+                            <select class="input-affix__suffix line-basis"
+                                    aria-label="Wat de prijs dekt"
+                                    [ngModel]="orderLine(line.productId)?.priceBasis ?? 'EXW'"
+                                    (ngModelChange)="setPriceBasis(line.productId, $event)">
+                              <option value="EXW">EXW</option>
+                              <option value="DDP">DDP</option>
+                            </select>
                           </div>
-                          <span class="hint">Leeg gebruikt de actuele prijs van het product.</span>
+                          @if ((orderLine(line.productId)?.priceBasis ?? 'EXW') === 'DDP') {
+                            <span class="hint">Geleverd incl. rechten: transport, lokale kosten en invoerrechten zitten al in deze prijs en worden niet bijgerekend.</span>
+                          } @else {
+                            <span class="hint">Af fabriek: transport, lokale kosten en invoerrechten komen er in de calculatie bij. Leeg gebruikt de actuele prijs van het product.</span>
+                          }
                         </div>
                       }
                     </div>
@@ -859,7 +871,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
     .products-card{overflow:visible}:is(.products-card .section-heading,.summary-heading){border-bottom:1px solid var(--line)}.add-product{flex:none;min-height:40px;padding-inline:11px}
     .po-line{padding:14px;border-bottom:1px solid var(--line)}.po-line:last-child{border:0}.po-line__head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
     .po-line__index{width:24px;color:var(--muted);font-size:11px;text-align:center}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
-    .line-remove{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}.line-remove:active{background:var(--danger-soft);color:var(--danger)}:is(.line-currency,.cost-currency){min-width:74px;border-radius:0 var(--r-sm) var(--r-sm) 0}
+    .line-remove{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}.line-remove:active{background:var(--danger-soft);color:var(--danger)}:is(.line-currency,.cost-currency){min-width:74px;border-radius:0}.line-basis{min-width:72px;border-radius:0 var(--r-sm) var(--r-sm) 0;border-left:0}
 
     :is(.line-breakdown,.allocation-settings){overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     :is(.line-breakdown,.allocation-settings) summary{display:flex;min-height:50px;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;list-style:none}
@@ -1266,6 +1278,10 @@ export class PurchaseEditor {
 
   setExwCurrency(productId: number, currency: Currency): void {
     this.setLine(productId, { exwCurrency: currency });
+  }
+
+  setPriceBasis(productId: number, basis: 'EXW' | 'DDP'): void {
+    this.setLine(productId, { priceBasis: basis });
   }
 
   private setLine(productId: number, patch: Partial<PurchaseOrderLine>): void {

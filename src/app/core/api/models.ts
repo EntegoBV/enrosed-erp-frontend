@@ -601,6 +601,8 @@ export interface PurchaseOrderLine {
   extraUnitCost: number | null;
   /** Quantity as placed with the supplier; null for lines added afterwards. */
   orderedQuantity: number | null;
+  /** What the agreed price covers: at the factory gate, or delivered with duty paid. Null = EXW. */
+  priceBasis?: 'EXW' | 'DDP' | null;
 }
 
 export interface PurchaseOrder {
