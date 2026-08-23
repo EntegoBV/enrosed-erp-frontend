@@ -16,6 +16,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { orderLikeTheList } from './catalogue-order';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -54,17 +55,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
  * categories' own order (no category last), names A-Z inside each. Stepping
  * through the editor then follows what the eye just saw in the list.
  */
-function orderLikeTheList(products: Product[], categories: Category[]): Product[] {
-  const rank = new Map(categories.map((category, index) => [category.id, index]));
-  const byName = (a: Product, b: Product) =>
-    a.name.localeCompare(b.name, 'nl', { numeric: true, sensitivity: 'base' })
-    || (a.sku ?? '').localeCompare(b.sku ?? '', 'nl', { numeric: true });
-  return [...products].sort((a, b) =>
-    ((a.categoryId == null ? Infinity : rank.get(a.categoryId) ?? Infinity)
-      - (b.categoryId == null ? Infinity : rank.get(b.categoryId) ?? Infinity))
-    || byName(a, b));
-}
-
 @Component({
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,

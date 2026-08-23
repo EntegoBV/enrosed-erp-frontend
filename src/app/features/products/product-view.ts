@@ -11,6 +11,7 @@ import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
+import { orderLikeTheList } from './catalogue-order';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
@@ -39,6 +40,21 @@ interface GalleryPointer {
     @if (product(); as product) {
       <app-page-header [title]="product.name" [subtitle]="headerLine()"
                        [showBack]="true" [showBell]="false">
+        <!-- Desktop: step to the next or previous product without going
+             back to the list, the same arrows as while editing. -->
+        @if (neighbours(); as around) {
+          <span class="product-nav" role="group" aria-label="Vorig of volgend product">
+            <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
+               [routerLink]="around.previous ? ['/products', around.previous.id] : null"
+               [attr.aria-disabled]="!around.previous"
+               [title]="around.previous ? 'Vorige: ' + around.previous.name : 'Dit is het eerste product'">‹</a>
+            <small class="product-nav__pos">{{ around.index + 1 }}/{{ around.total }}</small>
+            <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
+               [routerLink]="around.next ? ['/products', around.next.id] : null"
+               [attr.aria-disabled]="!around.next"
+               [title]="around.next ? 'Volgende: ' + around.next.name : 'Dit is het laatste product'">›</a>
+          </span>
+        }
         <a class="btn btn--primary btn--sm" [routerLink]="['/products', product.id, 'edit']">
           Bewerken
         </a>
@@ -551,6 +567,14 @@ interface GalleryPointer {
     .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 13px;
       border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font: inherit; color: inherit; cursor: pointer; }
     .stock-rows--sheet { margin-top: 4px; }
+    /* Desktop idiom only (the rail breakpoint); a phone has no room next
+       to Bewerken, and swiping back to the list is one gesture there. */
+    .product-nav { display: none; align-items: center; gap: 4px; margin-right: 6px; }
+    @media (min-width: 680px) { .product-nav { display: inline-flex; } }
+    .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
+    .product-nav__btn--off { opacity: .35; pointer-events: none; }
+    .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
+      font-variant-numeric: tabular-nums; }
     /* The tiles open something: a ringed chevron says so, and turns when open. */
     .hero-summary__price-stock span { display: inline-flex; align-items: center; gap: 6px; }
     .stock-tile__chev { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--line-strong);
@@ -832,6 +856,21 @@ export class ProductView {
   readonly familyLoading = signal(false);
   readonly familyLoadError = signal(false);
   private readonly categories = signal<Category[]>([]);
+
+  /** Every product in the catalogue's default order, for the header arrows. */
+  private readonly catalogueOrder = signal<Product[]>([]);
+  readonly neighbours = computed(() => {
+    const id = this.product()?.id ?? null;
+    const order = this.catalogueOrder();
+    if (id === null || !order.length) return null;
+    const index = order.findIndex((item) => item.id === id);
+    if (index < 0) return null;
+    return {
+      index, total: order.length,
+      previous: index > 0 ? order[index - 1] : null,
+      next: index < order.length - 1 ? order[index + 1] : null,
+    };
+  });
   private readonly suppliers = signal<Supplier[]>([]);
   private loadVersion = 0;
 
@@ -925,6 +964,11 @@ export class ProductView {
     }
     this.categories.set(categories);
     this.suppliers.set(suppliers);
+    if (!this.catalogueOrder().length) {
+      void this.catalog.products()
+        .then((all) => this.catalogueOrder.set(orderLikeTheList(all, categories)))
+        .catch(() => this.catalogueOrder.set([]));
+    }
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
   }
 

@@ -381,6 +381,20 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         }
                       </div>
 
+                      <!-- A box opened weeks later can still hold broken glass:
+                           the count stays editable after receipt and books the
+                           extra pieces out of stock on save. -->
+                      @if (isReceived()) {
+                        <div class="field">
+                          <label [attr.for]="'dmg-' + line.productId">Beschadigd</label>
+                          <input class="input num right" [id]="'dmg-' + line.productId"
+                                 type="number" min="0" step="1" inputmode="numeric"
+                                 [ngModel]="orderLine(line.productId)?.damagedQuantity ?? 0"
+                                 (ngModelChange)="setLineDamaged(line.productId, $event)" />
+                          <span class="hint">Meer kapot gevonden? Verhoog het aantal; bij opslaan gaan die stuks als beschadigd uit de voorraad.</span>
+                        </div>
+                      }
+
                       <div class="field">
                         <label [attr.for]="'exw-' + line.productId">Afgesproken prijs per stuk</label>
                         <div class="input-affix">
@@ -2131,6 +2145,11 @@ export class PurchaseEditor {
 
   setExwCurrency(productId: number, currency: Currency): void {
     this.setLine(productId, { exwCurrency: currency });
+  }
+
+  setLineDamaged(productId: number, raw: unknown): void {
+    const value = raw === null || raw === undefined || raw === '' ? 0 : Math.max(0, Math.round(+String(raw)));
+    this.setLine(productId, { damagedQuantity: value });
   }
 
   /**
