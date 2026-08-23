@@ -27,9 +27,9 @@ import { Sheet, Ui } from '../../shared/ui';
       <div class="alert alert--info">
         <span class="alert__icon">ℹ</span>
         <div>
-          Webklanten en portaalklanten zien alleen de voorraad van locaties die <b>online verkoopbaar</b> zijn
-          (normaal: het magazijn). Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die daar ter plaatse
-          verkocht wordt en online niet meetelt.
+          Website, portaal en offertes tellen alleen de voorraad van locaties die <b>ter beschikking staan voor alle
+          verkoopkanalen</b> (normaal: het magazijn). Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die
+          daar ter plaatse verkocht wordt.
         </div>
       </div>
 
@@ -45,7 +45,8 @@ import { Sheet, Ui } from '../../shared/ui';
               </div>
             </div>
             <div class="list-item__end location-flags">
-              @if (location.countsForWebsite) { <span class="badge badge--ok">online verkoopbaar</span> }
+              @if (location.countsForWebsite) { <span class="badge badge--ok">alle kanalen</span> }
+              @else { <span class="badge">enkel ter plaatse</span> }
               @if (!location.active) { <span class="badge">inactief</span> }
             </div>
             <span class="list-item__chev">›</span>
@@ -80,10 +81,13 @@ import { Sheet, Ui } from '../../shared/ui';
             <label class="row" style="gap:8px;cursor:pointer">
               <input type="checkbox" [ngModel]="draft().countsForWebsite"
                      (ngModelChange)="patch({ countsForWebsite: $event })" />
-              <span>Online verkoopbaar</span>
+              <span>Voorraad ter beschikking voor alle verkoopkanalen</span>
             </label>
-            <span class="hint">Aan: wat hier ligt, zien webklanten en portaalklanten als beschikbare voorraad.
-              Uit: deze voorraad wordt alleen ter plaatse verkocht (bv. een TICA-stand) en telt online niet mee.</span>
+            @if (draft().countsForWebsite) {
+              <span class="hint">Wat hier ligt, kan via elk kanaal verkocht worden: website, portaal en offertes tellen deze voorraad mee.</span>
+            } @else {
+              <span class="hint">Wat hier ligt, wordt alleen ter plaatse verkocht (bv. een TICA-stand); website, portaal en offertes tellen deze voorraad niet mee.</span>
+            }
           </div>
           @if (!isMain()) {
             <div class="field span-2">
@@ -185,5 +189,5 @@ export class StockLocationList {
 
 function blank(position = 0): StockLocation {
   return { id: null, code: null, name: '', kind: 'SALES_POINT', address: null, active: true,
-    countsForWebsite: false, receivesByDefault: false, position };
+    countsForWebsite: true, receivesByDefault: false, position };
 }
