@@ -186,6 +186,11 @@ export class CatalogApi {
       this.http.post<Product>(api(`/api/products/${productId}/stock`), { quantity, locationId, reference }));
   }
 
+  /** Pieces leaving the shelf as broken or as a demo for a customer. */
+  takeOutStock(productId: number, body: { locationId: number | null; quantity: number; kind: 'DAMAGED' | 'DEMO'; note: string | null }): Promise<Product> {
+    return firstValueFrom(this.http.post<Product>(api(`/api/products/${productId}/stock/take-out`), body));
+  }
+
   /* ---- the company's EAN list and barcode images ---- */
 
   barcodePool(): Promise<string[]> {

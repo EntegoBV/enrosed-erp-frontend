@@ -5,7 +5,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, PurchaseOrderView, StockMovement, Supplier, ProductStock } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
@@ -13,7 +13,7 @@ import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 import { Privacy } from '../../core/api/privacy';
 import { saveBlob } from '../../core/api/download';
-import { CbmPipe, CurPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
 interface GalleryPointer {
   pointerId: number;
@@ -32,7 +32,7 @@ interface GalleryPointer {
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    RouterLink, AuthImage, PhotoLightbox, PageHeader, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -138,22 +138,54 @@ interface GalleryPointer {
                 </button>
                 <!-- The stock tile opens the stock book below it: where the
                      figure came from, without leaving the page. -->
-                <button class="stock-tile" type="button" [class.stock-tile--open]="stockOpen()"
-                        [attr.aria-expanded]="stockOpen()" (click)="toggleStock(product)">
-                  <span>Voorraad <i class="stock-tile__chev" aria-hidden="true"></i></span>
+                <div class="stock-tile">
+                  <span>Voorraad</span>
                   @if (stockLevels(); as levels) {
                     <strong class="num" [class.warn-text]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
-                    <small>{{ stockSummary() }}</small>
+                    <small>{{ stockSummary() }}@if (expected(); as exp) { · <em class="expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }}</em>}</small>
                   } @else if (product.inventoryKnown) {
                     <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
                       {{ product.stockQuantity | num }}
                     </strong>
-                    <small>stuks</small>
+                    <small>stuks@if (expected(); as exp) { · <em class="expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }}</em>}</small>
                   } @else {
                     <strong>—</strong>
                     <small>nog niet bevestigd</small>
                   }
-                </button>
+                </div>
+              </div>
+
+              <!-- Where it lies and what happened lately: plain rows, the way
+                   the catalogue list reads, no box to open first. -->
+              <div class="stock-rows" aria-label="Voorraad per locatie">
+                @if (stockLevels(); as levels) {
+                  @for (level of levels; track level.locationId) {
+                    <div class="stock-row">
+                      <span class="stock-row__where">
+                        <b>{{ level.name }}</b>
+                        <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · alle verkoopkanalen' : ' · enkel ter plaatse' }}</small>
+                      </span>
+                      <strong class="num stock-row__qty" [class.muted]="!level.quantity">{{ level.quantity | num }}</strong>
+                    </div>
+                  }
+                }
+                @if (recentMoves(); as moves) {
+                  @for (move of moves; track move.id) {
+                    <div class="stock-row stock-row--move">
+                      <span class="stock-row__where">
+                        <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
+                        <small>{{ move.at | dateTimeNl }} · {{ move.actor }}@if (move.locationName) { · {{ move.locationName }}}</small>
+                      </span>
+                      <strong class="num stock-row__delta" [class.stock-row__delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</strong>
+                    </div>
+                  }
+                }
+                <div class="stock-row__actions">
+                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Corrigeren</a>
+                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'damaged' }">Beschadigd</a>
+                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'demo' }">Demo</a>
+                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Hele geschiedenis ›</a>
+                </div>
               </div>
 
               @if (priceOpen()) {
@@ -187,47 +219,6 @@ interface GalleryPointer {
                       </dd></div>
                     </dl>
                   }
-                </div>
-              }
-
-              @if (stockOpen()) {
-                <div class="stock-book" role="region" aria-label="Voorraadgeschiedenis">
-                  @if (stockLevels(); as levels) {
-                    @if (levels.length > 1) {
-                      <ul class="stock-book__levels">
-                        @for (level of levels; track level.locationId) {
-                          <li>
-                            <span>{{ level.name }}@if (level.countsForWebsite) { <small>alle kanalen</small> }</span>
-                            <b class="num" [class.muted]="!level.quantity">{{ level.quantity | num }}</b>
-                          </li>
-                        }
-                      </ul>
-                    }
-                  }
-                  @if (stockHistory(); as history) {
-                    @if (history.length) {
-                      <ol>
-                        @for (move of history; track move.id) {
-                          <li>
-                            <span class="stock-book__delta num" [class.stock-book__delta--minus]="move.delta < 0">
-                              {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
-                            </span>
-                            <span class="stock-book__what">
-                              <b>{{ move.kindLabel }}@if (move.reference) { {{ move.kind === 'TRANSFER_OUT' || move.kind === 'TRANSFER_IN' ? '' : '·' }} {{ move.reference }}}</b>
-                              <small>@if (move.locationName) { {{ move.locationName }} · }{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
-                            </span>
-                            <span class="stock-book__after num">= {{ move.quantityAfter | num }}</span>
-                          </li>
-                        }
-                      </ol>
-                    } @else {
-                      <p class="hint">Nog geen bewegingen geboekt.</p>
-                    }
-                  } @else {
-                    <p class="hint">Geschiedenis laden…</p>
-                  }
-                  <a class="stock-book__edit" [routerLink]="['/products', product.id, 'edit']"
-                     [queryParams]="{ tab: 'stock' }">Voorraad corrigeren ›</a>
                 </div>
               }
 
@@ -534,13 +525,21 @@ interface GalleryPointer {
     .hero-summary__price-stock strong { overflow: hidden; margin-top: 1px; font-size: 22px;
       line-height: 1.25; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
     .hero-summary__price-stock small { color: var(--muted); font-size: 10.5px; }
-    .stock-tile { font: inherit; text-align: left; cursor: pointer; color: inherit;
-      -webkit-appearance: none; appearance: none; margin: 0; }
-    .stock-tile:active { filter: brightness(.97); }
-    .stock-tile__chev { display: inline-block; width: 6px; height: 6px; margin-left: 4px;
-      border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-      transform: translateY(-2px) rotate(45deg); transition: transform .15s ease; }
-    .stock-tile--open .stock-tile__chev { transform: translateY(1px) rotate(-135deg); }
+    .stock-rows { margin-top: 10px; border-top: 1px solid var(--line); }
+    .stock-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 2px;
+      border-bottom: 1px solid var(--line); }
+    .stock-row__where { display: grid; min-width: 0; }
+    .stock-row__where b { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stock-row__where small { color: var(--muted); font-size: 11px; }
+    .stock-row__qty { font-size: 14px; font-weight: 750; }
+    .stock-row--move .stock-row__where b { font-weight: 600; color: var(--ink-2); }
+    .stock-row__delta { font-size: 13px; font-weight: 750; color: var(--ok, #2e7d4f); }
+    .stock-row__delta--minus { color: var(--danger); }
+    .stock-row__actions { display: flex; flex-wrap: wrap; gap: 14px; padding: 9px 2px 0; font-size: 12.5px; font-weight: 650; }
+    .stock-row__actions a { color: var(--rose-dark); text-decoration: none; }
+    .stock-row__actions a:last-child { margin-left: auto; color: var(--muted); }
+
+    .expected { color: var(--warn); font-style: normal; font-weight: 700; }
     .stock-book { margin-top: 9px; padding: 4px 13px 10px; border: 1px solid var(--line);
       border-radius: var(--r-sm); background: var(--surface-2); }
     .price-build__list { margin: 0; padding: 0; }
@@ -658,6 +657,8 @@ export class ProductView {
   readonly product = signal<Product | null>(null);
 
   /* The stock book, fetched the first time the tile is opened. */
+  /** Pieces on the water for this product, from ordered and shipped containers. */
+  readonly expected = signal<ExpectedStock | null>(null);
   readonly stockOpen = signal(false);
   readonly stockHistory = signal<StockMovement[] | null>(null);
   readonly stockLevels = signal<ProductStock[] | null>(null);
@@ -762,14 +763,13 @@ export class ProductView {
     this.priceBuild.set({ rows, source, sourceFound: line !== null });
   }
 
-  toggleStock(product: Product): void {
-    const open = !this.stockOpen();
-    this.stockOpen.set(open);
-    if (open && this.stockHistory() === null && product.id !== null) {
-      this.catalog.stockMovements(product.id)
-        .then((history) => this.stockHistory.set(history))
-        .catch(() => this.stockHistory.set([]));
-    }
+  /** The five latest lines of the stock book; the editor shows them all. */
+  readonly recentMoves = computed(() => this.stockHistory()?.slice(0, 5) ?? null);
+
+  private loadStockHistory(productId: number): void {
+    this.catalog.stockMovements(productId)
+      .then((history) => this.stockHistory.set(history))
+      .catch(() => this.stockHistory.set([]));
   }
   readonly family = signal<ProductFamily | null>(null);
   readonly familyLoading = signal(false);
@@ -838,6 +838,10 @@ export class ProductView {
   }
 
   private async loadProduct(id: number): Promise<void> {
+    this.loadStockHistory(id);
+    void this.sourcing.expectedStock()
+      .then((items) => this.expected.set(items.find((item) => item.productId === id) ?? null))
+      .catch(() => this.expected.set(null));
     const version = ++this.loadVersion;
     this.product.set(null);
     this.priceOpen.set(false);

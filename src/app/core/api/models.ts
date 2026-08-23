@@ -35,7 +35,7 @@ export interface StockMovement {
   at: string;
   delta: number;
   quantityAfter: number;
-  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE';
+  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'DAMAGED' | 'DEMO';
   kindLabel: string;
   reference: string | null;
   actor: string | null;
@@ -603,6 +603,91 @@ export interface PurchaseOrderLine {
   orderedQuantity: number | null;
   /** What the agreed price covers: at the factory gate, or delivered with duty paid. Null = EXW. */
   priceBasis?: 'EXW' | 'DDP' | null;
+  /** Pieces that arrived broken; in quantity, never in stock. */
+  damagedQuantity?: number | null;
+}
+
+/** What arrived of one line, and how much of that was broken. */
+export interface ReceivedLine { productId: number; received: number; damaged: number; }
+
+export interface Receipt {
+  lines: ReceivedLine[];
+  bookStock: boolean;
+  paidTotalEur: number | null;
+  receivedOn: string | null;
+  note: string | null;
+}
+
+export type PaymentTerms = 'THIRDS' | 'HALF_HALF' | 'DEPOSIT_30_70' | 'FULL_UPFRONT' | 'FULL_ON_ARRIVAL' | 'CUSTOM';
+
+/** One instalment of a payment plan: a share of the goods value and when it falls due. */
+export interface Instalment { label: string; share: number; due: 'ORDERED' | 'SHIPPED' | 'ARRIVED'; }
+
+export const PAYMENT_TERMS: { value: PaymentTerms; label: string; instalments: Instalment[] }[] = [
+  { value: 'THIRDS', label: '1/3 · 1/3 · 1/3 (bestelling, vertrek, aankomst)', instalments: [
+    { label: '1/3 bij bestelling', share: 1 / 3, due: 'ORDERED' },
+    { label: '1/3 bij vertrek', share: 1 / 3, due: 'SHIPPED' },
+    { label: '1/3 bij aankomst', share: 1 / 3, due: 'ARRIVED' } ] },
+  { value: 'HALF_HALF', label: '50% bij bestelling, 50% bij vertrek', instalments: [
+    { label: '50% bij bestelling', share: 0.5, due: 'ORDERED' },
+    { label: '50% bij vertrek', share: 0.5, due: 'SHIPPED' } ] },
+  { value: 'DEPOSIT_30_70', label: '30% bij bestelling, 70% bij vertrek', instalments: [
+    { label: '30% bij bestelling', share: 0.3, due: 'ORDERED' },
+    { label: '70% bij vertrek', share: 0.7, due: 'SHIPPED' } ] },
+  { value: 'FULL_UPFRONT', label: '100% bij bestelling', instalments: [ { label: '100% bij bestelling', share: 1, due: 'ORDERED' } ] },
+  { value: 'FULL_ON_ARRIVAL', label: '100% bij aankomst', instalments: [ { label: '100% bij aankomst', share: 1, due: 'ARRIVED' } ] },
+  { value: 'CUSTOM', label: 'Anders (vrij)', instalments: [] },
+];
+
+/** Who got the money: the factory, or the forwarder and customs. */
+export type Payee = 'SUPPLIER' | 'LOGISTICS';
+
+/** One amount paid on a purchase order, kept as it left the bank. */
+export interface PurchasePayment {
+  id: number;
+  orderId: number;
+  paidOn: string;
+  amount: number;
+  currency: Currency;
+  amountEur: number;
+  label: string | null;
+  actor: string | null;
+  recordedAt: string;
+  payee?: Payee | null;
+}
+
+export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
+
+/** A file that belongs to a container. */
+export interface PurchaseDocument {
+  id: number;
+  kind: DocumentKind;
+  kindLabel: string;
+  label: string | null;
+  originalFilename: string;
+  contentType: string;
+  sizeBytes: number;
+  paymentId: number | null;
+  actor: string | null;
+  addedAt: string;
+  orderId: number;
+}
+
+/** Who is owed what, in euro. */
+export interface Payable {
+  supplierEur: number;
+  logisticsEur: number;
+  enrosedEur: number;
+  freightInSupplierPrice: boolean;
+  ddp: boolean;
+}
+
+/** Pieces on the water for one product. */
+export interface ExpectedStock {
+  productId: number;
+  quantity: number;
+  expectedArrival: string | null;
+  orderNumbers: string[];
 }
 
 export interface PurchaseOrder {
@@ -637,6 +722,19 @@ export interface PurchaseOrder {
   receivingLocationId?: number | null;
   /** Variants of one series share out costs as one product; null = on. */
   groupVariants?: boolean | null;
+  /** When the container is expected; drives "te verwachten" on the products. */
+  expectedArrival?: string | null;
+  receivedOn?: string | null;
+  /** What was actually paid for the whole order; sometimes differs from the sum. */
+  paidTotalEur?: number | null;
+  /** Whether the received pieces were booked into stock; null on old orders = yes if received. */
+  stockBooked?: boolean | null;
+  /** How the supplier is paid; null = thirds. */
+  paymentTerms?: PaymentTerms | null;
+  /** The day the container sailed. */
+  shippedOn?: string | null;
+  /** Container / bill-of-lading number or a carrier tracking link. */
+  trackingReference?: string | null;
   notes: string;
   lines: PurchaseOrderLine[];
 }
@@ -704,6 +802,7 @@ export interface PurchaseOrderView {
   adjustments: CartonAdjustment[];
   /** Optional while a cached/older backend response is still in the browser. */
   costLabels?: PurchaseCostLabels;
+  payable?: Payable;
 }
 
 /* ----------------------------------------------------------------- sales */

@@ -3,11 +3,12 @@ import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
+import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Product, ProductFamily, StockLevel } from '../../core/api/models';
+import { Category, Product, ProductFamily, StockLevel, ExpectedStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { EurPipe } from '../../shared/pipes';
+import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { escapeHtml, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { Privacy } from '../../core/api/privacy';
@@ -63,7 +64,7 @@ interface ProductSwipe {
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NgTemplateOutlet],
+  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet],
   template: `
     <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
       <a class="btn btn--sm" routerLink="/catalog-export">Catalogus PDF</a>
@@ -233,7 +234,14 @@ interface ProductSwipe {
                 <div class="list-item__end group-head__end">
                   <div class="product-row__stock">
                     <span>Voorraad</span>
-                    <strong class="stock" [class.stock--empty]="!group.stock">{{ groupStock(group) }}</strong>
+                    @if (group.stock) {
+                      <strong class="stock">{{ groupStock(group) }}</strong>
+                    } @else {
+                      <strong class="stock stock--none">0</strong>
+                    }
+                    @if (expectedForGroup(group); as exp) {
+                      <small class="stock-expected">+{{ exp | num }} te verwachten</small>
+                    }
                   </div>
                   <!-- Variants mostly share a price, so the head shows the
                        lead variant's; a faint mark says when they differ. -->
@@ -347,7 +355,17 @@ interface ProductSwipe {
         <div class="list-item__end product-row__end">
           <div class="product-row__stock" [attr.title]="stockBreakdown(product)">
             <span>Voorraad</span>
-            <strong class="stock" [class.stock--empty]="!stockOf(product)">{{ stockLabel(stockOf(product)) }}</strong>
+            @if (stockOf(product)) {
+              <strong class="stock">{{ stockLabel(stockOf(product)) }}</strong>
+            } @else {
+              <strong class="stock stock--none">0</strong>
+            }
+            @if (expectedFor(product); as exp) {
+              <!-- On the water: what the catalogue may promise soon, and when. -->
+              <small class="stock-expected" [attr.title]="'Op ' + exp.orderNumbers.join(', ')">
+                +{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}
+              </small>
+            }
           </div>
           <div class="product-row__prices">
           @if (privacy.showPurchase()) {
@@ -510,7 +528,10 @@ interface ProductSwipe {
       border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line);
       color: var(--ink-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
       white-space: nowrap; }
-    .stock--empty { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+    /* Nothing on the shelf: a plain figure, no badge to shout about it. */
+    .stock--none { padding: 0; border: 0; background: transparent; color: var(--muted); font-weight: 600; }
+    .stock-expected { display: block; margin-top: 2px; color: var(--warn); font-size: 10px; font-weight: 700;
+      white-space: nowrap; text-transform: none; letter-spacing: 0; }
     .product-row__prices { display: grid; gap: 4px; width: 84px; box-sizing: border-box;
       padding-left: 8px; border-left: 1px solid var(--line); }
     @media (min-width: 680px) {
@@ -587,6 +608,7 @@ interface ProductSwipe {
 })
 export class ProductList {
   private readonly catalog = inject(CatalogApi);
+  private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
   readonly privacy = inject(Privacy);
 
@@ -653,6 +675,9 @@ export class ProductList {
         this.levels.set(levels);
         this.locationNames.set(new Map(locations.filter((l) => l.id !== null).map((l) => [l.id!, l.name])));
       })
+      .catch(() => undefined);
+    void this.sourcing.expectedStock()
+      .then((expected) => this.expected.set(new Map(expected.map((item) => [item.productId, item]))))
       .catch(() => undefined);
     this.loading.set(false);
     await familyRequest;
@@ -854,6 +879,15 @@ export class ProductList {
 
   /** Pieces per location, loaded once beside the products; the list shows the total. */
   private readonly levels = signal<StockLevel[]>([]);
+  private readonly expected = signal(new Map<number, ExpectedStock>());
+
+  expectedFor(product: Product): ExpectedStock | null {
+    return this.expected().get(product.id!) ?? null;
+  }
+
+  expectedForGroup(group: ProductGroup): number {
+    return group.products.reduce((sum, product) => sum + (this.expectedFor(product)?.quantity ?? 0), 0);
+  }
   private readonly locationNames = signal(new Map<number, string>());
   private readonly stockTotals = computed(() => {
     const totals = new Map<number, number>();

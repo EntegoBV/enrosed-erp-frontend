@@ -13,7 +13,7 @@ import { messageOf } from '../../core/api/errors';
 import { SupplierAddress } from '../../shared/supplier-address';
 
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
-  CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen',
+  CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Vertrokken', ONTVANGEN: 'Ontvangen',
 };
 
 @Component({
@@ -68,6 +68,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                   {{ row.order.number }} — {{ supplierName(row.order.supplierId) }}
                 }
               </div>
+              <!-- A nickname says which container; the supplier still says whose. -->
+              @if (row.order.alias) {
+                <div class="list-item__meta">{{ supplierName(row.order.supplierId) }}</div>
+              }
               <div class="list-item__meta">
                 {{ row.order.orderDate | dateNl }} · {{ containerLabel(row.order.containerType) }} ·
                 {{ row.costing.totals.cartons | num }} kartons ·

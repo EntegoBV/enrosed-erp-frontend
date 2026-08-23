@@ -14,16 +14,18 @@ import {
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import {
-  Allocation, Currency, Product, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, Supplier, StockLocation,
+  Allocation, Currency, DocumentKind, PAYMENT_TERMS, Payee, Product, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
+  PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
 import { PageHeader } from '../../shared/page-header';
 import { ProductDraft } from '../../shared/product-picker';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
-import { Ui } from '../../shared/ui';
-import { CbmPipe, CurPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { Sheet, Ui } from '../../shared/ui';
+import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
+import { AuthImage } from '../../core/api/auth-image';
 import {
   effectiveUsdToEur,
   purchaseCostLabels,
@@ -38,6 +40,15 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
  * and sea freight form the customs value, duty per HS code is levied on
  * that, and only then do the costs from the port of arrival join.
  */
+/** What the receive sheet edits before it is sent. */
+interface ReceiveDraft {
+  lines: { productId: number; name: string; sku: string; ordered: number; received: number; damaged: number }[];
+  bookStock: boolean;
+  /** Note the open balance as a final payment while receiving. */
+  finalPayment: boolean;
+  note: string;
+}
+
 /** The container's price basis: DDP when every line says so, EXW otherwise. */
 function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   return order.lines.length > 0 && order.lines.every((line) => (line.priceBasis ?? 'EXW') === 'DDP') ? 'DDP' : 'EXW';
@@ -46,12 +57,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, ProductPicker, DateField,
+  imports: [FormsModule, PageHeader, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess,
-            EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe],
+            EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
   template: `
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number" [subtitle]="supplierName()"
+      <app-page-header [title]="data.order.number"
+                       [subtitle]="data.order.alias ? data.order.alias + ' · ' + supplierName() : supplierName()"
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="true"
                        (titleChange)="patch({ number: $event })">
@@ -158,6 +170,22 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               }
             </div>
           </div>
+          <!-- The container's diary: agreements, then the receipt, the
+               booking and every payment write themselves in here. -->
+          <div class="po-note" [class.po-note--open]="noteOpen()">
+            <button class="po-note__head" type="button" [attr.aria-expanded]="noteOpen()" (click)="noteOpen.set(!noteOpen())">
+              <span class="po-note__label">Notitie</span>
+              @if (!noteOpen()) {
+                <span class="po-note__preview">{{ notePreview(data.order.notes) }}</span>
+              }
+              <i class="po-note__chev" aria-hidden="true"></i>
+            </button>
+            @if (noteOpen()) {
+              <textarea class="po-note__field" rows="7" [ngModel]="data.order.notes"
+                        (ngModelChange)="patch({ notes: $event })"
+                        placeholder="Afspraken, laadinstructies of aandachtspunten - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij"></textarea>
+            }
+          </div>
         </section>
 
         <div class="purchase-grid">
@@ -200,6 +228,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
 
                   <div class="form-grid order-fields">
+                    <div class="order-fields__group"><span>Order</span></div>
                     <div class="field">
                       <label for="po-alias">Herkenbare naam <span class="opt"></span></label>
                       <input class="input" id="po-alias" [ngModel]="data.order.alias"
@@ -212,6 +241,42 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <app-date-field fieldId="po-date" [value]="data.order.orderDate"
                                       (valueChange)="patch({ orderDate: $event })" />
                     </div>
+                    @if (!isReceived()) {
+                      <div class="field">
+                        <label for="po-expected">Verwacht op <span class="opt"></span></label>
+                        <app-date-field fieldId="po-expected" [value]="data.order.expectedArrival ?? ''"
+                                        (valueChange)="patch({ expectedArrival: $event || null })" />
+                        <span class="hint">De producten tonen dit als "te verwachten" tot de container binnen is.</span>
+                      </div>
+                    } @else if (data.order.receivedOn) {
+                      <div class="field">
+                        <label>Ontvangen op</label>
+                        <div class="input" style="background:var(--surface-2)">{{ data.order.receivedOn | dateNl }}</div>
+                      </div>
+                    }
+                    <div class="field">
+                      <label for="po-terms">Betaalafspraak</label>
+                      <select class="select" id="po-terms" [ngModel]="data.order.paymentTerms ?? 'THIRDS'"
+                              (ngModelChange)="patch({ paymentTerms: $event })">
+                        @for (terms of paymentTermOptions; track terms.value) {
+                          <option [value]="terms.value">{{ terms.label }}</option>
+                        }
+                      </select>
+                      <span class="hint">De betalingen rechts volgen dit plan: per termijn zie je wat open staat.</span>
+                    </div>
+                    @if (data.order.status !== 'CONCEPT') {
+                      <div class="field">
+                        <label for="po-tracking">Track &amp; trace <span class="opt"></span></label>
+                        <input class="input" id="po-tracking" placeholder="Containernummer, B/L of link van de rederij"
+                               [ngModel]="data.order.trackingReference ?? ''"
+                               (ngModelChange)="patch({ trackingReference: $event || null })" />
+                        @if (data.order.shippedOn) {
+                          <span class="hint">Vertrokken op {{ data.order.shippedOn | dateNl }}.</span>
+                        }
+                      </div>
+                    }
+                    <div class="order-fields__group"><span>Route</span>
+                      <small>{{ costLabels().loadingPort }} → {{ costLabels().destinationPort }} · {{ containerLabel(data.order.containerType) }} · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</small></div>
                     <div class="field order-route-field">
                       <label for="po-container">Type container</label>
                       <select class="select" id="po-container"
@@ -241,7 +306,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                  data.order.departurePort, departurePorts, customDeparturePort())"
                                (blur)="setCustomDeparturePort($any($event.target).value)" />
                       }
-                      <span class="hint">Standaard Ningbo. De gekozen haven bepaalt de vaarroute.</span>
                     </div>
                     <div class="field port-field order-route-field">
                       <label for="po-destination-port">Aankomsthaven</label>
@@ -264,7 +328,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                  customDestinationPort())"
                                (blur)="setCustomDestinationPort($any($event.target).value)" />
                       }
-                      <span class="hint">Niet in de lijst? Kies ‘Andere haven…’.</span>
                     </div>
                     <!-- Where the container is unloaded: the stock of every
                          line lands there on Ontvangen. -->
@@ -277,14 +340,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           <option [value]="location.id">{{ location.name }}</option>
                         }
                       </select>
-                      <span class="hint">De voorraad van deze order komt hier binnen bij Ontvangen.</span>
-                    </div>
-                    <div class="field span-2">
-                      <label for="po-notes">Interne notitie <span class="opt"></span></label>
-                      <textarea class="textarea" id="po-notes" rows="3"
-                                [ngModel]="data.order.notes"
-                                (ngModelChange)="patch({ notes: $event })"
-                                placeholder="Afspraken, laad-instructies of aandachtspunten"></textarea>
                     </div>
                   </div>
                 </div>
@@ -308,10 +363,17 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
 
               <div class="product-lines">
+                <div class="po-lines">
                 @for (line of data.costing.lines; track line.productId; let lineIndex = $index) {
                   <article class="po-line">
                     <header class="po-line__head">
-                      <span class="po-line__index" aria-hidden="true">{{ lineIndex + 1 }}</span>
+                      <!-- The photo says which product faster than a number; the number
+                           stays for a product without one. -->
+                      @if (photoOf(line.productId); as photo) {
+                        <img class="po-line__photo" [appAuthSrc]="photo" alt="" draggable="false" />
+                      } @else {
+                        <span class="po-line__index" aria-hidden="true">{{ lineIndex + 1 }}</span>
+                      }
                       <span class="po-line__identity">
                         <strong>{{ line.productName }}</strong>
                         <span>{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
@@ -468,6 +530,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     </button>
                   </div>
                 }
+                </div>
               </div>
             </section>
 
@@ -796,6 +859,110 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
             </section>
 
+            @if (privacy.showPurchase()) {
+              <!-- Money goes two ways. To the factory for the goods (and the
+                   sea freight when the price is CIF), in the agreed instalments;
+                   to the forwarder and customs for the road, once the box is
+                   here. The Enrosed kost is ours and nobody's invoice. -->
+              <section class="card payments-card" aria-labelledby="purchase-payments-title">
+                <div class="action-card__head">
+                  <span class="po-eyebrow">Betalingen</span>
+                  <h2 id="purchase-payments-title">
+                    @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
+                  </h2>
+                  <p>Te betalen: {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
+                </div>
+
+                <div class="pay-stream">
+                  <div class="pay-stream__head">
+                    <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht (in de prijs)' : 'de goederen' }}</small></span>
+                    <span class="num"><b>{{ paidTo('SUPPLIER') | eur }}</b><small>van {{ supplierOwed() | eur }}</small></span>
+                  </div>
+                  <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SUPPLIER'), supplierOwed())"></div></div>
+                  @if (plannedInstalments(); as plan) {
+                    @if (plan.length) {
+                      <ol class="instalments">
+                        @for (step of plan; track step.label) {
+                          <li [class.instalments__item--paid]="step.state === 'paid'" [class.instalments__item--due]="step.state === 'due'">
+                            <i aria-hidden="true">{{ step.state === 'paid' ? '✓' : (step.state === 'due' ? '!' : '·') }}</i>
+                            <span class="instalments__what">
+                              <b>{{ step.label }}</b>
+                              <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
+                            </span>
+                            @if (step.state === 'due') {
+                              <button class="btn btn--sm" type="button" (click)="openPayment(step.amount, step.label, 'SUPPLIER')">Noteren</button>
+                            }
+                          </li>
+                        }
+                      </ol>
+                    }
+                  }
+                  @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
+                    <div class="pay-line">
+                      <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
+                        <small>{{ payment.paidOn | dateNl }}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
+                      <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                      <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
+                    </div>
+                  }
+                  <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
+                </div>
+
+                @if (!isDdp()) {
+                  <div class="pay-stream">
+                    <div class="pay-stream__head">
+                      <span><b>Douane &amp; transport tot lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</b><small>invoerrechten, {{ data.payable?.freightInSupplierPrice ? '' : 'zeevracht, ' }}lokale kosten, aankomst · na aankomst</small></span>
+                      <span class="num"><b>{{ paidTo('LOGISTICS') | eur }}</b><small>van {{ logisticsOwed() | eur }}</small></span>
+                    </div>
+                    <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
+                    @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
+                      <div class="pay-line">
+                        <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
+                          <small>{{ payment.paidOn | dateNl }}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                        <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                        <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
+                      </div>
+                    }
+                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
+                  </div>
+                }
+
+                @if (data.costing.totals.extraRevenueEur) {
+                  <p class="pay-ours">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p>
+                }
+              </section>
+            }
+
+            <!-- The paper trail of a container: only what was actually added. -->
+            <section class="card files-card" aria-labelledby="purchase-files-title">
+              <div class="action-card__head">
+                <span class="po-eyebrow">Bestanden</span>
+                <h2 id="purchase-files-title">Documenten</h2>
+                <p>{{ (documents() ?? []).length ? (documents()!.length + ' bestand' + (documents()!.length === 1 ? '' : 'en')) : 'Nog geen bestanden bij deze container.' }}</p>
+              </div>
+              @if (documents(); as docs) {
+                @if (docs.length) {
+                  <ul class="files-list">
+                    @for (doc of docs; track doc.id) {
+                      <li>
+                        <span class="files-list__name">
+                          <b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b>
+                          <small>{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}</small>
+                        </span>
+                        <span class="files-list__actions">
+                          <button class="btn btn--sm" type="button" (click)="downloadDocument(doc)">Openen</button>
+                          <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Document verwijderen" (click)="removeDocument(doc)">×</button>
+                        </span>
+                      </li>
+                    }
+                  </ul>
+                }
+              }
+              <div class="action-card__buttons">
+                <button class="btn btn--block" type="button" (click)="openDocument()">Document toevoegen</button>
+              </div>
+            </section>
+
             <section class="card action-card" aria-labelledby="purchase-actions-title">
               <div class="action-card__head">
                 <span class="po-eyebrow">Afronden</span>
@@ -806,7 +973,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   @if (data.order.status === 'CONCEPT') {
                     Controleer de producten en kosten voordat je de bestelling vastlegt.
                   } @else if (!isReceived()) {
-                    Pas eventuele tekorten aan vóór je de voorraad bijboekt.
+                    Bij ontvangst tel je wat er echt in de container zat; bijboeken kan meteen of later.
+                  } @else if (!(data.order.stockBooked ?? true)) {
+                    Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.
                   } @else {
                     De voorraad is bijgeboekt. Je kunt nog een variant maken of kostprijzen toepassen.
                   }
@@ -818,6 +987,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <button class="btn btn--primary btn--block" type="button"
                           (click)="advanceStatus()">
                     {{ step.action }}
+                  </button>
+                }
+                @if (isReceived() && !(data.order.stockBooked ?? true)) {
+                  <!-- Received but not on the shelf yet: the one action left. -->
+                  <button class="btn btn--primary btn--block" type="button" [disabled]="booking()"
+                          (click)="bookStock()">
+                    {{ booking() ? 'Bezig…' : 'Voorraad bijboeken' }}
                   </button>
                 }
                 @if (privacy.showPurchase()) {
@@ -865,6 +1041,214 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         />
       }
 
+      @if (paying(); as pay) {
+        <app-sheet [title]="pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier'" (closed)="paying.set(null)">
+          <div body>
+            <!-- Deposits are fractions of the goods: one tap fills them in. -->
+            <div class="pay-chips" role="group" aria-label="Snel invullen">
+              @for (chip of (pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
+                <button class="pay-chip" type="button" (click)="paying.set({ ...pay, amount: chip.amount, currency: 'EUR', label: chip.label })">
+                  {{ chip.label }}<small>{{ chip.amount | eur }}</small>
+                </button>
+              }
+            </div>
+            <div class="form-grid mt-12">
+              <div class="field">
+                <label for="pay-amount">Bedrag</label>
+                <div class="input-affix">
+                  <input class="input num right" id="pay-amount" type="number" min="0" step="0.01" inputmode="decimal"
+                         [ngModel]="pay.amount" (ngModelChange)="paying.set({ ...pay, amount: +$event })" />
+                  <select class="input-affix__suffix line-currency" aria-label="Munt"
+                          [ngModel]="pay.currency" (ngModelChange)="paying.set({ ...pay, currency: $event })">
+                    <option value="EUR">EUR</option>
+                    <option value="USD">USD</option>
+                    <option value="CNY">CNY</option>
+                  </select>
+                </div>
+                @if (pay.currency !== 'EUR' && pay.amount > 0) {
+                  <span class="hint">≈ {{ eurOf(pay.amount, pay.currency) | eur }} aan de koers van deze order.</span>
+                }
+              </div>
+              <div class="field">
+                <label for="pay-date">Betaald op</label>
+                <app-date-field fieldId="pay-date" [value]="pay.paidOn" (valueChange)="paying.set({ ...pay, paidOn: $event })" />
+              </div>
+              <div class="field span-2">
+                <label for="pay-label">Omschrijving <span class="opt"></span></label>
+                <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
+                       [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
+              </div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
+              {{ payingBusy() ? 'Bezig…' : 'Betaling bewaren' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
+      @if (addingDocument(); as doc) {
+        <app-sheet title="Document toevoegen" (closed)="addingDocument.set(null)">
+          <div body>
+            <div class="form-grid">
+              <div class="field">
+                <label for="doc-kind">Soort</label>
+                <select class="select" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
+                  @for (kind of documentKinds; track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
+                </select>
+              </div>
+              <div class="field">
+                <label for="doc-label">Omschrijving <span class="opt"></span></label>
+                <input class="input" id="doc-label" placeholder="bijv. KBC 23/08, factuur 2e helft"
+                       [ngModel]="doc.label" (ngModelChange)="addingDocument.set({ ...doc, label: $event })" />
+              </div>
+              @if (doc.kind === 'PAYMENT_PROOF' && paymentsTo('SUPPLIER').length + paymentsTo('LOGISTICS').length) {
+                <div class="field span-2">
+                  <label for="doc-payment">Hoort bij betaling <span class="opt"></span></label>
+                  <select class="select" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
+                    <option value="">— geen —</option>
+                    @for (payment of payments() ?? []; track payment.id) {
+                      <option [value]="payment.id">{{ payment.paidOn | dateNl }} · {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option>
+                    }
+                  </select>
+                </div>
+              }
+              <div class="field span-2">
+                <label for="doc-file">Bestand</label>
+                <input class="input" id="doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv"
+                       (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
+                <span class="hint">PDF, foto of Office-bestand, tot 25 MB.</span>
+              </div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="addingDocument.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="uploadingDocument() || !doc.file" (click)="confirmDocument()">
+              {{ uploadingDocument() ? 'Bezig…' : 'Bewaren' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
+      @if (firstInstalmentPrompt(); as first) {
+        <!-- Just ordered: the first instalment falls due now. Ask once, with
+             room for the bank statement. -->
+        <app-sheet title="Eerste betaling" (closed)="firstInstalmentPrompt.set(null)">
+          <div body>
+            <p>De bestelling staat vast. Volgens de betaalafspraak is nu <b>{{ first.label }}</b> aan de beurt:
+              <b>{{ first.amount | eur }}</b> aan {{ supplierName() }}.</p>
+            <p class="hint mt-8">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 2 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
+            <div class="form-grid mt-12">
+              <div class="field">
+                <label for="first-amount">Betaald bedrag</label>
+                <div class="input-affix">
+                  <input class="input num right" id="first-amount" type="number" min="0" step="0.01" inputmode="decimal"
+                         [ngModel]="first.amount" (ngModelChange)="firstInstalmentPrompt.set({ ...first, amount: +$event })" />
+                  <select class="input-affix__suffix line-currency" aria-label="Munt" [ngModel]="first.currency"
+                          (ngModelChange)="firstInstalmentPrompt.set({ ...first, currency: $event })">
+                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="first-date">Betaald op</label>
+                <app-date-field fieldId="first-date" [value]="first.paidOn" (valueChange)="firstInstalmentPrompt.set({ ...first, paidOn: $event })" />
+              </div>
+              <div class="field span-2">
+                <label for="first-proof">Betalingsbewijs <span class="opt"></span></label>
+                <input class="input" id="first-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+                       (change)="firstInstalmentPrompt.set({ ...first, files: fileList($any($event.target).files) })" />
+                <span class="hint">Bijv. het KBC-afschrift; hoogstens twee bestanden.</span>
+              </div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="firstInstalmentPrompt.set(null)">Nog niet betaald</button>
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(first.amount > 0)" (click)="confirmFirstInstalment()">
+              {{ payingBusy() ? 'Bezig…' : 'Betaald - noteren' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
+      @if (receiving(); as draft) {
+        <!-- The container is in. Count what is there, note what broke, say
+             what was paid, and decide whether the shelf gets it now. -->
+        <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
+          <div body>
+            <p class="hint">Vul per product in wat er werkelijk in de container zat. Staat alles zoals
+              besteld, dan hoef je niets te wijzigen.</p>
+            <div class="receive-lines">
+              @for (line of draft.lines; track line.productId) {
+                <div class="receive-line" [class.receive-line--short]="line.received < line.ordered"
+                     [class.receive-line--damaged]="line.damaged > 0">
+                  <div class="receive-line__name">
+                    <b>{{ line.name }}</b>
+                    <small>{{ line.sku }} · besteld {{ line.ordered | num }}</small>
+                  </div>
+                  <label class="receive-line__field">
+                    <span>Ontvangen</span>
+                    <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
+                           [ngModel]="line.received" (ngModelChange)="setReceived(line.productId, +$event)" />
+                  </label>
+                  <label class="receive-line__field">
+                    <span>Beschadigd</span>
+                    <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
+                           [ngModel]="line.damaged" (ngModelChange)="setDamaged(line.productId, +$event)" />
+                  </label>
+                  @if (line.received !== line.ordered || line.damaged > 0) {
+                    <span class="receive-line__note">
+                      @if (line.received < line.ordered) { {{ line.ordered - line.received | num }} te weinig }
+                      @if (line.received > line.ordered) { {{ line.received - line.ordered | num }} te veel }
+                      @if (line.damaged > 0) { · {{ line.damaged | num }} kapot }
+                    </span>
+                  }
+                </div>
+              }
+            </div>
+
+            @if (privacy.showPurchase()) {
+              <div class="receive-balance mt-12">
+                <div>
+                  <b>Betaald tot nu: {{ paidTotalEur() | eur }}</b>
+                  <small>Goederenwaarde {{ data.costing.totals.goodsEur | eur }} · totaal geland {{ data.costing.totals.totalEur | eur }}</small>
+                </div>
+                @if (remainingEur() > 0.005) {
+                  <label class="receive-balance__final">
+                    <input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" />
+                    <span>Slotbetaling van <b>{{ remainingEur() | eur }}</b> meteen noteren</span>
+                  </label>
+                } @else {
+                  <span class="hint">Volledig betaald volgens de betalingen hierboven.</span>
+                }
+              </div>
+            }
+
+            <div class="field mt-12">
+              <label for="rc-note">Opmerking bij de ontvangst <span class="opt"></span></label>
+              <textarea class="textarea" id="rc-note" rows="2" [ngModel]="draft.note"
+                        (ngModelChange)="receiving.set({ ...draft, note: $event })"
+                        placeholder="Bijv. doos 3 nat aangekomen, foto's gemaild naar leverancier"></textarea>
+              <span class="hint">Komt met de datum in de notitie van de order; tekorten en schade worden er automatisch bij gezet.</span>
+            </div>
+
+            <label class="switch-row mt-12">
+              <span><b>Meteen bijboeken op {{ receivingLocationName(data.order.receivingLocationId) }}</b>
+                <small>Ontvangen min beschadigd gaat in de voorraad. Uit: later via "Voorraad bijboeken".</small></span>
+              <input type="checkbox" [ngModel]="draft.bookStock" (ngModelChange)="receiving.set({ ...draft, bookStock: $event })" />
+            </label>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="receiving.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="booking()" (click)="confirmReceive()">
+              {{ booking() ? 'Bezig…' : (draft.bookStock ? 'Ontvangen en bijboeken' : 'Ontvangen') }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
       @if (orderPlaced()) {
         <app-purchase-ordered-success [orderNumber]="data.order.number"
                                       (closed)="closeOrderPlaced()"
@@ -890,6 +1274,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-overview h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.po-overview__copy p{color:var(--muted);font-size:12px}
     .po-status{display:flex;flex:none;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11.5px;font-weight:700}
     .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok)}.overview-stepper{margin:16px 0}
+    .po-note{margin-top:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.po-note__head{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}.po-note__label{flex:none;color:var(--muted);font-size:10px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.po-note__preview{flex:1;min-width:0;overflow:hidden;color:var(--ink-2);font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}.po-note__chev{width:7px;height:7px;flex:none;margin-left:auto;border-right:1.6px solid var(--muted);border-bottom:1.6px solid var(--muted);transform:rotate(45deg);transition:transform .15s ease}.po-note--open .po-note__chev{transform:rotate(-135deg)}.po-note__field{display:block;width:100%;padding:0 12px 12px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;min-height:120px}
     .po-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
     .po-fact--total strong{color:var(--rose-dark)}
     .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}
@@ -903,13 +1288,25 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
     .supplier-context{display:flex;align-items:center;gap:9px;margin-bottom:14px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     .supplier-context__mark{display:grid;width:34px;height:34px;place-items:center;border-radius:10px;background:var(--rose);color:#fff}.supplier-context__copy{display:flex;min-width:0;flex:1;flex-direction:column}.supplier-context__copy>span,.supplier-context__country{color:var(--muted);font-size:10px}.supplier-context__copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.supplier-context__copy app-supplier-address{margin-top:1px}
-    :is(.order-fields,.po-line__inputs) .field{min-width:0}.port-field__custom{margin-top:7px}
+    :is(.order-fields,.po-line__inputs) .field{min-width:0}.order-fields__group{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;margin-top:6px;padding-top:12px;border-top:1px solid var(--line)}.order-fields__group:first-child{margin-top:0;padding-top:0;border-top:0}.order-fields__group span{color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}.order-fields__group small{color:var(--muted);font-size:11.5px}.port-field__custom{margin-top:7px}
 
   `, `
 
     .products-card{overflow:visible}:is(.products-card .section-heading,.summary-heading){border-bottom:1px solid var(--line)}.add-product{flex:none;min-height:40px;padding-inline:11px}
-    .po-line{padding:14px;border-bottom:1px solid var(--line)}.po-line:last-child{border:0}.po-line__head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
-    .po-line__index{width:24px;color:var(--muted);font-size:11px;text-align:center}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
+    .po-line{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 1px 2px rgb(31 25 22 / 4%)}.po-line+.po-line{margin-top:10px}.po-line__head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+    .po-lines{padding:12px;border-radius:16px;background:var(--surface-2)}
+    .po-line__index{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}.po-line__photo{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
+    .purchase-summary .cost-hero{grid-template-columns:1fr;gap:8px}.purchase-summary .cost-hero__unit{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line);text-align:left;align-self:auto}
+    .pay-stream__head{flex-wrap:wrap}.pay-stream__head>span:last-child{text-align:right;margin-left:auto}
+    .payments-card .action-card__head h2{font-size:16px}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
+    .instalments{list-style:none;margin:0 18px 6px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
+    .pay-stream{margin:0 18px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-stream .instalments{margin:0}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-ours{margin:0 18px 14px;color:var(--muted);font-size:11.5px}
+    .files-list__actions{display:flex;align-items:center;gap:6px}
+    .files-list{list-style:none;margin:0 18px 4px;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-card__hint{padding:6px 18px 14px}
+    .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
+    .receive-balance{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-balance b{font-size:13px}.receive-balance small{display:block;color:var(--muted);font-size:11.5px}.receive-balance__final{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.receive-balance__final input{width:18px;height:18px;accent-color:var(--rose)}
+    .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
+    @media(max-width:559px){.receive-line{grid-template-columns:1fr 1fr}.receive-line__name{grid-column:1/-1}}
     .switch-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:4px 0 10px;cursor:pointer;border-bottom:1px solid var(--line);margin-bottom:4px}.switch-row>span{display:flex;flex-direction:column;gap:2px;min-width:0}.switch-row b{font-size:13px}.switch-row small{color:var(--muted);font-size:11.5px;line-height:1.35}.switch-row input{width:20px;height:20px;flex:none;accent-color:var(--rose)}
     .line-remove{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}.line-remove:active{background:var(--danger-soft);color:var(--danger)}:is(.line-currency,.cost-currency){min-width:74px;border-radius:0}.line-basis{min-width:72px;border-radius:0 var(--r-sm) var(--r-sm) 0;border-left:0}
 
@@ -931,8 +1328,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .loading-card{display:flex;min-height:160px;align-items:center;justify-content:center;color:var(--muted)}.loading-card__mark{display:none}
 
     @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(3,1fr)}.line-breakdown summary{display:flex}.line-breakdown__value{padding-top:0}}
-    @media(min-width: 680px){:is(.section-toggle,.section-heading){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px 18px}.order-fields{grid-template-columns:repeat(6,minmax(0,1fr))}.order-fields>.field{grid-column:span 3}.order-fields>.order-route-field{grid-column:span 2}.order-fields>.span-2{grid-column:1/-1}}
-    @media(min-width:680px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.7fr);gap:16px;align-items:start}.purchase-summary{margin-top:0;position:sticky;top:calc(var(--appbar-h) + 12px);max-height:calc(100vh - var(--appbar-h) - 24px);overflow-y:auto;overscroll-behavior:contain}}
+    @media(min-width: 680px){:is(.section-toggle,.section-heading){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px}.order-fields{grid-template-columns:repeat(6,minmax(0,1fr))}.order-fields>.field{grid-column:span 3}.order-fields>.order-route-field{grid-column:span 2}.order-fields>.span-2{grid-column:1/-1}}
+    @media(min-width:680px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(330px,.85fr);gap:16px;align-items:start}.purchase-summary{margin-top:0}}
   `]
 })
 export class PurchaseEditor {
@@ -980,13 +1377,12 @@ export class PurchaseEditor {
   readonly containerTypes = CONTAINER_TYPES;
   readonly containerLabel = containerLabel;
 
-  /** The one-way street a container travels. */
-  /* Three visible steps: "onderweg" added a tap without adding
-     information - the stock only moves on receipt anyway. Orders still
-     in ONDERWEG from before simply show as Besteld. */
+  /** The one-way street a container travels: the sailing is a step of its
+      own again - a payment falls due on it, and the tracking starts there. */
   readonly statusSteps = [
     { value: 'CONCEPT' as const, label: 'Concept', action: 'Bestellen' },
-    { value: 'BESTELD' as const, label: 'Besteld', action: 'Container ontvangen' },
+    { value: 'BESTELD' as const, label: 'Besteld', action: 'Container vertrokken' },
+    { value: 'ONDERWEG' as const, label: 'Vertrokken', action: 'Container ontvangen' },
     { value: 'ONTVANGEN' as const, label: 'Ontvangen', action: '' },
   ];
 
@@ -1002,7 +1398,6 @@ export class PurchaseEditor {
   }
 
   stepIndex(status: string): number {
-    if (status === 'ONDERWEG') status = 'BESTELD';
     return this.statusSteps.findIndex((step) => step.value === status);
   }
 
@@ -1030,16 +1425,16 @@ export class PurchaseEditor {
     if (!data || !step) return;
 
     if (step.to === 'ONTVANGEN') {
-      this.ui.confirm(
-        {
-          title: 'Container ontvangen',
-          message: `De voorraad wordt bijgeboekt op <b>${this.receivingLocationName(data.order.receivingLocationId)}</b> `
-            + 'met de aantallen zoals ze nu op de order staan. Minder ontvangen dan besteld? '
-            + 'Pas de aantallen eerst aan; de order onthoudt wat er besteld was.',
-          confirmLabel: 'Ontvangen en bijboeken',
+      this.openReceive();
+      return;
+    }
+    if (step.to === 'ONDERWEG') {
+      this.enqueue(
+        (order) => ({ ...order, status: 'ONDERWEG' }),
+        () => {
+          this.ui.toast('Container vertrokken - vul het track & trace-nummer in bij Ordergegevens', 'ok');
+          if (!this.sectionOpen('order')) this.toggleSection('order');
         },
-        /* A status step saves at once - the draft goes along with it. */
-        () => { this.enqueue((order) => ({ ...order, status: 'ONTVANGEN' }), () => {}); },
       );
       return;
     }
@@ -1049,6 +1444,352 @@ export class PurchaseEditor {
     );
   }
 
+  readonly noteOpen = signal(false);
+
+  /** The first line of the diary, for the folded state. */
+  notePreview(notes: string | null | undefined): string {
+    const text = (notes ?? '').trim();
+    if (!text) return 'Nog geen notitie - tik om te schrijven';
+    const first = text.split('\n')[0];
+    return text.includes('\n') || first.length > 90 ? first.slice(0, 90) + '…' : first;
+  }
+
+  photoOf(productId: number): string | null {
+    const product = this.products().find((item) => item.id === productId);
+    return product?.photos?.[0]?.url ?? null;
+  }
+
+  /* ---- payments --------------------------------------------------- */
+  readonly payments = signal<PurchasePayment[] | null>(null);
+  readonly paying = signal<{ amount: number; currency: Currency; paidOn: string; label: string; payee: Payee } | null>(null);
+  readonly payingBusy = signal(false);
+
+  /** What the supplier is owed: goods, plus the sea freight when it is in the price. */
+  readonly supplierOwed = computed(() => this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
+  readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
+  readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed());
+  paymentsTo(payee: Payee): PurchasePayment[] {
+    return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
+  }
+  paidTo(payee: Payee): number {
+    return this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
+  }
+  readonly paidAll = computed(() => (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
+  readonly openAll = computed(() => Math.max(0, this.owedAll() - this.paidAll()));
+  pct(paid: number, owed: number): number {
+    return owed > 0 ? Math.min(100, Math.round((paid / owed) * 100)) : 0;
+  }
+  /* The supplier stream, as the plan and the balance see it. */
+  readonly paidTotalEur = computed(() => this.paidTo('SUPPLIER'));
+  readonly remainingEur = computed(() => this.supplierOwed() - this.paidTotalEur());
+  readonly payChips = computed(() => {
+    const goods = this.supplierOwed();
+    const rest = Math.max(0, this.remainingEur());
+    const chips = [
+      { label: '1/3', amount: Math.round((goods / 3) * 100) / 100 },
+      { label: '1/2', amount: Math.round((goods / 2) * 100) / 100 },
+      { label: '2/3', amount: Math.round((goods * 2 / 3) * 100) / 100 },
+    ];
+    if (rest > 0.005) chips.push({ label: 'Rest', amount: Math.round(rest * 100) / 100 });
+    return chips.filter((chip) => chip.amount > 0);
+  });
+
+  eurOf(amount: number, currency: Currency): number {
+    const order = this.view()?.order;
+    if (!order) return amount;
+    if (currency === 'USD') return amount * (order.usdToEurGoods ?? 1);
+    if (currency === 'CNY') return amount * (order.cnyToUsd ?? 1) * (order.usdToEurGoods ?? 1);
+    return amount;
+  }
+
+  private async loadPayments(orderId: number): Promise<void> {
+    try { this.payments.set(await this.sourcing.payments(orderId)); } catch { this.payments.set([]); }
+  }
+
+  openPayment(amount?: number, label?: string, payee: Payee = 'SUPPLIER'): void {
+    const rest = payee === 'SUPPLIER' ? Math.max(0, this.remainingEur()) : Math.max(0, this.logisticsOwed() - this.paidTo('LOGISTICS'));
+    this.paying.set({
+      amount: Math.round((amount ?? rest) * 100) / 100,
+      currency: 'EUR',
+      paidOn: new Date().toISOString().slice(0, 10),
+      label: label ?? (payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '') : 'Douane & transport'),
+      payee,
+    });
+  }
+
+  /**
+   * The plan's instalments against what was paid: instalments are ticked
+   * off in order by the paid total, the first unpaid one whose moment has
+   * come is "due", the rest wait.
+   */
+  readonly plannedInstalments = computed(() => {
+    const data = this.view();
+    if (!data) return [];
+    const terms = PAYMENT_TERMS.find((item) => item.value === (data.order.paymentTerms ?? 'THIRDS'));
+    if (!terms || !terms.instalments.length) return [];
+    const goods = this.supplierOwed();
+    if (!(goods > 0)) return [];
+    const reached: Record<'ORDERED' | 'SHIPPED' | 'ARRIVED', boolean> = {
+      ORDERED: data.order.status !== 'CONCEPT',
+      SHIPPED: data.order.status === 'ONDERWEG' || data.order.status === 'ONTVANGEN',
+      ARRIVED: data.order.status === 'ONTVANGEN',
+    };
+    let left = this.paidTotalEur();
+    return terms.instalments.map((step) => {
+      const amount = Math.round(goods * step.share * 100) / 100;
+      let state: 'paid' | 'due' | 'later';
+      if (left >= amount - 0.005) { state = 'paid'; left -= amount; }
+      else { state = reached[step.due] ? 'due' : 'later'; left = 0; }
+      return { label: step.label, amount, state };
+    });
+  });
+
+  async confirmPayment(): Promise<void> {
+    const data = this.view();
+    const pay = this.paying();
+    if (!data || !pay || this.payingBusy()) return;
+    this.payingBusy.set(true);
+    try {
+      await this.sourcing.addPayment(data.order.id, {
+        paidOn: pay.paidOn, amount: pay.amount, currency: pay.currency, label: pay.label || null, payee: pay.payee });
+      await this.loadPayments(data.order.id);
+      await this.reloadOrderQuietly();
+      this.paying.set(null);
+      this.ui.toast('Betaling bewaard', 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Betaling bewaren mislukt'), 'err');
+    } finally {
+      this.payingBusy.set(false);
+    }
+  }
+
+  removePayment(payment: PurchasePayment): void {
+    this.ui.confirm(
+      { title: 'Betaling verwijderen', message: `Betaling van <b>${payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })}</b> verwijderen?`,
+        confirmLabel: 'Verwijderen', danger: true },
+      async () => {
+        try {
+          await this.sourcing.deletePayment(payment.orderId, payment.id);
+          await this.loadPayments(payment.orderId);
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+        }
+      });
+  }
+
+  /* ---- documents ---------------------------------------------------- */
+  readonly documents = signal<PurchaseDocument[] | null>(null);
+  readonly addingDocument = signal<{ kind: DocumentKind; label: string; paymentId: number | null; file: File | null } | null>(null);
+  readonly uploadingDocument = signal(false);
+  readonly documentKinds: { value: DocumentKind; label: string }[] = [
+    { value: 'PAYMENT_PROOF', label: 'Betalingsbewijs' }, { value: 'COMMERCIAL_INVOICE', label: 'Commercial invoice' },
+    { value: 'PACKING_LIST', label: 'Packing list' }, { value: 'BILL_OF_LADING', label: 'Bill of lading' },
+    { value: 'CUSTOMS', label: 'Douanedocument' }, { value: 'OTHER', label: 'Andere' },
+  ];
+
+  private async loadDocuments(orderId: number): Promise<void> {
+    try { this.documents.set(await this.sourcing.documents(orderId)); } catch { this.documents.set([]); }
+  }
+
+  proofsOf(paymentId: number): PurchaseDocument[] {
+    return (this.documents() ?? []).filter((doc) => doc.paymentId === paymentId);
+  }
+
+  sizeLabel(bytes: number): string {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' kB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  openDocument(): void {
+    this.addingDocument.set({ kind: 'PAYMENT_PROOF', label: '', paymentId: null, file: null });
+  }
+
+  async confirmDocument(): Promise<void> {
+    const data = this.view();
+    const doc = this.addingDocument();
+    if (!data || !doc || !doc.file || this.uploadingDocument()) return;
+    this.uploadingDocument.set(true);
+    try {
+      await this.sourcing.addDocument(data.order.id, doc.file, doc.kind, doc.label || null, doc.paymentId);
+      await this.loadDocuments(data.order.id);
+      this.addingDocument.set(null);
+      this.ui.toast('Document bewaard', 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Document bewaren mislukt'), 'err');
+    } finally {
+      this.uploadingDocument.set(false);
+    }
+  }
+
+  async downloadDocument(doc: PurchaseDocument): Promise<void> {
+    try {
+      saveBlob(await this.sourcing.documentFile(doc.orderId, doc.id), doc.originalFilename);
+    } catch {
+      this.ui.toast('Document openen mislukt', 'err');
+    }
+  }
+
+  removeDocument(doc: PurchaseDocument): void {
+    this.ui.confirm(
+      { title: 'Document verwijderen', message: `<b>${doc.originalFilename}</b> verwijderen?`, confirmLabel: 'Verwijderen', danger: true },
+      async () => {
+        try {
+          await this.sourcing.deleteDocument(doc.orderId, doc.id);
+          await this.loadDocuments(doc.orderId);
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+        }
+      });
+  }
+
+  fileList(files: FileList | null): File[] {
+    return files ? Array.from(files).slice(0, 2) : [];
+  }
+
+  /* ---- just ordered: the first instalment ---------------------------- */
+  readonly firstInstalmentPrompt = signal<{ label: string; amount: number; currency: Currency; paidOn: string; files: File[] } | null>(null);
+
+  private promptFirstInstalment(): void {
+    const first = this.plannedInstalments().find((step) => step.state === 'due');
+    if (!first) return;
+    this.firstInstalmentPrompt.set({ label: first.label, amount: first.amount, currency: 'EUR',
+      paidOn: new Date().toISOString().slice(0, 10), files: [] });
+  }
+
+  async confirmFirstInstalment(): Promise<void> {
+    const data = this.view();
+    const first = this.firstInstalmentPrompt();
+    if (!data || !first || this.payingBusy()) return;
+    this.payingBusy.set(true);
+    try {
+      const payment = await this.sourcing.addPayment(data.order.id, {
+        paidOn: first.paidOn, amount: first.amount, currency: first.currency, label: first.label, payee: 'SUPPLIER' });
+      for (const file of first.files.slice(0, 2)) {
+        await this.sourcing.addDocument(data.order.id, file, 'PAYMENT_PROOF', first.label, payment.id);
+      }
+      await Promise.all([this.loadPayments(data.order.id), this.loadDocuments(data.order.id)]);
+      await this.reloadOrderQuietly();
+      this.firstInstalmentPrompt.set(null);
+      this.ui.toast(first.files.length ? 'Betaling en bewijs bewaard' : 'Betaling bewaard', 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Betaling bewaren mislukt'), 'err');
+    } finally {
+      this.payingBusy.set(false);
+    }
+  }
+
+  /** The server wrote a line in the notes; pick it up without disturbing the draft. */
+  private async reloadOrderQuietly(): Promise<void> {
+    const data = this.view();
+    if (!data || this.dirty()) return;
+    try {
+      const fresh = await this.sourcing.purchaseOrder(data.order.id);
+      ++this.previewVersion;
+      this.view.set(fresh);
+      this.savedOrder.set(JSON.stringify(fresh.order));
+    } catch { /* the note shows after the next load */ }
+  }
+
+  /* ---- receiving the container ------------------------------------- */
+  readonly receiving = signal<ReceiveDraft | null>(null);
+  readonly booking = signal(false);
+
+  /** Opens the count sheet; the draft is saved first so the counts land on what is on screen. */
+  async openReceive(): Promise<void> {
+    const data = this.view();
+    if (!data) return;
+    if (this.dirty()) {
+      const saved = await this.save();
+      if (!saved) return;
+    }
+    const current = this.view()!;
+    this.receiving.set({
+      lines: current.order.lines.map((line) => {
+        const product = this.products().find((p) => p.id === line.productId);
+        return {
+          productId: line.productId,
+          name: product?.name ?? `Product ${line.productId}`,
+          sku: product?.sku ?? '',
+          ordered: line.orderedQuantity ?? line.quantity,
+          received: line.quantity,
+          damaged: 0,
+        };
+      }),
+      bookStock: true,
+      finalPayment: false,
+      note: '',
+    });
+  }
+
+  setReceived(productId: number, received: number): void {
+    this.receiving.update((draft) => draft && {
+      ...draft,
+      lines: draft.lines.map((line) => line.productId === productId
+        ? { ...line, received: Math.max(0, received || 0), damaged: Math.min(line.damaged, Math.max(0, received || 0)) }
+        : line),
+    });
+  }
+
+  setDamaged(productId: number, damaged: number): void {
+    this.receiving.update((draft) => draft && {
+      ...draft,
+      lines: draft.lines.map((line) => line.productId === productId
+        ? { ...line, damaged: Math.min(Math.max(0, damaged || 0), line.received) }
+        : line),
+    });
+  }
+
+  async confirmReceive(): Promise<void> {
+    const data = this.view();
+    const draft = this.receiving();
+    if (!data || !draft || this.booking()) return;
+    this.booking.set(true);
+    try {
+      const lines: ReceivedLine[] = draft.lines.map((line) => ({
+        productId: line.productId, received: line.received, damaged: line.damaged }));
+      if (draft.finalPayment && this.remainingEur() > 0.005) {
+        await this.sourcing.addPayment(data.order.id, {
+          paidOn: new Date().toISOString().slice(0, 10), amount: Math.round(this.remainingEur() * 100) / 100,
+          currency: 'EUR', label: 'Slotbetaling', payee: 'SUPPLIER' });
+        await this.loadPayments(data.order.id);
+      }
+      const result = await this.sourcing.receivePurchaseOrder(data.order.id, {
+        lines, bookStock: draft.bookStock, paidTotalEur: this.paidTotalEur() || null,
+        receivedOn: null, note: draft.note || null,
+      });
+      ++this.previewVersion;
+      this.view.set(result);
+      this.savedOrder.set(JSON.stringify(result.order));
+      this.receiving.set(null);
+      this.ui.toast(draft.bookStock ? 'Container ontvangen en voorraad bijgeboekt' : 'Container ontvangen - nog niet bijgeboekt', 'ok');
+      this.products.set(await this.catalog.products(result.order.supplierId));
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Ontvangen mislukt'), 'err');
+    } finally {
+      this.booking.set(false);
+    }
+  }
+
+  async bookStock(): Promise<void> {
+    const data = this.view();
+    if (!data || this.booking()) return;
+    this.booking.set(true);
+    try {
+      const result = await this.sourcing.bookPurchaseStock(data.order.id);
+      ++this.previewVersion;
+      this.view.set(result);
+      this.savedOrder.set(JSON.stringify(result.order));
+      this.ui.toast('Voorraad bijgeboekt', 'ok');
+      this.products.set(await this.catalog.products(result.order.supplierId));
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Bijboeken mislukt'), 'err');
+    } finally {
+      this.booking.set(false);
+    }
+  }
+
+  readonly paymentTermOptions = PAYMENT_TERMS;
   readonly departurePorts = CHINESE_DEPARTURE_PORTS;
   readonly destinationPorts = DESTINATION_PORTS;
   readonly otherPortValue = OTHER_PORT_VALUE;
@@ -1187,6 +1928,8 @@ export class PurchaseEditor {
 
   private async load(orderId: number): Promise<void> {
     const view = await this.sourcing.purchaseOrder(orderId);
+    void this.loadPayments(orderId);
+    void this.loadDocuments(orderId);
     this.savedOrder.set(JSON.stringify(view.order));
     const [products, suppliers, locations] = await Promise.all([
       this.catalog.products(view.order.supplierId), this.sourcing.suppliers(),
@@ -1355,6 +2098,7 @@ export class PurchaseEditor {
 
   closeOrderPlaced(): void {
     this.orderPlaced.set(false);
+    this.promptFirstInstalment();
   }
 
   openOrderView(): void {

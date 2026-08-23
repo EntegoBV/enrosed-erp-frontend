@@ -2,12 +2,13 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
+import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Product, StockLevel, StockLocation } from '../../core/api/models';
+import { Category, ExpectedStock, Product, StockLevel, StockLocation, StockMovement } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { NumPipe } from '../../shared/pipes';
+import { DateNlPipe, DateTimeNlPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 
 interface StockRow {
@@ -26,7 +27,7 @@ interface StockRow {
 @Component({
   selector: 'app-stock-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, Sheet],
+  imports: [FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet],
   template: `
     <app-page-header title="Voorraad" [subtitle]="subtitle()">
       @if (!counting()) {
@@ -59,9 +60,19 @@ interface StockRow {
         </div>
       }
 
-      <div class="catalog-search mt-12">
-        <input class="input" type="search" placeholder="Zoek naam, SKU of kleur…"
-               [ngModel]="query()" (ngModelChange)="query.set($event)" />
+      <div class="stock-tools mt-12">
+        <div class="catalog-search">
+          <input class="input" type="search" placeholder="Zoek naam, SKU of kleur…"
+                 [ngModel]="query()" (ngModelChange)="query.set($event)" />
+        </div>
+        <select class="select stock-tools__sort" aria-label="Sorteren"
+                [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
+          <option value="NAME_ASC">Naam A–Z</option>
+          <option value="NAME_DESC">Naam Z–A</option>
+          <option value="STOCK_DESC">Voorraad hoog → laag</option>
+          <option value="STOCK_ASC">Voorraad laag → hoog</option>
+          <option value="EXPECTED">Te verwachten eerst</option>
+        </select>
       </div>
 
       <div class="card mt-12">
@@ -78,9 +89,23 @@ interface StockRow {
               @if (counting()) { <span class="num">Geteld</span> }
             }
           </div>
-          @for (row of filtered(); track row.product.id) {
+          @for (section of sections(); track section.key) {
+            @if (section.name !== null) {
+              <!-- The category heading folds its rows away; the eye finds
+                   "Glas" faster than it reads twenty names. -->
+              <button class="stock-table__section" type="button" [attr.aria-expanded]="!collapsed().has(section.key)"
+                      (click)="toggleSection(section.key)">
+                <i class="stock-table__chev" [class.stock-table__chev--closed]="collapsed().has(section.key)" aria-hidden="true"></i>
+                <span>{{ section.name }}</span>
+                <small>{{ section.rows.length }}</small>
+                <span class="num stock-table__section-total">{{ section.total | num }}</span>
+              </button>
+            }
+            @if (!collapsed().has(section.key)) {
+            @for (row of section.rows; track row.product.id) {
             <div class="stock-table__row" [class.stock-table__row--changed]="isChanged(row.product.id!)">
-              <a class="stock-table__product" [routerLink]="['/products', row.product.id]">
+              <!-- The name opens the stock book; the page itself is one more tap away from there. -->
+              <button class="stock-table__product" type="button" (click)="openHistory(row)">
                 @if (row.product.photos.length) {
                   <img class="thumb thumb--sm" [appAuthSrc]="row.product.photos[0].url" alt="" />
                 } @else {
@@ -88,9 +113,9 @@ interface StockRow {
                 }
                 <span class="stock-table__name">
                   <b>{{ row.product.name }}</b>
-                  <small>{{ row.product.sku }}@if (row.product.colour) { · {{ row.product.colour }}}@if (row.product.variantSize) { · {{ row.product.variantSize }}}</small>
+                  <small>{{ row.product.sku }}@if (row.product.colour) { · {{ row.product.colour }}}@if (row.product.variantSize) { · {{ row.product.variantSize }}}@if (expectedFor(row.product.id!); as exp) { · <em class="expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</em>}</small>
                 </span>
-              </a>
+              </button>
               <!-- Every figure is a field: type the real count and leave it,
                    and it is booked at that location as a manual correction. -->
               @if (view() === null) {
@@ -126,6 +151,8 @@ interface StockRow {
                         (click)="openTransfer(row)">⇄</button>
               }
             </div>
+            }
+            }
           } @empty {
             @if (loading()) { <app-skeleton kind="list" [rows]="6" /> }
             @else { <div class="empty"><div class="empty__title">Geen producten gevonden</div></div> }
@@ -133,6 +160,43 @@ interface StockRow {
         </div>
       </div>
     </div>
+
+    @if (history(); as book) {
+      <app-sheet [title]="book.row.product.name" (closed)="history.set(null)">
+        <div body>
+          <p class="hint">{{ book.row.product.sku }} · {{ book.row.total | num }} stuks op {{ activeLocations().length }} locatie{{ activeLocations().length === 1 ? '' : 's' }}</p>
+          <div class="history-levels">
+            @for (location of activeLocations(); track location.id) {
+              <span><small>{{ location.name }}</small><b class="num">{{ (book.row.byLocation.get(location.id!) ?? 0) | num }}</b></span>
+            }
+            @if (expectedFor(book.row.product.id!); as exp) {
+              <span><small>Te verwachten</small><b class="num expected">+{{ exp.quantity | num }}</b></span>
+            }
+          </div>
+          <h3 class="history-title">Geschiedenis</h3>
+          @if (book.moves; as moves) {
+            @if (moves.length) {
+              <ol class="history-list">
+                @for (move of moves; track move.id) {
+                  <li>
+                    <span class="history-delta num" [class.history-delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</span>
+                    <span class="history-what">
+                      <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
+                      <small>{{ move.at | dateTimeNl }} · {{ move.actor }}@if (move.locationName) { · {{ move.locationName }}}</small>
+                    </span>
+                    <span class="history-after num">= {{ move.quantityAfter | num }}</span>
+                  </li>
+                }
+              </ol>
+            } @else { <p class="hint">Nog geen bewegingen geboekt.</p> }
+          } @else { <p class="hint">Geschiedenis laden…</p> }
+        </div>
+        <div foot style="display:contents">
+          <a class="btn" [routerLink]="['/products', book.row.product.id]" (click)="history.set(null)">Product openen</a>
+          <button class="btn btn--primary" type="button" (click)="history.set(null); openTransfer(book.row)">Verplaatsen</button>
+        </div>
+      </app-sheet>
+    }
 
     @if (transfer(); as move) {
       <app-sheet [title]="'Verplaatsen · ' + move.row.product.name" (closed)="transfer.set(null)">
@@ -180,9 +244,38 @@ interface StockRow {
     .count-bar > div { flex: 1 1 200px; min-width: 0; }
     .count-bar small { display: block; color: var(--muted); font-size: 11.5px; }
     .stock-table { display: grid; }
-    .stock-table__head, .stock-table__row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), minmax(72px, auto)) 34px;
+    /* Fixed figure columns: head and rows are separate grids, and auto-sized
+       columns drifted apart - the heading sat above nothing in particular. */
+    .stock-table__head, .stock-table__row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), 96px) 34px;
       align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
     .stock-table__head { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+    /* The heading sits exactly above the figure: same right padding as the field. */
+    .stock-table__head .num { text-align: right; padding-right: 6px; }
+    .stock-tools { display: flex; gap: 9px; align-items: center; }
+    .stock-tools .catalog-search { flex: 1; min-width: 0; }
+    .stock-tools__sort { width: auto; min-height: 42px; font-size: 13px; font-weight: 650; }
+    .stock-table__section { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 9px 12px;
+      border: 0; border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2);
+      font: inherit; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; text-align: left; cursor: pointer; }
+    .stock-table__section small { color: var(--muted); font-size: 10.5px; font-weight: 650; letter-spacing: 0; }
+    .stock-table__section-total { margin-left: auto; letter-spacing: 0; font-size: 12px; }
+    .stock-table__chev { width: 7px; height: 7px; align-self: center; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+      transform: rotate(45deg); transition: transform .15s ease; opacity: .7; }
+    .stock-table__chev--closed { transform: rotate(-45deg); }
+    .expected { color: var(--warn); font-style: normal; font-weight: 650; }
+    .history-levels { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+    .history-levels span { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+    .history-levels small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .history-levels b { font-size: 16px; }
+    .history-title { margin: 14px 0 4px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+    .history-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+    .history-list li { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .history-delta { font-weight: 750; color: var(--ok, #2e7d4f); }
+    .history-delta--minus { color: var(--danger); }
+    .history-what { display: grid; min-width: 0; }
+    .history-what b { font-weight: 650; font-size: 12.5px; }
+    .history-what small { color: var(--muted); font-size: 11px; }
+    .history-after { color: var(--muted); font-size: 12px; white-space: nowrap; }
     .stock-table__row:last-child { border-bottom: 0; }
     .stock-table__row--changed { background: var(--warn-soft); }
     .stock-table__product { display: flex; align-items: center; gap: 10px; min-width: 0; color: inherit; text-decoration: none; }
@@ -205,13 +298,14 @@ interface StockRow {
     .stock-table__move:hover { color: var(--ink); background: var(--surface-2); }
     @media (max-width: 600px) {
       .stock-table:not(.stock-table--single) .stock-table__head, .stock-table:not(.stock-table--single) .stock-table__row {
-        grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), minmax(56px, auto)) 30px; gap: 6px; padding: 8px 10px; }
+        grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), 64px) 30px; gap: 6px; padding: 8px 10px; }
       .stock-table__qty { font-size: 12px; }
     }
   `,
 })
 export class StockPage {
   private readonly catalog = inject(CatalogApi);
+  private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
 
   readonly loading = signal(true);
@@ -243,12 +337,68 @@ export class StockPage {
       .sort((a, b) => a.product.name.localeCompare(b.product.name, 'nl', { numeric: true, sensitivity: 'base' }));
   });
 
+  readonly sortKey = signal<'NAME_ASC' | 'NAME_DESC' | 'STOCK_DESC' | 'STOCK_ASC' | 'EXPECTED'>('NAME_ASC');
+  readonly categories = signal<Category[]>([]);
+  readonly expected = signal<Map<number, ExpectedStock>>(new Map());
+  readonly collapsed = signal<Set<string>>(new Set());
+
+  expectedFor(productId: number): ExpectedStock | null {
+    return this.expected().get(productId) ?? null;
+  }
+
   readonly filtered = computed(() => {
     const needle = this.query().trim().toLowerCase();
-    if (!needle) return this.rows();
-    return this.rows().filter(({ product }) =>
+    const rows = !needle ? this.rows() : this.rows().filter(({ product }) =>
       [product.name, product.sku, product.colour, product.variantSize].join(' ').toLowerCase().includes(needle));
+    const byName = (a: StockRow, b: StockRow) =>
+      a.product.name.localeCompare(b.product.name, 'nl', { numeric: true, sensitivity: 'base' });
+    switch (this.sortKey()) {
+      case 'NAME_DESC': return [...rows].sort((a, b) => byName(b, a));
+      case 'STOCK_DESC': return [...rows].sort((a, b) => b.total - a.total || byName(a, b));
+      case 'STOCK_ASC': return [...rows].sort((a, b) => a.total - b.total || byName(a, b));
+      case 'EXPECTED': return [...rows].sort((a, b) =>
+        (this.expectedFor(b.product.id!)?.quantity ?? 0) - (this.expectedFor(a.product.id!)?.quantity ?? 0) || byName(a, b));
+      default: return [...rows].sort(byName);
+    }
   });
+
+  /** The rows cut into category sections, in the categories' own order; a search shows one flat list. */
+  readonly sections = computed<{ key: string; name: string | null; rows: StockRow[]; total: number }[]>(() => {
+    const rows = this.filtered();
+    if (!rows.length) return [];
+    if (this.query().trim()) return [{ key: 'all', name: null, rows, total: rows.reduce((sum, row) => sum + row.total, 0) }];
+    const order = new Map(this.categories().map((category, index) => [category.id, index]));
+    const groups = new Map<number | null, StockRow[]>();
+    for (const row of rows) {
+      const id = row.product.categoryId ?? null;
+      groups.set(id, [...(groups.get(id) ?? []), row]);
+    }
+    return [...groups.entries()]
+      .sort(([a], [b]) => (a === null ? Infinity : order.get(a) ?? Infinity) - (b === null ? Infinity : order.get(b) ?? Infinity))
+      .map(([id, group]) => ({
+        key: id === null ? 'none' : `c${id}`,
+        name: this.categories().find((category) => category.id === id)?.name ?? 'Zonder categorie',
+        rows: group,
+        total: group.reduce((sum, row) => sum + row.total, 0),
+      }));
+  });
+
+  toggleSection(key: string): void {
+    this.collapsed.update((set) => { const next = new Set(set); next.has(key) ? next.delete(key) : next.add(key); return next; });
+  }
+
+  /* ---- the stock book of one product ---- */
+  readonly history = signal<{ row: StockRow; moves: StockMovement[] | null } | null>(null);
+
+  async openHistory(row: StockRow): Promise<void> {
+    this.history.set({ row, moves: null });
+    try {
+      const moves = await this.catalog.stockMovements(row.product.id!);
+      this.history.update((book) => book && book.row === row ? { ...book, moves } : book);
+    } catch {
+      this.history.update((book) => book && book.row === row ? { ...book, moves: [] } : book);
+    }
+  }
 
   readonly subtitle = computed(() => {
     const total = this.rows().reduce((sum, row) => sum + row.total, 0);
@@ -261,12 +411,16 @@ export class StockPage {
 
   private async load(): Promise<void> {
     try {
-      const [products, locations, levels] = await Promise.all([
+      const [products, locations, levels, categories, expected] = await Promise.all([
         this.catalog.products(), this.catalog.stockLocations(), this.catalog.stockLevels(),
+        this.catalog.categories().catch(() => [] as Category[]),
+        this.sourcing.expectedStock().catch(() => [] as ExpectedStock[]),
       ]);
       this.products.set(products);
       this.locations.set(locations);
       this.levels.set(levels);
+      this.categories.set(categories);
+      this.expected.set(new Map(expected.map((item) => [item.productId, item])));
       document.documentElement.style.setProperty('--cols', String(Math.max(1, locations.filter((location) => location.active).length + 1)));
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Voorraad laden mislukt'), 'err');

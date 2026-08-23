@@ -1658,20 +1658,18 @@ a.kpi--dark { color: #fff; }
 }
 /* The landing: total and per-piece side by side, quietly framed. */
 .cost-hero {
-  display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px;
   margin-top: 14px;
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 12px 14px;
 }
-.cost-hero__unit {
-  margin-left: auto; text-align: right; flex: 0 1 auto; min-width: 160px;
-  padding-left: 14px; border-left: 1px solid var(--line);
-  /* The total sits vertically in the middle of its half, whatever the
-     aside's height. */
-  display: flex; flex-direction: column; justify-content: center;
-}
+/* Two halves of one box: label, figure, note - stacked the same way on
+   both sides, so the divider between them lines up with both. */
+.cost-hero__unit, .cost-hero__aside { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; }
+.cost-hero__unit { text-align: right; min-width: 130px; padding-left: 14px; border-left: 1px solid var(--line); align-self: stretch; }
+.cost-hero .cost-hero__label { white-space: nowrap; letter-spacing: .06em; }
 .cost-hero__label {
   font-size: 10px; font-weight: 800; letter-spacing: 0.1em;
   text-transform: uppercase; color: var(--muted);
@@ -1681,10 +1679,9 @@ a.kpi--dark { color: #fff; }
   font-variant-numeric: tabular-nums; margin-top: 2px;
 }
 .cost-hero__value--rose { color: var(--accent); }
-.cost-hero__aside { min-width: 0; }
 /* DDP: only the total is left - it takes the whole box, no divider. */
 .cost-hero__unit--alone { margin-left: 0; flex: 1; padding-left: 0; border-left: 0; text-align: left; }
-.cost-hero__value--quiet { font-size: 15px; font-weight: 650; color: var(--ink-2); margin-top: 4px; }
+.cost-hero__value--quiet { font-size: 19px; font-weight: 700; color: var(--ink-2); margin-top: 2px; }
 .cost-hero__sub { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
 
 /* ------------------------------------------------------- market cards */

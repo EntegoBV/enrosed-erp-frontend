@@ -691,8 +691,46 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
                 } @else {
                   <a class="btn btn--sm" routerLink="/stock-locations">Locatie toevoegen</a>
                 }
+                <!-- Pieces that leave without a sale, each counted under its own name. -->
+                <button class="btn btn--sm" type="button" (click)="startTakeOut(levels, 'DAMAGED')">Beschadigd</button>
+                <button class="btn btn--sm" type="button" (click)="startTakeOut(levels, 'DEMO')">Demo weggegeven</button>
                 <span class="hint">Groeit vanzelf wanneer een inkooporder op Ontvangen gaat.</span>
               </div>
+              @if (lossCounters(); as loss) {
+                @if (loss.damaged || loss.demo) {
+                  <p class="stock-loss">
+                    @if (loss.damaged) { <span><b>{{ loss.damaged | num }}</b> beschadigd</span> }
+                    @if (loss.demo) { <span><b>{{ loss.demo | num }}</b> als demo weggegeven</span> }
+                  </p>
+                }
+              }
+              @if (takeOutDraft(); as out) {
+                <div class="stock-transfer">
+                  <label class="field">
+                    <span>{{ out.kind === 'DAMAGED' ? 'Beschadigd op' : 'Demo uit' }}</span>
+                    <select class="select" [ngModel]="out.locationId" (ngModelChange)="patchTakeOut({ locationId: +$event })">
+                      @for (level of levels; track level.locationId) {
+                        <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Aantal</span>
+                    <input class="input num right" type="number" min="1" step="1" inputmode="numeric"
+                           [ngModel]="out.quantity" (ngModelChange)="patchTakeOut({ quantity: +$event })" />
+                  </label>
+                  <label class="field stock-transfer__note">
+                    <span>{{ out.kind === 'DAMAGED' ? 'Wat is er gebeurd' : 'Aan wie' }} <span class="opt"></span></span>
+                    <input class="input" [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens, beurs Gent'"
+                           [ngModel]="out.note" (ngModelChange)="patchTakeOut({ note: $event })" />
+                  </label>
+                  <span class="stock-transfer__actions">
+                    <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
+                            (click)="confirmTakeOut()">{{ stockSaving() ? 'Bezig…' : (out.kind === 'DAMAGED' ? 'Als beschadigd afboeken' : 'Als demo afboeken') }}</button>
+                    <button class="btn btn--sm" type="button" (click)="takeOutDraft.set(null)">Annuleren</button>
+                  </span>
+                </div>
+              }
               @if (transferDraft(); as move) {
                 <div class="stock-transfer">
                   <label class="field">
@@ -1167,6 +1205,8 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     .magic-field__btn:hover { background: var(--rose-line); }
     .magic-field__btn:disabled { opacity: .5; cursor: wait; }
     .stock-now { font-size: 16px; }
+    .stock-loss { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+    .stock-loss b { color: var(--ink); }
     .stock-levels { list-style: none; margin: 0 0 12px; padding: 0; border-top: 1px solid var(--line); }
     .stock-levels li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 0;
       border-bottom: 1px solid var(--line); }
@@ -1521,6 +1561,7 @@ export class ProductEditor implements OnDestroy {
   readonly id = input<string>('');
   /** ?tab=stock opens that section straight away (the view page links here). */
   readonly tab = input<string>('');
+  readonly action = input<string>('');
   readonly supplier = input<string>('');
   readonly returnTo = input<string>('');
 
@@ -1664,6 +1705,56 @@ export class ProductEditor implements OnDestroy {
 
   patchTransfer(changes: Partial<{ fromId: number; toId: number; quantity: number; note: string }>): void {
     this.transferDraft.update((move) => move ? { ...move, ...changes } : move);
+  }
+
+  /* ---- broken or given away: out of stock under its own kind ---- */
+  readonly takeOutDraft = signal<{ kind: 'DAMAGED' | 'DEMO'; locationId: number; quantity: number; note: string } | null>(null);
+
+  /** Lifetime counts from the stock book: how much broke, how much went out as demo. */
+  readonly lossCounters = computed(() => {
+    const moves = this.stockHistory();
+    if (!moves) return null;
+    let damaged = 0, demo = 0;
+    for (const move of moves) {
+      if (move.kind === 'DAMAGED') damaged += Math.abs(move.delta);
+      if (move.kind === 'DEMO') demo += Math.abs(move.delta);
+    }
+    return { damaged, demo };
+  });
+
+  startTakeOut(levels: ProductStock[], kind: 'DAMAGED' | 'DEMO'): void {
+    this.transferDraft.set(null);
+    const first = levels.find((level) => level.quantity > 0) ?? levels[0];
+    this.takeOutDraft.set({ kind, locationId: first?.locationId ?? 0, quantity: 1, note: '' });
+  }
+
+  patchTakeOut(changes: Partial<{ locationId: number; quantity: number; note: string }>): void {
+    this.takeOutDraft.update((draft) => draft && { ...draft, ...changes });
+  }
+
+  async confirmTakeOut(): Promise<void> {
+    const id = this.draft().id;
+    const out = this.takeOutDraft();
+    if (id === null || !out || this.stockSaving()) return;
+    if (!(out.quantity > 0)) { this.ui.toast('Geef een aantal op', 'err'); return; }
+    this.stockSaving.set(true);
+    try {
+      const saved = await this.catalog.takeOutStock(id, { locationId: out.locationId, quantity: out.quantity, kind: out.kind, note: out.note || null });
+      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      const baseline = this.baseline();
+      if (baseline) {
+        const parsed = JSON.parse(baseline) as Product;
+        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      }
+      this.takeOutDraft.set(null);
+      this.ui.toast(out.kind === 'DAMAGED' ? `${out.quantity} stuks als beschadigd afgeboekt` : `${out.quantity} stuks als demo afgeboekt`, 'ok');
+      void this.loadStockHistory(id);
+      void this.loadStockLevels(id);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Afboeken mislukt'), 'err');
+    } finally {
+      this.stockSaving.set(false);
+    }
   }
 
   async confirmTransfer(): Promise<void> {
@@ -1916,6 +2007,12 @@ export class ProductEditor implements OnDestroy {
       const wanted = this.tab();
       if (wanted && this.tabs().some((item) => item.id === wanted)) {
         setTimeout(() => this.showTab(wanted), 50);
+      }
+      /* Arriving from the product page's "Beschadigd" / "Demo": open that form at once. */
+      const action = this.action();
+      if (action === 'damaged' || action === 'demo') {
+        const levels = await this.loadStockLevels(productId).then(() => this.stockLevels() ?? []);
+        if (levels.length) this.startTakeOut(levels, action === 'damaged' ? 'DAMAGED' : 'DEMO');
       }
       this.syncPriceStrategy(product);
       this.markClean();
