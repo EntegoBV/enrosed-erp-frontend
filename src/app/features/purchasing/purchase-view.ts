@@ -315,6 +315,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                     <!-- What the road adds on top of the goods - the figure a
                          buyer negotiates on; an average per piece over mixed
                          products said nothing. Quiet, the total is the star. -->
+                    @if (!isDdp()) {
                     <div class="cost-hero__aside">
                       <div class="cost-hero__label">Bovenop de goederen</div>
                       <div class="cost-hero__value cost-hero__value--quiet">
@@ -328,7 +329,8 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                         }
                       </div>
                     </div>
-                    <div class="cost-hero__unit">
+                    }
+                    <div class="cost-hero__unit" [class.cost-hero__unit--alone]="isDdp()">
                       <div class="cost-hero__label">Totaal geland</div>
                       <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
                     </div>

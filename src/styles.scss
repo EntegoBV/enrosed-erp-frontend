@@ -1681,6 +1681,8 @@ a.kpi--dark { color: #fff; }
 }
 .cost-hero__value--rose { color: var(--accent); }
 .cost-hero__aside { min-width: 0; }
+/* DDP: only the total is left - it takes the whole box, no divider. */
+.cost-hero__unit--alone { margin-left: 0; flex: 1; padding-left: 0; border-left: 0; text-align: left; }
 .cost-hero__value--quiet { font-size: 15px; font-weight: 650; color: var(--ink-2); margin-top: 4px; }
 .cost-hero__sub { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
 
