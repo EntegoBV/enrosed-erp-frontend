@@ -483,7 +483,7 @@ interface ProductSwipe {
       padding: 3px 0; border: 0; background: transparent; color: var(--rose-dark);
       font-size: 11px; font-weight: 750; cursor: pointer;
     }
-    @media (min-width: 720px) {
+    @media (min-width: 680px) {
       .filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
     }
     .list-item--inactive { opacity: .66; }

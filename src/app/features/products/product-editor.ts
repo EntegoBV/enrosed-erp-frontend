@@ -1064,7 +1064,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     /* Phone: Volgende until the last step, then save; the header save
        fades out while nothing changed. Desktop: always save. */
     .editor-next { display: none; }
-    @media (max-width: 1023px) {
+    @media (max-width: 679px) {
       /* Phone: Volgende until the last step; saving is the header's job. */
       .editor-next { display: block; }
       .editor-save { display: none; }
@@ -1079,7 +1079,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     .select--status-off { background-color: var(--surface-2); color: var(--muted); }
     .variant-pending { border-color: var(--rose-soft); background: var(--rose-soft); }
     /* Phone: only the active section is in the DOM flow; desktop: all. */
-    @media (max-width: 1023px) {
+    @media (max-width: 679px) {
       /* Deleting lives on the list (swipe left) - no danger zone on a
          phone screen that is mostly about typing numbers. */
       .danger-zone { display: none; }
@@ -1273,7 +1273,7 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     .variant-copy__family-note p { color: var(--muted); font-size: 11px; line-height: 1.45; }
     .variant-copy__family-note b { color: var(--ink-2); }
 
-    @media (min-width: 700px) {
+    @media (min-width: 680px) {
       .section-head { padding-inline: 18px; }
       .editor-section .card__body { padding: 18px; }
       .measure-grid { gap: 10px; }
@@ -1467,7 +1467,7 @@ export class ProductEditor implements OnDestroy {
 
   showTab(id: string): void {
     this.activeTab.set(id);
-    if (window.innerWidth >= 1024) {
+    if (window.innerWidth >= 680) {
       /* Desktop: every section is on the page; jump to it. The spy below
          is muted briefly so the smooth scroll does not flicker the
          highlight through the sections it passes. */
@@ -1486,7 +1486,7 @@ export class ProductEditor implements OnDestroy {
     if (this.spyFrame) return;
     this.spyFrame = requestAnimationFrame(() => {
       this.spyFrame = 0;
-      if (window.innerWidth < 1024 || Date.now() < this.spyMutedUntil) return;
+      if (window.innerWidth < 680 || Date.now() < this.spyMutedUntil) return;
       /* Normally the last section whose top passed the rail owns the
          highlight. At the very end of the page that rule sticks on the
          section above the one you scrolled to (short sections cannot

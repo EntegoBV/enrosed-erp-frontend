@@ -263,7 +263,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     @media (prefers-reduced-motion: reduce) {
       .render-status__mark { animation: none; }
     }
-    @media (min-width: 1024px) {
+    @media (min-width: 680px) {
       .catalog-workspace {
         display: grid; grid-template-columns: minmax(330px, .78fr) minmax(440px, 1.22fr);
         align-items: start; gap: 14px;
@@ -507,7 +507,7 @@ export class CatalogExport {
 
   private bindDesktopQuery(): void {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    this.mediaQuery = window.matchMedia('(min-width: 1024px)');
+    this.mediaQuery = window.matchMedia('(min-width: 680px)');
     this.desktop.set(this.mediaQuery.matches);
     this.mediaQuery.addEventListener('change', this.handleDesktopChange);
   }

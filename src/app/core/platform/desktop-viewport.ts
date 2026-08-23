@@ -13,7 +13,7 @@ export class DesktopViewport {
   constructor() {
     const view = this.document.defaultView;
     if (!view || typeof view.matchMedia !== 'function') return;
-    this.mediaQuery = view.matchMedia('(min-width: 1024px)');
+    this.mediaQuery = view.matchMedia('(min-width: 680px)');
     this.active.set(this.mediaQuery.matches);
     this.mediaQuery.addEventListener('change', this.handleChange);
     this.destroyRef.onDestroy(() => this.mediaQuery?.removeEventListener('change', this.handleChange));

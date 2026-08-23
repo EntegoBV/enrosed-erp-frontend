@@ -175,7 +175,7 @@ import { Skeleton } from '../../shared/skeleton';
     @media (min-width: 620px) {
       .selection-tools { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
     }
-    @media (min-width: 1024px) {
+    @media (min-width: 680px) {
       .product-choice-list { max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain; }
     }
   `,

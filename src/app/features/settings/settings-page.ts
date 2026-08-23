@@ -723,7 +723,7 @@ const normalizeCategoryCode = (value: string): string => value
       .category-section__head .spacer { display: none; }
       .category-section__head .btn { width: 100%; }
     }
-    @media (min-width: 700px) {
+    @media (min-width: 680px) {
       .workbook-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .workbook-steps li { align-items: flex-start; }
       .workbook-actions { grid-template-columns: auto auto; justify-content: flex-start; }
@@ -739,7 +739,7 @@ const normalizeCategoryCode = (value: string): string => value
       .category-item__actions { display: flex; }
       .category-item__actions .btn { width: auto; }
     }
-    @media (min-width: 1024px) {
+    @media (min-width: 680px) {
       .settings-nav { top: 62px; }
       .settings-nav__rail { padding-inline: 26px; }
       .settings-content { padding-top: 16px; }

@@ -1246,7 +1246,7 @@ import {
       .section-heading p { max-width:190px }
       .logistics-option .badge { display:none }
     }
-    @media(min-width:700px) {
+    @media(min-width: 680px) {
       .quote-hero__top { padding:22px 24px 20px }
       .quote-header-total span { display:block }
       .workflow-nav { max-width:640px;margin-inline:auto }
@@ -1258,7 +1258,7 @@ import {
       .line-internal__units { grid-template-columns:repeat(3,minmax(0,1fr)) }
       .line-internal__units .line-internal__unit-profit { grid-column:auto }
     }
-    @media(min-width:1024px) {
+    @media(min-width:680px) {
       #quote-setup,#order-lines,#quote-logistics,#quote-check,#quote-status { scroll-margin-top:calc(var(--appbar-h) + 28px) }
       .workflow-layout { display:grid;grid-template-columns:minmax(0,1fr) 168px;gap:16px;align-items:start }
       .workflow-content { grid-column:1;grid-row:1;margin-top:0 }
@@ -2132,7 +2132,7 @@ export class SalesEditor {
 
     const appbarBottom = document.querySelector<HTMLElement>('.appbar')
       ?.getBoundingClientRect().bottom ?? 0;
-    const mobileNavBottom = window.innerWidth < 1024
+    const mobileNavBottom = window.innerWidth < 680
       ? (document.querySelector<HTMLElement>('.workflow-nav')?.getBoundingClientRect().bottom
         ?? appbarBottom)
       : appbarBottom;

@@ -593,7 +593,7 @@ interface FamilyFeaturedOption {
       font-weight: 700;
     }
 
-    @media (min-width: 700px) {
+    @media (min-width: 680px) {
       .publication > summary {
         grid-template-columns: auto minmax(0, 1fr) auto auto auto;
         padding: 14px 18px;

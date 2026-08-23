@@ -1,7 +1,8 @@
 /* ==========================================================================
    Enrosed — design system
    Mobile first: every base rule targets the phone; media queries only add
-   things from 700px (tablet) and 1024px (desktop) up.
+   things from 680px (tablet, unfolded foldable: desktop layout with a rail
+   sidebar) and 1024px (the full sidebar) up.
    ========================================================================== */
 
 :root {
@@ -698,7 +699,7 @@ app-product-editor .colour-control {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px;
 }
 app-product-editor .variant-copy__options { display: grid; gap: 11px; }
-@media (min-width: 700px) {
+@media (min-width: 680px) {
   app-product-editor .variant-copy__options { grid-template-columns: 1fr 1fr; }
 }
 
@@ -731,7 +732,7 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
 
 .search-bar { margin-bottom: 12px; }
 
-@media (min-width: 700px) {
+@media (min-width: 680px) {
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -772,7 +773,7 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
-@media (min-width: 700px) {
+@media (min-width: 680px) {
   .kpis { grid-template-columns: repeat(4, 1fr); }
 }
 
@@ -934,7 +935,7 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
 }
 .sheet__foot .btn { flex: 1; }
 
-@media (min-width: 700px) {
+@media (min-width: 680px) {
   .overlay { align-items: center; padding: 24px; }
   .sheet {
     max-width: 620px;
@@ -1063,7 +1064,7 @@ table.data tfoot td {
 .toast__dot { width: 7px; height: 7px; border-radius: 50%; background: #57c089; flex: none; }
 .toast--err .toast__dot { background: #e0796c; }
 
-@media (min-width: 1024px) {
+@media (min-width: 680px) {
   .toasts { left: auto; right: 20px; bottom: 20px; width: 320px; }
 }
 
@@ -1799,7 +1800,7 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
   transform: translateX(-76px);
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 679px) {
   .swipe--desktop-action:has(.swipe__delete:focus-visible) .swipe__row {
     transform: translateX(-76px);
   }
@@ -1807,7 +1808,7 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
 
 /* Workflows that deliberately opt into a permanently visible desktop action
    keep it at the row edge; product rows use the hidden pointer-reveal pattern. */
-@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+@media (min-width: 680px) and (hover: hover) and (pointer: fine) {
   .swipe--desktop-action { display: flex; align-items: stretch; }
   .swipe--desktop-action .swipe__row {
     min-width: 0; flex: 1 1 auto; transform: none;
@@ -2296,7 +2297,7 @@ app-product-picker.customer-safe .picker-item__end { display: none; }
   .freight-index__value > .freight-open-label { width: 100%; margin-left: 0; }
 }
 
-@media (min-width: 700px) {
+@media (min-width: 680px) {
   .freight-horizons { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
@@ -2429,7 +2430,7 @@ app-product-publication-editor .conflict-list span { color: var(--muted); }
 .subnav button:hover { color: var(--ink-2); background: var(--surface-2); }
 .subnav button.active { background: var(--rose-soft); color: var(--rose-dark); }
 .subnav button:focus-visible { outline: 2px solid var(--rose); outline-offset: -2px; }
-@media (min-width: 1024px) {
+@media (min-width: 680px) {
   .subnav { top: 62px; }
   .subnav__rail { padding-inline: 26px; }
 }

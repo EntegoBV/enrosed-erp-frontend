@@ -152,7 +152,7 @@ export class Sheet implements AfterViewInit, OnDestroy {
        work away - the cross, Annuleren and Escape remain the ways out.
        Phone: tapping the dimmed area is the natural way to dismiss a
        bottom sheet, so there it still closes. */
-    if (window.innerWidth >= 1024) return;
+    if (window.innerWidth >= 680) return;
     this.requestClose();
   }
 

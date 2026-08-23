@@ -627,7 +627,7 @@ interface GalleryPointer {
       overflow-wrap: anywhere; text-align: right; }
     .detail-list__emphasis dt, .detail-list__emphasis dd { color: var(--ink); font-weight: 750; }
 
-    @media (min-width: 760px) {
+    @media (min-width: 680px) {
       .product-hero { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); }
       .gallery { padding: 16px; }
       .hero-summary { display: flex; flex-direction: column; justify-content: center; padding: 24px; }
