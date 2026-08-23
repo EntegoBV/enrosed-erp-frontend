@@ -577,7 +577,8 @@ interface StockGroup {
       .stock-row__figure--total { padding-left: 0; border-left: 0; }
     }
     .history-levels { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
-    .history-levels__tile { display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); min-width: 92px; }
+    .history-levels__tile { display: grid; gap: 2px; flex: 1 1 96px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+    .history-levels__link { flex: 1 1 120px; }
     .history-levels__qty { width: 100%; min-width: 0; padding: 2px 4px; margin: 0 -4px; border: 1px solid transparent; border-radius: 6px;
       background: transparent; color: inherit; font: inherit; font-size: 16px; font-weight: 700; -moz-appearance: textfield; }
     .history-levels__qty::-webkit-outer-spin-button, .history-levels__qty::-webkit-inner-spin-button { display: none; }

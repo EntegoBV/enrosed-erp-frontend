@@ -277,7 +277,7 @@ function blank(): Supplier {
     }
   `,
   styles: [`
-    :host{display:block}.supplier-detail{display:grid;gap:12px}
+    :host{display:block}.supplier-detail{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0}.supplier-detail>*{min-width:0}.supplier-hero>*{min-width:0}
     .supplier-hero{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--rose-line);border-radius:16px;background:linear-gradient(145deg,var(--surface),var(--rose-soft))}
     .supplier-hero__mark{display:grid;width:42px;height:42px;flex:none;place-items:center;border-radius:13px;background:var(--rose);color:#fff;font-size:17px;font-weight:760;text-transform:uppercase}
     .supplier-hero__copy{display:flex;min-width:0;flex:1;flex-direction:column}.supplier-hero__copy>span{color:var(--rose);font-size:9px;font-weight:740;letter-spacing:.08em;text-transform:uppercase}.supplier-hero__copy strong,.supplier-hero__copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.supplier-hero__copy small{color:var(--muted);font-size:10.5px}

@@ -655,6 +655,10 @@ const normalizeCategoryCode = (value: string): string => value
       scrollbar-width: none;
     }
     .settings-nav__rail::-webkit-scrollbar { display: none; }
+    @media (max-width: 679px) {
+      .settings-nav__rail { padding-right: 36px; mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+    }
     .settings-nav button {
       flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 40px;
       padding: 0 11px; border: 0; border-radius: 8px; background: transparent;

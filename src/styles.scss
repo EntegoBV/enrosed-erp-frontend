@@ -2436,6 +2436,13 @@ app-product-publication-editor .conflict-list span { color: var(--muted); }
   scrollbar-width: none;
 }
 .subnav__rail::-webkit-scrollbar { display: none; }
+/* Phone: the rail fades out at the right edge, so it is plain there are
+   more tabs than fit; the last one was simply cut off. */
+@media (max-width: 679px) {
+  .subnav__rail { padding-right: 36px; scroll-padding-inline: 12px;
+    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  .subnav button { scroll-snap-align: start; min-height: 38px; border-radius: 999px; }
+}
 .subnav button {
   flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 40px;
   padding: 0 11px; border: 0; border-radius: 8px; background: transparent;
