@@ -545,7 +545,7 @@ interface GalleryPointer {
       text-overflow: ellipsis; white-space: nowrap; }
     /* Two equal tiles: "10.000" with its chevron needs as much room as a price. */
     .hero-summary__price-stock { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
-    .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 13px;
+    .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 13px;
       border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font: inherit; color: inherit; cursor: pointer; }
     .stock-rows--sheet { margin-top: 4px; }
     .stock-rows__head { padding: 10px 2px 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
