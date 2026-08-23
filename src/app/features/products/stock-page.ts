@@ -91,17 +91,27 @@ interface StockRow {
                   <small>{{ row.product.sku }}@if (row.product.colour) { · {{ row.product.colour }}}@if (row.product.variantSize) { · {{ row.product.variantSize }}}</small>
                 </span>
               </a>
+              <!-- Every figure is a field: type the real count and leave it,
+                   and it is booked at that location as a manual correction. -->
               @if (view() === null) {
                 @for (location of activeLocations(); track location.id) {
-                  <span class="num stock-table__qty" [class.muted]="!row.byLocation.get(location.id!)">
-                    {{ (row.byLocation.get(location.id!) ?? 0) | num }}
-                  </span>
+                  <input class="stock-table__qty stock-table__qty--edit num" type="number" min="0" step="1"
+                         inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
+                         [attr.aria-label]="row.product.name + ' op ' + location.name"
+                         [value]="row.byLocation.get(location.id!) ?? 0"
+                         (keydown.enter)="$any($event.target).blur()"
+                         (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
+                         (change)="setQuantity(row, location.id!, $any($event.target))" />
                 }
                 <span class="num stock-table__qty stock-table__qty--total">{{ row.total | num }}</span>
               } @else {
-                <span class="num stock-table__qty" [class.muted]="!row.byLocation.get(view()!)">
-                  {{ (row.byLocation.get(view()!) ?? 0) | num }}
-                </span>
+                <input class="stock-table__qty stock-table__qty--edit num" type="number" min="0" step="1"
+                       inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
+                       [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
+                       [value]="row.byLocation.get(view()!) ?? 0"
+                       (keydown.enter)="$any($event.target).blur()"
+                       (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
+                       (change)="setQuantity(row, view()!, $any($event.target))" />
                 @if (counting()) {
                   <span class="stock-table__count">
                     <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
@@ -181,6 +191,13 @@ interface StockRow {
     .stock-table__name small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .thumb--sm { width: 34px; height: 34px; }
     .stock-table__qty { text-align: right; font-weight: 650; font-size: 13px; }
+    /* Reads as a plain figure; shows it is a field only under the pointer or when focused. */
+    .stock-table__qty--edit { width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid transparent;
+      border-radius: 8px; background: transparent; color: inherit; font: inherit; font-weight: 650;
+      text-align: right; -moz-appearance: textfield; }
+    .stock-table__qty--edit::-webkit-outer-spin-button, .stock-table__qty--edit::-webkit-inner-spin-button { display: none; }
+    .stock-table__qty--edit:hover { border-color: var(--line); background: var(--surface-2); }
+    .stock-table__qty--edit:focus { outline: none; border-color: var(--rose); background: var(--surface); }
     .stock-table__qty--total { font-weight: 800; }
     .stock-table__count .input { width: 84px; min-height: 36px; padding: 4px 8px; }
     .stock-table__move { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
@@ -295,6 +312,26 @@ export class StockPage {
       this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  /* ---- typing a count straight into the table ---- */
+
+  /** A figure typed in a cell is booked at once as a manual correction. */
+  async setQuantity(row: StockRow, locationId: number, field: HTMLInputElement): Promise<void> {
+    const before = row.byLocation.get(locationId) ?? 0;
+    const quantity = Math.max(0, Math.round(Number(field.value) || 0));
+    if (quantity === before) { field.value = String(before); return; }
+    try {
+      await this.catalog.setStock(row.product.id!, quantity, locationId, 'Voorraadoverzicht');
+      this.levels.update((levels) => {
+        const rest = levels.filter((level) => !(level.productId === row.product.id && level.locationId === locationId));
+        return [...rest, { productId: row.product.id!, locationId, quantity }];
+      });
+      this.ui.toast(`${row.product.name}: ${quantity.toLocaleString('nl-BE')} op ${this.locationName(locationId)}`, 'ok');
+    } catch (failure: unknown) {
+      field.value = String(before);
+      this.ui.toast(messageOf(failure, 'Voorraad zetten mislukt'), 'err');
     }
   }
 
