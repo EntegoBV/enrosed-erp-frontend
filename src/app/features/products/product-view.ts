@@ -551,6 +551,17 @@ interface GalleryPointer {
     .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 13px;
       border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font: inherit; color: inherit; cursor: pointer; }
     .stock-rows--sheet { margin-top: 4px; }
+    /* The tiles open something: a ringed chevron says so, and turns when open. */
+    .hero-summary__price-stock span { display: inline-flex; align-items: center; gap: 6px; }
+    .stock-tile__chev { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--line-strong);
+      border-radius: 50%; background: var(--surface); flex: none; transition: transform .15s ease, background .15s ease; }
+    .stock-tile__chev::before { content: ''; width: 5px; height: 5px; margin-top: -2px; border-right: 1.5px solid var(--ink-2);
+      border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); }
+    .stock-tile:hover { background: var(--surface); border-color: var(--line-strong); }
+    .stock-tile:hover .stock-tile__chev { background: var(--surface-2); }
+    .stock-tile--open { border-color: var(--rose); background: var(--surface); }
+    .stock-tile--open .stock-tile__chev { transform: rotate(180deg); border-color: var(--rose); background: var(--rose-soft); }
+    .stock-tile--open .stock-tile__chev::before { border-color: var(--rose-dark); }
     .stock-rows__head { padding: 10px 2px 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
     .stock-rows--sheet .stock-row__actions { gap: 8px; padding-top: 12px; }
     .stock-rows--sheet .stock-row__actions a { padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 12.5px; }
