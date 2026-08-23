@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -56,7 +56,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [FormsModule, RouterLink, PageHeader, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess,
             EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
   template: `
@@ -346,16 +346,20 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <article class="po-line">
                     <header class="po-line__head">
                       <!-- The photo says which product faster than a number; the number
-                           stays for a product without one. -->
-                      @if (photoOf(line.productId); as photo) {
-                        <img class="po-line__photo" [appAuthSrc]="photo" alt="" draggable="false" />
-                      } @else {
-                        <span class="po-line__index" aria-hidden="true">{{ lineIndex + 1 }}</span>
-                      }
-                      <span class="po-line__identity">
-                        <strong>{{ line.productName }}</strong>
-                        <span>{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
-                      </span>
+                           stays for a product without one. Photo and name walk
+                           through to the product itself. -->
+                      <a class="po-line__link" [routerLink]="['/products', line.productId]"
+                         [title]="line.productName + ' openen'">
+                        @if (photoOf(line.productId); as photo) {
+                          <img class="po-line__photo" [appAuthSrc]="photo" alt="" draggable="false" />
+                        } @else {
+                          <span class="po-line__index" aria-hidden="true">{{ lineIndex + 1 }}</span>
+                        }
+                        <span class="po-line__identity">
+                          <strong>{{ line.productName }}</strong>
+                          <span>{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
+                        </span>
+                      </a>
                       <button class="line-remove" type="button" [disabled]="isReceived()"
                               [attr.aria-label]="'Verwijder ' + line.productName"
                               (click)="removeLine(line.productId)">
@@ -379,21 +383,16 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                             Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}
                           </span>
                         }
+                        @if (isReceived()) {
+                          <!-- A box opened weeks later can still hold broken
+                               glass or come up short: a quiet line under the
+                               count it corrects, the details in a sheet. -->
+                          <button class="line-issue" type="button" (click)="openIssue(line.productId)">
+                            Schade of tekort melden ›
+                          </button>
+                        }
                       </div>
 
-                      <!-- A box opened weeks later can still hold broken glass:
-                           the count stays editable after receipt and books the
-                           extra pieces out of stock on save. -->
-                      @if (isReceived()) {
-                        <div class="field">
-                          <label [attr.for]="'dmg-' + line.productId">Beschadigd</label>
-                          <input class="input num right" [id]="'dmg-' + line.productId"
-                                 type="number" min="0" step="1" inputmode="numeric"
-                                 [ngModel]="orderLine(line.productId)?.damagedQuantity ?? 0"
-                                 (ngModelChange)="setLineDamaged(line.productId, $event)" />
-                          <span class="hint">Meer kapot gevonden? Verhoog het aantal; bij opslaan gaan die stuks als beschadigd uit de voorraad.</span>
-                        </div>
-                      }
 
                       <div class="field">
                         <label [attr.for]="'exw-' + line.productId">Afgesproken prijs per stuk</label>
@@ -422,9 +421,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           </select>
                         </div>
                         @if ((orderLine(line.productId)?.priceBasis ?? 'EXW') === 'DDP') {
-                          <span class="hint">Geleverd incl. rechten: transport, lokale kosten en invoerrechten zitten al in de prijs. Geldt voor de hele container.</span>
+                          <span class="hint">Geleverd incl. rechten, voor de hele container.</span>
                         } @else {
-                          <span class="hint">Af fabriek: transport, lokale kosten en invoerrechten komen er in de calculatie bij. Leeg gebruikt de actuele prijs van het product.</span>
+                          <span class="hint">Bij leeg gebruikt actuele prijs.</span>
                         }
                       </div>
                     </div>
@@ -1035,6 +1034,41 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         />
       }
 
+      @if (issue(); as report) {
+        <app-sheet [title]="'Schade of tekort · ' + (issueLine()?.productName ?? '')" (closed)="issue.set(null)">
+          <div body>
+            <div class="per-toggle issue-kind" role="group" aria-label="Wat is er aan de hand?">
+              <button type="button" [class.on]="report.kind === 'DAMAGED'"
+                      (click)="issue.set({ ...report, kind: 'DAMAGED' })">Beschadigd</button>
+              <button type="button" [class.on]="report.kind === 'SHORT'"
+                      (click)="issue.set({ ...report, kind: 'SHORT' })">Minder aangekomen</button>
+            </div>
+            <div class="field mt-12">
+              <label class="req" for="issue-qty">Aantal stuks</label>
+              <input class="input num right" id="issue-qty" type="number" min="1" step="1" inputmode="numeric"
+                     [ngModel]="report.quantity || null" (ngModelChange)="issue.set({ ...report, quantity: +$event })" />
+            </div>
+            @if (issueLine(); as line) {
+              @if (report.kind === 'DAMAGED') {
+                <p class="hint mt-8">Nu {{ orderLine(line.productId)?.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen.
+                  {{ report.quantity > 0 ? 'Er komen ' + report.quantity + ' bij; die gaan als beschadigd uit de voorraad.' : '' }}</p>
+              } @else {
+                <p class="hint mt-8">Ontvangen telt nu {{ line.quantity | num }} stuks.
+                  {{ report.quantity > 0 ? 'Wordt ' + (line.quantity - report.quantity) + '; het verschil gaat uit de voorraad.' : '' }}</p>
+              }
+            }
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="issue.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button"
+                    [disabled]="saving() || !(report.quantity > 0)" (click)="confirmIssue()">
+              {{ saving() ? 'Bezig…' : 'Melden' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
       @if (paying(); as pay) {
         <app-sheet [title]="pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier'" (closed)="paying.set(null)">
           <div body>
@@ -1294,6 +1328,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-line__index{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}.po-line__photo{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
     .purchase-summary .cost-hero{grid-template-columns:1fr;gap:8px}.purchase-summary .cost-hero__unit{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line);text-align:left;align-self:auto}
     .pay-stream__head{flex-wrap:wrap}.pay-stream__head>span:last-child{text-align:right;margin-left:auto}
+    .po-line__link{display:flex;flex:1;min-width:0;align-items:center;gap:inherit;color:inherit;text-decoration:none}.po-line__link:hover strong{color:var(--rose-dark);text-decoration:underline}
+    .line-issue{display:block;padding:4px 0 0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;text-align:left;cursor:pointer}.line-issue:hover{color:var(--rose-dark)}.issue-kind{margin-top:2px}
     .payments-card .action-card__head,.files-card .action-card__head,.note-card .action-card__head{padding:14px 18px 10px}.note-card__field{display:block;width:100%;padding:0 18px 14px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.payments-card .action-card__head h2{font-size:16px}.field .hint--warn{color:var(--danger);font-weight:650}.pay-stream__done{margin:8px 0 2px;color:var(--ok,#2e7d4f);font-size:12.5px;font-weight:650}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
     .instalments{list-style:none;margin:0 18px 6px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
     .pay-stream{margin:0 18px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-stream .instalments{margin:0}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-ours{margin:0 18px 14px;color:var(--muted);font-size:11.5px}
@@ -1512,8 +1548,11 @@ export class PurchaseEditor {
 
   openPayment(amount?: number, label?: string, payee: Payee = 'SUPPLIER'): void {
     const rest = payee === 'SUPPLIER' ? Math.max(0, this.remainingEur()) : Math.max(0, this.logisticsOwed() - this.paidTo('LOGISTICS'));
+    /* An instalment can ask more than what is still open when earlier
+       payments did not line up exactly; never prefill beyond the rest. */
+    const capped = rest > 0.005 ? Math.min(amount ?? rest, rest) : (amount ?? rest);
     this.paying.set({
-      amount: Math.round((amount ?? rest) * 100) / 100,
+      amount: Math.round(capped * 100) / 100,
       currency: 'EUR',
       paidOn: new Date().toISOString().slice(0, 10),
       label: label ?? (payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '') : 'Douane & transport'),
@@ -1544,13 +1583,21 @@ export class PurchaseEditor {
     const paid = this.paidTotalEur();
     let cumulative = 0;
     let earlierOpen = false;
+    /* An unpaid step never asks more than what is genuinely open, or the
+       note sheet would refuse its own suggestion. */
+    let stillOpen = Math.max(0, goods - paid);
     return terms.instalments.map((step) => {
       const amount = Math.round(goods * step.share * 100) / 100;
       cumulative += amount;
       let state: 'paid' | 'due' | 'later';
-      if (!earlierOpen && paid >= Math.min(cumulative, goods) - 0.05) state = 'paid';
-      else { state = reached[step.due] ? 'due' : 'later'; earlierOpen = true; }
-      return { label: step.label, amount, state };
+      if (!earlierOpen && paid >= Math.min(cumulative, goods) - 0.05) {
+        state = 'paid';
+        return { label: step.label, amount, state };
+      }
+      state = reached[step.due] ? 'due' : 'later'; earlierOpen = true;
+      const ask = Math.round(Math.min(amount, stillOpen) * 100) / 100;
+      stillOpen = Math.max(0, stillOpen - ask);
+      return { label: step.label, amount: ask, state };
     });
   });
 
@@ -2147,9 +2194,36 @@ export class PurchaseEditor {
     this.setLine(productId, { exwCurrency: currency });
   }
 
-  setLineDamaged(productId: number, raw: unknown): void {
-    const value = raw === null || raw === undefined || raw === '' ? 0 : Math.max(0, Math.round(+String(raw)));
-    this.setLine(productId, { damagedQuantity: value });
+  /* ---- damage or shortfall on a received order, via one small button ---- */
+  readonly issue = signal<{ productId: number; kind: 'DAMAGED' | 'SHORT'; quantity: number } | null>(null);
+
+  readonly issueLine = computed(() => {
+    const report = this.issue();
+    if (!report) return null;
+    return this.view()?.costing.lines.find((line) => line.productId === report.productId) ?? null;
+  });
+
+  openIssue(productId: number): void {
+    this.issue.set({ productId, kind: 'DAMAGED', quantity: 0 });
+  }
+
+  /** Writes the report into the lines and saves: the backend books the stock difference. */
+  async confirmIssue(): Promise<void> {
+    const report = this.issue();
+    const line = this.orderLine(report?.productId ?? -1);
+    if (!report || !line || !(report.quantity > 0)) return;
+    if (report.kind === 'DAMAGED') {
+      const damaged = (line.damagedQuantity ?? 0) + report.quantity;
+      if (damaged > line.quantity) { this.ui.toast('Meer beschadigd dan ontvangen kan niet', 'err'); return; }
+      this.setLine(report.productId, { damagedQuantity: damaged });
+    } else {
+      const quantity = line.quantity - report.quantity;
+      if (quantity < 0) { this.ui.toast('Zoveel stuks staan er niet op de regel', 'err'); return; }
+      if (quantity < (line.damagedQuantity ?? 0)) { this.ui.toast('Minder dan het aantal beschadigde stuks kan niet', 'err'); return; }
+      this.setLine(report.productId, { quantity });
+    }
+    await this.save();
+    this.issue.set(null);
   }
 
   /**
