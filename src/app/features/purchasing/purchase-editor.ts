@@ -905,7 +905,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                     </div>
                   }
-                  <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
+                  @if (openFor('SUPPLIER') > 0 || !(supplierOwed() > 0)) {
+                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
+                  } @else {
+                    <p class="pay-stream__done">✓ Volledig betaald</p>
+                  }
                 </div>
 
                 @if (!isDdp()) {
@@ -923,7 +927,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                       </div>
                     }
-                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
+                    @if (openFor('LOGISTICS') > 0 || !(logisticsOwed() > 0)) {
+                      <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
+                    } @else {
+                      <p class="pay-stream__done">✓ Volledig betaald</p>
+                    }
                   </div>
                 }
 
@@ -1068,6 +1076,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 @if (pay.currency !== 'EUR' && pay.amount > 0) {
                   <span class="hint">≈ {{ eurOf(pay.amount, pay.currency) | eur }} aan de koers van deze order.</span>
                 }
+                @if (payingOverage() > 0) {
+                  <span class="hint hint--warn">Er staat nog {{ openFor(pay.payee) | eur }} open; dit bedrag gaat daar {{ payingOverage() | eur }} overheen.</span>
+                } @else if (pay.amount > 0 && openFor(pay.payee) > 0) {
+                  <span class="hint">Nog open: {{ openFor(pay.payee) | eur }}.</span>
+                }
               </div>
               <div class="field">
                 <label for="pay-date">Betaald op</label>
@@ -1082,7 +1095,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0) || payingOverage() > 0" (click)="confirmPayment()">
               {{ payingBusy() ? 'Bezig…' : 'Betaling bewaren' }}
             </button>
           </div>
@@ -1298,7 +1311,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-line__index{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}.po-line__photo{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
     .purchase-summary .cost-hero{grid-template-columns:1fr;gap:8px}.purchase-summary .cost-hero__unit{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line);text-align:left;align-self:auto}
     .pay-stream__head{flex-wrap:wrap}.pay-stream__head>span:last-child{text-align:right;margin-left:auto}
-    .payments-card .action-card__head h2{font-size:16px}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
+    .payments-card .action-card__head,.files-card .action-card__head{padding:14px 18px 10px}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.payments-card .action-card__head h2{font-size:16px}.field .hint--warn{color:var(--danger);font-weight:650}.pay-stream__done{margin:8px 0 2px;color:var(--ok,#2e7d4f);font-size:12.5px;font-weight:650}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
     .instalments{list-style:none;margin:0 18px 6px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
     .pay-stream{margin:0 18px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-stream .instalments{margin:0}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-ours{margin:0 18px 14px;color:var(--muted);font-size:11.5px}
     .files-list__actions{display:flex;align-items:center;gap:6px}
@@ -1482,6 +1495,7 @@ export class PurchaseEditor {
   /* The supplier stream, as the plan and the balance see it. */
   readonly paidTotalEur = computed(() => this.paidTo('SUPPLIER'));
   readonly remainingEur = computed(() => this.supplierOwed() - this.paidTotalEur());
+  /** Fractions of the goods that still fit in what is open: after 2/3 only the rest remains. */
   readonly payChips = computed(() => {
     const goods = this.supplierOwed();
     const rest = Math.max(0, this.remainingEur());
@@ -1489,9 +1503,24 @@ export class PurchaseEditor {
       { label: '1/3', amount: Math.round((goods / 3) * 100) / 100 },
       { label: '1/2', amount: Math.round((goods / 2) * 100) / 100 },
       { label: '2/3', amount: Math.round((goods * 2 / 3) * 100) / 100 },
-    ];
+    ].filter((chip) => chip.amount > 0 && chip.amount <= rest + 0.005);
     if (rest > 0.005) chips.push({ label: 'Rest', amount: Math.round(rest * 100) / 100 });
-    return chips.filter((chip) => chip.amount > 0);
+    return chips;
+  });
+
+  /** What is still open on the stream a payment goes to. */
+  openFor(payee: Payee): number {
+    const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
+    return Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
+  }
+
+  /** A payment beyond what is open is a mistake; the sheet says so before the server does. */
+  readonly payingOverage = computed(() => {
+    const pay = this.paying();
+    if (!pay || !(pay.amount > 0)) return 0;
+    const owed = pay.payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
+    if (!(owed > 0)) return 0;
+    return Math.max(0, Math.round((this.eurOf(pay.amount, pay.currency) - this.openFor(pay.payee)) * 100) / 100);
   });
 
   eurOf(amount: number, currency: Currency): number {
@@ -1534,12 +1563,18 @@ export class PurchaseEditor {
       SHIPPED: data.order.status === 'ONDERWEG' || data.order.status === 'ONTVANGEN',
       ARRIVED: data.order.status === 'ONTVANGEN',
     };
-    let left = this.paidTotalEur();
+    /* Ticked off against the running total, a few cents of slack: 2/3 noted
+       as € 232,39 must still cover two instalments of € 116,20, and "the
+       rest" closes the last one even when the thirds did not add up exactly. */
+    const paid = this.paidTotalEur();
+    let cumulative = 0;
+    let earlierOpen = false;
     return terms.instalments.map((step) => {
       const amount = Math.round(goods * step.share * 100) / 100;
+      cumulative += amount;
       let state: 'paid' | 'due' | 'later';
-      if (left >= amount - 0.005) { state = 'paid'; left -= amount; }
-      else { state = reached[step.due] ? 'due' : 'later'; left = 0; }
+      if (!earlierOpen && paid >= Math.min(cumulative, goods) - 0.05) state = 'paid';
+      else { state = reached[step.due] ? 'due' : 'later'; earlierOpen = true; }
       return { label: step.label, amount, state };
     });
   });

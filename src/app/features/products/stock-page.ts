@@ -36,17 +36,91 @@ interface StockRow {
     </app-page-header>
 
     <div class="content">
-      <!-- Which location you are looking at; "Alle" shows the columns side by side. -->
-      <div class="location-tabs" role="tablist" aria-label="Locatie">
-        <button type="button" role="tab" [class.active]="view() === null" [attr.aria-selected]="view() === null"
-                [disabled]="counting()" (click)="view.set(null)">Alle</button>
-        @for (location of activeLocations(); track location.id) {
-          <button type="button" role="tab" [class.active]="view() === location.id"
-                  [attr.aria-selected]="view() === location.id" [disabled]="counting()"
-                  (click)="view.set(location.id)">{{ location.name }}</button>
+      <section class="catalog-tools" aria-label="Voorraad zoeken en filteren">
+        <div class="catalog-search">
+          <label class="sr-only" for="stock-search-input">Zoeken</label>
+          <svg class="catalog-search__icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="m16 16 4 4" />
+          </svg>
+          <input class="input catalog-search__input" id="stock-search-input" type="search"
+                 placeholder="Zoek naam, SKU of kleur…"
+                 [ngModel]="query()" (ngModelChange)="query.set($event)" />
+          @if (query()) {
+            <button class="catalog-search__clear" type="button" aria-label="Zoekopdracht wissen"
+                    (click)="query.set('')">×</button>
+          }
+        </div>
+
+        <button class="filter-toggle" type="button"
+                [class.filter-toggle--active]="activeFilterCount() > 0"
+                [attr.aria-expanded]="filtersOpen()"
+                (click)="filtersOpen.set(!filtersOpen())">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" />
+          </svg>
+          <span class="hide-mobile">Filters</span>
+          @if (activeFilterCount(); as n) {
+            <b class="filter-toggle__count">{{ n }}</b>
+          }
+          <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
+        </button>
+
+        @if (filtersOpen()) {
+        <div class="filter-grid">
+          <!-- Which location you are looking at; "Alle" shows the figures side by side. -->
+          <label class="filter-field">
+            <span class="filter-field__label">Locatie</span>
+            <select class="select filter-field__select" aria-label="Locatie" [disabled]="!!counting()"
+                    [ngModel]="view()" (ngModelChange)="view.set($event)">
+              <option [ngValue]="null">Alle locaties</option>
+              @for (location of activeLocations(); track location.id) {
+                <option [ngValue]="location.id">{{ location.name }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="filter-field">
+            <span class="filter-field__label">Categorie</span>
+            <select class="select filter-field__select" aria-label="Filter op categorie"
+                    [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
+              <option [ngValue]="null">Alle categorieën</option>
+              @for (category of categories(); track category.id) {
+                <option [ngValue]="category.id">{{ category.name }}</option>
+              }
+            </select>
+          </label>
+
+          <div class="filter-field filter-sort">
+            <span class="filter-field__label" aria-hidden="true">Sorteren</span>
+            <div class="filter-sort__box">
+              <svg class="filter-sort__icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h12M4 12h8M4 17h5" /><path d="M17 10v10m0 0-3-3m3 3 3-3" />
+              </svg>
+              <span class="filter-sort__text hide-mobile">{{ sortLabel() }}</span>
+              <select class="filter-sort__native" aria-label="Sorteren"
+                      [title]="'Sorteren: ' + sortLabel()"
+                      [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
+                @for (option of sortOptions; track option.key) {
+                  <option [value]="option.key">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
+        </div>
         }
-        <a class="location-tabs__manage" routerLink="/stock-locations">Locaties beheren ›</a>
-      </div>
+
+        @if (filtersOpen() || hasFilters()) {
+          <div class="filter-summary" aria-live="polite">
+            <span><strong>{{ filtered().length }}</strong> van {{ rows().length }} producten</span>
+            @if (hasFilters()) {
+              <button class="filter-reset" type="button" (click)="resetFilters()">Filters wissen</button>
+            } @else {
+              <a class="filter-manage" routerLink="/stock-locations">Locaties beheren ›</a>
+            }
+          </div>
+        }
+      </section>
 
       @if (counting(); as count) {
         <div class="count-bar" role="status">
@@ -60,105 +134,95 @@ interface StockRow {
         </div>
       }
 
-      <div class="stock-tools mt-12">
-        <div class="catalog-search">
-          <input class="input" type="search" placeholder="Zoek naam, SKU of kleur…"
-                 [ngModel]="query()" (ngModelChange)="query.set($event)" />
-        </div>
-        <select class="select stock-tools__sort" aria-label="Sorteren"
-                [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
-          <option value="NAME_ASC">Naam A–Z</option>
-          <option value="NAME_DESC">Naam Z–A</option>
-          <option value="STOCK_DESC">Voorraad hoog → laag</option>
-          <option value="STOCK_ASC">Voorraad laag → hoog</option>
-          <option value="EXPECTED">Te verwachten eerst</option>
-        </select>
-      </div>
-
-      <div class="card mt-12">
-        <div class="stock-table" [class.stock-table--single]="view() !== null">
-          <div class="stock-table__head">
-            <span>Product</span>
-            @if (view() === null) {
-              @for (location of activeLocations(); track location.id) {
-                <span class="num">{{ location.name }}</span>
-              }
-              <span class="num">Totaal</span>
-            } @else {
-              <span class="num">{{ locationName(view()!) }}</span>
-              @if (counting()) { <span class="num">Geteld</span> }
-            }
-          </div>
-          @for (section of sections(); track section.key) {
-            @if (section.name !== null) {
-              <!-- The category heading folds its rows away; the eye finds
-                   "Glas" faster than it reads twenty names. -->
-              <button class="stock-table__section" type="button" [attr.aria-expanded]="!collapsed().has(section.key)"
-                      (click)="toggleSection(section.key)">
-                <i class="stock-table__chev" [class.stock-table__chev--closed]="collapsed().has(section.key)" aria-hidden="true"></i>
-                <span>{{ section.name }}</span>
-                <small>{{ section.rows.length }}</small>
-                <span class="num stock-table__section-total">{{ section.total | num }}</span>
-              </button>
-            }
-            @if (!collapsed().has(section.key)) {
-            @for (row of section.rows; track row.product.id) {
-            <div class="stock-table__row" [class.stock-table__row--changed]="isChanged(row.product.id!)">
-              <!-- The name opens the stock book; the page itself is one more tap away from there. -->
-              <button class="stock-table__product" type="button" (click)="openHistory(row)">
-                @if (row.product.photos.length) {
-                  <img class="thumb thumb--sm" [appAuthSrc]="row.product.photos[0].url" alt="" />
-                } @else {
-                  <span class="thumb thumb--sm thumb--placeholder">◈</span>
-                }
-                <span class="stock-table__name">
-                  <b>{{ row.product.name }}</b>
-                  <small>{{ row.product.sku }}@if (row.product.colour) { · {{ row.product.colour }}}@if (row.product.variantSize) { · {{ row.product.variantSize }}}@if (expectedFor(row.product.id!); as exp) { · <em class="expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</em>}</small>
-                </span>
-              </button>
-              <!-- Every figure is a field: type the real count and leave it,
-                   and it is booked at that location as a manual correction. -->
-              @if (view() === null) {
-                @for (location of activeLocations(); track location.id) {
-                  <input class="stock-table__qty stock-table__qty--edit num" type="number" min="0" step="1"
-                         inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
-                         [attr.aria-label]="row.product.name + ' op ' + location.name"
-                         [value]="row.byLocation.get(location.id!) ?? 0"
-                         (keydown.enter)="$any($event.target).blur()"
-                         (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
-                         (change)="setQuantity(row, location.id!, $any($event.target))" />
-                }
-                <span class="num stock-table__qty stock-table__qty--total">{{ row.total | num }}</span>
-              } @else {
-                <input class="stock-table__qty stock-table__qty--edit num" type="number" min="0" step="1"
-                       inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
-                       [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
-                       [value]="row.byLocation.get(view()!) ?? 0"
-                       (keydown.enter)="$any($event.target).blur()"
-                       (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
-                       (change)="setQuantity(row, view()!, $any($event.target))" />
-                @if (counting()) {
-                  <span class="stock-table__count">
-                    <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
-                           [attr.aria-label]="'Geteld: ' + row.product.name"
-                           [ngModel]="countDraft().get(row.product.id!) ?? null"
-                           (ngModelChange)="setCount(row.product.id!, $event)" />
-                  </span>
-                }
-              }
-              @if (!counting()) {
-                <button class="stock-table__move" type="button" title="Verplaatsen" aria-label="Verplaatsen"
-                        (click)="openTransfer(row)">⇄</button>
-              }
-            </div>
-            }
-            }
-          } @empty {
-            @if (loading()) { <app-skeleton kind="list" [rows]="6" /> }
-            @else { <div class="empty"><div class="empty__title">Geen producten gevonden</div></div> }
+      @for (section of sections(); track section.key) {
+        <!-- One card per category, its name above the white - the same
+             shape as the catalogue, so the eye already knows the way. -->
+        <section class="section" [style.animation-delay.ms]="$index * 40">
+          @if (section.name !== null) {
+            <h2 class="section-head">
+              <span>{{ section.name }}</span>
+              <small>{{ section.rows.length }}</small>
+              <small class="section-head__total num">{{ section.total | num }} st.</small>
+            </h2>
           }
-        </div>
-      </div>
+          <div class="card">
+            <div class="list">
+            @for (row of section.rows; track row.product.id) {
+              <div class="list-item stock-row" [class.stock-row--changed]="isChanged(row.product.id!)">
+                <!-- The name opens the stock book; the page itself is one more tap away from there. -->
+                <button class="stock-row__product" type="button" (click)="openHistory(row)">
+                  @if (row.product.photos.length) {
+                    <img class="thumb" [appAuthSrc]="row.product.photos[0].url" alt="" />
+                  } @else {
+                    <span class="thumb thumb--placeholder">◈</span>
+                  }
+                  <span class="stock-row__body">
+                    <span class="product-row__title">
+                      <strong>{{ row.product.name }}</strong>
+                      @if (row.product.colour) { <span>{{ row.product.colour }}</span> }
+                      @if (row.product.variantSize) { <span>{{ row.product.variantSize }}</span> }
+                    </span>
+                    <span class="product-row__sku mono">{{ row.product.sku || 'Geen SKU' }}</span>
+                    @if (expectedFor(row.product.id!); as exp) {
+                      <span class="stock-expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</span>
+                    }
+                  </span>
+                </button>
+                <!-- Every figure is a field: type the real count and leave it,
+                     and it is booked at that location as a manual correction. -->
+                <div class="list-item__end stock-row__end">
+                  @if (view() === null) {
+                    @for (location of activeLocations(); track location.id) {
+                      <div class="stock-row__figure stock-row__figure--location">
+                        <span>{{ location.name }}</span>
+                        <input class="stock-row__qty num" type="number" min="0" step="1"
+                               inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
+                               [attr.aria-label]="row.product.name + ' op ' + location.name"
+                               [value]="row.byLocation.get(location.id!) ?? 0"
+                               (keydown.enter)="$any($event.target).blur()"
+                               (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
+                               (change)="setQuantity(row, location.id!, $any($event.target))" />
+                      </div>
+                    }
+                    <div class="stock-row__figure stock-row__figure--total">
+                      <span>Totaal</span>
+                      <strong class="num">{{ row.total | num }}</strong>
+                    </div>
+                  } @else {
+                    <div class="stock-row__figure">
+                      <span>{{ locationName(view()!) }}</span>
+                      <input class="stock-row__qty num" type="number" min="0" step="1"
+                             inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
+                             [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
+                             [value]="row.byLocation.get(view()!) ?? 0"
+                             (keydown.enter)="$any($event.target).blur()"
+                             (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
+                             (change)="setQuantity(row, view()!, $any($event.target))" />
+                    </div>
+                    @if (counting()) {
+                      <div class="stock-row__figure stock-row__figure--count">
+                        <span>Geteld</span>
+                        <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
+                               [attr.aria-label]="'Geteld: ' + row.product.name"
+                               [ngModel]="countDraft().get(row.product.id!) ?? null"
+                               (ngModelChange)="setCount(row.product.id!, $event)" />
+                      </div>
+                    }
+                  }
+                  @if (!counting()) {
+                    <button class="stock-row__move" type="button" title="Verplaatsen" aria-label="Verplaatsen"
+                            (click)="openTransfer(row)">⇄</button>
+                  }
+                </div>
+              </div>
+            }
+            </div>
+          </div>
+        </section>
+      } @empty {
+        @if (loading()) { <app-skeleton kind="list" [rows]="6" /> }
+        @else { <div class="empty"><div class="empty__title">Geen producten gevonden</div></div> }
+      }
     </div>
 
     @if (history(); as book) {
@@ -170,7 +234,12 @@ interface StockRow {
               <span><small>{{ location.name }}</small><b class="num">{{ (book.row.byLocation.get(location.id!) ?? 0) | num }}</b></span>
             }
             @if (expectedFor(book.row.product.id!); as exp) {
-              <span><small>Te verwachten</small><b class="num expected">+{{ exp.quantity | num }}</b></span>
+              <!-- On the water: the tile is the way to the order it sits on. -->
+              <a class="history-levels__link" [routerLink]="['/purchasing', exp.orderIds[0]]" (click)="history.set(null)"
+                 [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
+                <small>Te verwachten</small><b class="num expected">+{{ exp.quantity | num }}</b>
+                <em>{{ exp.orderNumbers.join(', ') }}{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }} ›</em>
+              </a>
             }
           </div>
           <h3 class="history-title">Geschiedenis</h3>
@@ -233,40 +302,162 @@ interface StockRow {
     }
   `,
   styles: `
-    .location-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .location-tabs button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px;
-      background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
-    .location-tabs button.active { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); }
-    .location-tabs button:disabled { opacity: .5; cursor: default; }
-    .location-tabs__manage { margin-left: auto; color: var(--muted); font-size: 12px; text-decoration: none; }
-    .count-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px;
+    .catalog-tools {
+      width: 100%; min-width: 0; margin-bottom: 14px; padding: 12px;
+      border: 1px solid var(--line); border-radius: var(--r);
+      background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
+      box-shadow: 0 5px 18px rgb(31 25 22 / 4%);
+    }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
+    .catalog-search { position: relative; display: block; min-width: 0; flex: 1; }
+    .catalog-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+    .filter-toggle {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px;
+      border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface);
+      color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+    }
+    .filter-toggle:hover { background: var(--surface-2); }
+    .filter-toggle--active { border-color: var(--rose-line); color: var(--rose-dark); background: var(--rose-soft); }
+    .filter-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; }
+    .filter-toggle__count {
+      min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rose); color: #fff;
+      font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+    }
+    .filter-toggle__chev {
+      width: 7px; height: 7px; margin-left: 2px; border-right: 1.6px solid currentColor;
+      border-bottom: 1.6px solid currentColor; transform: translateY(-2px) rotate(45deg);
+      transition: transform .15s ease; opacity: .7;
+    }
+    .filter-toggle__chev--open { transform: translateY(2px) rotate(-135deg); }
+    .filter-grid, .filter-summary, .family-load-warning { flex: 1 0 100%; }
+    .catalog-search__icon {
+      position: absolute; z-index: 1; left: 13px; top: 50%; transform: translateY(-52%);
+      width: 18px; height: 18px; color: var(--muted); fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; pointer-events: none;
+    }
+    .catalog-search__input { padding-left: 42px; padding-right: 42px; }
+    .catalog-search__clear {
+      position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+      width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
+      background: transparent; color: var(--muted); font-size: 24px; line-height: 1;
+      cursor: pointer;
+    }
+    .catalog-search__clear:hover { background: var(--surface-2); color: var(--ink); }
+    .filter-grid {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+      gap: 9px; min-width: 0; margin-top: 2px;
+    }
+    .filter-sort__box {
+      position: relative; display: flex; align-items: center; gap: 7px; min-height: 42px;
+      padding: 0 11px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+      background: var(--surface); color: var(--ink-2);
+    }
+    .filter-sort__box:hover { background: var(--surface-2); }
+    .filter-sort__icon { width: 18px; height: 18px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .filter-sort__text { font-size: 13px; font-weight: 650; white-space: nowrap; }
+    /* The real select lies invisibly over the box: the native picker opens
+       on tap, the box is just how it looks. */
+    .filter-sort__native { position: absolute; inset: 0; width: 100%; height: 100%;
+      opacity: 0; cursor: pointer; font-size: 16px; }
+    .filter-field { display: block; min-width: 0; }
+    .filter-field__label {
+      display: block; margin: 0 0 5px 2px; color: var(--muted);
+      font-size: 10px; font-weight: 750; letter-spacing: .055em; text-transform: uppercase;
+    }
+    .filter-sort .filter-field__label { visibility: hidden; }
+    .filter-field__select {
+      display: block; min-width: 0; max-width: 100%; min-height: 42px;
+      padding: 9px 30px 9px 10px; font-size: 13px; font-weight: 650;
+      text-overflow: ellipsis;
+    }
+    .filter-summary {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      min-width: 0; margin-top: 0; color: var(--muted); font-size: 12px;
+    }
+    .filter-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .filter-reset {
+      flex: 0 0 auto; padding: 4px 0; border: 0; background: transparent;
+      color: var(--rose-dark); font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .filter-manage { color: var(--muted); font-size: 12px; text-decoration: none; }
+    @media (min-width: 680px) {
+      .filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+    }
+    .count-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 12px;
       border: 1px solid var(--rose-line); border-radius: var(--r-sm); background: var(--rose-soft); }
     .count-bar > div { flex: 1 1 200px; min-width: 0; }
     .count-bar small { display: block; color: var(--muted); font-size: 11.5px; }
-    .stock-table { display: grid; }
-    /* Fixed figure columns: head and rows are separate grids, and auto-sized
-       columns drifted apart - the heading sat above nothing in particular. */
-    .stock-table__head, .stock-table__row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), 96px) 34px;
-      align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-    .stock-table__head { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
-    /* The heading sits exactly above the figure: same right padding as the field. */
-    .stock-table__head .num { text-align: right; padding-right: 6px; }
-    .stock-tools { display: flex; gap: 9px; align-items: center; }
-    .stock-tools .catalog-search { flex: 1; min-width: 0; }
-    .stock-tools__sort { width: auto; min-height: 42px; font-size: 13px; font-weight: 650; }
-    .stock-table__section { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 9px 12px;
-      border: 0; border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2);
-      font: inherit; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; text-align: left; cursor: pointer; }
-    .stock-table__section small { color: var(--muted); font-size: 10.5px; font-weight: 650; letter-spacing: 0; }
-    .stock-table__section-total { margin-left: auto; letter-spacing: 0; font-size: 12px; }
-    .stock-table__chev { width: 7px; height: 7px; align-self: center; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
-      transform: rotate(45deg); transition: transform .15s ease; opacity: .7; }
-    .stock-table__chev--closed { transform: rotate(-45deg); }
+
+    .section { animation: section-in .28s ease both; }
+    .section + .section { margin-top: 18px; }
+    @keyframes section-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { .section { animation: none; } }
+    .section-head {
+      display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px 4px;
+      color: var(--ink-2); font-size: 11.5px; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .section-head small { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0; }
+    .section-head__total { margin-left: auto; margin-right: 4px; text-transform: none; }
+
+    .stock-row { gap: 8px; }
+    .stock-row--changed { background: var(--warn-soft); }
+    .stock-row__product { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0;
+      background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .stock-row__body { display: grid; min-width: 0; }
+    .product-row__title { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: 2px 4px; }
+    .product-row__title strong { flex: 0 1 auto; overflow: hidden; min-width: 0; font-size: 13.5px;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .product-row__title span { flex: 0 0 auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .product-row__sku { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
+    .stock-expected { display: block; margin-top: 2px; color: var(--warn); font-size: 10px; font-weight: 700; white-space: nowrap; }
     .expected { color: var(--warn); font-style: normal; font-weight: 650; }
+    .stock-row__end { display: flex; align-items: center; gap: 6px; }
+    /* Label over figure, like the catalogue's Voorraad / Kostprijs columns;
+       fixed widths so the figures line up from row to row. */
+    .stock-row__figure { display: grid; justify-items: end; gap: 3px; width: 72px; }
+    .stock-row__figure span { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .055em;
+      line-height: 1.15; text-transform: uppercase; white-space: nowrap; overflow: hidden; max-width: 100%; text-overflow: ellipsis; }
+    .stock-row__figure strong { font-size: 13px; font-weight: 800; line-height: 1.3; padding: 4px 6px; }
+    .stock-row__figure--total { padding-left: 8px; border-left: 1px solid var(--line); }
+    .stock-row__figure--count { width: 84px; }
+    .stock-row__figure--count .input { width: 100%; min-height: 34px; padding: 4px 8px; }
+    /* Reads as a plain figure; shows it is a field only under the pointer or when focused. */
+    .stock-row__qty { width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid transparent;
+      border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 650;
+      text-align: right; -moz-appearance: textfield; }
+    .stock-row__qty::-webkit-outer-spin-button, .stock-row__qty::-webkit-inner-spin-button { display: none; }
+    .stock-row__qty:hover { border-color: var(--line); background: var(--surface-2); }
+    .stock-row__qty:focus { outline: none; border-color: var(--rose); background: var(--surface); }
+    .stock-row__move { width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+      color: var(--muted); font-size: 15px; cursor: pointer; }
+    .stock-row__move:hover { color: var(--ink); background: var(--surface-2); }
+    @media (min-width: 680px) {
+      .stock-row__end { gap: 10px; }
+      .stock-row__figure { width: 84px; }
+    }
+    /* A phone has room for one figure next to the name: the total. The
+       split per location is one tap away in the stock book, and editing
+       a location happens with that location chosen under Filters. */
+    @media (max-width: 600px) {
+      .stock-row__figure { width: 64px; }
+      .stock-row__figure--location { display: none; }
+      .stock-row__figure--total { padding-left: 0; border-left: 0; }
+    }
     .history-levels { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
-    .history-levels span { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+    .history-levels span, .history-levels__link { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
     .history-levels small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
     .history-levels b { font-size: 16px; }
+    .history-levels__link { color: inherit; text-decoration: none; border-color: var(--warn-line, #eddcb9); }
+    .history-levels__link em { color: var(--warn); font-size: 11px; font-style: normal; font-weight: 650; }
     .history-title { margin: 14px 0 4px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
     .history-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
     .history-list li { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -276,31 +467,6 @@ interface StockRow {
     .history-what b { font-weight: 650; font-size: 12.5px; }
     .history-what small { color: var(--muted); font-size: 11px; }
     .history-after { color: var(--muted); font-size: 12px; white-space: nowrap; }
-    .stock-table__row:last-child { border-bottom: 0; }
-    .stock-table__row--changed { background: var(--warn-soft); }
-    .stock-table__product { display: flex; align-items: center; gap: 10px; min-width: 0; color: inherit; text-decoration: none; }
-    .stock-table__name { display: grid; min-width: 0; }
-    .stock-table__name b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-    .stock-table__name small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-    .thumb--sm { width: 34px; height: 34px; }
-    .stock-table__qty { text-align: right; font-weight: 650; font-size: 13px; }
-    /* Reads as a plain figure; shows it is a field only under the pointer or when focused. */
-    .stock-table__qty--edit { width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid transparent;
-      border-radius: 8px; background: transparent; color: inherit; font: inherit; font-weight: 650;
-      text-align: right; -moz-appearance: textfield; }
-    .stock-table__qty--edit::-webkit-outer-spin-button, .stock-table__qty--edit::-webkit-inner-spin-button { display: none; }
-    .stock-table__qty--edit:hover { border-color: var(--line); background: var(--surface-2); }
-    .stock-table__qty--edit:focus { outline: none; border-color: var(--rose); background: var(--surface); }
-    .stock-table__qty--total { font-weight: 800; }
-    .stock-table__count .input { width: 84px; min-height: 36px; padding: 4px 8px; }
-    .stock-table__move { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
-      color: var(--muted); font-size: 15px; cursor: pointer; }
-    .stock-table__move:hover { color: var(--ink); background: var(--surface-2); }
-    @media (max-width: 600px) {
-      .stock-table:not(.stock-table--single) .stock-table__head, .stock-table:not(.stock-table--single) .stock-table__row {
-        grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), 64px) 30px; gap: 6px; padding: 8px 10px; }
-      .stock-table__qty { font-size: 12px; }
-    }
   `,
 })
 export class StockPage {
@@ -340,7 +506,27 @@ export class StockPage {
   readonly sortKey = signal<'NAME_ASC' | 'NAME_DESC' | 'STOCK_DESC' | 'STOCK_ASC' | 'EXPECTED'>('NAME_ASC');
   readonly categories = signal<Category[]>([]);
   readonly expected = signal<Map<number, ExpectedStock>>(new Map());
-  readonly collapsed = signal<Set<string>>(new Set());
+  readonly filtersOpen = signal(false);
+  readonly categoryFilter = signal<number | null>(null);
+  readonly sortOptions: { key: 'NAME_ASC' | 'NAME_DESC' | 'STOCK_DESC' | 'STOCK_ASC' | 'EXPECTED'; label: string }[] = [
+    { key: 'NAME_ASC', label: 'Naam A–Z' },
+    { key: 'NAME_DESC', label: 'Naam Z–A' },
+    { key: 'STOCK_DESC', label: 'Voorraad hoog → laag' },
+    { key: 'STOCK_ASC', label: 'Voorraad laag → hoog' },
+    { key: 'EXPECTED', label: 'Te verwachten eerst' },
+  ];
+  readonly sortLabel = computed(() => this.sortOptions.find((option) => option.key === this.sortKey())?.label ?? '');
+  /* A count pins the location; that is not a filter you chose, so it does not light the button. */
+  readonly activeFilterCount = computed(() =>
+    (this.view() !== null && !this.counting() ? 1 : 0) + (this.categoryFilter() !== null ? 1 : 0)
+    + (this.sortKey() !== 'NAME_ASC' ? 1 : 0));
+  readonly hasFilters = computed(() => this.activeFilterCount() > 0);
+
+  resetFilters(): void {
+    if (!this.counting()) this.view.set(null);
+    this.categoryFilter.set(null);
+    this.sortKey.set('NAME_ASC');
+  }
 
   expectedFor(productId: number): ExpectedStock | null {
     return this.expected().get(productId) ?? null;
@@ -348,8 +534,10 @@ export class StockPage {
 
   readonly filtered = computed(() => {
     const needle = this.query().trim().toLowerCase();
-    const rows = !needle ? this.rows() : this.rows().filter(({ product }) =>
-      [product.name, product.sku, product.colour, product.variantSize].join(' ').toLowerCase().includes(needle));
+    const category = this.categoryFilter();
+    const rows = this.rows().filter(({ product }) =>
+      (category === null || product.categoryId === category)
+      && (!needle || [product.name, product.sku, product.colour, product.variantSize].join(' ').toLowerCase().includes(needle)));
     const byName = (a: StockRow, b: StockRow) =>
       a.product.name.localeCompare(b.product.name, 'nl', { numeric: true, sensitivity: 'base' });
     switch (this.sortKey()) {
@@ -382,10 +570,6 @@ export class StockPage {
         total: group.reduce((sum, row) => sum + row.total, 0),
       }));
   });
-
-  toggleSection(key: string): void {
-    this.collapsed.update((set) => { const next = new Set(set); next.has(key) ? next.delete(key) : next.add(key); return next; });
-  }
 
   /* ---- the stock book of one product ---- */
   readonly history = signal<{ row: StockRow; moves: StockMovement[] | null } | null>(null);

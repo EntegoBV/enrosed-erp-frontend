@@ -688,6 +688,7 @@ export interface ExpectedStock {
   quantity: number;
   expectedArrival: string | null;
   orderNumbers: string[];
+  orderIds: number[];
 }
 
 export interface PurchaseOrder {
