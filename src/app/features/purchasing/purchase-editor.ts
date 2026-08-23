@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -58,6 +58,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <button class="btn btn--sm" type="button" (click)="downloadPdf()"
                 [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
           PDF
+        </button>
+        <button class="btn btn--primary btn--sm" type="button"
+                [disabled]="saving() || !dirty()" (click)="save()">
+          {{ saving() ? 'Bezig…' : (dirty() ? 'Opslaan' : 'Opgeslagen') }}
         </button>
       </app-page-header>
 
@@ -1034,7 +1038,8 @@ export class PurchaseEditor {
             + 'Pas de aantallen eerst aan; de order onthoudt wat er besteld was.',
           confirmLabel: 'Ontvangen en bijboeken',
         },
-        () => { this.enqueue((order) => ({ ...order, status: 'ONTVANGEN' })); },
+        /* A status step saves at once - the draft goes along with it. */
+        () => { this.enqueue((order) => ({ ...order, status: 'ONTVANGEN' }), () => {}); },
       );
       return;
     }
@@ -1182,6 +1187,7 @@ export class PurchaseEditor {
 
   private async load(orderId: number): Promise<void> {
     const view = await this.sourcing.purchaseOrder(orderId);
+    this.savedOrder.set(JSON.stringify(view.order));
     const [products, suppliers, locations] = await Promise.all([
       this.catalog.products(view.order.supplierId), this.sourcing.suppliers(),
       this.catalog.stockLocations().catch(() => [] as StockLocation[])]);
@@ -1208,49 +1214,118 @@ export class PurchaseEditor {
     return order[field] as Allocation;
   }
 
-  /* Saves run strictly in sequence; see the sales editor for the race
-     this prevents. Each queued change is applied onto the freshest order. */
-  private saveQueue: Promise<void> = Promise.resolve();
+  /* ---- draft, preview, save ---------------------------------------- */
 
+  /* The order on screen is a draft: every edit lands here at once and the
+     figures are recalculated by the server without saving. Only Opslaan
+     (or a status step, which is an action) writes the order. */
+  private readonly savedOrder = signal<string>('');
+  readonly saving = signal(false);
+  readonly dirty = computed(() => {
+    const data = this.view();
+    return !!data && JSON.stringify(data.order) !== this.savedOrder();
+  });
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  private previewVersion = 0;
+
+  /** Applies a change to the draft and refreshes the calculation. */
   private enqueue(
     make: (order: PurchaseOrder) => PurchaseOrder,
     afterSave?: (saved: PurchaseOrderView) => void,
   ): void {
-    this.saveQueue = this.saveQueue.then(async () => {
-      const data = this.view();
-      if (!data) return;
-      try {
-        const saved = await this.save(make(data.order));
-        afterSave?.(saved);
-      } catch (failure: unknown) {
-        /* A rejected save must not reject the queue: the next correction still
-           has to reach the server without forcing the user to reload. */
-        this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
+    const data = this.view();
+    if (!data) return;
+    const order = make(data.order);
+    this.view.set({ ...data, order });
+    if (afterSave) {
+      /* A status step is an action, not a keystroke: it saves at once, draft included. */
+      void this.save().then((saved) => { if (saved) afterSave(saved); });
+      return;
+    }
+    this.schedulePreview();
+  }
+
+  /** Recalculates shortly after the last keystroke - the server owns the maths. */
+  private schedulePreview(): void {
+    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => { this.previewTimer = null; void this.preview(); }, 250);
+  }
+
+  private async preview(): Promise<void> {
+    const data = this.view();
+    if (!data) return;
+    const version = ++this.previewVersion;
+    try {
+      const fresh = await this.sourcing.previewPurchaseOrder(data.order.id, data.order);
+      const current = this.view();
+      /* Only the newest preview may land, and only onto the draft it was made for. */
+      if (version !== this.previewVersion || !current) return;
+      this.view.set({ ...fresh, order: current.order });
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Berekening vernieuwen mislukt'), 'err');
+    }
+  }
+
+  /** Writes the draft; the server answers with the order as it stands. */
+  async save(): Promise<PurchaseOrderView | null> {
+    const data = this.view();
+    if (!data || this.saving()) return null;
+    if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
+    this.saving.set(true);
+    try {
+      const result = await this.sourcing.updatePurchaseOrder(data.order.id, data.order);
+      ++this.previewVersion;
+      this.view.set(result);
+      this.savedOrder.set(JSON.stringify(result.order));
+      this.adjustments.set(result.adjustments ?? []);
+      if (result.adjustments?.length) {
+        /* Warning only: purchasing never rounds. A supplier can ship a sample of
+           three pieces, and silently inflating an order costs real money. */
+        const first = result.adjustments[0];
+        this.ui.toast(
+          `Let op: ${first.requested} stuks is geen volle doos (${first.piecesPerCarton}/doos)`,
+          'err');
+      } else {
+        this.ui.toast('Opgeslagen');
       }
+      /* Stock levels may have just been booked. The order is already saved here,
+         so a failed refresh is reported separately. */
+      try {
+        this.products.set(await this.catalog.products(result.order.supplierId));
+      } catch (failure: unknown) {
+        this.ui.toast(
+          messageOf(failure, 'Order opgeslagen, maar productgegevens vernieuwen mislukt'), 'err');
+      }
+      return result;
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
+      return null;
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /** Leaving with unsaved work asks first; saving in progress holds the door. */
+  canDeactivate(): boolean | Promise<boolean> {
+    if (this.saving()) return false;
+    if (!this.dirty()) return true;
+    return new Promise<boolean>((resolve) => {
+      this.ui.confirm(
+        {
+          title: 'Niet-opgeslagen wijzigingen',
+          message: 'Deze inkooporder heeft wijzigingen die nog niet zijn opgeslagen. Opslaan voor je verdergaat?',
+          confirmLabel: 'Opslaan',
+          secondaryLabel: 'Niet opslaan',
+        },
+        async () => { await this.save(); resolve(!this.dirty()); },
+        () => resolve(true),
+      );
     });
   }
 
-  private async save(order: PurchaseOrder): Promise<PurchaseOrderView> {
-    const result = await this.sourcing.updatePurchaseOrder(order.id, order);
-    this.view.set(result);
-    this.adjustments.set(result.adjustments ?? []);
-    if (result.adjustments?.length) {
-      /* Warning only: purchasing never rounds. A supplier can ship a sample of
-         three pieces, and silently inflating an order costs real money. */
-      const first = result.adjustments[0];
-      this.ui.toast(
-        `Let op: ${first.requested} stuks is geen volle doos (${first.piecesPerCarton}/doos)`,
-        'err');
-    }
-    /* Stock levels may have just been booked. The order is already saved here,
-       so a failed refresh is reported separately and must not poison autosave. */
-    try {
-      this.products.set(await this.catalog.products(order.supplierId));
-    } catch (failure: unknown) {
-      this.ui.toast(
-        messageOf(failure, 'Order opgeslagen, maar productgegevens vernieuwen mislukt'), 'err');
-    }
-    return result;
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.dirty()) event.preventDefault();
   }
 
   piecesPerCarton(productId: number): number {

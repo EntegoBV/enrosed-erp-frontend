@@ -38,6 +38,12 @@ export class SourcingApi {
       { supplierId, cnyToUsd, usdToEur, defaultDutyRatePct }));
   }
 
+  /** The calculation for an order as it stands on screen, without saving. */
+  previewPurchaseOrder(id: number, order: PurchaseOrder): Promise<PurchaseOrderView> {
+    return firstValueFrom(
+      this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${id}/preview`), order));
+  }
+
   updatePurchaseOrder(id: number, order: PurchaseOrder): Promise<PurchaseOrderView> {
     return firstValueFrom(
       this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}`), order));

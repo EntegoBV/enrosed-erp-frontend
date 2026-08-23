@@ -79,6 +79,11 @@ export class SalesApi {
       { customerId, countryCode, incoterm }));
   }
 
+  /** Prices the order as it stands on screen, without saving. */
+  previewOrder(id: number, order: SalesOrder): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/preview`), order));
+  }
+
   updateOrder(id: number, order: SalesOrder): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}`), order));
   }

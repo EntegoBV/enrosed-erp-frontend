@@ -1,6 +1,4 @@
-import {
-  ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -52,6 +50,12 @@ import {
             <span>Totaal</span>
             <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
           </div>
+          @if (canEdit()) {
+            <button class="btn btn--primary btn--sm quote-header-button" type="button"
+                    [disabled]="saving() || !dirty()" (click)="save()">
+              {{ saving() ? 'Bezig…' : (dirty() ? 'Opslaan' : 'Opgeslagen') }}
+            </button>
+          }
           <button class="btn btn--sm quote-header-button" type="button"
                   (click)="openPdfSheet()">PDF</button>
           @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
@@ -470,7 +474,7 @@ import {
                       <label [attr.for]="'q-' + line.productId">Aantal stuks</label>
                       <input class="input num" [id]="'q-' + line.productId" type="number"
                              min="0" step="1" inputmode="numeric" [disabled]="!canEdit()"
-                             [ngModel]="lineDraft()[line.productId] ?? line.quantity"
+                             [ngModel]="line.quantity"
                              (ngModelChange)="setLineQuantity(line.productId, +$event)" />
                       @if (linePending()[line.productId]; as to) {
                         <span class="hint warn-text" role="status">
@@ -1386,7 +1390,7 @@ export class SalesEditor {
       const [view, revisions] = await Promise.all([
         this.sales.order(orderId), this.sales.revisionsFor(orderId),
       ]);
-      this.view.set(view);
+      this.adopt(view);
       this.revisions.set(revisions);
       void this.loadHistory(orderId);
       void this.loadCustomerPortalLink(orderId);
@@ -1546,27 +1550,95 @@ export class SalesEditor {
 
   /* --------------------------------------------------------- mutating */
 
-  /*
-   * Saves run strictly one after another. Two quick taps used to race:
-   * the later PUT could be built from a stale order and its response
-   * resurrect old state - pallet lists came back shuffled. Every queued
-   * change is applied onto the freshest order at the moment its turn
-   * comes.
-   */
-  private saveQueue: Promise<void> = Promise.resolve();
+  /* ---- draft, preview, save ---------------------------------------- */
 
+  /* The quote on screen is a draft: every edit lands here at once and the
+     server re-prices it without saving. Only Opslaan - or an action such as
+     Verstuur, which saves first - writes the quote. */
+  private readonly savedOrder = signal<string>('');
+  readonly saving = signal(false);
+  readonly dirty = computed(() => {
+    const data = this.view();
+    return !!data && JSON.stringify(data.order) !== this.savedOrder();
+  });
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  private previewVersion = 0;
+
+  /** A view straight from the server: what is shown is what is saved. */
+  private adopt(view: SalesOrderView): void {
+    ++this.previewVersion;
+    this.view.set(view);
+    this.savedOrder.set(JSON.stringify(view.order));
+  }
+
+  /** Applies a change to the draft and re-prices it. */
   private enqueue(make: (order: SalesOrder) => SalesOrder | null): void {
-    this.saveQueue = this.saveQueue.then(async () => {
-      const data = this.view();
-      if (!data) return;
-      try {
-        const next = make(data.order);
-        if (!next) return;
-        this.view.set(await this.sales.updateOrder(data.order.id, next));
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
-      }
+    const data = this.view();
+    if (!data) return;
+    const next = make(data.order);
+    if (!next) return;
+    this.view.set({ ...data, order: next });
+    this.schedulePreview();
+  }
+
+  private schedulePreview(): void {
+    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => { this.previewTimer = null; void this.preview(); }, 250);
+  }
+
+  private async preview(): Promise<void> {
+    const data = this.view();
+    if (!data) return;
+    const version = ++this.previewVersion;
+    try {
+      const fresh = await this.sales.previewOrder(data.order.id, data.order);
+      const current = this.view();
+      if (version !== this.previewVersion || !current) return;
+      this.view.set({ ...fresh, order: current.order });
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Prijzen vernieuwen mislukt'), 'err');
+    }
+  }
+
+  /** Writes the draft. Returns false when it could not be written. */
+  async save(): Promise<boolean> {
+    const data = this.view();
+    if (!data || this.saving()) return false;
+    if (!this.dirty()) return true;
+    if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
+    this.saving.set(true);
+    try {
+      this.adopt(await this.sales.updateOrder(data.order.id, data.order));
+      this.ui.toast('Opgeslagen');
+      return true;
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
+      return false;
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  canDeactivate(): boolean | Promise<boolean> {
+    if (this.saving()) return false;
+    if (!this.dirty()) return true;
+    return new Promise<boolean>((resolve) => {
+      this.ui.confirm(
+        {
+          title: 'Niet-opgeslagen wijzigingen',
+          message: 'Deze offerte heeft wijzigingen die nog niet zijn opgeslagen. Opslaan voor je verdergaat?',
+          confirmLabel: 'Opslaan',
+          secondaryLabel: 'Niet opslaan',
+        },
+        async () => { await this.save(); resolve(!this.dirty()); },
+        () => resolve(true),
+      );
     });
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.dirty()) event.preventDefault();
   }
 
   patch(changes: Partial<SalesOrder>): void {
@@ -1601,24 +1673,17 @@ export class SalesEditor {
     return this.view()?.order.lines.find((l) => l.productId === productId)?.deliveryWeek ?? '';
   }
 
-  /** Quantity being typed per line; shown until the deferred save lands. */
-  readonly lineDraft = signal<Record<number, number>>({});
-  /** Announced carton correction per line: visible immediately, applied later. */
+  /** Announced carton correction per line: the server rounds on save. */
   readonly linePending = signal<Record<number, number>>({});
-  private readonly lineTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
   /**
-   * Line quantities follow the same contract as the pickers: the notice is
-   * immediate, the correction is not. Saving on every keystroke made the
-   * server round instantly, which put "6" in the field while someone was
-   * still typing "640". A round quantity saves after a short pause; an
-   * off-carton one gets the full two seconds to finish typing.
+   * The quantity lands in the draft at once. An off-carton figure is kept
+   * as typed with a notice of what the server will make of it on save -
+   * nothing is rounded under someone's fingers.
    */
   setLineQuantity(productId: number, raw: number): void {
     if (!this.canEdit()) return;
     const wanted = Math.max(0, raw || 0);
-    this.lineDraft.update((map) => ({ ...map, [productId]: wanted }));
-
     const per = this.piecesPerCarton(productId);
     const snapped = Math.ceil(wanted / per) * per;
     const offCarton = snapped !== wanted && wanted > 0;
@@ -1628,37 +1693,13 @@ export class SalesEditor {
       else delete next[productId];
       return next;
     });
-
-    clearTimeout(this.lineTimers.get(productId));
-    this.lineTimers.set(productId, setTimeout(() => {
-      this.lineTimers.delete(productId);
-      this.lineDraft.update((map) => {
-        const next = { ...map };
-        delete next[productId];
-        return next;
-      });
-      this.linePending.update((map) => {
-        const next = { ...map };
-        delete next[productId];
-        return next;
-      });
-      /* The server rounds sales quantities on save; this is the guarantee
-         behind the courtesy above. */
-      this.setLine(productId, { quantity: wanted });
-    }, offCarton ? 2000 : 400));
+    this.setLine(productId, { quantity: wanted });
   }
 
-  /** Commit what is still being typed before a send action reads the order. */
-  private async flushPendingEdits(): Promise<void> {
-    const drafts = this.lineDraft();
-    for (const timer of this.lineTimers.values()) clearTimeout(timer);
-    this.lineTimers.clear();
-    this.lineDraft.set({});
+  /** Saves the draft before an action reads the order on the server. */
+  private async flushPendingEdits(): Promise<boolean> {
     this.linePending.set({});
-    for (const [productId, quantity] of Object.entries(drafts)) {
-      this.setLine(Number(productId), { quantity });
-    }
-    await this.saveQueue;
+    return this.save();
   }
 
   private piecesPerCarton(productId: number): number {
@@ -1674,18 +1715,18 @@ export class SalesEditor {
       const deliveryOnly = Object.keys(changes).length === 1
           && Object.prototype.hasOwnProperty.call(changes, 'deliveryWeek');
       if (deliveryOnly && this.canEditTerms()) {
-        this.saveQueue = this.saveQueue.then(async () => {
+        void (async () => {
           const data = this.view();
           if (!data) return;
           try {
-            this.view.set(await this.sales.updateDeliveryTerms(data.order.id, [{
+            this.adopt(await this.sales.updateDeliveryTerms(data.order.id, [{
               productId,
               deliveryWeek: changes.deliveryWeek?.trim() || null,
             }]));
           } catch (failure: unknown) {
             this.ui.toast(messageOf(failure, 'Leverweek opslaan mislukt'), 'err');
           }
-        });
+        })();
       }
       return;
     }
@@ -1739,7 +1780,7 @@ export class SalesEditor {
   /* ------------------------------------------------------------ quote */
 
   async openSend(): Promise<void> {
-    await this.flushPendingEdits();
+    if (!(await this.flushPendingEdits())) return;
     if (this.sendIssues().length) {
       this.ui.toast(this.sendIssues()[0], 'err');
       return;
@@ -1752,7 +1793,7 @@ export class SalesEditor {
     if (this.sending()) return;
     this.sending.set(true);
     try {
-      await this.flushPendingEdits();
+      if (!(await this.flushPendingEdits())) return;
       const data = this.view();
       if (!data) return;
       if (this.sendIssues().length) {
@@ -1760,7 +1801,7 @@ export class SalesEditor {
         return;
       }
       const sent = await this.sales.sendQuote(data.order.id, this.sendMessage());
-      this.view.set(sent);
+      this.adopt(sent);
       this.sendSheet.set(false);
       void this.work.refresh();
       this.ui.toast('Offerte verstuurd naar de klant');
@@ -1785,7 +1826,7 @@ export class SalesEditor {
     this.busy.set(true);
     this.customerPortalLink.set(null);
     try {
-      this.view.set(await this.sales.reopenQuote(data.order.id));
+      this.adopt(await this.sales.reopenQuote(data.order.id));
       void this.loadCustomerPortalLink(data.order.id);
       this.ui.toast('Offerte staat weer op concept');
     } catch (failure: unknown) {
@@ -1886,16 +1927,19 @@ export class SalesEditor {
                       manualFreightEur: number | null,
                       freightPricingStrategy: SalesOrder['freightPricingStrategy'],
                       freightRatePerCbmEur: number | null): void {
-    this.saveQueue = this.saveQueue.then(async () => {
+    void (async () => {
+      /* The freight endpoint answers with the saved quote: write the draft
+         first, or the answer would undo what was typed since. */
+      if (this.dirty() && !(await this.save())) return;
       const data = this.view();
       if (!data) return;
       try {
-        this.view.set(await this.sales.updateFreight(data.order.id, state, manualFreightEur,
+        this.adopt(await this.sales.updateFreight(data.order.id, state, manualFreightEur,
           freightPricingStrategy ?? null, freightRatePerCbmEur));
       } catch (failure: unknown) {
         this.ui.toast(messageOf(failure, 'Vracht opslaan mislukt'), 'err');
       }
-    });
+    })();
   }
 
   effectiveFreightStrategy(data: SalesOrderView): FreightPricingStrategy {
@@ -1995,7 +2039,7 @@ export class SalesEditor {
       },
       async () => {
         this.customerPortalLink.set(null);
-        this.view.set(await this.sales.approveRevision(revision.id, 'Verkoop', ''));
+        this.adopt(await this.sales.approveRevision(revision.id, 'Verkoop', ''));
         void this.loadCustomerPortalLink(revision.salesOrderId);
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
         /* The tab counter and the bell must drop this immediately. */
@@ -2022,7 +2066,7 @@ export class SalesEditor {
         confirmLabel: 'Afwijzen', danger: true,
       },
       async () => {
-        this.view.set(await this.sales.rejectRevision(revision.id, 'Verkoop', ''));
+        this.adopt(await this.sales.rejectRevision(revision.id, 'Verkoop', ''));
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
         void this.work.refresh();
         this.ui.toast('Voorstel afgewezen');

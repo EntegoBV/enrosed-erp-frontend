@@ -34,6 +34,7 @@ export const routes: Routes = [
   {
     path: 'sales/:id/edit',
     canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
     loadComponent: () => import('./features/sales/sales-editor').then((m) => m.SalesEditor),
   },
   {
@@ -67,6 +68,7 @@ export const routes: Routes = [
   {
     path: 'purchasing/:id/edit',
     canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
       import('./features/purchasing/purchase-editor').then((m) => m.PurchaseEditor),
   },

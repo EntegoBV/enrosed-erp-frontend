@@ -183,7 +183,10 @@ export interface ConfirmRequest {
   message: string;
   confirmLabel: string;
   danger: boolean;
+  /** A second way out next to the main one, e.g. "Niet opslaan". */
+  secondaryLabel?: string;
   onConfirm: () => void;
+  onSecondary?: () => void;
 }
 
 /** Escapes dynamic copy before it is embedded in a confirm dialog's rich text. */
@@ -211,23 +214,34 @@ export class Ui {
     }, kind === 'err' ? 7000 : 3800);
   }
 
+  /**
+   * Asks before acting. Annuleren (or closing) always means "stay as you
+   * were"; a second choice such as "Niet opslaan" can be offered next to the
+   * main one for the save-or-drop question.
+   */
   confirm(
-    options: { title: string; message: string; confirmLabel?: string; danger?: boolean },
+    options: { title: string; message: string; confirmLabel?: string; danger?: boolean;
+      secondaryLabel?: string },
     onConfirm: () => void,
+    onSecondary?: () => void,
   ): void {
     this.confirmRequest.set({
       title: options.title,
       message: options.message,
       confirmLabel: options.confirmLabel ?? 'Bevestigen',
       danger: options.danger ?? false,
+      secondaryLabel: options.secondaryLabel,
       onConfirm,
+      onSecondary,
     });
   }
 
-  resolveConfirm(accepted: boolean): void {
+  resolveConfirm(accepted: boolean, secondary = false): void {
     const request = this.confirmRequest();
     this.confirmRequest.set(null);
-    if (accepted && request) request.onConfirm();
+    if (!request) return;
+    if (secondary) request.onSecondary?.();
+    else if (accepted) request.onConfirm();
   }
 }
 
@@ -247,6 +261,11 @@ export class Ui {
         <div foot style="display:contents">
           <button class="btn" type="button" data-initial-focus
                   (click)="ui.resolveConfirm(false)">Annuleren</button>
+          @if (request.secondaryLabel) {
+            <button class="btn" type="button" (click)="ui.resolveConfirm(false, true)">
+              {{ request.secondaryLabel }}
+            </button>
+          }
           <button
             class="btn"
             type="button"
