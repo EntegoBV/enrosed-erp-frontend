@@ -56,8 +56,17 @@ import { Icon } from './shared/icon';
             <a class="sidebar__link" routerLink="/products" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
             </a>
+            <a class="sidebar__link" routerLink="/stock" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
+            </a>
 
             <div class="sidebar__label">Configuratie</div>
+            <a class="sidebar__link" routerLink="/barcodes" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="barcode" [size]="18" /> EAN-codes
+            </a>
+            <a class="sidebar__link" routerLink="/stock-locations" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraadlocaties
+            </a>
             <a class="sidebar__link" routerLink="/countries" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="countries" [size]="18" /> Landen &amp; vracht
             </a>

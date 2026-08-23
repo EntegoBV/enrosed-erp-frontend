@@ -546,6 +546,7 @@ export class SalesList {
 
   /** Saves the new customer and selects them for this order right away. */
   async saveNewCustomer(): Promise<void> {
+    if (this.busy()) return;
     if (!this.newCustomer().company.trim()) {
       this.ui.toast('Bedrijfsnaam is verplicht', 'err');
       return;

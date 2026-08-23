@@ -36,6 +36,12 @@ import { PageHeader } from '../../shared/page-header';
             <div class="list-item__meta">Website- en orderapp-publicatie</div></div>
           <span class="list-item__chev">›</span>
         </a>
+        <a class="list-item" routerLink="/stock">
+          <span class="thumb thumb--placeholder"><app-icon name="stock" /></span>
+          <div class="list-item__body"><div class="list-item__title">Voorraad</div>
+            <div class="list-item__meta">Per locatie tellen en verplaatsen</div></div>
+          <span class="list-item__chev">›</span>
+        </a>
       </div></div>
 
       <div class="section-title">Inkoop</div>
@@ -50,6 +56,16 @@ import { PageHeader } from '../../shared/page-header';
 
       <div class="section-title">Configuratie</div>
       <div class="card"><div class="list">
+        <a class="list-item" routerLink="/barcodes">
+          <span class="thumb thumb--placeholder"><app-icon name="barcode" /></span>
+          <div class="list-item__body"><div class="list-item__title">EAN-codes</div></div>
+          <span class="list-item__chev">›</span>
+        </a>
+        <a class="list-item" routerLink="/stock-locations">
+          <span class="thumb thumb--placeholder"><app-icon name="stock" /></span>
+          <div class="list-item__body"><div class="list-item__title">Voorraadlocaties</div></div>
+          <span class="list-item__chev">›</span>
+        </a>
         <a class="list-item" routerLink="/countries">
           <span class="thumb thumb--placeholder"><app-icon name="countries" /></span>
           <div class="list-item__body"><div class="list-item__title">Landen &amp; vracht</div></div>

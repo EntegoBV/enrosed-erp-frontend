@@ -29,16 +29,51 @@ export interface Dimensions {
 
 export type PackagingKind = 'NONE' | 'GIFT_BOX' | 'DISPLAY';
 
-/** One line in the stock book: what changed, to what, why and by whom. */
+/** One line in the stock book: what changed, to what, why, where and by whom. */
 export interface StockMovement {
   id: number;
   at: string;
   delta: number;
   quantityAfter: number;
-  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION';
+  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE';
   kindLabel: string;
   reference: string | null;
   actor: string | null;
+  locationId: number | null;
+  locationName: string | null;
+}
+
+/** A place where stock sits: the warehouse, or a sales point such as a TICA stand. */
+export interface StockLocation {
+  id: number | null;
+  code: string | null;
+  name: string;
+  kind: 'WAREHOUSE' | 'SALES_POINT';
+  kindLabel?: string;
+  address: string | null;
+  active: boolean;
+  /** Adds to the stock the website and the portal show. */
+  countsForWebsite: boolean;
+  /** Purchase receipts land here unless the order says otherwise. */
+  receivesByDefault: boolean;
+  position: number;
+}
+
+/** How many pieces of one product lie at one location. */
+export interface StockLevel {
+  productId: number;
+  locationId: number;
+  quantity: number;
+}
+
+/** A product's pieces at one location, with the location spelled out. */
+export interface ProductStock {
+  locationId: number;
+  code: string;
+  name: string;
+  kindLabel: string;
+  countsForWebsite: boolean;
+  quantity: number;
 }
 
 /** Gift box or display the product is sold in, with its own outer size. */
@@ -47,6 +82,8 @@ export interface Packaging {
   dimensions: Dimensions;
   /** EAN on the gift box or display itself, when it is scanned apart from the article. */
   barcode: string | null;
+  /** Pieces one display holds; null or 1 for a gift box around a single piece. */
+  piecesPerUnit?: number | null;
 }
 
 export interface CartonDto {
@@ -594,6 +631,8 @@ export interface PurchaseOrder {
   departurePort: string;
   /** Port of arrival (Rotterdam, Amsterdam, ...); drives the cost labels. */
   destinationPort: string;
+  /** Stock location the container is unloaded at; null = the warehouse. */
+  receivingLocationId?: number | null;
   notes: string;
   lines: PurchaseOrderLine[];
 }

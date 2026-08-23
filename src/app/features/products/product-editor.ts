@@ -14,7 +14,7 @@ import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
@@ -34,7 +34,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
-    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null },
+    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null },
     colour: null, colourHex: null, variantSize: null,
     description: null, categoryId: null, supplierId, active: true,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -341,11 +341,26 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
                 </label>
               </div>
               <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat.</p>
+              @if (draft().packaging.kind === 'DISPLAY') {
+                <div class="field mt-8">
+                  <label class="req" for="p-packaging-pieces">Stuks in de display</label>
+                  <input class="input num right" id="p-packaging-pieces" type="number" min="1" step="1" inputmode="numeric"
+                         [ngModel]="draft().packaging.piecesPerUnit" placeholder="bijv. 12"
+                         (ngModelChange)="patchPackaging({ piecesPerUnit: num($event) })" />
+                  <span class="hint">Hoeveel stuks één volle display bevat - de catalogus kan daarmee ook een prijs per display tonen.</span>
+                </div>
+              }
               <div class="field mt-8">
                 <label for="p-packaging-barcode">Barcode op de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }} <span class="opt"></span></label>
-                <input class="input mono" id="p-packaging-barcode" inputmode="numeric"
+<span class="magic-field">
+              <input class="input mono" id="p-packaging-barcode" inputmode="numeric"
                        [ngModel]="draft().packaging.barcode" placeholder="EAN-13"
                        (ngModelChange)="patchPackaging({ barcode: $event }); check($event, 'packaging')" />
+              <!-- The next free code from the company's EAN list, one tap. -->
+              <button class="magic-field__btn" type="button" title="Vrije EAN uit de lijst halen"
+                      aria-label="Vrije EAN uit de lijst halen" [disabled]="takingCode()"
+                      (click)="takeCode('packaging')">✦</button>
+            </span>
                 @if (packagingCheck(); as result) {
                   <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
                 }
@@ -355,9 +370,15 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
 
           <div class="field">
             <label for="p-inner">Barcode (stuk) <span class="opt"></span></label>
-            <input class="input mono" id="p-inner" inputmode="numeric"
+<span class="magic-field">
+              <input class="input mono" id="p-inner" inputmode="numeric"
                    [ngModel]="draft().barcodeInner" placeholder="EAN-13"
                    (ngModelChange)="patch({ barcodeInner: $event }); check($event, 'inner')" />
+              <!-- The next free code from the company's EAN list, one tap. -->
+              <button class="magic-field__btn" type="button" title="Vrije EAN uit de lijst halen"
+                      aria-label="Vrije EAN uit de lijst halen" [disabled]="takingCode()"
+                      (click)="takeCode('inner')">✦</button>
+            </span>
             @if (innerCheck(); as result) {
               <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
             }
@@ -438,9 +459,15 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
             </div>
             <div class="field">
               <label for="p-outer">Omdoosbarcode <span class="opt"></span></label>
+<span class="magic-field">
               <input class="input mono" id="p-outer" inputmode="numeric"
                      [ngModel]="draft().barcodeOuter" placeholder="EAN-13 of ITF-14"
                      (ngModelChange)="patch({ barcodeOuter: $event }); check($event, 'outer')" />
+              <!-- The next free code from the company's EAN list, one tap. -->
+              <button class="magic-field__btn" type="button" title="Vrije EAN uit de lijst halen"
+                      aria-label="Vrije EAN uit de lijst halen" [disabled]="takingCode()"
+                      (click)="takeCode('outer')">✦</button>
+            </span>
               @if (outerCheck(); as result) {
                 <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
               }
@@ -481,13 +508,14 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
               </select>
             </div>
             <div class="field">
-              <label for="p-extra">Extra kost per stuk <span class="opt"></span></label>
+              <label for="p-extra">Extra kost per stuk (bijvoorbeeld display, geschenkverpakking) <span class="opt"></span></label>
               <div class="input-affix">
                 <input class="input num right" id="p-extra" appDecimal
                        inputmode="decimal" [ngModel]="draft().extraUnitCost"
                        (ngModelChange)="patch({ extraUnitCost: +$event })" />
                 <span class="input-affix__suffix">{{ draft().exwCurrency }}</span>
               </div>
+              <span class="hint">Wat de leverancier per stuk extra rekent bovenop de EXW-prijs: een display, een giftbox, een inlay. Telt mee in de kostprijs.</span>
             </div>
             <div class="field">
               <label for="p-hs">HS-code <span class="opt"></span></label>
@@ -621,33 +649,87 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
         <div class="card__head section-head">
           <h2 id="stock-title">Voorraad</h2>
           <span class="spacer"></span>
-          @if (!isNew() && draft().inventoryKnown) {
-            <strong class="num stock-now">{{ draft().stockQuantity | num }} stuks</strong>
+          @if (!isNew() && stockLevels(); as levels) {
+            <strong class="num stock-now">{{ stockTotal() | num }} stuks</strong>
           }
         </div>
         <div class="card__body">
           @if (isNew()) {
             <p class="hint">Voorraad komt er zodra het product is aangemaakt.</p>
           } @else {
-            @if (!draft().inventoryKnown) {
-              <p class="hint">Voorraad nog onbekend - zet hem met een telling.</p>
-            }
-            @if (stockEditing()) {
+            <!-- One line per location. The warehouse is what the website
+                 sells from; a stand sells on the spot. Correcting is per
+                 line, saved at once, apart from Opslaan. -->
+            @if (stockLevels(); as levels) {
+              <ul class="stock-levels">
+                @for (level of levels; track level.locationId) {
+                  <li [class.stock-levels__row--editing]="stockEditing() === level.locationId">
+                    <span class="stock-levels__where">
+                      <b>{{ level.name }}</b>
+                      <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · telt mee voor de website' : '' }}</small>
+                    </span>
+                    @if (stockEditing() === level.locationId) {
+                      <span class="stock-levels__edit">
+                        <label class="sr-only" [for]="'p-stock-' + level.locationId">Geteld aantal op {{ level.name }}</label>
+                        <input class="input num right" [id]="'p-stock-' + level.locationId" type="number" min="0" step="1"
+                               inputmode="numeric" [ngModel]="stockDraft()" (ngModelChange)="stockDraft.set($event)"
+                               (keydown.enter)="saveStock(level.locationId)" (keydown.escape)="stockEditing.set(null)" />
+                        <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
+                                (click)="saveStock(level.locationId)">{{ stockSaving() ? 'Bezig…' : 'Opslaan' }}</button>
+                        <button class="btn btn--sm" type="button" (click)="stockEditing.set(null)">Annuleren</button>
+                      </span>
+                    } @else {
+                      <strong class="num stock-levels__qty" [class.muted]="!level.quantity">{{ level.quantity | num }}</strong>
+                      <button class="btn btn--sm" type="button" (click)="startStockEdit(level)">Corrigeren</button>
+                    }
+                  </li>
+                }
+              </ul>
               <div class="stock-edit">
-                <label class="sr-only" for="p-stock">Nieuw aantal stuks</label>
-                <input class="input num right" id="p-stock" type="number" min="0" step="1" inputmode="numeric"
-                       [ngModel]="stockDraft()" (ngModelChange)="stockDraft.set($event)"
-                       (keydown.enter)="saveStock()" (keydown.escape)="stockEditing.set(false)" />
-                <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
-                        (click)="saveStock()">{{ stockSaving() ? 'Bezig…' : 'Voorraad opslaan' }}</button>
-                <button class="btn btn--sm" type="button" (click)="stockEditing.set(false)">Annuleren</button>
-              </div>
-              <span class="hint">Geteld? Vul het werkelijke aantal in; dit wordt meteen bewaard, los van Opslaan.</span>
-            } @else {
-              <div class="stock-edit">
-                <button class="btn btn--sm" type="button" (click)="startStockEdit()">Voorraad corrigeren</button>
+                @if (levels.length > 1) {
+                  <button class="btn btn--sm" type="button" (click)="startTransfer(levels)">Verplaatsen</button>
+                } @else {
+                  <a class="btn btn--sm" routerLink="/stock-locations">Locatie toevoegen</a>
+                }
                 <span class="hint">Groeit vanzelf wanneer een inkooporder op Ontvangen gaat.</span>
               </div>
+              @if (transferDraft(); as move) {
+                <div class="stock-transfer">
+                  <label class="field">
+                    <span>Van</span>
+                    <select class="select" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
+                      @for (level of levels; track level.locationId) {
+                        <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Naar</span>
+                    <select class="select" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
+                      @for (level of levels; track level.locationId) {
+                        <option [value]="level.locationId">{{ level.name }}</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Aantal</span>
+                    <input class="input num right" type="number" min="1" step="1" inputmode="numeric"
+                           [ngModel]="move.quantity" (ngModelChange)="patchTransfer({ quantity: +$event })" />
+                  </label>
+                  <label class="field stock-transfer__note">
+                    <span>Notitie <span class="opt"></span></span>
+                    <input class="input" placeholder="bijv. bus van maandag" [ngModel]="move.note"
+                           (ngModelChange)="patchTransfer({ note: $event })" />
+                  </label>
+                  <span class="stock-transfer__actions">
+                    <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
+                            (click)="confirmTransfer()">{{ stockSaving() ? 'Bezig…' : 'Verplaatsen' }}</button>
+                    <button class="btn btn--sm" type="button" (click)="transferDraft.set(null)">Annuleren</button>
+                  </span>
+                </div>
+              }
+            } @else {
+              <p class="hint">Voorraad laden…</p>
             }
 
             <h3 class="stock-history__title">Geschiedenis</h3>
@@ -672,8 +754,8 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
                           {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
                         </span>
                         <span class="stock-history__what">
-                          <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
-                          <small>{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
+                          <b>{{ move.kindLabel }}@if (move.reference) { {{ move.kind === 'TRANSFER_OUT' || move.kind === 'TRANSFER_IN' ? '' : '·' }} {{ move.reference }}}</b>
+                          <small>@if (move.locationName) { {{ move.locationName }} · }{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
                         </span>
                         <span class="stock-history__after num">= {{ move.quantityAfter | num }}</span>
                         <button class="stock-history__bin" type="button" title="Regel verwijderen"
@@ -1077,7 +1159,29 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
     .product-nav__btn--off { opacity: .35; pointer-events: none; }
     .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
       font-variant-numeric: tabular-nums; }
+    .magic-field { position: relative; display: block; }
+    .magic-field .input { padding-right: 44px; }
+    .magic-field__btn { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px;
+      border: 0; border-radius: 8px; background: var(--rose-soft); color: var(--rose-dark); font-size: 15px;
+      cursor: pointer; }
+    .magic-field__btn:hover { background: var(--rose-line); }
+    .magic-field__btn:disabled { opacity: .5; cursor: wait; }
     .stock-now { font-size: 16px; }
+    .stock-levels { list-style: none; margin: 0 0 12px; padding: 0; border-top: 1px solid var(--line); }
+    .stock-levels li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 0;
+      border-bottom: 1px solid var(--line); }
+    .stock-levels__where { flex: 1 1 160px; display: grid; min-width: 0; }
+    .stock-levels__where b { font-size: 13.5px; }
+    .stock-levels__where small { color: var(--muted); font-size: 11px; }
+    .stock-levels__qty { min-width: 64px; font-size: 16px; text-align: right; }
+    .stock-levels__edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .stock-levels__edit .input { width: 110px; }
+    .stock-transfer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 12px;
+      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+    .stock-transfer .field > span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .stock-transfer__note { grid-column: 1 / -1; }
+    .stock-transfer__actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+    @media (min-width: 680px) { .stock-transfer { grid-template-columns: 1fr 1fr 120px; } .stock-transfer__note { grid-column: auto; } }
     .stock-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .stock-edit .input { width: 120px; }
     .stock-history__title { margin: 18px 0 6px; color: var(--muted); font-size: 11px; font-weight: 750;
@@ -1548,6 +1652,46 @@ export class ProductEditor implements OnDestroy {
     }
   }
 
+  /* ---- move pieces between two locations ---- */
+  readonly transferDraft = signal<{ fromId: number; toId: number; quantity: number; note: string } | null>(null);
+
+  startTransfer(levels: ProductStock[]): void {
+    this.stockEditing.set(null);
+    const from = levels.find((level) => level.quantity > 0) ?? levels[0];
+    const to = levels.find((level) => level.locationId !== from.locationId) ?? levels[0];
+    this.transferDraft.set({ fromId: from.locationId, toId: to.locationId, quantity: 0, note: '' });
+  }
+
+  patchTransfer(changes: Partial<{ fromId: number; toId: number; quantity: number; note: string }>): void {
+    this.transferDraft.update((move) => move ? { ...move, ...changes } : move);
+  }
+
+  async confirmTransfer(): Promise<void> {
+    const id = this.draft().id;
+    const move = this.transferDraft();
+    if (id === null || !move || this.stockSaving()) return;
+    if (!(move.quantity > 0)) { this.ui.toast('Geef een aantal op', 'err'); return; }
+    if (move.fromId === move.toId) { this.ui.toast('Kies twee verschillende locaties', 'err'); return; }
+    this.stockSaving.set(true);
+    try {
+      const saved = await this.catalog.transferStock(id, move.fromId, move.toId, move.quantity, move.note || null);
+      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      const baseline = this.baseline();
+      if (baseline) {
+        const parsed = JSON.parse(baseline) as Product;
+        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      }
+      this.transferDraft.set(null);
+      this.ui.toast(`${move.quantity} stuks verplaatst`, 'ok');
+      void this.loadStockHistory(id);
+      void this.loadStockLevels(id);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
+    } finally {
+      this.stockSaving.set(false);
+    }
+  }
+
   /* ---- strike a line from the stock book: swipe left, no question ---- */
   readonly moveSwiped = signal<number | null>(null);
   readonly moveDeleting = signal<number | null>(null);
@@ -1611,17 +1755,30 @@ export class ProductEditor implements OnDestroy {
     }
   }
 
-  readonly stockEditing = signal(false);
+  /** The pieces per location; null while loading. */
+  readonly stockLevels = signal<ProductStock[] | null>(null);
+  readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
+  /** The location being corrected, or null. */
+  readonly stockEditing = signal<number | null>(null);
   readonly stockDraft = signal<number | null>(null);
   readonly stockSaving = signal(false);
 
-  startStockEdit(): void {
-    this.stockDraft.set(this.draft().inventoryKnown ? this.draft().stockQuantity : 0);
-    this.stockEditing.set(true);
-    setTimeout(() => document.getElementById('p-stock')?.focus());
+  private async loadStockLevels(productId: number): Promise<void> {
+    try {
+      this.stockLevels.set(await this.catalog.productStock(productId));
+    } catch {
+      this.stockLevels.set([]);
+    }
   }
 
-  async saveStock(): Promise<void> {
+  startStockEdit(level: ProductStock): void {
+    this.transferDraft.set(null);
+    this.stockDraft.set(level.quantity);
+    this.stockEditing.set(level.locationId);
+    setTimeout(() => document.getElementById('p-stock-' + level.locationId)?.focus());
+  }
+
+  async saveStock(locationId: number): Promise<void> {
     const id = this.draft().id;
     const quantity = this.stockDraft();
     if (id === null || this.stockSaving()) return;
@@ -1631,7 +1788,7 @@ export class ProductEditor implements OnDestroy {
     }
     this.stockSaving.set(true);
     try {
-      const saved = await this.catalog.setStock(id, Number(quantity));
+      const saved = await this.catalog.setStock(id, Number(quantity), locationId);
       /* Only the stock figures change; the rest of the form keeps the
          user's unsaved edits. */
       this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
@@ -1643,9 +1800,10 @@ export class ProductEditor implements OnDestroy {
         this.baseline.set(JSON.stringify(
           { ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
       }
-      this.stockEditing.set(false);
-      this.ui.toast(`Voorraad gezet op ${saved.stockQuantity}`, 'ok');
+      this.stockEditing.set(null);
+      this.ui.toast(`Voorraad gezet op ${quantity}`, 'ok');
       void this.loadStockHistory(id);
+      void this.loadStockLevels(id);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Voorraad aanpassen mislukt'), 'err');
     } finally {
@@ -1754,6 +1912,7 @@ export class ProductEditor implements OnDestroy {
       this.activeProductId = productId;
       this.draft.set(product);
       void this.loadStockHistory(productId);
+      void this.loadStockLevels(productId);
       const wanted = this.tab();
       if (wanted && this.tabs().some((item) => item.id === wanted)) {
         setTimeout(() => this.showTab(wanted), 50);
@@ -2273,6 +2432,27 @@ export class ProductEditor implements OnDestroy {
     }
   }
 
+  /* ---- a free code from the company's EAN list ---- */
+  readonly takingCode = signal(false);
+
+  async takeCode(which: 'inner' | 'outer' | 'packaging'): Promise<void> {
+    if (this.takingCode()) return;
+    this.takingCode.set(true);
+    try {
+      /* Only a look at the next free code; it leaves the list when this product is saved. */
+      const taken = await this.catalog.nextBarcode();
+      if (which === 'inner') this.patch({ barcodeInner: taken.code });
+      else if (which === 'outer') this.patch({ barcodeOuter: taken.code });
+      else this.patchPackaging({ barcode: taken.code });
+      void this.check(taken.code, which);
+      this.ui.toast(`${taken.code} klaargezet · verlaat de lijst bij Opslaan (${taken.remaining} vrij)`, 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Geen code gekregen'), 'err');
+    } finally {
+      this.takingCode.set(false);
+    }
+  }
+
   /**
    * Lets the server verify the check digit and whether the code is still
    * free - one place where those rules live. A taken code names the
@@ -2396,6 +2576,9 @@ export class ProductEditor implements OnDestroy {
     if ((this.draft().carton.piecesPerCarton ?? 0) <= 0) {
       missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton' });
     }
+    if (this.draft().packaging.kind === 'DISPLAY' && !((this.draft().packaging.piecesPerUnit ?? 0) >= 1)) {
+      missing.push({ tab: 'identity', field: 'p-packaging-pieces', label: 'stuks in de display' });
+    }
     if (this.priceStrategy() === 'FIXED' && (this.draft().fixedSalesPriceEur ?? 0) <= 0) {
       missing.push({ tab: 'sales', field: 'p-price', label: 'vaste verkoopprijs (hoger dan € 0)' });
     }
@@ -2434,7 +2617,7 @@ export class ProductEditor implements OnDestroy {
         return;
       }
       this.savedHere.set(true);
-      if (saved.id !== null) void this.loadStockHistory(saved.id);
+      if (saved.id !== null) { void this.loadStockHistory(saved.id); void this.loadStockLevels(saved.id); }
       if (wasNew && saved.id !== null) {
         await this.router.navigate(['/products', saved.id, 'edit'],
           { replaceUrl: true, state: { savedHere: true } });

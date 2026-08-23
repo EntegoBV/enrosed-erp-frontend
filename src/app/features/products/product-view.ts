@@ -5,12 +5,14 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, PurchaseOrderView, StockMovement, Supplier } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, PurchaseOrderView, StockMovement, Supplier, ProductStock } from '../../core/api/models';
 
-interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; }
+interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
+import { Ui } from '../../shared/ui';
 import { Privacy } from '../../core/api/privacy';
+import { saveBlob } from '../../core/api/download';
 import { CbmPipe, CurPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
 interface GalleryPointer {
@@ -139,7 +141,10 @@ interface GalleryPointer {
                 <button class="stock-tile" type="button" [class.stock-tile--open]="stockOpen()"
                         [attr.aria-expanded]="stockOpen()" (click)="toggleStock(product)">
                   <span>Voorraad <i class="stock-tile__chev" aria-hidden="true"></i></span>
-                  @if (product.inventoryKnown) {
+                  @if (stockLevels(); as levels) {
+                    <strong class="num" [class.warn-text]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
+                    <small>{{ stockSummary() }}</small>
+                  } @else if (product.inventoryKnown) {
                     <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
                       {{ product.stockQuantity | num }}
                     </strong>
@@ -157,7 +162,8 @@ interface GalleryPointer {
                     @if (priceBuild(); as build) {
                       <dl class="price-build__list">
                         @for (row of build.rows; track row.label) {
-                          <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note">
+                          <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note"
+                               [class.price-build__aside]="row.aside">
                             <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
                             <dd class="num">{{ row.eur | eur: 2 }}</dd>
                           </div>
@@ -186,6 +192,18 @@ interface GalleryPointer {
 
               @if (stockOpen()) {
                 <div class="stock-book" role="region" aria-label="Voorraadgeschiedenis">
+                  @if (stockLevels(); as levels) {
+                    @if (levels.length > 1) {
+                      <ul class="stock-book__levels">
+                        @for (level of levels; track level.locationId) {
+                          <li>
+                            <span>{{ level.name }}@if (level.countsForWebsite) { <small>website</small> }</span>
+                            <b class="num" [class.muted]="!level.quantity">{{ level.quantity | num }}</b>
+                          </li>
+                        }
+                      </ul>
+                    }
+                  }
                   @if (stockHistory(); as history) {
                     @if (history.length) {
                       <ol>
@@ -195,8 +213,8 @@ interface GalleryPointer {
                               {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
                             </span>
                             <span class="stock-book__what">
-                              <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
-                              <small>{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
+                              <b>{{ move.kindLabel }}@if (move.reference) { {{ move.kind === 'TRANSFER_OUT' || move.kind === 'TRANSFER_IN' ? '' : '·' }} {{ move.reference }}}</b>
+                              <small>@if (move.locationName) { {{ move.locationName }} · }{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
                             </span>
                             <span class="stock-book__after num">= {{ move.quantityAfter | num }}</span>
                           </li>
@@ -275,15 +293,34 @@ interface GalleryPointer {
                 @if (product.packaging.kind !== 'NONE') {
                   <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} (B × D × H)</dt>
                     <dd class="num">{{ size(product.packaging.dimensions) }}</dd></div>
+                  @if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) {
+                    <div><dt>Stuks in de display</dt><dd class="num">{{ product.packaging.piecesPerUnit | num }}</dd></div>
+                  }
                   <div><dt>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</dt><dd class="num">
                     {{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | num) + ' kg' : '—' }}
                   </dd></div>
-                  @if (product.packaging.barcode) {
+                  @if (product.packaging.barcode; as code) {
                     <div><dt>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</dt>
-                      <dd class="mono">{{ product.packaging.barcode }}</dd></div>
+                      <dd class="mono">
+                    <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
+                            (click)="downloadBarcode(code)">
+                      {{ code }}
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
+                    </button>
+                      </dd></div>
                   }
                 }
-                <div><dt>Barcode stuk</dt><dd class="mono">{{ product.barcodeInner || '—' }}</dd></div>
+                <div><dt>Barcode stuk</dt><dd class="mono">
+                  <!-- The code as a print-ready image: for the label printer,
+                       the supplier or the designer. -->
+                  @if (product.barcodeInner; as code) {
+                    <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
+                            (click)="downloadBarcode(code)">
+                      {{ code }}
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
+                    </button>
+                  } @else { — }
+                </dd></div>
               </dl>
             </section>
 
@@ -301,7 +338,17 @@ interface GalleryPointer {
                 <div><dt>Volume</dt><dd class="num">
                   @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
                 </dd></div>
-                <div><dt>Omdoosbarcode</dt><dd class="mono">{{ product.barcodeOuter || '—' }}</dd></div>
+                <div><dt>Omdoosbarcode</dt><dd class="mono">
+                  @if (product.barcodeOuter; as code) {
+                    @if (code.length === 13) {
+                    <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
+                            (click)="downloadBarcode(code)">
+                      {{ code }}
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
+                    </button>
+                    } @else { {{ code }} }
+                  } @else { — }
+                </dd></div>
               </dl>
             </section>
 
@@ -316,7 +363,7 @@ interface GalleryPointer {
                   <div><dt>EXW-prijs</dt><dd class="num">
                     @if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }
                   </dd></div>
-                  <div><dt>Extra kost per stuk</dt><dd class="num">
+                  <div><dt>Extra kost per stuk <small class="muted">bv. display, giftbox</small></dt><dd class="num">
                     @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
                   </dd></div>
                   <div class="detail-list__emphasis"><dt>Kostprijs incl. rechten</dt><dd class="num">
@@ -509,8 +556,12 @@ interface GalleryPointer {
     .price-build__sum dt, .price-build__sum dd { color: var(--ink); font-weight: 750; }
     .price-build__note dt { color: var(--muted); font-weight: 500; font-size: 11.5px; }
     .price-build__note dd { color: var(--ok, #2e7d4f); font-weight: 700; }
+    .price-build__aside dt, .price-build__aside dd { color: var(--muted); font-weight: 500; font-size: 11.5px; }
     .price-build__source { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.4; }
     .price-build__source b { color: var(--ink-2); }
+    .stock-book__levels { list-style: none; margin: 6px 0 4px; padding: 0 0 6px; border-bottom: 1px solid var(--line-strong); }
+    .stock-book__levels li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 12.5px; }
+    .stock-book__levels small { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-size: 10px; font-weight: 700; }
     .stock-book ol { list-style: none; margin: 0; padding: 0; }
     .stock-book li { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px;
       padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -566,6 +617,11 @@ interface GalleryPointer {
     .detail-list > div { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
       align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
     .detail-list > div:last-child { border-bottom: 0; }
+    .barcode-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
+      color: inherit; font: inherit; cursor: pointer; }
+    .barcode-link svg { width: 16px; height: 16px; fill: none; stroke: var(--rose-dark); stroke-width: 1.8;
+      stroke-linecap: round; }
+    .barcode-link:hover { text-decoration: underline dotted; }
     .detail-list dt { color: var(--muted); font-size: 11.5px; }
     .detail-list dd { min-width: 0; color: var(--ink-2); font-size: 12.5px; font-weight: 620;
       overflow-wrap: anywhere; text-align: right; }
@@ -597,12 +653,21 @@ export class ProductView {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   readonly privacy = inject(Privacy);
+  private readonly ui = inject(Ui);
 
   readonly product = signal<Product | null>(null);
 
   /* The stock book, fetched the first time the tile is opened. */
   readonly stockOpen = signal(false);
   readonly stockHistory = signal<StockMovement[] | null>(null);
+  readonly stockLevels = signal<ProductStock[] | null>(null);
+  readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
+  /** "stuks" alone with one location; otherwise "9.400 magazijn · 600 TICA". */
+  readonly stockSummary = computed(() => {
+    const levels = this.stockLevels() ?? [];
+    if (levels.length <= 1) return 'stuks';
+    return levels.map((level) => `${level.quantity.toLocaleString('nl-BE')} ${level.name}`).join(' · ');
+  });
 
   /* ---- the price, taken apart ---- */
   readonly priceOpen = signal(false);
@@ -682,6 +747,17 @@ export class ProductView {
       rows.push({ label: 'Catalogusprijs', eur: price, sum: true });
       const margin = this.margin();
       if (margin) rows.push({ label: `Marge per stuk · ${margin.pct} %`, eur: margin.eur, note: true });
+    }
+    /* Sold as a display: the same figures once more for a full display,
+       quietly under the per-piece sum. */
+    const pieces = product.packaging?.kind === 'DISPLAY' ? (product.packaging.piecesPerUnit ?? 0) : 0;
+    if (pieces > 1) {
+      if (product.landedCostEur) {
+        rows.push({ label: `Kostprijs per display · ${pieces} stuks`, eur: product.landedCostEur * pieces, aside: true });
+      }
+      if (price !== null) {
+        rows.push({ label: `Catalogusprijs per display · ${pieces} stuks`, eur: price * pieces, aside: true });
+      }
     }
     this.priceBuild.set({ rows, source, sourceFound: line !== null });
   }
@@ -782,6 +858,10 @@ export class ProductView {
     ]);
     if (version !== this.loadVersion) return;
     this.product.set(product);
+    this.stockLevels.set(null);
+    if (product.id !== null) {
+      this.catalog.productStock(product.id).then((levels) => this.stockLevels.set(levels)).catch(() => this.stockLevels.set([]));
+    }
     this.categories.set(categories);
     this.suppliers.set(suppliers);
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
@@ -938,6 +1018,15 @@ export class ProductView {
     this.galleryPointer = null;
     this.galleryDragging.set(false);
     this.galleryDragX.set(0);
+  }
+
+  /** Saves the EAN-13 as a 300 dpi PNG, ready for a label printer or a designer. */
+  async downloadBarcode(code: string): Promise<void> {
+    try {
+      saveBlob(await this.catalog.barcodeImage(code), `EAN-${code}.png`);
+    } catch {
+      this.ui.toast('Barcode-afbeelding maken mislukt', 'err');
+    }
   }
 
   hasFixedSalesPrice(product: Product): boolean {

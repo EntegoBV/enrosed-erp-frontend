@@ -137,7 +137,9 @@ function blank(): Country {
           }
           <span class="spacer"></span>
           <button class="btn" type="button" (click)="editing.set(false)">Annuleren</button>
-          <button class="btn btn--primary" type="button" (click)="save()">Opslaan</button>
+          <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Bezig…' : 'Opslaan' }}
+          </button>
         </div>
       </app-sheet>
     }
@@ -187,16 +189,24 @@ export class CountryList {
     this.draft.update((country) => ({ ...country, ...changes }));
   }
 
+  readonly saving = signal(false);
+
   async save(): Promise<void> {
+    if (this.saving()) return;
     const country = this.draft();
     if (this.isNew() && country.code.length !== 2) {
       this.ui.toast('Landcode moet 2 letters zijn', 'err');
       return;
     }
-    await this.sales.saveCountry(country);
-    this.editing.set(false);
-    await this.load();
-    this.ui.toast('Land opgeslagen');
+    this.saving.set(true);
+    try {
+      await this.sales.saveCountry(country);
+      this.editing.set(false);
+      await this.load();
+      this.ui.toast('Land opgeslagen');
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   remove(): void {

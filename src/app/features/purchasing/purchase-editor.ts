@@ -13,7 +13,9 @@ import {
   containerLabel,
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
-import { Allocation, Currency, Product, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, Supplier } from '../../core/api/models';
+import {
+  Allocation, Currency, Product, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, Supplier, StockLocation,
+} from '../../core/api/models';
 import { Privacy } from '../../core/api/privacy';
 import { PageHeader } from '../../shared/page-header';
 import { ProductDraft } from '../../shared/product-picker';
@@ -122,6 +124,10 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
             <div class="po-fact">
               <span class="po-fact__label">Aankomsthaven</span>
               <strong>{{ data.order.destinationPort || 'Rotterdam' }}</strong>
+            </div>
+            <div class="po-fact">
+              <span class="po-fact__label">Lossen op</span>
+              <strong>{{ receivingLocationName(data.order.receivingLocationId) }}</strong>
             </div>
             <div class="po-fact">
               <span class="po-fact__label">Lading</span>
@@ -239,6 +245,19 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                                (blur)="setCustomDestinationPort($any($event.target).value)" />
                       }
                       <span class="hint">Niet in de lijst? Kies ‘Andere haven…’.</span>
+                    </div>
+                    <!-- Where the container is unloaded: the stock of every
+                         line lands there on Ontvangen. -->
+                    <div class="field">
+                      <label for="po-receiving">Lossen op</label>
+                      <select class="select" id="po-receiving"
+                              [ngModel]="data.order.receivingLocationId ?? mainLocationId()"
+                              (ngModelChange)="patch({ receivingLocationId: +$event })">
+                        @for (location of stockLocations(); track location.id) {
+                          <option [value]="location.id">{{ location.name }}</option>
+                        }
+                      </select>
+                      <span class="hint">De voorraad van deze order komt hier binnen bij Ontvangen.</span>
                     </div>
                     <div class="field span-2">
                       <label for="po-notes">Interne notitie <span class="opt"></span></label>
@@ -772,7 +791,10 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
           [products]="available()"
           [priceOf]="privacy.showPurchase() ? exwPriceOf : hiddenPriceOf"
           [enforceCartons]="false"
+          mode="multi"
+          [stockAware]="false"
           (picked)="addLine($event)"
+          (pickedMany)="addLines($event)"
           (cancelled)="picking.set(false)"
           [allowCreate]="privacy.showPurchase()"
           [createCurrency]="supplier()?.currency ?? 'USD'"
@@ -944,9 +966,9 @@ export class PurchaseEditor {
       this.ui.confirm(
         {
           title: 'Container ontvangen',
-          message: 'De voorraad wordt bijgeboekt met de aantallen zoals ze nu op de order '
-            + 'staan. Minder ontvangen dan besteld? Pas de aantallen eerst aan; de order '
-            + 'onthoudt wat er besteld was.',
+          message: `De voorraad wordt bijgeboekt op <b>${this.receivingLocationName(data.order.receivingLocationId)}</b> `
+            + 'met de aantallen zoals ze nu op de order staan. Minder ontvangen dan besteld? '
+            + 'Pas de aantallen eerst aan; de order onthoudt wat er besteld was.',
           confirmLabel: 'Ontvangen en bijboeken',
         },
         () => { this.enqueue((order) => ({ ...order, status: 'ONTVANGEN' })); },
@@ -1047,6 +1069,15 @@ export class PurchaseEditor {
 
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
+
+  /** Active stock locations; the container is unloaded at one of them. */
+  readonly stockLocations = signal<StockLocation[]>([]);
+  readonly mainLocationId = computed(() =>
+    this.stockLocations().find((location) => location.code === 'MAIN')?.id ?? this.stockLocations()[0]?.id ?? null);
+  receivingLocationName(id: number | null | undefined): string {
+    const locations = this.stockLocations();
+    return locations.find((location) => location.id === (id ?? this.mainLocationId()))?.name ?? 'Magazijn';
+  }
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
   readonly privacy = inject(Privacy);
@@ -1086,9 +1117,11 @@ export class PurchaseEditor {
 
   private async load(orderId: number): Promise<void> {
     const view = await this.sourcing.purchaseOrder(orderId);
-    const [products, suppliers] = await Promise.all([
-      this.catalog.products(view.order.supplierId), this.sourcing.suppliers()]);
+    const [products, suppliers, locations] = await Promise.all([
+      this.catalog.products(view.order.supplierId), this.sourcing.suppliers(),
+      this.catalog.stockLocations().catch(() => [] as StockLocation[])]);
     this.products.set(products);
+    this.stockLocations.set(locations.filter((location) => location.active));
     this.supplier.set(suppliers.find((s) => s.id === view.order.supplierId) ?? null);
     /* Publish the order only after its header context is ready. Otherwise the
        app bar first paints a placeholder supplier and visibly jumps when the
@@ -1293,6 +1326,19 @@ export class PurchaseEditor {
         exwPrice: null, exwCurrency: null, extraUnitCost: null,
         /* Added after ordering means nothing was agreed for it yet. */
         orderedQuantity: null }],
+    }));
+  }
+
+  /** Several products at once, each with its own quantity. */
+  addLines(choices: { product: Product; quantity: number }[]): void {
+    this.picking.set(false);
+    if (this.isReceived() || !choices.length) return;
+    this.enqueue((order) => ({
+      ...order,
+      lines: [...order.lines, ...choices.map((choice) => ({
+        id: null, productId: choice.product.id!, quantity: choice.quantity,
+        exwPrice: null, exwCurrency: null, extraUnitCost: null,
+        orderedQuantity: null }))],
     }));
   }
 

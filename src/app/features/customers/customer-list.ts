@@ -139,7 +139,9 @@ function blank(countryCode: string): Customer {
           }
           <span class="spacer"></span>
           <button class="btn" type="button" (click)="editing.set(false)">Annuleren</button>
-          <button class="btn btn--primary" type="button" (click)="save()">Opslaan</button>
+          <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Bezig…' : 'Opslaan' }}
+          </button>
         </div>
       </app-sheet>
     }
@@ -209,8 +211,13 @@ export class CustomerList {
     this.draft.update((customer) => ({ ...customer, ...changes }));
   }
 
+  readonly saving = signal(false);
+
   async save(): Promise<void> {
+    /* A second tap while the first is under way made a second customer. */
+    if (this.saving()) return;
     const customer = this.draft();
+    this.saving.set(true);
     try {
       if (customer.id === null) await this.sales.createCustomer(customer);
       else await this.sales.updateCustomer(customer.id, customer);
@@ -219,6 +226,8 @@ export class CustomerList {
       this.ui.toast('Klant opgeslagen');
     } catch (failure: unknown) {
       this.ui.toast(message(failure, 'Opslaan mislukt'), 'err');
+    } finally {
+      this.saving.set(false);
     }
   }
 

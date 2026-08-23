@@ -36,7 +36,7 @@ export interface ProductDraft {
   template: `
     <app-sheet [title]="heading()" (closed)="cancelled.emit()">
       <div body>
-        @if (!createMode()) {
+        @if (!createMode() && !quantityStep()) {
         <div class="search-bar">
           <input
             class="input"
@@ -123,10 +123,13 @@ export interface ProductDraft {
                   <span class="row wrap" style="gap:5px">
                     <span>
                       {{ product.sku }}
-                      · {{ product.carton.piecesPerCarton }} per doos ·
+                      · {{ product.carton.piecesPerCarton }} per doos
                     </span>
-                    <span class="stock-dot" [class]="'stock-dot--' + stockLevel(product)"></span>
-                    <span>{{ stockLabel(product) }}</span>
+                    @if (stockAware()) {
+                      <span>·</span>
+                      <span class="stock-dot" [class]="'stock-dot--' + stockLevel(product)"></span>
+                      <span>{{ stockLabel(product) }}</span>
+                    }
                   </span>
                 </div>
               </div>
@@ -164,7 +167,10 @@ export interface ProductDraft {
               }
             </div>
 
-            @if (!product.inventoryKnown) {
+            <!-- Stock only matters when selling from it; a purchase is
+                 what fills it, so there the warnings would be nonsense. -->
+            @if (!stockAware()) {
+            } @else if (!product.inventoryKnown) {
               <div class="alert alert--warn mt-8">
                 <span class="alert__icon">?</span>
                 <div>
@@ -184,10 +190,45 @@ export interface ProductDraft {
               </div>
             }
           </div>
+        } @else if (quantityStep()) {
+          <!-- Several products at once: every chosen product gets its
+               number here, then the whole batch lands on the order. -->
+          <div class="picker-batch">
+            @for (entry of batch(); track entry.product.id) {
+              <div class="picker-batch__row">
+                @if (entry.product.photos.length) {
+                  <img class="thumb" [appAuthSrc]="entry.product.photos[0].url" [alt]="entry.product.name" />
+                } @else {
+                  <div class="thumb thumb--placeholder">◈</div>
+                }
+                <div class="picker-batch__body">
+                  <div class="strong">{{ entry.product.name }}</div>
+                  <div class="small muted">
+                    {{ entry.product.sku }}@if (entry.product.colour) { · {{ entry.product.colour }}}
+                    · {{ entry.product.carton.piecesPerCarton }}/doos
+                    @if (entry.quantity > 0 && (entry.product.carton.piecesPerCarton ?? 0) > 0) {
+                      · {{ entry.quantity / (entry.product.carton.piecesPerCarton ?? 1) | num: 1 }} doos(en)
+                    }
+                  </div>
+                </div>
+                <input class="input num right picker-batch__qty" type="number" min="0" step="1" inputmode="numeric"
+                       [attr.aria-label]="'Aantal stuks ' + entry.product.name"
+                       [ngModel]="entry.quantity" (ngModelChange)="setBatchQuantity(entry.product.id!, +$event)" />
+                <button class="picker-batch__remove" type="button" [attr.aria-label]="entry.product.name + ' weglaten'"
+                        (click)="toggle(entry.product)">×</button>
+              </div>
+            }
+          </div>
+          <span class="hint">Aantal stuks per product; start op één doos. Een halve doos mag bij inkoop.</span>
         } @else {
           <div class="picker-list">
             @for (product of matches(); track product.id) {
-              <button class="picker-item" type="button" (click)="choose(product)">
+              <button class="picker-item" type="button" [class.picker-item--selected]="isSelected(product)"
+                      [attr.aria-pressed]="mode() === 'multi' ? isSelected(product) : null"
+                      (click)="mode() === 'multi' ? toggle(product) : choose(product)">
+                @if (mode() === 'multi') {
+                  <span class="picker-item__check" aria-hidden="true">{{ isSelected(product) ? '✓' : '' }}</span>
+                }
                 @if (product.photos.length) {
                   <img class="thumb" [appAuthSrc]="product.photos[0].url" [alt]="product.name" />
                 } @else {
@@ -201,10 +242,12 @@ export interface ProductDraft {
                     @if (product.variantSize) { · {{ product.variantSize }} }
                     · {{ product.carton.piecesPerCarton }}/doos
                   </div>
-                  <div class="picker-item__meta row" style="gap:5px">
-                    <span class="stock-dot" [class]="'stock-dot--' + stockLevel(product)"></span>
-                    <span>{{ stockLabel(product) }}</span>
-                  </div>
+                  @if (stockAware()) {
+                    <div class="picker-item__meta row" style="gap:5px">
+                      <span class="stock-dot" [class]="'stock-dot--' + stockLevel(product)"></span>
+                      <span>{{ stockLabel(product) }}</span>
+                    </div>
+                  }
                 </div>
                 <div class="picker-item__end">{{ price(product) | eur }}</div>
               </button>
@@ -240,6 +283,18 @@ export interface ProductDraft {
           <button class="btn btn--primary" type="button"
                   [disabled]="!draftName().trim() || draftPer() < 1"
                   (click)="submitCreate()">Aanmaken en toevoegen</button>
+        } @else if (mode() === 'multi' && quantityStep()) {
+          <button class="btn" type="button" (click)="quantityStep.set(false)">Terug</button>
+          <span class="spacer"></span>
+          <button class="btn btn--primary" type="button" [disabled]="!batchReady()" (click)="confirmBatch()">
+            {{ batch().length }} product{{ batch().length === 1 ? '' : 'en' }} toevoegen
+          </button>
+        } @else if (mode() === 'multi') {
+          <button class="btn" type="button" (click)="cancelled.emit()">Annuleren</button>
+          <span class="spacer"></span>
+          <button class="btn btn--primary" type="button" [disabled]="!selected().size" (click)="toQuantities()">
+            @if (selected().size) { {{ selected().size }} gekozen · aantallen › } @else { Kies producten }
+          </button>
         } @else {
         <button class="btn" type="button" (click)="cancelled.emit()">Annuleren</button>
         <button
@@ -257,6 +312,19 @@ export interface ProductDraft {
   styles: `
     .dims-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
     .picker-list { display: flex; flex-direction: column; margin: 0 -16px; }
+    .picker-item--selected { background: var(--rose-soft); }
+    .picker-item__check { flex: 0 0 auto; width: 22px; height: 22px; display: inline-flex; align-items: center;
+      justify-content: center; border: 1.5px solid var(--line-strong); border-radius: 6px; background: var(--surface);
+      color: var(--rose-dark); font-size: 13px; font-weight: 800; }
+    .picker-item--selected .picker-item__check { border-color: var(--rose); background: var(--rose); color: #fff; }
+    .picker-batch { display: grid; }
+    .picker-batch__row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .picker-batch__body { flex: 1; min-width: 0; }
+    .picker-batch__body .strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-batch__qty { width: 96px; }
+    .picker-batch__remove { width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent;
+      color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+    .picker-batch__remove:hover { background: var(--surface-2); color: var(--ink); }
     .picker-item {
       display: flex;
       align-items: center;
@@ -311,7 +379,50 @@ export class ProductPicker implements OnDestroy {
   readonly enforceCartons = input(true);
 
   readonly picked = output<{ product: Product; quantity: number }>();
+  /** Multi mode: the whole batch at once, each with its quantity. */
+  readonly pickedMany = output<{ product: Product; quantity: number }[]>();
   readonly cancelled = output<void>();
+  /** 'single': pick one, type its number. 'multi': tick several, then numbers for all. */
+  readonly mode = input<'single' | 'multi'>('single');
+  /** Whether stock levels and shortfall warnings are shown - selling from stock cares, buying does not. */
+  readonly stockAware = input(true);
+
+  /* ---- multi mode ---- */
+  readonly selected = signal(new Map<number, { product: Product; quantity: number }>());
+  readonly quantityStep = signal(false);
+  readonly batch = computed(() => [...this.selected().values()]);
+  readonly batchReady = computed(() => this.batch().length > 0 && this.batch().every((entry) => entry.quantity > 0));
+
+  isSelected(product: Product): boolean {
+    return this.selected().has(product.id!);
+  }
+
+  toggle(product: Product): void {
+    this.selected.update((map) => {
+      const next = new Map(map);
+      if (next.has(product.id!)) next.delete(product.id!);
+      else next.set(product.id!, { product, quantity: product.carton.piecesPerCarton ?? 1 });
+      return next;
+    });
+    if (this.quantityStep() && !this.selected().size) this.quantityStep.set(false);
+  }
+
+  toQuantities(): void {
+    if (this.selected().size) this.quantityStep.set(true);
+  }
+
+  setBatchQuantity(productId: number, quantity: number): void {
+    this.selected.update((map) => {
+      const entry = map.get(productId);
+      if (!entry) return map;
+      return new Map(map).set(productId, { ...entry, quantity: Math.max(0, Math.round(quantity || 0)) });
+    });
+  }
+
+  confirmBatch(): void {
+    if (!this.batchReady()) return;
+    this.pickedMany.emit(this.batch());
+  }
   /** When on, an empty search offers creating the product right there. */
   readonly allowCreate = input(false);
   /** Default currency for a quick-created product (the supplier's). */

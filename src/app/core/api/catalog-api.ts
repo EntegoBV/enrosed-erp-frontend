@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, WebsiteRebuildStatus, StockMovement,
+  CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -179,9 +179,71 @@ export class CatalogApi {
   }
 
   /** Manual stock correction after a recount; the product PUT leaves stock alone. */
-  setStock(productId: number, quantity: number): Promise<Product> {
+  /** Sets the count at one location; without a location the warehouse. */
+  setStock(productId: number, quantity: number, locationId: number | null = null,
+           reference: string | null = null): Promise<Product> {
     return firstValueFrom(
-      this.http.post<Product>(api(`/api/products/${productId}/stock`), { quantity }));
+      this.http.post<Product>(api(`/api/products/${productId}/stock`), { quantity, locationId, reference }));
+  }
+
+  /* ---- the company's EAN list and barcode images ---- */
+
+  barcodePool(): Promise<string[]> {
+    return firstValueFrom(this.http.get<string[]>(api('/api/barcodes/pool')));
+  }
+
+  addBarcodes(codes: string): Promise<{ added: string[]; invalid: string[]; inUse: string[]; duplicate: string[] }> {
+    return firstValueFrom(this.http.post<{ added: string[]; invalid: string[]; inUse: string[]; duplicate: string[] }>(
+      api('/api/barcodes/pool'), { codes }));
+  }
+
+  removeBarcode(code: string): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/barcodes/pool/${code}`)));
+  }
+
+  /** The next free code, to put in a form; it leaves the list when the product is saved. */
+  nextBarcode(): Promise<{ code: string; remaining: number }> {
+    return firstValueFrom(this.http.get<{ code: string; remaining: number }>(api('/api/barcodes/pool/next')));
+  }
+
+  /** Print-ready EAN-13 PNG at 300 dpi. */
+  barcodeImage(code: string): Promise<Blob> {
+    return firstValueFrom(this.http.get(api(`/api/barcodes/${code}/image.png`), { responseType: 'blob' }));
+  }
+
+  /* ---- stock per location ---- */
+
+  stockLocations(): Promise<StockLocation[]> {
+    return firstValueFrom(this.http.get<StockLocation[]>(api('/api/stock/locations')));
+  }
+
+  saveStockLocation(location: StockLocation): Promise<StockLocation> {
+    return location.id === null
+      ? firstValueFrom(this.http.post<StockLocation>(api('/api/stock/locations'), location))
+      : firstValueFrom(this.http.put<StockLocation>(api(`/api/stock/locations/${location.id}`), location));
+  }
+
+  deleteStockLocation(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/stock/locations/${id}`)));
+  }
+
+  /** Every product's pieces per location, in one call. */
+  stockLevels(): Promise<StockLevel[]> {
+    return firstValueFrom(this.http.get<StockLevel[]>(api('/api/stock/levels')));
+  }
+
+  productStock(productId: number): Promise<ProductStock[]> {
+    return firstValueFrom(this.http.get<ProductStock[]>(api(`/api/products/${productId}/stock`)));
+  }
+
+  transferStock(productId: number, fromLocationId: number, toLocationId: number, quantity: number,
+                note: string | null): Promise<Product> {
+    return firstValueFrom(this.http.post<Product>(api(`/api/products/${productId}/stock/transfer`),
+      { fromLocationId, toLocationId, quantity, note }));
+  }
+
+  stocktake(locationId: number, reference: string, counts: { productId: number; quantity: number }[]): Promise<void> {
+    return firstValueFrom(this.http.post<void>(api('/api/stock/stocktake'), { locationId, reference, counts }));
   }
 
   deleteStockMovement(productId: number, movementId: number): Promise<void> {

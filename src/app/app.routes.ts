@@ -126,6 +126,22 @@ export const routes: Routes = [
     loadComponent: () => import('./features/settings/country-list').then((m) => m.CountryList),
   },
   {
+    path: 'stock',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/products/stock-page').then((m) => m.StockPage),
+  },
+  {
+    path: 'barcodes',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/settings/barcode-pool-page').then((m) => m.BarcodePoolPage),
+  },
+  {
+    path: 'stock-locations',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/settings/stock-location-list').then((m) => m.StockLocationList),
+  },
+  {
     path: 'settings',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],

@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Product, ProductFamily } from '../../core/api/models';
+import { Category, Product, ProductFamily, StockLevel } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { EurPipe } from '../../shared/pipes';
@@ -147,6 +147,7 @@ interface ProductSwipe {
               </select>
             </div>
           </div>
+
         </div>
 
         }
@@ -344,9 +345,9 @@ interface ProductSwipe {
           <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
         </div>
         <div class="list-item__end product-row__end">
-          <div class="product-row__stock">
+          <div class="product-row__stock" [attr.title]="stockBreakdown(product)">
             <span>Voorraad</span>
-            <strong class="stock" [class.stock--empty]="!product.stockQuantity">{{ stockLabel(product.stockQuantity) }}</strong>
+            <strong class="stock" [class.stock--empty]="!stockOf(product)">{{ stockLabel(stockOf(product)) }}</strong>
           </div>
           <div class="product-row__prices">
           @if (privacy.showPurchase()) {
@@ -645,6 +646,14 @@ export class ProductList {
     ]);
     this.products.set(products);
     this.categories.set(categories);
+    /* Stock per location arrives beside the products; until then the
+       product's own figure (the warehouse) stands in. */
+    void Promise.all([this.catalog.stockLevels(), this.catalog.stockLocations()])
+      .then(([levels, locations]) => {
+        this.levels.set(levels);
+        this.locationNames.set(new Map(locations.filter((l) => l.id !== null).map((l) => [l.id!, l.name])));
+      })
+      .catch(() => undefined);
     this.loading.set(false);
     await familyRequest;
   }
@@ -715,7 +724,7 @@ export class ProductList {
       }
       const size = product.variantSize?.trim();
       if (size && !group.sizes.includes(size)) group.sizes.push(size);
-      group.stock += product.stockQuantity ?? 0;
+      group.stock += this.stockOf(product);
     }
     const groups = [...byKey.values()];
     const compare = this.comparator();
@@ -841,6 +850,26 @@ export class ProductList {
 
   groupStock(group: ProductGroup): string {
     return this.stockLabel(group.stock);
+  }
+
+  /** Pieces per location, loaded once beside the products; the list shows the total. */
+  private readonly levels = signal<StockLevel[]>([]);
+  private readonly locationNames = signal(new Map<number, string>());
+  private readonly stockTotals = computed(() => {
+    const totals = new Map<number, number>();
+    for (const level of this.levels()) totals.set(level.productId, (totals.get(level.productId) ?? 0) + level.quantity);
+    return totals;
+  });
+
+  stockOf(product: Product): number {
+    return this.stockTotals().get(product.id!) ?? product.stockQuantity ?? 0;
+  }
+
+  stockBreakdown(product: Product): string | null {
+    const names = this.locationNames();
+    if (names.size <= 1) return null;
+    const own = this.levels().filter((level) => level.productId === product.id);
+    return own.map((level) => `${names.get(level.locationId) ?? '?'}: ${level.quantity.toLocaleString('nl-BE')}`).join(' · ');
   }
 
   stockLabel(quantity: number | null): string {

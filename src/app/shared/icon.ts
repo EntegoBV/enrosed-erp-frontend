@@ -52,6 +52,15 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <path d="M3.5 7h10v9h-10z" /><path d="M13.5 10h4l2.5 3v3h-6.5" />
           <circle cx="7.5" cy="18" r="1.8" /><circle cx="16.5" cy="18" r="1.8" />
         }
+        @case ('barcode') {
+          <path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" />
+        }
+        @case ('stock') {
+          <!-- Stacked boxes: stock that lies somewhere. -->
+          <path d="M4 10.5h16v9.5H4z" />
+          <path d="M7 10.5V5h10v5.5" />
+          <path d="M10 5v5.5M14 5v5.5M4 15h16" />
+        }
         @case ('countries') {
           <circle cx="12" cy="12" r="8.5" />
           <path d="M3.5 12h17" />
