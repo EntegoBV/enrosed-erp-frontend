@@ -1658,7 +1658,7 @@ a.kpi--dark { color: #fff; }
 }
 /* The landing: total and per-piece side by side, quietly framed. */
 .cost-hero {
-  display: flex; align-items: stretch; gap: 10px;
+  display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px;
   margin-top: 14px;
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -1666,7 +1666,7 @@ a.kpi--dark { color: #fff; }
   padding: 12px 14px;
 }
 .cost-hero__unit {
-  margin-left: auto; text-align: right;
+  margin-left: auto; text-align: right; flex: 0 1 auto; min-width: 160px;
   padding-left: 14px; border-left: 1px solid var(--line);
   /* The total sits vertically in the middle of its half, whatever the
      aside's height. */

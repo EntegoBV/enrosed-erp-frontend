@@ -421,7 +421,7 @@ import { messageOf } from '../../core/api/errors';
       .filter-controls { grid-template-columns: minmax(0, 1.5fr) minmax(190px, .75fr); }
     }
 
-    @media (min-width: 880px) {
+    @media (min-width: 680px) {
       .order-finder { padding: 18px; }
       .filter-controls { grid-template-columns: minmax(320px, 560px); }
       .mobile-status { display: none; }
