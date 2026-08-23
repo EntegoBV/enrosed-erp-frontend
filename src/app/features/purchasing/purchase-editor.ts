@@ -1005,7 +1005,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </button>
                 }
                 <button class="btn btn--block" type="button" (click)="apply()">
-                  Kostprijzen toepassen
+                  {{ costsApplied() ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen' }}
                 </button>
                 <button class="btn btn--block" type="button" (click)="duplicate()">
                   Deze container kopiëren
@@ -2387,19 +2387,30 @@ export class PurchaseEditor {
     }
   }
 
+  /** Did an earlier apply of this order land on its products? */
+  readonly costsApplied = computed(() => {
+    const data = this.view();
+    if (!data) return false;
+    const byId = new Map(this.products().map((product) => [product.id, product]));
+    return data.costing.lines.some((line) => byId.get(line.productId)?.landedCostSource === data.order.number);
+  });
+
   apply(): void {
     const data = this.view();
     if (!data) return;
+    const again = this.costsApplied();
     this.ui.confirm(
       {
-        title: 'Kostprijzen toepassen',
+        title: again ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen',
         message: 'De berekende kostprijs per stuk wordt op de producten in de catalogus '
           + 'gezet en overschrijft wat daar staat. Alle marges op verkooporders rekenen '
           + 'vanaf dan met deze cijfers.',
-        confirmLabel: 'Toepassen',
+        confirmLabel: again ? 'Opnieuw toepassen' : 'Toepassen',
       },
       async () => {
         await this.sourcing.applyLandedCosts(data.order.id);
+        this.products.set(await this.catalog.products(data.order.supplierId));
+        await this.reloadOrderQuietly();
         this.ui.toast('Kostprijzen bijgewerkt in de catalogus');
       },
     );
