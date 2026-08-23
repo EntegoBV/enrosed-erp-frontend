@@ -162,6 +162,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     }
   `,
   styles: [`
+    .list-item__status { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    .attention-dot { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+      border-radius: 999px; background: var(--warn); color: #fff; font-size: 11px; font-weight: 800;
+      line-height: 1; cursor: help; }
     .chosen-supplier{display:grid;grid-template-columns:36px minmax(0,1fr);gap:9px;margin:0 0 14px;padding:10px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}
     .chosen-supplier__mark{display:grid;width:36px;height:36px;place-items:center;border-radius:10px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760;text-transform:uppercase}
     .chosen-supplier__copy{display:flex;min-width:0;flex-direction:column}.chosen-supplier__copy strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.chosen-supplier__copy small{color:var(--muted);font-size:9.5px}
