@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, si
 import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Privacy } from '../../core/api/privacy';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import {
@@ -85,14 +84,12 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             </div>
           </div>
 
-          @if (privacy.showPurchase()) {
-            <div class="profit-strip">
-              <span>Alleen intern · winst</span>
-              <strong [class.profit-strip__negative]="data.priced.totals.marginEur < 0">
-                {{ signedMoney(data.priced.totals.marginEur) }}
-              </strong>
-            </div>
-          }
+          <div class="profit-strip">
+            <span>Winst</span>
+            <strong [class.profit-strip__negative]="data.priced.totals.marginEur < 0">
+              {{ signedMoney(data.priced.totals.marginEur) }}
+            </strong>
+          </div>
         </section>
 
         @if (pendingRevision(); as revision) {
@@ -121,14 +118,12 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   <h2 id="sales-lines-title">Producten</h2>
                 </div>
                 <div class="line-head-tools">
-                  @if (privacy.showPurchase()) {
-                    <div class="profit-mode" role="group" aria-label="Winstbedrag tonen per stuk of per regel">
-                      <button type="button" [class.profit-mode__active]="profitMode() === 'UNIT'"
-                              (click)="profitMode.set('UNIT')">Per stuk</button>
-                      <button type="button" [class.profit-mode__active]="profitMode() === 'LINE'"
-                              (click)="profitMode.set('LINE')">Hele regel</button>
-                    </div>
-                  }
+                  <div class="profit-mode" role="group" aria-label="Winstbedrag tonen per stuk of per regel">
+                    <button type="button" [class.profit-mode__active]="profitMode() === 'UNIT'"
+                            (click)="profitMode.set('UNIT')">Per stuk</button>
+                    <button type="button" [class.profit-mode__active]="profitMode() === 'LINE'"
+                            (click)="profitMode.set('LINE')">Hele regel</button>
+                  </div>
                   <span class="section-count">
                     {{ data.priced.lines.length }}
                     {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}
@@ -172,30 +167,28 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                       <span>Levering</span>
                       <strong>{{ deliveryText(line, data) }}</strong>
                     </div>
-                    @if (privacy.showPurchase()) {
-                      <div class="line-profit">
-                        <button class="line-profit__toggle" type="button"
-                                [attr.aria-expanded]="profitExpanded($index)"
-                                [attr.aria-controls]="'line-profit-' + $index"
-                                (click)="toggleProfit($index)">
-                          <span>Interne winst · {{ profitMode() === 'UNIT' ? 'per stuk' : 'hele regel' }}</span>
-                          <strong [class.negative]="line.marginEur < 0">
-                            {{ profitAmount(line) | eur: 2 }}
-                            <span class="line-profit__chevron" aria-hidden="true"
-                                  [class.line-profit__chevron--open]="profitExpanded($index)">⌄</span>
-                          </strong>
-                        </button>
-                        @if (profitExpanded($index)) {
-                          <dl class="line-profit__detail" [id]="'line-profit-' + $index">
-                            <div><dt>Verkoop na regelkorting</dt><dd>{{ profitNet(line) | eur: 2 }}</dd></div>
-                            <div><dt>Kostprijs</dt><dd>− {{ profitCost(line) | eur: 2 }}</dd></div>
-                            <div class="line-profit__result">
-                              <dt>Winst</dt><dd [class.negative]="line.marginEur < 0">{{ profitAmount(line) | eur: 2 }}</dd>
-                            </div>
-                          </dl>
-                        }
-                      </div>
-                    }
+                    <div class="line-profit">
+                      <button class="line-profit__toggle" type="button"
+                              [attr.aria-expanded]="profitExpanded($index)"
+                              [attr.aria-controls]="'line-profit-' + $index"
+                              (click)="toggleProfit($index)">
+                        <span>Interne winst · {{ profitMode() === 'UNIT' ? 'per stuk' : 'hele regel' }}</span>
+                        <strong [class.negative]="line.marginEur < 0">
+                          {{ profitAmount(line) | eur: 2 }}
+                          <span class="line-profit__chevron" aria-hidden="true"
+                                [class.line-profit__chevron--open]="profitExpanded($index)">⌄</span>
+                        </strong>
+                      </button>
+                      @if (profitExpanded($index)) {
+                        <dl class="line-profit__detail" [id]="'line-profit-' + $index">
+                          <div><dt>Verkoop na regelkorting</dt><dd>{{ profitNet(line) | eur: 2 }}</dd></div>
+                          <div><dt>Kostprijs</dt><dd>− {{ profitCost(line) | eur: 2 }}</dd></div>
+                          <div class="line-profit__result">
+                            <dt>Winst</dt><dd [class.negative]="line.marginEur < 0">{{ profitAmount(line) | eur: 2 }}</dd>
+                          </div>
+                        </dl>
+                      }
+                    </div>
                   </article>
                 } @empty {
                   <div class="products-empty">
@@ -227,7 +220,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 @if (data.order.notes) {
                   <div class="detail-grid__wide"><dt>Bericht op offerte</dt><dd class="text-value">{{ data.order.notes }}</dd></div>
                 }
-                @if (privacy.showPurchase() && data.order.internalNotes) {
+                @if (data.order.internalNotes) {
                   <div class="detail-grid__wide detail-grid__internal"><dt>Interne notitie</dt><dd class="text-value">{{ data.order.internalNotes }}</dd></div>
                 }
               </dl>
@@ -288,13 +281,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <div><dt>BTW {{ data.priced.totals.vatRatePct | pct: 0 }}</dt><dd>{{ data.priced.totals.vatAmount | eur: 2 }}</dd></div>
                 <div class="totals-list__incl"><dt>Inclusief BTW</dt><dd>{{ data.priced.totals.totalInclVat | eur: 2 }}</dd></div>
               </dl>
-              @if (privacy.showPurchase()) {
-                <div class="totals-profit">
-                  <span>Alleen intern</span>
-                  <div><b>Winst</b><strong [class.negative]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 2 }}</strong></div>
-                  <small>Goederenwinst vóór vrachtkosten</small>
-                </div>
-              }
+              <div class="totals-profit">
+                <div><b>Winst</b><strong [class.negative]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 2 }}</strong></div>
+                <small>Goederenwinst vóór vrachtkosten</small>
+              </div>
               <div class="manage-actions">
                 <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
                   {{ actionLabel() }}
@@ -396,7 +386,6 @@ import { STATUS_LABEL, statusClass } from './quote-status';
 export class SalesView {
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
-  readonly privacy = inject(Privacy);
 
   readonly id = input<string>('');
   readonly view = signal<SalesOrderView | null>(null);

@@ -20,6 +20,7 @@ import { Ui } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { THEMES, Theme } from '../../core/platform/theme';
 import {
   FeaturedProductEligibility,
   familyForProduct,
@@ -233,98 +234,6 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       </div>
 
-      <!-- ======================================= catalogus in Excel -->
-      <div class="card settings-section workbook-card" id="catalog-data">
-        <div class="card__head workbook-card__head">
-          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
-        </div>
-        <div class="card__body">
-          <p class="workbook-intro">
-            Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
-            Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
-            @if (desktop.active()) {
-              Ook vertalingen staan in dezelfde export.
-            }
-          </p>
-
-          <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
-            <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
-            <li><span>2</span><div><b>Bewerk</b><small>
-              Producten staan op duidelijke tabbladen.@if (desktop.active()) { Vertalingen staan apart. }
-            </small></div></li>
-            <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
-          </ol>
-
-          <div class="workbook-safety">
-            <b>SKU niet wijzigen.</b>
-            <span>
-              De SKU koppelt elke rij aan het juiste product. Categorie, leverancier,
-              voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.
-            </span>
-          </div>
-
-          <div class="workbook-actions">
-            <button class="btn btn--primary" type="button" [disabled]="exportingWorkbook()"
-                    (click)="exportWorkbook()">
-              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}
-            </button>
-            <button class="btn" type="button" [disabled]="importingWorkbook()"
-                    (click)="workbookFile.click()">Excel importeren…</button>
-            <input #workbookFile type="file"
-                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                   hidden (change)="selectWorkbook($any($event.target))" />
-          </div>
-
-          @if (selectedWorkbook(); as file) {
-            <div class="workbook-selection">
-              <div class="workbook-selection__file">
-                <span class="workbook-file-icon" aria-hidden="true">X</span>
-                <div><b>{{ file.name }}</b><small>{{ fileSize(file.size) }}</small></div>
-              </div>
-              <div class="workbook-selection__actions">
-                <button class="btn btn--sm" type="button" [disabled]="importingWorkbook()"
-                        (click)="clearWorkbookSelection()">Annuleren</button>
-                <button class="btn btn--sm btn--primary" type="button"
-                        [disabled]="importingWorkbook()" (click)="importWorkbook()">
-                  {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}
-                </button>
-              </div>
-            </div>
-          }
-
-          @if (workbookResult(); as result) {
-            <div class="alert workbook-result" aria-live="polite"
-                 [class.alert--ok]="!result.problems.length"
-                 [class.alert--warn]="result.problems.length > 0">
-              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
-              <div>
-                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
-                <div class="small workbook-result__summary">
-                  {{ result.updatedProducts }} productregels verwerkt ·
-                  {{ result.updatedRows }} vertaalregels bijgewerkt
-                </div>
-                @if (result.problems.length) {
-                  <details class="workbook-problems">
-                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
-                    <ul>
-                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
-                    </ul>
-                  </details>
-                }
-              </div>
-            </div>
-          }
-        </div>
-      </div>
-
-      <app-content-translation-workspace
-        [visible]="desktop.active()"
-        [syncRefreshKey]="websiteSyncRefresh()"
-        (dirtyChange)="contentTranslationDirty.set($event)"
-        (busyChange)="contentTranslationBusy.set($event)"
-      />
-
-      <!-- ======================================= categorieen -->
       <div class="card settings-section category-section" id="categories">
         <div class="card__head category-section__head">
           <div>
@@ -620,6 +529,117 @@ const normalizeCategoryCode = (value: string): string => value
           </div>
         </div>
       }
+      <!-- ======================================= catalogus in Excel -->
+      <div class="card settings-section workbook-card" id="catalog-data">
+        <div class="card__head workbook-card__head">
+          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
+        </div>
+        <div class="card__body">
+          <p class="workbook-intro">
+            Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
+            Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
+            @if (desktop.active()) {
+              Ook vertalingen staan in dezelfde export.
+            }
+          </p>
+
+          <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
+            <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
+            <li><span>2</span><div><b>Bewerk</b><small>
+              Producten staan op duidelijke tabbladen.@if (desktop.active()) { Vertalingen staan apart. }
+            </small></div></li>
+            <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
+          </ol>
+
+          <div class="workbook-safety">
+            <b>SKU niet wijzigen.</b>
+            <span>
+              De SKU koppelt elke rij aan het juiste product. Categorie, leverancier,
+              voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.
+            </span>
+          </div>
+
+          <div class="workbook-actions">
+            <button class="btn btn--primary" type="button" [disabled]="exportingWorkbook()"
+                    (click)="exportWorkbook()">
+              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}
+            </button>
+            <button class="btn" type="button" [disabled]="importingWorkbook()"
+                    (click)="workbookFile.click()">Excel importeren…</button>
+            <input #workbookFile type="file"
+                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                   hidden (change)="selectWorkbook($any($event.target))" />
+          </div>
+
+          @if (selectedWorkbook(); as file) {
+            <div class="workbook-selection">
+              <div class="workbook-selection__file">
+                <span class="workbook-file-icon" aria-hidden="true">X</span>
+                <div><b>{{ file.name }}</b><small>{{ fileSize(file.size) }}</small></div>
+              </div>
+              <div class="workbook-selection__actions">
+                <button class="btn btn--sm" type="button" [disabled]="importingWorkbook()"
+                        (click)="clearWorkbookSelection()">Annuleren</button>
+                <button class="btn btn--sm btn--primary" type="button"
+                        [disabled]="importingWorkbook()" (click)="importWorkbook()">
+                  {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}
+                </button>
+              </div>
+            </div>
+          }
+
+          @if (workbookResult(); as result) {
+            <div class="alert workbook-result" aria-live="polite"
+                 [class.alert--ok]="!result.problems.length"
+                 [class.alert--warn]="result.problems.length > 0">
+              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
+              <div>
+                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
+                <div class="small workbook-result__summary">
+                  {{ result.updatedProducts }} productregels verwerkt ·
+                  {{ result.updatedRows }} vertaalregels bijgewerkt
+                </div>
+                @if (result.problems.length) {
+                  <details class="workbook-problems">
+                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
+                    <ul>
+                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
+                    </ul>
+                  </details>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+
+      <app-content-translation-workspace
+        [visible]="desktop.active()"
+        [syncRefreshKey]="websiteSyncRefresh()"
+        (dirtyChange)="contentTranslationDirty.set($event)"
+        (busyChange)="contentTranslationBusy.set($event)"
+      />
+
+      <!-- ======================================= categorieen -->
+
+      <!-- ======================================= weergave -->
+      <div class="card settings-section" id="appearance">
+        <div class="card__head"><h2>Weergave</h2></div>
+        <div class="card__body">
+          <p class="small muted" style="margin-bottom:12px">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
+          <div class="theme-picker" role="radiogroup" aria-label="Kleurschema">
+            @for (option of themes; track option.key) {
+              <button class="theme-picker__option" type="button" role="radio"
+                      [class.theme-picker__option--active]="theme.current() === option.key"
+                      [attr.aria-checked]="theme.current() === option.key"
+                      (click)="theme.set(option.key)">
+                <i class="theme-picker__swatch" [style.background]="option.swatch" aria-hidden="true"></i>
+                <span>{{ option.label }}</span>
+              </button>
+            }
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: `
@@ -646,6 +666,13 @@ const normalizeCategoryCode = (value: string): string => value
     .settings-content { padding-top: 12px; }
     .settings-section { scroll-margin-top: 109px; }
     .workbook-card { overflow: hidden; }
+    .theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+    .theme-picker__option { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
+      border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
+      font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+    .theme-picker__option:hover { background: var(--surface-2); }
+    .theme-picker__option--active { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); box-shadow: inset 0 0 0 1px var(--rose); }
+    .theme-picker__swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgb(0 0 0 / 12%); }
     .workbook-card__head { background: linear-gradient(135deg, #effbf7, #fff); }
     .workbook-card__head > div { display: flex; align-items: center; gap: 9px; }
     .workbook-badge { padding: 4px 7px; border-radius: 5px; background: #16845b; color: #fff;
@@ -749,6 +776,8 @@ const normalizeCategoryCode = (value: string): string => value
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly desktop = inject(DesktopViewport);
+  readonly theme = inject(Theme);
+  readonly themes = THEMES;
   readonly workbookResult = signal<CatalogImportResult | null>(null);
   readonly selectedWorkbook = signal<File | null>(null);
   readonly exportingWorkbook = signal(false);
@@ -824,10 +853,11 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   readonly settingsSections = [
     { id: 'company', label: 'Bedrijf' },
-    { id: 'catalog-data', label: 'Catalogusdata' },
     { id: 'categories', label: 'Categorieën' },
     { id: 'duties', label: 'Douane' },
     { id: 'discounts', label: 'Kortingen' },
+    { id: 'catalog-data', label: 'Catalogusdata' },
+    { id: 'appearance', label: 'Weergave' },
   ] as const;
   readonly activeSection = signal<SettingsSectionId>('company');
 
@@ -1340,4 +1370,4 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 }
 
-type SettingsSectionId = 'company' | 'catalog-data' | 'categories' | 'duties' | 'discounts';
+type SettingsSectionId = 'company' | 'appearance' | 'catalog-data' | 'categories' | 'duties' | 'discounts';

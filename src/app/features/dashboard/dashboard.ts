@@ -11,7 +11,6 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { FreightRate, MarketSourceStatus, PurchaseOrderView, QuoteRevision, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
-import { Privacy } from '../../core/api/privacy';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from '../sales/quote-status';
 import { containerLabel } from '../../core/api/geo';
@@ -56,29 +55,16 @@ interface FreightHorizon {
           <div class="kpi__value">{{ openValue() | eur: 0 }}</div>
           <div class="kpi__meta">{{ openOrders().length }} order(s)</div>
         </a>
-        @if (privacy.showPurchase()) {
-          <div class="kpi">
-            <div class="kpi__label">Brutomarge</div>
-            <div class="kpi__value">{{ marginPct() | pct: 1 }}</div>
-            <div class="kpi__meta">{{ marginEur() | eur: 0 }} op open orders</div>
-          </div>
-          <div class="kpi">
-            <div class="kpi__label">Inkoop onderweg</div>
-            <div class="kpi__value">{{ incomingValue() | eur: 0 }}</div>
-            <div class="kpi__meta">{{ incoming().length }} container(s)</div>
-          </div>
-        } @else {
-          <div class="kpi">
-            <div class="kpi__label">Orders open</div>
-            <div class="kpi__value">{{ openOrders().length }}</div>
-            <div class="kpi__meta">in behandeling</div>
-          </div>
-          <div class="kpi">
-            <div class="kpi__label">Containers</div>
-            <div class="kpi__value">{{ incoming().length }}</div>
-            <div class="kpi__meta">onderweg</div>
-          </div>
-        }
+        <div class="kpi">
+          <div class="kpi__label">Brutomarge</div>
+          <div class="kpi__value">{{ marginPct() | pct: 1 }}</div>
+          <div class="kpi__meta">{{ marginEur() | eur: 0 }} op open orders</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi__label">Inkoop onderweg</div>
+          <div class="kpi__value">{{ incomingValue() | eur: 0 }}</div>
+          <div class="kpi__meta">{{ incoming().length }} container(s)</div>
+        </div>
         <a class="kpi" routerLink="/products">
           <div class="kpi__label">Catalogus</div>
           <div class="kpi__value">{{ productCount() }}</div>
@@ -420,9 +406,7 @@ interface FreightHorizon {
                 </div>
               </div>
               <div class="list-item__end">
-                @if (privacy.showPurchase()) {
-                  <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
-                }
+                <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
                 <div class="tiny muted">{{ purchaseStatusLabel(row.order.status) }}</div>
               </div>
               <span class="list-item__chev">›</span>
@@ -1294,7 +1278,6 @@ export class Dashboard {
   private readonly sales = inject(SalesApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
-  readonly privacy = inject(Privacy);
 
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly purchases = signal<PurchaseOrderView[]>([]);

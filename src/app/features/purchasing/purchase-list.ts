@@ -5,7 +5,6 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { containerLabel } from '../../core/api/geo';
-import { Privacy } from '../../core/api/privacy';
 import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -29,24 +28,14 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     </app-page-header>
 
     <div class="content">
-      @if (privacy.showPurchase()) {
-        <div class="alert alert--info">
-          <span class="alert__icon">ℹ</span>
-          <div>
-            Inkoop gaat per container. Hier wordt de <b>kostprijs per stuk</b> berekend: EXW in
-            USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de
-            kosten vanaf de aankomsthaven.
-          </div>
+      <div class="alert alert--info">
+        <span class="alert__icon">ℹ</span>
+        <div>
+          Inkoop gaat per container. Hier wordt de <b>kostprijs per stuk</b> berekend: EXW in
+          USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de
+          kosten vanaf de aankomsthaven.
         </div>
-      } @else {
-        <div class="alert alert--ok">
-          <span class="alert__icon">✓</span>
-          <div>
-            <b>Klantveilige weergave.</b> Alle inkoopbedragen, wisselkoersen en kostprijzen
-            zijn verborgen. Orderstatus, planning, aantallen en containervulling blijven zichtbaar.
-          </div>
-        </div>
-      }
+      </div>
 
       <div class="card mt-12"><div class="list">
         @for (row of orders(); track row.order.id) {
@@ -79,13 +68,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               </div>
             </div>
             <div class="list-item__end">
-              @if (privacy.showPurchase()) {
-                <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
-              }
+              <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
               <span class="badge badge--neutral">{{ statusLabel(row.order.status) }}</span>
-              @if (!privacy.showPurchase()) {
-                <div class="tiny muted">bedragen verborgen</div>
-              }
             </div>
             <span class="list-item__chev">›</span>
             </a>
@@ -134,7 +118,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               }
             </select>
           </div>
-          @if (privacy.showPurchase() && chosenSupplier(); as supplier) {
+          @if (chosenSupplier(); as supplier) {
             <div class="chosen-supplier" aria-label="Gekozen leverancier">
               <span class="chosen-supplier__mark" aria-hidden="true">
                 {{ supplier.name.charAt(0) || '?' }}
@@ -149,25 +133,18 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               </span>
             </div>
           }
-          @if (privacy.showPurchase()) {
-            <div class="field-row">
-              <div class="field"><label for="po-cny">Koers RMB → USD</label>
-                <input class="input num right" id="po-cny" type="number" step="0.0001"
-                       [ngModel]="cnyToUsd()" (ngModelChange)="cnyToUsd.set(+$event)" /></div>
-              <div class="field"><label for="po-usd">Koers USD → EUR</label>
-                <input class="input num right" id="po-usd" type="number" step="0.0001"
-                       [ngModel]="usdToEur()" (ngModelChange)="usdToEur.set(+$event)" /></div>
-            </div>
-            <p class="small muted">
-              De koersen worden op de order vastgeklikt, zodat een oude calculatie niet verandert
-              als de koers beweegt.
-            </p>
-          } @else {
-            <div class="alert alert--ok">
-              <span class="alert__icon">✓</span>
-              <div>De calculatie wordt met de interne standaardkoersen aangemaakt; bedragen blijven verborgen.</div>
-            </div>
-          }
+          <div class="field-row">
+            <div class="field"><label for="po-cny">Koers RMB → USD</label>
+              <input class="input num right" id="po-cny" type="number" step="0.0001"
+                     [ngModel]="cnyToUsd()" (ngModelChange)="cnyToUsd.set(+$event)" /></div>
+            <div class="field"><label for="po-usd">Koers USD → EUR</label>
+              <input class="input num right" id="po-usd" type="number" step="0.0001"
+                     [ngModel]="usdToEur()" (ngModelChange)="usdToEur.set(+$event)" /></div>
+          </div>
+          <p class="small muted">
+            De koersen worden op de order vastgeklikt, zodat een oude calculatie niet verandert
+            als de koers beweegt.
+          </p>
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="picking.set(false)">Annuleren</button>
@@ -192,7 +169,6 @@ export class PurchaseList {
   private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
-  readonly privacy = inject(Privacy);
 
   readonly orders = signal<PurchaseOrderView[]>([]);
   readonly suppliers = signal<Supplier[]>([]);

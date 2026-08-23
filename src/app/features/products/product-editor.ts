@@ -19,7 +19,6 @@ import { PageHeader } from '../../shared/page-header';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
-import { Privacy } from '../../core/api/privacy';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
@@ -484,72 +483,68 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
       </section>
 
       <!-- ======================================== purchasing -->
-      @if (privacy.showPurchase()) {
-      <section class="card editor-section" id="purchasing" aria-labelledby="purchasing-title">
-        <div class="card__head section-head">
-          <h2 id="purchasing-title">Inkoop</h2>
-          <span class="spacer"></span>
-          <span class="badge badge--warn">intern</span></div>
-        <div class="card__body">
-          <div class="form-grid">
-            <div class="field">
-              <label class="req" for="p-exw">EXW prijs</label>
-              <input class="input num right" id="p-exw" appDecimal
-                     inputmode="decimal" [ngModel]="draft().exwPrice"
-                     (ngModelChange)="patch({ exwPrice: +$event })" />
-            </div>
-            <div class="field">
-              <label for="p-cur">Munt</label>
-              <select class="select" id="p-cur" [ngModel]="draft().exwCurrency"
-                      (ngModelChange)="patch({ exwCurrency: $event })">
-                <option value="USD">USD — dollar</option>
-                <option value="CNY">CNY — Chinese yuan</option>
-                <option value="EUR">EUR — euro</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="p-extra">Extra kost per stuk (bijvoorbeeld display, geschenkverpakking) <span class="opt"></span></label>
-              <div class="input-affix">
-                <input class="input num right" id="p-extra" appDecimal
-                       inputmode="decimal" [ngModel]="draft().extraUnitCost"
-                       (ngModelChange)="patch({ extraUnitCost: +$event })" />
-                <span class="input-affix__suffix">{{ draft().exwCurrency }}</span>
-              </div>
-              <span class="hint">Wat de leverancier per stuk extra rekent bovenop de EXW-prijs: een display, een giftbox, een inlay. Telt mee in de kostprijs.</span>
-            </div>
-            <div class="field">
-              <label for="p-hs">HS-code <span class="opt"></span></label>
-              <select class="select" id="p-hs" [ngModel]="draft().hsCode"
-                      (ngModelChange)="patch({ hsCode: $event })">
-                <option value="">— geen tariefcode —</option>
-                @for (code of hsCodes(); track code.code) {
-                  <option [value]="code.code">
-                    {{ code.code }} — {{ code.description }} ({{ code.dutyRatePct }} %)
-                  </option>
-                }
-              </select>
-              <span class="hint">Bepaalt het invoerrecht op de inkoopcalculatie.</span>
-            </div>
+    <section class="card editor-section" id="purchasing" aria-labelledby="purchasing-title">
+      <div class="card__head section-head">
+        <h2 id="purchasing-title">Inkoop</h2></div>
+      <div class="card__body">
+        <div class="form-grid">
+          <div class="field">
+            <label class="req" for="p-exw">EXW prijs</label>
+            <input class="input num right" id="p-exw" appDecimal
+                   inputmode="decimal" [ngModel]="draft().exwPrice"
+                   (ngModelChange)="patch({ exwPrice: +$event })" />
           </div>
-
-          @if (draft().landedCostEur) {
-            <div class="stat-row stat-row--sub">
-              <span>Kostprijs incl. vracht &amp; rechten</span>
-              <span class="num strong rose-text">{{ draft().landedCostEur | eur: 4 }}</span>
+          <div class="field">
+            <label for="p-cur">Munt</label>
+            <select class="select" id="p-cur" [ngModel]="draft().exwCurrency"
+                    (ngModelChange)="patch({ exwCurrency: $event })">
+              <option value="USD">USD — dollar</option>
+              <option value="CNY">CNY — Chinese yuan</option>
+              <option value="EUR">EUR — euro</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="p-extra">Extra kost per stuk (bijvoorbeeld display, geschenkverpakking) <span class="opt"></span></label>
+            <div class="input-affix">
+              <input class="input num right" id="p-extra" appDecimal
+                     inputmode="decimal" [ngModel]="draft().extraUnitCost"
+                     (ngModelChange)="patch({ extraUnitCost: +$event })" />
+              <span class="input-affix__suffix">{{ draft().exwCurrency }}</span>
             </div>
-            <div class="stat-row stat-row--muted">
-              <span>Berekend uit {{ draft().landedCostSource }}</span><span></span>
-            </div>
-          } @else {
-            <div class="alert alert--warn mt-8">
-              <span class="alert__icon">!</span>
-              <div>Nog geen kostprijs. Zet dit product op een inkoopcalculatie.</div>
-            </div>
-          }
+            <span class="hint">Wat de leverancier per stuk extra rekent bovenop de EXW-prijs: een display, een giftbox, een inlay. Telt mee in de kostprijs.</span>
+          </div>
+          <div class="field">
+            <label for="p-hs">HS-code <span class="opt"></span></label>
+            <select class="select" id="p-hs" [ngModel]="draft().hsCode"
+                    (ngModelChange)="patch({ hsCode: $event })">
+              <option value="">— geen tariefcode —</option>
+              @for (code of hsCodes(); track code.code) {
+                <option [value]="code.code">
+                  {{ code.code }} — {{ code.description }} ({{ code.dutyRatePct }} %)
+                </option>
+              }
+            </select>
+            <span class="hint">Bepaalt het invoerrecht op de inkoopcalculatie.</span>
+          </div>
         </div>
-      </section>
 
-      }
+        @if (draft().landedCostEur) {
+          <div class="stat-row stat-row--sub">
+            <span>Kostprijs incl. vracht &amp; rechten</span>
+            <span class="num strong rose-text">{{ draft().landedCostEur | eur: 4 }}</span>
+          </div>
+          <div class="stat-row stat-row--muted">
+            <span>Berekend uit {{ draft().landedCostSource }}</span><span></span>
+          </div>
+        } @else {
+          <div class="alert alert--warn mt-8">
+            <span class="alert__icon">!</span>
+            <div>Nog geen kostprijs. Zet dit product op een inkoopcalculatie.</div>
+          </div>
+        }
+      </div>
+    </section>
+
 
       <!-- ============================================= sales -->
       <section class="card editor-section" id="sales" aria-labelledby="sales-title">
@@ -632,10 +627,8 @@ function orderLikeTheList(products: Product[], categories: Category[]): Product[
               <dd class="num">
                 @if (draft().inventoryKnown) { {{ draft().stockQuantity | num }} } @else { onbekend }
               </dd>
-              @if (privacy.showPurchase()) {
-                <dt>Marge per stuk</dt>
-                <dd class="num">{{ unitMargin() | eur }}</dd>
-              }
+              <dt>Marge per stuk</dt>
+              <dd class="num">{{ unitMargin() | eur }}</dd>
             </dl>
           </div>
         </div>
@@ -1502,7 +1495,7 @@ export class ProductEditor implements OnDestroy {
       { id: 'stock', label: 'Voorraad' },
       { id: 'publication', label: 'Website' },
     ];
-    return this.privacy.showPurchase() ? list : list.filter((t) => t.id !== 'purchasing');
+    return list;
   });
 
   showTab(id: string): void {
@@ -1556,7 +1549,6 @@ export class ProductEditor implements OnDestroy {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly ui = inject(Ui);
-  readonly privacy = inject(Privacy);
 
   readonly id = input<string>('');
   /** ?tab=stock opens that section straight away (the view page links here). */

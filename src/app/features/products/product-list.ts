@@ -11,7 +11,6 @@ import { Skeleton } from '../../shared/skeleton';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { escapeHtml, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
-import { Privacy } from '../../core/api/privacy';
 import { COLOUR_SWATCHES } from '../../core/api/geo';
 import { describePublicationIssues } from './publication-issues';
 
@@ -246,16 +245,14 @@ interface ProductSwipe {
                   <!-- Variants mostly share a price, so the head shows the
                        lead variant's; a faint mark says when they differ. -->
                   <div class="product-row__prices">
-                    @if (privacy.showPurchase()) {
-                      <div>
-                        <span>Kostprijs</span>
-                        @if (purchasePrice(group.lead); as price) {
-                          <strong class="num">{{ price | eur }}@if (group.costVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
-                        } @else {
-                          <strong class="muted">—</strong>
-                        }
-                      </div>
-                    }
+                    <div>
+                      <span>Kostprijs</span>
+                      @if (purchasePrice(group.lead); as price) {
+                        <strong class="num">{{ price | eur }}@if (group.costVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
+                      } @else {
+                        <strong class="muted">—</strong>
+                      }
+                    </div>
                     <div>
                       <span>Catalogusprijs</span>
                       @if (salesPrice(group.lead); as price) {
@@ -368,16 +365,14 @@ interface ProductSwipe {
             }
           </div>
           <div class="product-row__prices">
-          @if (privacy.showPurchase()) {
-            <div>
-              <span>Kostprijs</span>
-              @if (purchasePrice(product); as price) {
-                <strong class="num">{{ price | eur }}</strong>
-              } @else {
-                <strong class="muted">—</strong>
-              }
-            </div>
-          }
+          <div>
+            <span>Kostprijs</span>
+            @if (purchasePrice(product); as price) {
+              <strong class="num">{{ price | eur }}</strong>
+            } @else {
+              <strong class="muted">—</strong>
+            }
+          </div>
           <div>
             <span>Catalogusprijs</span>
             @if (salesPrice(product); as price) {
@@ -610,7 +605,6 @@ export class ProductList {
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
-  readonly privacy = inject(Privacy);
 
   readonly query = signal('');
   readonly categoryFilter = signal<number | null>(null);
@@ -630,10 +624,8 @@ export class ProductList {
     { key: 'STOCK_ASC', label: 'Voorraad laag → hoog' },
     { key: 'PRICE_ASC', label: 'Catalogusprijs laag → hoog' },
     { key: 'PRICE_DESC', label: 'Catalogusprijs hoog → laag' },
-    ...(this.privacy.showPurchase()
-      ? [{ key: 'COST_ASC' as const, label: 'Kostprijs laag → hoog' },
-         { key: 'COST_DESC' as const, label: 'Kostprijs hoog → laag' }]
-      : []),
+    { key: 'COST_ASC', label: 'Kostprijs laag → hoog' },
+    { key: 'COST_DESC', label: 'Kostprijs hoog → laag' },
   ]);
   readonly sortLabel = computed(() =>
     this.sortOptions().find((option) => option.key === this.sortKey())?.label ?? 'Naam A–Z');

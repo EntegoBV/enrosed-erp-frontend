@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
-import { Privacy } from '../../core/api/privacy';
 import { WorkQueue } from '../../core/api/work-queue';
 import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
@@ -159,7 +158,7 @@ import { messageOf } from '../../core/api/errors';
                     {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
                         ? 'pallet' : 'pallets' }}
                   }
-                  @if (privacy.showPurchase() && row.priced.totals.marginPct) {
+                  @if (row.priced.totals.marginPct) {
                     · marge {{ row.priced.totals.marginPct | pct: 0 }}
                   }
                 </div>
@@ -482,7 +481,6 @@ export class SalesList {
   private readonly sales = inject(SalesApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
-  readonly privacy = inject(Privacy);
   private readonly work = inject(WorkQueue);
 
   readonly filters: { value: QuoteStatus | ''; label: string }[] = [

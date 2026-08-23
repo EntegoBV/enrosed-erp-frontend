@@ -3,6 +3,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map, startWith } from 'rxjs';
 import { Auth } from './core/api/auth';
+import { Theme } from './core/platform/theme';
 import { WorkQueue } from './core/api/work-queue';
 import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
@@ -122,6 +123,8 @@ import { Icon } from './shared/icon';
 })
 export class App {
   readonly auth = inject(Auth);
+  /* Instantiated here so the palette is on <html> before the first screen paints. */
+  readonly theme = inject(Theme);
   private readonly router = inject(Router);
   private readonly work = inject(WorkQueue);
 

@@ -16,17 +16,12 @@
   --surface: #ffffff;
   --surface-2: #fcfaf8;
 
-  /*
-   * The accent colour is green while the purchase figures are hidden - the
-   * state in which a screen is safe to show. Once visible, everything turns
-   * rose red (see .theme-internal): red warns that cost prices and margins
-   * are on screen.
-   */
-  --rose: #1f7a4d;
-  --rose-dark: #145c39;
-  --rose-mid: #3f9e6d;
-  --rose-soft: #e9f5ee;
-  --rose-line: #cbe6d7;
+  /* The accent colour, blue unless another palette is chosen under Instellingen. */
+  --rose: #1f5e9e;
+  --rose-dark: #154577;
+  --rose-mid: #4a86c4;
+  --rose-soft: #e8f0f9;
+  --rose-line: #c9dcef;
   /* Backwards-compatible semantic alias used by newer shared components. */
   --accent: var(--rose);
 
@@ -44,7 +39,6 @@
   --blue-soft: #e9f2f8;
 
   /* The logo normally needs no recolouring. */
-  --logo-filter: none;
 
   /* iOS-flavoured chrome: generous corners, depth from soft shadow instead
      of hard borders. */
@@ -90,27 +84,19 @@ h1, h2, h3, h4, p, figure, dl, dd { margin: 0; }
 img { display: block; max-width: 100%; }
 button { font: inherit; color: inherit; }
 input, select, textarea { font: inherit; color: inherit; }
-/*
- * Rose-red theme once the purchase figures are visible.
- *
- * From the other side of a fair stand, one glance says cost prices and
- * margins are on screen - clearer than an inverted logo, and no squinting
- * required. Red is the warning here, green the safe state: the reverse of
- * "approved" thinking, but this is not about right or wrong - it is about
- * who is watching.
- *
- * The class sits on <html> (see Privacy), so overlays and sheets outside
- * the component tree colour along.
- */
-.theme-internal {
-  --rose: #b01f3f;
-  --rose-dark: #8a1730;
-  --rose-mid: #d14a67;
-  --rose-soft: #fbecef;
-  --rose-line: #f0d2d9;
-
-  /* The logo is black ink; this filter turns it that same rose red. */
-  --logo-filter: invert(19%) sepia(72%) saturate(3011%) hue-rotate(334deg) brightness(93%) contrast(93%);
+/* The other accent palettes, chosen under Instellingen (see Theme). The
+   class sits on <html>, so overlays outside the component tree follow. */
+.theme-green {
+  --rose: #1f7a4d; --rose-dark: #145c39; --rose-mid: #3f9e6d; --rose-soft: #e9f5ee; --rose-line: #cbe6d7;
+}
+.theme-plum {
+  --rose: #6f3c8f; --rose-dark: #532a6d; --rose-mid: #9a6cb7; --rose-soft: #f3ebf8; --rose-line: #ddcbe8;
+}
+.theme-terracotta {
+  --rose: #b8552e; --rose-dark: #8f3f20; --rose-mid: #d07a57; --rose-soft: #fbeee8; --rose-line: #f0d3c6;
+}
+.theme-rose {
+  --rose: #b01f3f; --rose-dark: #8a1730; --rose-mid: #d14a67; --rose-soft: #fbecef; --rose-line: #f0d2d9;
 }
 
 a { color: var(--rose); }
@@ -2038,10 +2024,6 @@ app-product-view .website-copy small {
 /* Breathing room between the pallet explainer and its two start options. */
 .pallet-intro { margin: 0 0 16px; line-height: 1.55; }
 
-/* The purchase picker stays operational in customer-safe mode, without a
-   misleading or screen-reader-visible cost column. Quick-create is disabled
-   by the parent because that flow contains an EXW input. */
-app-product-picker.customer-safe .picker-item__end { display: none; }
 
 
 /* ------------------------------------------------ buying-desk analysis */

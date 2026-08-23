@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { Privacy } from '../../core/api/privacy';
 import { AuthImage } from '../../core/api/auth-image';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
@@ -44,15 +43,6 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
       </app-page-header>
 
       <div class="content purchase-view-page anim-rise">
-        @if (!showMoney()) {
-          <div class="alert alert--ok privacy-notice" role="status">
-            <span class="alert__icon" aria-hidden="true">✓</span>
-            <div>
-              <b>Klantveilige weergave.</b> Inkoopprijzen, wisselkoersen en
-              kostopbouw zijn verborgen. Aantallen en containervulling blijven zichtbaar.
-            </div>
-          </div>
-        }
 
         <section class="journey-hero" aria-labelledby="purchase-overview-title">
           <div class="journey-hero__top">
@@ -134,11 +124,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
             </div>
             <div class="overview-fact overview-fact--total">
               <span>Totaal geland</span>
-              @if (showMoney()) {
-                <strong>{{ data.costing.totals.totalEur | eur }}</strong>
-              } @else {
-                <strong class="muted">—</strong>
-              }
+              <strong>{{ data.costing.totals.totalEur | eur }}</strong>
             </div>
           </div>
           @if (data.order.notes) {
@@ -210,9 +196,9 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                   <span class="section-kicker">Lading</span>
                   <h2 id="purchase-products-title">Productregels</h2>
                   <span>{{ data.costing.totals.pieces | num }} st ·
-                    {{ data.costing.totals.cartons | num }} dozen@if (showMoney()) { · 1 USD = {{ usdToEurRate() | num: 4 }} EUR}</span>
+                    {{ data.costing.totals.cartons | num }} dozen· 1 USD = {{ usdToEurRate() | num: 4 }} EUR</span>
                 </span>
-                @if (showMoney() && data.costing.lines.length) {
+                @if (data.costing.lines.length) {
                   <div class="per-toggle" role="group" aria-label="Kostopbouw tonen als">
                     <button type="button" [class.on]="!perPiece()"
                             [attr.aria-pressed]="!perPiece()"
@@ -246,27 +232,25 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                       <span><small>Volume</small><strong>{{ line.cbm | cbm }}</strong></span>
                     </div>
 
-                    @if (showMoney()) {
-                      <button class="line-breakdown-toggle" type="button"
-                              [attr.aria-expanded]="openLine() === line.productId"
-                              [attr.aria-controls]="linePanelId(line.productId)"
-                              (click)="toggleLine(line.productId)">
-                        <span>
-                          <small>Kostopbouw</small>
-                          <strong>{{ perPiece() ? 'Per stuk bekijken' : 'Hele regel bekijken' }}</strong>
-                        </span>
-                        <span class="line-breakdown-toggle__total">
-                          {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}
-                        </span>
-                        <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
-                             [class.chevron-open]="openLine() === line.productId">
-                          <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                      </button>
-                    }
+                    <button class="line-breakdown-toggle" type="button"
+                            [attr.aria-expanded]="openLine() === line.productId"
+                            [attr.aria-controls]="linePanelId(line.productId)"
+                            (click)="toggleLine(line.productId)">
+                      <span>
+                        <small>Kostopbouw</small>
+                        <strong>{{ perPiece() ? 'Per stuk bekijken' : 'Hele regel bekijken' }}</strong>
+                      </span>
+                      <span class="line-breakdown-toggle__total">
+                        {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}
+                      </span>
+                      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
+                           [class.chevron-open]="openLine() === line.productId">
+                        <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
 
-                    @if (showMoney() && openLine() === line.productId) {
+                    @if (openLine() === line.productId) {
                       <div class="line-breakdown" [id]="linePanelId(line.productId)">
                         <div class="stat-row"><span>Goederen</span>
                           <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
@@ -311,137 +295,125 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
           </main>
 
           <aside class="view-sidebar" aria-label="Samenvatting en acties">
-            @if (showMoney()) {
-              <section class="card cost-card internal-block" aria-labelledby="purchase-cost-title">
-                <div class="cost-card__head">
-                  <div>
-                    <span class="section-kicker">Interne calculatie</span>
-                    <h2 id="purchase-cost-title">Gelande kostprijs</h2>
-                  </div>
-                  <span class="internal-badge">Intern</span>
+            <section class="card cost-card internal-block" aria-labelledby="purchase-cost-title">
+              <div class="cost-card__head">
+                <div>
+                  <span class="section-kicker">Interne calculatie</span>
+                  <h2 id="purchase-cost-title">Gelande kostprijs</h2>
                 </div>
+                <span class="internal-badge">Intern</span>
+              </div>
 
-                <div class="cost-card__body">
-                  <!-- DDP: the sum below already ends on the landed total; this box
-                       would only repeat it. -->
+              <div class="cost-card__body">
+                <!-- DDP: the sum below already ends on the landed total; this box
+                     would only repeat it. -->
+                @if (!isDdp()) {
+                <div class="cost-hero">
+                  <!-- What the road adds on top of the goods - the figure a
+                       buyer negotiates on; an average per piece over mixed
+                       products said nothing. Quiet, the total is the star. -->
                   @if (!isDdp()) {
-                  <div class="cost-hero">
-                    <!-- What the road adds on top of the goods - the figure a
-                         buyer negotiates on; an average per piece over mixed
-                         products said nothing. Quiet, the total is the star. -->
-                    @if (!isDdp()) {
-                    <div class="cost-hero__aside">
-                      <div class="cost-hero__label">Bovenop de goederen</div>
-                      <div class="cost-hero__value cost-hero__value--quiet">
-                        + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}
-                      </div>
-                      <div class="cost-hero__sub">
-                        @if (data.costing.totals.goodsEur > 0) {
-                          {{ overheadPct(data.costing.totals) | num }} % van de inkoop
-                        } @else {
-                          nog geen goederen geladen
-                        }
-                      </div>
+                  <div class="cost-hero__aside">
+                    <div class="cost-hero__label">Bovenop de goederen</div>
+                    <div class="cost-hero__value cost-hero__value--quiet">
+                      + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}
                     </div>
-                    }
-                    <div class="cost-hero__unit">
-                      <div class="cost-hero__label">Totaal geland</div>
-                      <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
+                    <div class="cost-hero__sub">
+                      @if (data.costing.totals.goodsEur > 0) {
+                        {{ overheadPct(data.costing.totals) | num }} % van de inkoop
+                      } @else {
+                        nog geen goederen geladen
+                      }
                     </div>
                   </div>
                   }
+                  <div class="cost-hero__unit">
+                    <div class="cost-hero__label">Totaal geland</div>
+                    <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
+                  </div>
+                </div>
+                }
 
-                  <div class="cost-stage">
-                    <span class="cost-stage__label">{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</span>
-                    <div class="stat-row"><span>{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}
-                      <small>{{ data.costing.totals.goodsUsd | num: 2 }} USD{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</small>
-                    </span><span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
-                    @if (!isDdp()) {
-                    @if (data.costing.totals.originEur) {
-                      <div class="stat-row"><span>{{ costLabels().originCostsLabel }}
-                        <small>{{ costLabels().originRoute }}</small>
-                      </span>
-                        <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
-                    }
-                    <div class="stat-row"><span>{{ costLabels().seaFreightLabel }}
-                      <small>{{ costLabels().seaFreightRoute }}</small>
+                <div class="cost-stage">
+                  <span class="cost-stage__label">{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</span>
+                  <div class="stat-row"><span>{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}
+                    <small>{{ data.costing.totals.goodsUsd | num: 2 }} USD{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</small>
+                  </span><span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
+                  @if (!isDdp()) {
+                  @if (data.costing.totals.originEur) {
+                    <div class="stat-row"><span>{{ costLabels().originCostsLabel }}
+                      <small>{{ costLabels().originRoute }}</small>
                     </span>
-                      <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
-                    <div class="stat-row cost-stage__subtotal"><span>Douanewaarde</span>
-                      <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
-                    }
-                  </div>
+                      <span class="num">{{ data.costing.totals.originEur | eur }}</span></div>
+                  }
+                  <div class="stat-row"><span>{{ costLabels().seaFreightLabel }}
+                    <small>{{ costLabels().seaFreightRoute }}</small>
+                  </span>
+                    <span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
+                  <div class="stat-row cost-stage__subtotal"><span>Douanewaarde</span>
+                    <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
+                  }
+                </div>
 
-                  <div class="cost-stage">
-                    <span class="cost-stage__label">{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</span>
-                    @if (!isDdp()) {
-                    <div class="stat-row"><span>Invoerrechten
-                      <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
-                    </span><span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-                    <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
-                      <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
-                    }
-                    @if (data.costing.totals.extraRevenueEur) {
-                      <div class="stat-row"><span>Enrosed kost</span>
-                        <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
-                    }
-                  </div>
+                <div class="cost-stage">
+                  <span class="cost-stage__label">{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</span>
+                  @if (!isDdp()) {
+                  <div class="stat-row"><span>Invoerrechten
+                    <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
+                  </span><span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
+                  <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
+                    <span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
+                  }
+                  @if (data.costing.totals.extraRevenueEur) {
+                    <div class="stat-row"><span>Enrosed kost</span>
+                      <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
+                  }
+                </div>
 
-                  <div class="cost-stage">
-                    <span class="cost-stage__label">3 · Totaal</span>
-                    <div class="stat-row cost-stage__subtotal">
-                      <span>Totaal geland</span>
-                      <strong class="num">{{ data.costing.totals.totalEur | eur }}</strong>
-                    </div>
+                <div class="cost-stage">
+                  <span class="cost-stage__label">3 · Totaal</span>
+                  <div class="stat-row cost-stage__subtotal">
+                    <span>Totaal geland</span>
+                    <strong class="num">{{ data.costing.totals.totalEur | eur }}</strong>
                   </div>
                 </div>
-              </section>
-            } @else {
-              <section class="card safe-card" aria-labelledby="safe-card-title">
-                <span class="safe-card__icon" aria-hidden="true">✓</span>
-                <div>
-                  <h2 id="safe-card-title">Kosten veilig verborgen</h2>
-                  <p>Schakel de interne weergave in om kostprijzen en wisselkoersen te controleren.</p>
-                </div>
-              </section>
-            }
+              </div>
+            </section>
 
-            @if (showMoney()) {
-              <!-- Two streams of money: the factory for the goods, the forwarder
-                   and customs for the road. The Enrosed kost is ours. -->
-              <section class="card payments-card" aria-labelledby="purchase-payments-title">
-                <span class="section-kicker">Betalingen</span>
-                <h2 id="purchase-payments-title">
-                  @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
-                </h2>
-                <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
+            <!-- Two streams of money: the factory for the goods, the forwarder
+                 and customs for the road. The Enrosed kost is ours. -->
+            <section class="card payments-card" aria-labelledby="purchase-payments-title">
+              <span class="section-kicker">Betalingen</span>
+              <h2 id="purchase-payments-title">
+                @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
+              </h2>
+              <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
+              <div class="pay-stream">
+                <div class="pay-stream__head">
+                  <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht' : 'de goederen' }}</small></span>
+                  <span class="num"><b>{{ paidTo('SUPPLIER') | eur }}</b><small>van {{ supplierOwed() | eur }}</small></span>
+                </div>
+                <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SUPPLIER'), supplierOwed())"></div></div>
+                @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
+                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                }
+              </div>
+              @if ((data.payable?.logisticsEur ?? 0) > 0 || paymentsTo('LOGISTICS').length) {
                 <div class="pay-stream">
                   <div class="pay-stream__head">
-                    <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht' : 'de goederen' }}</small></span>
-                    <span class="num"><b>{{ paidTo('SUPPLIER') | eur }}</b><small>van {{ supplierOwed() | eur }}</small></span>
+                    <span><b>Douane &amp; transport tot lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</b><small>invoerrechten, transport, aankomst · na aankomst</small></span>
+                    <span class="num"><b>{{ paidTo('LOGISTICS') | eur }}</b><small>van {{ logisticsOwed() | eur }}</small></span>
                   </div>
-                  <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SUPPLIER'), supplierOwed())"></div></div>
-                  @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
+                  <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
+                  @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
                     <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                   }
                 </div>
-                @if ((data.payable?.logisticsEur ?? 0) > 0 || paymentsTo('LOGISTICS').length) {
-                  <div class="pay-stream">
-                    <div class="pay-stream__head">
-                      <span><b>Douane &amp; transport tot lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</b><small>invoerrechten, transport, aankomst · na aankomst</small></span>
-                      <span class="num"><b>{{ paidTo('LOGISTICS') | eur }}</b><small>van {{ logisticsOwed() | eur }}</small></span>
-                    </div>
-                    <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
-                    @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
-                      <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
-                    }
-                  </div>
-                }
-                @if (data.costing.totals.extraRevenueEur) {
-                  <p class="pay-ours">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p>
-                }
-              </section>
-            }
+              }
+              @if (data.costing.totals.extraRevenueEur) {
+                <p class="pay-ours">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p>
+              }
+            </section>
 
             @if (documents(); as docs) {
               @if (docs.length) {
@@ -545,7 +517,6 @@ export class PurchaseView {
   private readonly catalog = inject(CatalogApi);
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
-  readonly privacy = inject(Privacy);
 
   readonly view = signal<PurchaseOrderView | null>(null);
   readonly payments = signal<PurchasePayment[] | null>(null);
@@ -578,7 +549,6 @@ export class PurchaseView {
     { value: 'ONTVANGEN', label: 'Ontvangen' },
   ];
 
-  readonly showMoney = computed(() => this.privacy.showPurchase());
 
   /** Cost breakdown as totals or per piece. */
   readonly perPiece = signal(true);
@@ -704,11 +674,8 @@ export class PurchaseView {
   async downloadPdf(): Promise<void> {
     const data = this.view();
     if (!data) return;
-    const internal = this.privacy.showPurchase();
-    const blob = await this.sourcing.purchasePdf(data.order.id, internal);
-    saveBlob(blob, `${data.order.number}${internal ? '' : '-klantweergave'}.pdf`);
-    this.ui.toast(internal
-      ? 'Interne PDF gedownload — Enrosed kost als aparte regel'
-      : 'Klantweergave gedownload — Enrosed kost zit in de stukprijs');
+    const blob = await this.sourcing.purchasePdf(data.order.id, true);
+    saveBlob(blob, `${data.order.number}.pdf`);
+    this.ui.toast('PDF gedownload — Enrosed kost als aparte regel');
   }
 }

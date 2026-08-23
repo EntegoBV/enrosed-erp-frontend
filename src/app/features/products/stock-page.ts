@@ -1,10 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, ExpectedStock, Product, StockLevel, StockLocation, StockMovement } from '../../core/api/models';
+import { Category, ExpectedStock, Product, ProductFamily, StockLevel, StockLocation, StockMovement } from '../../core/api/models';
+import { COLOUR_SWATCHES } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
@@ -17,6 +19,18 @@ interface StockRow {
   total: number;
 }
 
+/** A series and its variants, or a lone product on its own. */
+interface StockGroup {
+  key: string;
+  name: string;
+  photo: string | null;
+  colours: { name: string; hex: string | null }[];
+  rows: StockRow[];
+  byLocation: Map<number, number>;
+  total: number;
+  expected: number;
+}
+
 /**
  * Stock across locations: what lies where, moving it, and counting it.
  *
@@ -27,7 +41,7 @@ interface StockRow {
 @Component({
   selector: 'app-stock-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet],
+  imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet],
   template: `
     <app-page-header title="Voorraad" [subtitle]="subtitle()">
       @if (!counting()) {
@@ -141,80 +155,80 @@ interface StockRow {
           @if (section.name !== null) {
             <h2 class="section-head">
               <span>{{ section.name }}</span>
-              <small>{{ section.rows.length }}</small>
+              <small>{{ section.count }}</small>
               <small class="section-head__total num">{{ section.total | num }} st.</small>
             </h2>
           }
           <div class="card">
             <div class="list">
-            @for (row of section.rows; track row.product.id) {
-              <div class="list-item stock-row" [class.stock-row--changed]="isChanged(row.product.id!)">
-                <!-- The name opens the stock book; the page itself is one more tap away from there. -->
-                <button class="stock-row__product" type="button" (click)="openHistory(row)">
-                  @if (row.product.photos.length) {
-                    <img class="thumb" [appAuthSrc]="row.product.photos[0].url" alt="" />
+            @for (group of section.groups; track group.key) {
+              @if (group.rows.length === 1) {
+                <ng-container *ngTemplateOutlet="stockRow; context: { $implicit: group.rows[0], nested: false }" />
+              } @else {
+                <!-- The series head: the figures of the whole range, the
+                     colours fold out below - the catalogue's shape. -->
+                <button class="list-item group-head" type="button"
+                        [class.group-head--open]="isOpen(group)"
+                        [attr.aria-expanded]="isOpen(group)"
+                        (click)="toggle(group)">
+                  @if (group.photo) {
+                    <img class="thumb" [appAuthSrc]="group.photo" alt="" draggable="false" />
                   } @else {
                     <span class="thumb thumb--placeholder">◈</span>
                   }
                   <span class="stock-row__body">
-                    <span class="product-row__title">
-                      <strong>{{ row.product.name }}</strong>
-                      @if (row.product.colour) { <span>{{ row.product.colour }}</span> }
-                      @if (row.product.variantSize) { <span>{{ row.product.variantSize }}</span> }
+                    <span class="product-row__title"><strong>{{ group.name }}</strong></span>
+                    <span class="group-head__meta">
+                      <span class="group-head__count">
+                        {{ group.colours.length > 1 ? group.colours.length + ' kleuren' : group.rows.length + ' varianten' }}
+                        <svg class="group-head__chev" viewBox="0 0 12 12" aria-hidden="true">
+                          <path d="M2.5 4.5 6 8l3.5-3.5" />
+                        </svg>
+                      </span>
+                      @if (group.colours.length) {
+                        <span class="group-head__dots" aria-hidden="true">
+                          @for (colour of group.colours.slice(0, 8); track colour.name) {
+                            <i [style.background]="colour.hex || 'var(--surface-2)'"
+                               [class.dot--empty]="!colour.hex" [title]="colour.name"></i>
+                          }
+                          @if (group.colours.length > 8) { <small>+{{ group.colours.length - 8 }}</small> }
+                        </span>
+                      }
                     </span>
-                    <span class="product-row__sku mono">{{ row.product.sku || 'Geen SKU' }}</span>
-                    @if (expectedFor(row.product.id!); as exp) {
-                      <span class="stock-expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</span>
+                    @if (group.expected) {
+                      <span class="stock-expected">+{{ group.expected | num }} te verwachten</span>
                     }
                   </span>
+                  <span class="list-item__end stock-row__end">
+                    @if (view() === null) {
+                      @for (location of activeLocations(); track location.id) {
+                        <span class="stock-row__figure stock-row__figure--location">
+                          <span>{{ location.name }}</span>
+                          <strong class="num" [class.muted]="!group.byLocation.get(location.id!)">{{ (group.byLocation.get(location.id!) ?? 0) | num }}</strong>
+                        </span>
+                      }
+                      <span class="stock-row__figure stock-row__figure--total">
+                        <span>Totaal</span>
+                        <strong class="num">{{ group.total | num }}</strong>
+                      </span>
+                    } @else {
+                      <span class="stock-row__figure">
+                        <span>{{ locationName(view()!) }}</span>
+                        <strong class="num">{{ (group.byLocation.get(view()!) ?? 0) | num }}</strong>
+                      </span>
+                      @if (counting()) { <span class="stock-row__figure stock-row__figure--count"></span> }
+                    }
+                    @if (!counting()) { <span class="stock-row__move stock-row__move--blank"></span> }
+                  </span>
                 </button>
-                <!-- Every figure is a field: type the real count and leave it,
-                     and it is booked at that location as a manual correction. -->
-                <div class="list-item__end stock-row__end">
-                  @if (view() === null) {
-                    @for (location of activeLocations(); track location.id) {
-                      <div class="stock-row__figure stock-row__figure--location">
-                        <span>{{ location.name }}</span>
-                        <input class="stock-row__qty num" type="number" min="0" step="1"
-                               inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
-                               [attr.aria-label]="row.product.name + ' op ' + location.name"
-                               [value]="row.byLocation.get(location.id!) ?? 0"
-                               (keydown.enter)="$any($event.target).blur()"
-                               (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
-                               (change)="setQuantity(row, location.id!, $any($event.target))" />
-                      </div>
+                @if (isOpen(group)) {
+                  <div class="group-body">
+                    @for (row of group.rows; track row.product.id) {
+                      <ng-container *ngTemplateOutlet="stockRow; context: { $implicit: row, nested: true }" />
                     }
-                    <div class="stock-row__figure stock-row__figure--total">
-                      <span>Totaal</span>
-                      <strong class="num">{{ row.total | num }}</strong>
-                    </div>
-                  } @else {
-                    <div class="stock-row__figure">
-                      <span>{{ locationName(view()!) }}</span>
-                      <input class="stock-row__qty num" type="number" min="0" step="1"
-                             inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
-                             [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
-                             [value]="row.byLocation.get(view()!) ?? 0"
-                             (keydown.enter)="$any($event.target).blur()"
-                             (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
-                             (change)="setQuantity(row, view()!, $any($event.target))" />
-                    </div>
-                    @if (counting()) {
-                      <div class="stock-row__figure stock-row__figure--count">
-                        <span>Geteld</span>
-                        <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
-                               [attr.aria-label]="'Geteld: ' + row.product.name"
-                               [ngModel]="countDraft().get(row.product.id!) ?? null"
-                               (ngModelChange)="setCount(row.product.id!, $event)" />
-                      </div>
-                    }
-                  }
-                  @if (!counting()) {
-                    <button class="stock-row__move" type="button" title="Verplaatsen" aria-label="Verplaatsen"
-                            (click)="openTransfer(row)">⇄</button>
-                  }
-                </div>
-              </div>
+                  </div>
+                }
+              }
             }
             </div>
           </div>
@@ -225,23 +239,143 @@ interface StockRow {
       }
     </div>
 
-    @if (history(); as book) {
-      <app-sheet [title]="book.row.product.name" (closed)="history.set(null)">
+    <ng-template #stockRow let-row let-nested="nested">
+      <div class="list-item stock-row" [class.list-item--nested]="nested" [class.stock-row--changed]="isChanged(row.product.id!)">
+        <!-- The name opens the product's stock sheet: figures, moving, the book. -->
+        <button class="stock-row__product" type="button" (click)="openBook(row)">
+          @if (row.product.photos.length) {
+            <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="row.product.photos[0].url" alt="" />
+          } @else {
+            <span class="thumb thumb--placeholder" [class.thumb--sm]="nested">◈</span>
+          }
+          <span class="stock-row__body">
+            <span class="product-row__title">
+              <strong>{{ nested ? (row.product.colour || row.product.variantSize || row.product.name) : row.product.name }}</strong>
+              @if (nested) {
+                @if (colourHex(row.product); as hex) { <i class="colour-dot" [style.background]="hex" [title]="row.product.colour"></i> }
+                @if (row.product.colour && row.product.variantSize) { <span>{{ row.product.variantSize }}</span> }
+              } @else {
+                @if (row.product.colour) { <span>{{ row.product.colour }}</span> }
+                @if (row.product.variantSize) { <span>{{ row.product.variantSize }}</span> }
+              }
+            </span>
+            <span class="product-row__sku mono">{{ row.product.sku || 'Geen SKU' }}</span>
+            @if (expectedFor(row.product.id!); as exp) {
+              <span class="stock-expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</span>
+            }
+          </span>
+        </button>
+        <!-- Every figure is a field: type the real count and leave it,
+             and it is booked at that location as a manual correction. -->
+        <div class="list-item__end stock-row__end">
+          @if (view() === null) {
+            @for (location of activeLocations(); track location.id) {
+              <div class="stock-row__figure stock-row__figure--location">
+                <span>{{ location.name }}</span>
+                <input class="stock-row__qty num" type="number" min="0" step="1"
+                       inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
+                       [attr.aria-label]="row.product.name + ' op ' + location.name"
+                       [value]="row.byLocation.get(location.id!) ?? 0"
+                       (keydown.enter)="$any($event.target).blur()"
+                       (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
+                       (change)="setQuantity(row, location.id!, $any($event.target))" />
+              </div>
+            }
+            <div class="stock-row__figure stock-row__figure--total">
+              <span>Totaal</span>
+              <strong class="num">{{ row.total | num }}</strong>
+            </div>
+          } @else {
+            <div class="stock-row__figure">
+              <span>{{ locationName(view()!) }}</span>
+              <input class="stock-row__qty num" type="number" min="0" step="1"
+                     inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
+                     [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
+                     [value]="row.byLocation.get(view()!) ?? 0"
+                     (keydown.enter)="$any($event.target).blur()"
+                     (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
+                     (change)="setQuantity(row, view()!, $any($event.target))" />
+            </div>
+            @if (counting()) {
+              <div class="stock-row__figure stock-row__figure--count">
+                <span>Geteld</span>
+                <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
+                       [attr.aria-label]="'Geteld: ' + row.product.name"
+                       [ngModel]="countDraft().get(row.product.id!) ?? null"
+                       (ngModelChange)="setCount(row.product.id!, $event)" />
+              </div>
+            }
+          }
+          @if (!counting()) {
+            <button class="stock-row__move" type="button" title="Verplaatsen" aria-label="Verplaatsen"
+                    (click)="openBook(row, true)">⇄</button>
+          }
+        </div>
+      </div>
+    </ng-template>
+
+    <!-- One sheet per product: the figures (typed straight in), moving
+         between locations, and the book underneath. Nothing opens on top
+         of it. -->
+    @if (book(); as book) {
+      <app-sheet [title]="book.row.product.name" (closed)="closeBook()">
         <div body>
-          <p class="hint">{{ book.row.product.sku }} · {{ book.row.total | num }} stuks op {{ activeLocations().length }} locatie{{ activeLocations().length === 1 ? '' : 's' }}</p>
+          <p class="hint">{{ book.row.product.sku }}@if (book.row.product.colour) { · {{ book.row.product.colour }}} · {{ book.row.total | num }} stuks op {{ activeLocations().length }} locatie{{ activeLocations().length === 1 ? '' : 's' }}</p>
           <div class="history-levels">
             @for (location of activeLocations(); track location.id) {
-              <span><small>{{ location.name }}</small><b class="num">{{ (book.row.byLocation.get(location.id!) ?? 0) | num }}</b></span>
+              <label class="history-levels__tile">
+                <small>{{ location.name }}</small>
+                <input class="history-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
+                       [attr.aria-label]="book.row.product.name + ' op ' + location.name"
+                       [value]="book.row.byLocation.get(location.id!) ?? 0"
+                       (keydown.enter)="$any($event.target).blur()"
+                       (change)="setQuantity(book.row, location.id!, $any($event.target))" />
+              </label>
             }
             @if (expectedFor(book.row.product.id!); as exp) {
               <!-- On the water: the tile is the way to the order it sits on. -->
-              <a class="history-levels__link" [routerLink]="['/purchasing', exp.orderIds[0]]" (click)="history.set(null)"
+              <a class="history-levels__link" [routerLink]="['/purchasing', exp.orderIds[0]]" (click)="closeBook()"
                  [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
                 <small>Te verwachten</small><b class="num expected">+{{ exp.quantity | num }}</b>
                 <em>{{ exp.orderNumbers.join(', ') }}{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }} ›</em>
               </a>
             }
           </div>
+          <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt.</p>
+
+          @if (transfer(); as move) {
+            <div class="transfer-box">
+              <h3 class="history-title">Verplaatsen</h3>
+              <div class="form-grid">
+                <div class="field"><label for="t-from">Van</label>
+                  <select class="select" id="t-from" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
+                    @for (location of activeLocations(); track location.id) {
+                      <option [value]="location.id">{{ location.name }} ({{ (book.row.byLocation.get(location.id!) ?? 0) | num }})</option>
+                    }
+                  </select></div>
+                <div class="field"><label for="t-to">Naar</label>
+                  <select class="select" id="t-to" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
+                    @for (location of activeLocations(); track location.id) {
+                      <option [value]="location.id">{{ location.name }}</option>
+                    }
+                  </select></div>
+                <div class="field"><label class="req" for="t-qty">Aantal</label>
+                  <input class="input num right" id="t-qty" type="number" min="1" step="1" inputmode="numeric"
+                         [ngModel]="move.quantity" (ngModelChange)="patchTransfer({ quantity: +$event })" /></div>
+                <div class="field"><label for="t-note">Notitie <span class="opt"></span></label>
+                  <input class="input" id="t-note" placeholder="bijv. bus van maandag" [ngModel]="move.note"
+                         (ngModelChange)="patchTransfer({ note: $event })" /></div>
+              </div>
+              <div class="transfer-box__actions">
+                <span class="hint">Op {{ locationName(move.fromId) }} liggen {{ (book.row.byLocation.get(move.fromId) ?? 0) | num }} stuks.</span>
+                <button class="btn btn--sm" type="button" (click)="transfer.set(null)">Annuleren</button>
+                <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="confirmTransfer()">
+                  {{ saving() ? 'Bezig…' : 'Verplaatsen' }}
+                </button>
+              </div>
+            </div>
+          }
+
           <h3 class="history-title">Geschiedenis</h3>
           @if (book.moves; as moves) {
             @if (moves.length) {
@@ -261,42 +395,10 @@ interface StockRow {
           } @else { <p class="hint">Geschiedenis laden…</p> }
         </div>
         <div foot style="display:contents">
-          <a class="btn" [routerLink]="['/products', book.row.product.id]" (click)="history.set(null)">Product openen</a>
-          <button class="btn btn--primary" type="button" (click)="history.set(null); openTransfer(book.row)">Verplaatsen</button>
-        </div>
-      </app-sheet>
-    }
-
-    @if (transfer(); as move) {
-      <app-sheet [title]="'Verplaatsen · ' + move.row.product.name" (closed)="transfer.set(null)">
-        <div body><div class="form-grid">
-          <div class="field"><label for="t-from">Van</label>
-            <select class="select" id="t-from" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
-              @for (location of activeLocations(); track location.id) {
-                <option [value]="location.id">{{ location.name }} ({{ (move.row.byLocation.get(location.id!) ?? 0) | num }})</option>
-              }
-            </select></div>
-          <div class="field"><label for="t-to">Naar</label>
-            <select class="select" id="t-to" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
-              @for (location of activeLocations(); track location.id) {
-                <option [value]="location.id">{{ location.name }}</option>
-              }
-            </select></div>
-          <div class="field"><label class="req" for="t-qty">Aantal</label>
-            <input class="input num right" id="t-qty" type="number" min="1" step="1" inputmode="numeric"
-                   [ngModel]="move.quantity" (ngModelChange)="patchTransfer({ quantity: +$event })" /></div>
-          <div class="field"><label for="t-note">Notitie <span class="opt"></span></label>
-            <input class="input" id="t-note" placeholder="bijv. bus van maandag" [ngModel]="move.note"
-                   (ngModelChange)="patchTransfer({ note: $event })" /></div>
-        </div>
-        <span class="hint">Op {{ locationName(move.fromId) }} liggen {{ (move.row.byLocation.get(move.fromId) ?? 0) | num }} stuks.</span>
-        </div>
-        <div foot style="display:contents">
-          <span class="spacer"></span>
-          <button class="btn" type="button" (click)="transfer.set(null)">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="confirmTransfer()">
-            {{ saving() ? 'Bezig…' : 'Verplaatsen' }}
-          </button>
+          <a class="btn" [routerLink]="['/products', book.row.product.id]" (click)="closeBook()">Product openen</a>
+          @if (!transfer()) {
+            <button class="btn btn--primary" type="button" (click)="openTransfer()">Verplaatsen</button>
+          }
         </div>
       </app-sheet>
     }
@@ -409,6 +511,28 @@ interface StockRow {
     .section-head__total { margin-left: auto; margin-right: 4px; text-transform: none; }
 
     .stock-row { gap: 8px; }
+    .group-head { width: 100%; gap: 8px; border: 0; border-bottom: 1px solid var(--line); font: inherit;
+      text-align: left; cursor: pointer; }
+    .group-head .stock-row__body { flex: 1; }
+    .group-head:hover { background: var(--surface-2); }
+    .group-head--open { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted)); }
+    .group-head__meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
+    .group-head__count { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .group-head__chev { width: 18px; height: 18px; padding: 3px; box-sizing: border-box;
+      border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface);
+      fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round;
+      stroke-linejoin: round; transition: transform .15s ease, background .15s ease; }
+    .group-head--open .group-head__chev { transform: rotate(180deg); background: var(--surface-2); }
+    .group-head__dots { display: inline-flex; align-items: center; gap: 3px; }
+    .group-head__dots i { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgb(0 0 0 / 14%); display: inline-block; }
+    .group-head__dots .dot--empty { border-style: dashed; }
+    .group-head__dots small { color: var(--muted); font-size: 10px; margin-left: 2px; }
+    .group-body { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted)); border-bottom: 1px solid var(--line); }
+    .group-body .stock-row:last-child { border-bottom: 0; }
+    .list-item--nested { padding-left: 30px; min-height: 50px; background: var(--surface-2); }
+    .thumb--sm { width: 36px; height: 36px; }
+    .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgb(0 0 0 / 14%); }
+    .stock-row__move--blank { visibility: hidden; }
     .stock-row--changed { background: var(--warn-soft); }
     .stock-row__product { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0;
       background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -453,6 +577,16 @@ interface StockRow {
       .stock-row__figure--total { padding-left: 0; border-left: 0; }
     }
     .history-levels { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+    .history-levels__tile { display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); min-width: 92px; }
+    .history-levels__qty { width: 100%; min-width: 0; padding: 2px 4px; margin: 0 -4px; border: 1px solid transparent; border-radius: 6px;
+      background: transparent; color: inherit; font: inherit; font-size: 16px; font-weight: 700; -moz-appearance: textfield; }
+    .history-levels__qty::-webkit-outer-spin-button, .history-levels__qty::-webkit-inner-spin-button { display: none; }
+    .history-levels__qty:hover { border-color: var(--line); background: var(--surface); }
+    .history-levels__qty:focus { outline: none; border-color: var(--rose); background: var(--surface); }
+    .transfer-box { margin-top: 4px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+    .transfer-box .history-title { margin-top: 0; }
+    .transfer-box__actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+    .transfer-box__actions .hint { flex: 1; }
     .history-levels span, .history-levels__link { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
     .history-levels small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
     .history-levels b { font-size: 16px; }
@@ -550,37 +684,101 @@ export class StockPage {
     }
   });
 
-  /** The rows cut into category sections, in the categories' own order; a search shows one flat list. */
-  readonly sections = computed<{ key: string; name: string | null; rows: StockRow[]; total: number }[]>(() => {
-    const rows = this.filtered();
-    if (!rows.length) return [];
-    if (this.query().trim()) return [{ key: 'all', name: null, rows, total: rows.reduce((sum, row) => sum + row.total, 0) }];
-    const order = new Map(this.categories().map((category, index) => [category.id, index]));
-    const groups = new Map<number | null, StockRow[]>();
-    for (const row of rows) {
-      const id = row.product.categoryId ?? null;
-      groups.set(id, [...(groups.get(id) ?? []), row]);
+  readonly families = signal<ProductFamily[]>([]);
+  private readonly familyNames = computed(() => new Map(this.families().map((family) => [family.id, family.name])));
+
+  colourHex(product: Product): string | null {
+    const colour = product.colour?.trim();
+    if (!colour) return null;
+    return product.colourHex || COLOUR_SWATCHES[colour] || null;
+  }
+
+  /** Variants of one series under one head; a lone product is a group of one. */
+  readonly groups = computed<StockGroup[]>(() => {
+    const byKey = new Map<string, StockGroup>();
+    for (const row of this.filtered()) {
+      const product = row.product;
+      const key = product.familyId == null ? `p${product.id}` : `f${product.familyId}`;
+      let group = byKey.get(key);
+      if (!group) {
+        group = { key, name: (product.familyId != null && this.familyNames().get(product.familyId)) || product.name,
+          photo: null, colours: [], rows: [], byLocation: new Map(), total: 0, expected: 0 };
+        byKey.set(key, group);
+      }
+      group.rows.push(row);
+      if (!group.photo && product.photos.length) group.photo = product.photos[0].url;
+      const colour = product.colour?.trim();
+      if (colour && !group.colours.some((item) => item.name === colour)) group.colours.push({ name: colour, hex: this.colourHex(product) });
+      for (const [locationId, quantity] of row.byLocation) group.byLocation.set(locationId, (group.byLocation.get(locationId) ?? 0) + quantity);
+      group.total += row.total;
+      group.expected += this.expectedFor(product.id!)?.quantity ?? 0;
     }
-    return [...groups.entries()]
+    return [...byKey.values()];
+  });
+
+  /** Which series are folded open; a search opens everything that matches. */
+  private readonly openOverrides = signal(new Map<string, boolean>());
+  isOpen(group: StockGroup): boolean {
+    return this.openOverrides().get(group.key) ?? this.query().trim().length > 0;
+  }
+  toggle(group: StockGroup): void {
+    const open = this.isOpen(group);
+    this.openOverrides.update((map) => new Map(map).set(group.key, !open));
+  }
+
+  /** The groups cut into category sections, in the categories' own order; a search shows one flat list. */
+  readonly sections = computed<{ key: string; name: string | null; groups: StockGroup[]; count: number; total: number }[]>(() => {
+    const groups = this.groups();
+    if (!groups.length) return [];
+    const count = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.rows.length, 0);
+    const total = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.total, 0);
+    if (this.query().trim()) return [{ key: 'all', name: null, groups, count: count(groups), total: total(groups) }];
+    const order = new Map(this.categories().map((category, index) => [category.id, index]));
+    const byCategory = new Map<number | null, StockGroup[]>();
+    for (const group of groups) {
+      const id = group.rows[0].product.categoryId ?? null;
+      byCategory.set(id, [...(byCategory.get(id) ?? []), group]);
+    }
+    return [...byCategory.entries()]
       .sort(([a], [b]) => (a === null ? Infinity : order.get(a) ?? Infinity) - (b === null ? Infinity : order.get(b) ?? Infinity))
-      .map(([id, group]) => ({
+      .map(([id, list]) => ({
         key: id === null ? 'none' : `c${id}`,
         name: this.categories().find((category) => category.id === id)?.name ?? 'Zonder categorie',
-        rows: group,
-        total: group.reduce((sum, row) => sum + row.total, 0),
+        groups: list, count: count(list), total: total(list),
       }));
   });
 
-  /* ---- the stock book of one product ---- */
-  readonly history = signal<{ row: StockRow; moves: StockMovement[] | null } | null>(null);
+  /* ---- the stock sheet of one product ---- */
+  private readonly bookProductId = signal<number | null>(null);
+  private readonly bookMoves = signal<StockMovement[] | null>(null);
 
-  async openHistory(row: StockRow): Promise<void> {
-    this.history.set({ row, moves: null });
+  /** The sheet follows the live row, so a figure typed into it shows at once. */
+  readonly book = computed(() => {
+    const id = this.bookProductId();
+    if (id === null) return null;
+    const row = this.rows().find((item) => item.product.id === id);
+    return row ? { row, moves: this.bookMoves() } : null;
+  });
+
+  openBook(row: StockRow, moving = false): void {
+    this.bookProductId.set(row.product.id!);
+    this.transfer.set(null);
+    void this.loadMoves(row.product.id!);
+    if (moving) this.openTransfer();
+  }
+
+  closeBook(): void {
+    this.bookProductId.set(null);
+    this.transfer.set(null);
+  }
+
+  private async loadMoves(productId: number): Promise<void> {
+    this.bookMoves.set(null);
     try {
-      const moves = await this.catalog.stockMovements(row.product.id!);
-      this.history.update((book) => book && book.row === row ? { ...book, moves } : book);
+      const moves = await this.catalog.stockMovements(productId);
+      if (this.bookProductId() === productId) this.bookMoves.set(moves);
     } catch {
-      this.history.update((book) => book && book.row === row ? { ...book, moves: [] } : book);
+      if (this.bookProductId() === productId) this.bookMoves.set([]);
     }
   }
 
@@ -595,17 +793,18 @@ export class StockPage {
 
   private async load(): Promise<void> {
     try {
-      const [products, locations, levels, categories, expected] = await Promise.all([
+      const [products, locations, levels, categories, expected, families] = await Promise.all([
         this.catalog.products(), this.catalog.stockLocations(), this.catalog.stockLevels(),
         this.catalog.categories().catch(() => [] as Category[]),
         this.sourcing.expectedStock().catch(() => [] as ExpectedStock[]),
+        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
       ]);
+      this.families.set(families);
       this.products.set(products);
       this.locations.set(locations);
       this.levels.set(levels);
       this.categories.set(categories);
       this.expected.set(new Map(expected.map((item) => [item.productId, item])));
-      document.documentElement.style.setProperty('--cols', String(Math.max(1, locations.filter((location) => location.active).length + 1)));
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Voorraad laden mislukt'), 'err');
     } finally {
@@ -617,10 +816,10 @@ export class StockPage {
     return this.locations().find((location) => location.id === id)?.name ?? '';
   }
 
-  /* ---- transfer ---- */
-  readonly transfer = signal<{ row: StockRow; fromId: number; toId: number; quantity: number; note: string } | null>(null);
+  /* ---- transfer, inside the sheet ---- */
+  readonly transfer = signal<{ fromId: number; toId: number; quantity: number; note: string } | null>(null);
 
-  openTransfer(row: StockRow): void {
+  openTransfer(): void {
     const locations = this.activeLocations();
     if (locations.length < 2) {
       this.ui.toast('Maak eerst een tweede locatie aan onder Voorraadlocaties', 'err');
@@ -628,7 +827,7 @@ export class StockPage {
     }
     const fromId = this.view() ?? locations[0].id!;
     const toId = locations.find((location) => location.id !== fromId)!.id!;
-    this.transfer.set({ row, fromId, toId, quantity: 0, note: '' });
+    this.transfer.set({ fromId, toId, quantity: 0, note: '' });
   }
 
   patchTransfer(changes: Partial<{ fromId: number; toId: number; quantity: number; note: string }>): void {
@@ -637,15 +836,17 @@ export class StockPage {
 
   async confirmTransfer(): Promise<void> {
     const move = this.transfer();
-    if (!move) return;
+    const row = this.book()?.row;
+    if (!move || !row) return;
     if (move.quantity <= 0) { this.ui.toast('Geef een aantal op', 'err'); return; }
     if (move.fromId === move.toId) { this.ui.toast('Kies twee verschillende locaties', 'err'); return; }
     this.saving.set(true);
     try {
-      await this.catalog.transferStock(move.row.product.id!, move.fromId, move.toId, move.quantity, move.note || null);
+      await this.catalog.transferStock(row.product.id!, move.fromId, move.toId, move.quantity, move.note || null);
       this.levels.set(await this.catalog.stockLevels());
       this.transfer.set(null);
-      this.ui.toast(`${move.quantity} × ${move.row.product.name} naar ${this.locationName(move.toId)}`, 'ok');
+      void this.loadMoves(row.product.id!);
+      this.ui.toast(`${move.quantity} × ${row.product.name} naar ${this.locationName(move.toId)}`, 'ok');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
     } finally {
@@ -666,6 +867,7 @@ export class StockPage {
         const rest = levels.filter((level) => !(level.productId === row.product.id && level.locationId === locationId));
         return [...rest, { productId: row.product.id!, locationId, quantity }];
       });
+      if (this.bookProductId() === row.product.id) void this.loadMoves(row.product.id!);
       this.ui.toast(`${row.product.name}: ${quantity.toLocaleString('nl-BE')} op ${this.locationName(locationId)}`, 'ok');
     } catch (failure: unknown) {
       field.value = String(before);

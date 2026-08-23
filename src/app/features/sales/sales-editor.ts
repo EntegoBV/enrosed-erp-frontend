@@ -13,7 +13,6 @@ import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { WeekField } from '../../shared/week-field';
-import { Privacy } from '../../core/api/privacy';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { WorkQueue } from '../../core/api/work-queue';
@@ -565,53 +564,50 @@ import {
                   }
                 </div>
 
-                @if (privacy.showPurchase()) {
-                  <details class="line-internal">
-                    <summary class="line-internal__summary">
-                      <span class="line-internal__title">
-                        <span class="line-internal__privacy">Alleen intern</span>
-                        <strong>Rendabiliteit per stuk</strong>
-                      </span>
-                      <span class="line-internal__profit"
-                            [class.line-internal__profit--negative]="marginPerUnit(line) < 0">
-                        {{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }}
-                        {{ absolute(marginPerUnit(line)) | eur: 2 }} / stuk
-                      </span>
-                    </summary>
+                <details class="line-internal">
+                  <summary class="line-internal__summary">
+                    <span class="line-internal__title">
+                      <strong>Rendabiliteit per stuk</strong>
+                    </span>
+                    <span class="line-internal__profit"
+                          [class.line-internal__profit--negative]="marginPerUnit(line) < 0">
+                      {{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }}
+                      {{ absolute(marginPerUnit(line)) | eur: 2 }} / stuk
+                    </span>
+                  </summary>
 
-                    <div class="line-internal__body">
-                      <dl class="line-internal__units">
-                        <div>
-                          <dt>Netto verkoop</dt>
-                          <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ stuk</small></dd>
-                        </div>
-                        <div>
-                          <dt>Gelande kost</dt>
-                          <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
-                        </div>
-                        <div class="line-internal__unit-profit"
-                             [class.line-internal__unit-profit--negative]="marginPerUnit(line) < 0">
-                          <dt>{{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }} per stuk</dt>
-                          <dd>{{ absolute(marginPerUnit(line)) | eur: 2 }}<small>/ stuk</small></dd>
-                        </div>
-                      </dl>
-
-                      <div class="line-internal__total">
-                        <span>
-                          Totale regel{{ line.marginEur < 0 ? 'verlies' : 'winst' }}
-                          <small>{{ line.quantity | num }} stuks, na regelkorting</small>
-                        </span>
-                        <strong [class.ok-text]="line.marginEur >= 0"
-                                [class.danger-text]="line.marginEur < 0">
-                          {{ absolute(line.marginEur) | eur: 2 }}
-                        </strong>
+                  <div class="line-internal__body">
+                    <dl class="line-internal__units">
+                      <div>
+                        <dt>Netto verkoop</dt>
+                        <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ stuk</small></dd>
                       </div>
-                      <p class="line-internal__note">
-                        Vóór orderkorting en vracht; de definitieve winst staat bij Controleren.
-                      </p>
+                      <div>
+                        <dt>Gelande kost</dt>
+                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
+                      </div>
+                      <div class="line-internal__unit-profit"
+                           [class.line-internal__unit-profit--negative]="marginPerUnit(line) < 0">
+                        <dt>{{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }} per stuk</dt>
+                        <dd>{{ absolute(marginPerUnit(line)) | eur: 2 }}<small>/ stuk</small></dd>
+                      </div>
+                    </dl>
+
+                    <div class="line-internal__total">
+                      <span>
+                        Totale regel{{ line.marginEur < 0 ? 'verlies' : 'winst' }}
+                        <small>{{ line.quantity | num }} stuks, na regelkorting</small>
+                      </span>
+                      <strong [class.ok-text]="line.marginEur >= 0"
+                              [class.danger-text]="line.marginEur < 0">
+                        {{ absolute(line.marginEur) | eur: 2 }}
+                      </strong>
                     </div>
-                  </details>
-                }
+                    <p class="line-internal__note">
+                      Vóór orderkorting en vracht; de definitieve winst staat bij Controleren.
+                    </p>
+                  </div>
+                </details>
 
                 <div class="order-line__foot">
                   <button class="remove-line" type="button" [disabled]="!canEdit()"
@@ -755,12 +751,10 @@ import {
                 <strong>{{ data.priced.totals.total | eur }}</strong>
                 <small class="quote-total__meta">
                   <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'exclusief BTW' }}</span>
-                  @if (privacy.showPurchase()) {
-                    <span class="quote-profit"
-                          [class.quote-profit--negative]="data.priced.totals.marginEur < 0">
-                      Winst {{ data.priced.totals.marginEur >= 0 ? '+' : '' }} {{ data.priced.totals.marginEur | eur: 0 }}
-                    </span>
-                  }
+                  <span class="quote-profit"
+                        [class.quote-profit--negative]="data.priced.totals.marginEur < 0">
+                    Winst {{ data.priced.totals.marginEur >= 0 ? '+' : '' }} {{ data.priced.totals.marginEur | eur: 0 }}
+                  </span>
                 </small>
               </div>
               @if (!data.priced.totals.vatLegalMention) {
@@ -1149,7 +1143,6 @@ import {
     .line-internal[open] .line-internal__summary:after { transform:rotate(180deg) }
     .line-internal__title { min-width:0;display:flex;flex-direction:column;gap:1px }
     .line-internal__title strong { overflow:hidden;color:var(--ink);font-size:11.5px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }
-    .line-internal__privacy { color:var(--warn);font-size:8.5px;font-weight:780;letter-spacing:.075em;text-transform:uppercase }
     .line-internal__profit { flex:none;padding:5px 7px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:9.5px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap }
     .line-internal__profit--negative { background:var(--danger-soft);color:var(--danger) }
     .line-internal__body { border-top:1px solid #ecdcbf }
@@ -1275,7 +1268,6 @@ export class SalesEditor {
   private readonly catalog = inject(CatalogApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
-  readonly privacy = inject(Privacy);
   private readonly work = inject(WorkQueue);
   private readonly destroyRef = inject(DestroyRef);
 

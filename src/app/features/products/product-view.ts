@@ -11,7 +11,6 @@ interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; n
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
-import { Privacy } from '../../core/api/privacy';
 import { saveBlob } from '../../core/api/download';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
@@ -190,34 +189,25 @@ interface GalleryPointer {
 
               @if (priceOpen()) {
                 <div class="stock-book price-build" role="region" aria-label="Prijsopbouw">
-                  @if (privacy.showPurchase()) {
-                    @if (priceBuild(); as build) {
-                      <dl class="price-build__list">
-                        @for (row of build.rows; track row.label) {
-                          <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note"
-                               [class.price-build__aside]="row.aside">
-                            <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
-                            <dd class="num">{{ row.eur | eur: 2 }}</dd>
-                          </div>
-                        }
-                      </dl>
-                      @if (build.source) {
-                        <p class="price-build__source">
-                          Kostprijs uit calculatie <b>{{ build.source }}</b>{{ build.sourceFound ? '' : ' - die calculatie is niet meer beschikbaar, dus zonder uitsplitsing' }}.
-                        </p>
-                      } @else {
-                        <p class="price-build__source">Nog geen kostprijs uit een inkoopcalculatie; transport en invoerrechten komen erbij zodra een calculatie is toegepast.</p>
+                  @if (priceBuild(); as build) {
+                    <dl class="price-build__list">
+                      @for (row of build.rows; track row.label) {
+                        <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note"
+                             [class.price-build__aside]="row.aside">
+                          <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
+                          <dd class="num">{{ row.eur | eur: 2 }}</dd>
+                        </div>
                       }
+                    </dl>
+                    @if (build.source) {
+                      <p class="price-build__source">
+                        Kostprijs uit calculatie <b>{{ build.source }}</b>{{ build.sourceFound ? '' : ' - die calculatie is niet meer beschikbaar, dus zonder uitsplitsing' }}.
+                      </p>
                     } @else {
-                      <p class="hint">Prijsopbouw laden…</p>
+                      <p class="price-build__source">Nog geen kostprijs uit een inkoopcalculatie; transport en invoerrechten komen erbij zodra een calculatie is toegepast.</p>
                     }
                   } @else {
-                    <dl class="price-build__list">
-                      <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs' : (product.markupPct | num) + ' % opslag op de kostprijs' }}</dd></div>
-                      <div class="price-build__sum"><dt>Catalogusprijs</dt><dd class="num">
-                        @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
-                      </dd></div>
-                    </dl>
+                    <p class="hint">Prijsopbouw laden…</p>
                   }
                 </div>
               }
@@ -343,34 +333,31 @@ interface GalleryPointer {
               </dl>
             </section>
 
-            @if (privacy.showPurchase()) {
-              <section class="info-card info-card--internal" aria-labelledby="purchase-details-title">
-                <header>
-                  <span class="info-card__icon" aria-hidden="true">03</span>
-                  <div><h2 id="purchase-details-title">Inkoop</h2><p>Alleen intern zichtbaar</p></div>
-                  <span class="badge badge--warn">intern</span>
-                </header>
-                <dl class="detail-list">
-                  <div><dt>EXW-prijs</dt><dd class="num">
-                    @if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }
-                  </dd></div>
-                  <div><dt>Extra kost per stuk <small class="muted">bv. display, giftbox</small></dt><dd class="num">
-                    @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
-                  </dd></div>
-                  <div class="detail-list__emphasis"><dt>Kostprijs incl. rechten</dt><dd class="num">
-                    @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
-                  </dd></div>
-                  @if (product.landedCostSource) {
-                    <div><dt>Bron kostprijs</dt><dd>{{ product.landedCostSource }}</dd></div>
-                  }
-                  <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}</dd></div>
-                </dl>
-              </section>
-            }
+            <section class="info-card info-card--internal" aria-labelledby="purchase-details-title">
+              <header>
+                <span class="info-card__icon" aria-hidden="true">03</span>
+                <div><h2 id="purchase-details-title">Inkoop</h2><p>Kostprijs en leverancier</p></div>
+              </header>
+              <dl class="detail-list">
+                <div><dt>EXW-prijs</dt><dd class="num">
+                  @if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }
+                </dd></div>
+                <div><dt>Extra kost per stuk <small class="muted">bv. display, giftbox</small></dt><dd class="num">
+                  @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
+                </dd></div>
+                <div class="detail-list__emphasis"><dt>Kostprijs incl. rechten</dt><dd class="num">
+                  @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
+                </dd></div>
+                @if (product.landedCostSource) {
+                  <div><dt>Bron kostprijs</dt><dd>{{ product.landedCostSource }}</dd></div>
+                }
+                <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}</dd></div>
+              </dl>
+            </section>
 
             <section class="info-card" aria-labelledby="sales-details-title">
               <header>
-                <span class="info-card__icon" aria-hidden="true">{{ privacy.showPurchase() ? '04' : '03' }}</span>
+                <span class="info-card__icon" aria-hidden="true">04</span>
                 <div><h2 id="sales-details-title">Verkoop</h2><p>Prijsregel en rendabiliteit</p></div>
               </header>
               <dl class="detail-list">
@@ -379,15 +366,13 @@ interface GalleryPointer {
                     ? 'Vaste verkoopprijs'
                     : (product.markupPct | num) + ' % opslag op kostprijs' }}
                 </dd></div>
-                @if (privacy.showPurchase()) {
-                  <div><dt>Marge per stuk</dt>
-                    @if (margin(); as value) {
-                      <dd class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }}</dd>
-                    } @else {
-                      <dd class="muted">Niet beschikbaar</dd>
-                    }
-                  </div>
-                }
+                <div><dt>Marge per stuk</dt>
+                  @if (margin(); as value) {
+                    <dd class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }}</dd>
+                  } @else {
+                    <dd class="muted">Niet beschikbaar</dd>
+                  }
+                </div>
               </dl>
             </section>
           </div>
@@ -652,7 +637,6 @@ export class ProductView {
   private readonly sourcing = inject(SourcingApi);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
-  readonly privacy = inject(Privacy);
   private readonly ui = inject(Ui);
 
   readonly product = signal<Product | null>(null);
@@ -679,7 +663,7 @@ export class ProductView {
     const open = !this.priceOpen();
     this.priceOpen.set(open);
     if (open) this.stockOpen.set(false);
-    if (open && product.id !== null && this.priceBuild() === null && this.privacy.showPurchase()) {
+    if (open && product.id !== null && this.priceBuild() === null) {
       void this.loadPriceBuild(product);
     }
   }
