@@ -763,7 +763,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                   </button>
                 }
                 <button class="btn btn--block" type="button" (click)="duplicate()">
-                  Kopiëren als variant
+                  Deze container kopiëren
                 </button>
               </div>
 
