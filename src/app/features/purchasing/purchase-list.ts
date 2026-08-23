@@ -51,14 +51,20 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
 
       <div class="card mt-12"><div class="list">
         @for (row of filtered(); track row.order.id) {
-          <!-- iOS pattern: swipe the row left to reveal delete - no need to
-               open a calculation just to get rid of it. -->
-          <div class="swipe swipe--desktop-action"
-               [class.swipe--open]="swiped() === row.order.id">
+          <!-- iOS pattern, also with a mouse or trackpad: drag or scroll the
+               row hard to the left and the delete confirm comes up itself;
+               a softer swipe only reveals the button. No standing bin. -->
+          <div class="swipe"
+               [class.swipe--open]="swiped() === row.order.id"
+               [class.swipe--dragging]="draggingOrderId() === row.order.id"
+               [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
             <a class="list-item swipe__row" [routerLink]="['/purchasing', row.order.id]"
-               (touchstart)="row.order.status !== 'ONTVANGEN' && swipeStart($event, row.order.id)"
-               (touchmove)="row.order.status !== 'ONTVANGEN' && swipeMove($event, row.order.id)"
-               (touchend)="swipeEnd()"
+               (pointerdown)="startSwipe($event, row)"
+               (pointermove)="moveSwipe($event, row)"
+               (pointerup)="finishSwipe($event, row)"
+               (pointercancel)="cancelSwipe($event)"
+               (wheel)="wheelSwipe($event, row)"
+               (dragstart)="$event.preventDefault()"
                (click)="blockWhenSwiped($event)">
             <div class="list-item__body">
               <!-- The nickname or the supplier leads; the number is the small
@@ -169,6 +175,9 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     }
   `,
   styles: [`
+    .swipe--dragging { user-select: none; }
+    .swipe--dragging .swipe__row { transform: translateX(var(--swipe-offset, 0px)); transition: none; }
+    .swipe__row { touch-action: pan-y; }
     .po-row__number { color: var(--ink-2); font-weight: 650; }
     .chip-rail { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
     .chip-rail::-webkit-scrollbar { display: none; }
@@ -247,35 +256,125 @@ export class PurchaseList {
 
   /** Which row shows its delete button; only one at a time, like iOS. */
   readonly swiped = signal<number | null>(null);
-  private touchX = 0;
-  private touchY = 0;
+  readonly draggingOrderId = signal<number | null>(null);
+  readonly swipeOffset = signal(0);
   private swipeHandled = false;
+  private pointerSwipe: { pointerId: number; orderId: number; startX: number; startY: number;
+    startOffset: number; horizontal: boolean; row: HTMLElement } | null = null;
+  private swipeResetTimer: ReturnType<typeof setTimeout> | null = null;
+  /* Trackpads swipe with a horizontal scroll: gathered per gesture. */
+  private wheelTotal = 0;
+  private wheelOrderId: number | null = null;
+  private wheelTimer: ReturnType<typeof setTimeout> | null = null;
 
-  swipeStart(event: TouchEvent, id: number): void {
-    this.touchX = event.touches[0].clientX;
-    this.touchY = event.touches[0].clientY;
+  startSwipe(event: PointerEvent, row: PurchaseOrderView): void {
+    if (row.order.status === 'ONTVANGEN' || row.order.id === null
+        || !event.isPrimary || event.button !== 0) return;
+    if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
     this.swipeHandled = false;
-    if (this.swiped() !== null && this.swiped() !== id) this.swiped.set(null);
-  }
-
-  swipeMove(event: TouchEvent, id: number): void {
-    if (this.swipeHandled) return;
-    const dx = event.touches[0].clientX - this.touchX;
-    const dy = event.touches[0].clientY - this.touchY;
-    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    /* A committed swipe acts as the button press itself, iOS-Mail style;
-       the confirm dialog still guards the actual delete. */
-    if (dx < -140) {
-      this.swipeHandled = true;
-      const row = this.orders().find((candidate) => candidate.order.id === id);
-      if (row) this.remove(id, row.order.number);
-      return;
+    if (this.swiped() !== null && this.swiped() !== row.order.id) this.swiped.set(null);
+    const target = event.currentTarget as HTMLElement;
+    this.pointerSwipe = {
+      pointerId: event.pointerId, orderId: row.order.id,
+      startX: event.clientX, startY: event.clientY,
+      startOffset: this.swiped() === row.order.id ? -76 : 0,
+      horizontal: false, row: target,
+    };
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch {
+      this.pointerSwipe = null;
     }
-    if (dx < -24) { this.swiped.set(id); return; }
-    if (dx > 24) { this.swipeHandled = true; this.swiped.set(null); }
   }
 
-  swipeEnd(): void { /* the decision falls in swipeMove */ }
+  moveSwipe(event: PointerEvent, row: PurchaseOrderView): void {
+    const active = this.pointerSwipe;
+    if (!active || active.pointerId !== event.pointerId || active.orderId !== row.order.id) return;
+    const dx = event.clientX - active.startX;
+    const dy = event.clientY - active.startY;
+    if (!active.horizontal) {
+      if (Math.hypot(dx, dy) < 8) return;
+      if (Math.abs(dx) <= Math.abs(dy) * 1.2) return;
+      active.horizontal = true;
+      this.swipeHandled = true;
+      this.draggingOrderId.set(active.orderId);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.swipeOffset.set(Math.max(-150, Math.min(0, active.startOffset + dx)));
+  }
+
+  finishSwipe(event: PointerEvent, row: PurchaseOrderView): void {
+    const active = this.pointerSwipe;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.horizontal) {
+      event.preventDefault();
+      event.stopPropagation();
+      const offset = this.swipeOffset();
+      /* Dragged well past the button: that is the delete itself, iOS-Mail
+         style. The confirm dialog still guards the actual delete. */
+      if (offset <= -130) {
+        this.swiped.set(null);
+        this.remove(row.order.id, row.order.number);
+      } else {
+        this.swiped.set(offset <= -38 ? active.orderId : null);
+      }
+      this.deferSwipeClickRelease();
+    }
+    this.releaseSwipePointer(active);
+    this.draggingOrderId.set(null);
+    this.swipeOffset.set(0);
+    this.pointerSwipe = null;
+  }
+
+  cancelSwipe(event: PointerEvent): void {
+    const active = this.pointerSwipe;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.horizontal) this.deferSwipeClickRelease();
+    else this.swipeHandled = false;
+    this.releaseSwipePointer(active);
+    this.draggingOrderId.set(null);
+    this.swipeOffset.set(0);
+    this.pointerSwipe = null;
+  }
+
+  /** A hard two-finger swipe on a trackpad reads as the same gesture. */
+  wheelSwipe(event: WheelEvent, row: PurchaseOrderView): void {
+    if (row.order.status === 'ONTVANGEN' || row.order.id === null) return;
+    if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    if (this.wheelOrderId !== row.order.id) { this.wheelOrderId = row.order.id; this.wheelTotal = 0; }
+    this.wheelTotal += event.deltaX;
+    if (this.wheelTimer !== null) clearTimeout(this.wheelTimer);
+    this.wheelTimer = setTimeout(() => { this.wheelOrderId = null; this.wheelTotal = 0; }, 250);
+    if (this.wheelTotal >= 130) {
+      this.wheelOrderId = null; this.wheelTotal = 0;
+      this.swiped.set(null);
+      this.remove(row.order.id, row.order.number);
+    } else if (this.wheelTotal >= 40) {
+      this.swiped.set(row.order.id);
+    } else if (this.wheelTotal <= -40) {
+      this.swiped.set(null);
+    }
+  }
+
+  private deferSwipeClickRelease(): void {
+    if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
+    this.swipeResetTimer = setTimeout(() => {
+      this.swipeHandled = false;
+      this.swipeResetTimer = null;
+    }, 400);
+  }
+
+  private releaseSwipePointer(active: { pointerId: number; row: HTMLElement }): void {
+    try {
+      if (active.row.hasPointerCapture(active.pointerId)) {
+        active.row.releasePointerCapture(active.pointerId);
+      }
+    } catch {
+      /* A cancelled pointer has already been released by the browser. */
+    }
+  }
 
   /** A tap on a swiped-open row folds it back instead of navigating. */
   blockWhenSwiped(event: Event): void {
