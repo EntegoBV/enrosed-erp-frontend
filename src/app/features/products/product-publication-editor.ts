@@ -637,7 +637,7 @@ interface FamilyFeaturedOption {
         min-width: 150px;
       }
     }
-    @media (min-width: 900px) {
+    @media (min-width: 680px) {
       .channel-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
