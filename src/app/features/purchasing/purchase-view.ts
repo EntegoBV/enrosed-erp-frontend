@@ -4,6 +4,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PageHeader } from '../../shared/page-header';
+import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
@@ -26,7 +27,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            EurPipe, NumPipe, PctPipe],
+            EurPipe, NumPipe, PctPipe, Diary],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -419,7 +420,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
               <section class="card payments-card note-card" aria-labelledby="purchase-note-title">
                 <span class="section-kicker">Notitie</span>
                 <h2 id="purchase-note-title">Dagboek van de container</h2>
-                <p class="note-card__text">{{ data.order.notes }}</p>
+                <app-diary [notes]="data.order.notes" />
               </section>
             }
 
@@ -486,7 +487,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
     .overview-fact--total strong{color:var(--rose-dark)}
     .payments-card{padding:14px 16px}.payments-card h2{margin-top:2px;font-size:16px}.payments-card p{margin-top:4px;color:var(--muted);font-size:12px}.payments-meter{height:6px;margin:10px 0;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px}.payments-list{list-style:none;margin:6px 0 0;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list li:last-child{border-bottom:0}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}
     .pay-stream{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-ours{margin-top:10px;color:var(--muted);font-size:11.5px}.doc-list{list-style:none;margin:8px 0 0;padding:0;border-top:1px solid var(--line)}.doc-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.doc-list li:last-child{border-bottom:0}
-    .note-card__text{margin:8px 0 0;white-space:pre-wrap;font-size:12.5px;line-height:1.55;color:var(--ink-2)}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}
+.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}
     .capacity-card__percentage.fill-pct--full{color:var(--ok)}
     .overview-fact{min-width:0;padding:9px 10px;background:var(--surface)}.overview-fact span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.overview-fact strong{display:block;overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 
