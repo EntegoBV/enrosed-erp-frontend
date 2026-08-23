@@ -137,6 +137,17 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
                 <strong>{{ data.costing.totals.pieces | num }} st</strong>
               }
             </div>
+            <!-- Six facts fill the grid on every width; the landed total is
+                 the one figure a buyer wants at the top anyway. Shown as a
+                 dash when purchase figures are hidden. -->
+            <div class="po-fact po-fact--total">
+              <span class="po-fact__label">Totaal geland</span>
+              @if (privacy.showPurchase()) {
+                <strong>{{ data.costing.totals.totalEur | eur }}</strong>
+              } @else {
+                <strong class="muted">—</strong>
+              }
+            </div>
           </div>
         </section>
 
@@ -828,6 +839,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
     .po-status{display:flex;flex:none;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11.5px;font-weight:700}
     .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok)}.overview-stepper{margin:16px 0}
     .po-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
+    .po-fact--total strong{color:var(--rose-dark)}
     .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
@@ -864,7 +876,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
     .action-card{padding:14px}.action-card__head h2{font-size:16px}.action-card__head p{color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:12px}.danger-zone{margin-top:7px;border-top:1px solid var(--line)}.danger-zone summary{padding:11px;color:var(--muted);font-size:11px;text-align:center}.danger-zone p{color:var(--muted);font-size:10px;text-align:center}
     .loading-card{display:flex;min-height:160px;align-items:center;justify-content:center;color:var(--muted)}.loading-card__mark{display:none}
 
-    @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(4,1fr)}.line-breakdown summary{display:flex}.line-breakdown__value{padding-top:0}}
+    @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(3,1fr)}.line-breakdown summary{display:flex}.line-breakdown__value{padding-top:0}}
     @media(min-width:700px){:is(.section-toggle,.section-heading){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px 18px}.order-fields{grid-template-columns:repeat(6,minmax(0,1fr))}.order-fields>.field{grid-column:span 3}.order-fields>.order-route-field{grid-column:span 2}.order-fields>.span-2{grid-column:1/-1}}
     @media(min-width:1000px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,.7fr);gap:16px}.purchase-summary{margin-top:0}}
   `]
