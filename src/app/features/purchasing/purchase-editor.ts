@@ -38,6 +38,11 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
  * and sea freight form the customs value, duty per HS code is levied on
  * that, and only then do the costs from the port of arrival join.
  */
+/** The container's price basis: DDP when every line says so, EXW otherwise. */
+function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
+  return order.lines.length > 0 && order.lines.every((line) => (line.priceBasis ?? 'EXW') === 'DDP') ? 'DDP' : 'EXW';
+}
+
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -1388,7 +1393,9 @@ export class PurchaseEditor {
         id: null, productId: choice.product.id!, quantity: choice.quantity,
         exwPrice: null, exwCurrency: null, extraUnitCost: null,
         /* Added after ordering means nothing was agreed for it yet. */
-        orderedQuantity: null }],
+        orderedQuantity: null,
+        /* A DDP container stays DDP: a new line follows the others. */
+        priceBasis: basisOf(order) }],
     }));
   }
 
@@ -1401,7 +1408,7 @@ export class PurchaseEditor {
       lines: [...order.lines, ...choices.map((choice) => ({
         id: null, productId: choice.product.id!, quantity: choice.quantity,
         exwPrice: null, exwCurrency: null, extraUnitCost: null,
-        orderedQuantity: null }))],
+        orderedQuantity: null, priceBasis: basisOf(order) }))],
     }));
   }
 
