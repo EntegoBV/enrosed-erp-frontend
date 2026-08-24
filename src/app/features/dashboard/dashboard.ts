@@ -1,6 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Skeleton } from '../../shared/skeleton';
 import { Sparkline } from '../../shared/sparkline';
+import { AuthImage } from '../../core/api/auth-image';
+import { PlannerCards } from './planner-cards';
+import { PlannerStore } from '../../core/api/planner-api';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/ui';
 import { FormsModule } from '@angular/forms';
@@ -9,9 +12,9 @@ import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { FreightRate, MarketSourceStatus, PurchaseOrderView, QuoteRevision, SalesOrderView } from '../../core/api/models';
+import { FreightRate, MarketSourceStatus, PurchaseOrderView, QuoteRevision, SalesOrderView, ExpectedStock, Product } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
-import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, EurPipe, NumPipe, PctPipe, DateNlPipe } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from '../sales/quote-status';
 import { containerLabel } from '../../core/api/geo';
 
@@ -30,7 +33,7 @@ interface FreightHorizon {
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Skeleton, Sparkline, Icon, Sheet, FormsModule, RouterLink, PageHeader,
-            EurPipe, NumPipe, PctPipe, CbmPipe],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, PlannerCards, AuthImage],
   template: `
     <app-page-header [title]="greeting()" [subtitle]="today()">
     </app-page-header>
@@ -41,8 +44,21 @@ interface FreightHorizon {
       @if (loading()) {
         <app-skeleton kind="stats" [rows]="4" />
       } @else {
+      <!-- A pinned appointment rides on top of everything until unpinned. -->
+      @for (pin of pinnedItems(); track pin.id) {
+        <div class="pin-line">
+          <span class="pin-line__icon" aria-hidden="true">📌</span>
+          <span class="pin-line__what">
+            <b>{{ pin.title }}</b>
+            <small>@if (pin.onDate) { {{ pin.onDate | dateNl }}@if (pin.atTime) { · {{ pin.atTime }} } }
+              @if (pin.note) { · {{ pin.note }} }</small>
+          </span>
+        </div>
+      }
+
+      <!-- Each tile opens its own analysis: what the figure is made of. -->
       <div class="kpis">
-        <a class="kpi kpi--dark" routerLink="/sales">
+        <button class="kpi kpi--dark" type="button" (click)="kpiSheet.set('SALES')">
           <svg class="kpi__rose" viewBox="0 0 24 24" fill="none" stroke="#e8b7c0"
                stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="8" r="3.2" />
@@ -54,25 +70,25 @@ interface FreightHorizon {
           <div class="kpi__label">Open verkoop</div>
           <div class="kpi__value">{{ openValue() | eur: 0 }}</div>
           <div class="kpi__meta">{{ openOrders().length }} order(s)</div>
-        </a>
-        <div class="kpi">
+        </button>
+        <button class="kpi" type="button" (click)="kpiSheet.set('MARGIN')">
           <div class="kpi__label">Brutomarge</div>
           <div class="kpi__value">{{ marginPct() | pct: 1 }}</div>
           <div class="kpi__meta">{{ marginEur() | eur: 0 }} op open orders</div>
-        </div>
-        <div class="kpi">
+        </button>
+        <button class="kpi" type="button" (click)="kpiSheet.set('PURCHASE')">
           <div class="kpi__label">Inkoop onderweg</div>
           <div class="kpi__value">{{ incomingValue() | eur: 0 }}</div>
           <div class="kpi__meta">{{ incoming().length }} container(s)</div>
-        </div>
-        <a class="kpi" routerLink="/products">
-          <div class="kpi__label">Catalogus</div>
-          <div class="kpi__value">{{ productCount() }}</div>
-          <div class="kpi__meta">
-            @if (catalogAttention()) { {{ catalogAttention() }} families met aandacht }
-            @else { {{ skuCount() }} producten }
-          </div>
-        </a>
+          @if (incomingPieces()) {
+            <div class="kpi__meta kpi__meta--expected">+{{ incomingPieces() | num }} st onderweg</div>
+          }
+        </button>
+        <button class="kpi" type="button" (click)="kpiSheet.set('STOCK')">
+          <div class="kpi__label">Voorraadwaarde</div>
+          <div class="kpi__value">{{ stockValue() | eur: 0 }}</div>
+          <div class="kpi__meta">{{ stockPieces() | num }} stuks · kostprijs</div>
+        </button>
       </div>
       }
 
@@ -87,6 +103,8 @@ interface FreightHorizon {
         </a>
       }
 
+      <app-planner-cards class="planner-mount" />
+
       @if (catalogAttention()) {
         <a class="alert alert--warn mt-12" routerLink="/products"
            style="text-decoration:none;color:inherit">
@@ -98,13 +116,79 @@ interface FreightHorizon {
         </a>
       }
 
+      @if (purchaseActions().length) {
+        <div class="section-title">Actie vereist <span class="section-count">{{ actionCount() }}</span></div>
+        <div class="card"><div class="list">
+          @for (row of purchaseActions(); track row.order.id) {
+            <!-- One quiet line per order: the first open point, the rest as a count. -->
+            <a class="list-item action-mini" [routerLink]="['/purchasing', row.order.id]">
+              <span class="attention-dot attention-dot--sm" aria-hidden="true">{{ row.attention!.length }}</span>
+              <b class="action-mini__order">{{ row.order.alias || row.order.number }}</b>
+              <span class="action-mini__what">{{ row.attention![0] }}</span>
+              @if (row.attention!.length > 1) { <small class="action-mini__more">+{{ row.attention!.length - 1 }}</small> }
+            </a>
+          }
+        </div></div>
+      }
+
+      @if (incomingStock().length) {
+        <div class="section-title">Onderweg naar het magazijn
+          <span class="section-count">{{ incomingPieces() | num }} st</span></div>
+        <div class="card"><div class="list">
+          @for (item of incomingStock().slice(0, 4); track item.name) {
+            <a class="list-item" [routerLink]="item.orderId !== null ? ['/purchasing', item.orderId] : null">
+              @if (item.photo) {
+                <img class="thumb thumb--sm" [appAuthSrc]="item.photo" alt="" />
+              } @else {
+                <span class="thumb thumb--sm thumb--placeholder" aria-hidden="true">◈</span>
+              }
+              <div class="list-item__body">
+                <div class="list-item__title">{{ item.name }}</div>
+                <div class="list-item__meta">{{ item.orderNumbers }}</div>
+              </div>
+              <div class="list-item__end">
+                <div class="strong num">+{{ item.quantity | num }}</div>
+                <span class="tiny muted">{{ item.arrival ? (item.arrival | dateNl) : 'datum volgt' }}</span>
+              </div>
+            </a>
+          }
+        </div></div>
+      }
+
       <div class="section-title">Markt</div>
       @if (fx.series(); as rates) {
         <div class="card">
-          <div class="card__head"><h2>Wisselkoersen</h2>
+          <button class="card__head market-toggle" type="button" [attr.aria-expanded]="fxOpen()"
+                  (click)="fxOpen.set(!fxOpen())">
+            <h2>Wisselkoersen</h2>
             <span class="spacer"></span>
             <span class="tiny muted">ECB · {{ rates.asOf }}</span>
-          </div>
+            <i class="market-toggle__chev" [class.market-toggle__chev--open]="fxOpen()" aria-hidden="true"></i>
+          </button>
+          @if (!fxOpen()) {
+            <!-- Small by default: the figures at a glance; the charts and
+                 the buying analysis come out when you tap. -->
+            <div class="market-compact">
+              <button class="market-compact__row" type="button" (click)="fxOpen.set(true)">
+                <span>EUR → USD</span>
+                <b class="num">{{ fxValue(rates.latestUsd, false) | num: 4 }}</b>
+                <span class="badge" [class]="fxPct(rates, rates.usd, false) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates, rates.usd, false) >= 0 ? '+' : '' }}{{ fxPct(rates, rates.usd, false) | num: 1 }}%</span>
+              </button>
+              <button class="market-compact__row" type="button" (click)="fxOpen.set(true)">
+                <span>EUR → CNY</span>
+                <b class="num">{{ fxValue(rates.latestCny, false) | num: 4 }}</b>
+                <span class="badge" [class]="fxPct(rates, rates.cny, false) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates, rates.cny, false) >= 0 ? '+' : '' }}{{ fxPct(rates, rates.cny, false) | num: 1 }}%</span>
+              </button>
+              <button class="market-compact__row" type="button" (click)="fxOpen.set(true)">
+                <span>USD → CNY</span>
+                <b class="num">{{ fxValue(latestCross(rates), false) | num: 4 }}</b>
+                <span class="badge" [class]="fxPct(rates, crossOf(rates), false) >= 0 ? 'badge--ok' : 'badge--warn'">
+                  {{ fxPct(rates, crossOf(rates), false) >= 0 ? '+' : '' }}{{ fxPct(rates, crossOf(rates), false) | num: 1 }}%</span>
+              </button>
+            </div>
+          } @else {
           <div class="card__body">
             <!-- Tap flips the pair: sometimes you think in "what does one
                  dollar cost", sometimes in "what does my euro buy". -->
@@ -217,6 +301,7 @@ interface FreightHorizon {
               </div>
             }
           </div>
+          }
         </div>
       } @else if (!fx.failed()) {
         <app-skeleton kind="card" [rows]="1" />
@@ -226,10 +311,41 @@ interface FreightHorizon {
            real trend chart in the same idiom as the FX card (months and
            horizons), and our own lanes as tappable tiles. -->
       <div class="card mt-12">
-        <div class="card__head"><h2>Containervracht</h2>
+        <button class="card__head market-toggle" type="button" [attr.aria-expanded]="freightOpen()"
+                (click)="freightOpen.set(!freightOpen())">
+          <h2>Containervracht</h2>
           <span class="spacer"></span>
           <span class="tiny muted">USD per 40ft</span>
-        </div>
+          <i class="market-toggle__chev" [class.market-toggle__chev--open]="freightOpen()" aria-hidden="true"></i>
+        </button>
+        @if (!freightOpen()) {
+          <div class="market-compact">
+            @for (route of ownRoutes; track route.code) {
+              <button class="market-compact__row" type="button" (click)="freightOpen.set(true)">
+                <span>{{ route.port }}</span>
+                @if (latestFor(route.code); as latest) {
+                  <b class="num">$ {{ latest.usdPerContainer | num: 0 }}</b>
+                  <span class="tiny muted">{{ shortDate(latest.quotedOn) }}</span>
+                } @else {
+                  <b class="muted">—</b>
+                  <span class="tiny muted">noteren</span>
+                }
+              </button>
+            }
+            @for (bench of dollarBenchmarks; track bench.code) {
+              @if (latestFor(bench.code); as latest) {
+                <button class="market-compact__row" type="button" (click)="freightOpen.set(true)">
+                  <span>{{ bench.label }} <small class="muted">markt</small></span>
+                  <b class="num">$ {{ latest.usdPerContainer | num: 0 }}</b>
+                  @if (indexChange(bench.code); as change) {
+                    <span class="badge" [class]="change <= 0 ? 'badge--ok' : 'badge--warn'">
+                      {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%</span>
+                  }
+                </button>
+              }
+            }
+          </div>
+        } @else {
         <div class="card__body">
 
           <div class="fown fown--top">
@@ -264,39 +380,12 @@ interface FreightHorizon {
           </div>
 
 
-          <div class="fown__head">
-            <span class="label">Marktprijzen online</span>
-            <span class="spacer"></span>
-            <span class="tiny muted">automatisch · wekelijks</span>
-          </div>
-          <div class="ftiles">
-            @for (bench of dollarBenchmarks; track bench.code) {
-              <button class="ftile ftile--btn" type="button"
-                      [disabled]="!latestFor(bench.code)"
-                      (click)="openHistory(bench.code, bench.title, 'USD ')">
-                <span class="ftile__label">{{ bench.label }}</span>
-                @if (latestFor(bench.code); as latest) {
-                  <span class="ftile__value num">$ {{ latest.usdPerContainer | num: 0 }}</span>
-                  <span class="ftile__sub">{{ bench.source }} · {{ shortDate(latest.quotedOn) }}
-                    @if (indexChange(bench.code); as change) {
-                      <b [class.ok-text]="change <= 0" [class.warn-text]="change > 0">
-                        {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%</b>
-                    }
-                  </span>
-                } @else {
-                  <span class="ftile__value muted">—</span>
-                  <span class="ftile__sub">{{ bench.source }} · volgt</span>
-                }
-              </button>
-            }
-          </div>
-
           @if (trendOptions().length) {
             <div class="ftrend">
               <div class="ftrend__head">
                 <div>
-                  <span class="label">Marktindex</span>
-                  <div class="tiny muted">indexpunten, geen dollars — toont de richting</div>
+                  <span class="label">Richting van de markt</span>
+                  <div class="tiny muted">indexpunten, geen dollars - elke index heeft zijn eigen periode</div>
                 </div>
                 <span class="spacer"></span>
                 <div class="ftrend__seg">
@@ -355,17 +444,46 @@ interface FreightHorizon {
             </div>
           }
 
+          <div class="fown__head fown__head--split">
+            <span class="label">Spotprijzen markt</span>
+            <span class="spacer"></span>
+            <span class="tiny muted">USD per 40ft · wekelijks automatisch</span>
+          </div>
+          <div class="ftiles">
+            @for (bench of dollarBenchmarks; track bench.code) {
+              <button class="ftile ftile--btn" type="button"
+                      [disabled]="!latestFor(bench.code)"
+                      (click)="openHistory(bench.code, bench.title, 'USD ')">
+                <span class="ftile__label">{{ bench.label }}</span>
+                @if (latestFor(bench.code); as latest) {
+                  <span class="ftile__value num">$ {{ latest.usdPerContainer | num: 0 }}</span>
+                  <span class="ftile__sub">{{ bench.source }} · {{ shortDate(latest.quotedOn) }}
+                    @if (indexChange(bench.code); as change) {
+                      <b [class.ok-text]="change <= 0" [class.warn-text]="change > 0">
+                        {{ change > 0 ? '+' : '' }}{{ change | num: 1 }}%</b>
+                    }
+                  </span>
+                } @else {
+                  <span class="ftile__value muted">—</span>
+                  <span class="ftile__sub">{{ bench.source }} · volgt</span>
+                }
+              </button>
+            }
+          </div>
+
         </div>
+        }
       </div>
 
       <div class="section-title">Recente verkooporders</div>
       <div class="card">
         <div class="list">
-          @for (row of recentSales(); track row.order.id) {
+          @for (row of recentSales().slice(0, 3); track row.order.id) {
             <a class="list-item" [routerLink]="['/sales', row.order.id]">
               <div class="list-item__body">
                 <div class="list-item__title">{{ row.order.number }}</div>
                 <div class="list-item__meta">
+                  {{ row.order.orderDate | dateNl }} ·
                   {{ row.priced.totals.pieces | num }} st ·
                   @if (row.order.loadMode === 'LOOSE_CARTONS') {
                     {{ row.priced.totals.cartons | num }}
@@ -396,11 +514,12 @@ interface FreightHorizon {
       <div class="section-title">Inkoop</div>
       <div class="card">
         <div class="list">
-          @for (row of purchases(); track row.order.id) {
+          @for (row of purchases().slice(0, 3); track row.order.id) {
             <a class="list-item" [routerLink]="['/purchasing', row.order.id]">
               <div class="list-item__body">
-                <div class="list-item__title">{{ row.order.number }}</div>
+                <div class="list-item__title">{{ row.order.alias || row.order.number }}</div>
                 <div class="list-item__meta">
+                  {{ row.order.orderDate | dateNl }} ·
                   {{ containerLabel(row.order.containerType) }} ·
                   {{ row.costing.totals.cartons | num }} kartons
                 </div>
@@ -567,6 +686,87 @@ interface FreightHorizon {
         <div foot style="display:contents">
           <button class="btn btn--primary btn--block" type="button"
                   (click)="historyRoute.set(null)">Sluiten</button>
+        </div>
+      </app-sheet>
+    }
+
+    @if (kpiSheet(); as kind) {
+      <app-sheet [title]="kpiTitle(kind)" (closed)="kpiSheet.set(null)">
+        <div body>
+          @switch (kind) {
+            @case ('SALES') {
+              <p class="kpi-explain">Alles wat klanten hebben aangevraagd of gekregen maar nog niet
+                afgerond is: samen <b>{{ openValue() | eur: 0 }}</b> over {{ openOrders().length }} order(s).</p>
+              <ol class="kpi-list">
+                @for (row of openOrders(); track row.order.id) {
+                  <li>
+                    <a class="kpi-list__row" [routerLink]="['/sales', row.order.id]" (click)="kpiSheet.set(null)">
+                      <span class="kpi-list__what"><b>{{ row.order.number }}</b>
+                        <small>{{ salesStatusLabel(row.order.status) }} · {{ row.priced.totals.pieces | num }} st</small></span>
+                      <span class="num kpi-list__amount">{{ row.priced.totals.total | eur: 0 }}</span>
+                    </a>
+                  </li>
+                }
+              </ol>
+            }
+            @case ('MARGIN') {
+              <p class="kpi-explain"><b>Brutomarge</b> is wat er van de goederenverkoop overblijft na de
+                kostprijs van de producten, vóór transport en eigen kosten. {{ marginPct() | pct: 1 }} betekent:
+                van elke € 100 goederenverkoop blijft {{ (marginPct()) | num: 0 }} euro over.
+                Op de open orders samen: <b>{{ marginEur() | eur: 0 }}</b>.</p>
+              <ol class="kpi-list">
+                @for (row of openOrders(); track row.order.id) {
+                  <li>
+                    <a class="kpi-list__row" [routerLink]="['/sales', row.order.id]" (click)="kpiSheet.set(null)">
+                      <span class="kpi-list__what"><b>{{ row.order.number }}</b>
+                        <small>verkoop {{ row.priced.totals.goodsTotal | eur: 0 }}</small></span>
+                      <span class="num kpi-list__amount" [class.warn-text]="row.priced.totals.marginEur < 0">
+                        {{ row.priced.totals.marginEur | eur: 0 }}
+                        <small class="muted">{{ row.priced.totals.marginPct | num: 0 }}%</small></span>
+                    </a>
+                  </li>
+                }
+              </ol>
+            }
+            @case ('PURCHASE') {
+              <p class="kpi-explain">Bestelde en vertrokken containers, tegen hun gelande kostprijs:
+                samen <b>{{ incomingValue() | eur: 0 }}</b>. Zodra een container op Ontvangen gaat,
+                schuift de waarde door naar de voorraad.</p>
+              <ol class="kpi-list">
+                @for (row of incoming(); track row.order.id) {
+                  <li>
+                    <a class="kpi-list__row" [routerLink]="['/purchasing', row.order.id]" (click)="kpiSheet.set(null)">
+                      <span class="kpi-list__what"><b>{{ row.order.alias || row.order.number }}</b>
+                        <small>{{ row.order.status === 'ONDERWEG' ? 'vertrokken' : 'besteld' }}
+                          @if (row.order.expectedArrival) { · verwacht {{ row.order.expectedArrival | dateNl }} }</small></span>
+                      <span class="num kpi-list__amount">{{ row.costing.totals.totalEur | eur: 0 }}</span>
+                    </a>
+                  </li>
+                }
+              </ol>
+            }
+            @case ('STOCK') {
+              <p class="kpi-explain">Wat er nu in het magazijn en op de stands ligt, gewaardeerd
+                tegen wat het jou gekost heeft (stuks × gelande kostprijs):
+                <b>{{ stockPieces() | num }} stuks · {{ stockValue() | eur: 0 }}</b>.
+                Hieronder de grootste posten - daar zit je geld.</p>
+              <ol class="kpi-list">
+                @for (item of stockTop(); track item.name) {
+                  <li>
+                    <span class="kpi-list__row">
+                      <span class="kpi-list__what"><b>{{ item.name }}</b>
+                        <small>{{ item.pieces | num }} st × {{ item.cost | eur: 2 }}</small></span>
+                      <span class="num kpi-list__amount">{{ item.value | eur: 0 }}</span>
+                    </span>
+                  </li>
+                }
+              </ol>
+            }
+          }
+        </div>
+        <div foot style="display:contents">
+          <span class="spacer"></span>
+          <button class="btn" type="button" (click)="kpiSheet.set(null)">Sluiten</button>
         </div>
       </app-sheet>
     }
@@ -1281,6 +1481,70 @@ export class Dashboard {
 
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly purchases = signal<PurchaseOrderView[]>([]);
+  readonly allPurchases = signal<PurchaseOrderView[]>([]);
+  readonly fxOpen = signal(false);
+  readonly kpiSheet = signal<'SALES' | 'MARGIN' | 'PURCHASE' | 'STOCK' | null>(null);
+  private readonly planner = inject(PlannerStore);
+  readonly pinnedItems = computed(() => this.planner.items().filter((item) => item.pinned));
+
+  kpiTitle(kind: 'SALES' | 'MARGIN' | 'PURCHASE' | 'STOCK'): string {
+    return kind === 'SALES' ? 'Open verkoop'
+      : kind === 'MARGIN' ? 'Brutomarge'
+      : kind === 'PURCHASE' ? 'Inkoop onderweg' : 'Voorraadwaarde';
+  }
+
+  salesStatusLabel(status: string): string {
+    return status === 'CONCEPT' ? 'concept' : status === 'VERZONDEN' ? 'verzonden'
+      : status === 'BEKEKEN' ? 'bekeken' : status === 'WIJZIGING_GEVRAAGD' ? 'wijziging gevraagd' : status.toLowerCase();
+  }
+
+  /** The shelf's heaviest lines by value, the ones worth watching. */
+  readonly stockTop = computed(() => this.products()
+    .filter((product) => (product.stockQuantity ?? 0) > 0)
+    .map((product) => ({
+      name: product.name + (product.colour ? ' - ' + product.colour : ''),
+      pieces: product.stockQuantity ?? 0,
+      cost: product.landedCostEur ?? 0,
+      value: (product.stockQuantity ?? 0) * (product.landedCostEur ?? 0),
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8));
+  readonly freightOpen = signal(false);
+  readonly products = signal<Product[]>([]);
+
+  /** What the shelf is worth at cost: pieces times landed cost, demo included. */
+  readonly stockValue = computed(() => this.products()
+    .reduce((sum, product) => sum + (product.stockQuantity ?? 0) * (product.landedCostEur ?? 0), 0));
+  readonly stockPieces = computed(() => this.products()
+    .reduce((sum, product) => sum + (product.stockQuantity ?? 0), 0));
+  readonly expected = signal<ExpectedStock[]>([]);
+
+  /** Orders that wait on us: a missing tracking number, an instalment due. */
+  readonly purchaseActions = computed(() =>
+    this.allPurchases()
+      .filter((row) => (row.attention?.length ?? 0) > 0)
+      .sort((a, b) => (b.attention!.length - a.attention!.length))
+      .slice(0, 5));
+  readonly actionCount = computed(() =>
+    this.allPurchases().reduce((sum, row) => sum + (row.attention?.length ?? 0), 0));
+
+  /** What is on the water, soonest first, with the product's name. */
+  readonly incomingStock = computed(() => {
+    const byId = new Map(this.products().map((product) => [product.id, product.name]));
+    return this.expected()
+      .slice()
+      .sort((a, b) => (a.expectedArrival ?? '9999').localeCompare(b.expectedArrival ?? '9999'))
+      .map((item) => ({
+        name: byId.get(item.productId) ?? `product ${item.productId}`,
+        photo: this.products().find((product) => product.id === item.productId)?.photos?.[0]?.url ?? null,
+        quantity: item.quantity,
+        arrival: item.expectedArrival,
+        orderId: item.orderIds[0] ?? null,
+        orderNumbers: item.orderNumbers.join(', '),
+      }));
+  });
+  readonly incomingPieces = computed(() =>
+    this.expected().reduce((sum, item) => sum + item.quantity, 0));
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly productCount = signal(0);
   readonly skuCount = signal(0);
@@ -1303,8 +1567,13 @@ export class Dashboard {
       this.catalog.productFamilies().catch(() => []),
     ]);
     this.salesOrders.set(orders);
+    this.allPurchases.set(purchases);
     this.purchases.set(purchases.slice(0, 5));
+    void this.sourcing.expectedStock()
+      .then((expected) => this.expected.set(expected))
+      .catch(() => this.expected.set([]));
     this.revisions.set(revisions);
+    this.products.set(products);
     this.productCount.set(families.length || products.length);
     this.skuCount.set(products.length);
     this.catalogAttention.set(families.length

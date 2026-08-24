@@ -1520,11 +1520,14 @@ table.data tfoot td {
 /* One entrance curve for the whole app: content rises softly into place.
    Route changes recreate .content, so every page gets it for free. */
 @keyframes rise {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(8px); }
+  /* Ends on transform:none - a kept translate(0) is still a containing
+     block, which pinned fixed sheets inside the animated child. */
+  to { opacity: 1; transform: none; }
 }
-.content { animation: rise 0.3s ease both; }
-.anim-rise { animation: rise 0.35s ease both; }
-.anim-stagger > * { animation: rise 0.4s ease both; }
+.content { animation: rise 0.3s ease backwards; }
+.anim-rise { animation: rise 0.35s ease backwards; }
+.anim-stagger > * { animation: rise 0.4s ease backwards; }
 .anim-stagger > *:nth-child(1) { animation-delay: 0.03s; }
 .anim-stagger > *:nth-child(2) { animation-delay: 0.08s; }
 .anim-stagger > *:nth-child(3) { animation-delay: 0.13s; }
@@ -1739,6 +1742,53 @@ button.market-row:disabled { cursor: default; }
 
 /* FX rows stack: header line, then a half-year chart with month marks. */
 .market-row--stack { display: block; }
+.section-count { margin-left: 6px; color: var(--muted); font-weight: 650; font-size: 11px; }
+.market-toggle { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.market-toggle__chev { width: 7px; height: 7px; margin-left: 10px; border-right: 1.6px solid var(--muted);
+  border-bottom: 1.6px solid var(--muted); transform: rotate(45deg); transition: transform .15s ease; flex: none; }
+.market-toggle__chev--open { transform: rotate(-135deg); }
+.market-compact { padding: 2px 14px 10px; }
+.market-compact__row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 0;
+  border: 0; border-top: 1px solid var(--line); background: transparent; font: inherit; font-size: 13px;
+  color: var(--ink-2); cursor: pointer; text-align: left; }
+.market-compact__row:first-child { border-top: 0; }
+.market-compact__row > span:first-child { flex: 1; min-width: 0; font-weight: 650; }
+.market-compact__row b { font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.planner-mount { display: block; margin-top: 12px; }
+.action-mini { min-height: 42px; padding: 8px 14px; gap: 9px; }
+.action-mini__order { flex: none; font-size: 12.5px; }
+.action-mini__what { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px;
+  text-overflow: ellipsis; white-space: nowrap; }
+.action-mini__more { flex: none; color: var(--warn); font-size: 11px; font-weight: 750; }
+.attention-dot--sm { min-width: 17px; height: 17px; font-size: 10px; }
+.fown__head--split { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.kpi { border: 0; font: inherit; text-align: left; cursor: pointer; }
+.kpi__meta--expected { color: var(--warn); font-weight: 700; }
+.kpi--dark .kpi__meta--expected { color: #ffd9a8; }
+.kpi-explain { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+.kpi-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.kpi-list li { border-bottom: 1px solid var(--line); }
+.kpi-list__row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 2px;
+  color: inherit; text-decoration: none; }
+a.kpi-list__row:hover { background: var(--surface-2); }
+.kpi-list__what { display: grid; flex: 1; min-width: 0; }
+.kpi-list__what b { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-list__what small { color: var(--muted); font-size: 11px; }
+.kpi-list__amount { font-weight: 700; font-size: 13px; white-space: nowrap; }
+.kpi-list__amount small { font-weight: 600; margin-left: 4px; }
+.pin-line { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 9px 13px;
+  border: 1px solid var(--rose-line); border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--rose-soft), var(--surface)); }
+.pin-line__icon { flex: none; font-size: 14px; }
+.pin-line__what { display: flex; min-width: 0; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pin-line__what b { font-size: 13px; }
+.pin-line__what small { color: var(--ink-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+
+
+
+.dashboard-attention-dot, .list-item .attention-dot { display: inline-grid; place-items: center; flex: none; min-width: 20px;
+  height: 20px; padding: 0 5px; border-radius: 999px; background: var(--warn); color: #fff;
+  font-size: 11px; font-weight: 800; line-height: 1; }
 .market-row__top { display: flex; align-items: center; gap: 10px; }
 .fx-chart { display: block; width: 100%; color: var(--accent); margin-top: 6px; }
 .fx-chart svg { width: 100%; height: 42px; }
