@@ -48,7 +48,7 @@ function isRed(colour: string | null | undefined): boolean {
   return value === 'rood' || value === 'red' || value === 'rouge' || value === 'rot';
 }
 
-type SortKey = 'NAME_ASC' | 'NAME_DESC' | 'SKU' | 'STOCK_DESC' | 'STOCK_ASC'
+type SortKey = 'STOCK_SMART' | 'NAME_ASC' | 'NAME_DESC' | 'SKU' | 'STOCK_DESC' | 'STOCK_ASC'
   | 'PRICE_ASC' | 'PRICE_DESC' | 'COST_ASC' | 'COST_DESC';
 
 interface ProductSwipe {
@@ -207,6 +207,7 @@ interface ProductSwipe {
                       <strong>{{ group.name }}</strong>
                     </div>
                     <div class="product-row__badges">
+                      @if (groupAllDemo(group)) { <span class="demo-chip">demo</span> }
                       @if (groupAttention(group); as attention) {
                         <span class="master-chip master-chip--warn"
                               [attr.title]="groupTooltip(group)">{{ attention }}</span>
@@ -296,6 +297,33 @@ interface ProductSwipe {
       }
     </div>
 
+    @if (demoGroups().length && !loading()) {
+      <!-- Demo pieces: ideas we show, nothing the shelf sells. Folded away
+           so the working list stays about sellable stock. -->
+      <div class="content demo-fold-wrap">
+        <section class="section section--demo">
+          <button class="demo-fold" type="button" [attr.aria-expanded]="showDemoFold()"
+                  (click)="demoOpen.set(!showDemoFold())">
+            <span class="demo-chip">demo</span>
+            <span class="demo-fold__label">Demoproducten</span>
+            <small>{{ demoCount() }}</small>
+            <i class="demo-fold__chev" [class.demo-fold__chev--open]="showDemoFold()" aria-hidden="true"></i>
+          </button>
+          @if (showDemoFold()) {
+            <div class="card">
+              <div class="list">
+                @for (group of demoGroups(); track group.key) {
+                  @for (product of group.products; track product.id) {
+                    <ng-container *ngTemplateOutlet="productRow; context: { $implicit: product, nested: false }" />
+                  }
+                }
+              </div>
+            </div>
+          }
+        </section>
+      </div>
+    }
+
     <ng-template #productRow let-product let-nested="nested">
       <div class="swipe"
            [class.swipe--nested]="nested"
@@ -337,6 +365,7 @@ interface ProductSwipe {
               }
             </div>
             <div class="product-row__badges">
+              @if (product.demo) { <span class="demo-chip">demo</span> }
               <!-- Inside a series a variant shows the points that concern
                    it: the shared ones plus its own, never another colour's.
                    Hovering lists them in words. -->
@@ -503,6 +532,20 @@ interface ProductSwipe {
       .filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
     }
     .list-item--inactive { opacity: .66; }
+    .demo-chip { flex: none; padding: 1px 7px; border-radius: 6px; background: var(--warn-soft);
+      border: 1px dashed var(--warn); color: var(--warn); font-size: 9.5px; font-weight: 800;
+      letter-spacing: .07em; text-transform: uppercase; }
+    .demo-fold-wrap { padding-top: 0; margin-top: -20px; }
+    .demo-fold { display: flex; align-items: center; gap: 8px; width: 100%; padding: 11px 14px;
+      margin-bottom: 8px; border: 1px dashed var(--line-strong); border-radius: var(--r-sm);
+      background: var(--surface-2); color: var(--ink-2); font: inherit; font-size: 12.5px;
+      font-weight: 650; text-align: left; cursor: pointer; }
+    .demo-fold:hover { background: var(--surface); }
+    .demo-fold__label { flex: none; }
+    .demo-fold small { color: var(--muted); }
+    .demo-fold__chev { width: 7px; height: 7px; margin-left: auto; border-right: 1.6px solid var(--muted);
+      border-bottom: 1.6px solid var(--muted); transform: rotate(45deg); transition: transform .15s ease; }
+    .demo-fold__chev--open { transform: rotate(-135deg); }
     .product-row__primary {
       display: flex; min-width: 0; flex-wrap: wrap; align-items: center;
       justify-content: space-between; gap: 4px 8px;
@@ -618,7 +661,7 @@ export class ProductList {
   readonly query = signal('');
   readonly categoryFilter = signal<number | null>(null);
   readonly statusFilter = signal<'ALL' | 'NEEDS_WORK' | 'WEBSITE' | 'ORDER_APP' | 'INACTIVE'>('ALL');
-  readonly sortKey = signal<SortKey>('NAME_ASC');
+  readonly sortKey = signal<SortKey>('STOCK_SMART');
   readonly filtersOpen = signal(false);
   /** How many of category, status and sorting stand off their default. */
   readonly activeFilterCount = computed(() =>
@@ -626,6 +669,7 @@ export class ProductList {
     + (!this.familyLoadError() && this.statusFilter() !== 'ALL' ? 1 : 0)
     + (this.sortKey() !== 'NAME_ASC' ? 1 : 0));
   readonly sortOptions = computed<{ key: SortKey; label: string }[]>(() => [
+    { key: 'STOCK_SMART', label: 'Voorraad (standaard)' },
     { key: 'NAME_ASC', label: 'Naam A–Z' },
     { key: 'NAME_DESC', label: 'Naam Z–A' },
     { key: 'SKU', label: 'SKU' },
@@ -772,6 +816,11 @@ export class ProductList {
     return groups.sort((a, b) => this.compareGroups(a, b));
   });
 
+  /** Fully-demo series and loose demo pieces live behind the fold at the bottom. */
+  readonly demoGroups = computed(() => this.groups().filter((group) => this.groupAllDemo(group)));
+  readonly demoOpen = signal(true);
+  readonly showDemoFold = computed(() => this.demoOpen() || this.query().trim().length > 0);
+
   /** Alphabetical unless told otherwise; names compare the Belgian way (é, ij). */
   private comparator(): (a: Product, b: Product) => number {
     const text = (pick: (p: Product) => string | null | undefined, reverse = false) =>
@@ -785,7 +834,15 @@ export class ProductList {
         if (right === null) return -1;
         return (reverse ? -1 : 1) * (left - right);
       };
+    /* The default reading order of a warehouse: what you can sell now on
+       top (most first), then what is on the water, then the empty shelves,
+       and demo pieces - not for sale - at the very bottom. */
+    const tier = (p: Product) =>
+      p.demo ? 3 : (this.stockOf(p) > 0 ? 0 : (this.expectedFor(p) ? 1 : 2));
     switch (this.sortKey()) {
+      case 'STOCK_SMART': return (a, b) => tier(a) - tier(b)
+        || (this.stockOf(b) - this.stockOf(a))
+        || text((p) => p.name)(a, b);
       case 'NAME_DESC': return text((p) => p.name, true);
       case 'SKU': return text((p) => p.sku);
       case 'STOCK_DESC': return num((p) => p.stockQuantity ?? 0, true);
@@ -802,11 +859,24 @@ export class ProductList {
    * A series sorts by its best-placed variant, except by name, where the
    * series name counts - the variants share it anyway.
    */
+  readonly demoCount = computed(() =>
+    this.demoGroups().reduce((sum, group) => sum + group.products.length, 0));
+
+  groupAllDemo(group: ProductGroup): boolean {
+    return group.products.length > 0 && group.products.every((product) => product.demo);
+  }
+
   private compareGroups(a: ProductGroup, b: ProductGroup): number {
     const key = this.sortKey();
     if (key === 'NAME_ASC' || key === 'NAME_DESC') {
       return (key === 'NAME_DESC' ? -1 : 1)
         * a.name.localeCompare(b.name, 'nl', { numeric: true, sensitivity: 'base' });
+    }
+    if (key === 'STOCK_SMART') {
+      const tier = (g: ProductGroup) => g.products.every((p) => p.demo) ? 3
+        : (g.stock > 0 ? 0 : (g.products.some((p) => this.expectedFor(p)) ? 1 : 2));
+      return tier(a) - tier(b) || (b.stock - a.stock)
+        || a.name.localeCompare(b.name, 'nl', { numeric: true, sensitivity: 'base' });
     }
     return this.comparator()(a.products[0], b.products[0]);
   }
@@ -817,7 +887,7 @@ export class ProductList {
    * heading, nor does a search - there the hits should stand alone.
    */
   readonly sections = computed<ProductSection[]>(() => {
-    const groups = this.groups();
+    const groups = this.groups().filter((group) => !this.groupAllDemo(group));
     if (!groups.length) return [];
     if (this.categoryFilter() !== null || this.query().trim()) {
       return [{ key: 'all', name: null, count: groups.length, groups }];

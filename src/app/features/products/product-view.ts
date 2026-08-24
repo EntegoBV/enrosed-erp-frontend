@@ -133,9 +133,9 @@ interface GalleryPointer {
 
             <div class="hero-summary">
               <div class="hero-summary__topline">
-                <span class="badge" [class.badge--ok]="product.active"
-                      [class.badge--warn]="!product.active">
-                  {{ product.active ? 'Actief' : 'Inactief' }}
+                <span class="badge" [class.badge--ok]="product.active && !product.demo"
+                      [class.badge--warn]="!product.active || product.demo">
+                  {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
                 </span>
                 @if (categoryName()) { <span class="hero-summary__category">{{ categoryName() }}</span> }
               </div>

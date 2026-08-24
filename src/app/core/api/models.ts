@@ -150,6 +150,8 @@ export interface Product {
   categoryId: number | null;
   supplierId: number | null;
   active: boolean;
+  /** A demo piece: shown, never sold; invisible to every public channel. */
+  demo?: boolean;
   /** Optional merchandising parent shared by colour/size SKUs. */
   familyKey: string | null;
   /** Stable URL identity used by the website and ordering app. */

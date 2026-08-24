@@ -32,6 +32,7 @@ import {
   withUsdToEur,
 } from './purchase-cost-labels';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
+import { PurchaseStatusSuccess } from './purchase-status-success';
 
 /**
  * Landed-cost calculation of a container.
@@ -58,7 +59,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
-            SupplierAddress, PurchaseOrderedSuccess,
+            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
   template: `
     @if (view(); as data) {
@@ -154,7 +155,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             <div class="po-fact">
               <span class="po-fact__label">Lading</span>
               @if (!isDdp() && data.costing.containerFill; as fill) {
-                <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | num: 0 }}% · {{ data.costing.totals.pieces | num }} st</strong>
+                <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
+                        [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
+                        [class.fill-pct--danger]="fill.fillPercent > 105">{{ fill.fillPercent | num: 0 }}% · {{ data.costing.totals.pieces | num }} st</strong>
               } @else {
                 <strong>{{ data.costing.totals.pieces | num }} st</strong>
               }
@@ -721,7 +724,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <span class="fill-overview__label">
                         {{ containerLabel(data.order.containerType) }}
                       </span>
-                      <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | num: 0 }}%</strong>
+                      <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
+                              [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
+                              [class.fill-pct--danger]="fill.fillPercent > 105">{{ fill.fillPercent | num: 0 }}%</strong>
                     </div>
                     <span>{{ fill.usedCbm | cbm }} van {{ fill.capacityCbm }} m³</span>
                   </div>
@@ -730,16 +735,26 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                        aria-valuemin="0" aria-valuemax="100"
                        [attr.aria-valuenow]="fill.fillPercent">
                     <div class="meter__fill"
-                         [class.meter__fill--warn]="fill.overflowCbm > 0"
+                         [class.meter__fill--warn]="fill.fillPercent > 100 && fill.fillPercent <= 105"
+                         [class.meter__fill--danger]="fill.fillPercent > 105"
                          [class.meter__fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
-                         [style.width.%]="fill.fillPercent"></div>
+                         [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></div>
                   </div>
-                  @if (fill.overflowCbm > 0) {
+                  @if (fill.fillPercent > 105) {
                     <div class="alert alert--danger capacity-alert">
                       <span class="alert__icon" aria-hidden="true">!</span>
                       <div>
-                        Te vol voor één {{ containerLabel(data.order.containerType) }}:
-                        <b>{{ fill.overflowCbm | cbm }} te veel</b>.
+                        <b>{{ fill.fillPercent | num: 0 }}%</b> · te vol voor één {{ containerLabel(data.order.containerType) }}:
+                        <b>{{ fill.overflowCbm | cbm }} te veel</b>. Haal er lading af of neem een tweede container.
+                      </div>
+                    </div>
+                  } @else if (fill.fillPercent > 100) {
+                    <!-- Just over the line: often still loadable with clever stacking. -->
+                    <div class="alert capacity-alert capacity-alert--tight">
+                      <span class="alert__icon" aria-hidden="true">!</span>
+                      <div>
+                        <b>{{ fill.fillPercent | num: 0 }}%</b> · {{ fill.overflowCbm | cbm }} boven de {{ containerLabel(data.order.containerType) }}.
+                        Vaak past dit nog net; reken niet op meer.
                       </div>
                     </div>
                   }
@@ -1311,6 +1326,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                       (closed)="closeOrderPlaced()"
                                       (overview)="openOrderView()" />
       }
+      @if (statusCelebration(); as celebration) {
+        <app-purchase-status-success [kind]="celebration" [orderNumber]="data.order.number"
+                                     [showAction]="celebration === 'SHIPPED' ? !data.order.trackingReference : !(data.order.stockBooked ?? true)"
+                                     (closed)="statusCelebration.set(null)"
+                                     (action)="celebrationAction(celebration)" />
+      }
     } @else {
       <app-page-header title="Inkoop" subtitle="Inkooporder laden…"
                        [showBack]="true" [showBell]="false" />
@@ -1330,10 +1351,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     :is(.po-eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
     .po-overview h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.po-overview__copy p{color:var(--muted);font-size:12px}
     .po-status{display:flex;flex:none;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11.5px;font-weight:700}
-    .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok)}.overview-stepper{margin:16px 0}
+    .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}.overview-stepper{margin:16px 0}
     .po-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
     .po-fact--total strong{color:var(--rose-dark)}
-    .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}
+    .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}.fill-overview strong.fill-pct--over,.po-fact strong.fill-pct--over{color:var(--warn)}.fill-overview strong.fill-pct--danger,.po-fact strong.fill-pct--danger{color:var(--danger)}.meter__fill--danger{background:var(--danger)}.capacity-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.capacity-alert--tight .alert__icon{background:var(--warn);color:#fff}
     .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
@@ -1489,10 +1510,7 @@ export class PurchaseEditor {
     if (step.to === 'ONDERWEG') {
       this.enqueue(
         (order) => ({ ...order, status: 'ONDERWEG' }),
-        () => {
-          this.ui.toast('Container vertrokken - vul het track & trace-nummer in bij Ordergegevens', 'ok');
-          if (!this.sectionOpen('order')) this.toggleSection('order');
-        },
+        () => this.statusCelebration.set('SHIPPED'),
       );
       return;
     }
@@ -1846,7 +1864,7 @@ export class PurchaseEditor {
       this.view.set(result);
       this.savedOrder.set(JSON.stringify(result.order));
       this.receiving.set(null);
-      this.ui.toast(draft.bookStock ? 'Container ontvangen en voorraad bijgeboekt' : 'Container ontvangen - nog niet bijgeboekt', 'ok');
+      this.statusCelebration.set('RECEIVED');
       this.products.set(await this.catalog.products(result.order.supplierId));
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Ontvangen mislukt'), 'err');
@@ -2001,6 +2019,17 @@ export class PurchaseEditor {
   readonly picking = signal(false);
   /** Opens only after the server confirms CONCEPT -> BESTELD. */
   readonly orderPlaced = signal(false);
+  /** Which little scene plays: the ship at Vertrokken, the boxes at Ontvangen. */
+  readonly statusCelebration = signal<'SHIPPED' | 'RECEIVED' | null>(null);
+
+  celebrationAction(kind: 'SHIPPED' | 'RECEIVED'): void {
+    this.statusCelebration.set(null);
+    if (kind === 'SHIPPED') {
+      if (!this.sectionOpen('order')) this.toggleSection('order');
+    } else {
+      void this.bookStock();
+    }
+  }
 
   constructor() {
     effect(() => {

@@ -36,7 +36,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
     packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null },
     colour: null, colourHex: null, variantSize: null,
-    description: null, categoryId: null, supplierId, active: true,
+    description: null, categoryId: null, supplierId, active: true, demo: false,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
     barcodeInner: '', barcodeOuter: '', hsCode: '',
     carton: { lengthCm: null, widthCm: null, heightCm: null, piecesPerCarton: 1, weightKg: null },
@@ -120,9 +120,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                a field among the fields. -->
           <select class="select select--status" aria-label="Productstatus"
                   [class.select--status-off]="!draft().active"
-                  [ngModel]="draft().active ? 'actief' : 'inactief'"
-                  (ngModelChange)="patch({ active: $event === 'actief' })">
+                  [ngModel]="!draft().active ? 'inactief' : (draft().demo ? 'demo' : 'actief')"
+                  (ngModelChange)="patch({ active: $event !== 'inactief', demo: $event === 'demo' })">
             <option value="actief">Actief</option>
+            <option value="demo">Demo</option>
             <option value="inactief">Inactief</option>
           </select>
         </div>
@@ -155,7 +156,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </select>
             </div>
                 <div class="field">
-                  <label for="p-colour">Kleur <span class="opt"></span></label>
+                  <label class="req" for="p-colour">Kleur</label>
                   <!-- Compact: a dropdown with the current swatch dot in
                        front of it. Colours typed on other products join the
                        list; "Anders…" opens a name field. An exact sample is
@@ -2673,6 +2674,7 @@ export class ProductEditor implements OnDestroy {
     const missing: { tab: string; field: string; label: string }[] = [];
     if (!this.draft().supplierId) missing.push({ tab: 'identity', field: 'p-supplier', label: 'leverancier' });
     if (!this.draft().name.trim()) missing.push({ tab: 'identity', field: 'p-name', label: 'productnaam' });
+    if (!(this.draft().colour ?? '').trim()) missing.push({ tab: 'identity', field: 'p-colour', label: 'kleur' });
     if ((this.draft().carton.piecesPerCarton ?? 0) <= 0) {
       missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton' });
     }

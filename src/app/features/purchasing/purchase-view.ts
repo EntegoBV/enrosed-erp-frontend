@@ -161,7 +161,8 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                 <p>{{ fill.containerCode }} · {{ fill.usedCbm | cbm }} van {{ fill.capacityCbm | cbm }}</p>
               </div>
               <strong class="capacity-card__percentage"
-                      [class.capacity-card__percentage--over]="fill.overflowCbm > 0"
+                      [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
+                      [class.fill-pct--danger]="fill.fillPercent > 105"
                       [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">
                 {{ fill.fillPercent | pct: 0 }}
               </strong>
@@ -169,14 +170,20 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
             <div class="meter__track capacity-meter" role="meter"
                  aria-label="Containervulling" aria-valuemin="0" aria-valuemax="100"
                  [attr.aria-valuenow]="fill.fillPercent">
-              <div class="meter__fill" [class.meter__fill--warn]="fill.overflowCbm > 0"
+              <div class="meter__fill"
+                   [class.meter__fill--warn]="fill.fillPercent > 100 && fill.fillPercent <= 105"
+                   [class.meter__fill--danger]="fill.fillPercent > 105"
                    [class.meter__fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
                    [style.width.%]="fillWidth(fill.fillPercent)"></div>
             </div>
             <div class="capacity-card__footer">
-              @if (fill.overflowCbm > 0) {
+              @if (fill.fillPercent > 105) {
                 <span class="capacity-state capacity-state--danger">
                   <span aria-hidden="true">!</span> {{ fill.overflowCbm | cbm }} te veel voor één container
+                </span>
+              } @else if (fill.fillPercent > 100) {
+                <span class="capacity-state capacity-state--tight">
+                  <span aria-hidden="true">!</span> {{ fill.overflowCbm | cbm }} boven de container - past vaak nog net
                 </span>
               } @else {
                 <span class="capacity-state capacity-state--ok">
@@ -480,7 +487,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
     :is(.eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
     .journey-hero h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.journey-hero__copy p{color:var(--muted);font-size:12px}
     .status-pill{display:flex;flex:none;align-items:center;gap:6px;padding:6px 9px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11px;font-weight:720}
-    .status-pill__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.status-pill--done{color:var(--ok)}
+    .status-pill__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.status-pill--done{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}
 
     .route-strip{display:flex;align-items:center;gap:7px;margin:15px 0;padding:10px;border:1px solid color-mix(in srgb,var(--line) 74%,transparent);border-radius:14px;background:color-mix(in srgb,var(--surface) 82%,transparent)}
     .route-stop{display:flex;min-width:0;align-items:center;gap:7px}.route-stop--end{text-align:right}.route-stop__dot{width:9px;height:9px;flex:none;border:2px solid var(--rose);border-radius:50%;background:var(--surface)}
@@ -492,6 +499,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
     .pay-stream{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-ours{margin-top:10px;color:var(--muted);font-size:11.5px}.doc-list{list-style:none;margin:8px 0 0;padding:0;border-top:1px solid var(--line)}.doc-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.doc-list li:last-child{border-bottom:0}
 .po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}
     .capacity-card__percentage.fill-pct--full{color:var(--ok)}
+    .capacity-card__percentage.fill-pct--over{color:var(--warn)}.capacity-card__percentage.fill-pct--danger{color:var(--danger)}.capacity-state--tight{color:var(--warn);font-weight:650}.meter__fill--danger{background:var(--danger)}
     .overview-fact{min-width:0;padding:9px 10px;background:var(--surface)}.overview-fact span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.overview-fact strong{display:block;overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 
     .capacity-card{margin-bottom:12px;padding:14px;overflow:hidden}.capacity-card__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.capacity-card h2{font-size:16px}.capacity-card__top p{color:var(--muted);font-size:11px}.capacity-card__percentage{color:var(--rose);font-size:25px;line-height:1}.capacity-card__percentage--over{color:var(--danger)}

@@ -32,11 +32,9 @@ interface StockGroup {
 }
 
 /**
- * Stock across locations: what lies where, moving it, and counting it.
- *
- * Built for the two moments that matter: loading the van for a stand
- * (Verplaatsen) and standing at that stand with a phone, counting
- * (Telling). Everything lands in the stock book with one reference.
+ * Stock across locations: what lies where, correcting it, moving it,
+ * and noting what broke or left as demo. Everything lands in the stock
+ * book with a reference.
  */
 @Component({
   selector: 'app-stock-page',
@@ -44,8 +42,10 @@ interface StockGroup {
   imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet],
   template: `
     <app-page-header [showBack]="true" backTo="/more" title="Voorraad" [subtitle]="subtitle()">
-      @if (!counting()) {
-        <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="startCount()">Telling</button>
+      @if (editing()) {
+        <button class="btn btn--primary btn--sm" type="button" (click)="editing.set(false)">Klaar</button>
+      } @else {
+        <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="editing.set(true)">Bewerken</button>
       }
     </app-page-header>
 
@@ -85,7 +85,7 @@ interface StockGroup {
           <!-- Which location you are looking at; "Alle" shows the figures side by side. -->
           <label class="filter-field">
             <span class="filter-field__label">Locatie</span>
-            <select class="select filter-field__select" aria-label="Locatie" [disabled]="!!counting()"
+            <select class="select filter-field__select" aria-label="Locatie"
                     [ngModel]="view()" (ngModelChange)="view.set($event)">
               <option [ngValue]="null">Alle locaties</option>
               @for (location of activeLocations(); track location.id) {
@@ -136,15 +136,13 @@ interface StockGroup {
         }
       </section>
 
-      @if (counting(); as count) {
-        <div class="count-bar" role="status">
+      @if (editing()) {
+        <div class="count-bar edit-bar" role="status">
           <div>
-            <b>Telling · {{ locationName(count.locationId) }}</b>
-            <small>Vul het getelde aantal in; leeg = ongewijzigd. {{ changedCounts().length }} verschil(len).</small>
+            <b>Bewerken</b>
+            <small>Tik een getal aan om het te corrigeren, of meld stuk/demo met de knop op de rij.</small>
           </div>
-          <button class="btn btn--sm" type="button" (click)="counting.set(null)">Annuleren</button>
-          <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || !changedCounts().length"
-                  (click)="confirmCount()">{{ saving() ? 'Bezig…' : 'Telling bevestigen' }}</button>
+          <button class="btn btn--primary btn--sm" type="button" (click)="editing.set(false)">Klaar</button>
         </div>
       }
 
@@ -216,9 +214,8 @@ interface StockGroup {
                         <span>{{ locationName(view()!) }}</span>
                         <strong class="num">{{ (group.byLocation.get(view()!) ?? 0) | num }}</strong>
                       </span>
-                      @if (counting()) { <span class="stock-row__figure stock-row__figure--count"></span> }
                     }
-                    @if (!counting()) { <span class="stock-row__move stock-row__move--blank"></span> }
+                    <span class="stock-row__move stock-row__move--blank"></span>
                   </span>
                 </button>
                 @if (isOpen(group)) {
@@ -240,7 +237,7 @@ interface StockGroup {
     </div>
 
     <ng-template #stockRow let-row let-nested="nested">
-      <div class="list-item stock-row" [class.list-item--nested]="nested" [class.stock-row--changed]="isChanged(row.product.id!)">
+      <div class="list-item stock-row" [class.list-item--nested]="nested">
         <!-- The name opens the product's stock sheet: figures, moving, the book. -->
         <button class="stock-row__product" type="button" (click)="openBook(row)">
           @if (row.product.photos.length) {
@@ -272,13 +269,17 @@ interface StockGroup {
             @for (location of activeLocations(); track location.id) {
               <div class="stock-row__figure stock-row__figure--location">
                 <span>{{ location.name }}</span>
-                <input class="stock-row__qty num" type="number" min="0" step="1"
-                       inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
-                       [attr.aria-label]="row.product.name + ' op ' + location.name"
-                       [value]="row.byLocation.get(location.id!) ?? 0"
-                       (keydown.enter)="$any($event.target).blur()"
-                       (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
-                       (change)="setQuantity(row, location.id!, $any($event.target))" />
+                @if (editing()) {
+                  <input class="stock-row__qty stock-row__qty--live num" type="number" min="0" step="1"
+                         inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
+                         [attr.aria-label]="row.product.name + ' op ' + location.name"
+                         [value]="row.byLocation.get(location.id!) ?? 0"
+                         (keydown.enter)="$any($event.target).blur()"
+                         (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
+                         (change)="setQuantity(row, location.id!, $any($event.target))" />
+                } @else {
+                  <strong class="num stock-row__qty-static" [class.muted]="!row.byLocation.get(location.id!)">{{ (row.byLocation.get(location.id!) ?? 0) | num }}</strong>
+                }
               </div>
             }
             <div class="stock-row__figure stock-row__figure--total">
@@ -288,25 +289,25 @@ interface StockGroup {
           } @else {
             <div class="stock-row__figure">
               <span>{{ locationName(view()!) }}</span>
-              <input class="stock-row__qty num" type="number" min="0" step="1"
-                     inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
-                     [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
-                     [value]="row.byLocation.get(view()!) ?? 0"
-                     (keydown.enter)="$any($event.target).blur()"
-                     (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
-                     (change)="setQuantity(row, view()!, $any($event.target))" />
+              @if (editing()) {
+                <input class="stock-row__qty stock-row__qty--live num" type="number" min="0" step="1"
+                       inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
+                       [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
+                       [value]="row.byLocation.get(view()!) ?? 0"
+                       (keydown.enter)="$any($event.target).blur()"
+                       (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
+                       (change)="setQuantity(row, view()!, $any($event.target))" />
+              } @else {
+                <strong class="num stock-row__qty-static" [class.muted]="!row.byLocation.get(view()!)">{{ (row.byLocation.get(view()!) ?? 0) | num }}</strong>
+              }
             </div>
-            @if (counting()) {
-              <div class="stock-row__figure stock-row__figure--count">
-                <span>Geteld</span>
-                <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
-                       [attr.aria-label]="'Geteld: ' + row.product.name"
-                       [ngModel]="countDraft().get(row.product.id!) ?? null"
-                       (ngModelChange)="setCount(row.product.id!, $event)" />
-              </div>
-            }
           }
-          @if (!counting()) {
+          @if (editing()) {
+            <!-- Broken on the shelf, or handed out as demo: one round mark. -->
+            <button class="stock-row__move stock-row__issue" type="button" title="Stuk of demo melden"
+                    [attr.aria-label]="'Stuk of demo melden voor ' + row.product.name"
+                    (click)="openTakeout(row)">!</button>
+          } @else {
             <button class="stock-row__move" type="button" title="Verplaatsen" aria-label="Verplaatsen"
                     (click)="openBook(row, true)">⇄</button>
           }
@@ -314,13 +315,60 @@ interface StockGroup {
       </div>
     </ng-template>
 
+    <!-- Broken or given away as demo: the piece leaves the shelf with a
+         note that says why, iOS-style in one small sheet. -->
+    @if (takeout(); as out) {
+      <app-sheet [title]="'Stuk of demo · ' + out.row.product.name" (closed)="takeout.set(null)">
+        <div body>
+          <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
+            <button type="button" [class.on]="out.kind === 'DAMAGED'"
+                    (click)="takeout.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
+            <button type="button" [class.on]="out.kind === 'DEMO'"
+                    (click)="takeout.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
+          </div>
+          <div class="form-grid mt-12">
+            @if (activeLocations().length > 1) {
+              <div class="field">
+                <label for="to-loc">Locatie</label>
+                <select class="select" id="to-loc" [ngModel]="out.locationId"
+                        (ngModelChange)="takeout.set({ ...out, locationId: +$event })">
+                  @for (location of activeLocations(); track location.id) {
+                    <option [value]="location.id">{{ location.name }} ({{ (out.row.byLocation.get(location.id!) ?? 0) | num }})</option>
+                  }
+                </select>
+              </div>
+            }
+            <div class="field">
+              <label class="req" for="to-qty">Aantal</label>
+              <input class="input num right" id="to-qty" type="number" min="1" step="1" inputmode="numeric"
+                     [ngModel]="out.quantity || null" (ngModelChange)="takeout.set({ ...out, quantity: +$event })" />
+            </div>
+            <div class="field span-2">
+              <label for="to-note">Notitie <span class="opt"></span></label>
+              <input class="input" id="to-note" [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens'"
+                     [ngModel]="out.note" (ngModelChange)="takeout.set({ ...out, note: $event })" />
+            </div>
+          </div>
+          <p class="hint mt-8">Op {{ locationName(out.locationId) }} liggen {{ (out.row.byLocation.get(out.locationId) ?? 0) | num }} stuks.
+            {{ out.quantity > 0 ? 'Er gaan er ' + out.quantity + ' uit de voorraad, geteld als ' + (out.kind === 'DAMAGED' ? 'beschadigd' : 'demo') + '.' : '' }}</p>
+        </div>
+        <div foot style="display:contents">
+          <span class="spacer"></span>
+          <button class="btn" type="button" (click)="takeout.set(null)">Annuleren</button>
+          <button class="btn btn--primary" type="button" [disabled]="saving() || !(out.quantity > 0)"
+                  (click)="confirmTakeout()">{{ saving() ? 'Bezig…' : 'Melden' }}</button>
+        </div>
+      </app-sheet>
+    }
+
     <!-- One sheet per product: the figures (typed straight in), moving
          between locations, and the book underneath. Nothing opens on top
          of it. -->
     @if (book(); as book) {
       <app-sheet [title]="book.row.product.name" (closed)="closeBook()">
         <div body>
-          <p class="hint">{{ book.row.product.sku }}@if (book.row.product.colour) { · {{ book.row.product.colour }}} · {{ book.row.total | num }} stuks op {{ activeLocations().length }} locatie{{ activeLocations().length === 1 ? '' : 's' }}</p>
+          <p class="book-sub">{{ book.row.product.sku }}@if (book.row.product.colour) { · {{ book.row.product.colour }}}
+            <b>{{ book.row.total | num }} stuks</b></p>
           <div class="history-levels">
             @for (location of activeLocations(); track location.id) {
               <label class="history-levels__tile">
@@ -342,6 +390,20 @@ interface StockGroup {
             }
           </div>
           <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt.</p>
+
+          <!-- The three things you come here to do, side by side like an
+               iOS action row: move it, write off breakage or demo, open it. -->
+          <div class="book-actions" role="group" aria-label="Acties">
+            <button class="book-action" type="button" [class.book-action--on]="!!transfer()" (click)="transfer() ? transfer.set(null) : openTransfer()">
+              <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
+            </button>
+            <button class="book-action" type="button" (click)="takeoutFromBook()">
+              <i aria-hidden="true" class="book-action__warn">!</i><span>Stuk / demo</span>
+            </button>
+            <a class="book-action" [routerLink]="['/products', book.row.product.id]" (click)="closeBook()">
+              <i aria-hidden="true">›</i><span>Product</span>
+            </a>
+          </div>
 
           @if (transfer(); as move) {
             <div class="transfer-box">
@@ -380,7 +442,7 @@ interface StockGroup {
           @if (book.moves; as moves) {
             @if (moves.length) {
               <ol class="history-list">
-                @for (move of moves; track move.id) {
+                @for (move of historyOpen() ? moves : moves.slice(0, 2); track move.id) {
                   <li>
                     <span class="history-delta num" [class.history-delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</span>
                     <span class="history-what">
@@ -391,14 +453,19 @@ interface StockGroup {
                   </li>
                 }
               </ol>
+              @if (moves.length > 2) {
+                <button class="history-more" type="button" [attr.aria-expanded]="historyOpen()"
+                        (click)="historyOpen.set(!historyOpen())">
+                  {{ historyOpen() ? 'Minder tonen' : 'Alles tonen (' + moves.length + ')' }}
+                  <i class="history-more__chev" [class.history-more__chev--open]="historyOpen()" aria-hidden="true"></i>
+                </button>
+              }
             } @else { <p class="hint">Nog geen bewegingen geboekt.</p> }
           } @else { <p class="hint">Geschiedenis laden…</p> }
         </div>
         <div foot style="display:contents">
-          <a class="btn" [routerLink]="['/products', book.row.product.id]" (click)="closeBook()">Product openen</a>
-          @if (!transfer()) {
-            <button class="btn btn--primary" type="button" (click)="openTransfer()">Verplaatsen</button>
-          }
+          <span class="spacer"></span>
+          <button class="btn" type="button" (click)="closeBook()">Sluiten</button>
         </div>
       </app-sheet>
     }
@@ -533,6 +600,11 @@ interface StockGroup {
     .thumb--sm { width: 36px; height: 36px; }
     .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgb(0 0 0 / 14%); }
     .stock-row__move--blank { visibility: hidden; }
+    .stock-row__qty-static { padding: 4px 6px; font-size: 13px; font-weight: 650; }
+    .edit-bar { border-color: var(--rose-line); background: var(--rose-soft); }
+    .stock-row__issue { border-color: #eddcb9; background: var(--warn-soft); color: var(--warn); font-weight: 800; }
+    .stock-row__issue:hover { background: #f7e8cd; color: var(--warn); }
+    .takeout-kind { margin-top: 2px; }
     .stock-row--changed { background: var(--warn-soft); }
     .stock-row__product { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0;
       background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -584,6 +656,26 @@ interface StockGroup {
     .history-levels__qty::-webkit-outer-spin-button, .history-levels__qty::-webkit-inner-spin-button { display: none; }
     .history-levels__qty:hover { border-color: var(--line); background: var(--surface); }
     .history-levels__qty:focus { outline: none; border-color: var(--rose); background: var(--surface); }
+    .book-sub { margin: -6px 0 10px; color: var(--muted); font-size: 12.5px; }
+    .book-sub b { color: var(--ink); font-weight: 700; margin-left: 6px; }
+    .book-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 14px; }
+    .book-action { display: grid; justify-items: center; gap: 4px; padding: 10px 6px 8px;
+      border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); color: var(--ink-2);
+      font: inherit; font-size: 11.5px; font-weight: 650; text-decoration: none; cursor: pointer;
+      transition: transform .12s ease, background .15s ease; }
+    .book-action:active { transform: scale(.96); }
+    .book-action:hover { background: var(--surface); border-color: var(--line-strong); }
+    .book-action--on { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+    .book-action i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+      background: var(--surface); border: 1px solid var(--line-strong); font-style: normal; font-size: 15px; font-weight: 700; }
+    .book-action--on i { border-color: var(--rose); color: var(--rose-dark); }
+    .book-action__warn { background: var(--warn-soft) !important; border-color: #eddcb9 !important; color: var(--warn); }
+    .history-more { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center;
+      padding: 9px 0 2px; border: 0; background: transparent; color: var(--rose-dark);
+      font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+    .history-more__chev { width: 7px; height: 7px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+      transform: rotate(45deg); transition: transform .15s ease; }
+    .history-more__chev--open { transform: rotate(-135deg); }
     .transfer-box { margin-top: 4px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
     .transfer-box .history-title { margin-top: 0; }
     .transfer-box__actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
@@ -651,14 +743,13 @@ export class StockPage {
     { key: 'EXPECTED', label: 'Te verwachten eerst' },
   ];
   readonly sortLabel = computed(() => this.sortOptions.find((option) => option.key === this.sortKey())?.label ?? '');
-  /* A count pins the location; that is not a filter you chose, so it does not light the button. */
   readonly activeFilterCount = computed(() =>
-    (this.view() !== null && !this.counting() ? 1 : 0) + (this.categoryFilter() !== null ? 1 : 0)
+    (this.view() !== null ? 1 : 0) + (this.categoryFilter() !== null ? 1 : 0)
     + (this.sortKey() !== 'NAME_ASC' ? 1 : 0));
   readonly hasFilters = computed(() => this.activeFilterCount() > 0);
 
   resetFilters(): void {
-    if (!this.counting()) this.view.set(null);
+    this.view.set(null);
     this.categoryFilter.set(null);
     this.sortKey.set('NAME_ASC');
   }
@@ -761,11 +852,22 @@ export class StockPage {
     return row ? { row, moves: this.bookMoves() } : null;
   });
 
+  readonly historyOpen = signal(false);
+
   openBook(row: StockRow, moving = false): void {
     this.bookProductId.set(row.product.id!);
     this.transfer.set(null);
+    this.historyOpen.set(false);
     void this.loadMoves(row.product.id!);
     if (moving) this.openTransfer();
+  }
+
+  /** Stuk/demo from inside the book: the small sheet takes over. */
+  takeoutFromBook(): void {
+    const row = this.book()?.row;
+    if (!row) return;
+    this.closeBook();
+    this.openTakeout(row);
   }
 
   closeBook(): void {
@@ -815,6 +917,38 @@ export class StockPage {
 
   locationName(id: number): string {
     return this.locations().find((location) => location.id === id)?.name ?? '';
+  }
+
+  /* ---- edit mode: figures typed straight in, stuk/demo per row ---- */
+  readonly editing = signal(false);
+  readonly takeout = signal<{ row: StockRow; kind: 'DAMAGED' | 'DEMO'; locationId: number; quantity: number; note: string } | null>(null);
+
+  openTakeout(row: StockRow): void {
+    const locations = this.activeLocations();
+    const withStock = locations.find((location) => (row.byLocation.get(location.id!) ?? 0) > 0);
+    this.takeout.set({ row, kind: 'DAMAGED',
+      locationId: this.view() ?? withStock?.id ?? locations[0]?.id ?? 0, quantity: 0, note: '' });
+  }
+
+  async confirmTakeout(): Promise<void> {
+    const out = this.takeout();
+    if (!out || !(out.quantity > 0)) return;
+    const at = out.row.byLocation.get(out.locationId) ?? 0;
+    if (out.quantity > at) { this.ui.toast(`Op ${this.locationName(out.locationId)} liggen maar ${at} stuks`, 'err'); return; }
+    this.saving.set(true);
+    try {
+      await this.catalog.takeOutStock(out.row.product.id!, {
+        locationId: out.locationId, quantity: out.quantity, kind: out.kind, note: out.note || null });
+      this.levels.set(await this.catalog.stockLevels());
+      this.takeout.set(null);
+      this.ui.toast(out.kind === 'DAMAGED'
+        ? `${out.quantity} stuks als beschadigd afgeboekt`
+        : `${out.quantity} stuks als demo afgeboekt`, 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Afboeken mislukt'), 'err');
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   /* ---- transfer, inside the sheet ---- */
@@ -876,60 +1010,4 @@ export class StockPage {
     }
   }
 
-  /* ---- stocktake ---- */
-  readonly counting = signal<{ locationId: number } | null>(null);
-  readonly countDraft = signal(new Map<number, number | null>());
-
-  startCount(): void {
-    const locationId = this.view() ?? this.activeLocations()[0]?.id ?? null;
-    if (locationId === null) return;
-    this.view.set(locationId);
-    this.countDraft.set(new Map());
-    this.counting.set({ locationId });
-  }
-
-  setCount(productId: number, value: unknown): void {
-    const quantity = value === '' || value === null || value === undefined ? null : Number(value);
-    this.countDraft.update((draft) => new Map(draft).set(productId, quantity));
-  }
-
-  isChanged(productId: number): boolean {
-    const count = this.counting();
-    if (!count) return false;
-    const counted = this.countDraft().get(productId);
-    if (counted === null || counted === undefined) return false;
-    const current = this.rows().find((row) => row.product.id === productId)?.byLocation.get(count.locationId) ?? 0;
-    return counted !== current;
-  }
-
-  readonly changedCounts = computed(() => {
-    const count = this.counting();
-    if (!count) return [];
-    const result: { productId: number; quantity: number }[] = [];
-    for (const [productId, quantity] of this.countDraft()) {
-      if (quantity === null || quantity === undefined || quantity < 0) continue;
-      const current = this.rows().find((row) => row.product.id === productId)?.byLocation.get(count.locationId) ?? 0;
-      if (quantity !== current) result.push({ productId, quantity });
-    }
-    return result;
-  });
-
-  async confirmCount(): Promise<void> {
-    const count = this.counting();
-    const counts = this.changedCounts();
-    if (!count || !counts.length) return;
-    this.saving.set(true);
-    try {
-      /* The kind already says "Telling"; the reference says where and when. */
-      const today = new Date().toLocaleDateString('nl-BE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      await this.catalog.stocktake(count.locationId, `${this.locationName(count.locationId)} ${today}`, counts);
-      this.levels.set(await this.catalog.stockLevels());
-      this.counting.set(null);
-      this.ui.toast(`Telling geboekt: ${counts.length} product(en) aangepast`, 'ok');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Telling boeken mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
-  }
 }
