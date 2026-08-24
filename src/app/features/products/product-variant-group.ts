@@ -109,6 +109,10 @@ import { Sheet, Ui } from '../../shared/ui';
               </small>
             </div>
             <a class="btn btn--sm" [routerLink]="['/products', sibling.id]">Openen</a>
+            <button class="variant-peek__unlink" type="button" title="Uit de reeks halen"
+                    [disabled]="unlinking()"
+                    [attr.aria-label]="sibling.name + ' uit de reeks halen'"
+                    (click)="unlinkSibling(sibling)">×</button>
           } @else {
             <span class="small muted">Laden…</span>
           }
@@ -192,6 +196,9 @@ import { Sheet, Ui } from '../../shared/ui';
     }
   `,
   styles: `
+    .variant-peek__unlink { width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px;
+      background: var(--surface); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+    .variant-peek__unlink:hover { background: var(--danger-soft); border-color: #efcdc9; color: var(--danger); }
     :host { display: block; }
     .variant-group {
       padding: 15px;
@@ -296,6 +303,32 @@ export class ProductVariantGroup {
   readonly family = input<ProductFamily | null>(null);
   readonly disabled = input(false);
   readonly linked = output<ProductFamily>();
+  readonly unlinking = signal(false);
+
+  /** Takes a variant out of the series; the product itself stays. */
+  unlinkSibling(sibling: Product): void {
+    const group = this.family();
+    if (!group || group.id === null || sibling.id === null) return;
+    const familyId = group.id;
+    this.ui.confirm(
+      { title: 'Uit de reeks halen',
+        message: `<b>${sibling.name}</b> loskoppelen van deze reeks? Het product blijft gewoon bestaan.`,
+        confirmLabel: 'Loskoppelen', danger: true },
+      async () => {
+        this.unlinking.set(true);
+        try {
+          await this.catalog.assignProductFamily(sibling.id!, null);
+          const fresh = await this.catalog.productFamily(familyId);
+          this.peekId.set(null);
+          this.linked.emit(fresh);
+          this.ui.toast(`${sibling.name} losgekoppeld`, 'ok');
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, 'Loskoppelen mislukt'), 'err');
+        } finally {
+          this.unlinking.set(false);
+        }
+      });
+  }
   /** The series itself changed (its name); the editor saves it with the product. */
   readonly familyChange = output<ProductFamily>();
 

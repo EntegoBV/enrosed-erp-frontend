@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
+import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
@@ -17,6 +18,7 @@ import { messageOf } from '../../core/api/errors';
 import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { WorkQueue } from '../../core/api/work-queue';
 import { Sheet, Ui } from '../../shared/ui';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
@@ -37,7 +39,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
@@ -125,6 +127,19 @@ import {
               <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</span>
             </div>
           </div>
+
+          @if (data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+            <!-- The country's minimum rides with the totals, in view the
+                 whole time you build; green the moment it is met. -->
+            <div class="hero-min" [class.hero-min--ok]="data.priced.validation.meetsMinimum" role="status">
+              <span class="hero-min__label">Minimumorder {{ data.priced.validation.minOrderValue | eur: 0 }}</span>
+              <b>
+                @if (data.priced.validation.meetsMinimum) { ✓ bereikt }
+                @else { nog − {{ data.priced.validation.shortfall | eur: 0 }} }
+              </b>
+              <i class="hero-min__track" aria-hidden="true"><i [style.width.%]="minimumPercent()"></i></i>
+            </div>
+          }
 
           @if (historyOpen()) {
             <div class="quote-history" id="quote-history">
@@ -219,17 +234,22 @@ import {
         <div class="workflow-layout">
         <nav class="workflow-nav" aria-label="Onderdelen van de offerte">
           @for (item of workflowSections; track item.id; let number = $index) {
+            <!-- On the phone, Status lives inside the Controle step. -->
+            @if (desktop.active() || item.id !== 'quote-status') {
             <button type="button"
-                    [class.workflow-nav__active]="activeSection() === item.id"
+                    [class.workflow-nav__active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
                     [attr.aria-current]="activeSection() === item.id ? 'step' : null"
                     (click)="scrollToSection(item.id)">
               <span>{{ number + 1 }}</span>{{ item.label }}
             </button>
+            }
           }
         </nav>
         <div class="workflow-content">
 
+
         <!-- ==================================== order -->
+        @if (desktop.active() || phoneStep() === 0) {
         <section class="card form-card" id="quote-setup" aria-labelledby="quote-setup-title">
           <button class="section-toggle" type="button" (click)="toggle('order')"
                   [attr.aria-expanded]="isOpen('order')" aria-controls="quote-setup-body">
@@ -259,23 +279,25 @@ import {
                   }
                 </select>
               </div>
-              <div class="field">
-                <label class="req" for="so-country">Land van levering</label>
-                <select class="select" id="so-country" [ngModel]="data.order.countryCode"
-                        (ngModelChange)="patch({ countryCode: $event })">
-                  @for (country of countries(); track country.code) {
-                    <option [ngValue]="country.code">{{ country.name }}</option>
-                  }
-                </select>
-              </div>
-              <div class="field">
-                <label for="so-incoterm">Incoterm</label>
-                <select class="select" id="so-incoterm" [ngModel]="data.order.incoterm"
-                        (ngModelChange)="patch({ incoterm: $event })">
-                  @for (term of incoterms; track term) {
-                    <option [ngValue]="term">{{ term }}</option>
-                  }
-                </select>
+              <div class="field-duo">
+                <div class="field">
+                  <label class="req" for="so-country">Land van levering</label>
+                  <select class="select" id="so-country" [ngModel]="data.order.countryCode"
+                          (ngModelChange)="patch({ countryCode: $event })">
+                    @for (country of countries(); track country.code) {
+                      <option [ngValue]="country.code">{{ country.name }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="so-incoterm">Incoterm</label>
+                  <select class="select" id="so-incoterm" [ngModel]="data.order.incoterm"
+                          (ngModelChange)="patch({ incoterm: $event })">
+                    @for (term of incoterms; track term) {
+                      <option [ngValue]="term">{{ term }}</option>
+                    }
+                  </select>
+                </div>
               </div>
               <div class="field">
                 <label for="so-pay">Betaalvoorwaarden <span class="opt"></span></label>
@@ -340,89 +362,11 @@ import {
 
         <!-- Pricing is important but not part of every edit. It remains one
              obvious, resumable section instead of a wall of fields. -->
-        <section class="card form-card" aria-labelledby="pricing-title">
-          <button class="section-toggle section-toggle--quiet" type="button"
-                  (click)="toggle('pricing')" [attr.aria-expanded]="isOpen('pricing')"
-                  aria-controls="pricing-body">
-            <span class="section-toggle__icon" aria-hidden="true">%</span>
-            <span class="section-toggle__copy">
-              <strong id="pricing-title">Prijsregels</strong>
-              <span>{{ pricingSummary() }}</span>
-            </span>
-            <span class="section-toggle__chev" aria-hidden="true"
-                  [class.section-toggle__chev--open]="isOpen('pricing')">›</span>
-          </button>
-          <div class="collapse" id="pricing-body"
-               [class.collapse--open]="isOpen('pricing')"><div class="collapse__inner">
-          <div class="card__body">
-            <fieldset class="form-lock" [disabled]="!canEdit()">
-            <p class="card-intro">Bepaal waar de verkoopprijs vandaan komt. Handmatig aangepaste stukprijzen worden gewist wanneer je wisselt.</p>
-            <div class="segmented" role="group" aria-label="Prijsopbouw">
-              <button type="button" [class.segmented__active]="data.order.markupMode === 'PRODUCT'"
-                      [attr.aria-pressed]="data.order.markupMode === 'PRODUCT'"
-                      (click)="setMarkupMode('PRODUCT')">
-                Per product
-              </button>
-              <button type="button" [class.segmented__active]="data.order.markupMode === 'ORDER'"
-                      [attr.aria-pressed]="data.order.markupMode === 'ORDER'"
-                      (click)="setMarkupMode('ORDER')">
-                Hele order
-              </button>
-            </div>
-            @if (data.order.markupMode === 'ORDER') {
-              <div class="field price-field">
-                <label for="so-markup">Opslag op kostprijs</label>
-                <div class="input-affix">
-                  <input class="input num right" id="so-markup" type="number" min="0" step="1"
-                         inputmode="decimal" [ngModel]="data.order.orderMarkupPct"
-                         (ngModelChange)="patch({ orderMarkupPct: +$event })" />
-                  <span class="input-affix__suffix">%</span>
-                </div>
-              </div>
-            } @else {
-              <div class="mode-explanation">
-                <span aria-hidden="true">✓</span>
-                Elk product gebruikt zijn eigen opslag uit de catalogus.
-              </div>
-            }
 
-            <details class="progressive-panel"
-                     [open]="!!data.order.extraDiscountPct || !!data.order.extraDiscountLabel">
-              <summary>
-                <span>Extra orderkorting</span>
-                <span class="progressive-panel__summary">
-                  {{ data.order.extraDiscountPct ? (data.order.extraDiscountPct + '%') : 'optioneel' }}
-                </span>
-              </summary>
-              <div class="progressive-panel__body">
-                <p class="panel-help">
-                  Bovenop staffelkorting, bijvoorbeeld voor een beursactie. De omschrijving
-                  verschijnt op de offerte.
-                </p>
-              <div class="field-row price-discount-fields">
-                <div class="field">
-                  <label for="so-extra-pct">Percentage</label>
-                  <div class="input-affix">
-                    <input class="input num right" id="so-extra-pct" type="number" min="0" max="100"
-                           step="0.5" inputmode="decimal" [ngModel]="data.order.extraDiscountPct"
-                           (ngModelChange)="patch({ extraDiscountPct: $event === null ? null : +$event })" />
-                    <span class="input-affix__suffix">%</span>
-                  </div>
-                </div>
-                <div class="field">
-                  <label for="so-extra-label">Omschrijving</label>
-                  <input class="input" id="so-extra-label" placeholder="Beurskorting"
-                         [value]="data.order.extraDiscountLabel ?? ''"
-                         (change)="patch({ extraDiscountLabel: $any($event.target).value })" />
-                </div>
-              </div></div>
-            </details>
-            </fieldset>
-          </div>
-          </div></div>
-        </section>
+        }
 
         <!-- ==================================== lines -->
+        @if (desktop.active() || phoneStep() === 1) {
         <section class="card products-card" id="order-lines" aria-labelledby="order-lines-title">
           <div class="products-card__head">
             <div class="section-heading">
@@ -432,16 +376,21 @@ import {
                 <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' stuks in deze offerte' : 'Bouw de offerte regel voor regel op' }}</p>
               </div>
             </div>
-            <button class="btn btn--primary btn--sm add-product" type="button"
-                    [disabled]="!canEdit() || !available().length" (click)="openPicker()">
-              <span aria-hidden="true">＋</span> Product
-            </button>
+            @if (data.priced.lines.length) {
+              <button class="btn btn--primary btn--sm add-product" type="button"
+                      [disabled]="!canEdit() || !available().length" (click)="openPicker()">
+                <span aria-hidden="true">＋</span> Product
+              </button>
+            }
           </div>
 
           <div class="product-lines">
             @for (line of data.priced.lines; track line.productId; let index = $index) {
               <article class="order-line" [attr.aria-labelledby]="'line-title-' + line.productId">
                 <div class="order-line__head">
+                  <!-- Photo and name walk through to the product itself. -->
+                  <a class="order-line__link" [routerLink]="['/products', line.productId]"
+                     [title]="line.description + ' openen'">
                   @if (line.photoUrl) {
                     <img class="order-line__photo" [appAuthSrc]="line.photoUrl"
                          alt="" loading="lazy" />
@@ -459,55 +408,73 @@ import {
                       {{ line.cbm | cbm }}
                     </span>
                   </div>
+                  </a>
                   <div class="order-line__amount">
                     <strong>{{ line.net | eur }}</strong>
                     @if (line.discountPct) {
                       <span>Regelkorting −{{ line.discountPct | pct: 1 }}</span>
                     }
                   </div>
+                  <!-- Small and out of the way: the row is about the product,
+                       not about deleting it. -->
+                  <button class="order-line__remove" type="button" [disabled]="!canEdit()"
+                          title="Regel verwijderen" [attr.aria-label]="line.description + ' verwijderen'"
+                          (click)="removeLine(line.productId)">×</button>
                 </div>
 
-                <div class="line-quick-controls">
-                  <div class="quantity-editor">
-                    <div class="field">
-                      <label [attr.for]="'q-' + line.productId">Aantal stuks</label>
-                      <input class="input num" [id]="'q-' + line.productId" type="number"
-                             min="0" step="1" inputmode="numeric" [disabled]="!canEdit()"
-                             [ngModel]="line.quantity"
-                             (ngModelChange)="setLineQuantity(line.productId, +$event)" />
-                      @if (linePending()[line.productId]; as to) {
-                        <span class="hint warn-text" role="status">
-                          Volle doos: wordt <b>{{ to | num }} stuks</b>
-                        </span>
-                      }
+                <!-- Three fields in one calm row: nothing folds, nothing jumps. -->
+                <div class="line-fields">
+                  <div class="field">
+                    <label [attr.for]="'q-' + line.productId">Aantal</label>
+                    <input class="input num" [id]="'q-' + line.productId" type="number"
+                           min="0" step="1" inputmode="numeric" [disabled]="!canEdit()"
+                           [ngModel]="line.quantity"
+                           (ngModelChange)="setLineQuantity(line.productId, +$event)" />
+                    @if (linePending()[line.productId]; as to) {
+                      <span class="hint warn-text" role="status">Volle doos: wordt <b>{{ to | num }} st</b></span>
+                    }
+                  </div>
+                  <div class="field">
+                    <label [attr.for]="'p-' + line.productId">Stukprijs</label>
+                    <div class="input-affix">
+                      <input class="input num" [id]="'p-' + line.productId" type="number"
+                             min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
+                             [ngModel]="line.unitPrice"
+                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
+                      <!-- The discount hides behind its own vertical tab: two
+                           calm fields until you actually want a third. -->
+                      <button class="input-affix__suffix discount-tab" type="button"
+                              [class.discount-tab--on]="discountShown(line)"
+                              [attr.aria-expanded]="discountShown(line)"
+                              (click)="toggleDiscountOpen(line.productId)">korting</button>
                     </div>
                   </div>
-
-                  <details class="line-pricing">
-                    <summary>
-                      <span>Prijs aanpassen</span>
-                      <span>{{ line.unitPrice | eur: 2 }} / stuk@if (line.manualPercent) { · {{ line.manualPercent | pct: 1 }} extra }</span>
-                    </summary>
-                    <div class="line-pricing__fields">
-                      <div class="field">
-                        <label [attr.for]="'p-' + line.productId">Stukprijs</label>
-                        <input class="input num" [id]="'p-' + line.productId" type="number"
-                               min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
-                               [ngModel]="line.unitPrice"
-                               (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
-                      </div>
-                      <div class="field">
-                        <label [attr.for]="'d-' + line.productId">Extra korting</label>
-                        <div class="input-affix">
-                          <input class="input num" [id]="'d-' + line.productId" type="number"
-                                 min="0" max="100" step="0.5" inputmode="decimal"
-                                 [disabled]="!canEdit()" [ngModel]="line.manualPercent"
-                                 (ngModelChange)="setLine(line.productId, { manualDiscountPct: +$event })" />
-                          <span class="input-affix__suffix">%</span>
-                        </div>
-                      </div>
+                  @if (discountShown(line)) {
+                  <div class="field">
+                    <label [attr.for]="'d-' + line.productId">Extra korting</label>
+                    <div class="input-affix">
+                      @if (discountMode(line.productId) === 'EUR') {
+                        <input class="input num" [id]="'d-' + line.productId" type="number"
+                               min="0" step="0.01" inputmode="decimal"
+                               [disabled]="!canEdit()" [ngModel]="lineDiscountEur(line)"
+                               (ngModelChange)="setLineDiscountEur(line, +$event)" />
+                      } @else {
+                        <input class="input num" [id]="'d-' + line.productId" type="number"
+                               min="0" max="100" step="0.5" inputmode="decimal"
+                               [disabled]="!canEdit()" [ngModel]="line.manualPercent"
+                               (ngModelChange)="setLine(line.productId, { manualDiscountPct: +$event })" />
+                      }
+                      <button class="input-affix__suffix discount-flip" type="button"
+                              [title]="discountMode(line.productId) === 'EUR' ? 'Wissel naar procent' : 'Wissel naar euro'"
+                              (click)="flipDiscountMode(line.productId)">
+                        {{ discountMode(line.productId) === 'EUR' ? '€' : '%' }} ⇄
+                      </button>
                     </div>
-                  </details>
+                    @if (discountMode(line.productId) === 'EUR' && line.manualPercent) {
+                      <span class="hint">= {{ line.manualPercent | pct: 2 }}</span>
+                    }
+                  </div>
+                  }
                 </div>
                 @if (line.nextTierAtQuantity) {
                   <div class="tier-nudge">
@@ -578,18 +545,15 @@ import {
 
                   <div class="line-internal__body">
                     <dl class="line-internal__units">
-                      <div>
+                      <!-- Tapping the cost opens where every cent came from. -->
+                      <button class="line-internal__unit line-internal__unit--btn" type="button"
+                              (click)="openCostSheet(line)">
+                        <dt>Gelande kost <i class="stock-tile__chev" aria-hidden="true"></i></dt>
+                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
+                      </button>
+                      <div class="line-internal__unit">
                         <dt>Netto verkoop</dt>
                         <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ stuk</small></dd>
-                      </div>
-                      <div>
-                        <dt>Gelande kost</dt>
-                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
-                      </div>
-                      <div class="line-internal__unit-profit"
-                           [class.line-internal__unit-profit--negative]="marginPerUnit(line) < 0">
-                        <dt>{{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }} per stuk</dt>
-                        <dd>{{ absolute(marginPerUnit(line)) | eur: 2 }}<small>/ stuk</small></dd>
                       </div>
                     </dl>
 
@@ -609,12 +573,6 @@ import {
                   </div>
                 </details>
 
-                <div class="order-line__foot">
-                  <button class="remove-line" type="button" [disabled]="!canEdit()"
-                          (click)="removeLine(line.productId)">
-                    <span aria-hidden="true">×</span> Verwijderen
-                  </button>
-                </div>
               </article>
             } @empty {
               <div class="products-empty">
@@ -629,7 +587,62 @@ import {
           </div>
         </section>
 
+        <!-- Pricing rules ride with the products: they shape the same lines. -->
+        <section class="card pricing-card" aria-labelledby="pricing-title">
+          <!-- One settings row: the summary tells everything; open it only
+               to change something. No prose. -->
+          <button class="pricing-row" type="button" (click)="pricingOpen.set(!pricingOpen())"
+                  [attr.aria-expanded]="pricingOpen()">
+            <span class="pricing-card__icon" aria-hidden="true">%</span>
+            <span class="pricing-row__copy">
+              <strong id="pricing-title">Prijsregels</strong>
+              <small>{{ pricingSummary() }}</small>
+            </span>
+            <i class="pricing-row__chev" [class.pricing-row__chev--open]="pricingOpen()" aria-hidden="true"></i>
+          </button>
+          @if (pricingOpen()) {
+            <fieldset class="form-lock pricing-card__body" [disabled]="!canEdit()">
+              <p class="pricing-help">Waar de verkoopprijs vandaan komt: kostprijs plus opslag.</p>
+              <div class="pricing-card__row pricing-card__row--center">
+                <div class="segmented" role="group" aria-label="Prijsopbouw">
+                  <button type="button" [class.segmented__active]="data.order.markupMode === 'PRODUCT'"
+                          [attr.aria-pressed]="data.order.markupMode === 'PRODUCT'"
+                          (click)="setMarkupMode('PRODUCT')">Opslag per product</button>
+                  <button type="button" [class.segmented__active]="data.order.markupMode === 'ORDER'"
+                          [attr.aria-pressed]="data.order.markupMode === 'ORDER'"
+                          (click)="setMarkupMode('ORDER')">Één opslag</button>
+                </div>
+                @if (data.order.markupMode === 'ORDER') {
+                  <div class="input-affix pricing-card__markup">
+                    <input class="input num right" id="so-markup" type="number" min="0" step="1"
+                           inputmode="decimal" aria-label="Opslag op kostprijs"
+                           [ngModel]="data.order.orderMarkupPct"
+                           (ngModelChange)="patch({ orderMarkupPct: +$event })" />
+                    <span class="input-affix__suffix">%</span>
+                  </div>
+                }
+              </div>
+              <p class="pricing-help">Eventuele korting bovenop de staffels; de naam verschijnt op de offerte.</p>
+              <div class="pricing-card__row pricing-card__row--center">
+                <div class="input-affix pricing-card__markup">
+                  <input class="input num right" id="so-extra-pct" type="number" min="0" max="100"
+                         step="0.5" inputmode="decimal" aria-label="Extra orderkorting"
+                         [ngModel]="data.order.extraDiscountPct"
+                         (ngModelChange)="patch({ extraDiscountPct: $event === null ? null : +$event })" />
+                  <span class="input-affix__suffix">% korting</span>
+                </div>
+                <input class="input pricing-card__label" id="so-extra-label"
+                       placeholder="Naam op de offerte, bijv. beurskorting"
+                       [value]="data.order.extraDiscountLabel ?? ''"
+                       (change)="patch({ extraDiscountLabel: $any($event.target).value })" />
+              </div>
+            </fieldset>
+          }
+        </section>
+        }
+
         <!-- ==================================== transport and delivery -->
+        @if (desktop.active() || phoneStep() === 2) {
         <section class="card logistics-card" id="quote-logistics" aria-labelledby="logistics-title">
           <div class="section-card-head">
             <div class="section-heading">
@@ -732,8 +745,10 @@ import {
             </div>
           </div>
         </section>
+        }
 
-        <!-- ==================================== totals -->
+        <!-- ==================================== totals: the overview -->
+        @if (desktop.active() || phoneStep() === 3) {
         <section class="card totals-card" id="quote-check" aria-labelledby="totals-title">
           <div class="section-card-head">
             <div class="section-heading">
@@ -745,97 +760,110 @@ import {
             </div>
           </div>
           <div class="card__body">
-            <div class="total-highlight">
-              <div>
-                <span>Offertetotaal</span>
-                <strong>{{ data.priced.totals.total | eur }}</strong>
-                <small class="quote-total__meta">
-                  <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'exclusief BTW' }}</span>
-                  <span class="quote-profit"
-                        [class.quote-profit--negative]="data.priced.totals.marginEur < 0">
-                    Winst {{ data.priced.totals.marginEur >= 0 ? '+' : '' }} {{ data.priced.totals.marginEur | eur: 0 }}
+            <!-- What is actually in the box, before any figure: the check
+                 starts with the order as the customer will read it. -->
+            <ol class="check-lines">
+              @for (line of data.priced.lines; track line.productId) {
+                <li>
+                  @if (line.photoUrl) {
+                    <img class="check-lines__photo" [appAuthSrc]="line.photoUrl" alt="" loading="lazy" />
+                  } @else {
+                    <span class="check-lines__photo check-lines__photo--empty" aria-hidden="true">◇</span>
+                  }
+                  <span class="check-lines__what">
+                    <b>{{ line.description }}</b>
+                    <small>{{ line.quantity | num }} st × {{ line.unitPrice | eur: 2 }}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
+                      · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}}</small>
                   </span>
-                </small>
+                  <span class="num check-lines__amount">{{ line.net | eur }}</span>
+                </li>
+              } @empty {
+                <li class="hint">Nog geen producten op de order.</li>
+              }
+              @if (data.priced.lines.length) {
+                <li class="check-lines__delivery">
+                  <span class="check-lines__delivery-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7zM7.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0M17.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0" /></svg>
+                  </span>
+                  <span class="check-lines__delivery-copy">
+                    <b>Levering</b>
+                    <span>{{ deliverySummary(data) }}</span>
+                  </span>
+                </li>
+              }
+            </ol>
+
+
+
+            <!-- Reads like a till receipt: three section lines, discounts
+                 only when they exist, one bold total at the foot. -->
+            <section class="receipt" aria-labelledby="price-breakdown-title">
+              <h3 id="price-breakdown-title" class="receipt__title">Prijsopbouw</h3>
+
+              <div class="receipt__row receipt__row--head">
+                <span>Goederen</span>
+                <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span>
               </div>
-              @if (!data.priced.totals.vatLegalMention) {
-                <div>
-                  <span>Inclusief BTW</span>
-                  <strong>{{ data.priced.totals.totalInclVat | eur }}</strong>
-                  <small>{{ data.priced.totals.vatRatePct | pct: 1 }} BTW</small>
+              @if (data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
+                <!-- The minimum is a goods matter, so its line lives here. -->
+                <div class="receipt-min receipt-min--goods">
+                  <div class="receipt-min__row">
+                    <span>Min {{ data.priced.validation.minOrderValue | eur: 0 }}</span>
+                  </div>
+                  <i class="receipt-min__track" aria-hidden="true"><i [style.width.%]="minimumPercent()"></i></i>
                 </div>
               }
-            </div>
-
-            @if (data.order.countryCode && data.priced.validation.minOrderValue > 0) {
-              <div class="minimum-check" [class.minimum-check--ok]="data.priced.validation.meetsMinimum">
-                <div class="minimum-check__copy">
-                  <strong>
-                    {{ data.priced.validation.meetsMinimum ? 'Minimumorder bereikt' : 'Minimumorder nog niet bereikt' }}
-                  </strong>
-                  <span>
-                    {{ data.priced.totals.goodsTotal | eur: 0 }} van
-                    {{ data.priced.validation.minOrderValue | eur: 0 }}
-                  </span>
+              @if (data.priced.totals.lineDiscountTotal || data.priced.totals.orderDiscountAmount) {
+                <div class="receipt__row receipt__row--sub">
+                  <span>Bruto</span><span class="num">{{ data.priced.totals.gross | eur }}</span>
                 </div>
-                <span class="minimum-check__value">
-                  @if (data.priced.validation.meetsMinimum) { ✓ }
-                  @else { −{{ data.priced.validation.shortfall | eur: 0 }} }
-                </span>
-                <div class="meter__track" aria-hidden="true">
-                  <div class="meter__fill"
-                       [class.meter__fill--ok]="data.priced.validation.meetsMinimum"
-                       [style.width.%]="minimumPercent()"></div>
-                </div>
-              </div>
-            }
-
-            <section class="cost-breakdown" aria-labelledby="price-breakdown-title">
-              <div class="cost-breakdown__head">
-                <h3 id="price-breakdown-title">Prijsopbouw</h3>
-              </div>
-              <div class="cost-breakdown__body">
-            <div class="cost-section">Goederen</div>
-            <div class="stat-row"><span>Bruto goederen</span>
-              <span class="num">{{ data.priced.totals.gross | eur }}</span></div>
-            <div class="stat-row stat-row--discount"><span>Kortingen op regels</span>
-              <span class="num">− {{ data.priced.totals.lineDiscountTotal | eur }}</span></div>
-            <div class="stat-row stat-row--discount">
-              <span>Orderkorting {{ data.priced.totals.orderDiscountPercent | pct: 0 }}</span>
-              <span class="num">− {{ data.priced.totals.orderDiscountAmount | eur }}</span></div>
-            <div class="stat-row stat-row--sub"><span>Goederenwaarde</span>
-              <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span></div>
-            <!-- Freight can be an open item, just like the delivery term: a
-                 destination outside the usual rates, or a customer arranging
-                 pickup, is unknown at drafting time. -->
-            <div class="cost-section">Verzending</div>
-            <div class="stat-row">
-              <span>Vracht ({{ freightBasisLabel(data) }})</span>
-              <span class="num">
-                @if (data.order.freight === 'TE_BEPALEN') {
-                  <span class="danger-text">nog te bepalen</span>
-                } @else {
-                  {{ data.priced.totals.freight | eur }}
+                @if (data.priced.totals.lineDiscountTotal) {
+                  <div class="receipt__row receipt__row--sub receipt__row--minus">
+                    <span>Kortingen op regels</span><span class="num">− {{ data.priced.totals.lineDiscountTotal | eur }}</span>
+                  </div>
                 }
-              </span></div>
-            <div class="stat-row"><span>Administratie</span>
-              <span class="num">{{ data.priced.totals.handling | eur }}</span></div>
-            @if (!data.priced.totals.vatLegalMention) {
-              <div class="cost-section">BTW</div>
-              <div class="stat-row"><span>BTW {{ data.priced.totals.vatRatePct | pct: 1 }}</span>
-                <span class="num">{{ data.priced.totals.vatAmount | eur }}</span></div>
-            }
-
-            @if (data.priced.totals.vatLegalMention) {
-              <div class="alert alert--info mt-12">
-                <span class="alert__icon">§</span>
-                <div>
-                  <b>{{ vatLabel(data.priced.totals.vatTreatment) }}</b><br />
-                  {{ data.priced.totals.vatLegalMention }}
-                </div>
-              </div>
-            } @else if (data.priced.totals.vatReason) {
-              <div class="tiny muted mt-8">{{ data.priced.totals.vatReason }}</div>
+                @if (data.priced.totals.orderDiscountAmount) {
+                  <div class="receipt__row receipt__row--sub receipt__row--minus">
+                    <span>Orderkorting {{ data.priced.totals.orderDiscountPercent | pct: 0 }}</span>
+                    <span class="num">− {{ data.priced.totals.orderDiscountAmount | eur }}</span>
+                  </div>
+                }
               }
+
+              <div class="receipt__row receipt__row--head">
+                <span>Verzending</span>
+                <span class="num">
+                  @if (data.order.freight === 'TE_BEPALEN') {
+                    <span class="danger-text">nog te bepalen</span>
+                  } @else {
+                    {{ data.priced.totals.freight + data.priced.totals.handling | eur }}
+                  }
+                </span>
+              </div>
+              @if (data.order.freight !== 'TE_BEPALEN') {
+                <div class="receipt__row receipt__row--sub">
+                  <span>Vracht · {{ freightBasisLabel(data) }}</span>
+                  <span class="num">{{ data.priced.totals.freight | eur }}</span>
+                </div>
+              }
+              @if (data.priced.totals.handling) {
+                <div class="receipt__row receipt__row--sub">
+                  <span>Administratie</span><span class="num">{{ data.priced.totals.handling | eur }}</span>
+                </div>
+              }
+
+              <div class="receipt__row receipt__row--head">
+                <span>BTW {{ data.priced.totals.vatLegalMention ? '0% · verlegd' : (data.priced.totals.vatRatePct | pct: 1) }}</span>
+                <span class="num">{{ (data.priced.totals.vatLegalMention ? 0 : data.priced.totals.vatAmount) | eur }}</span>
+              </div>
+
+              <div class="receipt__row receipt__row--total">
+                <span>Totaal
+                  <span class="receipt__profit" [class.receipt__profit--negative]="data.priced.totals.marginEur < 0">
+                    winst {{ data.priced.totals.marginEur >= 0 ? '+' : '' }}{{ data.priced.totals.marginEur | eur: 0 }}
+                  </span>
+                </span>
+                <span class="num">{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</span>
               </div>
             </section>
           </div>
@@ -882,9 +910,43 @@ import {
             }
           </div>
         </section>
+        }
+
+        <!-- Phone: one step at a time; the button walks you forward. -->
+        @if (!desktop.active() && phoneStep() < 3) {
+          <button class="btn btn--primary btn--block phone-next" type="button" (click)="nextPhoneStep()">
+            Volgende: {{ phoneStepLabels[phoneStep() + 1] }} ›
+          </button>
+        }
         </div>
         </div>
       </main>
+
+      @if (costSheet(); as sheet) {
+        <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="costSheet.set(null)">
+          <div body>
+            @if (sheet.rows.length) {
+              <dl class="cost-sheet">
+                @for (row of sheet.rows; track row.label) {
+                  <div [class.cost-sheet__sum]="row.sum">
+                    <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
+                    <dd class="num">{{ row.eur | eur: 4 }}</dd>
+                  </div>
+                }
+              </dl>
+              @if (sheet.source) {
+                <p class="hint">Kostprijs uit calculatie <b>{{ sheet.source }}</b>.</p>
+              }
+            } @else {
+              <p class="hint">Opbouw laden…</p>
+            }
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="costSheet.set(null)">Sluiten</button>
+          </div>
+        </app-sheet>
+      }
 
       @if (pdfSheet()) {
         <app-sheet title="Offerte als PDF" (closed)="pdfSheet.set(false)">
@@ -1057,9 +1119,10 @@ import {
   `, `
 
     .workflow-layout { position:relative }
-    .workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:5px;border:1px solid var(--line);border-radius:16px;background:rgb(255 255 255/.92);box-shadow:0 5px 18px rgb(26 22 20/.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px) }
+    .workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;padding:5px;border:1px solid var(--line);border-radius:16px;background:rgb(255 255 255/.92);box-shadow:0 5px 18px rgb(26 22 20/.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px) }
     .workflow-nav button { min-width:0;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 2px;border:0;border-radius:11px;background:transparent;color:var(--muted);font-size:10px;font-weight:670;cursor:pointer }
     .workflow-nav button:active { background:var(--surface-2) }
+    @media (min-width:680px) { .workflow-nav { grid-template-columns:repeat(5,minmax(0,1fr)) } }
     .workflow-nav button span { width:19px;height:19px;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:50%;color:var(--ink-2) }
     .workflow-nav .workflow-nav__active { background:var(--rose-soft);color:var(--rose-dark) }
     .workflow-nav .workflow-nav__active span { border-color:var(--rose-line);background:var(--surface);color:var(--rose-dark) }
@@ -1104,10 +1167,10 @@ import {
     .product-lines { padding:10px;background:color-mix(in srgb,var(--bg) 68%,var(--surface)) }
     .order-line { padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--surface);box-shadow:0 1px 5px rgb(26 22 20/.04) }
     .order-line+.order-line { margin-top:10px }
-    .order-line__head { display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:10px;align-items:center }
-    .order-line__photo { width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover }
+    .order-line__head { display:flex;gap:10px;align-items:center }
+    .order-line__photo { width:48px;height:48px;flex:none;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover }
     .order-line__photo--empty { display:grid;place-items:center;color:var(--muted-2);font-size:20px }
-    .order-line__identity { min-width:0;display:flex;flex-direction:column }
+    .order-line__identity { flex:1;min-width:0;display:flex;flex-direction:column }
     .order-line__identity h3 { overflow:hidden;font-size:14px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }
     .order-line__identity>span { color:var(--muted);font-size:10.5px }
     .order-line__index { color:var(--muted-2)!important;font-size:9.5px!important;font-weight:700;text-transform:uppercase }
@@ -1120,7 +1183,7 @@ import {
     .quantity-editor .field { height:100%;margin:0;padding:8px 10px 6px;display:grid;grid-template-rows:auto minmax(28px,1fr);align-content:center }
     .quantity-editor label { color:var(--ink-2);font-size:10.5px;line-height:1.15 }
     .quantity-editor .input { width:100%;min-height:28px;height:28px;padding:0;border:0;background:transparent;box-shadow:none;font-size:15px;font-weight:680;outline:0 }
-    .tier-nudge { margin-top:8px;padding:8px 10px;display:flex;gap:8px;border-radius:10px;background:var(--gold-soft);color:#78591f;font-size:11px }
+    .tier-nudge { margin-top:5px;padding:5px 9px;display:flex;gap:7px;border-radius:9px;background:var(--gold-soft);color:#78591f;font-size:11px }
     .line-pricing { margin:0 }
     .line-pricing[open] { grid-column:1/-1 }
     .line-pricing summary { min-height:58px;padding:7px 9px;display:grid;grid-template-columns:20px minmax(0,1fr);grid-template-rows:auto auto;column-gap:9px;row-gap:2px;align-content:center }
@@ -1162,6 +1225,115 @@ import {
     .line-internal__note { margin:0;padding:0 11px 10px;color:var(--muted);font-size:9px;line-height:1.4 }
     .order-line__foot { margin-top:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px }
     .remove-line,.delete-draft { color:var(--danger) }
+    .order-line { position:relative }
+    .order-line__head { padding-right:30px }
+    .order-line__remove { position:absolute;top:8px;right:8px;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted-2);font-size:17px;line-height:1;cursor:pointer }
+    .order-line__remove:hover:not(:disabled) { background:var(--danger-soft);color:var(--danger) }
+    .order-line__remove:disabled { opacity:.35;cursor:default }
+    .discount-flip { cursor:pointer;font-weight:700 }
+    .check-lines { list-style:none;margin:0 0 14px;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);overflow:hidden }
+    .check-lines li { display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface) }
+    .check-lines li:last-child { border-bottom:0 }
+    .check-lines__photo { width:36px;height:36px;flex:none;border-radius:9px;object-fit:cover;background:var(--surface-2) }
+    .check-lines__photo--empty { display:grid;place-items:center;color:var(--muted-2) }
+    .check-lines__what { display:grid;flex:1;min-width:0 }
+    .check-lines__what b { font-size:13px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    .check-lines__what small { color:var(--muted);font-size:11px }
+    .check-lines__amount { font-weight:700;font-size:13px;white-space:nowrap }
+    .check-lines__delivery { display:flex;gap:11px;align-items:center;padding:11px 12px !important;
+      background:linear-gradient(120deg,var(--rose-soft),color-mix(in srgb,var(--rose-soft) 55%,var(--surface))) !important }
+    .check-lines__delivery-icon { display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:50%;
+      background:var(--surface);border:1px solid var(--rose-line);box-shadow:0 2px 8px rgb(31 25 22/8%) }
+    .check-lines__delivery-icon svg { width:19px;height:19px;fill:none;stroke:var(--rose-dark);stroke-width:1.5;stroke-linejoin:round }
+    .check-lines__delivery-copy { display:grid }
+    .check-lines__delivery-copy b { color:var(--rose-dark);font-size:10px;font-weight:780;letter-spacing:.07em;text-transform:uppercase }
+    .check-lines__delivery-copy span { color:var(--ink-2);font-size:12.5px;font-weight:600 }
+    .receipt-min { margin-top:12px }
+    .receipt-min--goods { margin:2px 0 8px;padding-left:14px }
+    .receipt-min__row { display:flex;align-items:baseline;justify-content:flex-end;gap:10px;margin-bottom:5px }
+    .receipt-min__row span { color:var(--muted);font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase }
+    .receipt-min__row b { color:var(--warn);font-size:12px;font-weight:800 }
+    .receipt-min__track { display:block;height:4px;border-radius:99px;background:var(--line);overflow:hidden }
+    .receipt-min__track i { display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#e7b566,var(--warn)) }
+    .check-total { display:grid;justify-items:center;gap:3px;margin:0 0 12px;padding:18px 14px;border-radius:18px;
+      background:linear-gradient(135deg,#23201e,#3a3430);color:#fff;text-align:center }
+    .check-total__label { color:rgb(255 255 255/.65);font-size:10.5px;font-weight:750;letter-spacing:.07em;text-transform:uppercase }
+    .check-total__value { font-size:30px;font-weight:800;letter-spacing:-.02em }
+    .check-total__incl { color:rgb(255 255 255/.75);font-size:12px }
+    .check-total__profit { margin-top:5px;padding:3px 11px;border-radius:999px;background:rgb(120 190 140/.25);color:#9fe0b4;font-size:11.5px;font-weight:750 }
+    .check-total__profit--negative { background:rgb(220 120 110/.25);color:#f2b0a8 }
+    .receipt { margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2) }
+    .receipt__title { margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:780;letter-spacing:.07em;text-transform:uppercase }
+    .receipt__row { display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:13px }
+    .receipt__row--head { font-weight:700;border-top:1px solid var(--line);padding-top:9px;margin-top:3px }
+    .receipt__row--head:first-of-type { border-top:0;margin-top:0;padding-top:0 }
+    .receipt__row--sub { padding:2px 0 2px 14px;color:var(--ink-2);font-size:12.5px }
+    .receipt__row--minus span:last-child { color:var(--ok) }
+    .receipt__row--total { margin-top:8px;padding-top:11px;border-top:2px solid var(--ink);font-size:15px;font-weight:800 }
+    .receipt__note { margin:9px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5 }
+    .line-fields { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px }
+    @media (min-width:680px) { .line-fields { grid-template-columns:110px 130px minmax(150px,220px) } }
+    .receipt__min { position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px;
+      margin:4px 0 6px;padding:8px 11px 12px;border:1px solid #eddcb9;border-radius:11px;background:var(--warn-soft);
+      color:var(--warn);font-size:12px;font-weight:650 }
+    .receipt__min b { font-weight:800 }
+    .receipt__min-track { position:absolute;left:11px;right:11px;bottom:6px;display:block;height:3px;border-radius:99px;background:rgb(0 0 0/8%);overflow:hidden }
+    .receipt__min-track i { display:block;height:100%;background:var(--warn) }
+    .receipt__profit { margin-left:8px;padding:2px 9px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:11px;font-weight:750;vertical-align:2px }
+    .receipt__profit--negative { background:var(--danger-soft);color:var(--danger) }
+    .discount-tab { writing-mode:vertical-rl;text-orientation:mixed;padding:0 3px;font-size:9px;font-weight:750;
+      letter-spacing:.08em;text-transform:uppercase;color:var(--muted);cursor:pointer }
+    .discount-tab--on { background:var(--rose-soft);color:var(--rose-dark) }
+    .line-internal__unit--btn { border:1px solid var(--line);border-radius:11px;background:var(--surface);
+      font:inherit;text-align:left;cursor:pointer;transition:background .15s ease }
+    .line-internal__unit--btn:hover { background:var(--surface-2) }
+    .line-internal__unit--btn dt { display:flex;align-items:center;gap:5px }
+    .stock-tile__chev { display:inline-grid;place-items:center;width:14px;height:14px;border:1px solid var(--line-strong);
+      border-radius:50%;background:var(--surface) }
+    .stock-tile__chev::before { content:'';width:4px;height:4px;margin-top:-1px;border-right:1.4px solid var(--ink-2);
+      border-bottom:1.4px solid var(--ink-2);transform:rotate(45deg) }
+    .cost-sheet { margin:0;padding:0 }
+    .cost-sheet div { display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line) }
+    .cost-sheet dt { color:var(--ink-2);font-size:12.5px }
+    .cost-sheet dt small { display:block;color:var(--muted);font-size:10.5px }
+    .cost-sheet dd { margin:0;font-size:13px;font-weight:650 }
+    .cost-sheet__sum { font-weight:800 }
+    .cost-sheet__sum dt { color:var(--ink);font-weight:750 }
+    .pricing-row { display:flex;align-items:center;gap:11px;width:100%;padding:13px 16px;border:0;background:transparent;
+      font:inherit;text-align:left;cursor:pointer }
+    .pricing-row:hover { background:var(--surface-2) }
+    .pricing-row__copy { display:grid;flex:1;min-width:0 }
+    .pricing-row__copy strong { font-size:14px }
+    .pricing-row__copy small { color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    .pricing-row__chev { width:7px;height:7px;flex:none;border-right:1.6px solid var(--muted);border-bottom:1.6px solid var(--muted);
+      transform:rotate(45deg);transition:transform .15s ease }
+    .pricing-row__chev--open { transform:rotate(-135deg) }
+    .pricing-card__head { display:flex;align-items:center;gap:11px;padding:14px 16px 4px }
+    .pricing-card__icon { width:32px;height:32px;flex:none;display:grid;place-items:center;border:1px solid var(--line);
+      border-radius:11px;background:var(--surface-2);color:var(--muted);font-weight:720 }
+    .pricing-card__head h2 { font-size:15px }
+    .pricing-card__head p { color:var(--muted);font-size:11.5px }
+    .pricing-card__body { padding:10px 16px 14px;display:grid;gap:10px }
+    .pricing-card__row { display:flex;flex-wrap:wrap;align-items:center;gap:10px }
+    .pricing-card__row--center { justify-content:center }
+    .pricing-help { margin:2px 0 -2px;color:var(--muted);font-size:11.5px }
+    .pricing-card__markup { width:150px;flex:none }
+    .pricing-card__markup .input-affix__suffix { font-size:11px;white-space:nowrap }
+    .pricing-card__label { flex:1;min-width:170px }
+    .pricing-card__hint { flex:1;min-width:170px }
+    .field-duo { display:grid;grid-template-columns:1fr 1fr;gap:10px }
+    .order-line__link { display:flex;flex:1;min-width:0;gap:10px;align-items:center;color:inherit;text-decoration:none }
+    .order-line__link:hover h3 { color:var(--rose-dark);text-decoration:underline }
+    .hero-min { position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px;
+      margin-top:10px;padding:8px 12px 13px;border-radius:12px;background:rgb(255 255 255/.09);
+      color:#f4cf9a;font-size:12px;font-weight:650 }
+    .hero-min--ok { color:#9fe0b4 }
+    .hero-min b { font-weight:800 }
+    .hero-min__label { color:rgb(255 255 255/.72) }
+    .hero-min__track { position:absolute;left:12px;right:12px;bottom:6px;display:block;height:3px;border-radius:99px;background:rgb(255 255 255/.15);overflow:hidden }
+    .hero-min__track i { display:block;height:100%;background:currentColor }
+    .phone-next { margin-top:4px;min-height:50px;border-radius:16px;font-size:15px }
+    @media (min-width:680px) { .phone-next { display:none } }
     .products-empty { padding:38px 18px 42px;text-align:center }
     .products-empty__art { width:64px;height:64px;margin:0 auto 12px;display:grid;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px }
     .products-empty h3 { font-size:16px }
@@ -1248,7 +1420,7 @@ import {
       .order-line { padding:16px }
       .line-quick-controls { grid-template-columns:180px minmax(0,1fr);gap:10px }
       .tier-nudge { align-items:center }
-      .line-internal__units { grid-template-columns:repeat(3,minmax(0,1fr)) }
+
       .line-internal__units .line-internal__unit-profit { grid-column:auto }
     }
     @media(min-width:680px) {
@@ -1266,12 +1438,99 @@ import {
 export class SalesEditor {
   private readonly sales = inject(SalesApi);
   private readonly catalog = inject(CatalogApi);
+  private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly id = input<string>('');
+  /* ---- the discount field hides behind its vertical tab ---- */
+  readonly pricingOpen = signal(false);
+  private readonly discountOpens = signal(new Map<number, boolean>());
+
+  discountShown(line: PricedLine): boolean {
+    return this.discountOpens().get(line.productId) ?? !!line.manualPercent;
+  }
+
+  toggleDiscountOpen(productId: number): void {
+    const line = this.view()?.priced.lines.find((item) => item.productId === productId);
+    const open = line ? this.discountShown(line) : false;
+    this.discountOpens.update((map) => new Map(map).set(productId, !open));
+  }
+
+  /* ---- where the landed cost came from, one tap deep ---- */
+  readonly costSheet = signal<{ title: string; source: string | null;
+    rows: { label: string; hint?: string; eur: number; sum?: boolean }[] } | null>(null);
+
+  async openCostSheet(line: PricedLine): Promise<void> {
+    this.costSheet.set({ title: line.description, source: null, rows: [] });
+    try {
+      const product = await this.catalog.product(line.productId);
+      const source = product.landedCostSource;
+      const rows: { label: string; hint?: string; eur: number; sum?: boolean }[] = [];
+      let found = false;
+      if (source) {
+        const orders = await this.sourcing.purchaseOrders();
+        const view = orders.find((item) => item.order.number === source);
+        const costingLine = view?.costing.lines.find((item) => item.productId === line.productId);
+        if (costingLine && costingLine.quantity > 0) {
+          found = true;
+          const per = (total: number) => total / costingLine.quantity;
+          rows.push({ label: 'Inkoopprijs (EXW)', hint: `${costingLine.quantity.toLocaleString('nl-BE')} stuks in ${source}`, eur: per(costingLine.goodsEur) });
+          if (costingLine.originEur) rows.push({ label: '+ Lokale kosten bij vertrek', eur: per(costingLine.originEur) });
+          if (costingLine.freightEur) rows.push({ label: '+ Zeevracht', eur: per(costingLine.freightEur) });
+          if (costingLine.dutyEur) rows.push({ label: `+ Invoerrechten ${costingLine.dutyRatePct} %`, eur: per(costingLine.dutyEur) });
+          if (costingLine.destinationEur) rows.push({ label: '+ Kosten na aankomst', eur: per(costingLine.destinationEur) });
+          if (costingLine.extraRevenueEur) rows.push({ label: '+ Enrosed kost', eur: per(costingLine.extraRevenueEur) });
+        }
+      }
+      rows.push({ label: 'Gelande kost per stuk', hint: found ? undefined : 'incl. transport en rechten',
+        eur: line.landedUnitCost, sum: true });
+      rows.push({ label: 'Netto verkoop', eur: line.netUnitPrice });
+      rows.push({ label: this.marginPerUnit(line) < 0 ? 'Verlies per stuk' : 'Winst per stuk',
+        eur: this.marginPerUnit(line), sum: true });
+      this.costSheet.set({ title: line.description, source: source ?? null, rows });
+    } catch {
+      this.costSheet.update((sheet) => sheet && { ...sheet,
+        rows: [{ label: 'Gelande kost per stuk', eur: line.landedUnitCost, sum: true }] });
+    }
+  }
+
+  /* ---- extra line discount, thought in percent or in euros ---- */
+  private readonly discountModes = signal(new Map<number, 'PCT' | 'EUR'>());
+
+  discountMode(productId: number): 'PCT' | 'EUR' {
+    return this.discountModes().get(productId) ?? 'PCT';
+  }
+
+  flipDiscountMode(productId: number): void {
+    const next = this.discountMode(productId) === 'EUR' ? 'PCT' : 'EUR';
+    this.discountModes.update((map) => new Map(map).set(productId, next));
+  }
+
+  /** One sentence about when the goods can leave. */
+  deliverySummary(data: SalesOrderView): string {
+    const lines = data.priced.lines;
+    if (lines.every((line) => line.inStock)) return 'Alles op voorraad - kan meteen geleverd worden.';
+    const weeks = lines.map((line) => line.deliveryWeek).filter((week): week is string => !!week);
+    const unknown = lines.filter((line) => !line.inStock && !line.deliveryWeek).length;
+    if (unknown) return 'Levertijd nog te bevestigen voor ' + unknown + ' regel(s).';
+    const latest = weeks.sort().at(-1);
+    return latest ? 'Volledig leverbaar tegen week ' + latest + '.' : 'Levertijd nog te bevestigen.';
+  }
+
+  lineDiscountEur(line: PricedLine): number {
+    return Math.round(line.gross * (line.manualPercent ?? 0)) / 100;
+  }
+
+  /** Typed in euros, stored as the percent the pricing engine speaks. */
+  setLineDiscountEur(line: PricedLine, amount: number): void {
+    if (!(line.gross > 0)) return;
+    const pct = Math.max(0, Math.min(100, (amount / line.gross) * 100));
+    this.setLine(line.productId, { manualDiscountPct: Math.round(pct * 10000) / 10000 });
+  }
+
   readonly workflowSections = [
     { id: 'quote-setup', label: 'Klant' },
     { id: 'order-lines', label: 'Producten' },
@@ -1280,6 +1539,25 @@ export class SalesEditor {
     { id: 'quote-status', label: 'Status' },
   ] as const;
   readonly activeSection = signal<(typeof this.workflowSections)[number]['id']>('quote-setup');
+
+  /* ---- the phone walks the order as a stepper, ending on the overview ---- */
+  readonly desktop = inject(DesktopViewport);
+  readonly phoneStep = signal(0);
+  readonly phoneStepLabels = ['Gegevens', 'Producten', 'Levering', 'Controle'] as const;
+
+  stepOfId(id: (typeof this.workflowSections)[number]['id']): number {
+    return this.stepOf(id);
+  }
+
+  private stepOf(id: (typeof this.workflowSections)[number]['id']): number {
+    return id === 'quote-setup' ? 0 : id === 'order-lines' ? 1
+      : id === 'quote-logistics' ? 2 : 3;
+  }
+
+  nextPhoneStep(): void {
+    this.phoneStep.update((step) => Math.min(3, step + 1));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   readonly paymentTermsList = STANDARD_PAYMENT_TERMS;
   /** True while terms outside the standard list are being typed. */
@@ -2098,6 +2376,11 @@ export class SalesEditor {
   }
 
   scrollToSection(id: string): void {
+    if (!this.desktop.active()) {
+      this.phoneStep.set(this.stepOf(id as (typeof this.workflowSections)[number]['id']));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (this.workflowSections.some((item) => item.id === id)) {
       this.activeSection.set(id as (typeof this.workflowSections)[number]['id']);
     }

@@ -54,87 +54,60 @@ import { messageOf } from '../../core/api/errors';
         </div>
       }
 
-      <section class="order-finder" aria-labelledby="order-finder-title">
-        <div class="order-finder__head">
-          <div>
-            <h2 id="order-finder-title">Orders vinden</h2>
-            <p>Zoek op klant of ordernummer, of filter op status.</p>
-          </div>
-          @if (activeFilterCount()) {
-            <button class="filter-reset" type="button" (click)="clearFilters()">
-              Wis filters
-              <span aria-hidden="true">{{ activeFilterCount() }}</span>
-            </button>
+      <!-- One quiet row: search grows, two pills open native pickers,
+           the count sits at the end - no card, no grid of chips. -->
+      <!-- One Filter button; the choices unfold underneath, catalogue-style. -->
+      <div class="sales-filterbar">
+        <div class="search-control search-control--bar">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="6.5"></circle>
+            <path d="m16 16 4 4"></path>
+          </svg>
+          <input class="input" id="sales-search" type="search" inputmode="search"
+                 autocomplete="off" placeholder="Zoek klant of nummer…"
+                 [ngModel]="query()" (ngModelChange)="query.set($event)" />
+          @if (query()) {
+            <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
+                    (click)="query.set('')">×</button>
           }
         </div>
-
-        <div class="filter-controls">
-          <div class="filter-field">
-            <label for="sales-search">Klant of ordernummer</label>
-            <div class="search-control">
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="6.5"></circle>
-                <path d="m16 16 4 4"></path>
-              </svg>
-              <input class="input" id="sales-search" type="search" inputmode="search"
-                     autocomplete="off" placeholder="Bijv. De Vries of SO-1024"
-                     [ngModel]="query()" (ngModelChange)="query.set($event)" />
-              @if (query()) {
-                <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
-                        (click)="query.set('')">×</button>
-              }
-            </div>
+        <button class="filter-toggle" type="button"
+                [class.filter-toggle--active]="activeFilterCount() > 0"
+                [attr.aria-expanded]="filtersOpen()"
+                (click)="filtersOpen.set(!filtersOpen())">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+          <span class="hide-mobile">Filters</span>
+          @if (activeFilterCount(); as n) { <b class="filter-toggle__count">{{ n }}</b> }
+          <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
+        </button>
+        @if (filtersOpen()) {
+          <div class="filter-grid">
+            <label class="filter-field">
+              <span class="filter-field__label">Offertestatus</span>
+              <select class="select filter-field__select" [ngModel]="filter()" (ngModelChange)="selectStatus($event)">
+                @for (option of filters; track option.value) {
+                  <option [ngValue]="option.value">{{ option.label }} ({{ statusCount(option.value) }})</option>
+                }
+              </select>
+            </label>
+            <label class="filter-field">
+              <span class="filter-field__label">Klant</span>
+              <select class="select filter-field__select" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
+                <option [ngValue]="''">Alle klanten</option>
+                @for (customer of customersWithOrders(); track customer.id) {
+                  <option [ngValue]="customer.id">{{ customer.company }}</option>
+                }
+              </select>
+            </label>
           </div>
-
-          <!-- A native select is easier to scan and never overflows on a phone. -->
-          <div class="filter-field mobile-status">
-            <label for="sales-status">Offertestatus</label>
-            <select class="select" id="sales-status" [ngModel]="filter()"
-                    (ngModelChange)="selectStatus($event)">
-              @for (option of filters; track option.value) {
-                <option [ngValue]="option.value">
-                  {{ option.label }} ({{ statusCount(option.value) }})
-                </option>
-              }
-            </select>
-          </div>
-        </div>
-
-        <!-- Wider screens use a stable grid rather than a rail with a stray
-             last chip on a second line. The pressed state remains explicit. -->
-        <div class="desktop-status" role="group" aria-label="Offertestatus">
-          <div class="desktop-status__label">Offertestatus</div>
-          <div class="status-grid">
-            @for (option of filters; track option.value) {
-              <button class="status-option" type="button"
-                      [class.status-option--active]="filter() === option.value"
-                      [attr.aria-pressed]="filter() === option.value"
-                      (click)="selectStatus(option.value)">
-                <span>{{ option.label }}</span>
-                <span class="status-option__count">{{ statusCount(option.value) }}</span>
-              </button>
+          <div class="filter-summary">
+            <span><strong>{{ rows().length }}</strong> van {{ all().length }} orders</span>
+            @if (activeFilterCount()) {
+              <button class="filter-reset" type="button" (click)="clearFilters()">Filters wissen</button>
             }
           </div>
-        </div>
-
-        <div class="filter-result" role="status" aria-live="polite">
-          <div class="filter-result__copy">
-            <strong>{{ rows().length }}</strong>
-            {{ rows().length === 1 ? 'order gevonden' : 'orders gevonden' }}
-            @if (rows().length !== all().length) {
-              <span>van {{ all().length }}</span>
-            }
-          </div>
-          <div class="active-filters" aria-label="Actieve filters">
-            @if (filter()) {
-              <span>Status: {{ activeStatusLabel() }}</span>
-            }
-            @if (query().trim(); as term) {
-              <span class="active-filters__query">Zoekterm: “{{ term }}”</span>
-            }
-          </div>
-        </div>
-      </section>
+        }
+      </div>
 
       <div class="card">
         <div class="list">
@@ -292,6 +265,34 @@ import { messageOf } from '../../core/api/errors';
     }
   `,
   styles: `
+    .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px;padding:12px;
+      border:1px solid var(--line);border-radius:var(--r);background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
+      box-shadow:0 5px 18px rgb(31 25 22/4%) }
+    .filter-toggle { display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 13px;border:1px solid var(--line);
+      border-radius:13px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:13px;font-weight:650;cursor:pointer }
+    .filter-toggle--active { border-color:var(--rose-line);color:var(--rose-dark);background:var(--rose-soft) }
+    .filter-toggle svg { width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round }
+    .filter-toggle__count { display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;
+      background:var(--rose);color:#fff;font-size:10.5px }
+    .filter-toggle__chev { width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+      transform:rotate(45deg);transition:transform .15s ease }
+    .filter-toggle__chev--open { transform:rotate(-135deg) }
+    .filter-grid { flex:1 0 100%;display:grid;gap:10px }
+    @media (min-width:680px) { .filter-grid { grid-template-columns:1fr 1fr } }
+    .filter-field__label { display:block;margin:0 0 5px 2px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.055em;text-transform:uppercase }
+    .filter-field__select { min-height:42px;font-size:13px;font-weight:650 }
+    .filter-summary { flex:1 0 100%;display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:12px }
+    .filter-summary strong { color:var(--ink) }
+    .filter-reset { border:0;background:transparent;color:var(--rose-dark);font-size:12px;font-weight:700;cursor:pointer }
+    .search-control--bar { flex:1 1 200px;min-width:0 }
+    .sales-filterbar__count { margin-left:auto;white-space:nowrap }
+    .po-filter { position:relative;display:inline-flex;align-items:center;gap:7px;min-height:36px;max-width:46vw;
+      padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+      color:var(--ink-2);font-size:12.5px;font-weight:650 }
+    .po-filter span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    .po-filter--on { border-color:var(--rose-line);background:var(--rose-soft);color:var(--rose-dark) }
+    .po-filter svg { width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round }
+    .po-filter__native { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px }
     .order-finder {
       min-width: 0;
       margin-bottom: 14px;
@@ -566,9 +567,11 @@ export class SalesList {
 
   readonly rows = computed(() => {
     const status = this.filter();
+    const customer = this.customerFilter();
     const needle = this.query().toLowerCase().trim();
     return this.all().filter((row) => {
       if (status && row.order.status !== status) return false;
+      if (customer !== '' && row.order.customerId !== customer) return false;
       if (!needle) return true;
       /* Customer and number are how anyone refers to an order out loud. */
       return (this.customerName(row) + ' ' + row.order.number)
@@ -577,8 +580,22 @@ export class SalesList {
     });
   });
 
+  readonly filtersOpen = signal(false);
+  readonly customerFilter = signal<number | ''>('');
+
+  /** Only customers that actually carry orders, in company order. */
+  readonly customersWithOrders = computed(() => {
+    const ids = new Set(this.all().map((row) => row.order.customerId));
+    return this.customers()
+      .filter((customer) => ids.has(customer.id))
+      .sort((a, b) => a.company.localeCompare(b.company, 'nl'));
+  });
+
+  readonly activeCustomerLabel = computed(() =>
+    this.customers().find((customer) => customer.id === this.customerFilter())?.company ?? 'Alle klanten');
+
   readonly activeFilterCount = computed(() =>
-    (this.filter() ? 1 : 0) + (this.query().trim() ? 1 : 0));
+    (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0) + (this.query().trim() ? 1 : 0));
 
   readonly activeStatusLabel = computed(() =>
     this.filters.find((option) => option.value === this.filter())?.label ?? 'Alle orders');
@@ -590,6 +607,7 @@ export class SalesList {
   clearFilters(): void {
     this.query.set('');
     this.filter.set('');
+    this.customerFilter.set('');
   }
 
   statusCount(status: QuoteStatus | ''): number {

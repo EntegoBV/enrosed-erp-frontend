@@ -17,6 +17,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { orderLikeTheList } from './catalogue-order';
+import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -437,16 +438,24 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label class="req" for="p-ppc">Stuks per karton</label>
               <input class="input num right" id="p-ppc" type="number" min="1" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPerCarton"
-                     (ngModelChange)="patchCarton({ piecesPerCarton: +$event })" />
+                     [placeholder]="autoCartonPieces() !== null ? 'auto: ' + autoCartonPieces() : ''"
+                     (ngModelChange)="patchCarton({ piecesPerCarton: $event === null || $event === '' ? null : Math.max(1, Math.round(+$event)) })" />
+              @if (autoCartonPieces() !== null) {
+                <span class="hint">Leeg = automatisch uit de product- en kartonafmetingen.</span>
+              }
             </div>
             <div class="field">
               <label for="p-weight">Gewicht per karton <span class="opt"></span></label>
               <div class="input-affix">
                 <input class="input num right" id="p-weight" appDecimal
                        inputmode="decimal" [ngModel]="draft().carton.weightKg"
+                       [placeholder]="autoCartonWeight() !== null ? 'auto: ' + (autoCartonWeight() | num) : ''"
                        (ngModelChange)="patchCarton({ weightKg: num($event) })" />
                 <span class="input-affix__suffix">kg</span>
               </div>
+              @if (autoCartonWeight() !== null) {
+                <span class="hint">Leeg = stuks per karton × gewicht per stuk.</span>
+              }
             </div>
             <div class="field">
               <label for="p-hc">Stuks per 40' HC <span class="opt"></span></label>
@@ -2253,6 +2262,13 @@ export class ProductEditor implements OnDestroy {
 
   protected readonly Math = Math;
 
+  /** Whole units per axis when nobody typed a count. */
+  readonly autoCartonPieces = computed(() => autoPiecesPerCarton(this.draft()));
+
+  /** Pieces (typed or derived) times the piece's own weight. */
+  readonly autoCartonWeight = computed(() => autoCartonWeightKg(this.draft(),
+    this.draft().carton.piecesPerCarton ?? this.autoCartonPieces()));
+
   /** Full cartons that fit 68 m³, times the carton's content; null without sizes. */
   readonly autoHcCapacity = computed(() => {
     const carton = this.draft().carton;
@@ -2261,7 +2277,7 @@ export class ProductEditor implements OnDestroy {
     const cbm = (l / 100) * (w / 100) * (h / 100);
     if (!(cbm > 0)) return null;
     /* A hair of float slack so 68/0.16 counts as 425, like the backend's exact division. */
-    return Math.floor(68 / cbm + 1e-9) * Math.max(1, carton.piecesPerCarton ?? 1);
+    return Math.floor(68 / cbm + 1e-9) * Math.max(1, carton.piecesPerCarton ?? this.autoCartonPieces() ?? 1);
   });
 
   patchCarton(changes: Partial<Product['carton']>): void {
@@ -2750,7 +2766,16 @@ export class ProductEditor implements OnDestroy {
     if (!this.draft().name.trim()) missing.push({ tab: 'identity', field: 'p-name', label: 'productnaam' });
     if (!(this.draft().colour ?? '').trim()) missing.push({ tab: 'identity', field: 'p-colour', label: 'kleur' });
     if ((this.draft().carton.piecesPerCarton ?? 0) <= 0) {
-      missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton' });
+      const derivedPieces = this.autoCartonPieces();
+      if (derivedPieces !== null) {
+        /* Left empty on purpose: the sizes already say what fits. */
+        this.patchCarton({ piecesPerCarton: derivedPieces });
+      } else {
+        missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton (of vul de afmetingen in)' });
+      }
+    }
+    if (!this.draft().carton.weightKg && this.autoCartonWeight() !== null) {
+      this.patchCarton({ weightKg: this.autoCartonWeight() });
     }
     if (this.draft().packaging.kind === 'DISPLAY' && !((this.draft().packaging.piecesPerUnit ?? 0) >= 1)) {
       missing.push({ tab: 'identity', field: 'p-packaging-pieces', label: 'stuks in de display' });

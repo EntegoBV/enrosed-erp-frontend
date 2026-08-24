@@ -12,6 +12,7 @@ interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; n
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
 import { orderLikeTheList } from './catalogue-order';
+import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
@@ -343,9 +344,14 @@ interface GalleryPointer {
               </header>
               <dl class="detail-list">
                 <div><dt>Karton (B × D × H)</dt><dd class="num">{{ size(product.carton) }}</dd></div>
-                <div><dt>Inhoud</dt><dd class="num">{{ product.carton.piecesPerCarton | num }} stuks</dd></div>
+                <div><dt>Inhoud</dt><dd class="num">
+                  @if (cartonPiecesAuto(product)) { <small class="muted">auto</small> }
+                  {{ product.carton.piecesPerCarton | num }} stuks</dd></div>
                 <div><dt>Gewicht</dt><dd class="num">
-                  {{ product.carton.weightKg ? (product.carton.weightKg | num) + ' kg' : '—' }}
+                  @if (product.carton.weightKg) {
+                    @if (cartonWeightAuto(product)) { <small class="muted">auto</small> }
+                    {{ product.carton.weightKg | num }} kg
+                  } @else { — }
                 </dd></div>
                 <div><dt>Volume</dt><dd class="num">
                   @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
@@ -754,6 +760,16 @@ export class ProductView {
   /* ---- the price, taken apart ---- */
   readonly priceOpen = signal(false);
   readonly desktop = inject(DesktopViewport);
+
+  /** "auto" when the stored figure is exactly what the sizes derive. */
+  cartonPiecesAuto(product: Product): boolean {
+    return autoPiecesPerCarton(product) === product.carton.piecesPerCarton;
+  }
+
+  cartonWeightAuto(product: Product): boolean {
+    const derived = autoCartonWeightKg(product, product.carton.piecesPerCarton);
+    return derived !== null && derived === product.carton.weightKg;
+  }
   toggleStock(): void {
     const open = !this.stockOpen();
     this.stockOpen.set(open);
