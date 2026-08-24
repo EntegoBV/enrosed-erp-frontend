@@ -22,6 +22,8 @@ export interface PlannerItem {
   note: string | null;
   done: boolean;
   pinned?: boolean;
+  /** The appointment this task belongs to. */
+  parentId?: number | null;
   attachments?: PlannerAttachment[];
 }
 
