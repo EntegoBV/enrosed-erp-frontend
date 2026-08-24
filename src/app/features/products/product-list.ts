@@ -242,7 +242,7 @@ interface ProductSwipe {
                       <strong class="stock stock--none">0</strong>
                     }
                     @if (expectedForGroup(group); as exp) {
-                      <small class="stock-expected">+{{ exp | num }} te verwachten</small>
+                      <small class="stock-expected">+{{ exp | num }} verwacht</small>
                     }
                   </div>
                   <!-- Variants mostly share a price, so the head shows the
@@ -363,7 +363,7 @@ interface ProductSwipe {
             @if (expectedFor(product); as exp) {
               <!-- On the water: what the catalogue may promise soon, and when. -->
               <small class="stock-expected" [attr.title]="'Op ' + exp.orderNumbers.join(', ')">
-                +{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}
+                +{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}
               </small>
             }
           </div>

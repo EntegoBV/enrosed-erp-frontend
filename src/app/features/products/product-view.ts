@@ -160,12 +160,12 @@ interface GalleryPointer {
                   <span>Voorraad <i class="stock-tile__chev" aria-hidden="true"></i></span>
                   @if (stockLevels(); as levels) {
                     <strong class="num" [class.warn-text]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
-                    <small>{{ stockSummary() }}@if (expected(); as exp) { <a class="expected expected--line" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
+                    <small>{{ stockSummary() }}@if (expected(); as exp) { <a class="expected expected--line" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
                   } @else if (product.inventoryKnown) {
                     <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
                       {{ product.stockQuantity | num }}
                     </strong>
-                    <small>stuks@if (expected(); as exp) { <a class="expected expected--line" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
+                    <small>stuks@if (expected(); as exp) { <a class="expected expected--line" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
                   } @else {
                     <strong>—</strong>
                     <small>nog niet bevestigd</small>
@@ -352,7 +352,8 @@ interface GalleryPointer {
                 </dd></div>
                 <div><dt>Per 40' HC</dt><dd class="num">
                   @if (product.carton.hcCapacity; as hc) {
-                    {{ hc | num }} stuks <small class="muted">{{ product.carton.piecesPerHc ? 'geteld' : 'berekend' }}</small>
+                    @if (!product.carton.piecesPerHc) { <small class="muted">auto</small> }
+                    {{ hc | num }} stuks
                   } @else { — }
                 </dd></div>
                 <div><dt>Omdoosbarcode</dt><dd class="mono">

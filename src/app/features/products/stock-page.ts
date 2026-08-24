@@ -196,7 +196,7 @@ interface StockGroup {
                       }
                     </span>
                     @if (group.expected) {
-                      <span class="stock-expected">+{{ group.expected | num }} te verwachten</span>
+                      <span class="stock-expected">+{{ group.expected | num }} verwacht</span>
                     }
                   </span>
                   <span class="list-item__end stock-row__end">
@@ -261,7 +261,7 @@ interface StockGroup {
             </span>
             <span class="product-row__sku mono">{{ row.product.sku || 'Geen SKU' }}</span>
             @if (expectedFor(row.product.id!); as exp) {
-              <span class="stock-expected">+{{ exp.quantity | num }} te verwachten{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</span>
+              <span class="stock-expected">+{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</span>
             }
           </span>
         </button>
