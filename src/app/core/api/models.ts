@@ -92,6 +92,10 @@ export interface CartonDto {
   heightCm: number | null;
   piecesPerCarton: number | null;
   weightKg: number | null;
+  /** Hand-counted pieces per 40' HC; null = derived from the carton size. */
+  piecesPerHc?: number | null;
+  /** What fits a 40' HC: the hand count, or full cartons by volume. */
+  hcCapacity?: number | null;
 }
 
 export interface PhotoDto {
@@ -618,7 +622,7 @@ export interface Receipt {
   note: string | null;
 }
 
-export type PaymentTerms = 'THIRDS' | 'HALF_HALF' | 'DEPOSIT_30_70' | 'FULL_UPFRONT' | 'FULL_ON_ARRIVAL' | 'CUSTOM';
+export type PaymentTerms = 'THIRDS' | 'HALF_HALF' | 'DEPOSIT_30_70' | 'DEPOSIT_30_40_30' | 'FULL_UPFRONT' | 'FULL_ON_ARRIVAL' | 'CUSTOM';
 
 /** One instalment of a payment plan: a share of the goods value and when it falls due. */
 export interface Instalment { label: string; share: number; due: 'ORDERED' | 'SHIPPED' | 'ARRIVED'; }
@@ -634,6 +638,10 @@ export const PAYMENT_TERMS: { value: PaymentTerms; label: string; instalments: I
   { value: 'DEPOSIT_30_70', label: '30% bij bestelling, 70% bij vertrek', instalments: [
     { label: '30% bij bestelling', share: 0.3, due: 'ORDERED' },
     { label: '70% bij vertrek', share: 0.7, due: 'SHIPPED' } ] },
+  { value: 'DEPOSIT_30_40_30', label: '30% · 40% · 30% (bestelling, vertrek, aankomst)', instalments: [
+    { label: '30% bij bestelling', share: 0.3, due: 'ORDERED' },
+    { label: '40% bij vertrek', share: 0.4, due: 'SHIPPED' },
+    { label: '30% bij aankomst', share: 0.3, due: 'ARRIVED' } ] },
   { value: 'FULL_UPFRONT', label: '100% bij bestelling', instalments: [ { label: '100% bij bestelling', share: 1, due: 'ORDERED' } ] },
   { value: 'FULL_ON_ARRIVAL', label: '100% bij aankomst', instalments: [ { label: '100% bij aankomst', share: 1, due: 'ARRIVED' } ] },
   { value: 'CUSTOM', label: 'Anders (vrij)', instalments: [] },

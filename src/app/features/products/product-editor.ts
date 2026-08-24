@@ -447,6 +447,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               </div>
             </div>
             <div class="field">
+              <label for="p-hc">Stuks per 40' HC <span class="opt"></span></label>
+              <input class="input num right" id="p-hc" type="number" min="1" step="1"
+                     inputmode="numeric" [ngModel]="draft().carton.piecesPerHc ?? null"
+                     [placeholder]="autoHcCapacity() !== null ? 'auto: ' + (autoHcCapacity() | num) : ''"
+                     (ngModelChange)="patchCarton({ piecesPerHc: $event === null || $event === '' ? null : Math.max(1, Math.round(+$event)) })" />
+              <span class="hint">Handmatig geteld. Leeg = automatisch uit de kartonafmetingen en stuks per karton.</span>
+            </div>
+            <div class="field">
               <label for="p-outer">Omdoosbarcode <span class="opt"></span></label>
 <span class="magic-field">
               <input class="input mono" id="p-outer" inputmode="numeric"
@@ -2167,6 +2175,19 @@ export class ProductEditor implements OnDestroy {
     return product.packaging
       ?? { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null }, barcode: null };
   }
+
+  protected readonly Math = Math;
+
+  /** Full cartons that fit 68 m³, times the carton's content; null without sizes. */
+  readonly autoHcCapacity = computed(() => {
+    const carton = this.draft().carton;
+    const l = carton.lengthCm, w = carton.widthCm, h = carton.heightCm;
+    if (!l || !w || !h) return null;
+    const cbm = (l / 100) * (w / 100) * (h / 100);
+    if (!(cbm > 0)) return null;
+    /* A hair of float slack so 68/0.16 counts as 425, like the backend's exact division. */
+    return Math.floor(68 / cbm + 1e-9) * Math.max(1, carton.piecesPerCarton ?? 1);
+  });
 
   patchCarton(changes: Partial<Product['carton']>): void {
     this.draft.update((p) => ({ ...p, carton: { ...p.carton, ...changes } }));

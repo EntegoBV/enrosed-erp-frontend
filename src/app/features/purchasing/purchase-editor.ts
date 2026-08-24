@@ -883,11 +883,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                   </div>
                 }
-                @if (openFor('SUPPLIER') > 0 || !(supplierOwed() > 0)) {
-                  <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
-                } @else {
+                @if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) {
                   <p class="pay-stream__done">✓ Volledig betaald</p>
                 }
+                <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
               </div>
 
               @if (!isDdp()) {
@@ -905,11 +904,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                     </div>
                   }
-                  @if (openFor('LOGISTICS') > 0 || !(logisticsOwed() > 0)) {
-                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
-                  } @else {
+                  @if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) {
                     <p class="pay-stream__done">✓ Volledig betaald</p>
                   }
+                  <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
                 </div>
               }
 
@@ -953,11 +951,27 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <ul class="files-list">
                     @for (doc of docs; track doc.id) {
                       <li>
-                        <span class="files-list__name">
-                          <b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b>
-                          <small>{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}</small>
-                        </span>
+                        @if (renamingDoc()?.id === doc.id) {
+                          <input class="input input--sm files-list__rename" type="text" enterkeyhint="done"
+                                 placeholder="Titel, bijv. KBC mei" [ngModel]="renamingDoc()!.label"
+                                 (ngModelChange)="renamingDoc.set({ id: doc.id, label: $event })"
+                                 (keydown.enter)="commitDocRename(doc)" (keydown.escape)="renamingDoc.set(null)"
+                                 (blur)="commitDocRename(doc)" />
+                        } @else {
+                          <span class="files-list__name">
+                            <b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b>
+                            <small>{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}</small>
+                          </span>
+                        }
                         <span class="files-list__actions">
+                          <!-- The title stays editable after the upload. -->
+                          <button class="files-list__pencil" type="button" title="Titel aanpassen"
+                                  [attr.aria-label]="'Titel aanpassen van ' + doc.originalFilename"
+                                  (click)="renamingDoc.set({ id: doc.id, label: doc.label ?? '' })">
+                            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                              <path d="M4 20h4l10-10-4-4L4 16v4z" /><path d="m13 7 4 4" />
+                            </svg>
+                          </button>
                           <button class="btn btn--sm" type="button" (click)="downloadDocument(doc)">Openen</button>
                           <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Document verwijderen" (click)="removeDocument(doc)">×</button>
                         </span>
@@ -1109,7 +1123,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <span class="hint">≈ {{ eurOf(pay.amount, pay.currency) | eur }} aan de koers van deze order.</span>
                 }
                 @if (payingOverage() > 0) {
-                  <span class="hint hint--warn">Er staat nog {{ openFor(pay.payee) | eur }} open; dit bedrag gaat daar {{ payingOverage() | eur }} overheen.</span>
+                  <span class="hint hint--warn">Let op: dit gaat {{ payingOverage() | eur }} over het afgesproken bedrag heen (bijv. bankkosten of koersverschil). Bewaren kan gewoon.</span>
                 } @else if (pay.amount > 0 && openFor(pay.payee) > 0) {
                   <span class="hint">Nog open: {{ openFor(pay.payee) | eur }}.</span>
                 }
@@ -1127,7 +1141,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0) || payingOverage() > 0" (click)="confirmPayment()">
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
               {{ payingBusy() ? 'Bezig…' : 'Betaling bewaren' }}
             </button>
           </div>
@@ -1184,7 +1198,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           <div body>
             <p>De bestelling staat vast. Volgens de betaalafspraak is nu <b>{{ first.label }}</b> aan de beurt:
               <b>{{ first.amount | eur }}</b> aan {{ supplierName() }}.</p>
-            <p class="hint mt-8">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 2 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
+            <p class="hint mt-8">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 5 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
             <div class="form-grid mt-12">
               <div class="field">
                 <label for="first-amount">Betaald bedrag</label>
@@ -1205,7 +1219,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <label for="first-proof">Betalingsbewijs <span class="opt"></span></label>
                 <input class="input" id="first-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
                        (change)="firstInstalmentPrompt.set({ ...first, files: fileList($any($event.target).files) })" />
-                <span class="hint">Bijv. het KBC-afschrift; hoogstens twee bestanden.</span>
+                <span class="hint">Bijv. het KBC-afschrift; hoogstens vijf bestanden.</span>
               </div>
             </div>
           </div>
@@ -1346,7 +1360,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .instalments{list-style:none;margin:0 18px 6px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
     .pay-stream{margin:0 18px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-stream .instalments{margin:0}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-ours{margin:0 18px 14px;color:var(--muted);font-size:11.5px}
     .files-list__actions{display:flex;align-items:center;gap:6px}
-    .files-list{list-style:none;margin:0 18px 4px;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-card__hint{padding:6px 18px 14px}
+    .files-list{list-style:none;margin:0 18px 4px;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-card__hint{padding:6px 18px 14px}.files-list__rename{flex:1;min-width:0}.files-list__pencil{display:inline-grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}.files-list__pencil:hover{background:var(--surface-2);color:var(--ink)}.files-list__pencil svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
     .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
     .receive-balance{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-balance b{font-size:13px}.receive-balance small{display:block;color:var(--muted);font-size:11.5px}.receive-balance__final{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.receive-balance__final input{width:18px;height:18px;accent-color:var(--rose)}
     .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
@@ -1640,6 +1654,7 @@ export class PurchaseEditor {
         try {
           await this.sourcing.deletePayment(payment.orderId, payment.id);
           await this.loadPayments(payment.orderId);
+          await this.reloadOrderQuietly();
         } catch (failure: unknown) {
           this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
         }
@@ -1713,7 +1728,7 @@ export class PurchaseEditor {
   }
 
   fileList(files: FileList | null): File[] {
-    return files ? Array.from(files).slice(0, 2) : [];
+    return files ? Array.from(files).slice(0, 5) : [];
   }
 
   /* ---- just ordered: the first instalment ---------------------------- */
@@ -1734,7 +1749,7 @@ export class PurchaseEditor {
     try {
       const payment = await this.sourcing.addPayment(data.order.id, {
         paidOn: first.paidOn, amount: first.amount, currency: first.currency, label: first.label, payee: 'SUPPLIER' });
-      for (const file of first.files.slice(0, 2)) {
+      for (const file of first.files.slice(0, 5)) {
         await this.sourcing.addDocument(data.order.id, file, 'PAYMENT_PROOF', first.label, payment.id);
       }
       await Promise.all([this.loadPayments(data.order.id), this.loadDocuments(data.order.id)]);
@@ -2208,6 +2223,26 @@ export class PurchaseEditor {
 
   /* ---- damage or shortfall on a received order, via one small button ---- */
   readonly noteEditing = signal(false);
+  /* ---- renaming an uploaded document's title ---- */
+  readonly renamingDoc = signal<{ id: number; label: string } | null>(null);
+
+  async commitDocRename(doc: PurchaseDocument): Promise<void> {
+    const editing = this.renamingDoc();
+    if (!editing || editing.id !== doc.id) return;
+    this.renamingDoc.set(null);
+    const label = editing.label.trim();
+    if (label === (doc.label ?? '')) return;
+    const data = this.view();
+    if (!data) return;
+    try {
+      await this.sourcing.renameDocument(data.order.id, doc.id, label || null);
+      await this.loadDocuments(data.order.id);
+      this.ui.toast('Titel aangepast', 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Titel aanpassen mislukt'), 'err');
+    }
+  }
+
   readonly issue = signal<{ productId: number; kind: 'DAMAGED' | 'SHORT'; quantity: number } | null>(null);
 
   readonly issueLine = computed(() => {

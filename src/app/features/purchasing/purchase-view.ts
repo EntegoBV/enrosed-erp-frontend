@@ -213,7 +213,10 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
               <div class="product-lines">
                 @for (line of data.costing.lines; track line.productId; let lineIndex = $index) {
                   <article class="purchase-line">
-                    <div class="purchase-line__identity">
+                    <!-- The line walks through to the product itself; the
+                         back button brings you straight back here. -->
+                    <a class="purchase-line__identity" [routerLink]="['/products', line.productId]"
+                       [title]="line.productName + ' openen'">
                       @if (photoOf(line.productId); as url) {
                         <img class="purchase-line__photo" [appAuthSrc]="url" alt="" />
                       } @else {
@@ -224,7 +227,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                         <strong>{{ line.productName }}</strong>
                         <span>{{ line.quantity | num }} st · {{ line.cartons | num }} dozen</span>
                       </span>
-                    </div>
+                    </a>
 
                     <div class="line-facts">
                       <span><small>Aantal</small><strong>{{ line.quantity | num }} st</strong></span>
@@ -500,7 +503,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
     .section-heading__copy{display:block;min-width:0;flex:1}.section-heading h2{font-size:15px}.section-heading__copy>span:last-child{display:block;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
     .section-heading .per-toggle{flex:none}.section-heading .per-toggle button{padding-inline:8px;font-size:10px}
 
-    .purchase-line{padding:14px;border-bottom:1px solid var(--line)}.purchase-line:last-child{border:0}.purchase-line__identity{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px}
+    .purchase-line{padding:14px;border-bottom:1px solid var(--line)}.purchase-line:last-child{border:0}.purchase-line__identity{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px}.purchase-line__identity{color:inherit;text-decoration:none}a.purchase-line__identity:hover strong{color:var(--rose-dark);text-decoration:underline}
     .purchase-line__photo{width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover}.purchase-line__photo--empty{display:grid;place-items:center;color:var(--muted);font-size:20px}
     .purchase-line__copy{display:flex;min-width:0;flex-direction:column}.purchase-line__copy small{color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase}.purchase-line__copy strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__copy>span{color:var(--muted);font-size:11px}
     .line-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden}.line-facts>span{display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2)}.line-facts small{color:var(--muted);font-size:8.5px;text-transform:uppercase}.line-facts strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}

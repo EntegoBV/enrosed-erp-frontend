@@ -318,6 +318,10 @@ export class CatalogApi {
     return firstValueFrom(this.http.get<Category[]>(api('/api/categories')));
   }
 
+  reorderCategories(ids: number[]): Promise<Category[]> {
+    return firstValueFrom(this.http.put<Category[]>(api('/api/categories/order'), ids));
+  }
+
   createCategory(category: Category): Promise<Category> {
     return firstValueFrom(this.http.post<Category>(api('/api/categories'), category));
   }

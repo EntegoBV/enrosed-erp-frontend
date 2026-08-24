@@ -98,6 +98,11 @@ export class SourcingApi {
     return firstValueFrom(this.http.get(api(`/api/purchase-orders/${orderId}/documents/${documentId}/file`), { responseType: 'blob' }));
   }
 
+  renameDocument(orderId: number, documentId: number, label: string | null): Promise<PurchaseDocument> {
+    return firstValueFrom(this.http.put<PurchaseDocument>(
+      api(`/api/purchase-orders/${orderId}/documents/${documentId}/label`), { label }));
+  }
+
   deleteDocument(orderId: number, documentId: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/purchase-orders/${orderId}/documents/${documentId}`)));
   }

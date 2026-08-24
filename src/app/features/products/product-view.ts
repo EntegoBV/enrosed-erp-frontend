@@ -350,6 +350,11 @@ interface GalleryPointer {
                 <div><dt>Volume</dt><dd class="num">
                   @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
                 </dd></div>
+                <div><dt>Per 40' HC</dt><dd class="num">
+                  @if (product.carton.hcCapacity; as hc) {
+                    {{ hc | num }} stuks <small class="muted">{{ product.carton.piecesPerHc ? 'geteld' : 'berekend' }}</small>
+                  } @else { — }
+                </dd></div>
                 <div><dt>Omdoosbarcode</dt><dd class="mono">
                   @if (product.barcodeOuter; as code) {
                     @if (code.length === 13) {

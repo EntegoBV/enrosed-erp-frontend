@@ -440,6 +440,18 @@ const normalizeCategoryCode = (value: string): string => value
                     </span>
                   </div>
                   <div class="category-item__actions">
+                    <!-- The order here is the order everywhere: catalogue,
+                         stock, order app and website. -->
+                    <span class="category-order" role="group" [attr.aria-label]="'Volgorde van ' + category.name">
+                      <button class="category-order__btn" type="button" title="Omhoog"
+                              [disabled]="reordering() || $index === 0"
+                              [attr.aria-label]="category.name + ' omhoog'"
+                              (click)="moveCategory(category.id!, -1)">↑</button>
+                      <button class="category-order__btn" type="button" title="Omlaag"
+                              [disabled]="reordering() || $index === categories().length - 1"
+                              [attr.aria-label]="category.name + ' omlaag'"
+                              (click)="moveCategory(category.id!, 1)">↓</button>
+                    </span>
                     <button class="btn btn--sm" type="button"
                             [disabled]="categoryDraft() !== null || deletingCategoryId() === category.id"
                             (click)="editCategory(category)">Bewerken</button>
@@ -750,6 +762,12 @@ const normalizeCategoryCode = (value: string): string => value
     }
     .category-form__actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 14px; }
     .category-form__actions .btn { width: 100%; }
+    .category-order { display: inline-flex; gap: 4px; margin-right: 4px; }
+    .category-order__btn { display: inline-grid; place-items: center; width: 30px; height: 30px;
+      border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2);
+      font: inherit; font-size: 14px; cursor: pointer; }
+    .category-order__btn:hover:not(:disabled) { background: var(--surface-2); }
+    .category-order__btn:disabled { opacity: .35; cursor: default; }
     .category-list { overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-sm); }
     .category-item { display: grid; gap: 12px; padding: 14px; border-bottom: 1px solid var(--line);
       background: var(--surface); }
@@ -1057,6 +1075,31 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 
   /* ---------------------------------------------------- categorieen */
+
+  readonly reordering = signal(false);
+
+  /** One tap on an arrow: the whole order is written in one call. */
+  async moveCategory(id: number, direction: -1 | 1): Promise<void> {
+    const ids = this.categories().map((category) => category.id!) as number[];
+    const index = ids.indexOf(id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    this.reordering.set(true);
+    try {
+      const fresh = await this.catalog.reorderCategories(ids);
+      this.categories.set(fresh.map((category) => ({
+        ...category,
+        revision: category.revision ?? null,
+        texts: category.texts ?? [],
+      })));
+      this.ui.toast('Volgorde aangepast', 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Volgorde aanpassen mislukt'), 'err');
+    } finally {
+      this.reordering.set(false);
+    }
+  }
 
   addCategory(): void {
     if (this.categoryDraft()) return;
