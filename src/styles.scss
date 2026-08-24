@@ -1234,6 +1234,16 @@ table.data tfoot td {
   color: var(--rose);
 }
 .stepper__step--now .stepper__label { color: var(--ink); font-weight: 650; }
+/* A step both reached and current keeps its green check; the ring was
+   fighting the fill. */
+.stepper__step--done.stepper__step--now .stepper__dot { border-color: var(--ok); color: #fff; }
+/* Landed: the last step celebrates in the house colour instead of green. */
+.stepper__step--arrived .stepper__dot,
+.stepper__step--done.stepper__step--arrived .stepper__dot {
+  background: var(--rose); border-color: var(--rose); color: #fff;
+}
+.stepper__step--arrived .stepper__label { color: var(--rose-dark); font-weight: 700; }
+.stepper__line--half { background: linear-gradient(to right, var(--ok) 55%, var(--line-strong) 55%); }
 .stepper__line {
   flex: 1;
   min-width: 10px;
@@ -1767,6 +1777,7 @@ button.market-row:disabled { cursor: default; }
 .kpi { border: 0; font: inherit; text-align: center; cursor: pointer; }
 .kpi__meta--expected { color: var(--warn); font-weight: 700; }
 .kpi__meta--sales { color: var(--ok); font-weight: 700; }
+.hint--warn { color: var(--warn); font-weight: 650; }
 /* Sits tight under the big figure, roughly beneath its thousands dot. */
 .kpi__value-sub { margin: -3px 0 4px; color: var(--muted-2); font-size: 9.5px; font-weight: 750;
   letter-spacing: .07em; text-transform: uppercase; }

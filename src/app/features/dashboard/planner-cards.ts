@@ -34,6 +34,7 @@ export interface PlannerMilestone {
           <button class="btn btn--sm" type="button" (click)="openNew('EVENT')">+ Nieuw</button>
         </div>
         <div class="card__body">
+          <div class="cal-pane">
           <div class="cal-head">
             <button class="cal-nav" type="button" [attr.aria-label]="calOpen() ? 'Vorige maand' : 'Vorige week'"
                     (click)="shiftPeriod(-1)">‹</button>
@@ -57,6 +58,7 @@ export interface PlannerMilestone {
                 @if (cell.events) { <i class="cal-count" aria-hidden="true">{{ cell.events }}</i> }
               </button>
             }
+          </div>
           </div>
           @if (dayItems(); as items) {
             <div class="cal-agenda">
@@ -94,7 +96,7 @@ export interface PlannerMilestone {
               @if (!dayItems().length && !milestonesOn(selectedDate()).length) {
                 <p class="cal-empty">niets gepland</p>
               }
-              @if (!items.length && !milestonesOn(selectedDate()).length && upcoming().length) {
+              @if (!items.length && upcoming().length) {
                 <!-- The next things coming up, so an empty day still tells
                      you where the week is heading. -->
                 <div class="upcoming">
@@ -353,10 +355,10 @@ export interface PlannerMilestone {
       letter-spacing: .05em; text-align: center; text-transform: uppercase; }
     .cal-day { position: relative; display: grid; place-items: center; aspect-ratio: 1; min-height: 34px; border: 0; border-radius: 9px;
       background: transparent; color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer; }
-    .cal-day:hover { background: var(--surface-2); }
+    @media (hover: hover) { .cal-day:hover { background: var(--surface-2); } }
     .cal-day--outside { color: var(--muted-2); }
     .cal-day--today { font-weight: 800; color: var(--rose-dark); box-shadow: inset 0 0 0 1.5px var(--rose-line); }
-    .cal-day--selected { background: var(--rose); color: #fff; font-weight: 700; box-shadow: none; }
+    .cal-day.cal-day--selected { background: var(--rose); color: #fff; font-weight: 700; box-shadow: none; }
     .cal-title { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent;
       font: inherit; font-size: 13.5px; font-weight: 700; text-transform: capitalize; cursor: pointer; color: var(--ink); }
     .cal-title__chev { width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
@@ -369,6 +371,15 @@ export interface PlannerMilestone {
     .cal-day--selected .cal-count { background: #fff; color: var(--rose-dark); }
     .cal-empty { margin: 0; padding: 10px 0 2px; color: var(--muted-2); font-size: 12px; text-align: center; }
     .cal-agenda { margin-top: 8px; border-top: 1px solid var(--line); }
+    /* Desktop: the little calendar sits left like a paper desk planner,
+       the day's list gets the rest of the width. */
+    @media (min-width: 680px) {
+      .planner-card .card__body { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 4px 26px; align-items: start; }
+      .planner-card .overdue { grid-column: 1 / -1; }
+      .cal-pane { min-width: 0; }
+      .cal-agenda { margin-top: 0; padding-left: 26px; border-top: 0; border-left: 1px solid var(--line); min-height: 100%; }
+      .cal-day { min-height: 40px; }
+    }
     .cal-agenda__row { display: flex; gap: 10px; width: 100%; padding: 8px 2px; border: 0; border-bottom: 1px solid var(--line);
       background: transparent; font: inherit; text-align: left; cursor: pointer; align-items: baseline; }
     .cal-agenda__row:hover { background: var(--surface-2); }

@@ -82,16 +82,18 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
           <div class="stepper journey-stepper" aria-label="Voortgang van de inkooporder">
             @for (step of statusSteps; track step.value; let last = $last) {
               <div class="stepper__step"
-                   [class.stepper__step--done]="stepIndex(data.order.status) > $index || (data.order.status === 'ONTVANGEN' && stepIndex(data.order.status) === $index)"
-                   [class.stepper__step--now]="data.order.status !== 'ONTVANGEN' && stepIndex(data.order.status) === $index">
+                   [class.stepper__step--done]="stepIndex(data.order.status) >= $index"
+                   [class.stepper__step--arrived]="step.value === 'ONTVANGEN' && data.order.status === 'ONTVANGEN'"
+                   [class.stepper__step--now]="stepIndex(data.order.status) === $index">
                 <span class="stepper__dot" aria-hidden="true">
-                  @if (stepIndex(data.order.status) > $index || (data.order.status === 'ONTVANGEN' && stepIndex(data.order.status) === $index)) { ✓ } @else { {{ $index + 1 }} }
+                  @if (stepIndex(data.order.status) >= $index) { ✓ } @else { {{ $index + 1 }} }
                 </span>
                 <span class="stepper__label">{{ step.label }}</span>
               </div>
               @if (!last) {
                 <span class="stepper__line"
-                      [class.stepper__line--done]="stepIndex(data.order.status) > $index"></span>
+                      [class.stepper__line--done]="stepIndex(data.order.status) > $index"
+                      [class.stepper__line--half]="stepIndex(data.order.status) === $index"></span>
               }
             }
           </div>

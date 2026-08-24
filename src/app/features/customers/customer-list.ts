@@ -46,8 +46,6 @@ function blank(countryCode: string): Customer {
                 @if (!customer.email) { · <span class="warn-text">geen e-mail</span> }
               </div>
             </button>
-            <button class="btn btn--sm btn--primary" type="button"
-                    (click)="newOrder(customer)">Order</button>
           </div>
         } @empty {
           @if (loading()) {
@@ -105,7 +103,8 @@ function blank(countryCode: string): Customer {
                 <input class="input mt-8" aria-label="Landcode (ISO, 2 letters)" maxlength="2"
                        placeholder="Landcode, bijv. AT" [ngModel]="draft().countryCode"
                        (ngModelChange)="patch({ countryCode: ($event || '').toUpperCase() })" />
-                <span class="hint">{{ countryLabel(draft().countryCode) }} · zonder vrachtregels uit Landen &amp; vracht.</span>
+                <span class="hint hint--warn">{{ countryLabel(draft().countryCode) }} · staat niet bij Landen &amp; vracht:
+                  offertes naar dit land lukken pas als je het daar toevoegt.</span>
               }</div>
             <div class="field"><label class="req" for="c-language">Taal van de klant</label>
               <select class="select" id="c-language" [ngModel]="draft().language"
@@ -200,6 +199,11 @@ export class CustomerList {
       this.sales.customers(), this.sales.countries()]);
     this.customers.set(customers);
     this.countries.set(countries);
+    /* The sheet can open before this list arrives: without repair the new
+       customer sat on "Ander land…" with an empty code. */
+    if (this.editing() && this.draft().id === null && !this.draft().countryCode) {
+      this.patch({ countryCode: this.defaultCountry() });
+    }
     this.loading.set(false);
   }
 
@@ -229,10 +233,16 @@ export class CustomerList {
   }
 
   open(customer: Customer | null): void {
-    /* New customers default to the Netherlands with payment up front. */
-    this.draft.set(customer ? { ...customer }
-      : blank(this.countries().some((country) => country.code === 'NL') ? 'NL' : this.countries()[0]?.code ?? 'NL'));
+    this.draft.set(customer ? { ...customer } : blank(this.defaultCountry()));
     this.editing.set(true);
+  }
+
+  /** Home first when it ships, otherwise the first configured country -
+      never a hardcoded guess, which showed "Ander land…" on every new
+      customer whenever the guess was not in Landen & vracht. */
+  private defaultCountry(): string {
+    const codes = this.countries().map((country) => country.code);
+    return codes.includes('BE') ? 'BE' : codes[0] ?? '';
   }
 
   patch(changes: Partial<Customer>): void {
@@ -245,6 +255,10 @@ export class CustomerList {
     /* A second tap while the first is under way made a second customer. */
     if (this.saving()) return;
     const customer = this.draft();
+    if (!(customer.countryCode ?? '').trim()) {
+      this.ui.toast('Kies een land voor de klant', 'err');
+      return;
+    }
     this.saving.set(true);
     try {
       if (customer.id === null) await this.sales.createCustomer(customer);
