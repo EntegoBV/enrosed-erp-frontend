@@ -21,9 +21,29 @@ const DAY_MS = 24 * 60 * 60 * 1000;
       <div class="card planner-card">
         <div class="card__head"><h2>Agenda</h2>
           <span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="openNew('EVENT')">+ Afspraak</button>
+          <button class="btn btn--sm" type="button" (click)="openNew('EVENT')">+ Nieuw</button>
         </div>
         <div class="card__body">
+          <!-- What slipped: open tasks whose day has passed, and loose ones
+               without a day - they stay in sight until ticked or replanned. -->
+          @if (openLoose().length) {
+            <div class="overdue">
+              @for (item of openLoose(); track item.id) {
+                <div class="overdue__row">
+                  <input class="task__tick" type="checkbox" [checked]="item.done"
+                         [attr.aria-label]="'Afvinken: ' + item.title" (change)="toggleTask(item)" />
+                  <button class="overdue__open" type="button" (click)="openEdit(item)">
+                    <span class="task__title">{{ item.title }}</span>
+                    @if (item.onDate) {
+                      <small class="task__date task__date--late">{{ shortDay(item.onDate) }}</small>
+                    } @else {
+                      <small class="task__date">los</small>
+                    }
+                  </button>
+                </div>
+              }
+            </div>
+          }
           <div class="cal-head">
             <button class="cal-nav" type="button" [attr.aria-label]="calOpen() ? 'Vorige maand' : 'Vorige week'"
                     (click)="shiftPeriod(-1)">‹</button>
@@ -71,48 +91,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
         </div>
       </div>
 
-      <div class="card planner-card">
-        <div class="card__head"><h2>Taken</h2>
-          <span class="spacer"></span>
-          @if (openTasks().length) { <span class="tiny muted">{{ openTasks().length }} open</span> }
-        </div>
-        <div class="card__body">
-          <form class="task-add" (submit)="addTask(); $event.preventDefault()">
-            <input class="input input--sm" placeholder="Nieuwe taak of notitie…" enterkeyhint="done"
-                   [ngModel]="newTask()" (ngModelChange)="newTask.set($event)" name="task" autocomplete="off" />
-            <button class="btn btn--primary btn--sm" type="submit" [disabled]="!newTask().trim()">+</button>
-          </form>
-          <ul class="task-list">
-            @for (item of visibleTasks(); track item.id) {
-              <li [class.task--done]="item.done">
-                <input class="task__tick" type="checkbox" [checked]="item.done"
-                       [attr.aria-label]="'Afvinken: ' + item.title" (change)="toggleTask(item)" />
-                <!-- The row opens the task: write a note, put it on a day, push it out. -->
-                <button class="task__body" type="button" (click)="openEdit(item)">
-                  <span class="task__title">{{ item.title }}</span>
-                  <span class="task__tags">
-                    @if (item.onDate) {
-                      <small class="task__date" [class.task__date--late]="isOverdue(item)">{{ shortDay(item.onDate) }}</small>
-                    }
-                    @if (item.note) { <small class="task__note-mark" title="Heeft een notitie">✎</small> }
-                  </span>
-                </button>
-                <button class="task__remove" type="button" title="Verwijderen"
-                        [attr.aria-label]="'Taak verwijderen: ' + item.title" (click)="removeItem(item)">×</button>
-              </li>
-            } @empty {
-              <li class="cal-empty cal-empty--row">niets genoteerd</li>
-            }
-          </ul>
-          @if (doneTasks().length && !showDone()) {
-            <button class="linklike task-list__toggle" type="button" (click)="showDone.set(true)">
-              {{ doneTasks().length }} afgevinkt tonen</button>
-          } @else if (showDone() && doneTasks().length) {
-            <button class="linklike task-list__toggle" type="button" (click)="showDone.set(false)">
-              Afgevinkte verbergen</button>
-          }
-        </div>
-      </div>
     </div>
 
     @if (editing(); as draft) {
@@ -199,7 +177,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
   `,
   styles: `
     .planner-duo { display: grid; gap: 12px; }
-    @media (min-width: 680px) { .planner-duo { grid-template-columns: 1fr 1fr; align-items: start; } }
     .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .cal-head strong { font-size: 13.5px; text-transform: capitalize; }
     .cal-nav { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
@@ -259,6 +236,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
       color: var(--muted); font-size: 16px; cursor: pointer; }
     .attach-remove:hover { background: var(--danger-soft); color: var(--danger); }
     .attach-add { display: inline-flex; }
+    .overdue { margin-bottom: 10px; padding: 4px 10px; border: 1px solid var(--danger-soft, #f6dedb);
+      border-radius: 12px; background: var(--danger-soft, #fdf1ef); }
+    .overdue__row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
+    .overdue__row + .overdue__row { border-top: 1px solid rgb(0 0 0 / 5%); }
+    .overdue__open { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; padding: 0;
+      border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+    .overdue__open .task__date { margin-left: auto; flex: none; }
     .kind-toggle { margin-top: 2px; }
     .snooze-row { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
     .snooze { padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
@@ -291,8 +275,6 @@ export class PlannerCards {
   /** Closed = one week row; open = the whole month. */
   readonly calOpen = signal(false);
   readonly selectedDate = signal(isoDate(new Date()));
-  readonly newTask = signal('');
-  readonly showDone = signal(false);
   readonly editing = signal<PlannerItem | null>(null);
   readonly saving = signal(false);
 
@@ -309,15 +291,18 @@ export class PlannerCards {
   readonly events = computed(() => this.items().filter((item) => item.kind === 'EVENT'));
   readonly pinnedItems = computed(() => this.items().filter((item) => item.pinned));
 
+  /** Open tasks that slipped past their day, or never got one. */
+  readonly openLoose = computed(() => {
+    const today = isoDate(new Date());
+    return this.tasks().filter((task) => !task.done && (!task.onDate || task.onDate < today));
+  });
+
   openPinned(item: PlannerItem): void {
     if (item.onDate) { this.selectedDate.set(item.onDate); this.month.set(new Date(item.onDate.slice(0, 8) + '01')); }
     this.openEdit(item);
   }
   readonly tasks = computed(() => this.items().filter((item) => item.kind === 'TASK'));
   readonly openTasks = computed(() => this.tasks().filter((task) => !task.done));
-  readonly doneTasks = computed(() => this.tasks().filter((task) => task.done));
-  readonly visibleTasks = computed(() =>
-    this.showDone() ? this.tasks() : this.openTasks());
 
   readonly monthLabel = computed(() =>
     this.month().toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' }));
@@ -489,19 +474,6 @@ export class PlannerCards {
   sizeLabel(bytes: number): string {
     if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
     return Math.max(1, Math.round(bytes / 1024)) + ' kB';
-  }
-
-  async addTask(): Promise<void> {
-    const title = this.newTask().trim();
-    if (!title) return;
-    this.newTask.set('');
-    try {
-      await this.api.create({ id: null, kind: 'TASK', title, onDate: null, atTime: null, note: null, done: false });
-      await this.reload();
-    } catch (failure: unknown) {
-      this.newTask.set(title);
-      this.ui.toast(messageOf(failure, 'Taak bewaren mislukt'), 'err');
-    }
   }
 
   async toggleTask(item: PlannerItem): Promise<void> {
