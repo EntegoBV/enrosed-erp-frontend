@@ -657,6 +657,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <!-- The same smart shape as the stock page: type straight into
                    a tile and the correction books itself; the actions sit in
                    one iOS-style row below. -->
+              <p class="hint stock-hint">Tik een getal aan en het wordt meteen als correctie geboekt. Groeit vanzelf wanneer een inkooporder op Ontvangen gaat.</p>
               <div class="history-levels stock-tiles">
                 @for (level of levels; track level.locationId) {
                   <label class="history-levels__tile">
@@ -670,7 +671,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   </label>
                 }
               </div>
-              <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt. Groeit vanzelf wanneer een inkooporder op Ontvangen gaat.</p>
 
               <!-- One action at a time, each in its own sheet - the same
                    pattern as the stock page. -->
@@ -1224,6 +1224,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .magic-field__btn:hover { background: var(--rose-line); }
     .magic-field__btn:disabled { opacity: .5; cursor: wait; }
     .stock-now { font-size: 16px; }
+    .stock-hint { margin: 0 0 10px; }
     .stock-tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 6px; }
     .history-levels__tile { display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); min-width: 104px; }
     .history-levels__tile small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
