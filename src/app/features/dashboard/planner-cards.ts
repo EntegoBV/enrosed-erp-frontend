@@ -1,11 +1,21 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { PlannerApi, PlannerItem, PlannerStore } from '../../core/api/planner-api';
 import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
 import { Sheet, Ui } from '../../shared/ui';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A read-only line the containers write into the agenda by themselves. */
+export interface PlannerMilestone {
+  date: string;
+  icon: string;
+  title: string;
+  sub: string | null;
+  orderId: number;
+}
 
 /**
  * Agenda and task list, side by side on the dashboard: the little month
@@ -58,8 +68,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
                   @if (item.kind === 'TASK') {
                     <input class="cal-agenda__tick" type="checkbox" [checked]="item.done"
                            [attr.aria-label]="'Taak afvinken: ' + item.title" (change)="toggleTask(item)" />
+                  } @else if (item.atTime) {
+                    <span class="cal-agenda__time num">{{ item.atTime }}</span>
                   } @else {
-                    <span class="cal-agenda__time num">{{ item.atTime || '·' }}</span>
+                    <span class="cal-agenda__time cal-agenda__time--allday">dag</span>
                   }
                   <button class="cal-agenda__open" type="button"
                           (click)="item.kind === 'EVENT' ? openView(item) : openEdit(item)">
@@ -67,17 +79,29 @@ const DAY_MS = 24 * 60 * 60 * 1000;
                     @if (item.note) { <small>{{ item.note }}</small> }
                   </button>
                 </div>
-              } @empty {
+              }
+              @for (stone of milestonesOn(selectedDate()); track stone.title) {
+                <!-- The containers keep their own diary in here: read-only,
+                     one tap opens the order. -->
+                <button class="cal-agenda__row cal-agenda__row--stone" type="button" (click)="openMilestone(stone)">
+                  <span class="cal-agenda__time cal-agenda__stone-icon">{{ stone.icon }}</span>
+                  <span class="cal-agenda__open">
+                    <b>{{ stone.title }}</b>
+                    @if (stone.sub) { <small>{{ stone.sub }}</small> }
+                  </span>
+                </button>
+              }
+              @if (!dayItems().length && !milestonesOn(selectedDate()).length) {
                 <p class="cal-empty">niets gepland</p>
               }
-              @if (!items.length && upcoming().length) {
+              @if (!items.length && !milestonesOn(selectedDate()).length && upcoming().length) {
                 <!-- The next things coming up, so an empty day still tells
                      you where the week is heading. -->
                 <div class="upcoming">
                   <span class="upcoming__label">Eerstvolgend</span>
                   @for (next of upcoming(); track next.id) {
-                    <button class="upcoming__row" type="button" (click)="jumpTo(next)">
-                      <small class="task__date">{{ shortDay(next.onDate!) }}</small>
+                    <button class="upcoming__row" type="button" (click)="jumpToUpcoming(next)">
+                      <small class="task__date">{{ shortDay(next.onDate) }}</small>
                       <b>{{ next.title }}</b>
                       @if (next.atTime) { <small class="muted">{{ next.atTime }}</small> }
                     </button>
@@ -349,6 +373,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
       background: transparent; font: inherit; text-align: left; cursor: pointer; align-items: baseline; }
     .cal-agenda__row:hover { background: var(--surface-2); }
     .cal-agenda__time { flex: none; min-width: 40px; color: var(--muted); font-size: 11.5px; }
+    .cal-agenda__time--allday { display: inline-grid; place-items: center; min-width: 40px; padding: 1px 0;
+      border-radius: 7px; background: var(--rose-soft); color: var(--rose-dark); font-size: 9.5px;
+      font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
     .cal-agenda__what { display: grid; min-width: 0; }
     .cal-agenda__what b { font-size: 13px; font-weight: 650; }
     .cal-agenda__what small { color: var(--muted); font-size: 11px; }
@@ -422,6 +449,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     .cal-agenda__open b { font-size: 13px; font-weight: 650; }
     .cal-agenda__open small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cal-agenda__row--done .cal-agenda__open b { color: var(--muted); text-decoration: line-through; }
+    .cal-agenda__row--stone { background: var(--surface-2); border-radius: 10px; margin: 2px -6px; padding: 8px 8px; border-bottom: 0; }
+    .cal-agenda__row--stone + .cal-agenda__row--stone { margin-top: 4px; }
+    .cal-agenda__stone-icon { min-width: 40px; text-align: center; font-size: 14px; }
+    .cal-agenda__row--stone .cal-agenda__open b { font-weight: 620; }
   `,
 })
 export class PlannerCards {
@@ -522,9 +553,15 @@ export class PlannerCards {
   /** Everything on the horizon after the selected day, nearest first. */
   readonly upcoming = computed(() => {
     const from = this.selectedDate();
-    return this.items()
+    const own = this.items()
       .filter((item) => item.onDate && item.onDate > from && !(item.kind === 'TASK' && item.done))
-      .sort((a, b) => a.onDate!.localeCompare(b.onDate!) || (a.atTime ?? '').localeCompare(b.atTime ?? ''))
+      .map((item) => ({ id: 'p' + item.id, onDate: item.onDate!, atTime: item.atTime, title: item.title, item, stone: null as PlannerMilestone | null }));
+    const stones = this.milestones()
+      .filter((stone) => stone.date > from)
+      .map((stone) => ({ id: 'm' + stone.orderId + stone.title, onDate: stone.date, atTime: null as string | null,
+        title: stone.icon + ' ' + stone.title, item: null as PlannerItem | null, stone }));
+    return [...own, ...stones]
+      .sort((a, b) => a.onDate.localeCompare(b.onDate) || (a.atTime ?? '').localeCompare(b.atTime ?? ''))
       .slice(0, 3);
   });
 
@@ -532,6 +569,11 @@ export class PlannerCards {
     if (!item.onDate) return;
     this.selectedDate.set(item.onDate);
     this.month.set(new Date(item.onDate.slice(0, 8) + '01'));
+  }
+
+  jumpToUpcoming(next: { onDate: string }): void {
+    this.selectedDate.set(next.onDate);
+    this.month.set(new Date(next.onDate.slice(0, 8) + '01'));
   }
 
   readonly newTask = signal('');
@@ -579,6 +621,17 @@ export class PlannerCards {
   readonly saving = signal(false);
 
   readonly weekDays = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
+  /** Container milestones, derived by the dashboard - never stored, never stale. */
+  readonly milestones = input<PlannerMilestone[]>([]);
+  private readonly router = inject(Router);
+
+  openMilestone(stone: PlannerMilestone): void {
+    void this.router.navigate(['/purchasing', stone.orderId]);
+  }
+
+  milestonesOn(date: string): PlannerMilestone[] {
+    return this.milestones().filter((stone) => stone.date === date);
+  }
 
   constructor() {
     void this.reload();
@@ -607,6 +660,9 @@ export class PlannerCards {
       if (item.onDate && !(item.kind === 'TASK' && item.done)) {
         counts.set(item.onDate, (counts.get(item.onDate) ?? 0) + 1);
       }
+    }
+    for (const stone of this.milestones()) {
+      counts.set(stone.date, (counts.get(stone.date) ?? 0) + 1);
     }
     const today = isoDate(new Date());
     const build = (start: Date, length: number, monthOf: Date | null) =>

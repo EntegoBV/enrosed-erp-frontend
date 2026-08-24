@@ -12,7 +12,7 @@ import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { FreightRate, MarketSourceStatus, PurchaseOrderView, QuoteRevision, SalesOrderView, ExpectedStock, Product } from '../../core/api/models';
+import { FreightRate, MarketSourceStatus, PurchaseOrderView, QuoteRevision, SalesOrderView, ExpectedStock, Product, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, DateNlPipe } from '../../shared/pipes';
 import { STATUS_LABEL, statusClass } from '../sales/quote-status';
@@ -72,14 +72,14 @@ interface FreightHorizon {
           <div class="kpi__meta">{{ openOrders().length }} order(s)</div>
         </button>
         <button class="kpi" type="button" (click)="kpiSheet.set('MARGIN')">
-          <div class="kpi__label">Brutomarge</div>
-          <div class="kpi__value">{{ marginPct() | pct: 1 }}</div>
-          <div class="kpi__meta">{{ marginEur() | eur: 0 }} op open orders</div>
+          <div class="kpi__label">Winst open orders</div>
+          <div class="kpi__value">{{ marginEur() | eur: 0 }}</div>
+          <div class="kpi__meta">{{ marginPct() | num: 1 }}% marge op de goederen</div>
         </button>
         <button class="kpi" type="button" (click)="kpiSheet.set('PURCHASE')">
           <div class="kpi__label">Inkoop onderweg</div>
           <div class="kpi__value">{{ incomingValue() | eur: 0 }}</div>
-          <div class="kpi__meta">{{ incoming().length }} container(s)</div>
+          <div class="kpi__meta">{{ incomingLabel() }}</div>
           @if (incomingPieces()) {
             <div class="kpi__meta kpi__meta--expected">+{{ incomingPieces() | num }} st onderweg</div>
           }
@@ -87,7 +87,9 @@ interface FreightHorizon {
         <button class="kpi" type="button" (click)="kpiSheet.set('STOCK')">
           <div class="kpi__label">Voorraadwaarde</div>
           <div class="kpi__value">{{ stockValue() | eur: 0 }}</div>
-          <div class="kpi__meta">{{ stockPieces() | num }} stuks · kostprijs</div>
+          <div class="kpi__value-sub">kostprijs</div>
+          <div class="kpi__meta">{{ stockPieces() | num }} st</div>
+          <div class="kpi__meta kpi__meta--sales">verkoop {{ stockSalesValue() | eur: 0 }}</div>
         </button>
       </div>
       }
@@ -103,7 +105,7 @@ interface FreightHorizon {
         </a>
       }
 
-      <app-planner-cards class="planner-mount" />
+      <app-planner-cards class="planner-mount" [milestones]="purchaseMilestones()" />
 
       @if (catalogAttention()) {
         <a class="alert alert--warn mt-12" routerLink="/products"
@@ -710,55 +712,92 @@ interface FreightHorizon {
               </ol>
             }
             @case ('MARGIN') {
-              <p class="kpi-explain"><b>Brutomarge</b> is wat er van de goederenverkoop overblijft na de
-                kostprijs van de producten, vóór transport en eigen kosten. {{ marginPct() | pct: 1 }} betekent:
-                van elke € 100 goederenverkoop blijft {{ (marginPct()) | num: 0 }} euro over.
-                Op de open orders samen: <b>{{ marginEur() | eur: 0 }}</b>.</p>
+              <p class="kpi-explain">Van elke <b>€ 100</b> aan goederen die je verkoopt, blijft
+                <b class="ok-text">{{ marginPct() | num: 0 }} euro</b> over nadat de producten zelf
+                betaald zijn. Transport en eigen kosten gaan daar nog af.</p>
+              <!-- One bar says it: the sale is the cost plus what you keep. -->
+              <div class="margin-bar" role="img"
+                   [attr.aria-label]="'Goederenverkoop ' + (openGoods() | eur: 0) + ', waarvan winst ' + (marginEur() | eur: 0)">
+                <i class="margin-bar__cost" [style.width.%]="100 - marginPct()"></i>
+                <i class="margin-bar__win" [style.width.%]="marginPct()"></i>
+              </div>
+              <div class="stock-duo">
+                <span><small>Goederenverkoop</small><b class="num">{{ openGoods() | eur: 0 }}</b></span>
+                <span><small>Kostprijs</small><b class="num">{{ openGoods() - marginEur() | eur: 0 }}</b></span>
+                <span><small>Winst</small><b class="num ok-text">{{ marginEur() | eur: 0 }}</b></span>
+              </div>
+              <h3 class="attach-title">Per order · dunste marge eerst</h3>
               <ol class="kpi-list">
-                @for (row of openOrders(); track row.order.id) {
+                @for (row of ordersByMargin(); track row.order.id) {
                   <li>
                     <a class="kpi-list__row" [routerLink]="['/sales', row.order.id]" (click)="kpiSheet.set(null)">
                       <span class="kpi-list__what"><b>{{ row.order.number }}</b>
                         <small>verkoop {{ row.priced.totals.goodsTotal | eur: 0 }}</small></span>
-                      <span class="num kpi-list__amount" [class.warn-text]="row.priced.totals.marginEur < 0">
+                      <span class="num kpi-list__amount" [class.danger-text]="row.priced.totals.marginEur < 0">
                         {{ row.priced.totals.marginEur | eur: 0 }}
-                        <small class="muted">{{ row.priced.totals.marginPct | num: 0 }}%</small></span>
+                        <small [class.danger-text]="row.priced.totals.marginPct < 0"
+                               [class.muted]="row.priced.totals.marginPct >= 0">{{ row.priced.totals.marginPct | num: 0 }}%</small></span>
                     </a>
                   </li>
                 }
               </ol>
             }
             @case ('PURCHASE') {
-              <p class="kpi-explain">Bestelde en vertrokken containers, tegen hun gelande kostprijs:
-                samen <b>{{ incomingValue() | eur: 0 }}</b>. Zodra een container op Ontvangen gaat,
-                schuift de waarde door naar de voorraad.</p>
-              <ol class="kpi-list">
-                @for (row of incoming(); track row.order.id) {
-                  <li>
-                    <a class="kpi-list__row" [routerLink]="['/purchasing', row.order.id]" (click)="kpiSheet.set(null)">
-                      <span class="kpi-list__what"><b>{{ row.order.alias || row.order.number }}</b>
-                        <small>{{ row.order.status === 'ONDERWEG' ? 'vertrokken' : 'besteld' }}
-                          @if (row.order.expectedArrival) { · verwacht {{ row.order.expectedArrival | dateNl }} }</small></span>
-                      <span class="num kpi-list__amount">{{ row.costing.totals.totalEur | eur: 0 }}</span>
-                    </a>
-                  </li>
-                }
-              </ol>
+              <div class="stock-duo">
+                <span><small>Waarde</small><b class="num">{{ incomingValue() | eur: 0 }}</b></span>
+                <span><small>Stuks</small><b class="num">{{ incomingPieces() | num }}</b></span>
+                <span><small>Eerstvolgend</small><b class="num">{{ nextArrivalLabel() }}</b></span>
+              </div>
+              @for (bucket of incomingBuckets(); track bucket.label) {
+                <h3 class="attach-title">{{ bucket.label }} <small class="muted">{{ bucket.rows.length }}</small></h3>
+                <ol class="kpi-list">
+                  @for (row of bucket.rows; track row.order.id) {
+                    <li>
+                      <a class="kpi-list__row" [routerLink]="['/purchasing', row.order.id]" (click)="kpiSheet.set(null)">
+                        <span class="kpi-list__what"><b>{{ row.order.alias || row.order.number }}</b>
+                          <small>{{ supplierNameOf(row) }}
+                            @if (row.order.expectedArrival) { · aankomst {{ row.order.expectedArrival | dateNl }} }
+                            @if (row.attention?.length) { · <b class="warn-text">{{ row.attention!.length }} actie(s)</b> }</small></span>
+                        <span class="num kpi-list__amount">{{ row.costing.totals.totalEur | eur: 0 }}
+                          <small class="muted">{{ row.costing.totals.pieces | num }} st</small></span>
+                      </a>
+                    </li>
+                  }
+                </ol>
+              }
+              <p class="kpi-explain kpi-explain--foot">Zodra een container op Ontvangen gaat,
+                schuift zijn waarde door naar de voorraad.</p>
             }
             @case ('STOCK') {
-              <p class="kpi-explain">Wat er nu in het magazijn en op de stands ligt, gewaardeerd
-                tegen wat het jou gekost heeft (stuks × gelande kostprijs):
-                <b>{{ stockPieces() | num }} stuks · {{ stockValue() | eur: 0 }}</b>.
+              <p class="kpi-explain">Dezelfde planken, twee brillen:
+                gekost <b>{{ stockValue() | eur: 0 }}</b> (stuks × gelande kostprijs),
+                waard <b>{{ stockSalesValue() | eur: 0 }}</b> tegen catalogusprijs -
+                verkoop je alles, dan zit daar
+                <b class="ok-text">{{ stockSalesValue() - stockValue() | eur: 0 }}</b> brutowinst in.
                 Hieronder de grootste posten - daar zit je geld.</p>
+              <div class="stock-duo">
+                <span><small>Kostwaarde</small><b class="num">{{ stockValue() | eur: 0 }}</b></span>
+                <span><small>Verkoopwaarde</small><b class="num">{{ stockSalesValue() | eur: 0 }}</b></span>
+                <span><small>Potentieel</small><b class="num ok-text">{{ stockSalesValue() - stockValue() | eur: 0 }}</b></span>
+              </div>
               <ol class="kpi-list">
                 @for (item of stockTop(); track item.name) {
                   <li>
-                    <span class="kpi-list__row">
+                    <span class="kpi-list__row kpi-list__row--bar">
                       <span class="kpi-list__what"><b>{{ item.name }}</b>
-                        <small>{{ item.pieces | num }} st × {{ item.cost | eur: 2 }}</small></span>
+                        <small>{{ item.pieces | num }} st × {{ item.cost | eur: 2 }} · {{ item.share | num: 0 }}% van de waarde</small>
+                        <i class="share-bar" aria-hidden="true"><i [style.width.%]="item.share"></i></i></span>
                       <span class="num kpi-list__amount">{{ item.value | eur: 0 }}</span>
                     </span>
                   </li>
+                }
+                @if (stockRest(); as rest) {
+                  @if (rest.count) {
+                    <li><span class="kpi-list__row">
+                      <span class="kpi-list__what"><b class="muted">Overige {{ rest.count }} producten</b></span>
+                      <span class="num kpi-list__amount muted">{{ rest.value | eur: 0 }}</span>
+                    </span></li>
+                  }
                 }
               </ol>
             }
@@ -1498,6 +1537,59 @@ export class Dashboard {
       : status === 'BEKEKEN' ? 'bekeken' : status === 'WIJZIGING_GEVRAAGD' ? 'wijziging gevraagd' : status.toLowerCase();
   }
 
+  /** Containers grouped by leg: on the water first, then still at the factory. */
+  readonly incomingBuckets = computed(() => {
+    const sailing = this.incoming().filter((row) => row.order.status === 'ONDERWEG');
+    const ordered = this.incoming().filter((row) => row.order.status === 'BESTELD');
+    const buckets = [];
+    if (sailing.length) buckets.push({ label: 'Op zee', rows: sailing });
+    if (ordered.length) buckets.push({ label: 'Besteld, nog niet vertrokken', rows: ordered });
+    return buckets;
+  });
+
+  readonly nextArrivalLabel = computed(() => {
+    const dates = this.incoming()
+      .map((row) => row.order.expectedArrival)
+      .filter((date): date is string => !!date)
+      .sort();
+    if (!dates.length) return '—';
+    return new Date(dates[0]).toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
+  });
+
+  readonly suppliers = signal<Supplier[]>([]);
+
+  /** The containers write their own lines into the agenda: ordered, sailed,
+      expected and received - derived live, so never stale. */
+  readonly purchaseMilestones = computed(() => {
+    const stones = [];
+    for (const row of this.allPurchases()) {
+      const name = row.order.alias || row.order.number;
+      if (row.order.orderDate && row.order.status !== 'CONCEPT') {
+        stones.push({ date: row.order.orderDate, icon: '🛒', title: `${name} besteld`,
+          sub: this.supplierNameOf(row), orderId: row.order.id });
+      }
+      if (row.order.shippedOn) {
+        stones.push({ date: row.order.shippedOn, icon: '🚢', title: `${name} vertrokken`,
+          sub: row.order.trackingReference ? 'T&T ' + row.order.trackingReference : null, orderId: row.order.id });
+      }
+      if (row.order.expectedArrival && row.order.status !== 'ONTVANGEN') {
+        stones.push({ date: row.order.expectedArrival, icon: '📦', title: `${name} verwachte aankomst`,
+          sub: `${row.costing.totals.pieces.toLocaleString('nl-BE')} st · ${this.supplierNameOf(row)}`,
+          orderId: row.order.id });
+      }
+      if (row.order.receivedOn) {
+        stones.push({ date: row.order.receivedOn, icon: '✅', title: `${name} ontvangen`,
+          sub: this.supplierNameOf(row), orderId: row.order.id });
+      }
+    }
+    return stones;
+  });
+
+  supplierNameOf(row: PurchaseOrderView): string {
+    return this.suppliers().find((supplier) => supplier.id === row.order.supplierId)?.name
+      ?? row.order.number;
+  }
+
   /** The shelf's heaviest lines by value, the ones worth watching. */
   readonly stockTop = computed(() => this.products()
     .filter((product) => (product.stockQuantity ?? 0) > 0)
@@ -1508,7 +1600,16 @@ export class Dashboard {
       value: (product.stockQuantity ?? 0) * (product.landedCostEur ?? 0),
     }))
     .sort((a, b) => b.value - a.value)
+    .map((item) => ({ ...item, share: this.stockValue() > 0 ? (item.value / this.stockValue()) * 100 : 0 }))
     .slice(0, 8));
+
+  /** Whatever falls outside the top rows, as one closing line. */
+  readonly stockRest = computed(() => {
+    const top = this.stockTop();
+    const topValue = top.reduce((sum, item) => sum + item.value, 0);
+    const all = this.products().filter((product) => (product.stockQuantity ?? 0) > 0).length;
+    return { count: Math.max(0, all - top.length), value: Math.max(0, this.stockValue() - topValue) };
+  });
   readonly freightOpen = signal(false);
   readonly products = signal<Product[]>([]);
 
@@ -1517,6 +1618,16 @@ export class Dashboard {
     .reduce((sum, product) => sum + (product.stockQuantity ?? 0) * (product.landedCostEur ?? 0), 0));
   readonly stockPieces = computed(() => this.products()
     .reduce((sum, product) => sum + (product.stockQuantity ?? 0), 0));
+
+  /** The same shelf at catalogue prices: fixed price, or cost plus markup. */
+  readonly stockSalesValue = computed(() => this.products()
+    .reduce((sum, product) => sum + (product.stockQuantity ?? 0) * this.salesPriceOf(product), 0));
+
+  private salesPriceOf(product: Product): number {
+    if (product.fixedSalesPriceEur) return product.fixedSalesPriceEur;
+    const cost = product.landedCostEur ?? 0;
+    return cost * (1 + (product.markupPct ?? 0) / 100);
+  }
   readonly expected = signal<ExpectedStock[]>([]);
 
   /** Orders that wait on us: a missing tracking number, an instalment due. */
@@ -1561,11 +1672,13 @@ export class Dashboard {
     void this.fx.load();
     void this.loadFreightMarket();
 
-    const [orders, purchases, revisions, products, families] = await Promise.all([
+    const [orders, purchases, revisions, products, families, suppliers] = await Promise.all([
       this.sales.orders(), this.sourcing.purchaseOrders(),
       this.sales.pendingRevisions(), this.catalog.products(),
       this.catalog.productFamilies().catch(() => []),
+      this.sourcing.suppliers().catch(() => []),
     ]);
+    this.suppliers.set(suppliers);
     this.salesOrders.set(orders);
     this.allPurchases.set(purchases);
     this.purchases.set(purchases.slice(0, 5));
@@ -1603,13 +1716,32 @@ export class Dashboard {
     this.openOrders().reduce((sum, row) => sum + row.priced.totals.total, 0));
   readonly marginEur = computed(() =>
     this.openOrders().reduce((sum, row) => sum + row.priced.totals.marginEur, 0));
+  readonly openGoods = computed(() =>
+    this.openOrders().reduce((sum, row) => sum + row.priced.totals.goodsTotal, 0));
+
+  /** Thinnest first: the orders where the money leaks are the ones to open. */
+  readonly ordersByMargin = computed(() =>
+    this.openOrders().slice().sort((a, b) => a.priced.totals.marginPct - b.priced.totals.marginPct));
+
   readonly marginPct = computed(() => {
     const goods = this.openOrders().reduce((sum, row) => sum + row.priced.totals.goodsTotal, 0);
     return goods > 0 ? (this.marginEur() / goods) * 100 : 0;
   });
 
+  /* Counted over every order, not the five newest: an old container on
+     the water is exactly the one you must not lose sight of. */
   readonly incoming = computed(() =>
-    this.purchases().filter((row) => ['BESTELD', 'ONDERWEG'].includes(row.order.status)));
+    this.allPurchases().filter((row) => ['BESTELD', 'ONDERWEG'].includes(row.order.status)));
+
+  /** "1 besteld · 1 op zee" says more than a bare container count. */
+  readonly incomingLabel = computed(() => {
+    const ordered = this.incoming().filter((row) => row.order.status === 'BESTELD').length;
+    const sailing = this.incoming().filter((row) => row.order.status === 'ONDERWEG').length;
+    const parts = [];
+    if (ordered) parts.push(`${ordered} besteld`);
+    if (sailing) parts.push(`${sailing} op zee`);
+    return parts.length ? parts.join(' · ') : 'geen containers onderweg';
+  });
   readonly incomingValue = computed(() =>
     this.incoming().reduce((sum, row) => sum + row.costing.totals.totalEur, 0));
 

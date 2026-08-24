@@ -28,29 +28,32 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     </app-page-header>
 
     <div class="content">
-      <!-- The explanation folds away: one line for whoever knows the drill. -->
-      <details class="explainer">
-        <summary>Hoe werkt inkoop?</summary>
-        <div class="explainer__body">
-          <p>Inkoop gaat per container. Per calculatie wordt de <b>kostprijs per stuk</b> berekend: de afgesproken prijs in USD of RMB, plus lokale kosten in China, zeevracht, invoerrechten per HS-code en de kosten vanaf de aankomsthaven.</p>
-          <p>Een order loopt van <b>Concept</b> (rekenen) naar <b>Besteld</b> (vastgelegd bij de leverancier), <b>Vertrokken</b> (op de boot) en <b>Ontvangen</b> (geteld en in voorraad). Het oranje bolletje zegt wat er nog van jou nodig is.</p>
+      <!-- One compact pill instead of a rail of chips: the native picker
+           opens on tap, the pill just shows where you stand. -->
+      <div class="po-filterbar">
+        <div class="po-filter" [class.po-filter--on]="statusFilter() !== 'ALL'">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+          <span>{{ statusFilterLabel() }}</span>
+          <select class="po-filter__native" aria-label="Filter op status"
+                  [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
+            @for (option of statusOptions; track option.key) {
+              <option [value]="option.key">{{ option.label }}{{ countFor(option.key) ? ' (' + countFor(option.key) + ')' : '' }}</option>
+            }
+          </select>
         </div>
-      </details>
-
-      <!-- One tap narrows the list to a stage: "what is on the water" is
-           the question you come here with. -->
-      <div class="chip-rail" role="tablist" aria-label="Filter op status">
-        @for (option of statusOptions; track option.key) {
-          <button class="chip" type="button" role="tab" [class.chip--on]="statusFilter() === option.key"
-                  [attr.aria-selected]="statusFilter() === option.key" (click)="statusFilter.set(option.key)">
-            {{ option.label }}
-            @if (countFor(option.key); as n) { <small>{{ n }}</small> }
-          </button>
-        }
+        <span class="tiny muted">{{ filtered().length }} van {{ orders().length }}</span>
       </div>
 
-      <div class="card mt-12"><div class="list">
-        @for (row of filtered(); track row.order.id) {
+      @for (group of supplierSections(); track group.supplierId) {
+        <!-- One block per supplier: with many orders coming, the name on
+             top reads faster than a name on every row. -->
+        <section class="section po-supplier">
+          <h2 class="section-head">
+            <span>{{ group.name }}</span>
+            <small>{{ group.rows.length }} order{{ group.rows.length === 1 ? '' : 's' }}</small>
+          </h2>
+          <div class="card"><div class="list">
+        @for (row of group.rows; track row.order.id) {
           <!-- iOS pattern, also with a mouse or trackpad: drag or scroll the
                row hard to the left and the delete confirm comes up itself;
                a softer swipe only reveals the button. No standing bin. -->
@@ -69,27 +72,30 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             <div class="list-item__body">
               <!-- The nickname or the supplier leads; the number is the small
                    print. A phone has no room for both on one line. -->
-              <div class="list-item__title">{{ row.order.alias || supplierName(row.order.supplierId) }}</div>
+              <!-- The supplier already heads the block; the row leads with
+                   its own identity: the nickname or the number. -->
+              <div class="list-item__title">{{ row.order.alias || row.order.number }}</div>
               <div class="list-item__meta">
-                <b class="po-row__number">{{ row.order.number }}</b>@if (row.order.alias) { · {{ supplierName(row.order.supplierId) }}}
-                · {{ row.order.orderDate | dateNl }}
+                @if (row.order.alias) { <b class="po-row__number">{{ row.order.number }}</b> · }{{ row.order.orderDate | dateNl }}
               </div>
               <div class="list-item__meta hide-mobile">
                 {{ containerLabel(row.order.containerType) }} ·
                 {{ row.costing.totals.cartons | num }} kartons ·
                 {{ row.costing.totals.cbm | cbm }}
               </div>
+              @if (row.attention?.length) {
+                <div class="po-attn-line" [attr.title]="row.attention!.join(' · ')">
+                  <b>{{ row.attention!.length }}</b>
+                  <span>{{ row.attention![0] }}{{ row.attention!.length > 1 ? ' · +' + (row.attention!.length - 1) : '' }}</span>
+                </div>
+              }
             </div>
-            <div class="list-item__end">
+            <!-- The right edge belongs to figure and status alone; what
+                 still needs you gets its own amber line under the row. -->
+            <div class="list-item__end po-row-end">
               <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
-              <span class="list-item__status">
-                @if (row.attention?.length) {
-                  <!-- A box on the water without tracking, an instalment that
-                       fell due: the number says how many things wait on us. -->
-                  <span class="attention-dot" [attr.title]="row.attention!.join(' · ')"
-                        [attr.aria-label]="row.attention!.length + ' actie(s) vereist: ' + row.attention!.join(', ')">{{ row.attention!.length }}</span>
-                }
-                <span class="badge badge--neutral">{{ statusLabel(row.order.status) }}</span>
+              <span class="po-status-mini" [class]="'po-status-mini ' + statusMiniClass(row.order.status)">
+                <i aria-hidden="true"></i>{{ statusLabel(row.order.status) }}
               </span>
             </div>
             <span class="list-item__chev">›</span>
@@ -107,7 +113,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               </button>
             }
           </div>
-        } @empty {
+        }
+          </div></div>
+        </section>
+      } @empty {
           @if (loading()) {
             <app-skeleton kind="list" [rows]="4" />
           } @else {
@@ -121,8 +130,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             }
           </div>
           }
-        }
-      </div></div>
+      }
     </div>
 
     <button class="fab" type="button" (click)="startNew()">+ Calculatie</button>
@@ -175,6 +183,30 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     }
   `,
   styles: [`
+    .po-supplier + .po-supplier { margin-top: 16px; }
+    .po-filterbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .po-filter { position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 36px;
+      padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+      color: var(--ink-2); font-size: 12.5px; font-weight: 650; }
+    .po-filter--on { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); }
+    .po-filter svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8;
+      stroke-linecap: round; }
+    .po-filter__native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
+    .po-row-end { display: grid; justify-items: end; gap: 3px; }
+    .po-status-mini { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 750; }
+    .po-status-mini i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .po-status-mini--ok { color: var(--ok); }
+    .po-status-mini--warn { color: var(--warn); }
+    .po-status-mini--rose { color: var(--rose-dark); }
+    .po-status-mini--muted { color: var(--muted); }
+    .po-attn-line { display: flex; align-items: center; gap: 6px; margin-top: 5px; min-width: 0; }
+    .po-attn-line b { display: inline-grid; place-items: center; flex: none; min-width: 16px; height: 16px;
+      padding: 0 4px; border-radius: 999px; background: var(--warn); color: #fff; font-size: 9.5px; font-weight: 800; }
+    .po-attn-line span { overflow: hidden; color: var(--warn); font-size: 11px; font-weight: 650;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .section-head { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 8px 4px;
+      color: var(--ink-2); font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .section-head small { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0; }
     .swipe--dragging { user-select: none; }
     .swipe--dragging .swipe__row { transform: translateX(var(--swipe-offset, 0px)); transition: none; }
     .swipe__row { touch-action: pan-y; }
@@ -215,10 +247,37 @@ export class PurchaseList {
   readonly statusFilter = signal('ALL');
   readonly filtered = computed(() => {
     const key = this.statusFilter();
-    if (key === 'ALL') return this.orders();
-    if (key === 'ATTENTION') return this.orders().filter((row) => row.attention?.length);
-    return this.orders().filter((row) => row.order.status === key);
+    const rows = key === 'ALL' ? this.orders()
+      : key === 'ATTENTION' ? this.orders().filter((row) => row.attention?.length)
+      : this.orders().filter((row) => row.order.status === key);
+    /* Newest first: the order you placed this week is the one you want. */
+    return rows.slice().sort((a, b) => b.order.orderDate.localeCompare(a.order.orderDate)
+      || (b.order.id ?? 0) - (a.order.id ?? 0));
   });
+
+  /** One block per supplier, ordered by whoever has the newest order. */
+  readonly supplierSections = computed(() => {
+    const groups = new Map<number, { supplierId: number; name: string; rows: PurchaseOrderView[] }>();
+    for (const row of this.filtered()) {
+      const id = row.order.supplierId;
+      let group = groups.get(id);
+      if (!group) {
+        group = { supplierId: id, name: this.supplierName(id), rows: [] };
+        groups.set(id, group);
+      }
+      group.rows.push(row);
+    }
+    return [...groups.values()];
+  });
+
+  statusMiniClass(status: string): string {
+    return status === 'ONTVANGEN' ? 'po-status-mini--ok'
+      : status === 'ONDERWEG' ? 'po-status-mini--warn'
+      : status === 'BESTELD' ? 'po-status-mini--rose' : 'po-status-mini--muted';
+  }
+
+  readonly statusFilterLabel = computed(() =>
+    this.statusOptions.find((option) => option.key === this.statusFilter())?.label ?? 'Alle');
   countFor(key: string): number {
     if (key === 'ALL') return 0;
     if (key === 'ATTENTION') return this.orders().filter((row) => row.attention?.length).length;

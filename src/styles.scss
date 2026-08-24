@@ -777,6 +777,8 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   border-radius: var(--r);
   padding: 13px 14px;
   box-shadow: var(--sh-1);
+  /* Figures read like an iOS widget: centred in their tile. */
+  text-align: center;
 }
 .kpi__label {
   font-size: 10.5px;
@@ -1762,8 +1764,18 @@ button.market-row:disabled { cursor: default; }
 .action-mini__more { flex: none; color: var(--warn); font-size: 11px; font-weight: 750; }
 .attention-dot--sm { min-width: 17px; height: 17px; font-size: 10px; }
 .fown__head--split { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
-.kpi { border: 0; font: inherit; text-align: left; cursor: pointer; }
+.kpi { border: 0; font: inherit; text-align: center; cursor: pointer; }
 .kpi__meta--expected { color: var(--warn); font-weight: 700; }
+.kpi__meta--sales { color: var(--ok); font-weight: 700; }
+/* Sits tight under the big figure, roughly beneath its thousands dot. */
+.kpi__value-sub { margin: -3px 0 4px; color: var(--muted-2); font-size: 9.5px; font-weight: 750;
+  letter-spacing: .07em; text-transform: uppercase; }
+.stock-duo { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 12px; }
+.stock-duo span { display: grid; gap: 2px; padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 11px; background: var(--surface-2); }
+.stock-duo small { color: var(--muted); font-size: 9.5px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.stock-duo b { font-size: 14px; }
+
 .kpi--dark .kpi__meta--expected { color: #ffd9a8; }
 .kpi-explain { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
 .kpi-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
@@ -1776,6 +1788,14 @@ a.kpi-list__row:hover { background: var(--surface-2); }
 .kpi-list__what small { color: var(--muted); font-size: 11px; }
 .kpi-list__amount { font-weight: 700; font-size: 13px; white-space: nowrap; }
 .kpi-list__amount small { font-weight: 600; margin-left: 4px; }
+.kpi-explain--foot { margin: 12px 0 0; font-size: 11.5px; color: var(--muted); }
+.share-bar { display: block; height: 3px; margin-top: 5px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.share-bar i { display: block; height: 100%; border-radius: 99px; background: var(--rose); }
+.margin-bar { display: flex; height: 14px; margin: 0 0 12px; border-radius: 99px; overflow: hidden; }
+.margin-bar__cost { background: var(--line-strong); }
+.margin-bar__win { background: var(--ok); }
+
+
 .pin-line { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 9px 13px;
   border: 1px solid var(--rose-line); border-radius: var(--r-sm);
   background: linear-gradient(90deg, var(--rose-soft), var(--surface)); }
