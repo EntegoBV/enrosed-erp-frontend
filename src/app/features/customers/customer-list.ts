@@ -7,12 +7,13 @@ import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
+import { countryName } from '../../core/api/geo';
 
 function blank(countryCode: string): Customer {
   return {
     id: null, company: '', contact: '', email: '', phone: '', vatNumber: '',
     countryCode, language: 'NL', address: '', postalCode: '', city: '',
-    incoterm: 'DAP', paymentTerms: '30 dagen', notes: '',
+    incoterm: 'DAP', paymentTerms: 'Vooruitbetaling', notes: '',
   };
 }
 
@@ -93,12 +94,19 @@ function blank(countryCode: string): Customer {
               <input class="input" id="c-city" [ngModel]="draft().city"
                      (ngModelChange)="patch({ city: $event })" /></div>
             <div class="field"><label class="req" for="c-country">Land</label>
-              <select class="select" id="c-country" [ngModel]="draft().countryCode"
-                      (ngModelChange)="patch({ countryCode: $event })">
+              <select class="select" id="c-country" [ngModel]="countrySelectValue()"
+                      (ngModelChange)="pickCountry($event)">
                 @for (country of countries(); track country.code) {
                   <option [value]="country.code">{{ country.name }}</option>
                 }
-              </select></div>
+                <option value="__other__">Ander land…</option>
+              </select>
+              @if (countrySelectValue() === '__other__') {
+                <input class="input mt-8" aria-label="Landcode (ISO, 2 letters)" maxlength="2"
+                       placeholder="Landcode, bijv. AT" [ngModel]="draft().countryCode"
+                       (ngModelChange)="patch({ countryCode: ($event || '').toUpperCase() })" />
+                <span class="hint">{{ countryLabel(draft().countryCode) }} · zonder vrachtregels uit Landen &amp; vracht.</span>
+              }</div>
             <div class="field"><label class="req" for="c-language">Taal van de klant</label>
               <select class="select" id="c-language" [ngModel]="draft().language"
                       (ngModelChange)="patch({ language: $event })">
@@ -202,8 +210,28 @@ export class CustomerList {
         .join(' ').toLowerCase().includes(needle));
   });
 
+  /** The configured code, or "other" when the customer's country is not in the freight list. */
+  readonly countrySelectValue = computed(() => {
+    const code = this.draft().countryCode;
+    return this.countries().some((country) => country.code === code) ? code : '__other__';
+  });
+
+  pickCountry(value: string): void {
+    if (value === '__other__') {
+      this.patch({ countryCode: '' });
+      return;
+    }
+    this.patch({ countryCode: value });
+  }
+
+  countryLabel(code: string): string {
+    return code && code.length === 2 ? countryName(code) : 'Twee letters (ISO), bijv. AT voor Oostenrijk';
+  }
+
   open(customer: Customer | null): void {
-    this.draft.set(customer ? { ...customer } : blank(this.countries()[0]?.code ?? 'BE'));
+    /* New customers default to the Netherlands with payment up front. */
+    this.draft.set(customer ? { ...customer }
+      : blank(this.countries().some((country) => country.code === 'NL') ? 'NL' : this.countries()[0]?.code ?? 'NL'));
     this.editing.set(true);
   }
 

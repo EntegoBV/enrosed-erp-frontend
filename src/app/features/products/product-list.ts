@@ -186,6 +186,55 @@ interface ProductSwipe {
           <div class="card">
             <div class="list">
             @for (group of section.groups; track group.key) {
+              <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
+            }
+            </div>
+          </div>
+        </section>
+      } @empty {
+        <div class="card">
+          <div class="list">
+            @if (loading()) {
+              <app-skeleton kind="list" [rows]="6" />
+            } @else {
+              <div class="empty">
+                <div class="empty__icon">◈</div>
+                <div class="empty__title">Geen producten gevonden</div>
+                <a class="btn btn--primary" routerLink="/products/new">Product toevoegen</a>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    @if (demoGroups().length && !loading()) {
+      <!-- Demo pieces: ideas we show, nothing the shelf sells. Folded away
+           so the working list stays about sellable stock. -->
+      <div class="content demo-fold-wrap">
+        <section class="section section--demo">
+          <button class="demo-fold" type="button" [attr.aria-expanded]="showDemoFold()"
+                  (click)="demoOpen.set(!showDemoFold())">
+            <span class="demo-chip">demo</span>
+            <span class="demo-fold__label">Demoproducten</span>
+            <small>{{ demoCount() }}</small>
+            <i class="demo-fold__chev" [class.demo-fold__chev--open]="showDemoFold()" aria-hidden="true"></i>
+          </button>
+          @if (showDemoFold()) {
+            <div class="card">
+              <div class="list">
+                @for (group of demoGroups(); track group.key) {
+                  <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
+                }
+              </div>
+            </div>
+          }
+        </section>
+      </div>
+    }
+
+    <ng-template #productGroup let-group>
+
             @if (group.products.length === 1) {
               <ng-container *ngTemplateOutlet="productRow; context: { $implicit: group.products[0], nested: false }" />
             } @else {
@@ -276,53 +325,7 @@ interface ProductSwipe {
                 </div>
               }
             }
-            }
-            </div>
-          </div>
-        </section>
-      } @empty {
-        <div class="card">
-          <div class="list">
-            @if (loading()) {
-              <app-skeleton kind="list" [rows]="6" />
-            } @else {
-              <div class="empty">
-                <div class="empty__icon">◈</div>
-                <div class="empty__title">Geen producten gevonden</div>
-                <a class="btn btn--primary" routerLink="/products/new">Product toevoegen</a>
-              </div>
-            }
-          </div>
-        </div>
-      }
-    </div>
-
-    @if (demoGroups().length && !loading()) {
-      <!-- Demo pieces: ideas we show, nothing the shelf sells. Folded away
-           so the working list stays about sellable stock. -->
-      <div class="content demo-fold-wrap">
-        <section class="section section--demo">
-          <button class="demo-fold" type="button" [attr.aria-expanded]="showDemoFold()"
-                  (click)="demoOpen.set(!showDemoFold())">
-            <span class="demo-chip">demo</span>
-            <span class="demo-fold__label">Demoproducten</span>
-            <small>{{ demoCount() }}</small>
-            <i class="demo-fold__chev" [class.demo-fold__chev--open]="showDemoFold()" aria-hidden="true"></i>
-          </button>
-          @if (showDemoFold()) {
-            <div class="card">
-              <div class="list">
-                @for (group of demoGroups(); track group.key) {
-                  @for (product of group.products; track product.id) {
-                    <ng-container *ngTemplateOutlet="productRow; context: { $implicit: product, nested: false }" />
-                  }
-                }
-              </div>
-            </div>
-          }
-        </section>
-      </div>
-    }
+    </ng-template>
 
     <ng-template #productRow let-product let-nested="nested">
       <div class="swipe"

@@ -120,6 +120,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                a field among the fields. -->
           <select class="select select--status" aria-label="Productstatus"
                   [class.select--status-off]="!draft().active"
+                  [class.select--status-demo]="draft().active && draft().demo"
                   [ngModel]="!draft().active ? 'inactief' : (draft().demo ? 'demo' : 'actief')"
                   (ngModelChange)="patch({ active: $event !== 'inactief', demo: $event === 'demo' })">
             <option value="actief">Actief</option>
@@ -653,40 +654,39 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                  sells from; a stand sells on the spot. Correcting is per
                  line, saved at once, apart from Opslaan. -->
             @if (stockLevels(); as levels) {
-              <ul class="stock-levels">
+              <!-- The same smart shape as the stock page: type straight into
+                   a tile and the correction books itself; the actions sit in
+                   one iOS-style row below. -->
+              <div class="history-levels stock-tiles">
                 @for (level of levels; track level.locationId) {
-                  <li [class.stock-levels__row--editing]="stockEditing() === level.locationId">
-                    <span class="stock-levels__where">
-                      <b>{{ level.name }}</b>
-                      <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · alle verkoopkanalen' : '' }}</small>
-                    </span>
-                    @if (stockEditing() === level.locationId) {
-                      <span class="stock-levels__edit">
-                        <label class="sr-only" [for]="'p-stock-' + level.locationId">Geteld aantal op {{ level.name }}</label>
-                        <input class="input num right" [id]="'p-stock-' + level.locationId" type="number" min="0" step="1"
-                               inputmode="numeric" [ngModel]="stockDraft()" (ngModelChange)="stockDraft.set($event)"
-                               (keydown.enter)="saveStock(level.locationId)" (keydown.escape)="stockEditing.set(null)" />
-                        <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
-                                (click)="saveStock(level.locationId)">{{ stockSaving() ? 'Bezig…' : 'Opslaan' }}</button>
-                        <button class="btn btn--sm" type="button" (click)="stockEditing.set(null)">Annuleren</button>
-                      </span>
-                    } @else {
-                      <strong class="num stock-levels__qty" [class.muted]="!level.quantity">{{ level.quantity | num }}</strong>
-                      <button class="btn btn--sm" type="button" (click)="startStockEdit(level)">Corrigeren</button>
-                    }
-                  </li>
+                  <label class="history-levels__tile">
+                    <small>{{ level.name }}{{ level.countsForWebsite ? ' · alle kanalen' : '' }}</small>
+                    <input class="history-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
+                           [attr.aria-label]="'Voorraad op ' + level.name"
+                           [value]="level.quantity"
+                           (keydown.enter)="$any($event.target).blur()"
+                           (keydown.escape)="$any($event.target).value = level.quantity; $any($event.target).blur()"
+                           (change)="quickSetStock(level, $any($event.target))" />
+                  </label>
                 }
-              </ul>
-              <div class="stock-edit">
+              </div>
+              <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt. Groeit vanzelf wanneer een inkooporder op Ontvangen gaat.</p>
+
+              <!-- One action at a time, each in its own sheet - the same
+                   pattern as the stock page. -->
+              <div class="book-actions book-actions--two" role="group" aria-label="Voorraadacties">
                 @if (levels.length > 1) {
-                  <button class="btn btn--sm" type="button" (click)="startTransfer(levels)">Verplaatsen</button>
+                  <button class="book-action" type="button" (click)="startTransfer(levels)">
+                    <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
+                  </button>
                 } @else {
-                  <a class="btn btn--sm" routerLink="/stock-locations">Locatie toevoegen</a>
+                  <a class="book-action" routerLink="/stock-locations">
+                    <i aria-hidden="true">+</i><span>Locatie</span>
+                  </a>
                 }
-                <!-- Pieces that leave without a sale, each counted under its own name. -->
-                <button class="btn btn--sm" type="button" (click)="startTakeOut(levels, 'DAMAGED')">Beschadigd</button>
-                <button class="btn btn--sm" type="button" (click)="startTakeOut(levels, 'DEMO')">Demo weggegeven</button>
-                <span class="hint">Groeit vanzelf wanneer een inkooporder op Ontvangen gaat.</span>
+                <button class="book-action" type="button" (click)="startTakeOut(levels, 'DAMAGED')">
+                  <i aria-hidden="true" class="book-action__warn">!</i><span>Stuk / demo</span>
+                </button>
               </div>
               @if (lossCounters(); as loss) {
                 @if (loss.damaged || loss.demo) {
@@ -695,68 +695,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     @if (loss.demo) { <span><b>{{ loss.demo | num }}</b> als demo weggegeven</span> }
                   </p>
                 }
-              }
-              @if (takeOutDraft(); as out) {
-                <div class="stock-transfer">
-                  <label class="field">
-                    <span>{{ out.kind === 'DAMAGED' ? 'Beschadigd op' : 'Demo uit' }}</span>
-                    <select class="select" [ngModel]="out.locationId" (ngModelChange)="patchTakeOut({ locationId: +$event })">
-                      @for (level of levels; track level.locationId) {
-                        <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
-                      }
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>Aantal</span>
-                    <input class="input num right" type="number" min="1" step="1" inputmode="numeric"
-                           [ngModel]="out.quantity" (ngModelChange)="patchTakeOut({ quantity: +$event })" />
-                  </label>
-                  <label class="field stock-transfer__note">
-                    <span>{{ out.kind === 'DAMAGED' ? 'Wat is er gebeurd' : 'Aan wie' }} <span class="opt"></span></span>
-                    <input class="input" [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens, beurs Gent'"
-                           [ngModel]="out.note" (ngModelChange)="patchTakeOut({ note: $event })" />
-                  </label>
-                  <span class="stock-transfer__actions">
-                    <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
-                            (click)="confirmTakeOut()">{{ stockSaving() ? 'Bezig…' : (out.kind === 'DAMAGED' ? 'Als beschadigd afboeken' : 'Als demo afboeken') }}</button>
-                    <button class="btn btn--sm" type="button" (click)="takeOutDraft.set(null)">Annuleren</button>
-                  </span>
-                </div>
-              }
-              @if (transferDraft(); as move) {
-                <div class="stock-transfer">
-                  <label class="field">
-                    <span>Van</span>
-                    <select class="select" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
-                      @for (level of levels; track level.locationId) {
-                        <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
-                      }
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>Naar</span>
-                    <select class="select" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
-                      @for (level of levels; track level.locationId) {
-                        <option [value]="level.locationId">{{ level.name }}</option>
-                      }
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>Aantal</span>
-                    <input class="input num right" type="number" min="1" step="1" inputmode="numeric"
-                           [ngModel]="move.quantity" (ngModelChange)="patchTransfer({ quantity: +$event })" />
-                  </label>
-                  <label class="field stock-transfer__note">
-                    <span>Notitie <span class="opt"></span></span>
-                    <input class="input" placeholder="bijv. bus van maandag" [ngModel]="move.note"
-                           (ngModelChange)="patchTransfer({ note: $event })" />
-                  </label>
-                  <span class="stock-transfer__actions">
-                    <button class="btn btn--primary btn--sm" type="button" [disabled]="stockSaving()"
-                            (click)="confirmTransfer()">{{ stockSaving() ? 'Bezig…' : 'Verplaatsen' }}</button>
-                    <button class="btn btn--sm" type="button" (click)="transferDraft.set(null)">Annuleren</button>
-                  </span>
-                </div>
               }
             } @else {
               <p class="hint">Voorraad laden…</p>
@@ -769,7 +707,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                      bin, a long one deletes at once - no question asked, the
                      count itself never changes. -->
                 <ol class="stock-history">
-                  @for (move of history; track move.id) {
+                  @for (move of editorHistoryOpen() ? history : history.slice(0, 2); track move.id) {
                     <li class="swipe stock-history__item" [class.swipe--open]="moveSwiped() === move.id"
                         [class.swipe--dragging]="moveDragging() === move.id"
                         [class.stock-history__item--leaving]="moveDeleting() === move.id"
@@ -807,6 +745,13 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     </li>
                   }
                 </ol>
+                @if (history.length > 2) {
+                  <button class="history-more" type="button" [attr.aria-expanded]="editorHistoryOpen()"
+                          (click)="editorHistoryOpen.set(!editorHistoryOpen())">
+                    {{ editorHistoryOpen() ? 'Minder tonen' : 'Alles tonen (' + history.length + ')' }}
+                    <i class="history-more__chev" [class.history-more__chev--open]="editorHistoryOpen()" aria-hidden="true"></i>
+                  </button>
+                }
               } @else {
                 <p class="hint">Nog geen bewegingen geboekt. Alles wat vanaf nu binnenkomt of geteld wordt, staat hier.</p>
               }
@@ -1066,6 +1011,87 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       }
       </div>
     </div>
+
+    @if (takeOutDraft(); as out) {
+      @if (stockLevels(); as levels) {
+        <app-sheet [title]="'Stuk of demo · ' + (draft().name || 'product')" (closed)="takeOutDraft.set(null)">
+          <div body>
+            <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
+              <button type="button" [class.on]="out.kind === 'DAMAGED'"
+                      (click)="takeOutDraft.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
+              <button type="button" [class.on]="out.kind === 'DEMO'"
+                      (click)="takeOutDraft.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
+            </div>
+            <div class="form-grid mt-12">
+              @if (levels.length > 1) {
+                <div class="field">
+                  <label for="po-out-loc">{{ out.kind === 'DAMAGED' ? 'Beschadigd op' : 'Demo uit' }}</label>
+                  <select class="select" id="po-out-loc" [ngModel]="out.locationId"
+                          (ngModelChange)="patchTakeOut({ locationId: +$event })">
+                    @for (level of levels; track level.locationId) {
+                      <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
+                    }
+                  </select>
+                </div>
+              }
+              <div class="field">
+                <label class="req" for="po-out-qty">Aantal</label>
+                <input class="input num right" id="po-out-qty" type="number" min="1" step="1" inputmode="numeric"
+                       [ngModel]="out.quantity || null" (ngModelChange)="patchTakeOut({ quantity: +$event })" />
+              </div>
+              <div class="field span-2">
+                <label for="po-out-note">{{ out.kind === 'DAMAGED' ? 'Wat is er gebeurd' : 'Aan wie' }} <span class="opt"></span></label>
+                <input class="input" id="po-out-note"
+                       [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens, beurs Gent'"
+                       [ngModel]="out.note" (ngModelChange)="patchTakeOut({ note: $event })" />
+              </div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="takeOutDraft.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="stockSaving() || !(out.quantity > 0)"
+                    (click)="confirmTakeOut()">{{ stockSaving() ? 'Bezig…' : 'Melden' }}</button>
+          </div>
+        </app-sheet>
+      }
+    }
+
+    @if (transferDraft(); as move) {
+      @if (stockLevels(); as levels) {
+        <app-sheet [title]="'Verplaatsen · ' + (draft().name || 'product')" (closed)="transferDraft.set(null)">
+          <div body>
+            <div class="form-grid">
+              <div class="field"><label for="po-t-from">Van</label>
+                <select class="select" id="po-t-from" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
+                  @for (level of levels; track level.locationId) {
+                    <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
+                  }
+                </select></div>
+              <div class="field"><label for="po-t-to">Naar</label>
+                <select class="select" id="po-t-to" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
+                  @for (level of levels; track level.locationId) {
+                    <option [value]="level.locationId">{{ level.name }}</option>
+                  }
+                </select></div>
+              <div class="field"><label class="req" for="po-t-qty">Aantal</label>
+                <input class="input num right" id="po-t-qty" type="number" min="1" step="1" inputmode="numeric"
+                       [ngModel]="move.quantity || null" (ngModelChange)="patchTransfer({ quantity: +$event })" /></div>
+              <div class="field"><label for="po-t-note">Notitie <span class="opt"></span></label>
+                <input class="input" id="po-t-note" placeholder="bijv. bus van maandag" [ngModel]="move.note"
+                       (ngModelChange)="patchTransfer({ note: $event })" /></div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="transferDraft.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="stockSaving()"
+                    (click)="confirmTransfer()">{{ stockSaving() ? 'Bezig…' : 'Verplaatsen' }}</button>
+          </div>
+        </app-sheet>
+      }
+    }
+
   `,
   styles: `
     .product-editor-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 260px); }
@@ -1107,6 +1133,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       border-color: transparent; border-radius: 999px;
     }
     .select--status-off { background-color: var(--surface-2); color: var(--muted); }
+    .select--status-demo { background-color: var(--warn-soft); color: var(--warn); }
     .variant-pending { border-color: var(--rose-soft); background: var(--rose-soft); }
     /* Phone: only the active section is in the DOM flow; desktop: all. */
     @media (max-width: 679px) {
@@ -1197,6 +1224,34 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .magic-field__btn:hover { background: var(--rose-line); }
     .magic-field__btn:disabled { opacity: .5; cursor: wait; }
     .stock-now { font-size: 16px; }
+    .stock-tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 6px; }
+    .history-levels__tile { display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); min-width: 104px; }
+    .history-levels__tile small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .history-levels__qty { width: 100%; min-width: 0; padding: 2px 4px; margin: 0 -4px; border: 1px solid transparent; border-radius: 6px;
+      background: transparent; color: inherit; font: inherit; font-size: 16px; font-weight: 700; -moz-appearance: textfield; }
+    .history-levels__qty::-webkit-outer-spin-button, .history-levels__qty::-webkit-inner-spin-button { display: none; }
+    .history-levels__qty:hover { border-color: var(--line); background: var(--surface); }
+    .history-levels__qty:focus { outline: none; border-color: var(--rose); background: var(--surface); }
+    .book-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 6px; max-width: 430px; }
+    .book-actions--two { grid-template-columns: repeat(2, 1fr); max-width: 300px; }
+    .book-action { display: grid; justify-items: center; gap: 4px; padding: 10px 6px 8px;
+      border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); color: var(--ink-2);
+      font: inherit; font-size: 11.5px; font-weight: 650; text-decoration: none; cursor: pointer;
+      transition: transform .12s ease, background .15s ease; }
+    .book-action:active { transform: scale(.96); }
+    .book-action:hover { background: var(--surface); border-color: var(--line-strong); }
+    .book-action--on { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+    .book-action i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+      background: var(--surface); border: 1px solid var(--line-strong); font-style: normal; font-size: 15px; font-weight: 700; }
+    .book-action--on i { border-color: var(--rose); color: var(--rose-dark); }
+    .book-action__warn { background: var(--warn-soft) !important; border-color: #eddcb9 !important; color: var(--warn); }
+    .takeout-kind { margin: 10px 0 8px; }
+    .history-more { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center;
+      padding: 9px 0 2px; border: 0; background: transparent; color: var(--rose-dark);
+      font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+    .history-more__chev { width: 7px; height: 7px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+      transform: rotate(45deg); transition: transform .15s ease; }
+    .history-more__chev--open { transform: rotate(-135deg); }
     .stock-loss { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 0; color: var(--muted); font-size: 12px; }
     .stock-loss b { color: var(--ink); }
     .stock-levels { list-style: none; margin: 0 0 12px; padding: 0; border-top: 1px solid var(--line); }
@@ -1688,6 +1743,7 @@ export class ProductEditor implements OnDestroy {
   readonly transferDraft = signal<{ fromId: number; toId: number; quantity: number; note: string } | null>(null);
 
   startTransfer(levels: ProductStock[]): void {
+    this.takeOutDraft.set(null);
     this.stockEditing.set(null);
     const from = levels.find((level) => level.quantity > 0) ?? levels[0];
     const to = levels.find((level) => level.locationId !== from.locationId) ?? levels[0];
@@ -1850,6 +1906,23 @@ export class ProductEditor implements OnDestroy {
       this.stockLevels.set(await this.catalog.productStock(productId));
     } catch {
       this.stockLevels.set([]);
+    }
+  }
+
+  readonly editorHistoryOpen = signal(false);
+
+  /** A figure typed straight into a tile: booked at once as a correction. */
+  async quickSetStock(level: ProductStock, field: HTMLInputElement): Promise<void> {
+    const before = level.quantity;
+    const quantity = Math.max(0, Math.round(Number(field.value) || 0));
+    if (quantity === before) { field.value = String(before); return; }
+    this.stockDraft.set(quantity);
+    try {
+      await this.saveStock(level.locationId);
+    } finally {
+      if (this.stockLevels()?.find((item) => item.locationId === level.locationId)?.quantity === before) {
+        field.value = String(before);
+      }
     }
   }
 
