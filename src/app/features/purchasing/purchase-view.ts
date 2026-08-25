@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Location } from '@angular/common';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
@@ -30,22 +32,34 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
             EurPipe, NumPipe, PctPipe, Diary],
   template: `
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number"
-                       [subtitle]="data.order.alias ? data.order.alias + ' · ' + supplierName() : supplierName()"
-                       [showBack]="true" [showBell]="false">
-        <button class="btn btn--sm" type="button" (click)="downloadPdf()"
-                [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
-          PDF
-        </button>
-        <a class="btn btn--primary btn--sm"
-           [routerLink]="['/purchasing', data.order.id, 'edit']">
-          Bewerken
-        </a>
-      </app-page-header>
+      @if (desktop.active()) {
+        <app-page-header [title]="data.order.number"
+                         [subtitle]="data.order.alias ? data.order.alias + ' · ' + supplierName() : supplierName()"
+                         [showBack]="true" [showBell]="false">
+          <button class="btn btn--sm" type="button" (click)="downloadPdf()"
+                  [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
+            PDF
+          </button>
+          <a class="btn btn--primary btn--sm"
+             [routerLink]="['/purchasing', data.order.id, 'edit']">
+            Bewerken
+          </a>
+        </app-page-header>
+      }
 
       <div class="content purchase-view-page anim-rise">
 
         <section class="journey-hero" aria-labelledby="purchase-overview-title">
+          <!-- Phone: the app bar folds into the hero - back, PDF and
+               Bewerken live on the dark surface itself. -->
+          @if (!desktop.active()) {
+            <div class="jhero-bar">
+              <button class="jhero-back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
+              <span class="jhero-spacer"></span>
+              <button class="jhero-pdf" type="button" (click)="downloadPdf()">PDF</button>
+              <a class="jhero-edit" [routerLink]="['/purchasing', data.order.id, 'edit']">Bewerken</a>
+            </div>
+          }
           <div class="journey-hero__top">
             <div class="journey-hero__copy">
               <span class="eyebrow">Inkomende container</span>
@@ -55,10 +69,12 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                 @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
               </p>
             </div>
-            <span class="status-pill" [class.status-pill--done]="data.order.status === 'ONTVANGEN'">
-              <span class="status-pill__dot" aria-hidden="true"></span>
-              {{ statusLabel(data.order.status) }}
-            </span>
+            @if (desktop.active()) {
+              <span class="status-pill" [class.status-pill--done]="data.order.status === 'ONTVANGEN'">
+                <span class="status-pill__dot" aria-hidden="true"></span>
+                {{ statusLabel(data.order.status) }}
+              </span>
+            }
           </div>
 
           <div class="route-strip" aria-label="Transportroute">
@@ -483,7 +499,44 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
   styles: [`
     :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}.privacy-notice{margin-bottom:12px}
 
-    .journey-hero{position:relative;margin-bottom:12px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
+    .journey-hero{position:relative;margin-bottom:12px;padding:16px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2);overflow:hidden}
+    .journey-hero .eyebrow{color:#efb8c4}
+    .journey-hero h1{color:#fff}
+    .journey-hero__copy p{color:rgb(255 255 255/.6)!important}
+    .journey-hero .status-pill{border-color:transparent;background:rgb(255 255 255/.14);color:#fff}
+    .journey-hero .status-pill--done{background:rgb(125 223 166/.16);color:#7ddfa6}
+    .journey-hero .route-strip{border-color:transparent;background:rgb(255 255 255/.08)}
+    .journey-hero .route-stop__dot{border-color:#efb8c4;background:transparent}
+    .journey-hero .route-stop small{color:rgb(255 255 255/.5)}
+    .journey-hero .route-strip__line{background:linear-gradient(90deg,rgb(255 255 255/.25),#efb8c4)}
+    .journey-hero .stepper__dot{background:transparent;border-color:rgb(255 255 255/.32);color:rgb(255 255 255/.55)}
+    .journey-hero .stepper__label{color:rgb(255 255 255/.5)}
+    .journey-hero .stepper__step--done .stepper__dot,.journey-hero .stepper__step--arrived .stepper__dot{background:#2f9e63;border-color:#2f9e63;color:#fff}
+    .journey-hero .stepper__step--now .stepper__dot{background:#fff;border-color:#fff;color:var(--rose-dark)}
+    .journey-hero .stepper__step--done.stepper__step--now .stepper__dot,.journey-hero .stepper__step--done.stepper__step--arrived .stepper__dot{background:#2f9e63;border-color:#2f9e63;color:#fff}
+    .journey-hero .stepper__step--done .stepper__label,.journey-hero .stepper__step--now .stepper__label,.journey-hero .stepper__step--arrived .stepper__label{color:#fff}
+    .journey-hero .stepper__line{background:rgb(255 255 255/.18)}
+    .journey-hero .stepper__line--done{background:#2f9e63}
+    .journey-hero .stepper__line--half{background:linear-gradient(to right,#2f9e63 55%,rgb(255 255 255/.18) 55%)}
+    .journey-hero .po-attention{border-color:transparent;background:rgb(255 213 122/.14)}
+    .journey-hero .po-attention__body{color:rgb(255 255 255/.85)}
+    .journey-hero .po-attention__body b{color:#ffd57a}
+    .journey-hero .overview-facts{border:0;background:transparent;gap:8px;overflow:visible}
+    .journey-hero .overview-fact{background:rgb(255 255 255/.09);border-radius:13px}
+    .journey-hero .overview-fact span{color:rgb(255 255 255/.55)}
+    .journey-hero .overview-fact strong{color:#fff}
+    .journey-hero .overview-fact--total strong{color:#ffd57a}
+    .jhero-bar{display:flex;align-items:center;gap:8px;margin:-2px 0 12px}
+    .jhero-back{display:grid;place-items:center;width:34px;height:34px;padding:0 0 2px;border:0;border-radius:50%;background:rgb(255 255 255/.12);color:#fff;font-size:21px;line-height:1;cursor:pointer}
+    .jhero-back:active{background:rgb(255 255 255/.24)}
+    .jhero-spacer{flex:1}
+    .jhero-pdf{padding:8px 14px;border:0;border-radius:999px;background:rgb(255 255 255/.12);color:#fff;font:inherit;font-size:12.5px;font-weight:750;cursor:pointer}
+    .jhero-edit{padding:8px 16px;border-radius:999px;background:#fff;color:#1a1614;font-size:12.5px;font-weight:750;text-decoration:none}
+    .jhero-edit:active{opacity:.8}
+    @media(max-width:679px){
+      .journey-hero{margin:-14px -12px 12px;border-radius:0 0 22px 22px;padding:calc(12px + env(safe-area-inset-top, 0px)) 16px 15px}
+      .journey-hero h1{white-space:normal;font-size:20px;line-height:1.2}
+    }
     .journey-hero:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--rose)}
     .journey-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.journey-hero__copy{min-width:0}
     :is(.eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
@@ -533,6 +586,15 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
   `],
 })
 export class PurchaseView {
+  readonly desktop = inject(DesktopViewport);
+  private readonly browserLocation = inject(Location);
+  private readonly routerNav = inject(Router);
+
+  goBack(): void {
+    if (window.history.length <= 1) { void this.routerNav.navigateByUrl('/purchasing'); return; }
+    this.browserLocation.back();
+  }
+
   readonly containerLabel = containerLabel;
 
   private readonly sourcing = inject(SourcingApi);
