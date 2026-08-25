@@ -18,14 +18,6 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
-interface GalleryPointer {
-  pointerId: number;
-  startX: number;
-  startY: number;
-  axis: 'pending' | 'horizontal' | 'vertical';
-  stage: HTMLElement;
-}
-
 /**
  * Read-first product master. The page deliberately separates the customer
  * story (photo, price, availability) from operational data. Editing remains
@@ -63,278 +55,249 @@ interface GalleryPointer {
 
       <div class="content product-view-page">
         <div class="product-view-canvas">
-          <section class="product-hero" aria-label="Productoverzicht">
-            <div class="gallery" role="region" aria-roledescription="carousel"
-                 [attr.aria-label]="product.name + ' productfoto’s'">
-              @if (activePhoto(); as photo) {
-                <button class="gallery__stage" type="button"
-                        [class.gallery__stage--dragging]="galleryDragging()"
-                        [style.--gallery-drag-x]="galleryDragging() ? galleryDragX() + 'px' : null"
-                        (pointerdown)="startGalleryDrag($event)"
-                        (pointermove)="moveGalleryDrag($event)"
-                        (pointerup)="finishGalleryDrag($event)"
-                        (pointercancel)="cancelGalleryDrag($event)"
-                        (dragstart)="$event.preventDefault()"
-                        (keydown)="handleGalleryKey($event)"
-                        (click)="openActivePhoto($event)"
-                        [attr.aria-label]="'Foto ' + (activePhotoIndex() + 1) + ' van '
-                          + product.photos.length
-                          + ' vergroten. Sleep horizontaal of gebruik de pijltoetsen om te wisselen.'">
-                  <img [appAuthSrc]="photo.url"
-                       [alt]="product.name + ' — foto ' + (activePhotoIndex() + 1)"
-                       draggable="false" />
-                  <span class="gallery__count">{{ activePhotoIndex() + 1 }} / {{ product.photos.length }}</span>
-                  <span class="gallery__zoom" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
-                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M11 8v6M8 11h6"/>
-                    </svg>
-                  </span>
-                </button>
-
-                @if (product.photos.length > 1) {
-                  <nav class="gallery__pager" aria-label="Door productfoto's bladeren">
-                    <button class="gallery__step" type="button" (click)="stepPhoto(-1)"
-                            aria-label="Vorige foto">‹</button>
-                    <div class="gallery__dots" role="group" aria-label="Fotopositie">
-                      @for (item of product.photos; track item.id) {
-                        <button class="gallery__dot" type="button"
-                                [class.active]="activePhotoIndex() === $index"
-                                [attr.aria-current]="activePhotoIndex() === $index ? 'true' : null"
-                                [attr.aria-label]="'Toon foto ' + ($index + 1) + ' van ' + product.photos.length"
-                                (click)="selectPhoto($index)"></button>
+          <section class="phero" aria-label="Productoverzicht">
+            <div class="phero__top">
+              <div class="phero__id">
+                <span class="phero__eyebrow">{{ categoryName() || 'Catalogus' }}</span>
+                <h1>{{ product.name }}</h1>
+                @if (supplierName(); as name) { <p class="phero__supplier">{{ name }}</p> }
+                <p class="phero__meta">
+                  @if (product.colour) {
+                    <span>
+                      @if (product.colourHex) {
+                        <i class="variant-swatch" [style.backgroundColor]="product.colourHex" aria-hidden="true"></i>
                       }
-                    </div>
-                    <button class="gallery__step" type="button" (click)="stepPhoto(1)"
-                            aria-label="Volgende foto">›</button>
-                  </nav>
-                  <span class="sr-only" role="status" aria-live="polite">
-                    Foto {{ activePhotoIndex() + 1 }} van {{ product.photos.length }}
-                  </span>
-                  <div class="gallery__thumbs" role="group" aria-label="Kies een productfoto">
-                    @for (item of product.photos; track item.id) {
-                      <button type="button" [class.active]="activePhotoIndex() === $index"
-                              [attr.aria-pressed]="activePhotoIndex() === $index"
-                              [attr.aria-label]="'Toon foto ' + ($index + 1)"
-                              (click)="selectPhoto($index)">
-                        <img [appAuthSrc]="item.url" alt="" draggable="false" />
-                      </button>
-                    }
-                  </div>
-                }
-                <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
-              } @else {
-                <div class="gallery__empty">
-                  <span aria-hidden="true">◇</span>
-                  <b>Nog geen productfoto</b>
-                  <small>Voeg in Bewerken een hoofdfoto toe.</small>
-                </div>
-              }
+                      {{ product.colour }}
+                    </span>
+                  }
+                  @if (product.variantSize) { <span>Maat {{ product.variantSize }}</span> }
+                  @if (product.sku) { <span class="mono">{{ product.sku }}</span> }
+                </p>
+              </div>
+              <span class="phero__status" [class.phero__status--warn]="!product.active || product.demo">
+                {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
+              </span>
             </div>
 
-            <div class="hero-summary">
-              <div class="hero-summary__topline">
-                <span class="badge" [class.badge--ok]="product.active && !product.demo"
-                      [class.badge--warn]="!product.active || product.demo">
-                  {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
-                </span>
-                @if (categoryName()) { <span class="hero-summary__category">{{ categoryName() }}</span> }
-              </div>
+            @if (!product.photos.length) {
+              <p class="phero__nofoto">Nog geen productfoto — voeg er een toe via Bewerken.</p>
+            }
 
-              <div class="hero-summary__price-stock">
-                <!-- The price tile opens the build-up: every euro from the
-                     factory price to the catalogue price. -->
-                <button class="stock-tile" type="button" [class.stock-tile--open]="priceOpen()"
-                        [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
-                  <span>Catalogusprijs <i class="stock-tile__chev" aria-hidden="true"></i></span>
-                  @if (displayPrice(); as price) {
-                    <strong class="num">{{ price | eur: 2 }}</strong>
-                  } @else {
-                    <strong>—</strong>
-                  }
-                  <small>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kostprijs + opslag' }}</small>
-                </button>
-                <!-- The stock tile opens the stock book below it: where the
-                     figure came from, without leaving the page. -->
-                <button class="stock-tile" type="button" [class.stock-tile--open]="stockOpen()"
-                        [attr.aria-expanded]="stockOpen()" (click)="toggleStock()">
-                  <span>Voorraad <i class="stock-tile__chev" aria-hidden="true"></i></span>
-                  @if (stockLevels(); as levels) {
-                    <strong class="num" [class.warn-text]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
-                    <small>{{ stockSummary() }}@if (expected(); as exp) { <a class="expected expected--line" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
-                  } @else if (product.inventoryKnown) {
-                    <strong class="num" [class.warn-text]="product.stockQuantity <= 0">
-                      {{ product.stockQuantity | num }}
-                    </strong>
-                    <small>stuks@if (expected(); as exp) { <a class="expected expected--line" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' (' + (exp.expectedArrival | dateNl) + ')' : '' }} ›</a>}</small>
-                  } @else {
-                    <strong>—</strong>
-                    <small>nog niet bevestigd</small>
-                  }
-                </button>
-              </div>
-
-              <!-- Desktop: the build-up or the stock book unfolds right under
-                   the tile it explains; closed, the hero stays one screen. -->
-              @if (priceOpen() && desktop.active()) {
-                <ng-container *ngTemplateOutlet="priceBuildTpl" />
-              }
-              @if (stockOpen() && desktop.active()) {
-                <div class="stock-rows stock-rows--fold" aria-label="Voorraad per locatie">
-                  <ng-container *ngTemplateOutlet="stockRowsTpl" />
-                </div>
-              }
-
-              <!-- Where it lies and what happened lately: plain rows, the way
-                   the catalogue list reads, no box to open first. -->
-              <ng-template #stockRowsTpl>
-                @if (stockLevels(); as levels) {
-                  @for (level of levels; track level.locationId) {
-                    <div class="stock-row">
-                      <span class="stock-row__where">
-                        <b>{{ level.name }}</b>
-                        <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · alle verkoopkanalen' : ' · enkel ter plaatse' }}</small>
-                      </span>
-                      <strong class="num stock-row__qty" [class.muted]="!level.quantity">{{ level.quantity | num }}</strong>
-                    </div>
-                  }
-                }
-                @if (recentMoves(); as moves) {
-                  @if (moves.length) { <div class="stock-rows__head">Laatste bewegingen</div> }
-                  @for (move of moves; track move.id) {
-                    <div class="stock-row stock-row--move">
-                      <span class="stock-row__where">
-                        <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
-                        <small>{{ move.at | dateTimeNl }} · {{ move.actor }}@if (move.locationName) { · {{ move.locationName }}}</small>
-                      </span>
-                      <strong class="num stock-row__delta" [class.stock-row__delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</strong>
-                    </div>
-                  }
-                }
-                <div class="stock-row__actions">
-                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Corrigeren</a>
-                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'damaged' }">Beschadigd</a>
-                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'demo' }">Demo</a>
-                  <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Hele geschiedenis ›</a>
-                </div>
-              </ng-template>
-
-              <ng-template #priceBuildTpl>
-                <div class="stock-book price-build" role="region" aria-label="Prijsopbouw">
-                  @if (priceBuild(); as build) {
-                    <dl class="price-build__list">
-                      @for (row of build.rows; track row.label) {
-                        <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note"
-                             [class.price-build__aside]="row.aside">
-                          <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
-                          <dd class="num">{{ row.eur | eur: 2 }}</dd>
-                        </div>
+            <!-- The photos ride along in the facts row: one thumb with a
+                 "+n ›" badge on the phone, the full strip on desktop. -->
+            <div class="phero__facts" [class.phero__facts--photo]="product.photos.length > 0">
+              @if (product.photos.length) {
+                <div class="phero__shots" role="group" [attr.aria-label]="product.photos.length + ' foto’s'">
+                  @for (photo of product.photos; track photo.id) {
+                    <button class="phero__shot" type="button" (click)="lightbox.set($index)"
+                            [attr.aria-label]="'Foto ' + ($index + 1) + ' van ' + product.photos.length + ' vergroten'">
+                      <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + ($index + 1)"
+                           draggable="false" loading="lazy" />
+                      @if ($index === 0 && product.photos.length > 1) {
+                        <span aria-hidden="true">+{{ product.photos.length - 1 }} ›</span>
                       }
-                    </dl>
-                    @if (build.source) {
-                      <p class="price-build__source">
-                        Kostprijs uit calculatie <b>{{ build.source }}</b>{{ build.sourceFound ? '' : ' - die calculatie is niet meer beschikbaar, dus zonder uitsplitsing' }}.
-                      </p>
-                    } @else {
-                      <p class="price-build__source">Nog geen kostprijs uit een inkoopcalculatie; transport en invoerrechten komen erbij zodra een calculatie is toegepast.</p>
-                    }
-                  } @else {
-                    <p class="hint">Prijsopbouw laden…</p>
+                    </button>
                   }
                 </div>
-              </ng-template>
-
-              <div class="hero-summary__identity">
-                @if (product.colour) {
-                  <span>
-                    @if (product.colourHex) {
-                      <i class="variant-swatch" [style.backgroundColor]="product.colourHex" aria-hidden="true"></i>
-                    }
-                    <b>Kleur</b>{{ product.colour }}
-                  </span>
+              }
+              <!-- The stock tile opens the stock book: where the figure came
+                   from, without leaving the page. -->
+              <button class="phero__fact" type="button" [class.phero__fact--open]="stockOpen()"
+                      [attr.aria-expanded]="stockOpen()" (click)="toggleStock()">
+                <small>Voorraad</small>
+                @if (stockLevels()) {
+                  <strong class="num" [class.phero__neg]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
+                  <span>{{ stockSummary() }} ›</span>
+                } @else if (product.inventoryKnown) {
+                  <strong class="num" [class.phero__neg]="product.stockQuantity <= 0">
+                    {{ product.stockQuantity | num }}
+                  </strong>
+                  <span>stuks ›</span>
+                } @else {
+                  <strong>—</strong>
+                  <span>nog niet bevestigd ›</span>
                 }
-                @if (product.variantSize) { <span><b>Maat</b>{{ product.variantSize }}</span> }
-                @if (product.sku) { <span><b>SKU</b><span class="mono">{{ product.sku }}</span></span> }
-              </div>
+              </button>
+              <!-- The price tile opens the build-up: every euro from the
+                   factory price to the catalogue price. -->
+              <button class="phero__fact" type="button" [class.phero__fact--open]="priceOpen()"
+                      [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
+                <small>Prijs</small>
+                @if (displayPrice(); as price) {
+                  <strong class="num">{{ price | eur: 2 }}</strong>
+                } @else {
+                  <strong>—</strong>
+                }
+                @if (margin(); as value) {
+                  <span class="phero__gain" [class.phero__gain--neg]="value.eur < 0">
+                    marge {{ value.eur | eur: 2 }} · {{ value.pct }} %
+                  </span>
+                } @else {
+                  <span>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kost + opslag' }} ›</span>
+                }
+              </button>
             </div>
+
+            @if (expected(); as exp) {
+              <a class="phero__expected" [routerLink]="['/purchasing', exp.orderIds[0]]"
+                 [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
+                +{{ exp.quantity | num }} stuks onderweg{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›
+              </a>
+            }
+
+            <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
           </section>
 
-          @if (familyLoading()) {
-            <div class="variant-group-state" role="status">Varianten laden…</div>
-          } @else if (familyLoadError()) {
-            <div class="variant-group-state variant-group-state--error" role="alert">
-              <span>Varianten zijn niet geladen.</span>
-              <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
-            </div>
-          } @else if (variantMembers().length > 1) {
-            <section class="variant-links" aria-labelledby="variant-links-title">
-              <b id="variant-links-title">Varianten</b>
-              <div>
-                @for (member of variantMembers(); track member.productId) {
-                  @if (member.productId === product.id) {
-                    <span class="product-variant-link product-variant-link--current" aria-current="page">
-                      @if (member.colourHex) {
-                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                      }
-                      {{ variantMemberLabel(member) }}
-                    </span>
-                  } @else {
-                    <a class="product-variant-link" [routerLink]="['/products', member.productId]">
-                      @if (member.colourHex) {
-                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                      }
-                      {{ variantMemberLabel(member) }}
-                    </a>
-                  }
-                }
+          <!-- Desktop: the build-up or the stock book unfolds in its own
+               panel right under the hero; on a phone they come up as sheets. -->
+          @if (priceOpen() && desktop.active()) {
+            <section class="fold-panel" aria-label="Prijsopbouw">
+              <ng-container *ngTemplateOutlet="priceBuildTpl" />
+            </section>
+          }
+          @if (stockOpen() && desktop.active()) {
+            <section class="fold-panel" aria-label="Voorraad per locatie">
+              <div class="stock-rows stock-rows--fold">
+                <ng-container *ngTemplateOutlet="stockRowsTpl" />
               </div>
             </section>
           }
 
+          <!-- Where it lies and what happened lately: plain rows, the way
+               the catalogue list reads, no box to open first. -->
+          <ng-template #stockRowsTpl>
+            @if (stockLevels(); as levels) {
+              @for (level of levels; track level.locationId) {
+                <div class="stock-row">
+                  <span class="stock-row__where">
+                    <b>{{ level.name }}</b>
+                    <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · alle verkoopkanalen' : ' · enkel ter plaatse' }}</small>
+                  </span>
+                  <strong class="num stock-row__qty" [class.muted]="!level.quantity">{{ level.quantity | num }}</strong>
+                </div>
+              }
+            }
+            @if (recentMoves(); as moves) {
+              @if (moves.length) { <div class="stock-rows__head">Laatste bewegingen</div> }
+              @for (move of moves; track move.id) {
+                <div class="stock-row stock-row--move">
+                  <span class="stock-row__where">
+                    <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
+                    <small>{{ move.at | dateTimeNl }} · {{ move.actor }}@if (move.locationName) { · {{ move.locationName }}}</small>
+                  </span>
+                  <strong class="num stock-row__delta" [class.stock-row__delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</strong>
+                </div>
+              }
+            }
+            <div class="stock-row__actions">
+              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Corrigeren</a>
+              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'damaged' }">Beschadigd</a>
+              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'demo' }">Demo</a>
+              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Hele geschiedenis ›</a>
+            </div>
+          </ng-template>
+
+          <ng-template #priceBuildTpl>
+            <div class="stock-book price-build" role="region" aria-label="Prijsopbouw">
+              @if (priceBuild(); as build) {
+                <dl class="price-build__list">
+                  @for (row of build.rows; track row.label) {
+                    <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note"
+                         [class.price-build__aside]="row.aside">
+                      <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
+                      <dd class="num">{{ row.eur | eur: 2 }}</dd>
+                    </div>
+                  }
+                </dl>
+                @if (build.source) {
+                  <p class="price-build__source">
+                    Kostprijs uit calculatie <b>{{ build.source }}</b>{{ build.sourceFound ? '' : ' - die calculatie is niet meer beschikbaar, dus zonder uitsplitsing' }}.
+                  </p>
+                } @else {
+                  <p class="price-build__source">Nog geen kostprijs uit een inkoopcalculatie; transport en invoerrechten komen erbij zodra een calculatie is toegepast.</p>
+                }
+              } @else {
+                <p class="hint">Prijsopbouw laden…</p>
+              }
+            </div>
+          </ng-template>
+
           <div class="details-grid">
-            <section class="info-card" aria-labelledby="product-details-title">
+            <section class="info-card info-card--internal" aria-labelledby="dossier-title">
               <header>
                 <span class="info-card__icon" aria-hidden="true">01</span>
-                <div><h2 id="product-details-title">Productdetails</h2><p>Identificatie van het artikel</p></div>
+                <div><h2 id="dossier-title">Product &amp; prijzen</h2><p>Identificatie, inkoop en verkoop</p></div>
               </header>
-              <dl class="detail-list">
-                <div><dt>Leverancier</dt><dd>{{ supplierName() || '—' }}</dd></div>
-                <div><dt>Afmeting (B × D × H)</dt><dd class="num">{{ size(product.dimensions) }}</dd></div>
-                <div><dt>Gewicht per stuk</dt><dd class="num">
-                  {{ product.dimensions.weightKg ? (product.dimensions.weightKg | num) + ' kg' : '—' }}
-                </dd></div>
+
+              <div class="tiles-kicker tiles-kicker--first">Identificatie</div>
+              <div class="tiles">
+                <div class="tile"><span>Leverancier</span><b>{{ supplierName() || '—' }}</b></div>
+                <div class="tile"><span>Afmeting B × D × H</span><b class="num">{{ size(product.dimensions) }}</b></div>
+                <div class="tile"><span>Gewicht per stuk</span>
+                  <b class="num">{{ product.dimensions.weightKg ? (product.dimensions.weightKg | num) + ' kg' : '—' }}</b></div>
                 @if (product.packaging.kind !== 'NONE') {
-                  <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} (B × D × H)</dt>
-                    <dd class="num">{{ size(product.packaging.dimensions) }}</dd></div>
-                  @if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) {
-                    <div><dt>Stuks in de display</dt><dd class="num">{{ product.packaging.piecesPerUnit | num }}</dd></div>
+                  <div class="tile"><span>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} B × D × H</span>
+                    <b class="num">{{ size(product.packaging.dimensions) }}</b></div>
+                  @if (product.packaging.piecesPerUnit) {
+                    <div class="tile"><span>Stuks in de {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</span>
+                      <b class="num">{{ product.packaging.piecesPerUnit | num }}</b></div>
                   }
-                  <div><dt>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</dt><dd class="num">
-                    {{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | num) + ' kg' : '—' }}
-                  </dd></div>
+                  <div class="tile"><span>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</span>
+                    <b class="num">{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | num) + ' kg' : '—' }}</b></div>
                   @if (product.packaging.barcode; as code) {
-                    <div><dt>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</dt>
-                      <dd class="mono">
-                    <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
-                            (click)="downloadBarcode(code)">
-                      {{ code }}
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
-                    </button>
-                      </dd></div>
+                    <div class="tile"><span>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</span>
+                      <b class="mono">
+                        <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
+                                (click)="downloadBarcode(code)">
+                          {{ code }}
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
+                        </button>
+                      </b></div>
                   }
                 }
-                <div><dt>Barcode stuk</dt><dd class="mono">
-                  <!-- The code as a print-ready image: for the label printer,
-                       the supplier or the designer. -->
-                  @if (product.barcodeInner; as code) {
-                    <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
-                            (click)="downloadBarcode(code)">
-                      {{ code }}
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
-                    </button>
-                  } @else { — }
-                </dd></div>
-              </dl>
+                <div class="tile"><span>Barcode stuk</span>
+                  <b class="mono">
+                    <!-- The code as a print-ready image: for the label printer,
+                         the supplier or the designer. -->
+                    @if (product.barcodeInner; as code) {
+                      <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
+                              (click)="downloadBarcode(code)">
+                        {{ code }}
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
+                      </button>
+                    } @else { — }
+                  </b></div>
+              </div>
+
+              <!-- Purchase and sale share one grid, so the pairs land next to
+                   each other: the two inputs, then cost against price, the
+                   paperwork, and the margin as the full-width closer. -->
+              <div class="tiles-kicker">Inkoop &amp; verkoop</div>
+              <div class="tiles">
+                <div class="tile"><span>EXW-prijs</span><b class="num">
+                  @if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }
+                </b><small>fabrieksprijs, excl. transport</small></div>
+                <div class="tile"><span>Extra kost per stuk</span><b class="num">
+                  @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
+                </b><small>bv. display of giftbox</small></div>
+                <div class="tile tile--emphasis"><span>Kostprijs incl. rechten</span><b class="num">
+                  @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
+                </b><small>geland: mét transport en invoer</small></div>
+                <div class="tile tile--emphasis"><span>Catalogusprijs</span><b class="num">
+                  @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
+                </b><small>{{ hasFixedSalesPrice(product)
+                  ? 'vaste verkoopprijs'
+                  : 'kostprijs + ' + (product.markupPct | num) + ' % opslag' }}</small></div>
+                <div class="tile"><span>HS-code</span><b class="mono">{{ product.hsCode || '—' }}</b></div>
+                <div class="tile"><span>Bron kostprijs</span><b>{{ product.landedCostSource || '—' }}</b></div>
+                <div class="tile tile--result"><span>Marge per stuk</span>
+                  @if (margin(); as value) {
+                    <b class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }} · {{ value.pct }} %</b>
+                  } @else {
+                    <b class="muted">Niet beschikbaar</b>
+                  }
+                  <small>catalogusprijs min kostprijs</small></div>
+              </div>
             </section>
 
             <section class="info-card" aria-labelledby="carton-details-title">
@@ -342,82 +305,78 @@ interface GalleryPointer {
                 <span class="info-card__icon" aria-hidden="true">02</span>
                 <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
               </header>
-              <dl class="detail-list">
-                <div><dt>Karton (B × D × H)</dt><dd class="num">{{ size(product.carton) }}</dd></div>
-                <div><dt>Inhoud</dt><dd class="num">
+              <div class="tiles">
+                <div class="tile"><span>Karton B × D × H</span><b class="num">{{ size(product.carton) }}</b></div>
+                <div class="tile"><span>Inhoud</span><b class="num">
                   @if (cartonPiecesAuto(product)) { <small class="muted">auto</small> }
-                  {{ product.carton.piecesPerCarton | num }} stuks</dd></div>
-                <div><dt>Gewicht</dt><dd class="num">
+                  {{ product.carton.piecesPerCarton | num }} stuks</b></div>
+                <div class="tile"><span>Gewicht</span><b class="num">
                   @if (product.carton.weightKg) {
                     @if (cartonWeightAuto(product)) { <small class="muted">auto</small> }
                     {{ product.carton.weightKg | num }} kg
                   } @else { — }
-                </dd></div>
-                <div><dt>Volume</dt><dd class="num">
+                </b></div>
+                <div class="tile"><span>Volume</span><b class="num">
                   @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
-                </dd></div>
-                <div><dt>Per 40' HC</dt><dd class="num">
+                </b></div>
+                <div class="tile"><span>Per 40' HC</span><b class="num">
                   @if (product.carton.hcCapacity; as hc) {
                     @if (!product.carton.piecesPerHc) { <small class="muted">auto</small> }
                     {{ hc | num }} stuks
                   } @else { — }
-                </dd></div>
-                <div><dt>Omdoosbarcode</dt><dd class="mono">
+                </b></div>
+                <div class="tile"><span>Omdoosbarcode</span><b class="mono">
                   @if (product.barcodeOuter; as code) {
                     @if (code.length === 13) {
-                    <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
-                            (click)="downloadBarcode(code)">
-                      {{ code }}
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
-                    </button>
+                      <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
+                              (click)="downloadBarcode(code)">
+                        {{ code }}
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
+                      </button>
                     } @else { {{ code }} }
                   } @else { — }
-                </dd></div>
-              </dl>
+                </b></div>
+              </div>
             </section>
 
-            <section class="info-card info-card--internal" aria-labelledby="purchase-details-title">
-              <header>
-                <span class="info-card__icon" aria-hidden="true">03</span>
-                <div><h2 id="purchase-details-title">Inkoop</h2><p>Kostprijs en leverancier</p></div>
-              </header>
-              <dl class="detail-list">
-                <div><dt>EXW-prijs</dt><dd class="num">
-                  @if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }
-                </dd></div>
-                <div><dt>Extra kost per stuk <small class="muted">bv. display, giftbox</small></dt><dd class="num">
-                  @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
-                </dd></div>
-                <div class="detail-list__emphasis"><dt>Kostprijs incl. rechten</dt><dd class="num">
-                  @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
-                </dd></div>
-                @if (product.landedCostSource) {
-                  <div><dt>Bron kostprijs</dt><dd>{{ product.landedCostSource }}</dd></div>
+            @if (familyLoading() || familyLoadError() || variantMembers().length > 1) {
+              <section class="info-card" aria-labelledby="linked-products-title">
+                <header>
+                  <span class="info-card__icon" aria-hidden="true">03</span>
+                  <div><h2 id="linked-products-title">Gekoppelde producten</h2><p>Varianten in dezelfde reeks</p></div>
+                </header>
+                @if (familyLoading()) {
+                  <p class="linked-state" role="status">Varianten laden…</p>
+                } @else if (familyLoadError()) {
+                  <div class="linked-state linked-state--error" role="alert">
+                    <span>Varianten zijn niet geladen.</span>
+                    <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
+                  </div>
+                } @else {
+                  <div class="linked-list">
+                    @for (member of variantMembers(); track member.productId) {
+                      @if (member.productId === product.id) {
+                        <span class="linked-row linked-row--current" aria-current="page">
+                          @if (member.colourHex) {
+                            <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                          }
+                          <b>{{ variantMemberLabel(member) }}</b>
+                          <small>huidig</small>
+                        </span>
+                      } @else {
+                        <a class="linked-row" [routerLink]="['/products', member.productId]">
+                          @if (member.colourHex) {
+                            <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                          }
+                          <b>{{ variantMemberLabel(member) }}</b>
+                          <span aria-hidden="true">›</span>
+                        </a>
+                      }
+                    }
+                  </div>
                 }
-                <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}</dd></div>
-              </dl>
-            </section>
-
-            <section class="info-card" aria-labelledby="sales-details-title">
-              <header>
-                <span class="info-card__icon" aria-hidden="true">04</span>
-                <div><h2 id="sales-details-title">Verkoop</h2><p>Prijsregel en rendabiliteit</p></div>
-              </header>
-              <dl class="detail-list">
-                <div><dt>Prijsregel</dt><dd>
-                  {{ hasFixedSalesPrice(product)
-                    ? 'Vaste verkoopprijs'
-                    : (product.markupPct | num) + ' % opslag op kostprijs' }}
-                </dd></div>
-                <div><dt>Marge per stuk</dt>
-                  @if (margin(); as value) {
-                    <dd class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }}</dd>
-                  } @else {
-                    <dd class="muted">Niet beschikbaar</dd>
-                  }
-                </div>
-              </dl>
-            </section>
+              </section>
+            }
           </div>
 
           <details class="info-card publication-card">
@@ -521,63 +480,92 @@ interface GalleryPointer {
     .product-view-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 300px); }
     .product-view-canvas { width: 100%; max-width: 1080px; margin: 0 auto; }
 
-    .product-hero {
-      overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r-lg);
-      background: var(--surface); box-shadow: var(--sh-2);
-    }
-    .gallery { min-width: 0; padding: 12px; background: linear-gradient(145deg, #f6f1ed, #eee7e1); }
-    .gallery__stage {
-      position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; padding: 0;
-      border: 1px solid rgb(26 22 20 / 7%); border-radius: 18px; background: #fff;
-      cursor: grab; touch-action: pan-y; user-select: none;
-    }
-    .gallery__stage:active, .gallery__stage--dragging { cursor: grabbing; }
-    .gallery__stage img {
-      width: 100%; height: 100%; object-fit: contain; pointer-events: none;
-      transform: translateX(var(--gallery-drag-x, 0px));
-      transition: transform .2s cubic-bezier(.2,.8,.2,1);
-    }
-    .gallery__stage--dragging img { transition: none; }
-    /* A phone: the photo takes a third of the screen, not the whole of it -
-       the price and the stock are what you opened the page for. */
-    @media (max-width: 679px) {
-      .gallery { padding: 8px; }
-      .gallery__stage { aspect-ratio: 4 / 3; max-height: 290px; }
-    }
-    .gallery__stage:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
-    .gallery__count, .gallery__zoom {
-      position: absolute; bottom: 10px; display: inline-flex; align-items: center; justify-content: center;
-      background: rgb(25 20 18 / 68%); color: #fff; backdrop-filter: blur(8px);
-    }
-    .gallery__count { left: 10px; min-height: 28px; padding: 4px 9px; border-radius: 999px;
-      font-size: 10.5px; font-weight: 700; }
-    .gallery__zoom { right: 10px; width: 32px; height: 32px; border-radius: 50%; }
-    .gallery__thumbs {
-      display: flex; gap: 7px; min-width: 0; margin-top: 2px; padding: 2px 1px 5px;
-      overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin;
-    }
-    .gallery__thumbs button {
-      flex: 0 0 54px; width: 54px; height: 54px; overflow: hidden; padding: 2px; border: 2px solid transparent;
-      border-radius: 11px; background: rgb(255 255 255 / 68%); cursor: pointer;
-    }
-    .gallery__thumbs button.active { border-color: var(--rose); background: var(--surface); }
-    .gallery__thumbs button:focus-visible { outline: 3px solid var(--rose-line); outline-offset: 2px; }
-    .gallery__thumbs img { width: 100%; height: 100%; border-radius: 7px; object-fit: cover; }
-    .gallery__empty { min-height: 280px; display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 4px; border: 1px dashed var(--line-strong); border-radius: 18px;
-      background: rgb(255 255 255 / 55%); color: var(--muted); text-align: center; }
-    .gallery__empty > span { font-size: 38px; line-height: 1; opacity: .55; }
-    .gallery__empty b { color: var(--ink-2); font-size: 13px; }
-    .gallery__empty small { font-size: 11.5px; }
-
-    .hero-summary { min-width: 0; padding: 18px; }
-    .hero-summary__topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .hero-summary__category { overflow: hidden; color: var(--muted); font-size: 11.5px;
+    .phero { overflow: hidden; padding: 16px; border-radius: 22px;
+      background: linear-gradient(145deg, #27211f, #151210); color: #fff; box-shadow: var(--sh-2); }
+    .phero__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .phero__id { min-width: 0; }
+    .phero__eyebrow { color: #efb8c4; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .phero h1 { margin: 3px 0 0; color: #fff; font-size: clamp(20px, 5.5vw, 28px); line-height: 1.15; letter-spacing: -.03em; }
+    .phero__supplier { margin: 3px 0 0; color: rgb(255 255 255 / 60%); font-size: 12px; }
+    .phero__meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+    .phero__meta span { display: inline-flex; align-items: center; gap: 5px; padding: 3.5px 9px;
+      border-radius: 999px; background: rgb(255 255 255 / 10%); color: rgb(255 255 255 / 85%); font-size: 11px; }
+    .phero__status { flex: none; padding: 5px 11px; border-radius: 999px;
+      background: rgb(255 255 255 / 14%); color: #fff; font-size: 11px; font-weight: 750; }
+    .phero__status--warn { background: rgb(255 213 122 / 18%); color: #ffd57a; }
+    /* Photos in the facts row: the phone shows one thumb with a "+n ›"
+       badge, desktop the whole strip - the tiles keep a fixed width there. */
+    .phero__shots { display: flex; gap: 7px; min-width: 0; align-self: stretch; overflow-x: auto; scrollbar-width: none; }
+    .phero__shots::-webkit-scrollbar { display: none; }
+    .phero__shot { position: relative; flex: none; width: 62px; height: 100%; min-height: 62px; padding: 0; overflow: hidden;
+      border: 1px solid rgb(255 255 255 / 18%); border-radius: 13px; background: rgb(255 255 255 / 6%);
+      cursor: pointer; transition: transform .12s ease; }
+    .phero__shot:active { transform: scale(.95); }
+    .phero__shot:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .phero__shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .phero__shot span { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px;
+      background: rgb(20 16 14 / 62%); color: #fff; font-size: 9px; font-weight: 750; }
+    .phero__nofoto { margin: 12px 0 0; color: rgb(255 255 255 / 55%); font-size: 11.5px; }
+    .phero__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+    .phero__facts--photo { grid-template-columns: auto repeat(2, minmax(0, 1fr)); }
+    .phero__fact { min-width: 0; display: grid; gap: 1px; align-content: start; padding: 10px 11px;
+      border: 0; border-radius: 13px; background: rgb(255 255 255 / 9%); color: inherit; font: inherit; text-align: left; }
+    button.phero__fact { cursor: pointer; }
+    button.phero__fact:active { background: rgb(255 255 255 / 16%); }
+    .phero__fact--open { background: rgb(255 255 255 / 18%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 35%); }
+    .phero__fact small { overflow: hidden; color: rgb(255 255 255 / 55%); font-size: 8.5px; font-weight: 780;
+      letter-spacing: .07em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .phero__fact strong { overflow: hidden; font-size: clamp(13px, 4vw, 18px); letter-spacing: -.02em;
       text-overflow: ellipsis; white-space: nowrap; }
-    /* Two equal tiles: "10.000" with its chevron needs as much room as a price. */
-    .hero-summary__price-stock { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
-    .hero-summary__price-stock > * { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 13px;
-      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font: inherit; color: inherit; cursor: pointer; }
+    /* A phone fits the photo plus three tiles only when everything breathes
+       a little less. The value must always survive whole. */
+    @media (max-width: 679px) {
+      .phero__facts { gap: 6px; }
+      .phero__fact { padding: 8px 8px; border-radius: 12px; }
+      .phero__shot { width: 56px; }
+      .phero__shots .phero__shot:not(:first-child) { display: none; }
+    }
+    .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 50%); font-size: 9.5px;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .phero__neg { color: #ff9d92; }
+    .phero__gain { color: #7ddfa6 !important; }
+    .phero__gain--neg { color: #ff9d92 !important; }
+    .phero__expected { display: block; margin-top: 8px; padding: 8px 11px; border-radius: 11px;
+      background: rgb(255 213 122 / 14%); color: #ffd57a; font-size: 11.5px; font-weight: 700; text-decoration: none; }
+    .fold-panel { margin-top: 10px; padding: 6px 14px 12px; border: 1px solid rgb(255 255 255 / 70%);
+      border-radius: var(--r); background: var(--surface); box-shadow: var(--sh-1); animation: rise .18s ease backwards; }
+    .fold-panel .stock-book { margin-top: 4px; padding: 0; border: 0; background: transparent; }
+
+    /* Detail tiles: label above value, hairline grid, the inkoop idiom. */
+    .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); }
+    .tile { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 10px 13px; background: var(--surface); }
+    .tiles > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    .tile > span { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .tile > b { font-size: 12.5px; font-weight: 650; overflow-wrap: anywhere; }
+    .tile--emphasis { background: var(--rose-soft); }
+    .tile--emphasis > b { font-weight: 800; }
+    .tile > small { margin-top: 1px; color: var(--muted); font-size: 9.5px; line-height: 1.35; }
+    .tile .muted { font-size: 10px; font-weight: 500; }
+    .tile--result { background: var(--ok-soft); align-items: center; text-align: center; }
+    .tile--result > b { color: var(--ok); }
+    .tile--result > b.warn-text { color: var(--danger); }
+    .tiles-kicker { padding: 11px 13px 4px; border-top: 1px solid var(--line); background: var(--surface);
+      color: var(--warn); font-size: 9px; font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
+    .tiles-kicker--first { border-top: 0; }
+    .linked-state { margin: 0; padding: 12px 14px; color: var(--muted); font-size: 12px; }
+    .linked-state--error { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .linked-list { display: grid; }
+    .linked-row { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--line);
+      color: inherit; font-size: 13px; text-decoration: none; }
+    .linked-row:last-child { border-bottom: 0; }
+    .linked-row i { flex: none; width: 14px; height: 14px; border: 1px solid rgb(26 22 20 / 12%); border-radius: 50%; }
+    .linked-row b { flex: 1; min-width: 0; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .linked-row > span { color: var(--muted-2); }
+    a.linked-row:hover { background: var(--surface-2); }
+    .linked-row--current { background: var(--rose-soft); }
+    .linked-row--current small { padding: 2px 8px; border-radius: 999px; background: var(--surface);
+      color: var(--rose-dark); font-size: 10px; font-weight: 700; }
+
     .stock-rows--sheet { margin-top: 4px; }
     /* Desktop idiom only (the rail breakpoint); a phone has no room next
        to Bewerken, and swiping back to the list is one gesture there. */
@@ -587,25 +575,9 @@ interface GalleryPointer {
     .product-nav__btn--off { opacity: .35; pointer-events: none; }
     .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
       font-variant-numeric: tabular-nums; }
-    /* The tiles open something: a ringed chevron says so, and turns when open. */
-    .hero-summary__price-stock span { display: inline-flex; align-items: center; gap: 6px; }
-    .stock-tile__chev { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--line-strong);
-      border-radius: 50%; background: var(--surface); flex: none; transition: transform .15s ease, background .15s ease; }
-    .stock-tile__chev::before { content: ''; width: 5px; height: 5px; margin-top: -2px; border-right: 1.5px solid var(--ink-2);
-      border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); }
-    .stock-tile:hover { background: var(--surface); border-color: var(--line-strong); }
-    .stock-tile:hover .stock-tile__chev { background: var(--surface-2); }
-    .stock-tile--open { border-color: var(--rose); background: var(--surface); }
-    .stock-tile--open .stock-tile__chev { transform: rotate(180deg); border-color: var(--rose); background: var(--rose-soft); }
-    .stock-tile--open .stock-tile__chev::before { border-color: var(--rose-dark); }
     .stock-rows__head { padding: 10px 2px 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
     .stock-rows--sheet .stock-row__actions { gap: 8px; padding-top: 12px; }
     .stock-rows--sheet .stock-row__actions a { padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 12.5px; }
-    .hero-summary__price-stock span { color: var(--muted); font-size: 10px; font-weight: 700;
-      letter-spacing: .07em; text-transform: uppercase; }
-    .hero-summary__price-stock strong { overflow: hidden; margin-top: 1px; font-size: 22px;
-      line-height: 1.25; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
-    .hero-summary__price-stock small { color: var(--muted); font-size: 10.5px; }
     .stock-rows { margin-top: 10px; border-top: 1px solid var(--line); }
     .stock-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 2px;
       border-bottom: 1px solid var(--line); }
@@ -657,11 +629,7 @@ interface GalleryPointer {
     .stock-book__after { color: var(--muted); font-size: 12px; white-space: nowrap; }
     .stock-book__edit { display: inline-block; margin-top: 8px; color: var(--rose-dark);
       font-size: 12.5px; font-weight: 650; text-decoration: none; }
-    .hero-summary__identity { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
-    .hero-summary__identity > span { display: inline-flex; gap: 6px; padding: 5px 9px; border-radius: 999px;
-      background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; }
-    .hero-summary__identity b { color: var(--muted); font-weight: 600; }
-    .variant-swatch { width: 12px; height: 12px; border: 1px solid rgb(26 22 20 / 12%); border-radius: 50%; }
+    .variant-swatch { width: 12px; height: 12px; border: 1px solid rgb(255 255 255 / 25%); border-radius: 50%; }
 
     .publication-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px;
       margin-top: 16px; padding: 12px; border: 1px solid var(--rose-line);
@@ -696,44 +664,24 @@ interface GalleryPointer {
     .info-card--internal { border-color: #eddcb9; }
     .info-card--internal .info-card__icon { background: var(--warn-soft); color: var(--warn); }
 
-    .detail-list { margin: 0; padding: 6px 14px 10px; }
-    .detail-list > div { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
-      align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
-    .detail-list > div:last-child { border-bottom: 0; }
     .barcode-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
       color: inherit; font: inherit; cursor: pointer; }
     .barcode-link svg { width: 16px; height: 16px; fill: none; stroke: var(--rose-dark); stroke-width: 1.8;
       stroke-linecap: round; }
     .barcode-link:hover { text-decoration: underline dotted; }
-    .detail-list dt { color: var(--muted); font-size: 11.5px; }
-    .detail-list dd { min-width: 0; color: var(--ink-2); font-size: 12.5px; font-weight: 620;
-      overflow-wrap: anywhere; text-align: right; }
-    .detail-list__emphasis dt, .detail-list__emphasis dd { color: var(--ink); font-weight: 750; }
 
     @media (min-width: 680px) {
-      /* The photo is a fixed, modest column that keeps its own height; the
-         summary beside it decides nothing about its size any more. */
-      .product-hero { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
-      .gallery { padding: 16px; align-self: start; }
-      .gallery__stage { aspect-ratio: 1; }
-      .hero-summary { display: flex; flex-direction: column; justify-content: flex-start; padding: 20px 24px; }
+      .phero { padding: 20px 22px; }
+      .phero__facts--photo { grid-template-columns: minmax(0, 1fr) 220px 220px; }
+      .phero__shot { width: 84px; }
+      .phero__shot span { display: none; }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
-      .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .gallery__stage img { transition: none; }
+      .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
     }
   `,
 })
 export class ProductView {
   readonly lightbox = signal(-1);
-  readonly activePhotoIndex = signal(0);
-  readonly galleryDragging = signal(false);
-  readonly galleryDragX = signal(0);
-
-  private galleryPointer: GalleryPointer | null = null;
-  private galleryGestureHandled = false;
-  private galleryClickResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
@@ -934,13 +882,6 @@ export class ProductView {
     return { eur, pct: Math.round((eur / price) * 100) };
   });
 
-  readonly activePhoto = computed(() => {
-    const photos = this.product()?.photos ?? [];
-    if (!photos.length) return null;
-    const index = Math.min(Math.max(this.activePhotoIndex(), 0), photos.length - 1);
-    return photos[index];
-  });
-
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const id = Number(params.get('id'));
@@ -969,9 +910,7 @@ export class ProductView {
     this.family.set(null);
     this.familyLoadError.set(false);
     this.familyLoading.set(false);
-    this.activePhotoIndex.set(0);
     this.lightbox.set(-1);
-    this.resetGalleryPointer();
 
     const [product, categories, suppliers] = await Promise.all([
       this.catalog.product(id),
@@ -1008,143 +947,6 @@ export class ProductView {
     } finally {
       if (version === this.loadVersion) this.familyLoading.set(false);
     }
-  }
-
-  openActivePhoto(event: MouseEvent): void {
-    if (this.galleryGestureHandled) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    this.lightbox.set(this.activePhotoIndex());
-  }
-
-  selectPhoto(index: number): void {
-    const count = this.product()?.photos.length ?? 0;
-    if (!count) return;
-    this.activePhotoIndex.set(Math.max(0, Math.min(index, count - 1)));
-  }
-
-  stepPhoto(direction: -1 | 1): void {
-    const count = this.product()?.photos.length ?? 0;
-    if (count < 2) return;
-    this.activePhotoIndex.update((index) => (index + direction + count) % count);
-  }
-
-  handleGalleryKey(event: KeyboardEvent): void {
-    const count = this.product()?.photos.length ?? 0;
-    if (count < 2) return;
-    switch (event.key) {
-      case 'ArrowLeft':
-        event.preventDefault();
-        this.stepPhoto(-1);
-        break;
-      case 'ArrowRight':
-        event.preventDefault();
-        this.stepPhoto(1);
-        break;
-      case 'Home':
-        event.preventDefault();
-        this.selectPhoto(0);
-        break;
-      case 'End':
-        event.preventDefault();
-        this.selectPhoto(count - 1);
-        break;
-    }
-  }
-
-  startGalleryDrag(event: PointerEvent): void {
-    if (!event.isPrimary || event.button !== 0 || (this.product()?.photos.length ?? 0) < 2) return;
-    if (this.galleryClickResetTimer !== null) {
-      clearTimeout(this.galleryClickResetTimer);
-      this.galleryClickResetTimer = null;
-    }
-    this.galleryGestureHandled = false;
-    const stage = event.currentTarget as HTMLElement;
-    this.galleryPointer = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      axis: 'pending',
-      stage,
-    };
-    try {
-      stage.setPointerCapture(event.pointerId);
-    } catch {
-      this.galleryPointer = null;
-    }
-  }
-
-  moveGalleryDrag(event: PointerEvent): void {
-    const active = this.galleryPointer;
-    if (!active || active.pointerId !== event.pointerId) return;
-    const dx = event.clientX - active.startX;
-    const dy = event.clientY - active.startY;
-    if (active.axis === 'pending') {
-      if (Math.hypot(dx, dy) < 8) return;
-      active.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'horizontal' : 'vertical';
-    }
-    if (active.axis !== 'horizontal') return;
-    event.preventDefault();
-    event.stopPropagation();
-    this.galleryGestureHandled = true;
-    this.galleryDragging.set(true);
-    const limit = Math.max(70, Math.min(active.stage.clientWidth * .32, 150));
-    this.galleryDragX.set(Math.max(-limit, Math.min(limit, dx)));
-  }
-
-  finishGalleryDrag(event: PointerEvent): void {
-    const active = this.galleryPointer;
-    if (!active || active.pointerId !== event.pointerId) return;
-    const dx = event.clientX - active.startX;
-    const moved = Math.hypot(dx, event.clientY - active.startY);
-    const horizontal = active.axis === 'horizontal';
-    if (active.axis !== 'pending' && moved >= 8) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.galleryGestureHandled = true;
-      this.deferGalleryClickRelease();
-    }
-    const threshold = Math.max(44, Math.min(active.stage.clientWidth * .14, 88));
-    this.releaseGalleryPointer(active);
-    this.resetGalleryPointer();
-    if (horizontal && Math.abs(dx) >= threshold) this.stepPhoto(dx < 0 ? 1 : -1);
-  }
-
-  cancelGalleryDrag(event: PointerEvent): void {
-    const active = this.galleryPointer;
-    if (!active || active.pointerId !== event.pointerId) return;
-    if (active.axis === 'horizontal') {
-      this.galleryGestureHandled = true;
-      this.deferGalleryClickRelease();
-    }
-    this.releaseGalleryPointer(active);
-    this.resetGalleryPointer();
-  }
-
-  private deferGalleryClickRelease(): void {
-    if (this.galleryClickResetTimer !== null) clearTimeout(this.galleryClickResetTimer);
-    this.galleryClickResetTimer = setTimeout(() => {
-      this.galleryGestureHandled = false;
-      this.galleryClickResetTimer = null;
-    }, 400);
-  }
-
-  private releaseGalleryPointer(active: GalleryPointer): void {
-    try {
-      if (active.stage.hasPointerCapture(active.pointerId)) {
-        active.stage.releasePointerCapture(active.pointerId);
-      }
-    } catch {
-      /* Pointer cancellation releases capture before Angular receives it. */
-    }
-  }
-
-  private resetGalleryPointer(): void {
-    this.galleryPointer = null;
-    this.galleryDragging.set(false);
-    this.galleryDragX.set(0);
   }
 
   /** Saves the EAN-13 as a 300 dpi PNG, ready for a label printer or a designer. */
