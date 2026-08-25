@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from '../api/api.config';
+import { Ui } from '../../shared/ui';
 
 /**
  * Phone notifications for this device, via web push.
@@ -14,6 +15,7 @@ import { api } from '../api/api.config';
 @Injectable({ providedIn: 'root' })
 export class PushSetup {
   private readonly http = inject(HttpClient);
+  private readonly ui = inject(Ui);
 
   readonly supported = signal(false);
   readonly enabled = signal(false);
@@ -32,7 +34,11 @@ export class PushSetup {
       navigator.serviceWorker.addEventListener('message', (event) => {
         const data = event.data;
         if (data?.source !== 'enrosed-push') return;
+        /* Only the fronted app speaks: sound plus a toast instead of the
+           suppressed system banner. */
+        if (document.visibilityState !== 'visible') return;
         void playSoundFor(data.kind);
+        this.ui.toast(data.title + (data.body ? ' — ' + data.body : ''));
       });
     } catch {
       /* An old browser without workers simply has no notifications. */
@@ -85,6 +91,12 @@ export class PushSetup {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  devices(): Promise<{ id: number; device: string; since: string | null;
+      lastStatus: number | null; lastAt: string | null }[]> {
+    return firstValueFrom(this.http.get<{ id: number; device: string; since: string | null;
+      lastStatus: number | null; lastAt: string | null }[]>(api('/api/push/subscriptions')));
   }
 
   async sendTest(): Promise<void> {

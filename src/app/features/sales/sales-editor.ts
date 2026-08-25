@@ -635,6 +635,10 @@ import {
                 } @else {
                   <span>{{ freightStrategyLabel(data) }} · {{ data.priced.totals.freight | eur }}</span>
                 }
+                @if (transitDays(); as days) {
+                  <span>Transittijd ± {{ days }} {{ days === 1 ? 'dag' : 'dagen' }}
+                    naar {{ orderCountryName() }}</span>
+                }
               </div>
               @if (!isLooseCartons(data) && data.order.pallets.length) {
                 <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
@@ -1597,13 +1601,27 @@ export class SalesEditor {
   /** One sentence about when the goods can leave. */
   deliverySummary(data: SalesOrderView): string {
     const lines = data.priced.lines;
-    if (lines.every((line) => line.inStock)) return 'Alles op voorraad - kan meteen geleverd worden.';
+    const transit = this.transitDays();
+    const transitText = transit
+      ? ` Transittijd ± ${transit} ${transit === 1 ? 'dag' : 'dagen'} naar ${this.orderCountryName()}.`
+      : '';
+    if (lines.every((line) => line.inStock)) {
+      return 'Alles op voorraad - kan meteen geleverd worden.' + transitText;
+    }
     const weeks = lines.map((line) => line.deliveryWeek).filter((week): week is string => !!week);
     const unknown = lines.filter((line) => !line.inStock && !line.deliveryWeek).length;
-    if (unknown) return 'Levertijd nog te bevestigen voor ' + unknown + ' regel(s).';
+    if (unknown) return 'Levertijd nog te bevestigen voor ' + unknown + ' regel(s).' + transitText;
     const latest = weeks.sort().at(-1);
-    return latest ? 'Volledig leverbaar tegen week ' + latest + '.' : 'Levertijd nog te bevestigen.';
+    return (latest ? 'Volledig leverbaar tegen week ' + latest + '.'
+      : 'Levertijd nog te bevestigen.') + transitText;
   }
+
+  /** Road days to the delivery country, from the country configuration. */
+  readonly transitDays = computed(() => {
+    const code = this.view()?.order.countryCode;
+    const days = this.countries().find((country) => country.code === code)?.transitDays;
+    return days && days > 0 ? days : null;
+  });
 
   lineDiscountEur(line: PricedLine): number {
     return Math.round(line.gross * (line.manualPercent ?? 0)) / 100;

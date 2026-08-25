@@ -472,7 +472,11 @@ export class ProductPicker implements OnDestroy {
 
   readonly matches = computed(() => {
     const needle = this.query().toLowerCase().trim();
-    const all = this.products();
+    /* Name first, colour second: a family's variants stand side by side
+       with the colours in a fixed order, instead of database order. */
+    const all = this.products().slice().sort((a, b) =>
+      a.name.localeCompare(b.name, 'nl')
+      || (a.colour ?? '').localeCompare(b.colour ?? '', 'nl'));
     if (!needle) return all.slice(0, 50);
     return all
       .filter((product) =>

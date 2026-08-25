@@ -676,6 +676,21 @@ const normalizeCategoryCode = (value: string): string => value
               <button class="btn btn--sm" type="button" [disabled]="push.busy()"
                       (click)="disablePush()">Uitzetten</button>
             </div>
+            @if (pushDevices().length) {
+              <div class="push-devices">
+                @for (device of pushDevices(); track device.id) {
+                  <div class="push-device">
+                    <b>{{ device.device }}</b>
+                    <span>
+                      @if (device.lastStatus === null) { nog geen melding gestuurd }
+                      @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
+                        laatste melding afgeleverd ✓
+                      } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
+                    </span>
+                  </div>
+                }
+              </div>
+            }
           } @else {
             <button class="btn btn--primary" type="button" [disabled]="push.busy()"
                     (click)="enablePush()">
@@ -850,6 +865,11 @@ const normalizeCategoryCode = (value: string): string => value
       .settings-section { scroll-margin-top: 119px; }
     }
     .push-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .push-devices { display: grid; gap: 5px; margin-top: 10px; }
+    .push-device { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px;
+      border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+      font-size: 11px; }
+    .push-device span { color: var(--muted); }
     .push-sounds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .app-settings-kicker { margin: 22px 2px 8px; color: var(--muted); font-size: 10px;
       font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
@@ -857,12 +877,17 @@ const normalizeCategoryCode = (value: string): string => value
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly push = inject(PushSetup);
+  /** The device list fills in once the worker knows whether we are enabled. */
+  private readonly pushDevicesLoad = setTimeout(() => void this.loadPushDevices(), 1500);
 
   async enablePush(): Promise<void> {
     const error = await this.push.enable();
     if (error) this.ui.toast(error, 'err');
     else this.ui.toast('Meldingen aangezet — je krijgt zo een testmelding');
-    if (!error) void this.push.sendTest();
+    if (!error) {
+      void this.push.sendTest();
+      setTimeout(() => void this.loadPushDevices(), 4000);
+    }
   }
 
   async disablePush(): Promise<void> {
@@ -873,6 +898,16 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   async testPush(): Promise<void> {
     await this.push.sendTest();
     this.ui.toast('Testmelding onderweg');
+    setTimeout(() => void this.loadPushDevices(), 4000);
+  }
+
+  readonly pushDevices = signal<{ id: number; device: string;
+    lastStatus: number | null; lastAt: string | null }[]>([]);
+
+  async loadPushDevices(): Promise<void> {
+    try {
+      this.pushDevices.set(await this.push.devices());
+    } catch { /* diagnostics only */ }
   }
 
   previewSound(kind: string): void {

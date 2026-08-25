@@ -15,9 +15,13 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const appVisible = clients.some((client) => client.visibilityState === 'visible');
     for (const client of clients) {
-      client.postMessage({ source: 'enrosed-push', kind, title, body });
+      client.postMessage({ source: 'enrosed-push', kind, title, body, appVisible });
     }
+    /* With the app in front, the in-app sound and toast carry the news;
+       a system banner on top would ring twice and say it twice. */
+    if (appVisible) return;
     await self.registration.showNotification(title, {
       body,
       icon: '/icons/icon-192.png',
