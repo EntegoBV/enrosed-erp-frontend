@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
@@ -32,31 +32,56 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
   ],
   template: `
     @if (product(); as product) {
-      <app-page-header [title]="product.name" [subtitle]="headerLine()"
-                       [showBack]="true" [showBell]="false">
-        <!-- Desktop: step to the next or previous product without going
-             back to the list, the same arrows as while editing. -->
-        @if (neighbours(); as around) {
-          <span class="product-nav" role="group" aria-label="Vorig of volgend product">
-            <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
-               [routerLink]="around.previous ? ['/products', around.previous.id] : null"
-               [attr.aria-disabled]="!around.previous"
-               [title]="around.previous ? 'Vorige: ' + around.previous.name : 'Dit is het eerste product'">‹</a>
-            <small class="product-nav__pos">{{ around.index + 1 }}/{{ around.total }}</small>
-            <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
-               [routerLink]="around.next ? ['/products', around.next.id] : null"
-               [attr.aria-disabled]="!around.next"
-               [title]="around.next ? 'Volgende: ' + around.next.name : 'Dit is het laatste product'">›</a>
-          </span>
-        }
-        <a class="btn btn--primary btn--sm" [routerLink]="['/products', product.id, 'edit']">
-          Bewerken
-        </a>
-      </app-page-header>
+
+      @if (desktop.active()) {
+        <app-page-header [title]="product.name" [subtitle]="product.sku || ''"
+                         [showBack]="true" [showBell]="false">
+          <!-- Desktop: step to the next or previous product without going
+               back to the list, the same arrows as while editing. -->
+          @if (neighbours(); as around) {
+            <span class="product-nav" role="group" aria-label="Vorig of volgend product">
+              <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
+                 [routerLink]="around.previous ? ['/products', around.previous.id] : null"
+                 [attr.aria-disabled]="!around.previous"
+                 [title]="around.previous ? 'Vorige: ' + around.previous.name : 'Dit is het eerste product'">‹</a>
+              <small class="product-nav__pos">{{ around.index + 1 }}/{{ around.total }}</small>
+              <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
+                 [routerLink]="around.next ? ['/products', around.next.id] : null"
+                 [attr.aria-disabled]="!around.next"
+                 [title]="around.next ? 'Volgende: ' + around.next.name : 'Dit is het laatste product'">›</a>
+            </span>
+          }
+          <a class="btn btn--primary btn--sm" [routerLink]="['/products', product.id, 'edit']">
+            Bewerken
+          </a>
+        </app-page-header>
+      }
 
       <div class="content product-view-page">
         <div class="product-view-canvas">
           <section class="phero" aria-label="Productoverzicht">
+            <!-- Phone: the app bar folds into the hero - back and Bewerk on
+                 the dark surface, so the page starts as one piece from the top. -->
+            @if (!desktop.active()) {
+              <div class="phero__bar">
+                <button class="phero__back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
+                <span class="phero__bar-spacer"></span>
+                <a class="phero__edit" [routerLink]="['/products', product.id, 'edit']">Bewerk</a>
+              </div>
+            }
+
+            @if (!desktop.active() && product.photos.length) {
+              <div class="phero__shots" role="group" [attr.aria-label]="product.photos.length + ' foto’s'">
+                @for (photo of product.photos; track photo.id) {
+                  <button class="phero__shot" type="button" (click)="lightbox.set($index)"
+                          [attr.aria-label]="'Foto ' + ($index + 1) + ' van ' + product.photos.length + ' vergroten'">
+                    <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + ($index + 1)"
+                         draggable="false" loading="lazy" />
+                  </button>
+                }
+              </div>
+            }
+
             <div class="phero__top">
               <div class="phero__id">
                 <span class="phero__eyebrow">{{ categoryName() || 'Catalogus' }}</span>
@@ -65,6 +90,11 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                   <a class="phero__supplier" [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} ›</a>
                 }
                 <p class="phero__meta">
+                  @if (!desktop.active()) {
+                    <span class="phero__status" [class.phero__status--warn]="!product.active || product.demo">
+                      {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
+                    </span>
+                  }
                   @if (product.colour) {
                     <span>
                       @if (product.colourHex) {
@@ -77,28 +107,27 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                   @if (product.sku) { <span class="mono">{{ product.sku }}</span> }
                 </p>
               </div>
-              <span class="phero__status" [class.phero__status--warn]="!product.active || product.demo">
-                {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
-              </span>
+              @if (desktop.active()) {
+                <span class="phero__status phero__status--top"
+                      [class.phero__status--warn]="!product.active || product.demo">
+                  {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
+                </span>
+              }
             </div>
 
             @if (!product.photos.length) {
               <p class="phero__nofoto">Nog geen productfoto — voeg er een toe via Bewerken.</p>
             }
 
-            <!-- The photos ride along in the facts row: one thumb with a
-                 "+n ›" badge on the phone, the full strip on desktop. -->
-            <div class="phero__facts" [class.phero__facts--photo]="product.photos.length > 0">
-              @if (product.photos.length) {
-                <div class="phero__shots" role="group" [attr.aria-label]="product.photos.length + ' foto’s'">
+            <div class="phero__facts" [class.phero__facts--photo]="desktop.active() && product.photos.length > 0">
+              @if (desktop.active() && product.photos.length) {
+                <div class="phero__shots phero__shots--row" role="group"
+                     [attr.aria-label]="product.photos.length + ' foto’s'">
                   @for (photo of product.photos; track photo.id) {
                     <button class="phero__shot" type="button" (click)="lightbox.set($index)"
                             [attr.aria-label]="'Foto ' + ($index + 1) + ' van ' + product.photos.length + ' vergroten'">
                       <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + ($index + 1)"
                            draggable="false" loading="lazy" />
-                      @if ($index === 0 && product.photos.length > 1) {
-                        <span aria-hidden="true">+{{ product.photos.length - 1 }} ›</span>
-                      }
                     </button>
                   }
                 </div>
@@ -106,24 +135,26 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
               <!-- The stock tile walks down to the stock card: locations
                    and the latest movements live on the page itself. -->
               <button class="phero__fact" type="button" (click)="scrollToStock()">
+                <i class="phero__fact-chev" aria-hidden="true"></i>
                 <small>Voorraad</small>
                 @if (stockLevels()) {
                   <strong class="num" [class.phero__neg]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
-                  <span>{{ stockSummary() }} ›</span>
+                  <span>{{ stockSummary() }}</span>
                 } @else if (product.inventoryKnown) {
                   <strong class="num" [class.phero__neg]="product.stockQuantity <= 0">
                     {{ product.stockQuantity | num }}
                   </strong>
-                  <span>stuks ›</span>
+                  <span>stuks</span>
                 } @else {
                   <strong>—</strong>
-                  <span>nog niet bevestigd ›</span>
+                  <span>nog niet bevestigd</span>
                 }
               </button>
               <!-- The price tile opens the build-up: every euro from the
                    factory price to the catalogue price. -->
               <button class="phero__fact" type="button" [class.phero__fact--open]="priceOpen()"
                       [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
+                <i class="phero__fact-chev" aria-hidden="true"></i>
                 <small>Catalogusprijs</small>
                 @if (displayPrice(); as price) {
                   <strong class="num">{{ price | eur: 2 }}</strong>
@@ -135,7 +166,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                     marge {{ value.eur | eur: 2 }} · {{ value.pct }} %
                   </span>
                 } @else {
-                  <span>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kost + opslag' }} ›</span>
+                  <span>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kost + opslag' }}</span>
                 }
               </button>
             </div>
@@ -269,7 +300,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
               </div>
             </section>
             @if (familyLoading() || familyLoadError() || variantMembers().length > 1) {
-              <section class="info-card" aria-labelledby="linked-products-title">
+              <section class="info-card linked-card" aria-labelledby="linked-products-title">
                 <header>
                   <span class="info-card__icon" aria-hidden="true">03</span>
                   <div><h2 id="linked-products-title">Gekoppelde producten</h2><p>Varianten in dezelfde reeks</p></div>
@@ -308,7 +339,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
             }
             </div>
             <div class="details-col">
-            <section class="info-card" aria-labelledby="carton-details-title">
+            <section class="info-card omdoos-card" aria-labelledby="carton-details-title">
               <header>
                 <span class="info-card__icon" aria-hidden="true">02</span>
                 <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
@@ -559,6 +590,20 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
 
     .phero { overflow: hidden; padding: 16px; border-radius: 22px;
       background: linear-gradient(145deg, #27211f, #151210); color: #fff; box-shadow: var(--sh-2); }
+    .product-nav { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+    .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
+    .product-nav__btn--off { opacity: .35; pointer-events: none; }
+    .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
+      font-variant-numeric: tabular-nums; }
+    .phero__bar { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; }
+    .phero__back { display: grid; place-items: center; width: 34px; height: 34px; padding: 0 0 2px;
+      border: 0; border-radius: 50%; background: rgb(255 255 255 / 12%); color: #fff;
+      font-size: 21px; line-height: 1; cursor: pointer; }
+    .phero__back:active { background: rgb(255 255 255 / 24%); }
+    .phero__bar-spacer { flex: 1; }
+    .phero__edit { padding: 8px 16px; border-radius: 999px; background: #fff; color: #1a1614;
+      font-size: 12.5px; font-weight: 750; text-decoration: none; }
+    .phero__edit:active { opacity: .8; }
     .phero__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
     .phero__id { min-width: 0; }
     .phero__eyebrow { color: #efb8c4; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
@@ -568,15 +613,16 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     .phero__meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
     .phero__meta span { display: inline-flex; align-items: center; gap: 5px; padding: 3.5px 9px;
       border-radius: 999px; background: rgb(255 255 255 / 10%); color: rgb(255 255 255 / 85%); font-size: 11px; }
-    .phero__status { flex: none; padding: 5px 11px; border-radius: 999px;
-      background: rgb(255 255 255 / 14%); color: #fff; font-size: 11px; font-weight: 750; }
+    .phero__status { background: rgb(255 255 255 / 16%) !important; font-weight: 750; }
+    .phero__status--top { flex: none; display: inline-block; padding: 5px 11px; border-radius: 999px;
+      color: #fff; font-size: 11px; }
     .phero__status--warn { background: rgb(255 213 122 / 18%); color: #ffd57a; }
-    /* Photos in the facts row: the phone shows one thumb with a "+n ›"
-       badge, desktop the whole strip - the tiles keep a fixed width there. */
-    .phero__shots { display: flex; gap: 7px; min-width: 0; align-self: stretch; overflow-x: auto; scrollbar-width: none; }
+    /* Photos above the identity: the phone shows one generous thumb with
+       a "+n ›" badge in the middle, desktop the whole strip. */
+    .phero__shots { display: flex; gap: 7px; min-width: 0; margin-bottom: 12px; overflow-x: auto; scrollbar-width: none; }
     .phero__shots::-webkit-scrollbar { display: none; }
-    .phero__shot { position: relative; flex: none; width: 62px; height: 100%; min-height: 62px; padding: 0; overflow: hidden;
-      border: 1px solid rgb(255 255 255 / 18%); border-radius: 13px; background: rgb(255 255 255 / 6%);
+    .phero__shot { position: relative; flex: none; width: 92px; height: 92px; padding: 0; overflow: hidden;
+      border: 1px solid rgb(255 255 255 / 18%); border-radius: 16px; background: rgb(255 255 255 / 6%);
       cursor: pointer; transition: transform .12s ease; }
     .phero__shot:active { transform: scale(.95); }
     .phero__shot:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
@@ -585,8 +631,11 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
       background: rgb(20 16 14 / 62%); color: #fff; font-size: 9px; font-weight: 750; }
     .phero__nofoto { margin: 12px 0 0; color: rgb(255 255 255 / 55%); font-size: 11.5px; }
     .phero__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
-    .phero__facts--photo { grid-template-columns: auto repeat(2, minmax(0, 1fr)); }
-    .phero__fact { min-width: 0; display: grid; gap: 1px; align-content: start; padding: 10px 11px;
+    .phero__fact-chev { position: absolute; top: 9px; right: 9px; display: grid; place-items: center;
+      width: 22px; height: 22px; border-radius: 50%; background: rgb(255 255 255 / 14%); }
+    .phero__fact-chev::before { content: ''; width: 7px; height: 7px; margin-left: -2px;
+      border-right: 1.8px solid #fff; border-bottom: 1.8px solid #fff; transform: rotate(-45deg); }
+    .phero__fact { position: relative; min-width: 0; display: grid; gap: 1px; align-content: start; padding: 10px 34px 10px 11px;
       border: 0; border-radius: 13px; background: rgb(255 255 255 / 9%); color: inherit; font: inherit; text-align: left; }
     button.phero__fact { cursor: pointer; }
     button.phero__fact:active { background: rgb(255 255 255 / 16%); }
@@ -598,10 +647,27 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     /* A phone fits the photo plus three tiles only when everything breathes
        a little less. The value must always survive whole. */
     @media (max-width: 679px) {
+      /* The hero grows out of the top edge of the screen: square above,
+         rounded below, the photo generous and in the middle. */
+      .phero { margin: -14px -12px 0; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 16px;
+        border-radius: 0 0 22px 22px; }
       .phero__facts { gap: 6px; }
-      .phero__fact { padding: 8px 8px; border-radius: 12px; }
-      .phero__shot { width: 56px; }
-      .phero__shots .phero__shot:not(:first-child) { display: none; }
+      .phero__fact { padding: 8px 34px 8px 10px; border-radius: 12px; }
+      /* A swiper: every photo shows, side by side, snapping under the
+         thumb; with one or two they sit centred. */
+      .phero__shots { justify-content: safe center; margin: 2px -16px 12px; padding: 0 16px;
+        scroll-snap-type: x mandatory; }
+      .phero__shot { width: 132px; height: 132px; border-radius: 22px; scroll-snap-align: center; }
+      .phero__top { flex-direction: column; align-items: center; gap: 9px; }
+      .phero__id { display: flex; flex-direction: column; align-items: center; text-align: center; }
+      .phero__meta { justify-content: center; }
+      /* One column again: the carton follows the dossier, then the linked
+         products and the stock. */
+      .details-grid > .details-col { display: contents; }
+      .info-card--internal { order: 1; }
+      .omdoos-card { order: 2; }
+      .linked-card { order: 3; }
+      #stock-card { order: 4; }
     }
     .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 50%); font-size: 9.5px;
       text-overflow: ellipsis; white-space: nowrap; }
@@ -650,14 +716,6 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
       color: var(--rose-dark); font-size: 10px; font-weight: 700; }
 
     .stock-rows--sheet { margin-top: 4px; }
-    /* Desktop idiom only (the rail breakpoint); a phone has no room next
-       to Bewerken, and swiping back to the list is one gesture there. */
-    .product-nav { display: none; align-items: center; gap: 4px; margin-right: 6px; }
-    @media (min-width: 680px) { .product-nav { display: inline-flex; } }
-    .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
-    .product-nav__btn--off { opacity: .35; pointer-events: none; }
-    .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
-      font-variant-numeric: tabular-nums; }
     .stock-rows__head { padding: 10px 2px 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
     .stock-rows--sheet .stock-row__actions { gap: 8px; padding-top: 12px; }
     .stock-rows--sheet .stock-row__actions a { padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 12.5px; }
@@ -769,8 +827,8 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     @media (min-width: 680px) {
       .phero { padding: 20px 22px; }
       .phero__facts--photo { grid-template-columns: minmax(0, 1fr) 220px 220px; }
-      .phero__shot { width: 84px; }
-      .phero__shot span { display: none; }
+      .phero__shots--row { align-self: stretch; margin-bottom: 0; }
+      .phero__shots--row .phero__shot { width: 84px; height: 100%; min-height: 62px; border-radius: 13px; }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
       /* Two independent stacks: the dossier with its linked products on
          the left, Omdoos with the stock on the right. */
@@ -785,6 +843,8 @@ export class ProductView {
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly destroyRef = inject(DestroyRef);
   private readonly ui = inject(Ui);
 
@@ -816,6 +876,11 @@ export class ProductView {
     const derived = autoCartonWeightKg(product, product.carton.piecesPerCarton);
     return derived !== null && derived === product.carton.weightKg;
   }
+  goBack(): void {
+    if (window.history.length <= 1) { void this.router.navigateByUrl('/products'); return; }
+    this.location.back();
+  }
+
   scrollToStock(): void {
     document.getElementById('stock-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1144,12 +1209,6 @@ export class ProductView {
 
   hasFixedSalesPrice(product: Product): boolean {
     return product.fixedSalesPriceEur !== null && product.fixedSalesPriceEur > 0;
-  }
-
-  headerLine(): string {
-    const product = this.product();
-    if (!product) return '';
-    return product.sku ?? '';
   }
 
   publicationSummary(): string {
