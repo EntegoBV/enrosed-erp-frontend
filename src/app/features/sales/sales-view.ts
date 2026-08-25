@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Location } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { saveBlob } from '../../core/api/download';
@@ -31,19 +32,33 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number" [subtitle]="customerName()"
-                       [showBack]="true" [showBell]="false">
-        <button class="btn btn--sm" type="button" [disabled]="downloading()"
-                (click)="downloadPdf()">
-          {{ downloading() ? 'Even wachten…' : 'PDF' }}
-        </button>
-        <a class="btn btn--primary btn--sm" [routerLink]="['/sales', data.order.id, 'edit']">
-          {{ actionLabel() }}
-        </a>
-      </app-page-header>
+      @if (desktop.active()) {
+        <app-page-header [title]="data.order.number" [subtitle]="customerName()"
+                         [showBack]="true" [showBell]="false">
+          <button class="btn btn--sm" type="button" [disabled]="downloading()"
+                  (click)="downloadPdf()">
+            {{ downloading() ? 'Even wachten…' : 'PDF' }}
+          </button>
+          <a class="btn btn--primary btn--sm" [routerLink]="['/sales', data.order.id, 'edit']">
+            {{ actionLabel() }}
+          </a>
+        </app-page-header>
+      }
 
       <main class="content sales-view-page anim-rise">
         <section class="sales-hero" aria-labelledby="sales-overview-title">
+          <!-- Phone: the app bar folds into the hero - back, PDF and the
+               edit action live on the dark surface itself. -->
+          @if (!desktop.active()) {
+            <div class="shero-bar">
+              <button class="shero-back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
+              <span class="shero-spacer"></span>
+              <button class="shero-pdf" type="button" [disabled]="downloading()" (click)="downloadPdf()">
+                {{ downloading() ? '…' : 'PDF' }}
+              </button>
+              <a class="shero-edit" [routerLink]="['/sales', data.order.id, 'edit']">{{ actionLabel() }}</a>
+            </div>
+          }
           <div class="sales-hero__top">
             <div class="sales-hero__identity">
               <span class="eyebrow">Verkoopofferte</span>
@@ -373,6 +388,19 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .sales-view-page>*+* { margin-top:12px }
     .sales-hero { overflow:hidden;padding:18px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2) }
     .sales-hero__top { display:flex;align-items:flex-start;justify-content:space-between;gap:12px }
+    .shero-bar { display:flex;align-items:center;gap:8px;margin:-2px 0 12px }
+    .shero-back { display:grid;place-items:center;width:34px;height:34px;padding:0 0 2px;border:0;border-radius:50%;background:rgb(255 255 255/.12);color:#fff;font-size:21px;line-height:1;cursor:pointer }
+    .shero-back:active { background:rgb(255 255 255/.24) }
+    .shero-spacer { flex:1 }
+    .shero-pdf { padding:8px 14px;border:0;border-radius:999px;background:rgb(255 255 255/.12);color:#fff;font:inherit;font-size:12.5px;font-weight:750;cursor:pointer }
+    .shero-pdf:disabled { opacity:.55 }
+    .shero-edit { padding:8px 16px;border-radius:999px;background:#fff;color:#1a1614;font-size:12.5px;font-weight:750;text-decoration:none }
+    .shero-edit:active { opacity:.8 }
+    @media (max-width:679px) {
+      .sales-hero { margin:-14px -12px 0;border-radius:0 0 22px 22px;padding:calc(12px + env(safe-area-inset-top, 0px)) 16px 15px }
+      .sales-hero__top { flex-direction:column;align-items:center;gap:9px;text-align:center }
+      .sales-hero__identity { display:flex;flex-direction:column;align-items:center }
+    }
     .sales-hero h1 a { color:inherit;text-decoration:none }
     .sales-hero h1 a:active { opacity:.75 }
     .eyebrow,.section-kicker { color:var(--rose);font-size:9.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase }
@@ -501,7 +529,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .manage-actions { display:grid;gap:7px }.manage-actions .btn { margin:0 }.link-explainer { margin:1px 3px 0;color:var(--muted);font-size:9.5px;line-height:1.4;text-align:center }
     .sales-side { min-width:0 }.load-error { max-width:520px;margin:28px auto!important;padding:34px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:center;box-shadow:var(--sh-1) }.load-error>span { display:grid;width:46px;height:46px;margin:0 auto 11px;place-items:center;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:800 }.load-error h1 { font-size:17px }.load-error p { margin:5px 0 15px;color:var(--muted);font-size:12px }.loading-grid { display:grid;gap:12px;margin-top:12px }
     .vat-detail__short { display:none }
-    @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.sales-hero { padding:15px }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em } }
+    @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em } }
     @media(min-width: 680px) { .sales-hero { padding:22px }.hero-facts { max-width:700px }.revision-alert { grid-template-columns:auto minmax(0,1fr) auto;align-items:center }.revision-alert .btn { grid-column:auto }.sales-line { padding:15px 18px }.sales-line__identity { grid-template-columns:52px minmax(0,1fr) }.sales-line__photo { width:52px;height:52px }.loading-grid { grid-template-columns:1fr 1fr } }
     @media(min-width:680px) { .sales-layout { grid-template-columns:minmax(0,1fr) minmax(250px,310px);align-items:start }.sales-main { grid-column:1;grid-row:1 }.sales-side { grid-column:2;grid-row:1/3;position:sticky;top:78px }.history-card { grid-column:1;grid-row:2 }.details-grid { grid-template-columns:repeat(3,1fr) }.details-grid>.detail-item:last-child:nth-child(odd) { grid-column:auto }.sales-hero__top { align-items:center }.sales-hero h1 { max-width:700px }.sales-side .btn { min-height:46px } }
   `],
@@ -517,6 +545,13 @@ export class SalesView {
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly history = signal<QuoteEvent[]>([]);
   readonly desktop = inject(DesktopViewport);
+  private readonly browserLocation = inject(Location);
+
+  goBack(): void {
+    if (window.history.length <= 1) { void this.routerNav.navigateByUrl('/sales'); return; }
+    this.browserLocation.back();
+  }
+  private readonly routerNav = inject(Router);
 
   readonly portalLink = signal<CustomerPortalLink | null>(null);
   readonly profitMode = signal<'UNIT' | 'LINE'>('UNIT');
