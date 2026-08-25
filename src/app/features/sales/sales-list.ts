@@ -31,7 +31,7 @@ import { messageOf } from '../../core/api/errors';
              lands right on top of the search bar. -->
         <div class="card" style="border-color:var(--rose-line);margin-bottom:14px">
           <div class="card__head">
-            <h2>Wacht op ons</h2>
+            <h2>Klant wacht op ons</h2>
             <span class="spacer"></span>
             <span class="badge badge--todo">{{ openWork().length }}</span>
           </div>
@@ -152,12 +152,6 @@ import { messageOf } from '../../core/api/errors';
                     · marge {{ row.priced.totals.marginPct | pct: 0 }}
                   }
                 </div>
-                @if (attention(row); as attn) {
-                  <div class="so-attn-line" [attr.title]="attn.join(' · ')">
-                    <b>{{ attn.length }}</b>
-                    <span>{{ attn[0] }}{{ attn.length > 1 ? ' · +' + (attn.length - 1) : '' }}</span>
-                  </div>
-                }
               </div>
               <div class="list-item__end list-item__end--stacked">
                 <div class="strong num">{{ row.priced.totals.total | eur: 0 }}</div>
@@ -167,6 +161,11 @@ import { messageOf } from '../../core/api/errors';
                 @if (row.order.goodsShippedAt) {
                   <span class="so-status-mini so-status-mini--ok">
                     <i aria-hidden="true"></i>Bestelling verzonden
+                  </span>
+                }
+                @if (attention(row); as attn) {
+                  <span class="so-status-mini so-status-mini--warn" [attr.title]="attn.join(' · ')">
+                    <i aria-hidden="true"></i>{{ attn[0] }}{{ attn.length > 1 ? ' +' + (attn.length - 1) : '' }}
                   </span>
                 }
               </div>
@@ -303,19 +302,17 @@ import { messageOf } from '../../core/api/errors';
     }
   `,
   styles: `
-    .so-status-mini { display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:750;white-space:nowrap }
-    .so-status-mini i { width:7px;height:7px;flex:none;border-radius:50%;background:currentColor }
+    .so-status-mini { display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 9px;
+      border-radius:999px;background:color-mix(in srgb,currentColor 10%,transparent);
+      font-size:10.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+    .so-status-mini i { width:6px;height:6px;flex:none;border-radius:50%;background:currentColor }
     .so-status-mini--ok { color:var(--ok) }
     .so-status-mini--danger { color:var(--danger) }
     .so-status-mini--gold { color:var(--gold) }
     .so-status-mini--rose { color:var(--rose-dark) }
     .so-status-mini--blue { color:var(--blue) }
     .so-status-mini--neutral { color:var(--muted) }
-    .so-attn-line { display:flex;align-items:center;gap:6px;margin-top:5px;min-width:0 }
-    .so-attn-line b { display:inline-grid;place-items:center;flex:none;min-width:16px;height:16px;
-      padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:9.5px;font-weight:800 }
-    .so-attn-line span { overflow:hidden;color:var(--warn);font-size:11px;font-weight:650;
-      text-overflow:ellipsis;white-space:nowrap }
+    .so-status-mini--warn { color:var(--warn) }
 
     .doc-tabs { display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:10px;padding:4px;
       border:1px solid var(--line);border-radius:14px;background:var(--surface) }
@@ -738,7 +735,7 @@ export class SalesList {
   /** What we still must do with this document, or nothing. */
   todo = (order: SalesOrder, awaitingResend = false): string | null => {
     if ((order.docType ?? 'OFFERTE') === 'FACTUUR') {
-      if (order.status === 'CONCEPT') return 'Nog niet verstuurd';
+      if (order.status === 'CONCEPT') return null;
       if (this.overdue(order)) return 'Betaling opvolgen';
       if (!order.goodsShippedAt) return 'Bestelling nog te verzenden';
       return null;

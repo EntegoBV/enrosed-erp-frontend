@@ -152,7 +152,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           <section class="revision-alert" aria-labelledby="revision-alert-title">
             <span class="revision-alert__icon" aria-hidden="true">⇄</span>
             <div>
-              <span class="eyebrow">Wacht op ons</span>
+              <span class="eyebrow">Klant wacht op ons</span>
               <h2 id="revision-alert-title">De klant vraagt een wijziging</h2>
               <p>
                 {{ revision.proposedBy || 'De klant' }} stuurde een voorstel met

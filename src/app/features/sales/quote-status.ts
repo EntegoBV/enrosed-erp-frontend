@@ -34,9 +34,9 @@ export function statusClass(status: QuoteStatus): string {
 export function actionNeeded(order: SalesOrder, awaitingResend = false): string | null {
   if (order.status === 'WIJZIGING_GEVRAAGD') return 'Voorstel beoordelen';
   if (order.status === 'AFGEWEZEN') return 'Heropenen of laten';
-  /* An adopted proposal outranks a plain draft: the customer is waiting. */
+  /* An adopted proposal outranks a plain draft: the customer is waiting.
+     A plain concept gets no nag - inkoop stays quiet about those too. */
   if (order.status === 'CONCEPT' && awaitingResend) return 'Klant wacht op nieuwe versie';
-  if (order.status === 'CONCEPT') return 'Nog niet verstuurd';
 
   /* A sent quote with an open item waits on us, not on the customer. */
   const open = order.status === 'VERZONDEN' || order.status === 'BEKEKEN';

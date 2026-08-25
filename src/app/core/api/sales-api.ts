@@ -245,7 +245,16 @@ export class SalesApi {
   /** @param language language the customer picked; empty for their own. */
   portalQuote(token: string, language?: LanguageCode): Promise<PortalQuote> {
     const query = language ? `?language=${encodeURIComponent(language)}` : '';
-    return firstValueFrom(this.http.get<PortalQuote>(api(`/api/portal/${token}${query}`)));
+    return firstValueFrom(this.http.get<PortalQuote>(api(`/api/portal/${token}${query}`)))
+      .then((quote) => ({
+        ...quote,
+        /* The lines carry the staff photo path, which needs a login and the
+           API origin. The portal swaps in its own public token URL. */
+        lines: quote.lines.map((line) => ({
+          ...line,
+          photoUrl: line.photoUrl ? this.portalPhotoUrl(token, line.productId) : null,
+        })),
+      }));
   }
 
   /** Products the customer can add, with the price this order charges. */

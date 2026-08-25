@@ -193,8 +193,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
       stroke-linecap: round; }
     .po-filter__native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
     .po-row-end { display: grid; justify-items: end; gap: 3px; }
-    .po-status-mini { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 750; }
-    .po-status-mini i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .po-status-mini { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
+      border-radius: 999px; background: color-mix(in srgb, currentColor 10%, transparent);
+      font-size: 10.5px; font-weight: 750; white-space: nowrap; }
+    .po-status-mini i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
     .po-status-mini--ok { color: var(--ok); }
     .po-status-mini--warn { color: var(--warn); }
     .po-status-mini--rose { color: var(--rose-dark); }
