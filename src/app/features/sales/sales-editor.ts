@@ -51,10 +51,12 @@ import {
             <span>Totaal</span>
             <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
           </div>
-          @if (canEdit()) {
+          <!-- One primary at a time: with unsaved changes the only next
+               step is saving; once saved, sending takes the spot. -->
+          @if (canEdit() && (dirty() || saving())) {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
-                    [disabled]="saving() || !dirty()" (click)="save()">
-              {{ saving() ? 'Bezig…' : (dirty() ? 'Opslaan' : 'Opgeslagen') }}
+                    [disabled]="saving()" (click)="save()">
+              {{ saving() ? 'Bezig…' : 'Opslaan' }}
             </button>
           }
           <button class="btn btn--sm quote-header-button quote-header-button--desktop" type="button"
@@ -64,9 +66,9 @@ import {
                     [disabled]="busy()" (click)="reopen()">Heropen</button>
           } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
                      || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
-            <button class="btn btn--primary btn--sm quote-header-button" type="button"
-                    [disabled]="sending() || sendIssues().length > 0"
-                    [attr.title]="sendIssues()[0] || null"
+            <button class="btn btn--sm quote-header-button" type="button"
+                    [class.btn--primary]="!dirty()"
+                    [disabled]="sending()"
                     [attr.aria-label]="data.order.sentAt ? 'Offerte opnieuw versturen' : 'Offerte versturen'"
                     (click)="openSend()">
               {{ data.order.sentAt ? 'Opnieuw' : 'Verstuur' }}
@@ -600,57 +602,6 @@ import {
         </section>
 
         <!-- Pricing rules ride with the products: they shape the same lines. -->
-        <section class="card pricing-card" aria-labelledby="pricing-title">
-          <!-- One settings row: the summary tells everything; open it only
-               to change something. No prose. -->
-          <button class="pricing-row" type="button" (click)="pricingOpen.set(!pricingOpen())"
-                  [attr.aria-expanded]="pricingOpen()">
-            <span class="pricing-card__icon" aria-hidden="true">%</span>
-            <span class="pricing-row__copy">
-              <strong id="pricing-title">Prijsregels</strong>
-              <small>{{ pricingSummary() }}</small>
-            </span>
-            <i class="pricing-row__chev" [class.pricing-row__chev--open]="pricingOpen()" aria-hidden="true"></i>
-          </button>
-          @if (pricingOpen()) {
-            <fieldset class="form-lock pricing-card__body" [disabled]="!canEdit()">
-              <p class="pricing-help">Waar de verkoopprijs vandaan komt: kostprijs plus opslag.</p>
-              <div class="pricing-card__row pricing-card__row--center">
-                <div class="segmented" role="group" aria-label="Prijsopbouw">
-                  <button type="button" [class.segmented__active]="data.order.markupMode === 'PRODUCT'"
-                          [attr.aria-pressed]="data.order.markupMode === 'PRODUCT'"
-                          (click)="setMarkupMode('PRODUCT')">Opslag per product</button>
-                  <button type="button" [class.segmented__active]="data.order.markupMode === 'ORDER'"
-                          [attr.aria-pressed]="data.order.markupMode === 'ORDER'"
-                          (click)="setMarkupMode('ORDER')">Één opslag</button>
-                </div>
-                @if (data.order.markupMode === 'ORDER') {
-                  <div class="input-affix pricing-card__markup">
-                    <input class="input num right" id="so-markup" type="number" min="0" step="1"
-                           inputmode="decimal" aria-label="Opslag op kostprijs"
-                           [ngModel]="data.order.orderMarkupPct"
-                           (ngModelChange)="patch({ orderMarkupPct: +$event })" />
-                    <span class="input-affix__suffix">%</span>
-                  </div>
-                }
-              </div>
-              <p class="pricing-help">Eventuele korting bovenop de staffels; de naam verschijnt op de offerte.</p>
-              <div class="pricing-card__row pricing-card__row--center">
-                <div class="input-affix pricing-card__markup">
-                  <input class="input num right" id="so-extra-pct" type="number" min="0" max="100"
-                         step="0.5" inputmode="decimal" aria-label="Extra orderkorting"
-                         [ngModel]="data.order.extraDiscountPct"
-                         (ngModelChange)="patch({ extraDiscountPct: $event === null ? null : +$event })" />
-                  <span class="input-affix__suffix">% korting</span>
-                </div>
-                <input class="input pricing-card__label" id="so-extra-label"
-                       placeholder="Naam op de offerte, bijv. beurskorting"
-                       [value]="data.order.extraDiscountLabel ?? ''"
-                       (change)="patch({ extraDiscountLabel: $any($event.target).value })" />
-              </div>
-            </fieldset>
-          }
-        </section>
         }
 
         <!-- ==================================== transport and delivery -->
@@ -729,6 +680,7 @@ import {
                         <option value="PER_CBM">Tarief per m³</option>
                       }
                       <option value="FIXED">Vast bedrag</option>
+                      <option value="PICKUP">Afhalen in het magazijn</option>
                     </select>
                   </div>
                   @if (effectiveFreightStrategy(data) === 'CARRIER') {
@@ -855,6 +807,49 @@ import {
                   <div class="receipt__row receipt__row--sub receipt__row--minus">
                     <span>Orderkorting {{ data.priced.totals.orderDiscountPercent | pct: 0 }}</span>
                     <span class="num">− {{ data.priced.totals.orderDiscountAmount | eur }}</span>
+                  </div>
+                }
+              }
+              @if (data.priced.totals.extraDiscountAmount) {
+                <div class="receipt__row receipt__row--sub receipt__row--minus">
+                  <span>{{ data.order.extraDiscountLabel || 'Extra korting' }}
+                    {{ data.order.extraDiscountPct | pct: 1 }}</span>
+                  <span class="num">− {{ data.priced.totals.extraDiscountAmount | eur }}</span>
+                </div>
+              }
+              <!-- The one commercial lever at check time: an order discount
+                   for a fair or a deal, as a percentage or an amount. -->
+              @if (canEdit()) {
+                @if (!orderDiscountOpen()) {
+                  <button class="receipt-korting__add" type="button"
+                          (click)="orderDiscountOpen.set(true)">
+                    {{ data.priced.totals.extraDiscountAmount
+                        ? 'Korting aanpassen' : '+ Korting op het order, bv. beurs' }}
+                  </button>
+                } @else {
+                  <div class="receipt-korting">
+                    <div class="discount-flip2" role="group" aria-label="Korting in euro of procent">
+                      <button type="button" [class.discount-flip2__on]="orderDiscountShown() === 'PCT'"
+                              (click)="orderDiscountShown.set('PCT')">%</button>
+                      <button type="button" [class.discount-flip2__on]="orderDiscountShown() === 'EUR'"
+                              (click)="orderDiscountShown.set('EUR')">€</button>
+                    </div>
+                    @if (orderDiscountShown() === 'PCT') {
+                      <input class="input num" type="number" min="0" max="100" step="0.5"
+                             placeholder="%" aria-label="Korting in procent"
+                             [ngModel]="data.order.extraDiscountPct"
+                             (ngModelChange)="setOrderDiscountPct($event)" />
+                    } @else {
+                      <input class="input num" type="number" min="0" step="0.01"
+                             placeholder="€" aria-label="Korting in euro"
+                             [ngModel]="orderDiscountEur(data)"
+                             (ngModelChange)="setOrderDiscountEur($event)" />
+                    }
+                    <input class="input receipt-korting__name" placeholder="Naam, bv. beurskorting"
+                           [ngModel]="data.order.extraDiscountLabel"
+                           (ngModelChange)="patch({ extraDiscountLabel: $event })" />
+                    <button class="receipt-korting__done" type="button" aria-label="Klaar"
+                            (click)="orderDiscountOpen.set(false)">✓</button>
                   </div>
                 }
               }
@@ -1060,6 +1055,7 @@ import {
                 [canEdit]="canEdit()"
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
+                [countryName]="orderCountryName()"
                 (patch)="applyShippingPatch($event)"
                 (action)="handlePalletAction($event)"
               />
@@ -1465,6 +1461,16 @@ import {
     .send-checklist__ok { border-color:#c6e5d5!important;background:var(--ok-soft)!important;color:var(--ok)!important }
     .send-checklist__ok i { background:var(--ok) }
     @media(max-width:350px) { .total-highlight { grid-template-columns:1fr } }
+    .receipt-korting__add { margin:6px 0 2px;padding:6px 2px;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:680;cursor:pointer;text-align:left }
+    .receipt-korting__add:hover { text-decoration:underline }
+    .receipt-korting { display:flex;align-items:center;gap:6px;margin:6px 0 2px }
+    .receipt-korting .input { min-height:38px;padding:6px 8px;font-size:12px }
+    .receipt-korting .num { max-width:86px }
+    .receipt-korting__name { flex:1;min-width:0 }
+    .receipt-korting__done { display:grid;place-items:center;width:34px;height:38px;flex:none;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ok);font-size:14px;cursor:pointer }
+    .discount-flip2 { display:inline-flex;flex:none;border:1px solid var(--line);border-radius:10px;overflow:hidden }
+    .discount-flip2 button { min-width:34px;min-height:38px;border:0;background:var(--surface);color:var(--muted);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer }
+    .discount-flip2__on { background:var(--rose-soft)!important;color:var(--rose-dark)!important }
     .status-actions { display:flex;align-items:center;gap:8px }
     .status-actions__spacer { flex:1 }
     .status-actions .btn--primary { min-width:150px }
@@ -1526,7 +1532,6 @@ export class SalesEditor {
 
   readonly id = input<string>('');
   /* ---- the discount field hides behind its vertical tab ---- */
-  readonly pricingOpen = signal(false);
   private readonly discountOpens = signal(new Map<number, boolean>());
 
   discountShown(line: PricedLine): boolean {
@@ -1670,6 +1675,30 @@ export class SalesEditor {
 
   readonly isInvoiceDoc = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
 
+  /* --- the order discount at check time, in percent or euro --- */
+  readonly orderDiscountOpen = signal(false);
+  readonly orderDiscountShown = signal<'PCT' | 'EUR'>('PCT');
+
+  setOrderDiscountPct(raw: unknown): void {
+    const value = raw === null || raw === '' ? null : Math.min(100, Math.max(0, Number(raw) || 0));
+    this.patch({ extraDiscountPct: value });
+  }
+
+  /** The euro face of the same discount; a typed amount converts to percent. */
+  orderDiscountEur(data: SalesOrderView): number | null {
+    return data.priced.totals.extraDiscountAmount || null;
+  }
+
+  setOrderDiscountEur(raw: unknown): void {
+    const data = this.view();
+    if (!data) return;
+    const amount = raw === null || raw === '' ? null : Math.max(0, Number(raw) || 0);
+    if (amount === null) { this.patch({ extraDiscountPct: null }); return; }
+    const base = data.priced.totals.subtotal - data.priced.totals.orderDiscountAmount;
+    if (base <= 0) return;
+    this.patch({ extraDiscountPct: Math.min(100, +(amount / base * 100).toFixed(4)) });
+  }
+
   /**
    * A complaint you can tap: every open point walks straight to the place
    * where it is solved, instead of leaving the reader to guess.
@@ -1691,6 +1720,11 @@ export class SalesEditor {
     }
     this.scrollToSection('quote-setup');
   }
+
+  readonly orderCountryName = computed(() => {
+    const code = this.view()?.order.countryCode;
+    return this.countries().find((country) => country.code === code)?.name ?? code ?? null;
+  });
 
   /** Postcode of the order's customer; the staffel resolves its zone with it. */
   readonly customerPostcode = computed(() => {
@@ -1991,9 +2025,22 @@ export class SalesEditor {
     if (!this.dirty()) return true;
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
+    const sentQuantities = new Map(data.order.lines.map((line) => [line.productId, line.quantity]));
     try {
-      this.adopt(await this.sales.updateOrder(data.order.id, data.order));
-      this.ui.toast('Opgeslagen');
+      const saved = await this.sales.updateOrder(data.order.id, data.order);
+      this.adopt(saved);
+      /* The server rounds up to whole cartons; when it did, say so - a
+         silently changed number reads as a bug. */
+      const rounded = saved.order.lines.filter((line) =>
+        sentQuantities.has(line.productId) && sentQuantities.get(line.productId) !== line.quantity);
+      if (rounded.length) {
+        const parts = rounded.map((line) =>
+          `${sentQuantities.get(line.productId)} → ${line.quantity} st`);
+        this.ui.toast(`Opgeslagen — aantal afgerond op volle dozen: ${parts.join(' · ')}`);
+      } else {
+        this.ui.toast('Opgeslagen');
+      }
+      this.linePending.set({});
       return true;
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
@@ -2040,17 +2087,6 @@ export class SalesEditor {
       countryCode: customer?.countryCode ?? this.view()?.order.countryCode ?? null,
       incoterm: customer?.incoterm ?? 'DAP',
     });
-  }
-
-  setMarkupMode(mode: MarkupMode): void {
-    const data = this.view();
-    if (!data || data.order.markupMode === mode) return;
-    /* Clear manual prices, or the new markup cannot get through. */
-    this.enqueue((order) => ({
-      ...order,
-      markupMode: mode,
-      lines: order.lines.map((line) => ({ ...line, unitPriceEur: null })),
-    }));
   }
 
   weekOf(productId: number): string {
@@ -2164,6 +2200,17 @@ export class SalesEditor {
   /* ------------------------------------------------------------ quote */
 
   async openSend(): Promise<void> {
+    /* First save, then send: pressing Verstuur with unsaved changes
+       writes them before anything leaves. */
+    if (this.dirty() && !(await this.save())) return;
+    /* Blocked is fine, silent is not: say the first open point and walk
+       there, instead of a button that mysteriously does nothing. */
+    const issues = this.sendIssues();
+    if (issues.length) {
+      this.ui.toast(issues[0], 'err');
+      this.scrollToSection('quote-status');
+      return;
+    }
     if (!(await this.flushPendingEdits())) return;
     if (this.sendIssues().length) {
       this.ui.toast(this.sendIssues()[0], 'err');
@@ -2562,15 +2609,6 @@ export class SalesEditor {
     return parts.join(' · ');
   }
 
-  pricingSummary(): string {
-    const data = this.view();
-    if (!data) return '';
-    const markup = data.order.markupMode === 'ORDER'
-        ? `${data.order.orderMarkupPct ?? 0}% op ordertotaal` : 'Opslag per product';
-    const extra = data.order.extraDiscountPct
-        ? ` · ${data.order.extraDiscountLabel || 'extra korting'}` : '';
-    return markup + extra;
-  }
 
   palletSummary(): string {
     const data = this.view();
@@ -2621,6 +2659,7 @@ export class SalesEditor {
       ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
     if (strategy === 'PER_CBM') return 'Tarief per m³';
     if (strategy === 'FIXED') return 'Vast bedrag';
+    if (strategy === 'PICKUP') return 'Afhalen';
     if (strategy === 'CARRIER') {
       return this.carriers().find((carrier) => carrier.id === data.order.freightCarrierId)?.name
         ?? 'Verzendorganisatie';

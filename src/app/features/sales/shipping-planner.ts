@@ -459,6 +459,13 @@ export type ShippingPalletAction =
             <strong>Vast bedrag</strong>
             <small>Een totaalprijs voor deze offerte</small>
           </button>
+          <button type="button" role="radio" [disabled]="!canEdit()"
+                  [class.price-choice--active]="pricingStrategy() === 'PICKUP'"
+                  [attr.aria-checked]="pricingStrategy() === 'PICKUP'"
+                  (click)="choosePricing('PICKUP')">
+            <strong>Afhalen</strong>
+            <small>De klant haalt op in het magazijn — geen vracht</small>
+          </button>
         </div>
 
         @if (pricingStrategy() === 'CARRIER') {
@@ -489,7 +496,7 @@ export type ShippingPalletAction =
             </label>
             @if (carrierBreakdown(); as b) {
               <dl class="carrier-breakdown">
-                <div><dt>Zone</dt><dd>{{ b.zoneName }}
+                <div><dt>Zone</dt><dd>{{ b.zoneName }} · {{ countryName() || view().order.countryCode }}
                   @if (!b.postcodeMatched) { <small>· dichtstbijzijnde bij {{ customerPostcode() || '—' }}</small> }
                 </dd></div>
                 <div><dt>Staffeltrap</dt><dd>{{ b.tierLabel }}</dd></div>
@@ -752,6 +759,7 @@ export class ShippingPlanner {
   readonly canEdit = input(true);
   readonly carriers = input<Carrier[]>([]);
   readonly customerPostcode = input<string | null>(null);
+  readonly countryName = input<string | null>(null);
 
   private readonly sales = inject(SalesApi);
   readonly carrierBreakdown = signal<CarrierShipQuote | null>(null);
@@ -775,7 +783,8 @@ export class ShippingPlanner {
         country: data.order.countryCode,
         postcode,
         pallets,
-        palletType: data.order.palletProfile === 'BLOCK_120X100' ? 'BLOCK' : 'EURO',
+        palletType: data.order.palletProfile === 'BLOCK_120X100' ? 'BLOCK'
+          : data.order.palletProfile === 'HALF_80X60' ? 'HALF' : 'EURO',
         weightKg: totals.weightKg ?? null,
       }).then((quote) => {
         this.carrierBreakdown.set(quote);

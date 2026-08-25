@@ -88,6 +88,7 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
                   <select class="select" [ngModel]="quickType()" (ngModelChange)="quickType.set($event)">
                     <option value="EURO">Europallet</option>
                     <option value="BLOCK">Blokpallet</option>
+                    <option value="HALF">Halve pallet</option>
                   </select></label>
                 <label><span>Gewicht kg</span>
                   <input class="input num" type="number" min="0" [ngModel]="quickWeight()"
@@ -316,6 +317,7 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
                 <select class="select" [ngModel]="testType()" (ngModelChange)="testType.set($event)">
                   <option value="EURO">Europallet</option>
                   <option value="BLOCK">Blokpallet</option>
+                  <option value="HALF">Halve pallet</option>
                 </select></label>
               <label><span>Gewicht kg</span>
                 <input class="input num" type="number" min="0" [ngModel]="testWeight()"
@@ -325,7 +327,7 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
             </div>
             @if (testResult(); as quote) {
               <dl class="peek-result">
-                <div><dt>Zone</dt><dd>{{ quote.zoneName }}
+                <div><dt>Zone</dt><dd>{{ quote.zoneName }} · {{ countryLabel(peek.lane.countryCode) }}
                   @if (!quote.postcodeMatched) { <small>· dichtstbijzijnde gekozen</small> }</dd></div>
                 <div><dt>Trap</dt><dd>{{ quote.tierLabel }}</dd></div>
                 <div><dt>Basis</dt><dd>{{ quote.baseEur | eur: 2 }}</dd></div>
@@ -498,7 +500,7 @@ export class CarrierManager {
   readonly quickCountry = signal('');
   readonly quickPostcode = signal('');
   readonly quickPallets = signal(1);
-  readonly quickType = signal<'EURO' | 'BLOCK'>('EURO');
+  readonly quickType = signal<'EURO' | 'BLOCK' | 'HALF'>('EURO');
   readonly quickWeight = signal<number | null>(null);
   readonly quickResult = signal<import('../../core/api/models').CarrierShipQuote | null>(null);
   readonly quickTried = signal(false);
@@ -536,7 +538,7 @@ export class CarrierManager {
   /* --- the try-a-shipment tester inside the lane peek --- */
   readonly testPostcode = signal('');
   readonly testPallets = signal(1);
-  readonly testType = signal<'EURO' | 'BLOCK'>('EURO');
+  readonly testType = signal<'EURO' | 'BLOCK' | 'HALF'>('EURO');
   readonly testWeight = signal<number | null>(null);
   readonly testResult = signal<import('../../core/api/models').CarrierShipQuote | null>(null);
   readonly testTried = signal(false);

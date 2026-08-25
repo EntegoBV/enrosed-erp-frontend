@@ -750,6 +750,8 @@ export class PortalPage implements OnDestroy {
         return `${new CbmPipe().transform(quote.totals.cbm ?? 0, 3, this.locale())} · ${this.t('freightPerCbm')}`;
       case 'FIXED':
         return this.t('freightFixedAmount');
+      case 'PICKUP':
+        return this.t('pickup');
       case 'CARRIER':
         /* The staffel is our internal kitchen; the customer just reads
            how many pallets travel. */

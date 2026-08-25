@@ -818,6 +818,7 @@ export class SalesView {
     if (strategy === 'PER_CBM') return 'per m³';
     if (strategy === 'FIXED') return 'vast bedrag';
     if (strategy === 'CARRIER') return 'staffel verzendorganisatie';
+    if (strategy === 'PICKUP') return 'afhalen';
     return 'per pallet';
   }
 

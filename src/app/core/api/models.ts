@@ -10,7 +10,7 @@ export type MarkupMode = 'PRODUCT' | 'ORDER';
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
-export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER';
+export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
 export type DocumentType = 'OFFERTE' | 'FACTUUR';
 export type PublicationStatus = 'DRAFT' | 'READY' | 'PUBLISHED';
 
