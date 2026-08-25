@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map, startWith } from 'rxjs';
@@ -122,6 +123,12 @@ import { Icon } from './shared/icon';
   `,
 })
 export class App {
+  /* Register the push worker at startup: the cash register must ring
+     even when nobody opened Instellingen this session. */
+  private readonly pushSetup = inject(PushSetup);
+
+  constructor() { void this.pushSetup.init(); }
+
   readonly auth = inject(Auth);
   /* Instantiated here so the palette is on <html> before the first screen paints. */
   readonly theme = inject(Theme);

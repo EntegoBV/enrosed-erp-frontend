@@ -1,4 +1,5 @@
 import { DOCUMENT } from '@angular/common';
+import { PushSetup, playSoundFor } from '../../core/platform/push';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -636,6 +637,8 @@ const normalizeCategoryCode = (value: string): string => value
       <!-- ======================================= categorieen -->
 
       <!-- ======================================= weergave -->
+      <!-- ============== app on this device: looks and notifications -->
+      <p class="app-settings-kicker">App op dit toestel</p>
       <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance">
         <div (click)="toggleSection('appearance', $event)" class="card__head settings-head"><h2>Weergave</h2></div>
         <div class="card__body">
@@ -653,6 +656,43 @@ const normalizeCategoryCode = (value: string): string => value
           </div>
         </div>
       </div>
+
+      <!-- ======================================= meldingen op dit toestel -->
+      <div [class.settings-section--folded]="folded('notifications')" class="card settings-section" id="notifications">
+        <div (click)="toggleSection('notifications', $event)" class="card__head settings-head"><h2>Meldingen op dit toestel</h2></div>
+        <div class="card__body">
+          <p class="small muted" style="margin-bottom:12px">
+            Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
+            product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
+            Op iPhone werkt dit zodra de app op het beginscherm staat.
+          </p>
+          @if (!push.supported()) {
+            <p class="small warn-text">Deze browser ondersteunt geen meldingen.</p>
+          } @else if (push.enabled()) {
+            <div class="push-actions">
+              <span class="badge badge--ok">Meldingen staan aan op dit toestel</span>
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="testPush()">Stuur testmelding</button>
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="disablePush()">Uitzetten</button>
+            </div>
+          } @else {
+            <button class="btn btn--primary" type="button" [disabled]="push.busy()"
+                    (click)="enablePush()">
+              {{ push.busy() ? 'Bezig…' : 'Meldingen aanzetten op dit toestel' }}
+            </button>
+          }
+          <div class="push-sounds">
+            <button class="btn btn--sm" type="button" (click)="previewSound('sale-quote')">
+              🔔 Geluid nieuwe offerte
+            </button>
+            <button class="btn btn--sm" type="button" (click)="previewSound('sale-invoice')">
+              💰 Geluid nieuwe factuur
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div>
   `,
   styles: `
@@ -809,9 +849,36 @@ const normalizeCategoryCode = (value: string): string => value
       .settings-content { padding-top: 16px; }
       .settings-section { scroll-margin-top: 119px; }
     }
+    .push-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .push-sounds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .app-settings-kicker { margin: 22px 2px 8px; color: var(--muted); font-size: 10px;
+      font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
+  readonly push = inject(PushSetup);
+
+  async enablePush(): Promise<void> {
+    const error = await this.push.enable();
+    if (error) this.ui.toast(error, 'err');
+    else this.ui.toast('Meldingen aangezet — je krijgt zo een testmelding');
+    if (!error) void this.push.sendTest();
+  }
+
+  async disablePush(): Promise<void> {
+    await this.push.disable();
+    this.ui.toast('Meldingen uitgezet op dit toestel');
+  }
+
+  async testPush(): Promise<void> {
+    await this.push.sendTest();
+    this.ui.toast('Testmelding onderweg');
+  }
+
+  previewSound(kind: string): void {
+    void playSoundFor(kind);
+  }
+
   readonly desktop = inject(DesktopViewport);
   readonly theme = inject(Theme);
   readonly themes = THEMES;
@@ -895,6 +962,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     { id: 'discounts', label: 'Kortingen' },
     { id: 'catalog-data', label: 'Catalogusdata' },
     { id: 'appearance', label: 'Weergave' },
+    { id: 'notifications', label: 'Meldingen' },
   ] as const;
   readonly activeSection = signal<SettingsSectionId>('company');
   /** Phone: the one section that is unfolded; desktop shows them all. */
@@ -1444,4 +1512,4 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 }
 
-type SettingsSectionId = 'company' | 'appearance' | 'catalog-data' | 'categories' | 'duties' | 'discounts';
+type SettingsSectionId = 'company' | 'appearance' | 'catalog-data' | 'categories' | 'duties' | 'discounts' | 'notifications';
