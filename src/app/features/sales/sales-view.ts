@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, si
 import { Location } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
+import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
@@ -320,6 +321,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="markPaid(data)">Markeer als betaald</button>
                   }
+                  @if (data.order.status !== 'CONCEPT' && !data.order.goodsShippedAt) {
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
+                            (click)="openShipSheet(data)">Bestelling verzonden — voorraad afpunten</button>
+                  } @else if (data.order.goodsShippedAt) {
+                    <p class="link-explainer">Bestelling verzonden op
+                      {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
+                  }
                   <button class="btn btn--block" type="button" [disabled]="packing()"
                           (click)="downloadPackingSlip(data)">
                     {{ packing() ? 'Pakbon maken…' : 'Pakbon downloaden' }}
@@ -376,6 +384,51 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               </div>
             </section>
         </div>
+
+        @if (shipSheet(); as ship) {
+          <app-sheet title="Voorraad afpunten" (closed)="shipSheet.set(null)">
+            <div body>
+              <p class="ship-intro">Deze aantallen gaan als verkocht uit de voorraad
+                op {{ ship.number }}. Dit gebeurt één keer.</p>
+              <ul class="ship-lines">
+                @for (row of ship.rows; track $index) {
+                  <li>
+                    @if (row.photoUrl) {
+                      <img class="ship-line__photo" [appAuthSrc]="row.photoUrl" alt="" />
+                    } @else {
+                      <span class="ship-line__photo ship-line__photo--empty" aria-hidden="true">◈</span>
+                    }
+                    <div class="ship-line__copy">
+                      <strong>{{ row.name }}</strong>
+                      <span>−{{ row.qty | num }} stuks</span>
+                    </div>
+                    <div class="ship-line__stock"
+                         [class.ship-line__stock--negative]="row.after !== null && row.after < 0">
+                      @if (row.before !== null) {
+                        <small>voorraad</small>
+                        <span>{{ row.before | num }} <b aria-hidden="true">→</b> {{ row.after | num }}</span>
+                      } @else {
+                        <small>voorraad</small><span>onbekend</span>
+                      }
+                    </div>
+                  </li>
+                }
+              </ul>
+              @if (shipHasNegative()) {
+                <p class="ship-warning">Minstens één product komt onder nul te staan —
+                  controleer de telling voor je afpunt.</p>
+              }
+            </div>
+            <div foot style="display:contents">
+              <button class="btn" type="button" (click)="shipSheet.set(null)">Annuleren</button>
+              <span class="spacer"></span>
+              <button class="btn btn--primary" type="button" [disabled]="invoiceBusy()"
+                      (click)="confirmShipFromSheet()">
+                {{ invoiceBusy() ? 'Bezig…' : 'Voorraad afpunten' }}
+              </button>
+            </div>
+          </app-sheet>
+        }
 
         @if (sendSheetOpen()) {
       <app-sheet [title]="isInvoice() ? 'Factuur versturen' : 'Offerte versturen'"
@@ -496,6 +549,20 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     a.sales-line__identity:hover strong { color:var(--rose-dark);text-decoration:underline }
     .sales-line__photo { width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover }
     .sales-line__photo--empty { display:grid;place-items:center;color:var(--muted);font-size:20px }
+    .ship-intro { margin:0 0 12px;color:var(--ink-2);font-size:12.5px;line-height:1.5 }
+    .ship-lines { margin:0;padding:0;list-style:none }
+    .ship-lines li { display:flex;align-items:center;gap:11px;padding:9px 0;border-top:1px solid var(--line) }
+    .ship-line__photo { width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);object-fit:cover }
+    .ship-line__photo--empty { display:grid;place-items:center;color:var(--muted);font-size:18px }
+    .ship-line__copy { flex:1;min-width:0 }
+    .ship-line__copy strong { display:block;overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap }
+    .ship-line__copy span { color:var(--muted);font-size:11.5px;font-weight:650 }
+    .ship-line__stock { flex:none;text-align:right;font-variant-numeric:tabular-nums }
+    .ship-line__stock small { display:block;color:var(--muted);font-size:9px;font-weight:750;letter-spacing:.07em;text-transform:uppercase }
+    .ship-line__stock span { font-size:12.5px;font-weight:750 }
+    .ship-line__stock b { color:var(--muted);font-weight:600 }
+    .ship-line__stock--negative span { color:var(--danger) }
+    .ship-warning { margin:12px 0 0;padding:9px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:12px;font-weight:650 }
     .sales-line__copy { display:flex;min-width:0;flex-direction:column }
     .sales-line__copy small { color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase }
     .sales-line__copy strong { overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap }
@@ -597,6 +664,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
 })
 export class SalesView {
   private readonly sales = inject(SalesApi);
+  private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
 
   readonly id = input<string>('');
@@ -679,14 +747,19 @@ export class SalesView {
   /** The quote's journey, or the invoice's shorter one. */
   journey(order: SalesOrder) {
     if ((order.docType ?? 'OFFERTE') !== 'FACTUUR') return this.quoteJourney(order.status);
-    const reached = order.status === 'BETAALD' ? 2 : order.status === 'CONCEPT' ? 0 : 1;
+    /* Payment and shipment are separate facts, so each step carries its own
+       flag; the first thing not yet done gets the "now" ring. */
+    const flags = [true, order.status !== 'CONCEPT', !!order.goodsShippedAt,
+                   order.status === 'BETAALD'];
+    const now = flags.indexOf(false);
     return [
       { label: 'Concept', mark: '✓' },
       { label: 'Verstuurd', mark: '✓' },
+      { label: 'Bestelling', mark: '✓' },
       { label: 'Betaald', mark: '✓' },
     ].map((step, index) => ({
       ...step,
-      state: (index < reached ? 'done' : index === reached ? 'now' : 'todo') as 'done' | 'now' | 'todo',
+      state: (flags[index] ? 'done' : index === now ? 'now' : 'todo') as 'done' | 'now' | 'todo',
       kind: undefined as undefined,
     }));
   }
@@ -722,6 +795,57 @@ export class SalesView {
       this.ui.toast('Factuur staat op verstuurd');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
+    } finally {
+      this.invoiceBusy.set(false);
+    }
+  }
+
+  readonly shipSheet = signal<{
+    rows: { name: string; photoUrl: string | null; qty: number;
+            before: number | null; after: number | null }[];
+    pieces: number; number: string;
+  } | null>(null);
+
+  /**
+   * Deducting stock is deliberate: the sheet first shows every product with
+   * its photo and the count before and after, and flags a line that would
+   * push the book below zero.
+   */
+  async openShipSheet(data: SalesOrderView): Promise<void> {
+    if (this.invoiceBusy()) return;
+    let stockById = new Map<number, number>();
+    try {
+      const products = await this.catalog.products();
+      stockById = new Map(products.filter(product => product.id !== null)
+        .map(product => [product.id!, product.stockQuantity ?? 0]));
+    } catch { /* stock preview is best-effort; the rows then say "onbekend" */ }
+    const rows = data.priced.lines.map(line => {
+      const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
+      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity,
+               before, after: before === null ? null : before - line.quantity };
+    });
+    this.shipSheet.set({ rows, pieces: data.priced.totals.pieces, number: data.order.number });
+  }
+
+  shipHasNegative(): boolean {
+    return (this.shipSheet()?.rows ?? []).some(row => row.after !== null && row.after < 0);
+  }
+
+  confirmShipFromSheet(): void {
+    const data = this.view();
+    if (!data) return;
+    void this.shipGoods(data);
+  }
+
+  private async shipGoods(data: SalesOrderView): Promise<void> {
+    this.invoiceBusy.set(true);
+    try {
+      this.view.set(await this.sales.shipGoods(data.order.id!));
+      this.history.set(await this.sales.history(data.order.id!).catch(() => this.history()));
+      this.shipSheet.set(null);
+      this.ui.toast('Bestelling verzonden — voorraad afgepunt');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Voorraad afpunten mislukt'), 'err');
     } finally {
       this.invoiceBusy.set(false);
     }
@@ -800,7 +924,8 @@ export class SalesView {
   }
 
   paymentTerms(): string {
-    return this.view()?.order.paymentTerms || this.customer()?.paymentTerms || '—';
+    /* Mirrors the backend: without agreed terms the house standard applies. */
+    return this.view()?.order.paymentTerms || this.customer()?.paymentTerms || 'Vooruitbetaling';
   }
 
   palletCount(data: SalesOrderView): number {

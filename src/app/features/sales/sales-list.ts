@@ -152,17 +152,22 @@ import { messageOf } from '../../core/api/errors';
                     · marge {{ row.priced.totals.marginPct | pct: 0 }}
                   }
                 </div>
+                @if (attention(row); as attn) {
+                  <div class="so-attn-line" [attr.title]="attn.join(' · ')">
+                    <b>{{ attn.length }}</b>
+                    <span>{{ attn[0] }}{{ attn.length > 1 ? ' · +' + (attn.length - 1) : '' }}</span>
+                  </div>
+                }
               </div>
               <div class="list-item__end list-item__end--stacked">
                 <div class="strong num">{{ row.priced.totals.total | eur: 0 }}</div>
-                <span class="badge" [class]="'badge--' + cls(row.order.status)">
-                  {{ label(row.order.status) }}
+                <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + cls(row.order.status)">
+                  <i aria-hidden="true"></i>{{ label(row.order.status) }}
                 </span>
-                @if (overdue(row.order)) {
-                  <span class="badge badge--gold">Vervallen</span>
-                }
-                @if (todo(row.order); as task) {
-                  <span class="badge badge--todo">{{ task }}</span>
+                @if (row.order.goodsShippedAt) {
+                  <span class="so-status-mini so-status-mini--ok">
+                    <i aria-hidden="true"></i>Bestelling verzonden
+                  </span>
                 }
               </div>
               <span class="list-item__chev">›</span>
@@ -298,6 +303,20 @@ import { messageOf } from '../../core/api/errors';
     }
   `,
   styles: `
+    .so-status-mini { display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:750;white-space:nowrap }
+    .so-status-mini i { width:7px;height:7px;flex:none;border-radius:50%;background:currentColor }
+    .so-status-mini--ok { color:var(--ok) }
+    .so-status-mini--danger { color:var(--danger) }
+    .so-status-mini--gold { color:var(--gold) }
+    .so-status-mini--rose { color:var(--rose-dark) }
+    .so-status-mini--blue { color:var(--blue) }
+    .so-status-mini--neutral { color:var(--muted) }
+    .so-attn-line { display:flex;align-items:center;gap:6px;margin-top:5px;min-width:0 }
+    .so-attn-line b { display:inline-grid;place-items:center;flex:none;min-width:16px;height:16px;
+      padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:9.5px;font-weight:800 }
+    .so-attn-line span { overflow:hidden;color:var(--warn);font-size:11px;font-weight:650;
+      text-overflow:ellipsis;white-space:nowrap }
+
     .doc-tabs { display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:10px;padding:4px;
       border:1px solid var(--line);border-radius:14px;background:var(--surface) }
     .doc-tabs button { min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:7px;
@@ -563,6 +582,16 @@ export class SalesList {
     ? this.filters.filter((option) => ['', 'CONCEPT', 'VERZONDEN', 'BETAALD'].includes(option.value))
     : this.filters.filter((option) => option.value !== 'BETAALD'));
 
+  /** The amber under-row line, inkoop-style: everything still waiting on us. */
+  attention = (row: SalesOrderView): string[] | null => {
+    const items: string[] = [];
+    const task = this.todo(row.order, row.awaitingResend);
+    if (task) items.push(task);
+    /* An overdue invoice already reads "Betaling opvolgen"; no second label. */
+    if (this.overdue(row.order) && !items.includes('Betaling opvolgen')) items.push('Vervallen');
+    return items.length ? items : null;
+  };
+
   overdue(order: SalesOrder): boolean {
     return (order.docType ?? 'OFFERTE') === 'FACTUUR'
       && order.status === 'VERZONDEN'
@@ -707,13 +736,14 @@ export class SalesList {
     }
   }
   /** What we still must do with this document, or nothing. */
-  todo = (order: SalesOrder): string | null => {
+  todo = (order: SalesOrder, awaitingResend = false): string | null => {
     if ((order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (order.status === 'CONCEPT') return 'Nog niet verstuurd';
       if (this.overdue(order)) return 'Betaling opvolgen';
+      if (!order.goodsShippedAt) return 'Bestelling nog te verzenden';
       return null;
     }
-    return actionNeeded(order);
+    return actionNeeded(order, awaitingResend);
   };
 
   startNew(): void {

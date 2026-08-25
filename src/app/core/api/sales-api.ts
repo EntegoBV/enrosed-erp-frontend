@@ -95,6 +95,12 @@ export class SalesApi {
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/mark-paid`), {}));
   }
 
+  /** Books the shipped goods out of stock; the server refuses to do it twice. */
+  shipGoods(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/ship-goods`), {}));
+  }
+
   /* -------------------------------------------------- verzendorganisaties */
 
   carriers(): Promise<Carrier[]> {

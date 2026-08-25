@@ -66,12 +66,16 @@ import {
                     [disabled]="busy()" (click)="reopen()">Heropen</button>
           } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
                      || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
-            <button class="btn btn--sm quote-header-button" type="button"
-                    [class.btn--primary]="!dirty()"
+            <button class="btn btn--sm quote-header-button quote-header-button--send" type="button"
+                    [class.quote-header-button--send-quiet]="dirty()"
                     [disabled]="sending()"
                     [attr.aria-label]="data.order.sentAt ? 'Offerte opnieuw versturen' : 'Offerte versturen'"
                     (click)="openSend()">
-              {{ data.order.sentAt ? 'Opnieuw' : 'Verstuur' }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 22-7z"/>
+              </svg>
+              <span>{{ data.order.sentAt ? 'Opnieuw' : 'Verstuur' }}</span>
             </button>
           }
         </div>
@@ -143,6 +147,16 @@ import {
               </b>
               <i class="hero-min__track" aria-hidden="true"><i [style.width.%]="minimumPercent()"></i></i>
             </div>
+          }
+
+          @if (data.awaitingResend) {
+            <!-- An adopted proposal drops the quote back to concept, but the
+                 customer is still waiting. Keep saying so until it goes out. -->
+            <button class="hero-waiting" type="button" (click)="openSend()">
+              <i aria-hidden="true">⏳</i>
+              <span><b>Klant wacht op de nieuwe versie</b> — voorstel overgenomen, nog niet verstuurd</span>
+              <b class="hero-waiting__go" aria-hidden="true">Verstuur ›</b>
+            </button>
           }
 
           @if (historyOpen()) {
@@ -910,7 +924,9 @@ import {
               <p>
                 {{ sendIssues().length
                     ? 'Los onderstaande punten op; daarna kun je meteen versturen.'
-                    : 'Klant, producten en minimumorder zijn gecontroleerd.' }}
+                    : (data.awaitingResend
+                        ? 'Voorstel van de klant overgenomen — verstuur de nieuwe versie.'
+                        : 'Klant, producten en minimumorder zijn gecontroleerd.') }}
               </p>
             </div>
           </div>
@@ -1143,6 +1159,15 @@ import {
     .quote-header-total span { display:none;color:var(--muted);font-size:8.5px;font-weight:720;letter-spacing:.06em;text-transform:uppercase }
     .quote-header-total strong { font-size:12px;font-variant-numeric:tabular-nums }
     .quote-header-button { min-width:0;padding-inline:10px }
+    /* The send pill: the one action that moves the quote forward, dressed to
+       belong to the header instead of floating on it. While there are unsaved
+       changes it steps back so Opslaan can lead. */
+    .quote-header-button--send { gap:6px;border:none;color:#fff;font-weight:650;padding-inline:13px;
+      background:linear-gradient(135deg,var(--rose-mid),var(--rose-dark));
+      box-shadow:0 3px 10px color-mix(in srgb,var(--rose-dark) 28%,transparent),inset 0 1px 0 rgb(255 255 255/.18) }
+    .quote-header-button--send svg { width:13px;height:13px;flex:none;margin-left:-1px }
+    .quote-header-button--send-quiet { background:var(--rose-soft);color:var(--rose-dark);
+      box-shadow:none;border:1px solid var(--rose-line) }
     @media(max-width:679px) { .quote-header-button--desktop { display:none } }
     @media(max-width:380px) {
       .quote-header-actions { gap:3px }
@@ -1396,6 +1421,13 @@ import {
     .hero-min__label { color:rgb(255 255 255/.72) }
     .hero-min__track { position:absolute;left:12px;right:12px;bottom:6px;display:block;height:3px;border-radius:99px;background:rgb(255 255 255/.15);overflow:hidden }
     .hero-min__track i { display:block;height:100%;background:currentColor }
+    .hero-waiting { display:flex;align-items:center;gap:9px;width:100%;margin-top:8px;padding:9px 12px;
+      border:none;border-radius:12px;background:linear-gradient(120deg,rgb(244 207 154/.18),rgb(244 207 154/.08));
+      color:#f4cf9a;font:inherit;font-size:12px;font-weight:650;text-align:left;cursor:pointer }
+    .hero-waiting i { font-style:normal;flex:none }
+    .hero-waiting span { flex:1;min-width:0 }
+    .hero-waiting span b { font-weight:800 }
+    .hero-waiting__go { flex:none;font-weight:800;white-space:nowrap }
     .phone-next { margin-top:4px;min-height:50px;border-radius:16px;font-size:15px }
     @media (min-width:680px) { .phone-next { display:none } }
     .products-empty { padding:38px 18px 42px;text-align:center }

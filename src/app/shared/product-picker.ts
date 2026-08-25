@@ -36,7 +36,7 @@ export interface ProductDraft {
   template: `
     <app-sheet [title]="heading()" (closed)="cancelled.emit()">
       <div body>
-        @if (!createMode() && !quantityStep()) {
+        @if (!createMode()) {
         <div class="search-bar">
           <input
             class="input"
@@ -44,7 +44,7 @@ export interface ProductDraft {
             inputmode="search"
             placeholder="Zoek op naam, kleur, maat, SKU of barcode…"
             [ngModel]="query()"
-            (ngModelChange)="query.set($event)"
+            (ngModelChange)="searchAgain($event)"
           />
         </div>
         }
@@ -390,6 +390,16 @@ export class ProductPicker implements OnDestroy {
   /* ---- multi mode ---- */
   readonly selected = signal(new Map<number, { product: Product; quantity: number }>());
   readonly quantityStep = signal(false);
+
+  /**
+   * Typing in the search always searches, also from the quantity step:
+   * the sheet walks back to the list with the picks kept, so one more
+   * product is a few letters away instead of a dead field.
+   */
+  searchAgain(value: string): void {
+    this.query.set(value);
+    if (this.quantityStep()) this.quantityStep.set(false);
+  }
   readonly batch = computed(() => [...this.selected().values()]);
   readonly batchReady = computed(() => this.batch().length > 0 && this.batch().every((entry) => entry.quantity > 0));
 
@@ -474,9 +484,12 @@ export class ProductPicker implements OnDestroy {
     const needle = this.query().toLowerCase().trim();
     /* Name first, colour second: a family's variants stand side by side
        with the colours in a fixed order, instead of database order. */
+    /* Colour groups first (all Rood together), alphabetical inside each;
+       colourless products close the list. */
     const all = this.products().slice().sort((a, b) =>
-      a.name.localeCompare(b.name, 'nl')
-      || (a.colour ?? '').localeCompare(b.colour ?? '', 'nl'));
+      Number(!a.colour) - Number(!b.colour)
+      || (a.colour ?? '').localeCompare(b.colour ?? '', 'nl')
+      || a.name.localeCompare(b.name, 'nl'));
     if (!needle) return all.slice(0, 50);
     return all
       .filter((product) =>

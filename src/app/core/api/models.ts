@@ -894,6 +894,8 @@ export interface SalesOrder {
   invoiceDueDate?: string | null;
   paidAt?: string | null;
   sourceQuoteId?: number | null;
+  /** Invoices only: when the goods left and stock was written down. */
+  goodsShippedAt?: string | null;
   lines: SalesOrderLine[];
   /** Hand-built pallet layout; empty means the calculated stacking applies. */
   pallets: OrderPallet[];
@@ -967,6 +969,8 @@ export interface PricedOrder {
 export interface SalesOrderView {
   order: SalesOrder;
   priced: PricedOrder;
+  /** An adopted customer proposal that has not been resent: the customer waits. */
+  awaitingResend: boolean;
 }
 
 /**

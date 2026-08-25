@@ -31,9 +31,11 @@ export function statusClass(status: QuoteStatus): string {
  * does not say whether to wait or to act. This is the question you ask on
  * every row, so the answer sits right next to it.
  */
-export function actionNeeded(order: SalesOrder): string | null {
+export function actionNeeded(order: SalesOrder, awaitingResend = false): string | null {
   if (order.status === 'WIJZIGING_GEVRAAGD') return 'Voorstel beoordelen';
   if (order.status === 'AFGEWEZEN') return 'Heropenen of laten';
+  /* An adopted proposal outranks a plain draft: the customer is waiting. */
+  if (order.status === 'CONCEPT' && awaitingResend) return 'Klant wacht op nieuwe versie';
   if (order.status === 'CONCEPT') return 'Nog niet verstuurd';
 
   /* A sent quote with an open item waits on us, not on the customer. */
