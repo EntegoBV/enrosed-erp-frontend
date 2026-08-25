@@ -271,12 +271,12 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 <div class="tile"><span>Extra kost per stuk</span><b class="num">
                   @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
                 </b><small>bv. display of giftbox</small></div>
-                <button class="tile tile--dark" type="button" (click)="openPriceInfo(product)">
+                <button class="tile tile--price" type="button" (click)="openPriceInfo(product)">
                   <i class="tile-chev" aria-hidden="true"></i>
                   <span>Kostprijs incl. rechten</span><b class="num">
                   @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
                 </b><small>geland: mét transport en invoer</small></button>
-                <button class="tile tile--dark" type="button" (click)="openPriceInfo(product)">
+                <button class="tile tile--price" type="button" (click)="openPriceInfo(product)">
                   <i class="tile-chev" aria-hidden="true"></i>
                   <span>Catalogusprijs</span><b class="num">
                   @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
@@ -291,7 +291,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 } @else {
                   <div class="tile"><span>Bron kostprijs</span><b>{{ product.landedCostSource || '—' }}</b></div>
                 }
-                <button class="tile tile--dark tile--dark-result" type="button" (click)="openPriceInfo(product)">
+                <button class="tile tile--price tile--price-result" type="button" (click)="openPriceInfo(product)">
                   <i class="tile-chev" aria-hidden="true"></i>
                   <span>Marge per stuk</span>
                   @if (margin(); as value) {
@@ -694,21 +694,20 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     a.tile:hover > b { text-decoration: underline dotted; }
     button.tile:hover > b { text-decoration: underline dotted; }
     button.tile:active { opacity: .75; }
-    /* The buying-and-selling money tiles wear the hero's brown: the same
-       surface as the Catalogusprijs above, chevron ring included. */
-    .tile--dark { position: relative; padding-right: 34px; background: linear-gradient(145deg, #27211f, #151210); }
-    .tile--dark > span { color: rgb(255 255 255 / 55%); }
-    .tile--dark > b { color: #fff; font-weight: 800; }
-    .tile--dark > small { color: rgb(255 255 255 / 50%); }
+    /* The buying-and-selling money tiles carry only a whisper of the
+       house brown, with the chevron ring saying they open. */
+    .tile--price { position: relative; padding-right: 34px; background: var(--rose-soft); }
+    .tile--price > b { font-weight: 800; }
     .tile-chev { position: absolute; top: 9px; right: 9px; display: grid; place-items: center;
-      width: 20px; height: 20px; border-radius: 50%; background: rgb(255 255 255 / 14%); }
+      width: 20px; height: 20px; border-radius: 50%; background: var(--surface); color: var(--rose-dark);
+      box-shadow: 0 1px 3px rgb(26 22 20 / 10%); }
     .tile-chev::before { content: ''; width: 6px; height: 6px; margin-left: -2px;
-      border-right: 1.6px solid #fff; border-bottom: 1.6px solid #fff; transform: rotate(-45deg); }
+      border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(-45deg); }
     .tile > small { margin-top: 1px; color: var(--muted); font-size: 9.5px; line-height: 1.35; }
     .tile .muted { font-size: 10px; font-weight: 500; }
-    .tile--dark-result { align-items: center; text-align: center; }
-    .tile--dark-result > b { color: #7ddfa6; }
-    .tile--dark-result > b.warn-text { color: #ff9d92; }
+    .tile--price-result { align-items: center; text-align: center; }
+    .tile--price-result > b { color: var(--ok); }
+    .tile--price-result > b.warn-text { color: var(--danger); }
     .tiles-kicker { padding: 11px 13px 4px; border-top: 1px solid var(--line); background: var(--surface);
       color: var(--warn); font-size: 9px; font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
     .tiles-kicker--first { border-top: 0; }
