@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES } from '../../core/api/models';
@@ -192,7 +192,12 @@ export class CustomerList {
   readonly draft = signal<Customer>(blank('BE'));
   readonly loading = signal(true);
 
-  constructor() { void this.load(); }
+  constructor() {
+    /* Deep links (the sales hero) filter the list straight to one customer. */
+    const q = inject(ActivatedRoute).snapshot.queryParamMap.get('q');
+    if (q) this.query.set(q);
+    void this.load();
+  }
 
   private async load(): Promise<void> {
     const [customers, countries] = await Promise.all([

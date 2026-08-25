@@ -57,7 +57,7 @@ import {
               {{ saving() ? 'Bezig…' : (dirty() ? 'Opslaan' : 'Opgeslagen') }}
             </button>
           }
-          <button class="btn btn--sm quote-header-button" type="button"
+          <button class="btn btn--sm quote-header-button quote-header-button--desktop" type="button"
                   (click)="openPdfSheet()">PDF</button>
           @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
@@ -1080,6 +1080,7 @@ import {
     .quote-header-total span { display:none;color:var(--muted);font-size:8.5px;font-weight:720;letter-spacing:.06em;text-transform:uppercase }
     .quote-header-total strong { font-size:12px;font-variant-numeric:tabular-nums }
     .quote-header-button { min-width:0;padding-inline:10px }
+    @media(max-width:679px) { .quote-header-button--desktop { display:none } }
     @media(max-width:380px) {
       .quote-header-actions { gap:3px }
       .quote-header-total { padding-right:0 }

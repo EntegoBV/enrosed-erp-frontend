@@ -10,7 +10,8 @@ import {
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { Ui } from '../../shared/ui';
+import { Sheet, Ui } from '../../shared/ui';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
@@ -26,8 +27,8 @@ import { STATUS_LABEL, statusClass } from './quote-status';
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            DateTimeNlPipe, EurPipe, NumPipe, PctPipe],
+  imports: [RouterLink, AuthImage, PageHeader, Sheet, Skeleton, CbmPipe, DateNlPipe,
+            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
@@ -46,7 +47,9 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           <div class="sales-hero__top">
             <div class="sales-hero__identity">
               <span class="eyebrow">Verkoopofferte</span>
-              <h1 id="sales-overview-title">{{ customerName() }}</h1>
+              <h1 id="sales-overview-title">
+                <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">{{ customerName() }}</a>
+              </h1>
               <p>
                 {{ data.order.orderDate | dateNl }}
                 <span aria-hidden="true"> · </span>
@@ -82,6 +85,38 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
               <small>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</small>
             </div>
+          </div>
+
+          <!-- The agreement in one glass row: what used to be its own
+               Offertedetails card lives with the rest of the header. -->
+          <div class="hero-details">
+            <span><small>Geldig tot</small><b>{{ data.order.validUntil | dateNl }}</b></span>
+            <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">
+              <small>Contact</small><b>{{ customer()?.contact || '—' }}</b>
+            </a>
+            <span class="hero-details__pay">
+              <small>Betaling</small>
+              <b>{{ desktop.active() ? paymentTerms() : paymentShort() }}</b>
+            </span>
+            <span><small>BTW</small><b>{{ data.priced.totals.vatLegalMention ? 'verlegd · 0%' : (data.priced.totals.vatRatePct | pct: 0) }}</b></span>
+          </div>
+
+          <!-- The inkoop journey, retold for a quote. -->
+          <div class="stepper hero-stepper" aria-label="Status van de offerte">
+            @for (step of quoteJourney(data.order.status); track step.label; let last = $last) {
+              <div class="stepper__step"
+                   [class.stepper__step--done]="step.state === 'done'"
+                   [class.stepper__step--now]="step.state === 'now'"
+                   [class.hero-stepper__step--danger]="step.kind === 'danger'"
+                   [class.hero-stepper__step--gold]="step.kind === 'gold'"
+                   [class.hero-stepper__step--muted]="step.kind === 'muted'">
+                <span class="stepper__dot" aria-hidden="true">{{ step.mark }}</span>
+                <span class="stepper__label">{{ step.label }}</span>
+              </div>
+              @if (!last) {
+                <span class="stepper__line" [class.stepper__line--done]="step.state === 'done'"></span>
+              }
+            }
           </div>
 
           <div class="profit-strip">
@@ -132,63 +167,72 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               </header>
 
               <div class="product-lines">
-                @for (line of data.priced.lines; track line.productId) {
-                  <article class="product-line">
-                    <div class="product-line__photo">
+                <!-- Same rhythm as the inkoop detail: identity walks through
+                     to the product, facts sit in a strip, the price build-up
+                     folds open under its own toggle. -->
+                @for (line of data.priced.lines; track line.productId; let lineIndex = $index) {
+                  <article class="sales-line">
+                    <a class="sales-line__identity" [routerLink]="['/products', line.productId]"
+                       [title]="line.description + ' openen'">
                       @if (line.photoUrl) {
-                        <img [appAuthSrc]="line.photoUrl" [alt]="line.description" />
+                        <img class="sales-line__photo" [appAuthSrc]="line.photoUrl" alt="" />
                       } @else {
-                        <span aria-hidden="true">◇</span>
+                        <span class="sales-line__photo sales-line__photo--empty" aria-hidden="true">◈</span>
                       }
+                      <span class="sales-line__copy">
+                        <small>Regel {{ lineIndex + 1 }}</small>
+                        <strong>{{ line.description }}</strong>
+                        <span>{{ line.quantity | num }} st · {{ line.cartons | num }} dozen</span>
+                      </span>
+                    </a>
+
+                    <div class="line-facts">
+                      <span><small>Aantal</small><strong>{{ line.quantity | num }} st</strong></span>
+                      <span><small>Dozen</small><strong>{{ line.cartons | num }}</strong></span>
+                      <button type="button"
+                              [class.line-facts__ok]="!deliveryOpen(line, data)"
+                              [class.line-facts__warn]="deliveryOpen(line, data)"
+                              (click)="deliveryInfo.set(line)">
+                        <small>Levering</small>
+                        <strong>{{ deliveryShort(line, data) }}<i aria-hidden="true">›</i></strong>
+                      </button>
                     </div>
-                    <div class="product-line__copy">
-                      <h3>{{ line.description }}</h3>
-                      <p class="product-line__sku">{{ line.sku || 'Zonder SKU' }}</p>
-                      <div class="product-line__meta">
-                        <span><b>{{ line.quantity | num }}</b> stuks</span>
-                        <span>
-                          {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }}
-                        </span>
-                        <span>{{ line.netUnitPrice | eur: 2 }} / stuk</span>
-                      </div>
-                    </div>
-                    <div class="product-line__amount">
-                      <span>Netto</span>
-                      <strong>{{ line.net | eur: 2 }}</strong>
-                    </div>
-                    @if (line.discountPct) {
-                      <div class="line-discount">
-                        <span>Regelkorting <b>{{ line.discountPct | pct: 1 }}</b></span>
-                        <strong>− {{ line.discountAmount | eur: 2 }}</strong>
+
+                    <button class="line-breakdown-toggle" type="button"
+                            [attr.aria-expanded]="openLine() === line.productId"
+                            [attr.aria-controls]="linePanelId(line.productId)"
+                            (click)="toggleLine(line.productId)">
+                      <span>
+                        <small>Prijsopbouw</small>
+                        <strong>{{ profitMode() === 'UNIT' ? 'Per stuk bekijken' : 'Hele regel bekijken' }}</strong>
+                      </span>
+                      <span class="line-breakdown-toggle__total">
+                        {{ profitMode() === 'UNIT' ? (line.netUnitPrice | eur: 2) : (line.net | eur) }}
+                      </span>
+                      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
+                           [class.chevron-open]="openLine() === line.productId">
+                        <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+
+                    @if (openLine() === line.productId) {
+                      <div class="line-breakdown" [id]="linePanelId(line.productId)">
+                        @if (line.discountPct) {
+                          <div class="stat-row"><span>Regelkorting {{ line.discountPct | pct: 1 }}</span>
+                            <span class="num">− {{ profitDiscount(line) | eur: 2 }}</span></div>
+                        }
+                        <div class="stat-row"><span>Verkoop na korting</span>
+                          <span class="num">{{ profitNet(line) | eur: 2 }}</span></div>
+                        <div class="stat-row"><span>Kostprijs</span>
+                          <span class="num">− {{ profitCost(line) | eur: 2 }}</span></div>
+                        <div class="stat-row line-breakdown__result"
+                             [class.line-breakdown__result--negative]="line.marginEur < 0">
+                          <span>{{ line.marginEur < 0 ? 'Verlies' : 'Winst' }}</span>
+                          <span class="num">{{ profitPill(line) }}</span>
+                        </div>
                       </div>
                     }
-                    <div class="delivery-line" [class.delivery-line--open]="deliveryOpen(line, data)">
-                      <span class="delivery-line__dot" aria-hidden="true"></span>
-                      <span>Levering</span>
-                      <strong>{{ deliveryText(line, data) }}</strong>
-                    </div>
-                    <div class="line-profit">
-                      <button class="line-profit__toggle" type="button"
-                              [attr.aria-expanded]="profitExpanded($index)"
-                              [attr.aria-controls]="'line-profit-' + $index"
-                              (click)="toggleProfit($index)">
-                        <span>Interne winst · {{ profitMode() === 'UNIT' ? 'per stuk' : 'hele regel' }}</span>
-                        <strong [class.negative]="line.marginEur < 0">
-                          {{ profitAmount(line) | eur: 2 }}
-                          <span class="line-profit__chevron" aria-hidden="true"
-                                [class.line-profit__chevron--open]="profitExpanded($index)">⌄</span>
-                        </strong>
-                      </button>
-                      @if (profitExpanded($index)) {
-                        <dl class="line-profit__detail" [id]="'line-profit-' + $index">
-                          <div><dt>Verkoop na regelkorting</dt><dd>{{ profitNet(line) | eur: 2 }}</dd></div>
-                          <div><dt>Kostprijs</dt><dd>− {{ profitCost(line) | eur: 2 }}</dd></div>
-                          <div class="line-profit__result">
-                            <dt>Winst</dt><dd [class.negative]="line.marginEur < 0">{{ profitAmount(line) | eur: 2 }}</dd>
-                          </div>
-                        </dl>
-                      }
-                    </div>
                   </article>
                 } @empty {
                   <div class="products-empty">
@@ -200,31 +244,6 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               </div>
             </section>
 
-            <section class="section-card" aria-labelledby="quote-details-title">
-              <header class="section-card__head">
-                <div><span class="section-kicker">Afspraken</span><h2 id="quote-details-title">Offertedetails</h2></div>
-              </header>
-              <dl class="detail-grid">
-                <div><dt>Offertedatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
-                <div><dt>Geldig tot</dt><dd>{{ data.order.validUntil | dateNl }}</dd></div>
-                <div><dt>Klant</dt><dd>{{ customerName() }}</dd></div>
-                <div><dt>Contactpersoon</dt><dd>{{ customer()?.contact || '—' }}</dd></div>
-                <div><dt>Betaalvoorwaarden</dt><dd>{{ paymentTerms() }}</dd></div>
-                <div>
-                  <dt>BTW</dt>
-                  <dd class="vat-detail" [attr.aria-label]="vatLabel(data)">
-                    <span class="vat-detail__full" aria-hidden="true">{{ vatLabel(data) }}</span>
-                    <span class="vat-detail__short" aria-hidden="true">…</span>
-                  </dd>
-                </div>
-                @if (data.order.notes) {
-                  <div class="detail-grid__wide"><dt>Bericht op offerte</dt><dd class="text-value">{{ data.order.notes }}</dd></div>
-                }
-                @if (data.order.internalNotes) {
-                  <div class="detail-grid__wide detail-grid__internal"><dt>Interne notitie</dt><dd class="text-value">{{ data.order.internalNotes }}</dd></div>
-                }
-              </dl>
-            </section>
 
             <section class="section-card" aria-labelledby="delivery-details-title">
               <header class="section-card__head">
@@ -233,41 +252,21 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                   {{ deliveryState(data) }}
                 </span>
               </header>
-              <dl class="detail-grid">
-                <div><dt>Leverland</dt><dd>{{ countryName() }}</dd></div>
-                <div><dt>Incoterm</dt><dd>{{ data.order.incoterm || '—' }}</dd></div>
-                <div><dt>Verzendwijze</dt><dd>{{ isLooseCartons(data) ? 'Losse dozen' : 'Pallets' }}</dd></div>
+              <div class="details-grid">
+                <div class="detail-item"><span>Leverland</span><strong>{{ countryName() }}</strong></div>
+                <div class="detail-item"><span>Incoterm</span><strong>{{ data.order.incoterm || '—' }}</strong></div>
+                <div class="detail-item"><span>Verzendwijze</span><strong>{{ isLooseCartons(data) ? 'Losse dozen' : 'Pallets' }}</strong></div>
                 @if (!isLooseCartons(data)) {
-                  <div><dt>Pallets</dt><dd>{{ palletCount(data) | num }}</dd></div>
+                  <div class="detail-item"><span>Pallets</span><strong>{{ palletCount(data) | num }}</strong></div>
                 }
-                <div><dt>Dozen</dt><dd>{{ data.priced.totals.cartons | num }}</dd></div>
-                <div><dt>Volume</dt><dd>{{ data.priced.totals.cbm | cbm }}</dd></div>
-                <div><dt>Gewicht</dt><dd>{{ data.priced.totals.weightKg | num: 1 }} kg</dd></div>
-                <div><dt>Vracht · {{ freightStrategyLabel(data) }}</dt><dd>{{ freightLabel(data) }}</dd></div>
-                <div><dt>Levertermijn</dt><dd>{{ deliveryState(data) }}</dd></div>
-              </dl>
-            </section>
-
-            <section class="section-card history-card" aria-labelledby="quote-history-title">
-              <header class="section-card__head">
-                <div><span class="section-kicker">Status</span><h2 id="quote-history-title">Geschiedenis</h2></div>
-                <span class="badge" [class]="'badge badge--' + cls(data.order.status)">{{ label(data.order.status) }}</span>
-              </header>
-              <div class="timeline">
-                @for (event of history(); track event.id) {
-                  <div class="timeline__event" [class.timeline__event--customer]="event.byCustomer">
-                    <span class="timeline__dot" aria-hidden="true"></span>
-                    <div>
-                      <strong>{{ event.summary }}</strong>
-                      <p>{{ event.at | dateTimeNl }}@if (event.actor) { · {{ event.actor }} }</p>
-                      @if (event.detail) { <small>{{ event.detail }}</small> }
-                    </div>
-                  </div>
-                } @empty {
-                  <p class="empty-history">Nog geen statuswijzigingen geregistreerd.</p>
-                }
+                <div class="detail-item"><span>Dozen</span><strong>{{ data.priced.totals.cartons | num }}</strong></div>
+                <div class="detail-item"><span>Volume</span><strong>{{ data.priced.totals.cbm | cbm }}</strong></div>
+                <div class="detail-item"><span>Gewicht</span><strong>{{ data.priced.totals.weightKg | num: 1 }} kg</strong></div>
+                <div class="detail-item"><span>Vracht · {{ freightStrategyLabel(data) }}</span><strong>{{ freightLabel(data) }}</strong></div>
+                <div class="detail-item"><span>Levertermijn</span><strong>{{ deliveryState(data) }}</strong></div>
               </div>
             </section>
+
           </div>
 
           <aside class="sales-side" aria-label="Totalen en acties">
@@ -303,7 +302,53 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               </div>
             </section>
           </aside>
+
+            <section class="section-card history-card" aria-labelledby="quote-history-title">
+              <header class="section-card__head">
+                <div><span class="section-kicker">Status</span><h2 id="quote-history-title">Geschiedenis</h2></div>
+                <span class="badge" [class]="'badge badge--' + cls(data.order.status)">{{ label(data.order.status) }}</span>
+              </header>
+              <div class="timeline">
+                @for (event of history(); track event.id) {
+                  <div class="timeline__event" [class.timeline__event--customer]="event.byCustomer">
+                    <span class="timeline__dot" aria-hidden="true"></span>
+                    <div>
+                      <strong>{{ event.summary }}</strong>
+                      <p>{{ event.at | dateTimeNl }}@if (event.actor) { · {{ event.actor }} }</p>
+                      @if (event.detail) { <small>{{ event.detail }}</small> }
+                    </div>
+                  </div>
+                } @empty {
+                  <p class="empty-history">Nog geen statuswijzigingen geregistreerd.</p>
+                }
+              </div>
+            </section>
         </div>
+
+        @if (deliveryInfo(); as line) {
+          <app-sheet [title]="'Levering · ' + line.description" (closed)="deliveryInfo.set(null)">
+            <div class="delivery-sheet" body>
+              @if (deliveryText(line, data) !== deliveryShort(line, data)) {
+                <p>{{ deliveryText(line, data) }}</p>
+              }
+              <dl class="delivery-sheet__facts">
+                <div><dt>Besteld</dt><dd>{{ line.quantity | num }} st</dd></div>
+                @if (line.inventoryKnown) {
+                  <div><dt>Op voorraad</dt><dd>{{ (line.stockQuantity ?? 0) | num }} st</dd></div>
+                }
+                @if (line.shortfall) {
+                  <div><dt>Tekort</dt><dd>{{ line.shortfall | num }} st</dd></div>
+                }
+                @if (line.deliveryWeek) {
+                  <div><dt>Leverweek</dt><dd>{{ line.deliveryWeek | weekNl }}</dd></div>
+                }
+                @if (line.deliveryDate) {
+                  <div><dt>Leverbaar vanaf</dt><dd>{{ line.deliveryDate | dateNl }}</dd></div>
+                }
+              </dl>
+            </div>
+          </app-sheet>
+        }
       </main>
     } @else if (loading()) {
       <app-page-header title="Offerte laden" [showBack]="true" [showBell]="false" />
@@ -328,6 +373,8 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .sales-view-page>*+* { margin-top:12px }
     .sales-hero { overflow:hidden;padding:18px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2) }
     .sales-hero__top { display:flex;align-items:flex-start;justify-content:space-between;gap:12px }
+    .sales-hero h1 a { color:inherit;text-decoration:none }
+    .sales-hero h1 a:active { opacity:.75 }
     .eyebrow,.section-kicker { color:var(--rose);font-size:9.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase }
     .sales-hero .eyebrow { color:#efb8c4 }
     .sales-hero h1 { margin:3px 0 0;color:#fff;font-size:clamp(21px,6vw,30px);line-height:1.14;letter-spacing:-.03em }
@@ -353,22 +400,98 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .profit-mode { display:flex;padding:2px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2) }.profit-mode button { min-height:25px;border:0;border-radius:7px;background:transparent;padding:0 7px;color:var(--muted);font-size:9px;font-weight:720;cursor:pointer }.profit-mode .profit-mode__active { background:#fff;color:var(--ink);box-shadow:0 1px 4px rgb(39 33 31/.1) }
     .delivery-state { background:var(--ok-soft);color:var(--ok) }.delivery-state--open { background:var(--warn-soft);color:var(--warn) }
   `, `
-    .product-lines { padding:10px }.product-line { display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;padding:11px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2) }.product-line+.product-line { margin-top:9px }
-    .product-line__photo { width:54px;height:54px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--muted-2);font-size:21px }.product-line__photo img { width:100%;height:100%;object-fit:contain }
-    .product-line__copy { min-width:0 }.product-line h3 { overflow:hidden;margin:1px 0 0;font-size:12.5px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }.product-line__sku { overflow:hidden;margin:3px 0 0;color:var(--muted);font:9.5px/1.2 var(--mono);text-overflow:ellipsis;white-space:nowrap }
-    .product-line__meta { display:flex;flex-wrap:wrap;gap:3px 9px;margin-top:7px;color:var(--muted);font-size:10px }.product-line__meta b { color:var(--ink) }
-    .product-line__amount { min-width:72px;text-align:right }.product-line__amount span,.product-line__amount small { display:block;color:var(--muted);font-size:9px }.product-line__amount strong { display:block;margin-top:2px;font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap }
-    .delivery-line,.line-discount,.line-profit { grid-column:1/-1 }.delivery-line,.line-discount { display:flex;align-items:center;gap:6px;padding-top:9px;border-top:1px solid var(--line);font-size:10px }.delivery-line>span:nth-child(2) { color:var(--muted) }.delivery-line strong,.line-discount strong { margin-left:auto;text-align:right }
-    .delivery-line__dot { width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft) }.delivery-line--open .delivery-line__dot { background:var(--warn);box-shadow:0 0 0 3px var(--warn-soft) }
-    .line-discount { margin-top:-2px;padding:7px 9px;border:0;border-radius:9px;background:var(--gold-soft);color:var(--ink-2) }.line-discount span { color:var(--muted) }.line-discount b { color:var(--ink-2) }.line-discount strong { color:#986b00 }
-    .line-profit { overflow:hidden;border:1px solid var(--rose-line);border-radius:10px;background:var(--rose-soft);color:var(--rose-dark) }.line-profit__toggle { width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;padding:7px 9px;color:inherit;font:inherit;font-size:10px;cursor:pointer;text-align:left }.line-profit__toggle>span { color:var(--rose-dark);font-weight:720 }.line-profit__toggle strong { display:flex;align-items:center;gap:7px;margin-left:auto;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap }.line-profit__chevron { display:inline-block;color:var(--rose-dark)!important;font-size:15px;line-height:1;transition:transform .16s ease }.line-profit__chevron--open { transform:rotate(180deg) }
-    .line-profit__detail { margin:0;padding:2px 9px 8px;border-top:1px solid var(--rose-line) }.line-profit__detail>div { display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgb(180 91 112/.12) }.line-profit__detail>div:last-child { border-bottom:0 }.line-profit__detail dt { color:var(--muted);font-size:9.5px }.line-profit__detail dd { margin:0;color:var(--ink-2);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums }.line-profit__result dt,.line-profit__result dd { color:var(--rose-dark);font-weight:800 }
+    .product-lines { padding:0 0 4px }
+    .sales-line { padding:13px 14px;border-bottom:1px solid var(--line) }
+    .sales-line:last-child { border-bottom:0 }
+    .sales-line__identity { display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px;color:inherit;text-decoration:none }
+    a.sales-line__identity:hover strong { color:var(--rose-dark);text-decoration:underline }
+    .sales-line__photo { width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover }
+    .sales-line__photo--empty { display:grid;place-items:center;color:var(--muted);font-size:20px }
+    .sales-line__copy { display:flex;min-width:0;flex-direction:column }
+    .sales-line__copy small { color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase }
+    .sales-line__copy strong { overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap }
+    .sales-line__copy>span { overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap }
+    .line-facts { display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden }
+    .line-facts>span,.line-facts>button { display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2);border:0;font:inherit;text-align:left;color:inherit }
+    .line-facts>button { cursor:pointer }
+    .line-facts>button strong { display:flex;align-items:center;gap:3px }
+    .line-facts>button i { margin-left:auto;color:var(--muted);font-size:13px;font-style:normal;line-height:1 }
+    .line-facts small { color:var(--muted);font-size:8.5px;text-transform:uppercase }
+    .line-facts strong { overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap }
+    .line-facts__ok strong { color:var(--ok) }
+    .line-facts__warn strong { color:var(--warn) }
+    .line-breakdown-toggle { display:flex;width:100%;min-height:48px;align-items:center;gap:8px;margin-top:9px;padding:7px 9px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer }
+    .line-breakdown-toggle>span:first-child { display:flex;min-width:0;flex:1;flex-direction:column }
+    .line-breakdown-toggle small { color:var(--muted);font-size:9px }
+    .line-breakdown-toggle strong { font-size:11px }
+    .line-breakdown-toggle__total { color:var(--rose);font-size:12px;font-weight:760;font-variant-numeric:tabular-nums }
+    .line-breakdown-toggle svg { flex:none;color:var(--muted);transition:transform .18s }
+    .line-breakdown-toggle svg.chevron-open { transform:rotate(180deg) }
+    .line-breakdown { margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease }
+    .stat-row { display:flex;align-items:baseline;justify-content:space-between;gap:12px }
+    .line-breakdown .stat-row { padding:4px 0;font-size:11.5px }
+    .line-breakdown .stat-row>span:first-child { color:var(--ink-2) }
+    .line-breakdown__result { border-top:1px solid var(--line);font-weight:760 }
+    .line-breakdown__result>span { color:var(--ok)!important }
+    .line-breakdown__result--negative>span { color:var(--danger)!important }
     .negative { color:var(--danger)!important }
     .products-empty { padding:36px 18px;text-align:center;color:var(--muted) }.products-empty>span { display:block;font-size:32px;opacity:.55 }.products-empty strong { display:block;margin-top:6px;color:var(--ink-2);font-size:13px }.products-empty p { margin:4px 0 0;font-size:11.5px }
-    .detail-grid { margin:0;padding:5px 14px 10px }.detail-grid>div { display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);align-items:baseline;gap:12px;padding:9px 0;border-bottom:1px solid var(--line) }.detail-grid>div:last-child { border:0 }
-    .detail-grid dt { color:var(--muted);font-size:11px }.detail-grid dd { min-width:0;margin:0;color:var(--ink-2);font-size:12px;font-weight:650;overflow-wrap:anywhere;text-align:right }.detail-grid .text-value { white-space:pre-line;line-height:1.5 }.detail-grid__internal { margin-inline:-6px;padding-inline:6px!important;border-radius:9px;background:var(--rose-soft) }
+    .details-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line) }
+    .detail-item { display:flex;min-width:0;flex-direction:column;padding:12px 14px;background:var(--surface) }
+    .detail-item>span { color:var(--muted);font-size:9.5px;text-transform:uppercase }
+    .detail-item strong { overflow-wrap:anywhere;font-size:12.5px }
+    .details-grid>.detail-item:last-child:nth-child(odd) { grid-column:1/-1 }
+    .delivery-sheet { display:grid;gap:12px }
+    .delivery-sheet p { margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.55 }
+    .delivery-sheet__facts { margin:0;display:grid;gap:1px;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden }
+    .delivery-sheet__facts>div { display:flex;justify-content:space-between;gap:12px;padding:9px 12px;background:var(--surface);font-size:12px }
+    .delivery-sheet__facts dt { color:var(--muted) }
+    .delivery-sheet__facts dd { margin:0;font-weight:680;font-variant-numeric:tabular-nums }
     .timeline { padding:4px 14px 14px }.timeline__event { position:relative;display:grid;grid-template-columns:13px minmax(0,1fr);gap:9px;padding:9px 0 }.timeline__event:not(:last-child)::before { position:absolute;top:22px;bottom:-8px;left:5px;width:1px;background:var(--line);content:'' }
     .timeline__dot { position:relative;z-index:1;width:11px;height:11px;margin-top:3px;border:3px solid var(--surface);border-radius:50%;background:var(--rose);box-shadow:0 0 0 1px var(--rose) }.timeline__event--customer .timeline__dot { background:var(--gold);box-shadow:0 0 0 1px var(--gold) }
+    .product-line__row { display:flex;width:100%;gap:10px;align-items:center;padding:10px 2px;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer }
+    .product-line__row:hover { background:var(--surface-2) }
+    .product-line__photo { width:42px;height:42px;flex:none;display:grid;place-items:center;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);overflow:hidden;color:var(--muted-2) }
+    .product-line__photo img { width:100%;height:100%;object-fit:cover }
+    .product-line__copy { flex:1;min-width:0;display:grid }
+    .product-line__copy h3 { overflow:hidden;font-size:13px;font-weight:650;text-overflow:ellipsis;white-space:nowrap }
+    .product-line__copy small { color:var(--muted);font-size:11px;display:flex;align-items:center;gap:5px }
+    .delivery-dot { width:7px;height:7px;flex:none;border-radius:50%;background:var(--warn) }
+    .delivery-dot--ok { background:var(--ok) }
+    .product-line__amount { flex:none;display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:750 }
+    .product-line__chev { width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);transition:transform .15s ease }
+    .product-line--open .product-line__chev { transform:rotate(-135deg) }
+    .product-line__detail { padding:2px 2px 10px 54px }
+    .line-detail { margin:0;padding:0;display:grid;gap:3px }
+    .line-detail div { display:flex;justify-content:space-between;gap:10px;font-size:12px }
+    .line-detail dt { color:var(--muted) }
+    .line-detail dd { margin:0;font-weight:650 }
+    .line-detail__profit { padding-top:5px;border-top:1px solid var(--line);font-weight:750 }
+    .line-detail__profit dd { color:var(--ok) }
+    .line-detail__profit dd.negative { color:var(--danger) }
+    .product-line__detail .linklike { display:inline-block;margin-top:8px;font-size:12px }
+    .hero-details { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px }
+    @media (min-width:680px) { .hero-details { grid-template-columns:repeat(4,minmax(0,1fr)) } }
+    .hero-details>* { display:grid;gap:1px;padding:8px 11px;border-radius:11px;background:rgb(255 255 255/.08);color:inherit;text-decoration:none;align-content:center }
+    .hero-details a:active { background:rgb(255 255 255/.16) }
+    @media(max-width:679px) { .hero-details__pay small { display:none } }
+    .hero-details small { color:rgb(255 255 255/.6);font-size:9px;font-weight:750;letter-spacing:.06em;text-transform:uppercase }
+    .hero-details b { color:#fff;font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    .hero-stepper { margin-top:10px;padding:9px 12px;border-radius:13px;background:rgb(255 255 255/.08);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none }
+    .hero-stepper::-webkit-scrollbar { display:none }
+    .hero-stepper .stepper__dot { width:19px;height:19px;background:transparent;border-color:rgb(255 255 255/.32);color:rgb(255 255 255/.55);font-size:9.5px }
+    .hero-stepper .stepper__label { color:rgb(255 255 255/.5);font-size:10.5px;white-space:nowrap }
+    .hero-stepper .stepper__step--done .stepper__dot,.hero-stepper .stepper__step--now .stepper__dot { background:#fff;border-color:#fff;color:var(--rose-dark) }
+    .hero-stepper .stepper__step--done .stepper__label,.hero-stepper .stepper__step--now .stepper__label { color:#fff }
+    .hero-stepper .stepper__step--now .stepper__label { font-weight:700 }
+    .hero-stepper .stepper__line { background:rgb(255 255 255/.18) }
+    .hero-stepper .stepper__line--done { background:rgb(255 255 255/.75) }
+    .hero-stepper__step--danger .stepper__dot { background:#ffb3aa!important;border-color:#ffb3aa!important;color:#5c150d!important }
+    .hero-stepper__step--danger .stepper__label { color:#ffb3aa!important }
+    .hero-stepper__step--gold .stepper__dot { background:#ffd57a!important;border-color:#ffd57a!important;color:#5f4200!important }
+    .hero-stepper__step--gold .stepper__label { color:#ffd57a!important }
+    .hero-stepper__step--muted .stepper__dot { background:rgb(255 255 255/.25)!important;border-color:transparent!important;color:#fff!important }
+
     .timeline strong { display:block;font-size:11.5px }.timeline p { margin:2px 0 0;color:var(--muted);font-size:9.5px }.timeline small { display:block;margin-top:4px;color:var(--ink-2);font-size:10.5px;line-height:1.45 }.empty-history { margin:12px 0 0;color:var(--muted);font-size:11.5px }
   `, `
     .totals-card { padding:15px }.totals-card header { margin-bottom:7px }.totals-list { margin:0 }.totals-list>div { display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line) }.totals-list dt { color:var(--muted);font-size:11px }.totals-list dd { margin:0;font-size:12px;font-weight:680;font-variant-numeric:tabular-nums;white-space:nowrap }
@@ -378,9 +501,9 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .manage-actions { display:grid;gap:7px }.manage-actions .btn { margin:0 }.link-explainer { margin:1px 3px 0;color:var(--muted);font-size:9.5px;line-height:1.4;text-align:center }
     .sales-side { min-width:0 }.load-error { max-width:520px;margin:28px auto!important;padding:34px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:center;box-shadow:var(--sh-1) }.load-error>span { display:grid;width:46px;height:46px;margin:0 auto 11px;place-items:center;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:800 }.load-error h1 { font-size:17px }.load-error p { margin:5px 0 15px;color:var(--muted);font-size:12px }.loading-grid { display:grid;gap:12px;margin-top:12px }
     .vat-detail__short { display:none }
-    @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.sales-hero { padding:15px }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.product-line { grid-template-columns:46px minmax(0,1fr) }.product-line__photo { width:46px;height:46px }.product-line__amount { grid-column:2;display:flex;align-items:baseline;justify-content:space-between;text-align:left }.product-line__amount span { display:inline }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em } }
-    @media(min-width: 680px) { .sales-hero { padding:22px }.hero-facts { max-width:700px }.revision-alert { grid-template-columns:auto minmax(0,1fr) auto;align-items:center }.revision-alert .btn { grid-column:auto }.product-line { grid-template-columns:60px minmax(0,1fr) 120px;padding:13px }.product-line__photo { width:60px;height:60px }.detail-grid { display:grid;grid-template-columns:1fr 1fr;gap:0 24px }.detail-grid__wide { grid-column:1/-1 }.loading-grid { grid-template-columns:1fr 1fr } }
-    @media(min-width:680px) { .sales-layout { grid-template-columns:minmax(0,1fr) minmax(250px,310px);align-items:start }.sales-side { position:sticky;top:78px }.sales-main { grid-template-columns:1fr 1fr }.products-card,.history-card { grid-column:1/-1 }.detail-grid { grid-template-columns:1fr }.sales-hero__top { align-items:center }.sales-hero h1 { max-width:700px }.sales-side .btn { min-height:46px } }
+    @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.sales-hero { padding:15px }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em } }
+    @media(min-width: 680px) { .sales-hero { padding:22px }.hero-facts { max-width:700px }.revision-alert { grid-template-columns:auto minmax(0,1fr) auto;align-items:center }.revision-alert .btn { grid-column:auto }.sales-line { padding:15px 18px }.sales-line__identity { grid-template-columns:52px minmax(0,1fr) }.sales-line__photo { width:52px;height:52px }.loading-grid { grid-template-columns:1fr 1fr } }
+    @media(min-width:680px) { .sales-layout { grid-template-columns:minmax(0,1fr) minmax(250px,310px);align-items:start }.sales-main { grid-column:1;grid-row:1 }.sales-side { grid-column:2;grid-row:1/3;position:sticky;top:78px }.history-card { grid-column:1;grid-row:2 }.details-grid { grid-template-columns:repeat(3,1fr) }.details-grid>.detail-item:last-child:nth-child(odd) { grid-column:auto }.sales-hero__top { align-items:center }.sales-hero h1 { max-width:700px }.sales-side .btn { min-height:46px } }
   `],
 })
 export class SalesView {
@@ -393,9 +516,10 @@ export class SalesView {
   readonly countries = signal<Country[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly history = signal<QuoteEvent[]>([]);
+  readonly desktop = inject(DesktopViewport);
+
   readonly portalLink = signal<CustomerPortalLink | null>(null);
   readonly profitMode = signal<'UNIT' | 'LINE'>('UNIT');
-  readonly expandedProfitLines = signal<ReadonlySet<number>>(new Set());
   readonly loading = signal(true);
   readonly loadError = signal('');
   readonly downloading = signal(false);
@@ -433,7 +557,7 @@ export class SalesView {
     this.loadError.set('');
     this.view.set(null);
     this.portalLink.set(null);
-    this.expandedProfitLines.set(new Set());
+    this.openLine.set(null);
     try {
       const [view, customers, countries, revisions, history, portalLink] = await Promise.all([
         this.sales.order(orderId),
@@ -467,6 +591,13 @@ export class SalesView {
 
   countryName(): string {
     return this.country()?.name || this.view()?.order.countryCode || 'Geen leverland';
+  }
+
+  /** "50% voorschot / 50% bij levering" reads as "50/50" on a phone tile. */
+  paymentShort(): string {
+    const label = this.paymentTerms();
+    const parts = label.match(/\d+(?=\s*%)/g);
+    return parts && parts.length > 1 ? parts.join('/') : label;
   }
 
   paymentTerms(): string {
@@ -505,6 +636,16 @@ export class SalesView {
     return 'Volgens afspraak';
   }
 
+  /** Fact-cell version of deliveryText: always a couple of words. */
+  deliveryShort(line: PricedLine, data: SalesOrderView): string {
+    if (line.deliveryWeek) return new WeekNlPipe().transform(line.deliveryWeek, 'short');
+    if ((line.shortfall ?? 0) > 0) return `${new NumPipe().transform(line.shortfall!)} tekort`;
+    if (data.order.deliveryTerms === 'TE_BEPALEN') return 'Te bepalen';
+    if (!line.inventoryKnown) return 'Onbevestigd';
+    if (line.inStock) return 'Op voorraad';
+    return 'Volgens afspraak';
+  }
+
   deliveryState(data: SalesOrderView): string {
     switch (data.order.deliveryTerms) {
       case 'TE_BEPALEN': return 'Nog te bepalen';
@@ -535,17 +676,48 @@ export class SalesView {
     return `${value >= 0 ? '+' : '−'} ${formatted}`;
   }
 
-  profitExpanded(index: number): boolean {
-    return this.expandedProfitLines().has(index);
+  profitPill(line: PricedLine): string {
+    const value = this.profitAmount(line);
+    return `${value < 0 ? '−' : '+'} ${new EurPipe().transform(Math.abs(value), 2)}`;
   }
 
-  toggleProfit(index: number): void {
-    this.expandedProfitLines.update((current) => {
-      const next = new Set(current);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
+  profitDiscount(line: PricedLine): number {
+    return this.profitMode() === 'UNIT' && line.quantity > 0
+      ? line.discountAmount / line.quantity
+      : line.discountAmount;
+  }
+
+  readonly openLine = signal<number | null>(null);
+  readonly deliveryInfo = signal<PricedLine | null>(null);
+
+  /** The inkoop stepper, retold for a quote: three fixed stops, one outcome. */
+  quoteJourney(status: QuoteStatus): {
+    label: string; mark: string; state: 'done' | 'now' | 'todo';
+    kind?: 'danger' | 'gold' | 'muted';
+  }[] {
+    const reached: Record<QuoteStatus, number> = {
+      CONCEPT: 0, VERZONDEN: 1, BEKEKEN: 2,
+      WIJZIGING_GEVRAAGD: 3, GEACCEPTEERD: 3, AFGEWEZEN: 3, VERLOPEN: 3,
+    };
+    const outcome = status === 'AFGEWEZEN' ? { label: 'Afgewezen', mark: '✕', kind: 'danger' as const }
+      : status === 'WIJZIGING_GEVRAAGD' ? { label: 'Wijziging', mark: '!', kind: 'gold' as const }
+      : status === 'VERLOPEN' ? { label: 'Verlopen', mark: '–', kind: 'muted' as const }
+      : { label: 'Geaccepteerd', mark: '✓', kind: undefined };
+    const steps: { label: string; mark: string; kind?: 'danger' | 'gold' | 'muted' }[] = [
+      { label: 'Concept', mark: '✓' }, { label: 'Verzonden', mark: '✓' },
+      { label: 'Bekeken', mark: '✓' }, outcome,
+    ];
+    const now = reached[status];
+    return steps.map((step, index) => ({
+      label: step.label,
+      mark: index < now ? '✓' : index === now ? step.mark : `${index + 1}`,
+      state: index < now ? 'done' as const : index === now ? 'now' as const : 'todo' as const,
+      kind: index === now ? step.kind : undefined,
+    }));
+  }
+  linePanelId(productId: number): string { return `sales-line-breakdown-${productId}`; }
+  toggleLine(productId: number): void {
+    this.openLine.update((current) => (current === productId ? null : productId));
   }
 
   profitAmount(line: PricedLine): number {

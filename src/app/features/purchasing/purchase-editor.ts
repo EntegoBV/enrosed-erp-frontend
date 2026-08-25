@@ -68,7 +68,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="true"
                        (titleChange)="patch({ number: $event })">
-        <button class="btn btn--sm" type="button" (click)="downloadPdf()"
+        <button class="btn btn--sm pdf-header-button" type="button" (click)="downloadPdf()"
                 [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
           PDF
         </button>
@@ -1346,6 +1346,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     }
   `,
   styles: [`
+    @media(max-width:679px) { .pdf-header-button { display:none } }
     :host{display:block;min-width:0}.po-page{max-width:1180px}.po-notice{margin-bottom:12px}
     .po-overview{position:relative;margin-bottom:14px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
     .po-overview:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--rose)}
