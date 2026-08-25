@@ -17,11 +17,11 @@
   --surface-2: #fcfaf8;
 
   /* The accent colour, blue unless another palette is chosen under Instellingen. */
-  --rose: #1f5e9e;
-  --rose-dark: #154577;
-  --rose-mid: #4a86c4;
-  --rose-soft: #e8f0f9;
-  --rose-line: #c9dcef;
+  --rose: #5d4037;
+  --rose-dark: #3e2b25;
+  --rose-mid: #8d6e63;
+  --rose-soft: #f3edea;
+  --rose-line: #e0d3ce;
   /* Backwards-compatible semantic alias used by newer shared components. */
   --accent: var(--rose);
 
@@ -86,6 +86,9 @@ button { font: inherit; color: inherit; }
 input, select, textarea { font: inherit; color: inherit; }
 /* The other accent palettes, chosen under Instellingen (see Theme). The
    class sits on <html>, so overlays outside the component tree follow. */
+.theme-blue {
+  --rose: #1f5e9e; --rose-dark: #154577; --rose-mid: #4a86c4; --rose-soft: #e8f0f9; --rose-line: #c9dcef;
+}
 .theme-green {
   --rose: #1f7a4d; --rose-dark: #145c39; --rose-mid: #3f9e6d; --rose-soft: #e9f5ee; --rose-line: #cbe6d7;
 }
@@ -94,6 +97,9 @@ input, select, textarea { font: inherit; color: inherit; }
 }
 .theme-terracotta {
   --rose: #b8552e; --rose-dark: #8f3f20; --rose-mid: #d07a57; --rose-soft: #fbeee8; --rose-line: #f0d3c6;
+}
+.theme-brown {
+  --rose: #5d4037; --rose-dark: #3e2b25; --rose-mid: #8d6e63; --rose-soft: #f3edea; --rose-line: #e0d3ce;
 }
 .theme-rose {
   --rose: #b01f3f; --rose-dark: #8a1730; --rose-mid: #d14a67; --rose-soft: #fbecef; --rose-line: #f0d2d9;
@@ -1807,10 +1813,18 @@ a.kpi-list__row:hover { background: var(--surface-2); }
 .margin-bar__win { background: var(--ok); }
 
 
-.pin-line { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 9px 13px;
-  border: 1px solid var(--rose-line); border-radius: var(--r-sm);
-  background: linear-gradient(90deg, var(--rose-soft), var(--surface)); }
-.pin-line__icon { flex: none; font-size: 14px; }
+/* The pinned appointment hangs from the app bar itself: it starts in the
+   bar's own white and only its lower edge warms into the theme colour,
+   one piece with the chrome instead of a loose card. */
+.pin-line { display: flex; align-items: center; gap: 10px; margin: -14px -12px 12px; padding: 13px 16px 11px;
+  border: 0; border-radius: 0 0 16px 16px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 80%) 0%, var(--surface) 55%, var(--rose-soft) 100%); }
+@media (min-width: 680px) and (max-width: 1023.98px) { .pin-line { margin: -18px -20px 12px; } }
+@media (min-width: 1024px) { .pin-line { margin: -22px -26px 14px; } }
+.pin-line__icon { display: grid; flex: none; width: 26px; height: 26px; place-items: center;
+  border-radius: 50%; background: var(--rose-soft); color: var(--rose-dark); }
+.pin-line__icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .pin-line__what { display: flex; min-width: 0; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .pin-line__what b { font-size: 13px; }
 .pin-line__what small { color: var(--ink-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
@@ -2619,3 +2633,9 @@ app-product-publication-editor .conflict-list span { color: var(--muted); }
    breathing room as cards. */
 app-content-translation-workspace, app-website-sync-status { display: block; margin-top: 12px; }
 app-content-translation-workspace .card + * { margin-top: 12px; }
+
+/* Dashboard: the fold under a list that shows only its first lines. */
+.list-more {
+  width: 100%; padding: 11px; border: 0; border-top: 1px solid var(--line); background: none;
+  color: var(--rose-dark); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer;
+}

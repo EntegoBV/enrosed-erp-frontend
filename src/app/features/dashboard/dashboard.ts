@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Skeleton } from '../../shared/skeleton';
 import { Sparkline } from '../../shared/sparkline';
 import { AuthImage } from '../../core/api/auth-image';
@@ -47,7 +48,9 @@ interface FreightHorizon {
       <!-- A pinned appointment rides on top of everything until unpinned. -->
       @for (pin of pinnedItems(); track pin.id) {
         <div class="pin-line">
-          <span class="pin-line__icon" aria-hidden="true">📌</span>
+          <span class="pin-line__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 16.5V21M8.5 4h7l-.9 6.3 3.4 3.2H6l3.4-3.2L8.5 4z"/></svg>
+          </span>
           <span class="pin-line__what">
             <b>{{ pin.title }}</b>
             <small>@if (pin.onDate) { {{ pin.onDate | dateNl }}@if (pin.atTime) { · {{ pin.atTime }} } }
@@ -121,16 +124,21 @@ interface FreightHorizon {
       @if (purchaseActions().length) {
         <div class="section-title">Actie vereist <span class="section-count">{{ actionCount() }}</span></div>
         <div class="card"><div class="list">
-          @for (row of purchaseActions(); track row.order.id) {
+          @for (row of visibleActions(); track row.order.id) {
             <!-- One quiet line per order: the first open point, the rest as a count. -->
             <a class="list-item action-mini" [routerLink]="['/purchasing', row.order.id]">
-              <span class="attention-dot attention-dot--sm" aria-hidden="true">{{ row.attention!.length }}</span>
               <b class="action-mini__order">{{ row.order.alias || row.order.number }}</b>
               <span class="action-mini__what">{{ row.attention![0] }}</span>
               @if (row.attention!.length > 1) { <small class="action-mini__more">+{{ row.attention!.length - 1 }}</small> }
             </a>
           }
-        </div></div>
+        </div>
+        @if (hiddenActionCount() > 0) {
+          <button class="list-more" type="button" (click)="actionsOpen.set(true)">
+            Meer weergeven ({{ hiddenActionCount() }})
+          </button>
+        }
+        </div>
       }
 
       @if (incomingStock().length) {
@@ -477,67 +485,6 @@ interface FreightHorizon {
         }
       </div>
 
-      <div class="section-title">Recente verkooporders</div>
-      <div class="card">
-        <div class="list">
-          @for (row of recentSales().slice(0, 3); track row.order.id) {
-            <a class="list-item" [routerLink]="['/sales', row.order.id]">
-              <div class="list-item__body">
-                <div class="list-item__title">{{ row.order.number }}</div>
-                <div class="list-item__meta">
-                  {{ row.order.orderDate | dateNl }} ·
-                  {{ row.priced.totals.pieces | num }} st ·
-                  @if (row.order.loadMode === 'LOOSE_CARTONS') {
-                    {{ row.priced.totals.cartons | num }}
-                    {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} ·
-                    {{ row.priced.totals.cbm | cbm }}
-                  } @else {
-                    {{ row.priced.totals.palletsManual || row.priced.totals.palletsStrict }}
-                    {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
-                        ? 'pallet' : 'pallets' }}
-                  }
-                </div>
-              </div>
-              <div class="list-item__end">
-                <div class="strong num">{{ row.priced.totals.total | eur: 0 }}</div>
-                <span class="badge" [class]="'badge--' + cls(row.order.status)">
-                  {{ label(row.order.status) }}
-                </span>
-              </div>
-              <span class="list-item__chev">›</span>
-            </a>
-          } @empty {
-            <div class="empty"><div class="empty__title">
-              Nog geen verkooporders</div></div>
-          }
-        </div>
-      </div>
-
-      <div class="section-title">Inkoop</div>
-      <div class="card">
-        <div class="list">
-          @for (row of purchases().slice(0, 3); track row.order.id) {
-            <a class="list-item" [routerLink]="['/purchasing', row.order.id]">
-              <div class="list-item__body">
-                <div class="list-item__title">{{ row.order.alias || row.order.number }}</div>
-                <div class="list-item__meta">
-                  {{ row.order.orderDate | dateNl }} ·
-                  {{ containerLabel(row.order.containerType) }} ·
-                  {{ row.costing.totals.cartons | num }} kartons
-                </div>
-              </div>
-              <div class="list-item__end">
-                <div class="strong num">{{ row.costing.totals.totalEur | eur: 0 }}</div>
-                <div class="tiny muted">{{ purchaseStatusLabel(row.order.status) }}</div>
-              </div>
-              <span class="list-item__chev">›</span>
-            </a>
-          } @empty {
-            <div class="empty"><div class="empty__title">
-              Nog geen inkooporders</div></div>
-          }
-        </div>
-      </div>
     </div>
 
     @if (rateSheet()) {
@@ -812,6 +759,7 @@ interface FreightHorizon {
   `,
 })
 export class Dashboard {
+  readonly desktop = inject(DesktopViewport);
 
   readonly fx = inject(Fx);
 
@@ -1631,6 +1579,16 @@ export class Dashboard {
   readonly expected = signal<ExpectedStock[]>([]);
 
   /** Orders that wait on us: a missing tracking number, an instalment due. */
+  /* The phone shows three action lines; the rest waits behind one
+     button. Desktop has the room and always shows everything. */
+  readonly actionsOpen = signal(false);
+  readonly visibleActions = computed(() => {
+    const rows = this.purchaseActions();
+    return this.actionsOpen() || this.desktop.active() ? rows : rows.slice(0, 3);
+  });
+  readonly hiddenActionCount = computed(() =>
+    this.purchaseActions().length - this.visibleActions().length);
+
   readonly purchaseActions = computed(() =>
     this.allPurchases()
       .filter((row) => (row.attention?.length ?? 0) > 0)

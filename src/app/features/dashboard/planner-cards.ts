@@ -113,9 +113,17 @@ export interface PlannerMilestone {
             </div>
           }
 
-          <!-- Tasks live under the calendar: work with a deadline. Overdue
-               first in red, then by day, loose ones last. -->
-          <h3 class="attach-title">Taken</h3>
+        </div>
+      </div>
+
+      <!-- The notebook next to the planner: work with a deadline. Overdue
+           first in red, then by day, loose ones last. -->
+      <div class="card tasks-card">
+        <div class="card__head"><h2>Taken</h2>
+          <span class="spacer"></span>
+          @if (smartTasks().length) { <small class="tasks-card__count">{{ smartTasks().length }} open</small> }
+        </div>
+        <div class="card__body">
           <form class="task-add" (submit)="addTask(); $event.preventDefault()">
             <input class="input input--sm" placeholder="Nieuwe taak… (dag kiezen kan erna)" enterkeyhint="done"
                    [ngModel]="newTask()" (ngModelChange)="newTask.set($event)" name="task" autocomplete="off" />
@@ -154,7 +162,6 @@ export interface PlannerMilestone {
           }
         </div>
       </div>
-
     </div>
 
     <!-- Looking first, editing on demand: the view is where the work
@@ -345,6 +352,10 @@ export interface PlannerMilestone {
   `,
   styles: `
     .planner-duo { display: grid; gap: 12px; }
+    .tasks-card__count { color: var(--muted); font-size: 11.5px; font-weight: 650; }
+    @media (min-width: 980px) {
+      .planner-duo { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; }
+    }
     .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .cal-head strong { font-size: 13.5px; text-transform: capitalize; }
     .cal-nav { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
@@ -400,7 +411,10 @@ export interface PlannerMilestone {
     .task__remove { width: 26px; height: 26px; flex: none; border: 0; border-radius: 8px; background: transparent;
       color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
     .task__remove:hover { background: var(--danger-soft); color: var(--danger); }
-    .task-list__toggle { padding: 8px 0 0; }
+    .task-list__toggle { display: block; width: 100%; margin-top: 8px; padding: 9px;
+      border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
+      color: var(--muted); font-size: 12px; font-weight: 650; text-align: center; text-decoration: none; }
+    .task-list__toggle:active { background: var(--surface); }
     .cal-empty--row { display: block; border: 0 !important; padding: 12px 0 4px; }
     .pin-toggle { display: flex; align-items: center; gap: 9px; padding: 4px 0; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
     .pin-toggle input { width: 19px; height: 19px; accent-color: var(--rose); flex: none; }

@@ -1,7 +1,7 @@
 import { Injectable, effect, signal } from '@angular/core';
 
 const STORAGE_KEY = 'enrosed.theme';
-const DEFAULT_THEME = 'blue';
+const DEFAULT_THEME = 'brown';
 
 /** One accent palette; the rest of the app's colours stay the same. */
 export interface ThemeOption {
@@ -12,6 +12,7 @@ export interface ThemeOption {
 }
 
 export const THEMES: readonly ThemeOption[] = [
+  { key: 'brown', label: 'Bruin', swatch: '#5d4037' },
   { key: 'blue', label: 'Blauw', swatch: '#1f5e9e' },
   { key: 'green', label: 'Groen', swatch: '#1f7a4d' },
   { key: 'plum', label: 'Paars', swatch: '#6f3c8f' },

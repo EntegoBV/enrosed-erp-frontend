@@ -271,11 +271,13 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 <div class="tile"><span>Extra kost per stuk</span><b class="num">
                   @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
                 </b><small>bv. display of giftbox</small></div>
-                <button class="tile tile--emphasis" type="button" (click)="openPriceInfo(product)">
+                <button class="tile tile--dark" type="button" (click)="openPriceInfo(product)">
+                  <i class="tile-chev" aria-hidden="true"></i>
                   <span>Kostprijs incl. rechten</span><b class="num">
                   @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
                 </b><small>geland: mét transport en invoer</small></button>
-                <button class="tile tile--emphasis" type="button" (click)="openPriceInfo(product)">
+                <button class="tile tile--dark" type="button" (click)="openPriceInfo(product)">
+                  <i class="tile-chev" aria-hidden="true"></i>
                   <span>Catalogusprijs</span><b class="num">
                   @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
                 </b><small>{{ hasFixedSalesPrice(product)
@@ -289,7 +291,8 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 } @else {
                   <div class="tile"><span>Bron kostprijs</span><b>{{ product.landedCostSource || '—' }}</b></div>
                 }
-                <button class="tile tile--result" type="button" (click)="openPriceInfo(product)">
+                <button class="tile tile--dark tile--dark-result" type="button" (click)="openPriceInfo(product)">
+                  <i class="tile-chev" aria-hidden="true"></i>
                   <span>Marge per stuk</span>
                   @if (margin(); as value) {
                     <b class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }} · {{ value.pct }} %</b>
@@ -691,13 +694,21 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     a.tile:hover > b { text-decoration: underline dotted; }
     button.tile:hover > b { text-decoration: underline dotted; }
     button.tile:active { opacity: .75; }
-    .tile--emphasis { background: var(--rose-soft); }
-    .tile--emphasis > b { font-weight: 800; }
+    /* The buying-and-selling money tiles wear the hero's brown: the same
+       surface as the Catalogusprijs above, chevron ring included. */
+    .tile--dark { position: relative; padding-right: 34px; background: linear-gradient(145deg, #27211f, #151210); }
+    .tile--dark > span { color: rgb(255 255 255 / 55%); }
+    .tile--dark > b { color: #fff; font-weight: 800; }
+    .tile--dark > small { color: rgb(255 255 255 / 50%); }
+    .tile-chev { position: absolute; top: 9px; right: 9px; display: grid; place-items: center;
+      width: 20px; height: 20px; border-radius: 50%; background: rgb(255 255 255 / 14%); }
+    .tile-chev::before { content: ''; width: 6px; height: 6px; margin-left: -2px;
+      border-right: 1.6px solid #fff; border-bottom: 1.6px solid #fff; transform: rotate(-45deg); }
     .tile > small { margin-top: 1px; color: var(--muted); font-size: 9.5px; line-height: 1.35; }
     .tile .muted { font-size: 10px; font-weight: 500; }
-    .tile--result { background: var(--ok-soft); align-items: center; text-align: center; }
-    .tile--result > b { color: var(--ok); }
-    .tile--result > b.warn-text { color: var(--danger); }
+    .tile--dark-result { align-items: center; text-align: center; }
+    .tile--dark-result > b { color: #7ddfa6; }
+    .tile--dark-result > b.warn-text { color: #ff9d92; }
     .tiles-kicker { padding: 11px 13px 4px; border-top: 1px solid var(--line); background: var(--surface);
       color: var(--warn); font-size: 9px; font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
     .tiles-kicker--first { border-top: 0; }
