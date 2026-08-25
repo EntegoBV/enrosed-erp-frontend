@@ -10,12 +10,13 @@ export type MarkupMode = 'PRODUCT' | 'ORDER';
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
-export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED';
+export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER';
+export type DocumentType = 'OFFERTE' | 'FACTUUR';
 export type PublicationStatus = 'DRAFT' | 'READY' | 'PUBLISHED';
 
 export type QuoteStatus =
   | 'CONCEPT' | 'VERZONDEN' | 'BEKEKEN' | 'WIJZIGING_GEVRAAGD'
-  | 'GEACCEPTEERD' | 'AFGEWEZEN' | 'VERLOPEN';
+  | 'GEACCEPTEERD' | 'AFGEWEZEN' | 'VERLOPEN' | 'BETAALD';
 
 export type RevisionStatus = 'IN_AFWACHTING' | 'GOEDGEKEURD' | 'AFGEWEZEN' | 'INGETROKKEN';
 
@@ -884,6 +885,15 @@ export interface SalesOrder {
   freightPricingStrategy?: FreightPricingStrategy | null;
   /** Used only with PER_CBM; the inactive strategy keeps no shadow value. */
   freightRatePerCbmEur?: number | null;
+  /** The shipping organisation whose staffel prices the freight (CARRIER). */
+  freightCarrierId?: number | null;
+  /** Internal top-up on the staffel; the customer sees one freight total. */
+  freightCarrierExtraEur?: number | null;
+  /** Quote or invoice; older orders without the field are quotes. */
+  docType?: DocumentType | null;
+  invoiceDueDate?: string | null;
+  paidAt?: string | null;
+  sourceQuoteId?: number | null;
   lines: SalesOrderLine[];
   /** Hand-built pallet layout; empty means the calculated stacking applies. */
   pallets: OrderPallet[];
@@ -1130,4 +1140,60 @@ export interface PortalQuote {
   language: LanguageCode;
   /** The translated texts for this portal, from the server. */
   text: Record<string, string>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Verzendorganisaties: staffels per land, zones per postcode.        */
+
+export interface CarrierZone {
+  id?: number | null;
+  name: string;
+  /** Comma-separated prefixes/ranges: "10-15,18-44" or "AB,SW". */
+  postcodes: string;
+}
+
+export interface CarrierTier {
+  id?: number | null;
+  epMax: number | null;
+  bpMax: number | null;
+  ldmMax: number | null;
+  kgMax: number | null;
+  /** Aligned with the lane's zones. */
+  prices: (number | null)[];
+}
+
+export interface CarrierLane {
+  id?: number | null;
+  countryCode: string;
+  surchargePct: number | null;
+  surchargeFixedEur: number | null;
+  surchargeNote: string | null;
+  zones: CarrierZone[];
+  tiers: CarrierTier[];
+}
+
+export interface Carrier {
+  id: number | null;
+  name: string;
+  fullName: string | null;
+  active: boolean;
+  dieselSurchargePct: number | null;
+  validUntil: string | null;
+  notes: string | null;
+  lanes: CarrierLane[];
+}
+
+/** One shipment priced against a carrier's staffel. */
+export interface CarrierShipQuote {
+  baseEur: number;
+  dieselPct: number;
+  dieselEur: number;
+  surchargePct: number;
+  surchargePctEur: number;
+  surchargeFixedEur: number;
+  totalEur: number;
+  zoneName: string;
+  tierLabel: string;
+  postcodeMatched: boolean;
+  surchargeNote: string | null;
 }

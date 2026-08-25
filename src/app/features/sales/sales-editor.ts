@@ -7,7 +7,7 @@ import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
-  Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
+  Carrier, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
   MarkupMode, Product, QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -62,8 +62,8 @@ import {
           @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
                     [disabled]="busy()" (click)="reopen()">Heropen</button>
-          } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN'
-                     || data.order.status === 'BEKEKEN') {
+          } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
+                     || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
                     [disabled]="sending() || sendIssues().length > 0"
                     [attr.title]="sendIssues()[0] || null"
@@ -81,7 +81,9 @@ import {
         <section class="quote-hero" aria-labelledby="quote-overview-title">
           <div class="quote-hero__top">
             <div>
-              <div class="quote-hero__eyebrow" id="quote-overview-title">Verkoopofferte</div>
+              <div class="quote-hero__eyebrow" id="quote-overview-title">
+                {{ isInvoiceDoc() ? 'Factuur' : 'Verkoopofferte' }}
+              </div>
               <div class="quote-hero__customer">{{ customerName() }}</div>
               <div class="quote-hero__meta">
                 {{ data.order.countryCode || 'Nog geen leverland' }}
@@ -122,7 +124,7 @@ import {
               }
             </div>
             <div class="hero-fact hero-fact--total">
-              <span class="hero-fact__label">Offertetotaal</span>
+              <span class="hero-fact__label">{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
               <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
               <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</span>
             </div>
@@ -234,8 +236,9 @@ import {
         <div class="workflow-layout">
         <nav class="workflow-nav" aria-label="Onderdelen van de offerte">
           @for (item of workflowSections; track item.id; let number = $index) {
-            <!-- On the phone, Status lives inside the Controle step. -->
-            @if (desktop.active() || item.id !== 'quote-status') {
+            <!-- On the phone, Status lives inside the Controle step; an
+                 invoice has no send step at all. -->
+            @if (item.id !== 'quote-status' ? true : (desktop.active() && !isInvoiceDoc())) {
             <button type="button"
                     [class.workflow-nav__active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
                     [attr.aria-current]="activeSection() === item.id ? 'step' : null"
@@ -323,11 +326,20 @@ import {
                 <app-date-field fieldId="so-date" [value]="data.order.orderDate"
                                 (valueChange)="patch({ orderDate: $event })" />
               </div>
-              <div class="field">
-                <label for="so-valid">Geldig tot</label>
-                <app-date-field fieldId="so-valid" [value]="data.order.validUntil"
-                                (valueChange)="patch({ validUntil: $event })" />
-              </div>
+              @if (isInvoiceDoc()) {
+                <div class="field">
+                  <label for="so-due">Vervaldatum</label>
+                  <app-date-field fieldId="so-due" [value]="data.order.invoiceDueDate ?? ''"
+                                  (valueChange)="patch({ invoiceDueDate: $event })" />
+                  <span class="hint">Tot wanneer de klant heeft om te betalen.</span>
+                </div>
+              } @else {
+                <div class="field">
+                  <label for="so-valid">Geldig tot</label>
+                  <app-date-field fieldId="so-valid" [value]="data.order.validUntil"
+                                  (valueChange)="patch({ validUntil: $event })" />
+                </div>
+              }
             </div>
 
             <details class="progressive-panel" [open]="!!data.order.notes || !!data.order.internalNotes">
@@ -710,10 +722,27 @@ import {
                       @if (!isLooseCartons(data)) {
                         <option value="COUNTRY_PALLET">Landentarief per pallet</option>
                       }
-                      <option value="PER_CBM">Tarief per m³</option>
+                      @if (!isLooseCartons(data) && carriers().length) {
+                        <option value="CARRIER">Verzendorganisatie (staffel)</option>
+                      }
+                      @if (effectiveFreightStrategy(data) === 'PER_CBM') {
+                        <option value="PER_CBM">Tarief per m³</option>
+                      }
                       <option value="FIXED">Vast bedrag</option>
                     </select>
                   </div>
+                  @if (effectiveFreightStrategy(data) === 'CARRIER') {
+                    <div class="field">
+                      <label for="so-freight-carrier">Verzendorganisatie</label>
+                      <select class="select" id="so-freight-carrier"
+                              [value]="data.order.freightCarrierId ?? ''"
+                              (change)="setLockedCarrier($any($event.target).value)">
+                        @for (carrier of carriers(); track carrier.id) {
+                          <option [value]="carrier.id">{{ carrier.name }}</option>
+                        }
+                      </select>
+                    </div>
+                  }
                   @if (effectiveFreightStrategy(data) === 'PER_CBM') {
                     <div class="field">
                       <label for="so-freight-cbm">Tarief per m³</label>
@@ -870,6 +899,7 @@ import {
         </section>
 
         <!-- ==================================== sending the quote -->
+        @if (!isInvoiceDoc()) {
         <section class="card send-card" id="quote-status" aria-labelledby="send-title">
           <div class="send-card__head">
             <div class="send-card__icon" [class.send-card__icon--ok]="!sendIssues().length"
@@ -887,14 +917,33 @@ import {
           </div>
           <div class="send-card__body">
             @if (sendIssues().length) {
-              <ul class="send-issues">
-                @for (issue of sendIssues(); track issue) { <li>{{ issue }}</li> }
+              <!-- Every open point is its own row: a checklist to tick off,
+                   not a paragraph to decipher. -->
+              <ul class="send-checklist">
+                @for (issue of sendIssues(); track issue) {
+                  <li>
+                    <button type="button" (click)="fixIssue(issue)">
+                      <i aria-hidden="true">!</i><span>{{ issue }}</span>
+                      <b aria-hidden="true">›</b>
+                    </button>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <ul class="send-checklist">
+                <li class="send-checklist__ok"><i aria-hidden="true">✓</i>
+                  <span>Klant, producten, pallets en minimumorder zijn in orde.</span></li>
               </ul>
             }
+            <!-- One quiet row: the destructive act far left, the way
+                 forward far right, nothing shouting. -->
             <div class="status-actions">
-              <button class="btn" type="button" (click)="openCustomerPreview()">
-                Klantweergave openen
-              </button>
+              @if (canDelete()) {
+                <button class="delete-draft" type="button" (click)="remove()">
+                  Dit concept verwijderen
+                </button>
+              }
+              <span class="status-actions__spacer" aria-hidden="true"></span>
               @if (customerPortalLink(); as portalLink) {
                 @if (portalLink.available && portalLink.url) {
                   <button class="btn" type="button" (click)="copyLink()">
@@ -902,14 +951,15 @@ import {
                   </button>
                 }
               }
-            </div>
-            @if (canDelete()) {
-              <button class="delete-draft" type="button" (click)="remove()">
-                Dit concept verwijderen
+              <button class="btn btn--primary" type="button"
+                      [disabled]="sending() || sendIssues().length > 0"
+                      (click)="openSend()">
+                {{ view()?.order?.sentAt ? 'Opnieuw versturen' : 'Versturen' }}
               </button>
-            }
+            </div>
           </div>
         </section>
+        }
         }
 
         <!-- Phone: one step at a time; the button walks you forward. -->
@@ -949,8 +999,19 @@ import {
       }
 
       @if (pdfSheet()) {
-        <app-sheet title="Offerte als PDF" (closed)="pdfSheet.set(false)">
+        <app-sheet [title]="isInvoiceDoc() ? 'Factuur als PDF' : 'Offerte als PDF'"
+                   (closed)="pdfSheet.set(false)">
           <div body>
+            <div class="field">
+              <label for="pdf-name">Bestandsnaam</label>
+              <div class="input-affix">
+                <input class="input" id="pdf-name" [ngModel]="pdfFilename()"
+                       (ngModelChange)="pdfFilename.set($event)" />
+                <span class="input-affix__suffix">.pdf</span>
+              </div>
+              <span class="hint">Het volgnummer {{ view()?.order?.number }} blijft altijd
+                op het document zelf staan, hoe het bestand ook heet.</span>
+            </div>
             <div class="field">
               <label for="pdf-lang">Taal</label>
               <select class="select" id="pdf-lang" [ngModel]="pdfLanguage()"
@@ -997,6 +1058,8 @@ import {
               <app-shipping-planner
                 [view]="data"
                 [canEdit]="canEdit()"
+                [carriers]="carriers()"
+                [customerPostcode]="customerPostcode()"
                 (patch)="applyShippingPatch($event)"
                 (action)="handlePalletAction($event)"
               />
@@ -1392,10 +1455,26 @@ import {
     .send-card__head h2 { font-size:15px }
     .send-card__head p { color:var(--muted);font-size:11.5px }
     .send-card__body { padding:0 14px 14px }
-    .send-issues { margin:0 0 14px;padding:10px 12px 10px 30px;border-radius:11px;background:var(--warn-soft);color:#7c450b;font-size:12px }
+    .send-checklist { margin:0 0 14px;padding:4px 0;display:grid;gap:7px;list-style:none }
+    .send-checklist li { border:1px solid #f0dcbc;border-radius:11px;background:var(--warn-soft);font-size:12px;color:#7c450b }
+    .send-checklist li > button { display:flex;width:100%;gap:9px;align-items:flex-start;padding:9px 11px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer }
+    .send-checklist li > button:hover span { text-decoration:underline }
+    .send-checklist b { margin-left:auto;align-self:center;color:var(--warn);font-size:14px;font-weight:700 }
+    .send-checklist__ok { display:flex;gap:9px;align-items:flex-start;padding:9px 11px }
+    .send-checklist i { display:grid;place-items:center;width:18px;height:18px;flex:none;margin-top:-1px;border-radius:50%;background:var(--warn);color:#fff;font-size:11px;font-style:normal;font-weight:800 }
+    .send-checklist__ok { border-color:#c6e5d5!important;background:var(--ok-soft)!important;color:var(--ok)!important }
+    .send-checklist__ok i { background:var(--ok) }
     @media(max-width:350px) { .total-highlight { grid-template-columns:1fr } }
-    .status-actions { display:flex;flex-wrap:wrap;gap:8px }
-    .delete-draft { width:100%;margin-top:10px }
+    .status-actions { display:flex;align-items:center;gap:8px }
+    .status-actions__spacer { flex:1 }
+    .status-actions .btn--primary { min-width:150px }
+    .status-actions .delete-draft { min-height:0;padding:6px 2px;color:var(--danger);opacity:.75 }
+    .status-actions .delete-draft:hover { opacity:1;text-decoration:underline }
+    @media(max-width:679px) {
+      .status-actions { flex-direction:column-reverse;align-items:stretch }
+      .status-actions__spacer { display:none }
+      .status-actions .delete-draft { margin:4px auto 0 }
+    }
 
     .sales-state { max-width:760px }
     .loading-hero { height:150px;margin-bottom:12px;border-radius:22px }
@@ -1587,6 +1666,37 @@ export class SalesEditor {
   readonly loadError = signal('');
   readonly referenceError = signal('');
   readonly customers = signal<Customer[]>([]);
+  readonly carriers = signal<Carrier[]>([]);
+
+  readonly isInvoiceDoc = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
+
+  /**
+   * A complaint you can tap: every open point walks straight to the place
+   * where it is solved, instead of leaving the reader to guess.
+   */
+  fixIssue(issue: string): void {
+    const text = issue.toLowerCase();
+    if (text.includes('vracht') || text.includes('pallet') || text.includes('omdo')
+        || text.includes('transport')) {
+      this.palletSheet.set(true);
+      return;
+    }
+    if (text.includes('klant') || text.includes('e-mail') || text.includes('land')) {
+      this.scrollToSection('quote-setup');
+      return;
+    }
+    if (text.includes('product') || text.includes('minimum')) {
+      this.scrollToSection('order-lines');
+      return;
+    }
+    this.scrollToSection('quote-setup');
+  }
+
+  /** Postcode of the order's customer; the staffel resolves its zone with it. */
+  readonly customerPostcode = computed(() => {
+    const id = this.view()?.order.customerId;
+    return this.customers().find((customer) => customer.id === id)?.postalCode ?? null;
+  });
   readonly countries = signal<Country[]>([]);
   readonly products = signal<Product[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
@@ -1609,6 +1719,7 @@ export class SalesEditor {
   readonly historyOpen = signal(false);
   readonly pdfSheet = signal(false);
   readonly pdfLanguage = signal<LanguageCode>('NL');
+  readonly pdfFilename = signal('');
   readonly languages = LANGUAGES;
 
   /** The language belonging to this customer; the pick-list's starting point. */
@@ -1641,12 +1752,14 @@ export class SalesEditor {
   private async loadReference(): Promise<void> {
     this.referenceError.set('');
     try {
-      const [customers, countries, products] = await Promise.all([
+      const [customers, countries, products, carriers] = await Promise.all([
         this.sales.customers(), this.sales.countries(), this.catalog.products(),
+        this.sales.carriers().catch(() => []),
       ]);
       this.customers.set(customers);
       this.countries.set(countries);
       this.products.set(products);
+      this.carriers.set(carriers.filter((carrier) => carrier.active));
     } catch (failure: unknown) {
       this.referenceError.set(messageOf(failure, 'Klanten, landen of producten ontbreken'));
     }
@@ -2185,19 +2298,32 @@ export class SalesEditor {
   setLockedFreightStrategy(strategy: FreightPricingStrategy): void {
     const data = this.view();
     if (!data || !this.canEditTerms()) return;
-    if (strategy === 'COUNTRY_PALLET' && this.isLooseCartons(data)) return;
+    if ((strategy === 'COUNTRY_PALLET' || strategy === 'CARRIER')
+        && this.isLooseCartons(data)) return;
     const manual = strategy === 'FIXED' ? data.order.manualFreightEur : null;
     const rate = strategy === 'PER_CBM' ? data.order.freightRatePerCbmEur ?? null : null;
+    const carrierId = strategy === 'CARRIER'
+      ? data.order.freightCarrierId ?? this.carriers()[0]?.id ?? null
+      : null;
     const incomplete = (strategy === 'FIXED' && manual == null)
-      || (strategy === 'PER_CBM' && !(rate! > 0));
+      || (strategy === 'PER_CBM' && !(rate! > 0))
+      || (strategy === 'CARRIER' && carrierId == null);
     const state = incomplete ? 'TE_BEPALEN' : data.order.freight ?? 'BEREKEND';
-    this.saveFreight(state, manual, strategy, rate);
+    this.saveFreight(state, manual, strategy, rate, carrierId);
+  }
+
+  setLockedCarrier(raw: string): void {
+    const data = this.view();
+    const id = Number(raw);
+    if (!data || !this.canEditTerms() || !Number.isInteger(id) || id <= 0) return;
+    this.saveFreight(data.order.freight ?? 'BEREKEND', null, 'CARRIER', null, id);
   }
 
   private saveFreight(state: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD',
                       manualFreightEur: number | null,
                       freightPricingStrategy: SalesOrder['freightPricingStrategy'],
-                      freightRatePerCbmEur: number | null): void {
+                      freightRatePerCbmEur: number | null,
+                      freightCarrierId: number | null = null): void {
     void (async () => {
       /* The freight endpoint answers with the saved quote: write the draft
          first, or the answer would undo what was typed since. */
@@ -2206,7 +2332,7 @@ export class SalesEditor {
       if (!data) return;
       try {
         this.adopt(await this.sales.updateFreight(data.order.id, state, manualFreightEur,
-          freightPricingStrategy ?? null, freightRatePerCbmEur));
+          freightPricingStrategy ?? null, freightRatePerCbmEur, freightCarrierId));
       } catch (failure: unknown) {
         this.ui.toast(messageOf(failure, 'Vracht opslaan mislukt'), 'err');
       }
@@ -2249,6 +2375,12 @@ export class SalesEditor {
    */
   openPdfSheet(): void {
     this.pdfLanguage.set(this.customerLanguage());
+    const data = this.view();
+    /* Prefilled with number and customer: recognisable in any download
+       folder, and the sequence number stays in the name by default. */
+    this.pdfFilename.set(data
+      ? `${data.order.number} - ${this.customerName() || 'klant'}`.trim()
+      : '');
     this.pdfSheet.set(true);
   }
 
@@ -2267,7 +2399,8 @@ export class SalesEditor {
     const language = this.pdfLanguage();
     try {
       const blob = await this.sales.quotePdf(data.order.id, language);
-      saveBlob(blob, `${data.order.number}-${language.toLowerCase()}.pdf`);
+      const cleaned = this.pdfFilename().trim().replace(/[\\/:*?"<>|]+/g, '-');
+      saveBlob(blob, `${cleaned || data.order.number}.pdf`);
       this.pdfSheet.set(false);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'PDF maken mislukt'), 'err');
@@ -2279,11 +2412,6 @@ export class SalesEditor {
     if (!portalLink?.available || !portalLink.url) return;
     await navigator.clipboard.writeText(portalLink.url);
     this.ui.toast('Klantlink gekopieerd');
-  }
-
-  openCustomerPreview(): void {
-    const orderId = this.view()?.order.id;
-    if (orderId != null) void this.router.navigate(['/sales', orderId, 'customer-preview']);
   }
 
   /* ---------------------------------------------------------- changes */
@@ -2493,6 +2621,10 @@ export class SalesEditor {
       ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
     if (strategy === 'PER_CBM') return 'Tarief per m³';
     if (strategy === 'FIXED') return 'Vast bedrag';
+    if (strategy === 'CARRIER') {
+      return this.carriers().find((carrier) => carrier.id === data.order.freightCarrierId)?.name
+        ?? 'Verzendorganisatie';
+    }
     return 'Landentarief';
   }
 

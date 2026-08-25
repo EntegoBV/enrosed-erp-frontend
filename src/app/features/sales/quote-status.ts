@@ -9,11 +9,13 @@ export const STATUS_LABEL: Record<QuoteStatus, string> = {
   GEACCEPTEERD: 'Geaccepteerd',
   AFGEWEZEN: 'Afgewezen',
   VERLOPEN: 'Verlopen',
+  BETAALD: 'Betaald',
 };
 
 export function statusClass(status: QuoteStatus): string {
   switch (status) {
     case 'GEACCEPTEERD': return 'ok';
+    case 'BETAALD': return 'ok';
     case 'AFGEWEZEN': return 'danger';
     case 'WIJZIGING_GEVRAAGD': return 'gold';
     case 'VERZONDEN': return 'rose';

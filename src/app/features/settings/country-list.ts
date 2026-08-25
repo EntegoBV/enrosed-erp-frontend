@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { CarrierManager } from './carrier-manager';
 import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
 import { Sheet, Ui } from '../../shared/ui';
 
@@ -14,15 +15,33 @@ function blank(): Country {
 @Component({
   selector: 'app-country-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, Sheet],
+  imports: [FormsModule, PageHeader, Sheet, CarrierManager],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="Landen & vracht" subtitle="Minimum order en palletvracht per land">
-      <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
-        + Land
-      </button>
+    <app-page-header [showBack]="true" backTo="/more" title="Landen & vracht" subtitle="Minimum order, palletvracht en staffels">
+      @if (tab() === 'LANDEN') {
+        <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
+          + Land
+        </button>
+      }
     </app-page-header>
 
     <div class="content">
+      <!-- Two halves of the same subject: the country's own tariff, and the
+           shipping organisations whose staffels can replace it. -->
+      <div class="doc-tabs" role="tablist" aria-label="Landen of verzendorganisaties">
+        <button type="button" role="tab" [attr.aria-selected]="tab() === 'LANDEN'"
+                [class.doc-tabs__active]="tab() === 'LANDEN'" (click)="tab.set('LANDEN')">
+          Landen
+        </button>
+        <button type="button" role="tab" [attr.aria-selected]="tab() === 'CARRIERS'"
+                [class.doc-tabs__active]="tab() === 'CARRIERS'" (click)="tab.set('CARRIERS')">
+          Verzendorganisaties
+        </button>
+      </div>
+
+      @if (tab() === 'CARRIERS') {
+        <app-carrier-manager />
+      } @else {
       <details class="explainer">
         <summary>Hoe wordt vracht berekend?</summary>
         <div class="explainer__body">
@@ -59,9 +78,12 @@ function blank(): Country {
           <div class="empty"><div class="empty__title">Geen landen gevonden</div></div>
         }
       </div></div>
+      }
     </div>
 
-    <button class="fab" type="button" (click)="open(null)">+ Land</button>
+    @if (tab() === 'LANDEN') {
+      <button class="fab" type="button" (click)="open(null)">+ Land</button>
+    }
 
     @if (editing()) {
       <app-sheet [title]="isNew() ? 'Land toevoegen' : draft().name"
@@ -144,8 +166,17 @@ function blank(): Country {
       </app-sheet>
     }
   `,
+  styles: [`
+    .doc-tabs { display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:12px;padding:4px;
+      border:1px solid var(--line);border-radius:14px;background:var(--surface) }
+    .doc-tabs button { min-height:40px;border:0;border-radius:10px;background:transparent;color:var(--muted);
+      font:inherit;font-size:12.5px;font-weight:680;cursor:pointer }
+    .doc-tabs__active { background:var(--rose-soft)!important;color:var(--rose-dark)!important }
+  `],
 })
 export class CountryList {
+  readonly tab = signal<'LANDEN' | 'CARRIERS'>('LANDEN');
+
   readonly isoCountries = ISO_COUNTRIES;
 
   /** Filling code and name together keeps them consistent by construction. */

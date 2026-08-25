@@ -52,6 +52,13 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <path d="M3.5 7h10v9h-10z" /><path d="M13.5 10h4l2.5 3v3h-6.5" />
           <circle cx="7.5" cy="18" r="1.8" /><circle cx="16.5" cy="18" r="1.8" />
         }
+        @case ('truck') {
+          <!-- A little lorry: the freight staffels. -->
+          <path d="M2.5 6.5h11v9h-11z" />
+          <path d="M13.5 9.5h4l3 3v3h-7" />
+          <circle cx="6.5" cy="17.5" r="1.8" />
+          <circle cx="16.5" cy="17.5" r="1.8" />
+        }
         @case ('barcode') {
           <path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" />
         }

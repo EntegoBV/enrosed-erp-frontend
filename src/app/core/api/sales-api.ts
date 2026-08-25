@@ -5,7 +5,7 @@ import { API_BASE, api } from './api.config';
 import {
   CompanyProfile, Country, Customer, CustomerPortalLink, DiscountTier, FreightPricingStrategy, LanguageCode,
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
-  SalesOrderView,
+  SalesOrderView, Carrier, CarrierShipQuote, DocumentType,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -74,9 +74,56 @@ export class SalesApi {
   }
 
   createOrder(customerId: number, countryCode: string | null,
-              incoterm: string): Promise<SalesOrderView> {
+              incoterm: string, docType: DocumentType = 'OFFERTE'): Promise<SalesOrderView> {
     return firstValueFrom(this.http.post<SalesOrderView>(api('/api/sales-orders'),
-      { customerId, countryCode, incoterm }));
+      { customerId, countryCode, incoterm, docType }));
+  }
+
+  /** Freezes the quote's content into a new invoice; the quote stays. */
+  createInvoiceFrom(quoteId: number): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/invoice`), {}));
+  }
+
+  markInvoiceSent(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/mark-sent`), {}));
+  }
+
+  markInvoicePaid(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/mark-paid`), {}));
+  }
+
+  /* -------------------------------------------------- verzendorganisaties */
+
+  carriers(): Promise<Carrier[]> {
+    return firstValueFrom(this.http.get<Carrier[]>(api('/api/carriers')));
+  }
+
+  saveCarrier(carrier: Carrier): Promise<Carrier> {
+    return carrier.id == null
+      ? firstValueFrom(this.http.post<Carrier>(api('/api/carriers'), carrier))
+      : firstValueFrom(this.http.put<Carrier>(api(`/api/carriers/${carrier.id}`), carrier));
+  }
+
+  deleteCarrier(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/carriers/${id}`)));
+  }
+
+  /** Prices one shipment against a staffel; the editor shows the breakdown. */
+  carrierQuote(id: number, params: { country: string; postcode: string | null;
+               pallets: number; palletType: string; weightKg: number | null }):
+      Promise<CarrierShipQuote | null> {
+    const query = new URLSearchParams({
+      country: params.country,
+      postcode: params.postcode ?? '',
+      pallets: String(params.pallets),
+      palletType: params.palletType,
+      ...(params.weightKg != null ? { weightKg: String(params.weightKg) } : {}),
+    });
+    return firstValueFrom(this.http.get<CarrierShipQuote | null>(
+      api(`/api/carriers/${id}/quote?${query}`)));
   }
 
   /** Prices the order as it stands on screen, without saving. */
@@ -99,10 +146,11 @@ export class SalesApi {
   updateFreight(id: number, state: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD',
                 manualFreightEur: number | null,
                 freightPricingStrategy: FreightPricingStrategy | null,
-                freightRatePerCbmEur: number | null): Promise<SalesOrderView> {
+                freightRatePerCbmEur: number | null,
+                freightCarrierId: number | null = null): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(
       api(`/api/sales-orders/${id}/freight`), {
-        state, manualFreightEur, freightPricingStrategy, freightRatePerCbmEur,
+        state, manualFreightEur, freightPricingStrategy, freightRatePerCbmEur, freightCarrierId,
       }));
   }
 
@@ -150,13 +198,6 @@ export class SalesApi {
     return firstValueFrom(
       this.http.get<CustomerPortalLink>(
         api(`/api/sales-orders/${id}/portal-link`)));
-  }
-
-  /** Customer-safe read-only projection, protected by the normal admin guard. */
-  customerPreview(id: number, language?: LanguageCode): Promise<PortalQuote> {
-    const query = language ? `?language=${encodeURIComponent(language)}` : '';
-    return firstValueFrom(this.http.get<PortalQuote>(
-      api(`/api/sales-orders/${id}/customer-preview${query}`)));
   }
 
   /* -------------------------------------------------------- wijzigingen */

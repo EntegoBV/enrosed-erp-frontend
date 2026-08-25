@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
-import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrderView } from '../../core/api/models';
+import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrder, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { WorkQueue } from '../../core/api/work-queue';
 import { Sheet, Ui } from '../../shared/ui';
@@ -54,6 +54,19 @@ import { messageOf } from '../../core/api/errors';
         </div>
       }
 
+      <!-- Offerte or factuur: two piles of a different nature; the tab
+           keeps each pile clean instead of mixing claim and proposal. -->
+      <div class="doc-tabs" role="tablist" aria-label="Documenttype">
+        <button type="button" role="tab" [attr.aria-selected]="docTab() === 'OFFERTE'"
+                [class.doc-tabs__active]="docTab() === 'OFFERTE'" (click)="switchTab('OFFERTE')">
+          Offertes <b>{{ docCount('OFFERTE') }}</b>
+        </button>
+        <button type="button" role="tab" [attr.aria-selected]="docTab() === 'FACTUUR'"
+                [class.doc-tabs__active]="docTab() === 'FACTUUR'" (click)="switchTab('FACTUUR')">
+          Facturen <b>{{ docCount('FACTUUR') }}</b>
+        </button>
+      </div>
+
       <!-- One quiet row: search grows, two pills open native pickers,
            the count sits at the end - no card, no grid of chips. -->
       <!-- One Filter button; the choices unfold underneath, catalogue-style. -->
@@ -83,9 +96,9 @@ import { messageOf } from '../../core/api/errors';
         @if (filtersOpen()) {
           <div class="filter-grid">
             <label class="filter-field">
-              <span class="filter-field__label">Offertestatus</span>
+              <span class="filter-field__label">Status</span>
               <select class="select filter-field__select" [ngModel]="filter()" (ngModelChange)="selectStatus($event)">
-                @for (option of filters; track option.value) {
+                @for (option of visibleFilters(); track option.value) {
                   <option [ngValue]="option.value">{{ option.label }} ({{ statusCount(option.value) }})</option>
                 }
               </select>
@@ -101,7 +114,8 @@ import { messageOf } from '../../core/api/errors';
             </label>
           </div>
           <div class="filter-summary">
-            <span><strong>{{ rows().length }}</strong> van {{ all().length }} orders</span>
+            <span><strong>{{ rows().length }}</strong> van {{ docCount(docTab()) }}
+              {{ docTab() === 'FACTUUR' ? 'facturen' : 'offertes' }}</span>
             @if (activeFilterCount()) {
               <button class="filter-reset" type="button" (click)="clearFilters()">Filters wissen</button>
             }
@@ -119,6 +133,9 @@ import { messageOf } from '../../core/api/errors';
                      implies and pushed the date into "18/0...". -->
                 <div class="list-item__meta list-item__meta--wrap">
                   {{ row.order.number }} · {{ row.order.orderDate | dateNl }}
+                  @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate) {
+                    · vervalt {{ row.order.invoiceDueDate | dateNl }}
+                  }
                 </div>
                 <div class="list-item__meta list-item__meta--wrap">
                   {{ row.priced.totals.pieces | num }} st ·
@@ -141,6 +158,9 @@ import { messageOf } from '../../core/api/errors';
                 <span class="badge" [class]="'badge--' + cls(row.order.status)">
                   {{ label(row.order.status) }}
                 </span>
+                @if (overdue(row.order)) {
+                  <span class="badge badge--gold">Vervallen</span>
+                }
                 @if (todo(row.order); as task) {
                   <span class="badge badge--todo">{{ task }}</span>
                 }
@@ -176,11 +196,24 @@ import { messageOf } from '../../core/api/errors';
     <button class="fab" type="button" (click)="startNew()">+ Order</button>
 
     @if (picking()) {
-      <app-sheet title="Nieuwe verkooporder" (closed)="picking.set(false)">
+      <app-sheet [title]="newDocType() === 'FACTUUR' ? 'Nieuwe factuur' : 'Nieuwe offerte'"
+                 (closed)="picking.set(false)">
         <div body>
           @if (loading()) {
             <app-skeleton kind="lines" [rows]="3" />
           } @else if (!addingCustomer()) {
+            <div class="per-toggle doc-choice" role="group" aria-label="Documenttype">
+              <button type="button" [class.on]="newDocType() === 'OFFERTE'"
+                      (click)="newDocType.set('OFFERTE')">Offerte</button>
+              <button type="button" [class.on]="newDocType() === 'FACTUUR'"
+                      (click)="newDocType.set('FACTUUR')">Factuur</button>
+            </div>
+            @if (newDocType() === 'FACTUUR') {
+              <p class="tiny muted" style="margin:-4px 0 10px">
+                Meteen een factuur, zonder offerte vooraf — voor directe verkoop.
+                Vanuit een geaccepteerde offerte maak je een factuur via de offerte zelf.
+              </p>
+            }
             <div class="field">
               <label class="req" for="so-customer">Klant</label>
               <select class="select" id="so-customer" [ngModel]="chosen()"
@@ -265,6 +298,16 @@ import { messageOf } from '../../core/api/errors';
     }
   `,
   styles: `
+    .doc-tabs { display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:10px;padding:4px;
+      border:1px solid var(--line);border-radius:14px;background:var(--surface) }
+    .doc-tabs button { min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:7px;
+      border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;
+      font-weight:680;cursor:pointer }
+    .doc-tabs button b { min-width:20px;padding:1px 6px;border-radius:999px;background:var(--surface-2);
+      font-size:10.5px;font-weight:750 }
+    .doc-tabs__active { background:var(--rose-soft)!important;color:var(--rose-dark)!important }
+    .doc-tabs__active b { background:var(--surface)!important }
+    .doc-choice { margin-bottom:12px }
     .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px;padding:12px;
       border:1px solid var(--line);border-radius:var(--r);background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
       box-shadow:0 5px 18px rgb(31 25 22/4%) }
@@ -493,9 +536,39 @@ export class SalesList {
     { value: 'GEACCEPTEERD', label: 'Geaccepteerd' },
     { value: 'AFGEWEZEN', label: 'Afgewezen' },
     { value: 'VERLOPEN', label: 'Verlopen' },
+    { value: 'BETAALD', label: 'Betaald' },
   ];
 
   readonly filter = signal<QuoteStatus | ''>('');
+  readonly docTab = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
+  readonly newDocType = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
+
+  switchTab(tab: 'OFFERTE' | 'FACTUUR'): void {
+    if (this.docTab() === tab) return;
+    this.docTab.set(tab);
+    /* Quote statuses and invoice statuses are different vocabularies. */
+    this.filter.set('');
+  }
+
+  docCount(tab: 'OFFERTE' | 'FACTUUR'): number {
+    return this.all().filter((row) => (row.order.docType ?? 'OFFERTE') === tab).length;
+  }
+
+  /** Rows of the active tab, before search and filters. */
+  private inTab(): SalesOrderView[] {
+    return this.all().filter((row) => (row.order.docType ?? 'OFFERTE') === this.docTab());
+  }
+
+  readonly visibleFilters = computed(() => this.docTab() === 'FACTUUR'
+    ? this.filters.filter((option) => ['', 'CONCEPT', 'VERZONDEN', 'BETAALD'].includes(option.value))
+    : this.filters.filter((option) => option.value !== 'BETAALD'));
+
+  overdue(order: SalesOrder): boolean {
+    return (order.docType ?? 'OFFERTE') === 'FACTUUR'
+      && order.status === 'VERZONDEN'
+      && !!order.invoiceDueDate
+      && order.invoiceDueDate < new Date().toISOString().slice(0, 10);
+  }
   readonly query = signal('');
   readonly picking = signal(false);
   readonly chosen = signal<number | null>(null);
@@ -569,7 +642,7 @@ export class SalesList {
     const status = this.filter();
     const customer = this.customerFilter();
     const needle = this.query().toLowerCase().trim();
-    return this.all().filter((row) => {
+    return this.inTab().filter((row) => {
       if (status && row.order.status !== status) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
       if (!needle) return true;
@@ -611,7 +684,8 @@ export class SalesList {
   }
 
   statusCount(status: QuoteStatus | ''): number {
-    return status ? this.all().filter((row) => row.order.status === status).length : this.all().length;
+    const rows = this.inTab();
+    return status ? rows.filter((row) => row.order.status === status).length : rows.length;
   }
 
   customerName(row: SalesOrderView): string {
@@ -632,10 +706,18 @@ export class SalesList {
       default: return '◉';
     }
   }
-  /** What we still must do with this quote, or nothing. */
-  todo = actionNeeded;
+  /** What we still must do with this document, or nothing. */
+  todo = (order: SalesOrder): string | null => {
+    if ((order.docType ?? 'OFFERTE') === 'FACTUUR') {
+      if (order.status === 'CONCEPT') return 'Nog niet verstuurd';
+      if (this.overdue(order)) return 'Betaling opvolgen';
+      return null;
+    }
+    return actionNeeded(order);
+  };
 
   startNew(): void {
+    this.newDocType.set(this.docTab());
     this.picking.set(true);
     /* While the data is still loading the sheet shows a skeleton; load()
        makes the no-customers-yet call once it actually knows. Deciding on
@@ -668,7 +750,7 @@ export class SalesList {
     let view: SalesOrderView;
     try {
       view = await this.sales.createOrder(
-        customerId, customer.countryCode, customer.incoterm || 'DAP');
+        customerId, customer.countryCode, customer.incoterm || 'DAP', this.newDocType());
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Order aanmaken mislukt'), 'err');
       this.creating.set(false);

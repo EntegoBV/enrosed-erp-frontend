@@ -788,7 +788,7 @@ export class Dashboard {
   ];
   readonly trendOptions = computed(() =>
     this.trendCandidates.filter((option) => this.seriesFor(option.code).length > 1));
-  readonly trendCode = signal('NCFI NINGBO');
+  readonly trendCode = signal('CCFI CN-EUR');
   readonly trendLabel = computed(() =>
     this.trendCandidates.find((option) => option.code === this.trendCode())?.title ?? '');
   readonly trendUnit = computed(() =>

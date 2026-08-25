@@ -1,8 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import {
   FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, SalesOrderView,
+  Carrier, CarrierShipQuote,
 } from '../../core/api/models';
-import { CbmPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { SalesApi } from '../../core/api/sales-api';
 
 /** Canonical B × D labels; also upgrades the two historical D × B values. */
 export function normalizeManualPalletType(value: string): string {
@@ -30,6 +32,8 @@ export interface ShippingOrderPatch {
   freightPricingStrategy?: FreightPricingStrategy;
   freightRatePerCbmEur?: number | null;
   manualFreightEur?: number | null;
+  freightCarrierId?: number | null;
+  freightCarrierExtraEur?: number | null;
   freight?: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD';
   pallets?: OrderPallet[];
 }
@@ -57,7 +61,7 @@ export type ShippingPalletAction =
 @Component({
   selector: 'app-shipping-planner',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CbmPipe, EurPipe, NumPipe],
+  imports: [CbmPipe, EurPipe, NumPipe, PctPipe],
   template: `
     <div class="planner">
       <section aria-labelledby="load-choice-title">
@@ -439,13 +443,15 @@ export type ShippingPalletAction =
               <small>Per pallet, met het minimumtarief van het land</small>
             </button>
           }
-          <button type="button" role="radio" [disabled]="!canEdit()"
-                  [class.price-choice--active]="pricingStrategy() === 'PER_CBM'"
-                  [attr.aria-checked]="pricingStrategy() === 'PER_CBM'"
-                  (click)="choosePricing('PER_CBM')">
-            <strong>Tarief per m³</strong>
-            <small>Volume × jouw tarief</small>
-          </button>
+          @if (loadMode() === 'PALLETS' && carriers().length) {
+            <button type="button" role="radio" [disabled]="!canEdit()"
+                    [class.price-choice--active]="pricingStrategy() === 'CARRIER'"
+                    [attr.aria-checked]="pricingStrategy() === 'CARRIER'"
+                    (click)="choosePricing('CARRIER')">
+              <strong>Verzendorganisatie</strong>
+              <small>Staffel: zone per postcode, trap per pallet</small>
+            </button>
+          }
           <button type="button" role="radio" [disabled]="!canEdit()"
                   [class.price-choice--active]="pricingStrategy() === 'FIXED'"
                   [attr.aria-checked]="pricingStrategy() === 'FIXED'"
@@ -455,7 +461,66 @@ export type ShippingPalletAction =
           </button>
         </div>
 
-        @if (pricingStrategy() === 'PER_CBM') {
+        @if (pricingStrategy() === 'CARRIER') {
+          <div class="carrier-panel">
+            <label class="price-input" for="freight-carrier">
+              <span>Verzendorganisatie</span>
+              <select class="select" id="freight-carrier" [disabled]="!canEdit()"
+                      [value]="order().freightCarrierId ?? ''"
+                      (change)="setCarrier($any($event.target).value)">
+                @for (carrier of carriers(); track carrier.id) {
+                  <option [value]="carrier.id">{{ carrier.name }}</option>
+                }
+              </select>
+            </label>
+            <label class="price-input" for="freight-carrier-extra">
+              <span class="price-input__copy">
+                <span>Transporttoeslag Enrosed</span>
+                <small>Telt mee in het vrachtbedrag voor de klant;
+                  alleen wij zien het apart.</small>
+              </span>
+              <span class="money-input">
+                <span>€</span>
+                <input id="freight-carrier-extra" class="input num" type="number" min="0"
+                       step="0.01" inputmode="decimal" [disabled]="!canEdit()"
+                       [value]="order().freightCarrierExtraEur ?? ''"
+                       (change)="setCarrierExtra($any($event.target).value)" />
+              </span>
+            </label>
+            @if (carrierBreakdown(); as b) {
+              <dl class="carrier-breakdown">
+                <div><dt>Zone</dt><dd>{{ b.zoneName }}
+                  @if (!b.postcodeMatched) { <small>· dichtstbijzijnde bij {{ customerPostcode() || '—' }}</small> }
+                </dd></div>
+                <div><dt>Staffeltrap</dt><dd>{{ b.tierLabel }}</dd></div>
+                <div><dt>Basis</dt><dd>{{ b.baseEur | eur: 2 }}</dd></div>
+                @if (b.dieselEur) {
+                  <div><dt>Dieseltoeslag {{ b.dieselPct | pct: 0 }}</dt><dd>+ {{ b.dieselEur | eur: 2 }}</dd></div>
+                }
+                @if (b.surchargePctEur) {
+                  <div><dt>Toeslag {{ b.surchargePct | pct: 0 }}</dt><dd>+ {{ b.surchargePctEur | eur: 2 }}</dd></div>
+                }
+                @if (b.surchargeFixedEur) {
+                  <div><dt>Vaste toeslag</dt><dd>+ {{ b.surchargeFixedEur | eur: 2 }}</dd></div>
+                }
+                @if (order().freightCarrierExtraEur; as extra) {
+                  <div><dt>Transporttoeslag Enrosed <small>(intern)</small></dt><dd>+ {{ extra | eur: 2 }}</dd></div>
+                  <div class="carrier-breakdown__total"><dt>Vracht voor de klant</dt>
+                    <dd>{{ b.totalEur + extra | eur: 2 }}</dd></div>
+                } @else {
+                  <div class="carrier-breakdown__total"><dt>Vracht</dt><dd>{{ b.totalEur | eur: 2 }}</dd></div>
+                }
+              </dl>
+              @if (b.surchargeNote) { <p class="carrier-note">{{ b.surchargeNote }}</p> }
+            } @else if (!customerPostcode()) {
+              <p class="carrier-note">Vul de postcode bij de klant in: die bepaalt de zone.
+                Zonder postcode kan de staffel geen prijs kiezen.</p>
+            } @else if (carrierQuoteMissing()) {
+              <p class="carrier-note">Deze zending past niet in de staffel — vraag een prijs op
+                en kies dan een vast bedrag.</p>
+            }
+          </div>
+        } @else if (pricingStrategy() === 'PER_CBM') {
           <label class="price-input" for="freight-rate-cbm">
             <span>Tarief per m³</span>
             <span class="money-input">
@@ -517,6 +582,15 @@ export type ShippingPalletAction =
     .planner__intro,.calculation__head { display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px }
     .result-pill,.calculation__status,.layout-badge { flex:none;padding:4px 7px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:700;white-space:nowrap }
 
+    .carrier-panel { display:grid;gap:9px;margin-bottom:10px }
+    .carrier-breakdown { margin:0;padding:9px 11px;display:grid;gap:4px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2) }
+    .carrier-breakdown div { display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:11.5px }
+    .carrier-breakdown dt { color:var(--muted) }
+    .carrier-breakdown dd { margin:0;font-weight:650;font-variant-numeric:tabular-nums }
+    .carrier-breakdown dd small { color:var(--muted);font-weight:550 }
+    .carrier-breakdown__total { margin-top:2px;padding-top:6px;border-top:1px dashed var(--line);font-weight:760 }
+    .carrier-breakdown__total dt { color:var(--ink) }
+    .carrier-note { margin:0;color:var(--muted);font-size:10.5px;line-height:1.45 }
     .choice-grid { display:grid;gap:8px }
     .choice-card { width:100%;min-height:72px;padding:11px;display:grid;grid-template-columns:40px minmax(0,1fr) 22px;gap:10px;align-items:center;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer }
     .choice-card:disabled,.price-choices button:disabled { cursor:default }
@@ -640,6 +714,8 @@ export type ShippingPalletAction =
     .price-choices .price-choice--active { border-color:var(--rose-line);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose-line) }
     .price-input { margin-top:10px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr) 138px;gap:4px 10px;align-items:center;border:1px solid var(--line);border-radius:11px;background:var(--surface) }
     .price-input>small { grid-column:1/-1;color:var(--muted);font-size:9.5px;font-weight:520 }
+    .price-input__copy { min-width:0;display:grid;gap:2px }
+    .price-input__copy>small { color:var(--muted);font-size:9.5px;font-weight:520;line-height:1.4 }
     .money-input>span { min-width:34px;display:grid;place-items:center;border:1px solid var(--line-strong);border-right:0;border-radius:9px 0 0 9px;background:var(--surface-2);color:var(--muted);font-size:11px }
     .money-input input { min-width:0;border-radius:0 9px 9px 0 }
     .pending-toggle { min-height:56px;margin-top:9px;padding:9px 10px;display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);border-radius:11px;background:var(--surface);cursor:pointer }
@@ -674,6 +750,54 @@ export type ShippingPalletAction =
 export class ShippingPlanner {
   readonly view = input.required<SalesOrderView>();
   readonly canEdit = input(true);
+  readonly carriers = input<Carrier[]>([]);
+  readonly customerPostcode = input<string | null>(null);
+
+  private readonly sales = inject(SalesApi);
+  readonly carrierBreakdown = signal<CarrierShipQuote | null>(null);
+  readonly carrierQuoteMissing = signal(false);
+
+  constructor() {
+    /* The breakdown mirrors what the backend already priced: same zone
+       resolution, same rungs - fetched purely to show the why. */
+    effect(() => {
+      const data = this.view();
+      const carrierId = data.order.freightCarrierId;
+      const postcode = this.customerPostcode();
+      if (this.pricingStrategy() !== 'CARRIER' || !carrierId || !data.order.countryCode) {
+        this.carrierBreakdown.set(null);
+        this.carrierQuoteMissing.set(false);
+        return;
+      }
+      const totals = data.priced.totals;
+      const pallets = totals.palletsManual || totals.palletsStrict;
+      void this.sales.carrierQuote(carrierId, {
+        country: data.order.countryCode,
+        postcode,
+        pallets,
+        palletType: data.order.palletProfile === 'BLOCK_120X100' ? 'BLOCK' : 'EURO',
+        weightKg: totals.weightKg ?? null,
+      }).then((quote) => {
+        this.carrierBreakdown.set(quote);
+        this.carrierQuoteMissing.set(quote === null && pallets > 0);
+      }).catch(() => {
+        this.carrierBreakdown.set(null);
+        this.carrierQuoteMissing.set(false);
+      });
+    });
+  }
+
+  setCarrierExtra(raw: string): void {
+    if (!this.canEdit()) return;
+    const value = raw.trim() === '' ? null : Math.max(0, Number(raw) || 0);
+    this.patch.emit({ freightCarrierExtraEur: value, freightPricingStrategy: 'CARRIER' });
+  }
+
+  setCarrier(raw: string): void {
+    const id = Number(raw);
+    if (!this.canEdit() || !Number.isInteger(id) || id <= 0) return;
+    this.patch.emit({ freightCarrierId: id, freightPricingStrategy: 'CARRIER' });
+  }
   readonly patch = output<ShippingOrderPatch>();
   readonly action = output<ShippingPalletAction>();
 
@@ -729,8 +853,9 @@ export class ShippingPlanner {
   chooseLoadMode(mode: LoadMode): void {
     if (!this.canEdit() || mode === this.loadMode()) return;
     const current = this.pricingStrategy();
-    const strategy = mode === 'LOOSE_CARTONS' && current === 'COUNTRY_PALLET'
-      ? 'PER_CBM' : current;
+    const strategy = mode === 'LOOSE_CARTONS'
+        && (current === 'COUNTRY_PALLET' || current === 'CARRIER')
+      ? 'FIXED' : current;
     const changes: ShippingOrderPatch = {
       loadMode: mode,
       freightPricingStrategy: strategy,
@@ -776,6 +901,10 @@ export class ShippingPlanner {
       freightRatePerCbmEur: strategy === 'PER_CBM'
         ? this.order().freightRatePerCbmEur : null,
       manualFreightEur: fixed,
+      freightCarrierId: strategy === 'CARRIER'
+        ? this.order().freightCarrierId
+          ?? this.carriers().find((carrier) => carrier.active)?.id ?? this.carriers()[0]?.id
+        : this.order().freightCarrierId,
     });
   }
 

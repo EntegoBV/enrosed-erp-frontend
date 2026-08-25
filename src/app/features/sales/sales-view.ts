@@ -5,7 +5,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
-import {
+import { SalesOrder,
   Country, Customer, CustomerPortalLink, PricedLine, QuoteEvent, QuoteRevision, QuoteStatus,
   SalesOrderView,
 } from '../../core/api/models';
@@ -61,7 +61,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           }
           <div class="sales-hero__top">
             <div class="sales-hero__identity">
-              <span class="eyebrow">Verkoopofferte</span>
+              <span class="eyebrow">{{ isInvoice() ? 'Factuur' : 'Verkoopofferte' }}</span>
               <h1 id="sales-overview-title">
                 <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">{{ customerName() }}</a>
               </h1>
@@ -96,7 +96,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
               }
             </div>
             <div class="hero-facts__total">
-              <span>Offertetotaal</span>
+              <span>{{ isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
               <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
               <small>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</small>
             </div>
@@ -105,7 +105,11 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           <!-- The agreement in one glass row: what used to be its own
                Offertedetails card lives with the rest of the header. -->
           <div class="hero-details">
-            <span><small>Geldig tot</small><b>{{ data.order.validUntil | dateNl }}</b></span>
+            @if (isInvoice()) {
+              <span><small>Vervaldatum</small><b>{{ data.order.invoiceDueDate | dateNl }}</b></span>
+            } @else {
+              <span><small>Geldig tot</small><b>{{ data.order.validUntil | dateNl }}</b></span>
+            }
             <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">
               <small>Contact</small><b>{{ customer()?.contact || '—' }}</b>
             </a>
@@ -116,9 +120,10 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             <span><small>BTW</small><b>{{ data.priced.totals.vatLegalMention ? 'verlegd · 0%' : (data.priced.totals.vatRatePct | pct: 0) }}</b></span>
           </div>
 
-          <!-- The inkoop journey, retold for a quote. -->
-          <div class="stepper hero-stepper" aria-label="Status van de offerte">
-            @for (step of quoteJourney(data.order.status); track step.label; let last = $last) {
+          <!-- The inkoop journey, retold for a quote or an invoice. -->
+          <div class="stepper hero-stepper"
+               [attr.aria-label]="isInvoice() ? 'Status van de factuur' : 'Status van de offerte'">
+            @for (step of journey(data.order); track step.label; let last = $last) {
               <div class="stepper__step"
                    [class.stepper__step--done]="step.state === 'done'"
                    [class.stepper__step--now]="step.state === 'now'"
@@ -291,7 +296,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div>
                 <div><dt>Vracht <small>{{ freightStrategyLabel(data) }}</small></dt><dd>{{ freightAmount(data) }}</dd></div>
                 <div><dt>Handling</dt><dd>{{ data.priced.totals.handling | eur: 2 }}</dd></div>
-                <div class="totals-list__main"><dt>Offertetotaal <small>excl. BTW</small></dt><dd>{{ data.priced.totals.total | eur: 2 }}</dd></div>
+                <div class="totals-list__main"><dt>{{ isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }} <small>excl. BTW</small></dt><dd>{{ data.priced.totals.total | eur: 2 }}</dd></div>
                 <div><dt>BTW {{ data.priced.totals.vatRatePct | pct: 0 }}</dt><dd>{{ data.priced.totals.vatAmount | eur: 2 }}</dd></div>
                 <div class="totals-list__incl"><dt>Inclusief BTW</dt><dd>{{ data.priced.totals.totalInclVat | eur: 2 }}</dd></div>
               </dl>
@@ -303,10 +308,42 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
                   {{ actionLabel() }}
                 </a>
-                <a class="btn btn--block" [routerLink]="['/sales', data.order.id, 'customer-preview']">
-                  Klantweergave openen
-                </a>
-                @if (portalLink()?.available && portalLink()?.url) {
+                @if (isInvoice()) {
+                  @if (data.order.status === 'CONCEPT') {
+                    <button class="btn btn--block" type="button" [disabled]="sendingQuote()"
+                            (click)="sendSheetOpen.set(true)">Versturen…</button>
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
+                            (click)="markSent(data)">Markeer als verstuurd</button>
+                    <p class="link-explainer">Versturen mailt de PDF met de betaalgegevens;
+                      "markeer" is voor wanneer je ze zelf al bezorgde.</p>
+                  } @else if (data.order.status !== 'BETAALD') {
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
+                            (click)="markPaid(data)">Markeer als betaald</button>
+                  }
+                  <button class="btn btn--block" type="button" [disabled]="packing()"
+                          (click)="downloadPackingSlip(data)">
+                    {{ packing() ? 'Pakbon maken…' : 'Pakbon downloaden' }}
+                  </button>
+                  @if (data.order.sourceQuoteId; as quoteId) {
+                    <a class="btn btn--block" [routerLink]="['/sales', quoteId]">
+                      Naar de offerte
+                    </a>
+                  }
+                } @else {
+                  @if (data.order.status === 'CONCEPT') {
+                    <button class="btn btn--block" type="button" [disabled]="sendingQuote()"
+                            (click)="sendSheetOpen.set(true)">
+                      {{ data.order.sentAt ? 'Opnieuw versturen…' : 'Versturen…' }}
+                    </button>
+                  }
+                  @if (data.order.status === 'GEACCEPTEERD' || data.order.status === 'CONCEPT') {
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
+                            (click)="makeInvoice(data)">
+                      {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+                    </button>
+                  }
+                }
+                @if (!isInvoice() && portalLink()?.available && portalLink()?.url) {
                   <button class="btn btn--block" type="button" [disabled]="copyingLink()"
                           (click)="copyCustomerLink()">
                     {{ copyingLink() ? 'Kopiëren…' : 'Klantlink kopiëren' }}
@@ -340,7 +377,31 @@ import { STATUS_LABEL, statusClass } from './quote-status';
             </section>
         </div>
 
-        @if (deliveryInfo(); as line) {
+        @if (sendSheetOpen()) {
+      <app-sheet [title]="isInvoice() ? 'Factuur versturen' : 'Offerte versturen'"
+                 (closed)="sendSheetOpen.set(false)">
+        <div body>
+          <p class="small muted" style="margin-bottom:14px">
+            {{ isInvoice()
+                ? 'De klant krijgt de factuur-PDF in bijlage, met de betaalgegevens in de mail.'
+                : 'De klant krijgt de PDF in bijlage en een link om online te tekenen of een wijziging voor te stellen.' }}
+          </p>
+          <div class="field">
+            <label for="view-send-message">Persoonlijk bericht</label>
+            <textarea class="textarea" id="view-send-message" rows="3"
+                      [value]="sendMessage()"
+                      (input)="sendMessage.set($any($event.target).value)"></textarea>
+          </div>
+        </div>
+        <div foot style="display:contents">
+          <button class="btn" type="button" (click)="sendSheetOpen.set(false)">Annuleren</button>
+          <button class="btn btn--primary" type="button" [disabled]="sendingQuote()"
+                  (click)="sendFromView()">{{ sendingQuote() ? 'Bezig…' : 'Versturen' }}</button>
+        </div>
+      </app-sheet>
+    }
+
+    @if (deliveryInfo(); as line) {
           <app-sheet [title]="'Levering · ' + line.description" (closed)="deliveryInfo.set(null)">
             <div class="delivery-sheet" body>
               @if (deliveryText(line, data) !== deliveryShort(line, data)) {
@@ -576,6 +637,109 @@ export class SalesView {
   readonly actionLabel = computed(() =>
     this.view()?.order.status === 'CONCEPT' ? 'Bewerken' : 'Beheren');
 
+  readonly isInvoice = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
+  readonly invoiceBusy = signal(false);
+  readonly sendSheetOpen = signal(false);
+  readonly packing = signal(false);
+
+  /** The paper that travels with the goods; prices stay off it. */
+  async downloadPackingSlip(data: SalesOrderView): Promise<void> {
+    if (this.packing()) return;
+    this.packing.set(true);
+    try {
+      const blob = await this.sales.packingSlip(data.order.id!);
+      saveBlob(blob, `${data.order.number}-pakbon.pdf`);
+      this.ui.toast('Pakbon gedownload — zonder prijzen, voor magazijn en transport');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Pakbon maken mislukt'), 'err');
+    } finally {
+      this.packing.set(false);
+    }
+  }
+  readonly sendMessage = signal('');
+  readonly sendingQuote = signal(false);
+
+  /** The next step without opening the editor: the quote leaves from here. */
+  async sendFromView(): Promise<void> {
+    const data = this.view();
+    if (!data || this.sendingQuote()) return;
+    this.sendingQuote.set(true);
+    try {
+      this.view.set(await this.sales.sendQuote(data.order.id!, this.sendMessage().trim()));
+      this.sendSheetOpen.set(false);
+      this.sendMessage.set('');
+      this.ui.toast(this.isInvoice() ? 'Factuur verstuurd' : 'Offerte verstuurd');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Versturen mislukt'), 'err');
+    } finally {
+      this.sendingQuote.set(false);
+    }
+  }
+
+  /** The quote's journey, or the invoice's shorter one. */
+  journey(order: SalesOrder) {
+    if ((order.docType ?? 'OFFERTE') !== 'FACTUUR') return this.quoteJourney(order.status);
+    const reached = order.status === 'BETAALD' ? 2 : order.status === 'CONCEPT' ? 0 : 1;
+    return [
+      { label: 'Concept', mark: '✓' },
+      { label: 'Verstuurd', mark: '✓' },
+      { label: 'Betaald', mark: '✓' },
+    ].map((step, index) => ({
+      ...step,
+      state: (index < reached ? 'done' : index === reached ? 'now' : 'todo') as 'done' | 'now' | 'todo',
+      kind: undefined as undefined,
+    }));
+  }
+
+  makeInvoice(data: SalesOrderView): void {
+    if (this.invoiceBusy()) return;
+    this.ui.confirm({
+      title: 'Factuur maken',
+      message: `De inhoud van ${data.order.number} wordt bevroren in een nieuwe factuur. `
+        + 'De offerte zelf blijft bestaan.',
+      confirmLabel: 'Factuur maken',
+    }, () => { void this.createInvoice(data); });
+  }
+
+  private async createInvoice(data: SalesOrderView): Promise<void> {
+    this.invoiceBusy.set(true);
+    try {
+      const invoice = await this.sales.createInvoiceFrom(data.order.id!);
+      this.ui.toast(`${invoice.order.number} aangemaakt`);
+      await this.routerNav.navigate(['/sales', invoice.order.id]);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Factuur maken mislukt'), 'err');
+    } finally {
+      this.invoiceBusy.set(false);
+    }
+  }
+
+  async markSent(data: SalesOrderView): Promise<void> {
+    if (this.invoiceBusy()) return;
+    this.invoiceBusy.set(true);
+    try {
+      this.view.set(await this.sales.markInvoiceSent(data.order.id!));
+      this.ui.toast('Factuur staat op verstuurd');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
+    } finally {
+      this.invoiceBusy.set(false);
+    }
+  }
+
+  async markPaid(data: SalesOrderView): Promise<void> {
+    if (this.invoiceBusy()) return;
+    this.invoiceBusy.set(true);
+    try {
+      this.view.set(await this.sales.markInvoicePaid(data.order.id!));
+      this.ui.toast('Factuur betaald — mooi zo');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
+    } finally {
+      this.invoiceBusy.set(false);
+    }
+  }
+
   constructor() {
     effect(() => {
       const orderId = Number(this.id());
@@ -653,6 +817,7 @@ export class SalesView {
       ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
     if (strategy === 'PER_CBM') return 'per m³';
     if (strategy === 'FIXED') return 'vast bedrag';
+    if (strategy === 'CARRIER') return 'staffel verzendorganisatie';
     return 'per pallet';
   }
 
@@ -732,7 +897,7 @@ export class SalesView {
   }[] {
     const reached: Record<QuoteStatus, number> = {
       CONCEPT: 0, VERZONDEN: 1, BEKEKEN: 2,
-      WIJZIGING_GEVRAAGD: 3, GEACCEPTEERD: 3, AFGEWEZEN: 3, VERLOPEN: 3,
+      WIJZIGING_GEVRAAGD: 3, GEACCEPTEERD: 3, AFGEWEZEN: 3, VERLOPEN: 3, BETAALD: 3,
     };
     const outcome = status === 'AFGEWEZEN' ? { label: 'Afgewezen', mark: '✕', kind: 'danger' as const }
       : status === 'WIJZIGING_GEVRAAGD' ? { label: 'Wijziging', mark: '!', kind: 'gold' as const }
@@ -782,7 +947,7 @@ export class SalesView {
     this.downloading.set(true);
     try {
       const blob = await this.sales.quotePdf(data.order.id);
-      saveBlob(blob, `${data.order.number}.pdf`);
+      saveBlob(blob, `${data.order.number} - ${this.customerName() || 'klant'}.pdf`);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'PDF downloaden mislukt'), 'err');
     } finally {
