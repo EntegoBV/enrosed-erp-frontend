@@ -1,3 +1,4 @@
+import { ActivatedRoute } from '@angular/router';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Skeleton } from '../../shared/skeleton';
 import { FormsModule } from '@angular/forms';
@@ -302,7 +303,12 @@ export class SupplierList {
   readonly saving = signal(false);
   readonly saveAttempted = signal(false);
 
-  constructor() { void this.load(); }
+  constructor() {
+    /* Deep links (the product hero) filter the list straight to one supplier. */
+    const q = inject(ActivatedRoute).snapshot.queryParamMap.get('q');
+    if (q) this.query.set(q);
+    void this.load();
+  }
 
   private async load(): Promise<void> {
     this.suppliers.set((await this.sourcing.suppliers())

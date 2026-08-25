@@ -16,6 +16,7 @@ import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
+import { messageOf } from '../../core/api/errors';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 
 /**
@@ -60,7 +61,9 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
               <div class="phero__id">
                 <span class="phero__eyebrow">{{ categoryName() || 'Catalogus' }}</span>
                 <h1>{{ product.name }}</h1>
-                @if (supplierName(); as name) { <p class="phero__supplier">{{ name }}</p> }
+                @if (supplierName(); as name) {
+                  <a class="phero__supplier" [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} ›</a>
+                }
                 <p class="phero__meta">
                   @if (product.colour) {
                     <span>
@@ -100,10 +103,9 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                   }
                 </div>
               }
-              <!-- The stock tile opens the stock book: where the figure came
-                   from, without leaving the page. -->
-              <button class="phero__fact" type="button" [class.phero__fact--open]="stockOpen()"
-                      [attr.aria-expanded]="stockOpen()" (click)="toggleStock()">
+              <!-- The stock tile walks down to the stock card: locations
+                   and the latest movements live on the page itself. -->
+              <button class="phero__fact" type="button" (click)="scrollToStock()">
                 <small>Voorraad</small>
                 @if (stockLevels()) {
                   <strong class="num" [class.phero__neg]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
@@ -122,7 +124,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                    factory price to the catalogue price. -->
               <button class="phero__fact" type="button" [class.phero__fact--open]="priceOpen()"
                       [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
-                <small>Prijs</small>
+                <small>Catalogusprijs</small>
                 @if (displayPrice(); as price) {
                   <strong class="num">{{ price | eur: 2 }}</strong>
                 } @else {
@@ -155,48 +157,6 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
               <ng-container *ngTemplateOutlet="priceBuildTpl" />
             </section>
           }
-          @if (stockOpen() && desktop.active()) {
-            <section class="fold-panel" aria-label="Voorraad per locatie">
-              <div class="stock-rows stock-rows--fold">
-                <ng-container *ngTemplateOutlet="stockRowsTpl" />
-              </div>
-            </section>
-          }
-
-          <!-- Where it lies and what happened lately: plain rows, the way
-               the catalogue list reads, no box to open first. -->
-          <ng-template #stockRowsTpl>
-            @if (stockLevels(); as levels) {
-              @for (level of levels; track level.locationId) {
-                <div class="stock-row">
-                  <span class="stock-row__where">
-                    <b>{{ level.name }}</b>
-                    <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · alle verkoopkanalen' : ' · enkel ter plaatse' }}</small>
-                  </span>
-                  <strong class="num stock-row__qty" [class.muted]="!level.quantity">{{ level.quantity | num }}</strong>
-                </div>
-              }
-            }
-            @if (recentMoves(); as moves) {
-              @if (moves.length) { <div class="stock-rows__head">Laatste bewegingen</div> }
-              @for (move of moves; track move.id) {
-                <div class="stock-row stock-row--move">
-                  <span class="stock-row__where">
-                    <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
-                    <small>{{ move.at | dateTimeNl }} · {{ move.actor }}@if (move.locationName) { · {{ move.locationName }}}</small>
-                  </span>
-                  <strong class="num stock-row__delta" [class.stock-row__delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</strong>
-                </div>
-              }
-            }
-            <div class="stock-row__actions">
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Corrigeren</a>
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'damaged' }">Beschadigd</a>
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock', action: 'demo' }">Demo</a>
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'stock' }">Hele geschiedenis ›</a>
-            </div>
-          </ng-template>
-
           <ng-template #priceBuildTpl>
             <div class="stock-book price-build" role="region" aria-label="Prijsopbouw">
               @if (priceBuild(); as build) {
@@ -223,6 +183,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
           </ng-template>
 
           <div class="details-grid">
+            <div class="details-col">
             <section class="info-card info-card--internal" aria-labelledby="dossier-title">
               <header>
                 <span class="info-card__icon" aria-hidden="true">01</span>
@@ -231,7 +192,6 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
 
               <div class="tiles-kicker tiles-kicker--first">Identificatie</div>
               <div class="tiles">
-                <div class="tile"><span>Leverancier</span><b>{{ supplierName() || '—' }}</b></div>
                 <div class="tile"><span>Afmeting B × D × H</span><b class="num">{{ size(product.dimensions) }}</b></div>
                 <div class="tile"><span>Gewicht per stuk</span>
                   <b class="num">{{ product.dimensions.weightKg ? (product.dimensions.weightKg | num) + ' kg' : '—' }}</b></div>
@@ -239,13 +199,13 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                   <div class="tile"><span>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} B × D × H</span>
                     <b class="num">{{ size(product.packaging.dimensions) }}</b></div>
                   @if (product.packaging.piecesPerUnit) {
-                    <div class="tile"><span>Stuks in de {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</span>
+                    <div class="tile"><span>Stuks in de {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
                       <b class="num">{{ product.packaging.piecesPerUnit | num }}</b></div>
                   }
-                  <div class="tile"><span>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</span>
+                  <div class="tile"><span>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
                     <b class="num">{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | num) + ' kg' : '—' }}</b></div>
                   @if (product.packaging.barcode; as code) {
-                    <div class="tile"><span>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'verpakking' }}</span>
+                    <div class="tile"><span>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
                       <b class="mono">
                         <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
                                 (click)="downloadBarcode(code)">
@@ -280,65 +240,34 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 <div class="tile"><span>Extra kost per stuk</span><b class="num">
                   @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
                 </b><small>bv. display of giftbox</small></div>
-                <div class="tile tile--emphasis"><span>Kostprijs incl. rechten</span><b class="num">
+                <button class="tile tile--emphasis" type="button" (click)="openPriceInfo(product)">
+                  <span>Kostprijs incl. rechten</span><b class="num">
                   @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
-                </b><small>geland: mét transport en invoer</small></div>
-                <div class="tile tile--emphasis"><span>Catalogusprijs</span><b class="num">
+                </b><small>geland: mét transport en invoer</small></button>
+                <button class="tile tile--emphasis" type="button" (click)="openPriceInfo(product)">
+                  <span>Catalogusprijs</span><b class="num">
                   @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
                 </b><small>{{ hasFixedSalesPrice(product)
                   ? 'vaste verkoopprijs'
-                  : 'kostprijs + ' + (product.markupPct | num) + ' % opslag' }}</small></div>
+                  : 'kostprijs + ' + (product.markupPct | num) + ' % opslag' }}</small></button>
                 <div class="tile"><span>HS-code</span><b class="mono">{{ product.hsCode || '—' }}</b></div>
-                <div class="tile"><span>Bron kostprijs</span><b>{{ product.landedCostSource || '—' }}</b></div>
-                <div class="tile tile--result"><span>Marge per stuk</span>
+                @if (sourceOrderId(); as orderId) {
+                  <a class="tile tile--link" [routerLink]="['/purchasing', orderId]">
+                    <span>Bron kostprijs</span><b>{{ product.landedCostSource }} ›</b>
+                  </a>
+                } @else {
+                  <div class="tile"><span>Bron kostprijs</span><b>{{ product.landedCostSource || '—' }}</b></div>
+                }
+                <button class="tile tile--result" type="button" (click)="openPriceInfo(product)">
+                  <span>Marge per stuk</span>
                   @if (margin(); as value) {
                     <b class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }} · {{ value.pct }} %</b>
                   } @else {
                     <b class="muted">Niet beschikbaar</b>
                   }
-                  <small>catalogusprijs min kostprijs</small></div>
+                  <small>catalogusprijs min kostprijs</small></button>
               </div>
             </section>
-
-            <section class="info-card" aria-labelledby="carton-details-title">
-              <header>
-                <span class="info-card__icon" aria-hidden="true">02</span>
-                <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
-              </header>
-              <div class="tiles">
-                <div class="tile"><span>Karton B × D × H</span><b class="num">{{ size(product.carton) }}</b></div>
-                <div class="tile"><span>Inhoud</span><b class="num">
-                  @if (cartonPiecesAuto(product)) { <small class="muted">auto</small> }
-                  {{ product.carton.piecesPerCarton | num }} stuks</b></div>
-                <div class="tile"><span>Gewicht</span><b class="num">
-                  @if (product.carton.weightKg) {
-                    @if (cartonWeightAuto(product)) { <small class="muted">auto</small> }
-                    {{ product.carton.weightKg | num }} kg
-                  } @else { — }
-                </b></div>
-                <div class="tile"><span>Volume</span><b class="num">
-                  @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
-                </b></div>
-                <div class="tile"><span>Per 40' HC</span><b class="num">
-                  @if (product.carton.hcCapacity; as hc) {
-                    @if (!product.carton.piecesPerHc) { <small class="muted">auto</small> }
-                    {{ hc | num }} stuks
-                  } @else { — }
-                </b></div>
-                <div class="tile"><span>Omdoosbarcode</span><b class="mono">
-                  @if (product.barcodeOuter; as code) {
-                    @if (code.length === 13) {
-                      <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
-                              (click)="downloadBarcode(code)">
-                        {{ code }}
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
-                      </button>
-                    } @else { {{ code }} }
-                  } @else { — }
-                </b></div>
-              </div>
-            </section>
-
             @if (familyLoading() || familyLoadError() || variantMembers().length > 1) {
               <section class="info-card" aria-labelledby="linked-products-title">
                 <header>
@@ -377,6 +306,93 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 }
               </section>
             }
+            </div>
+            <div class="details-col">
+            <section class="info-card" aria-labelledby="carton-details-title">
+              <header>
+                <span class="info-card__icon" aria-hidden="true">02</span>
+                <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
+              </header>
+              <div class="tiles">
+                <div class="tile"><span>Karton B × D × H</span><b class="num">{{ size(product.carton) }}</b></div>
+                <div class="tile"><span>Inhoud</span><b class="num">
+                  @if (cartonPiecesAuto(product)) { <small class="muted">auto</small> }
+                  {{ product.carton.piecesPerCarton | num }} stuks</b></div>
+                <div class="tile"><span>Gewicht</span><b class="num">
+                  @if (product.carton.weightKg) {
+                    @if (cartonWeightAuto(product)) { <small class="muted">auto</small> }
+                    {{ product.carton.weightKg | num }} kg
+                  } @else { — }
+                </b></div>
+                <div class="tile"><span>Volume</span><b class="num">
+                  @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
+                </b></div>
+                <div class="tile"><span>Per 40' HC</span><b class="num">
+                  @if (product.carton.hcCapacity; as hc) {
+                    @if (!product.carton.piecesPerHc) { <small class="muted">auto</small> }
+                    {{ hc | num }} stuks
+                  } @else { — }
+                </b></div>
+                <div class="tile"><span>Omdoosbarcode</span><b class="mono">
+                  @if (product.barcodeOuter; as code) {
+                    @if (code.length === 13) {
+                      <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
+                              (click)="downloadBarcode(code)">
+                        {{ code }}
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" /></svg>
+                      </button>
+                    } @else { {{ code }} }
+                  } @else { — }
+                </b></div>
+              </div>
+            </section>
+            <section class="info-card" id="stock-card" aria-labelledby="stock-card-title">
+              <header>
+                <span class="info-card__icon" aria-hidden="true">04</span>
+                <div><h2 id="stock-card-title">Voorraad</h2><p>Locaties en laatste bewegingen</p></div>
+                @if (stockLevels()) {
+                  <strong class="stock-card__total num" [class.warn-text]="stockTotal() <= 0">
+                    {{ stockTotal() | num }}
+                  </strong>
+                }
+              </header>
+              <div class="stock-rows stock-rows--card">
+                @if (stockLevels(); as levels) {
+                  @for (level of levels; track level.locationId) {
+                    <div class="stock-row">
+                      <span class="stock-row__where">
+                        <b>{{ level.name }}</b>
+                        <small>{{ level.kindLabel }}{{ level.countsForWebsite ? ' · alle verkoopkanalen' : ' · enkel ter plaatse' }}</small>
+                      </span>
+                      <strong class="num stock-row__qty" [class.muted]="!level.quantity">{{ level.quantity | num }}</strong>
+                    </div>
+                  }
+                }
+                @if (recentMoves(); as moves) {
+                  @if (moves.length) { <div class="stock-rows__head">Laatste bewegingen</div> }
+                  @for (move of moves; track move.id) {
+                    <div class="stock-row stock-row--move">
+                      <span class="stock-row__where">
+                        <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
+                        <small>{{ move.at | dateTimeNl }} · {{ move.actor }}@if (move.locationName) { · {{ move.locationName }}}</small>
+                      </span>
+                      <strong class="num stock-row__delta" [class.stock-row__delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</strong>
+                    </div>
+                  }
+                }
+                @if (!allMovesOpen() && hiddenMoves() > 0) {
+                  <button class="stock-more" type="button" (click)="allMovesOpen.set(true)">
+                    Meer ({{ hiddenMoves() }}) ›
+                  </button>
+                }
+                <div class="stock-row__actions">
+                  <button type="button" (click)="correctOpen.set(true)">Corrigeren</button>
+                  <button type="button" (click)="openTakeout('DAMAGED')">Beschadigd</button>
+                  <button type="button" (click)="openTakeout('DEMO')">Demo</button>
+                </div>
+              </div>
+            </section>
+            </div>
           </div>
 
           <details class="info-card publication-card">
@@ -452,24 +468,85 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
       </div>
       <!-- Phone: the build-up and the stock book come up as sheets, not
            somewhere further down the page. -->
-      @if (priceOpen() && !desktop.active()) {
-        <app-sheet title="Prijsopbouw" (closed)="priceOpen.set(false)">
+      @if ((priceOpen() && !desktop.active()) || priceInfoOpen()) {
+        <app-sheet title="Prijsopbouw" (closed)="closePriceInfo()">
           <div body><ng-container *ngTemplateOutlet="priceBuildTpl" /></div>
           <div foot style="display:contents">
             <span class="spacer"></span>
-            <button class="btn" type="button" (click)="priceOpen.set(false)">Sluiten</button>
+            <button class="btn" type="button" (click)="closePriceInfo()">Sluiten</button>
           </div>
         </app-sheet>
       }
-      @if (stockOpen() && !desktop.active()) {
-        <app-sheet title="Voorraad" (closed)="stockOpen.set(false)">
+
+      <!-- Broken or given away as demo: the piece leaves the shelf with a
+           note that says why - right here, not in the editor. -->
+      @if (takeout(); as out) {
+        <app-sheet [title]="out.kind === 'DAMAGED' ? 'Stuk / beschadigd' : 'Demo weggegeven'" (closed)="takeout.set(null)">
           <div body>
-            <p class="hint">{{ stockTotal() | num }} stuks@if (stockSummary()) { · {{ stockSummary() }}}</p>
-            <div class="stock-rows stock-rows--sheet"><ng-container *ngTemplateOutlet="stockRowsTpl" /></div>
+            <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
+              <button type="button" [class.on]="out.kind === 'DAMAGED'"
+                      (click)="takeout.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
+              <button type="button" [class.on]="out.kind === 'DEMO'"
+                      (click)="takeout.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
+            </div>
+            <div class="form-grid mt-12">
+              @if ((stockLevels() ?? []).length > 1) {
+                <div class="field">
+                  <label for="out-loc">Locatie</label>
+                  <select class="select" id="out-loc"
+                          (change)="takeout.set({ ...out, locationId: +$any($event.target).value })">
+                    @for (level of stockLevels(); track level.locationId) {
+                      <option [value]="level.locationId" [selected]="out.locationId === level.locationId">
+                        {{ level.name }} ({{ level.quantity | num }})
+                      </option>
+                    }
+                  </select>
+                </div>
+              }
+              <div class="field">
+                <label class="req" for="out-qty">Aantal</label>
+                <input class="input num right" id="out-qty" type="number" min="1" step="1" inputmode="numeric"
+                       [value]="out.quantity || ''"
+                       (input)="takeout.set({ ...out, quantity: +$any($event.target).value })" />
+              </div>
+              <div class="field span-2">
+                <label for="out-note">Notitie <span class="opt"></span></label>
+                <input class="input" id="out-note"
+                       [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens'"
+                       [value]="out.note"
+                       (input)="takeout.set({ ...out, note: $any($event.target).value })" />
+              </div>
+            </div>
           </div>
           <div foot style="display:contents">
             <span class="spacer"></span>
-            <button class="btn" type="button" (click)="stockOpen.set(false)">Sluiten</button>
+            <button class="btn" type="button" (click)="takeout.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="stockSaving() || !(out.quantity > 0)"
+                    (click)="confirmTakeout()">{{ stockSaving() ? 'Bezig…' : 'Melden' }}</button>
+          </div>
+        </app-sheet>
+      }
+
+      <!-- A recount: type the number, it books as a correction at once. -->
+      @if (correctOpen()) {
+        <app-sheet title="Voorraad corrigeren" (closed)="correctOpen.set(false)">
+          <div body>
+            <div class="correct-levels">
+              @for (level of stockLevels(); track level.locationId) {
+                <label class="correct-levels__tile">
+                  <small>{{ level.name }}</small>
+                  <input class="correct-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
+                         [attr.aria-label]="level.name" [value]="level.quantity"
+                         (keydown.enter)="$any($event.target).blur()"
+                         (change)="bookCorrection(level.locationId, $any($event.target))" />
+                </label>
+              }
+            </div>
+            <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt.</p>
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="correctOpen.set(false)">Sluiten</button>
           </div>
         </app-sheet>
       }
@@ -486,7 +563,8 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     .phero__id { min-width: 0; }
     .phero__eyebrow { color: #efb8c4; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
     .phero h1 { margin: 3px 0 0; color: #fff; font-size: clamp(20px, 5.5vw, 28px); line-height: 1.15; letter-spacing: -.03em; }
-    .phero__supplier { margin: 3px 0 0; color: rgb(255 255 255 / 60%); font-size: 12px; }
+    .phero__supplier { display: block; margin: 3px 0 0; color: rgb(255 255 255 / 60%); font-size: 12px; text-decoration: none; }
+    .phero__supplier:active { color: rgb(255 255 255 / 85%); }
     .phero__meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
     .phero__meta span { display: inline-flex; align-items: center; gap: 5px; padding: 3.5px 9px;
       border-radius: 999px; background: rgb(255 255 255 / 10%); color: rgb(255 255 255 / 85%); font-size: 11px; }
@@ -542,6 +620,11 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     .tiles > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
     .tile > span { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
     .tile > b { font-size: 12.5px; font-weight: 650; overflow-wrap: anywhere; }
+    button.tile { border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+    a.tile { color: inherit; text-decoration: none; }
+    a.tile:hover > b { text-decoration: underline dotted; }
+    button.tile:hover > b { text-decoration: underline dotted; }
+    button.tile:active { opacity: .75; }
     .tile--emphasis { background: var(--rose-soft); }
     .tile--emphasis > b { font-weight: 800; }
     .tile > small { margin-top: 1px; color: var(--muted); font-size: 9.5px; line-height: 1.35; }
@@ -579,6 +662,8 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     .stock-rows--sheet .stock-row__actions { gap: 8px; padding-top: 12px; }
     .stock-rows--sheet .stock-row__actions a { padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 12.5px; }
     .stock-rows { margin-top: 10px; border-top: 1px solid var(--line); }
+    .stock-rows--card { margin-top: 0; padding: 2px 14px 10px; border-top: 0; }
+    .stock-card__total { font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
     .stock-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 2px;
       border-bottom: 1px solid var(--line); }
     .stock-row__where { display: grid; min-width: 0; }
@@ -589,8 +674,18 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     .stock-row__delta { font-size: 13px; font-weight: 750; color: var(--ok, #2e7d4f); }
     .stock-row__delta--minus { color: var(--danger); }
     .stock-row__actions { display: flex; flex-wrap: wrap; gap: 14px; padding: 9px 2px 0; font-size: 12.5px; font-weight: 650; }
-    .stock-row__actions a { color: var(--rose-dark); text-decoration: none; }
-    .stock-row__actions a:last-child { margin-left: auto; color: var(--muted); }
+    .stock-row__actions button { padding: 0; border: 0; background: none; color: var(--rose-dark);
+      font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+    .stock-more { margin: 2px 0 0; padding: 6px 2px 0; border: 0; background: none; color: var(--muted);
+      font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+    .takeout-kind { margin-bottom: 4px; }
+    .correct-levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .correct-levels__tile { display: grid; gap: 3px; padding: 10px 11px; border: 1px solid var(--line);
+      border-radius: 12px; background: var(--surface-2); }
+    .correct-levels__tile small { color: var(--muted); font-size: 10px; font-weight: 700;
+      letter-spacing: .05em; text-transform: uppercase; }
+    .correct-levels__qty { width: 100%; border: 0; background: transparent; font: inherit;
+      font-size: 16px; font-weight: 750; }
 
     .expected { color: var(--warn); font-style: normal; font-weight: 700; text-decoration: none; }
     /* On the water: always its own, last line under the stock. */
@@ -651,7 +746,8 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
       border-radius: 50%; background: var(--warn); color: #fff; font-size: 12px; font-weight: 800; }
     .publication-alert b { font-size: 11.5px; }
     .publication-alert p { margin-top: 1px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
-    .details-grid { display: grid; gap: 12px; margin-top: 14px; }
+    .details-grid, .details-col { display: grid; gap: 12px; min-width: 0; }
+    .details-grid { margin-top: 14px; }
     .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);
       background: var(--surface); box-shadow: var(--sh-1); }
     .info-card > header { display: flex; align-items: center; gap: 10px; min-height: 64px;
@@ -676,7 +772,10 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
       .phero__shot { width: 84px; }
       .phero__shot span { display: none; }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
+      /* Two independent stacks: the dossier with its linked products on
+         the left, Omdoos with the stock on the right. */
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+      .details-col { gap: 14px; }
     }
   `,
 })
@@ -694,7 +793,6 @@ export class ProductView {
   /* The stock book, fetched the first time the tile is opened. */
   /** Pieces on the water for this product, from ordered and shipped containers. */
   readonly expected = signal<ExpectedStock | null>(null);
-  readonly stockOpen = signal(false);
   readonly stockHistory = signal<StockMovement[] | null>(null);
   readonly stockLevels = signal<ProductStock[] | null>(null);
   readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
@@ -718,17 +816,30 @@ export class ProductView {
     const derived = autoCartonWeightKg(product, product.carton.piecesPerCarton);
     return derived !== null && derived === product.carton.weightKg;
   }
-  toggleStock(): void {
-    const open = !this.stockOpen();
-    this.stockOpen.set(open);
-    if (open) this.priceOpen.set(false);
+  scrollToStock(): void {
+    document.getElementById('stock-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   readonly priceBuild = signal<PriceBuild | null>(null);
+  /** Id of the purchase calculation the cost price came from, when it still exists. */
+  readonly sourceOrderId = signal<number | null>(null);
+  /** The card tiles open the build-up as a sheet on every screen size. */
+  readonly priceInfoOpen = signal(false);
+
+  openPriceInfo(product: Product): void {
+    this.priceInfoOpen.set(true);
+    if (product.id !== null && this.priceBuild() === null) {
+      void this.loadPriceBuild(product);
+    }
+  }
+
+  closePriceInfo(): void {
+    this.priceOpen.set(false);
+    this.priceInfoOpen.set(false);
+  }
 
   togglePrice(product: Product): void {
     const open = !this.priceOpen();
     this.priceOpen.set(open);
-    if (open) this.stockOpen.set(false);
     if (open && product.id !== null && this.priceBuild() === null) {
       void this.loadPriceBuild(product);
     }
@@ -814,8 +925,70 @@ export class ProductView {
     this.priceBuild.set({ rows, source, sourceFound: line !== null });
   }
 
-  /** The five latest lines of the stock book; the editor shows them all. */
-  readonly recentMoves = computed(() => this.stockHistory()?.slice(0, 5) ?? null);
+  /** Three latest lines of the stock book; "Meer" unfolds the rest. */
+  readonly allMovesOpen = signal(false);
+  readonly hiddenMoves = computed(() => Math.max(0, (this.stockHistory()?.length ?? 0) - 3));
+  readonly recentMoves = computed(() => {
+    const history = this.stockHistory();
+    if (!history) return null;
+    return this.allMovesOpen() ? history : history.slice(0, 3);
+  });
+
+  /* ---- stock actions, right on the page ---- */
+  readonly correctOpen = signal(false);
+  readonly stockSaving = signal(false);
+  readonly takeout = signal<{
+    kind: 'DAMAGED' | 'DEMO'; locationId: number | null; quantity: number; note: string;
+  } | null>(null);
+
+  openTakeout(kind: 'DAMAGED' | 'DEMO'): void {
+    const levels = this.stockLevels() ?? [];
+    const preferred = levels.find((level) => level.quantity > 0) ?? levels[0];
+    this.takeout.set({ kind, locationId: preferred?.locationId ?? null, quantity: 0, note: '' });
+  }
+
+  async confirmTakeout(): Promise<void> {
+    const product = this.product();
+    const out = this.takeout();
+    if (!product || product.id === null || !out || !(out.quantity > 0)) return;
+    this.stockSaving.set(true);
+    try {
+      await this.catalog.takeOutStock(product.id, {
+        locationId: out.locationId, quantity: out.quantity, kind: out.kind,
+        note: out.note.trim() || null,
+      });
+      this.takeout.set(null);
+      this.ui.toast(out.kind === 'DAMAGED' ? 'Beschadigde stuks geboekt' : 'Demo geboekt');
+      this.refreshStock(product.id);
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Boeken mislukt'), 'err');
+    } finally {
+      this.stockSaving.set(false);
+    }
+  }
+
+  async bookCorrection(locationId: number, input: HTMLInputElement): Promise<void> {
+    const product = this.product();
+    if (!product || product.id === null) return;
+    const quantity = Math.max(0, Math.floor(Number(input.value) || 0));
+    this.stockSaving.set(true);
+    try {
+      await this.catalog.setStock(product.id, quantity, locationId);
+      this.ui.toast('Correctie geboekt');
+      this.refreshStock(product.id);
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Correctie boeken mislukt'), 'err');
+    } finally {
+      this.stockSaving.set(false);
+    }
+  }
+
+  /** After a booking every figure on the page tells the new truth. */
+  private refreshStock(productId: number): void {
+    this.catalog.productStock(productId).then((levels) => this.stockLevels.set(levels)).catch(() => {});
+    this.loadStockHistory(productId);
+    this.catalog.product(productId).then((product) => this.product.set(product)).catch(() => {});
+  }
 
   private loadStockHistory(productId: number): void {
     this.catalog.stockMovements(productId)
@@ -904,9 +1077,12 @@ export class ProductView {
     const version = ++this.loadVersion;
     this.product.set(null);
     this.priceOpen.set(false);
+    this.priceInfoOpen.set(false);
     this.priceBuild.set(null);
-    this.stockOpen.set(false);
     this.stockHistory.set(null);
+    this.allMovesOpen.set(false);
+    this.correctOpen.set(false);
+    this.takeout.set(null);
     this.family.set(null);
     this.familyLoadError.set(false);
     this.familyLoading.set(false);
@@ -925,6 +1101,14 @@ export class ProductView {
     }
     this.categories.set(categories);
     this.suppliers.set(suppliers);
+    this.sourceOrderId.set(null);
+    if (product.landedCostSource) {
+      void this.sourcing.purchaseOrders().then((orders) => {
+        if (version !== this.loadVersion) return;
+        this.sourceOrderId.set(
+          orders.find((item) => item.order.number === product.landedCostSource)?.order.id ?? null);
+      }).catch(() => {});
+    }
     if (!this.catalogueOrder().length) {
       void this.catalog.products()
         .then((all) => this.catalogueOrder.set(orderLikeTheList(all, categories)))
