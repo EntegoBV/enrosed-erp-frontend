@@ -230,6 +230,17 @@ export interface ProductPublicTranslationImage {
   altTexts: ProductFamilyImageAlt[];
 }
 
+export interface ProductPublicNameText {
+  language: LanguageCode;
+  publicName: string | null;
+}
+
+/** Customer-facing product name, deliberately separate from ERP/document names. */
+export interface ProductPublicCopy {
+  publicName: string | null;
+  texts: ProductPublicNameText[];
+}
+
 export interface ProductPublicTranslationsSnapshot {
   revision: string;
   /** Null for a deliberately standalone product. */
@@ -240,6 +251,8 @@ export interface ProductPublicTranslationsSnapshot {
   images: ProductPublicTranslationImage[];
   family: ProductFamily | null;
   product: Product;
+  /** Optional while an older backend is being upgraded. */
+  productPublicCopy?: ProductPublicCopy | null;
 }
 
 export interface ProductPublicTranslationsWrite {
@@ -248,6 +261,7 @@ export interface ProductPublicTranslationsWrite {
   familyTexts: ProductFamilyText[];
   productTexts: ProductText[];
   images: ProductPublicTranslationImage[];
+  productPublicCopy?: ProductPublicCopy | null;
 }
 
 export interface ProductExternalIdentifier {
@@ -484,6 +498,41 @@ export interface WebsiteRebuildStatus {
   currentRevision: string | null;
   liveRevision: string | null;
   lastError: string | null;
+}
+
+export type WebsiteBuilderSectionKey =
+  | 'hero'
+  | 'range'
+  | 'order'
+  | 'counter'
+  | 'flowerbox'
+  | 'soap'
+  | 'occasion'
+  | 'retail'
+  | 'faq'
+  | 'catalog'
+  | 'quote';
+
+export interface WebsiteBuilderSection {
+  key: WebsiteBuilderSectionKey;
+  enabled: boolean;
+}
+
+export interface WebsiteBuilderLayout {
+  sections: WebsiteBuilderSection[];
+}
+
+export interface WebsiteBuilderHomepage {
+  revision: string | number;
+  draft: WebsiteBuilderLayout;
+  published: WebsiteBuilderLayout;
+  updatedAt: string | null;
+  publishedAt: string | null;
+}
+
+export interface PublicWebsiteLayout {
+  revision: string | number;
+  homepage: WebsiteBuilderLayout;
 }
 
 export interface HsCode {

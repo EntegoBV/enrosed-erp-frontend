@@ -235,6 +235,18 @@ const PREFIX_LABELS: Record<string, string> = {
                     </button>
                   }
                 </div>
+                <label class="mobile-language-picker">
+                  <span>Taal kiezen</span>
+                  <select class="select" [ngModel]="selectedLanguage()"
+                          (ngModelChange)="selectedLanguage.set($any($event))">
+                    @for (language of languages; track language.code) {
+                      <option [ngValue]="language.code">
+                        {{ language.label }} — {{ hasText(group, language.code)
+                          ? 'compleet' : (group.required ? 'ontbreekt' : 'nog leeg') }}
+                      </option>
+                    }
+                  </select>
+                </label>
 
                 <label class="translation-value">
                   <span>{{ selectedLanguageLabel() }}</span>
@@ -242,6 +254,13 @@ const PREFIX_LABELS: Record<string, string> = {
                             (ngModelChange)="patchValue($event)"
                             [placeholder]="group.required ? 'Verplichte vertaling' : 'Optionele vertaling'"></textarea>
                 </label>
+                @if (nextMissingLanguage(); as nextLanguage) {
+                  <button class="next-language" type="button"
+                          (click)="selectedLanguage.set(nextLanguage.code)">
+                    Volgende ontbrekende taal: <b>{{ nextLanguage.label }}</b>
+                    <span aria-hidden="true">›</span>
+                  </button>
+                }
 
                 @if (conflict()) {
                   <div class="conflict" role="alert">
@@ -385,6 +404,7 @@ const PREFIX_LABELS: Record<string, string> = {
     .language-tabs b { font-size: 9px; }
     .language-tabs small { color: var(--warn); font-size: 8px; }
     .language-tabs button.complete small { color: var(--ok); }
+    .mobile-language-picker { display: none; }
     .translation-value { display: grid; gap: 5px; margin-top: 11px; }
     .translation-value > span { font-size: 10.5px; font-weight: 650; }
     .conflict, .save-error {
@@ -395,7 +415,56 @@ const PREFIX_LABELS: Record<string, string> = {
     .conflict > div { display: grid; gap: 1px; }
     .conflict small { font-size: 9px; }
     .group-editor__actions { display: flex; align-items: center; gap: 6px; margin-top: 11px; }
+    .next-language { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: flex-start; gap: 5px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 13px; cursor: pointer; }
+    .next-language span { margin-left: auto; color: var(--rose-dark); font-size: 21px; }
     .danger-link { color: var(--danger); }
+
+    @media (max-width: 720px) {
+      .content-translations__head { align-items: stretch; flex-direction: column; }
+      .content-translations__head h2 { font-size: 18px; }
+      .content-translations__head p, .overview-progress, .workspace-state { font-size: 13px; line-height: 1.45; }
+      .overview-progress { align-self: flex-start; }
+      .workspace-controls { position: static; margin: 0; padding: 0; background: var(--surface); backdrop-filter: none; }
+      .workspace-toolbar { align-items: stretch; flex-direction: column; }
+      .scope-switch { display: grid; grid-template-columns: 1fr 1fr; }
+      .scope-switch button, .content-translations .btn { min-height: 48px; font-size: 14px; }
+      .language-overview { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+      .language-overview > span { min-height: 42px; }
+      .language-overview b, .language-overview small { font-size: 12px; }
+      .filter-row { align-items: stretch; flex-direction: column; }
+      .content-search .input { min-height: 48px; }
+      .result-count { font-size: 13px; }
+      .prefix-filters { gap: 7px; padding-block: 2px 7px; }
+      .prefix-filters button { min-height: 48px; padding-inline: 14px; font-size: 13px; }
+      .prefix-filters small { font-size: 12px; }
+      .create-group { grid-template-columns: 1fr; }
+      .create-group__actions .btn { flex: 1; }
+      .workspace-grid { grid-template-columns: 1fr; }
+      .group-list { max-height: 300px; padding-right: 0; }
+      .group-list > button { min-height: 64px; padding: 11px 12px; }
+      .group-list b { font-size: 15px; }
+      .group-list small { font-size: 12px; }
+      .group-list em { min-width: 28px; height: 28px; font-size: 12px; }
+      .group-editor { padding: 13px; }
+      .group-editor__head { align-items: stretch; flex-direction: column; }
+      .group-label { min-height: 48px; font-size: 17px; }
+      .group-editor__head small, .eyebrow { font-size: 12px; }
+      .required-toggle { min-height: 48px; font-size: 14px; }
+      .required-toggle input { width: 22px; height: 22px; }
+      .legal-review b { font-size: 14px; }
+      .legal-review small { font-size: 13px; }
+      .language-tabs { display: none; }
+      .mobile-language-picker { display: grid; gap: 6px; margin-top: 12px; }
+      .mobile-language-picker > span, .translation-value > span { font-size: 14px; font-weight: 700; }
+      .mobile-language-picker .select { min-height: 48px; font-size: 16px; }
+      .translation-value .textarea { min-height: 190px; font-size: 16px; }
+      .conflict, .save-error { font-size: 13px; }
+      .conflict { align-items: stretch; flex-direction: column; }
+      .conflict small { font-size: 13px; }
+      .group-editor__actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .group-editor__actions .spacer { display: none; }
+      .group-editor__actions .danger-link { grid-column: 1 / -1; }
+    }
   `,
 })
 export class ContentTranslationWorkspace {
@@ -480,6 +549,18 @@ export class ContentTranslationWorkspace {
   readonly selectedValue = computed(() => this.draft()?.texts.find(
     (text) => text.language === this.selectedLanguage(),
   )?.value ?? '');
+  readonly nextMissingLanguage = computed(() => {
+    const group = this.draft();
+    if (!group?.required) return null;
+    const currentIndex = this.languages.findIndex(
+      (language) => language.code === this.selectedLanguage(),
+    );
+    for (let offset = 1; offset < this.languages.length; offset += 1) {
+      const candidate = this.languages[(currentIndex + offset) % this.languages.length];
+      if (!this.hasText(group, candidate.code)) return candidate;
+    }
+    return null;
+  });
   readonly legalReview = computed(() => {
     const group = this.draft();
     return !!group && /(?:legal|terms|conditions|privacy|voorwaarden|jurid)/i

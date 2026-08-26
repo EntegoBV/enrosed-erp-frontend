@@ -91,6 +91,9 @@ import { Icon } from './shared/icon';
               <a class="sidebar__link" routerLink="/products" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
               </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website-builder" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="settings" [size]="18" /> Website beheren
+              </a>
               <a class="sidebar__link" routerLink="/stock" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
               </a>
@@ -257,7 +260,8 @@ export class App {
 
   readonly catalogRoute = computed(() => {
     const url = this.url();
-    return url.startsWith('/products') || url.startsWith('/catalog-export');
+    return url.startsWith('/products') || url.startsWith('/catalog-export')
+      || url.startsWith('/website-builder');
   });
 
   readonly moreRoute = computed(() => {

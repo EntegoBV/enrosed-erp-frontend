@@ -94,6 +94,12 @@ import { THEMES, Theme } from '../../core/platform/theme';
               <div class="list-item__meta">Productgroepen en volgorde</div></div>
             <span class="list-item__chev">›</span>
           </a>
+          <a class="list-item" routerLink="/website-builder">
+            <span class="thumb thumb--placeholder"><app-icon name="settings" /></span>
+            <div class="list-item__body"><div class="list-item__title">Website beheren</div>
+              <div class="list-item__meta">Volgorde, zichtbaarheid en testvoorbeeld</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
           <a class="list-item" [routerLink]="['/settings']" [queryParams]="{ sectie: 'catalog-data' }">
             <span class="thumb thumb--placeholder"><app-icon name="products" /></span>
             <div class="list-item__body"><div class="list-item__title">Catalogusdata</div>

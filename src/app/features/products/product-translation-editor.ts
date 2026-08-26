@@ -20,6 +20,8 @@ import {
   ProductFamily,
   ProductFamilyImage,
   ProductFamilyText,
+  ProductPublicCopy,
+  ProductPublicNameText,
   ProductPublicTranslationsSnapshot,
   ProductPublicTranslationsWrite,
   ProductText,
@@ -87,11 +89,22 @@ import {
                     [class.complete]="!option.gaps"
                     [disabled]="effectiveBusy()"
                     (click)="selectLanguage(option.code)">
-              <span>{{ option.code }}</span>
-              <small>{{ option.gaps ? option.gaps : '✓' }}</small>
+              <span>{{ option.label }}</span>
+              <small>{{ option.gaps ? option.gaps + ' mist' : 'Compleet' }}</small>
             </button>
           }
         </div>
+        <label class="mobile-language-picker">
+          <span>Taal kiezen</span>
+          <select class="select" [ngModel]="language()" [disabled]="effectiveBusy()"
+                  (ngModelChange)="selectLanguage($any($event))">
+            @for (option of languageStates(); track option.code) {
+              <option [ngValue]="option.code">
+                {{ option.label }} — {{ option.gaps ? option.gaps + ' ontbreekt' : 'compleet' }}
+              </option>
+            }
+          </select>
+        </label>
 
         <fieldset class="translation-fields" [disabled]="effectiveBusy()"
                   role="tabpanel"
@@ -114,6 +127,37 @@ import {
               <span class="language-state__check" aria-hidden="true">✓</span>
             }
           </div>
+          @if (nextIncompleteLanguage(); as nextLanguage) {
+            <button class="next-language" type="button" [disabled]="effectiveBusy()"
+                    (click)="selectLanguage(nextLanguage.code)">
+              Volgende taal met ontbrekende velden: <b>{{ nextLanguage.label }}</b>
+              <span aria-hidden="true">›</span>
+            </button>
+          }
+
+          <section class="translation-group public-name-group" aria-labelledby="public-name-title">
+            <div class="translation-group__head">
+              <div>
+                <h4 id="public-name-title">Naam op de website</h4>
+                <p>De publieke naam mag vriendelijker zijn dan de interne productnaam.</p>
+              </div>
+              <span>Website</span>
+            </div>
+            <div class="public-name-grid">
+              <div class="internal-name-card">
+                <span>Interne productnaam</span>
+                <b>{{ (productDraft() ?? product()).name }}</b>
+                <small>Blijft ongewijzigd voor administratie, voorraad en documenten.</small>
+              </div>
+              <label class="field public-name-field">
+                <span>Publieke naam in {{ languageLabel() }}</span>
+                <input class="input" maxlength="255" [ngModel]="publicName()"
+                       [placeholder]="(productDraft() ?? product()).name"
+                       (ngModelChange)="patchPublicName($event)" />
+                <small class="field__hint">Dit is de naam die bezoekers op de website zien.</small>
+              </label>
+            </div>
+          </section>
 
           @if (familyDraft()) {
           <section class="translation-group" aria-labelledby="shared-translation-title">
@@ -173,11 +217,11 @@ import {
             </div>
             <div class="form-grid">
               <label class="field">
-                <span>{{ familyDraft() ? 'Variantnaam in ' + language() : 'Productnaam in ' + language() }}</span>
+                <span>{{ familyDraft() ? 'Documentnaam variant in ' + language() : 'Documentnaam in ' + language() }}</span>
                 <input class="input" [ngModel]="variantText().name"
                        [placeholder]="(productDraft() ?? product()).name"
                        (ngModelChange)="patchVariant({ name: $event })" />
-                <small class="field__hint">Hoe deze uitvoering op de website heet; leeg = de familienaam.</small>
+                <small class="field__hint">Voor offertes en klantdocumenten. De websitenaam staat hierboven apart.</small>
               </label>
               @if ((productDraft() ?? product()).colour) {
                 <label class="field">
@@ -284,67 +328,76 @@ import {
     .translations__head, .translation-group__head, .language-state, .editor-state {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
     }
-    .translations__head h3 { font-size: 13.5px; }
+    .translations__head h3 { font-size: 17px; }
     .translations__head p, .translation-group__head p {
-      margin-top: 2px; color: var(--muted); font-size: 10.5px; line-height: 1.4;
+      margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.45;
     }
     .completion-badge {
       flex: none; padding: 5px 8px; border: 1px solid var(--warn); border-radius: 999px;
-      background: var(--warn-soft); color: var(--ink-2); font-size: 9.5px; font-weight: 750;
+      background: var(--warn-soft); color: var(--ink-2); font-size: 13px; font-weight: 750;
     }
     .completion-badge--done { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
     .editor-state {
       min-height: 64px; align-items: center; margin-top: 12px; padding: 11px;
-      border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: 10.5px;
+      border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: 14px;
     }
     .editor-state > div { display: grid; gap: 2px; }
-    .editor-state small { font-size: 9px; }
+    .editor-state small { font-size: 13px; }
     .editor-state--error { background: var(--danger-soft); color: var(--danger); }
     .language-tabs {
-      display: grid; grid-template-columns: repeat(8, minmax(52px, 1fr)); gap: 5px;
+      display: grid; grid-template-columns: repeat(4, minmax(112px, 1fr)); gap: 7px;
       margin-top: 12px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin;
     }
     .language-tabs button {
-      display: flex; min-width: 52px; min-height: 44px; align-items: center; justify-content: center;
-      gap: 5px; padding: 6px; border: 1px solid var(--line); border-radius: 9px;
+      display: grid; min-width: 112px; min-height: 56px; align-content: center; justify-items: start;
+      gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
       background: var(--surface-2); color: var(--ink-2); cursor: pointer;
     }
-    .language-tabs button span { font-size: 10.5px; font-weight: 800; }
+    .language-tabs button span { font-size: 14px; font-weight: 750; }
     .language-tabs button small {
-      display: grid; min-width: 17px; height: 17px; place-items: center; padding-inline: 3px;
-      border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 8.5px;
+      color: var(--warn); font-size: 12px; font-weight: 650;
     }
-    .language-tabs button.complete small { background: var(--ok-soft); color: var(--ok); }
+    .language-tabs button.complete small { color: var(--ok); }
     .language-tabs button.active {
       border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark);
       box-shadow: inset 0 0 0 1px var(--rose);
     }
     .translation-fields { min-inline-size: 0; margin: 12px 0 0; padding: 0; border: 0; }
+    .mobile-language-picker { display: none; }
     .language-state {
       align-items: center; padding: 10px 11px; border: 1px solid var(--warn);
       border-radius: var(--r-sm); background: var(--warn-soft);
     }
     .language-state--complete { border-color: var(--ok); background: var(--ok-soft); }
     .language-state > div:first-child { display: grid; gap: 1px; }
-    .language-state b { font-size: 11.5px; }
-    .language-state small { color: var(--muted); font-size: 9.5px; }
+    .language-state b { font-size: 15px; }
+    .language-state small { color: var(--muted); font-size: 13px; }
     .language-state__check { color: var(--ok); font-size: 16px; font-weight: 800; }
     .missing-fields { display: flex; max-width: 64%; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
     .missing-fields span {
       padding: 4px 6px; border-radius: 999px; background: rgb(255 255 255 / 72%);
-      color: var(--ink-2); font-size: 8.5px; font-weight: 650;
+      color: var(--ink-2); font-size: 12px; font-weight: 650;
     }
+    .next-language { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: flex-start; gap: 5px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 13px; cursor: pointer; }
+    .next-language span { margin-left: auto; color: var(--rose-dark); font-size: 21px; }
     .translation-group { padding: 16px 0; border-bottom: 1px solid var(--line); }
     .translation-group__head { margin-bottom: 11px; }
-    .translation-group__head h4 { font-size: 12.5px; }
+    .translation-group__head h4 { font-size: 16px; }
     .translation-group__head > span {
-      flex: none; color: var(--muted); font-size: 9px; font-weight: 750;
+      flex: none; color: var(--muted); font-size: 12px; font-weight: 750;
       letter-spacing: .07em; text-transform: uppercase;
     }
     .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .field { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
-    .field > span { color: var(--ink-2); font-size: 12px; font-weight: 650; }
-    .field__hint { color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+    .field > span { color: var(--ink-2); font-size: 14px; font-weight: 650; }
+    .field__hint { color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .public-name-group { border: 1px solid var(--rose); border-radius: var(--r-sm); margin-top: 14px; padding: 15px; background: var(--rose-soft); }
+    .public-name-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); align-items: stretch; gap: 12px; }
+    .internal-name-card { display: grid; align-content: center; gap: 4px; min-height: 92px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .internal-name-card > span { color: var(--muted); font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+    .internal-name-card b { overflow-wrap: anywhere; color: var(--ink-2); font-size: 15px; }
+    .internal-name-card small { color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .public-name-field { justify-content: center; }
     .span-2 { grid-column: 1 / -1; }
     .photo-alt-list { display: grid; gap: 6px; }
     .photo-alt-row {
@@ -354,18 +407,37 @@ import {
     }
     .photo-alt-row img { width: 46px; height: 46px; border-radius: 7px; object-fit: cover; }
     .photo-alt-row > span { display: grid; gap: 1px; }
-    .photo-alt-row b { font-size: 10px; }
-    .photo-alt-row small, .empty-photos { color: var(--muted); font-size: 8.5px; }
+    .photo-alt-row b { font-size: 13px; }
+    .photo-alt-row small, .empty-photos { color: var(--muted); font-size: 12px; }
     .empty-photos { padding: 10px 0; }
     .conflict, .save-error {
       margin-top: 10px; padding: 9px 10px; border-radius: 9px;
-      background: var(--danger-soft); color: var(--danger); font-size: 10px;
+      background: var(--danger-soft); color: var(--danger); font-size: 13px;
     }
     .conflict { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .conflict > div { display: grid; gap: 1px; }
-    .conflict small { font-size: 9px; }
+    .conflict small { font-size: 12px; }
     .translation-actions { display: flex; align-items: center; gap: 6px; margin-top: 11px; }
-    .translation-actions > span { margin-right: auto; color: var(--muted); font-size: 9px; }
+    .translation-actions > span { margin-right: auto; color: var(--muted); font-size: 13px; }
+    .translations .btn { min-height: 48px; font-size: 14px; }
+    .translations .input, .translations .select { min-height: 48px; }
+    @media (max-width: 720px) {
+      .language-tabs { display: none; }
+      .mobile-language-picker { display: grid; gap: 6px; margin-top: 14px; }
+      .mobile-language-picker > span { color: var(--ink-2); font-size: 14px; font-weight: 700; }
+      .public-name-grid, .form-grid { grid-template-columns: 1fr; }
+      .span-2 { grid-column: auto; }
+      .public-name-group { padding: 13px; }
+      .public-name-field .input { min-height: 48px; }
+      .language-state { align-items: flex-start; flex-direction: column; }
+      .missing-fields { max-width: 100%; justify-content: flex-start; }
+      .photo-alt-row { grid-template-columns: 56px minmax(0, 1fr); }
+      .photo-alt-row img { width: 56px; height: 56px; }
+      .photo-alt-row .input { grid-column: 1 / -1; }
+      .translation-actions { align-items: stretch; flex-direction: column; }
+      .translation-actions > span { margin: 0 0 3px; }
+      .translation-actions .btn { width: 100%; }
+    }
   `,
 })
 export class ProductTranslationEditor {
@@ -389,6 +461,7 @@ export class ProductTranslationEditor {
   readonly snapshot = signal<ProductPublicTranslationsSnapshot | null>(null);
   readonly familyDraft = signal<ProductFamily | null>(null);
   readonly productDraft = signal<Product | null>(null);
+  readonly publicCopyDraft = signal<ProductPublicCopy | null>(null);
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly loadError = signal<string | null>(null);
@@ -410,20 +483,38 @@ export class ProductTranslationEditor {
     const product = this.productDraft();
     return product ? productText(product, this.language()) : blankProductText(this.language());
   });
+  readonly publicName = computed(() => {
+    const copy = this.publicCopyDraft();
+    if (!copy) return '';
+    return copy.texts.find((text) => text.language === this.language())?.publicName
+      ?? (this.language() === 'EN' ? copy.publicName : null)
+      ?? '';
+  });
   readonly highlightsText = computed(() => this.sharedText().highlights.join('\n'));
   readonly gaps = computed(() => {
     const family = this.familyDraft();
     const product = this.productDraft();
-    return product ? translationGaps(family, product, this.language()) : [];
+    return product
+      ? translationGaps(family, product, this.language(), this.publicCopyDraft())
+      : [];
   });
   readonly languageStates = computed(() => this.languages.map((option) => {
     const family = this.familyDraft();
     const product = this.productDraft();
     return { ...option, gaps: product
-      ? translationGaps(family, product, option.code).length : 0 };
+      ? translationGaps(family, product, option.code, this.publicCopyDraft()).length : 0 };
   }));
   readonly completeCount = computed(() =>
     this.languageStates().filter((state) => state.gaps === 0).length);
+  readonly nextIncompleteLanguage = computed(() => {
+    const states = this.languageStates();
+    const currentIndex = states.findIndex((state) => state.code === this.language());
+    for (let offset = 1; offset < states.length; offset += 1) {
+      const candidate = states[(currentIndex + offset) % states.length];
+      if (candidate.gaps > 0) return candidate;
+    }
+    return null;
+  });
   readonly languageLabel = computed(() =>
     this.languages.find((item) => item.code === this.language())?.label ?? this.language());
   readonly variantLabel = computed(() => {
@@ -493,6 +584,24 @@ export class ProductTranslationEditor {
     if (this.effectiveBusy()) return;
     this.productDraft.update((product) => product
       ? upsertProductText(product, this.language(), changes) : product);
+    this.resetSaveState();
+  }
+
+  patchPublicName(value: string): void {
+    if (this.effectiveBusy()) return;
+    const language = this.language();
+    this.publicCopyDraft.update((copy) => {
+      if (!copy) return copy;
+      const next: ProductPublicNameText = { language, publicName: value || null };
+      const texts = copy.texts.some((item) => item.language === language)
+        ? copy.texts.map((item) => item.language === language ? next : item)
+        : [...copy.texts, next];
+      return {
+        ...copy,
+        publicName: language === 'EN' ? next.publicName : copy.publicName,
+        texts,
+      };
+    });
     this.resetSaveState();
   }
 
@@ -600,9 +709,18 @@ export class ProductTranslationEditor {
       ...structuredClone(snapshot.product),
       texts: structuredClone(snapshot.productTexts),
     };
+    const productPublicCopy: ProductPublicCopy = snapshot.productPublicCopy
+      ? structuredClone(snapshot.productPublicCopy)
+      : {
+          publicName: product.name,
+          texts: snapshot.productTexts
+            .filter((text) => !!text.name?.trim())
+            .map((text) => ({ language: text.language, publicName: text.name })),
+        };
     this.snapshot.set(structuredClone(snapshot));
     this.familyDraft.set(family);
     this.productDraft.set(product);
+    this.publicCopyDraft.set(productPublicCopy);
     const body = this.writeBody();
     this.baseline.set(body ? JSON.stringify(this.canonicalWrite(body)) : null);
     this.resetSaveState();
@@ -612,7 +730,8 @@ export class ProductTranslationEditor {
     const snapshot = this.snapshot();
     const family = this.familyDraft();
     const product = this.productDraft();
-    if (!snapshot || !product) return null;
+    const productPublicCopy = this.publicCopyDraft();
+    if (!snapshot || !product || !productPublicCopy) return null;
     return {
       revision: snapshot.revision,
       familyId: snapshot.familyId,
@@ -623,6 +742,7 @@ export class ProductTranslationEditor {
         position: image.position,
         altTexts: structuredClone(image.altTexts),
       })),
+      productPublicCopy: structuredClone(productPublicCopy),
     };
   }
 
@@ -631,6 +751,11 @@ export class ProductTranslationEditor {
       ...write,
       familyTexts: [...write.familyTexts].sort((a, b) => a.language.localeCompare(b.language)),
       productTexts: [...write.productTexts].sort((a, b) => a.language.localeCompare(b.language)),
+      productPublicCopy: write.productPublicCopy ? {
+        ...write.productPublicCopy,
+        texts: [...write.productPublicCopy.texts]
+          .sort((a, b) => a.language.localeCompare(b.language)),
+      } : write.productPublicCopy,
       images: [...write.images]
         .sort((a, b) => a.position - b.position || a.imageId - b.imageId)
         .map((image) => ({ ...image, altTexts: [...image.altTexts]
@@ -649,6 +774,7 @@ export class ProductTranslationEditor {
     this.baseline.set(null);
     this.familyDraft.set(null);
     this.productDraft.set(null);
+    this.publicCopyDraft.set(null);
     this.loading.set(false);
     this.loadError.set(null);
     this.resetSaveState();

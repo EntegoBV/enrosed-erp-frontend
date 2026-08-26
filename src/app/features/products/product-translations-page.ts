@@ -22,9 +22,9 @@ import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
   imports: [RouterLink, PageHeader, Skeleton, ProductTranslationEditor],
   template: `
     @if (product(); as product) {
-      <app-page-header title="Vertalingen" [subtitle]="product.name"
+      <app-page-header title="Productnaam &amp; vertalingen" [subtitle]="product.name"
                        [showBack]="true" [showBell]="false">
-        <a class="btn btn--sm" [routerLink]="['/products', product.id, 'edit']">Product</a>
+        <a class="btn" [routerLink]="['/products', product.id, 'edit']">Productgegevens</a>
       </app-page-header>
       <div class="content translations-page">
         @if (familyLoading()) {
@@ -42,12 +42,13 @@ import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
         }
       </div>
     } @else {
-      <app-page-header title="Vertalingen" [showBack]="true" [showBell]="false" />
+      <app-page-header title="Productnaam &amp; vertalingen" [showBack]="true" [showBell]="false" />
       <div class="content"><app-skeleton kind="card" [rows]="2" /></div>
     }
   `,
   styles: `
-    .translations-page { max-width: 1100px; margin: 0 auto; }
+    .translations-page { max-width: 1100px; margin: 0 auto; padding-bottom: calc(44px + env(safe-area-inset-bottom)); }
+    .btn { min-height: 48px; }
   `,
 })
 export class ProductTranslationsPage implements HasUnsavedChanges {

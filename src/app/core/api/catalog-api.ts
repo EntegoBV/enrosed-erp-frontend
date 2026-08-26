@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
+  CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -376,6 +376,35 @@ export class CatalogApi {
   retryWebsiteRebuild(): Promise<WebsiteRebuildStatus> {
     return firstValueFrom(this.http.post<WebsiteRebuildStatus>(
       api('/api/website-rebuild/retry'), null));
+  }
+
+  websiteBuilderHomepage(): Promise<WebsiteBuilderHomepage> {
+    return firstValueFrom(this.http.get<WebsiteBuilderHomepage>(
+      api('/api/website-builder/homepage')));
+  }
+
+  saveWebsiteBuilderHomepage(
+    revision: string | number,
+    sections: WebsiteBuilderSection[],
+  ): Promise<WebsiteBuilderHomepage> {
+    return firstValueFrom(this.http.put<WebsiteBuilderHomepage>(
+      api('/api/website-builder/homepage'),
+      { revision, sections },
+    ));
+  }
+
+  publishWebsiteBuilderHomepage(
+    revision: string | number,
+  ): Promise<WebsiteBuilderHomepage> {
+    return firstValueFrom(this.http.post<WebsiteBuilderHomepage>(
+      api('/api/website-builder/homepage/publish'),
+      { revision },
+    ));
+  }
+
+  publicWebsiteLayout(): Promise<PublicWebsiteLayout> {
+    return firstValueFrom(this.http.get<PublicWebsiteLayout>(
+      api('/api/v1/public/website-layout')));
   }
 
   hsCodes(): Promise<HsCode[]> {

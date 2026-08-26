@@ -4,6 +4,7 @@ import {
   Product,
   ProductFamily,
   ProductFamilyText,
+  ProductPublicCopy,
   ProductText,
 } from '../../core/api/models';
 
@@ -14,7 +15,7 @@ export const TRANSLATION_LANGUAGES = LANGUAGE_ORDER.map((code) =>
 );
 
 export interface TranslationGap {
-  area: 'FAMILY' | 'VARIANT' | 'IMAGE';
+  area: 'PUBLIC' | 'FAMILY' | 'VARIANT' | 'IMAGE';
   key: string;
   label: string;
 }
@@ -71,9 +72,16 @@ export function translationGaps(
   family: ProductFamily | null,
   product: Product,
   language: LanguageCode,
+  publicCopy?: ProductPublicCopy | null,
 ): TranslationGap[] {
   const variant = productText(product, language);
   const gaps: TranslationGap[] = [];
+
+  if (publicCopy) {
+    const publicName = publicCopy.texts.find((text) => text.language === language)?.publicName
+      ?? (language === 'EN' ? publicCopy.publicName : null);
+    required(gaps, 'PUBLIC', 'public-name', 'Publieke productnaam', true, publicName);
+  }
 
   if (family) {
     const shared = familyText(family, language);

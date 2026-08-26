@@ -495,6 +495,13 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 } @else {
                   <p class="publication-loading">Voor dit product zijn nog geen gedeelde websitegegevens gestart.</p>
                 }
+
+                @if (product.id !== null) {
+                  <a class="btn btn--primary public-copy-cta"
+                     [routerLink]="['/products', product.id, 'translations']">
+                    Publieke naam &amp; vertalingen aanpassen
+                  </a>
+                }
               }
             </div>
           </details>
@@ -814,6 +821,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
       border-radius: 50%; background: var(--warn); color: #fff; font-size: 12px; font-weight: 800; }
     .publication-alert b { font-size: 11.5px; }
     .publication-alert p { margin-top: 1px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+    .public-copy-cta { min-height: 48px; margin-top: 12px; }
     .details-grid, .details-col { display: grid; gap: 12px; min-width: 0; }
     .details-grid { margin-top: 14px; }
     .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);

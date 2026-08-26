@@ -112,9 +112,26 @@ export const routes: Routes = [
   },
   {
     path: 'products/:id/translations',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/products/product-translations-page').then((m) => m.ProductTranslationsPage),
     canDeactivate: [unsavedChangesGuard],
+  },
+  {
+    path: 'website-builder/texts',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () =>
+      import('./features/website-builder/content-translations-page')
+        .then((m) => m.ContentTranslationsPage),
+  },
+  {
+    path: 'website-builder',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () =>
+      import('./features/website-builder/website-builder-page')
+        .then((m) => m.WebsiteBuilderPage),
   },
   {
     path: 'countries',
