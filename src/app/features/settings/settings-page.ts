@@ -1,4 +1,5 @@
 import { DOCUMENT } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { PushSetup, playSoundFor } from '../../core/platform/push';
 import {
   AfterViewInit,
@@ -986,6 +987,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
   private readonly document = inject(DOCUMENT);
+  private readonly route = inject(ActivatedRoute);
   private scrollSpyFrame: number | null = null;
   private removeScrollSpyListeners?: () => void;
   private contentResizeObserver?: ResizeObserver;
@@ -1059,6 +1061,20 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       this.contentResizeObserver.observe(content);
     }
     this.scheduleScrollSpy();
+
+    this.scrollToDeepLink();
+  }
+
+  /**
+   * Meer links straight into one drawer: /settings?sectie=... opens and
+   * scrolls to it. Runs again after the data lands, because the sections
+   * above the target grow while loading and drag the anchor along.
+   */
+  private scrollToDeepLink(): void {
+    const view = this.document.defaultView;
+    const wanted = this.route.snapshot.queryParamMap.get('sectie') as SettingsSectionId | null;
+    if (!view || !wanted || !this.settingsSections.some((section) => section.id === wanted)) return;
+    view.setTimeout(() => this.scrollToSection(wanted), 150);
   }
 
   ngOnDestroy(): void {
@@ -1087,6 +1103,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
     this.lineTiers.set(line);
     this.orderTiers.set(order);
+    this.scrollToDeepLink();
   }
 
   patchCompany(changes: Partial<CompanyProfile>): void {
