@@ -475,6 +475,19 @@ a { color: var(--rose); }
   .hide-desktop.hide-desktop { display: none !important; }
 }
 
+/* Website editing is a distinct product workspace. Its navigation becomes a
+   left rail on a regular desktop, while smaller screens keep a work strip. */
+.shell.shell--website { flex-direction: column; background: #f4f1ed; }
+.shell--website .main { background: #f7f5f2; }
+.sidebar__link--workspace {
+  margin-top: 10px; border: 1px solid var(--rose-line); background: var(--rose-soft);
+  color: var(--rose-dark);
+}
+.sidebar__link--workspace i { margin-left: auto; font-style: normal; opacity: .55; }
+@media (min-width: 960px) {
+  .shell.shell--website { flex-direction: row; }
+}
+
 /* ================================================================= cards */
 
 .card {

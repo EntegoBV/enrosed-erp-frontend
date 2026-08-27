@@ -20,7 +20,6 @@ import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
 import { environment } from '../../../environments/environment';
-import { WebsiteAdminNav } from './website-admin-nav';
 
 interface SectionDefinition {
   key: WebsiteBuilderSectionKey;
@@ -50,7 +49,7 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
 @Component({
   selector: 'app-website-builder-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, WebsiteAdminNav, WebsiteSyncStatus],
+  imports: [PageHeader, WebsiteSyncStatus],
   template: `
     <app-page-header
       title="Homepage-indeling"
@@ -63,8 +62,6 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
     </app-page-header>
 
     <main class="content builder-page">
-      <app-website-admin-nav active="layout" />
-
       <section class="merchandising-note" role="note">
         <div>
           <b>Glass bowls eerst</b>

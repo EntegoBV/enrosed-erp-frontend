@@ -9,6 +9,7 @@ import { WorkQueue } from './core/api/work-queue';
 import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
 import { Icon } from './shared/icon';
+import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
 
 /**
  * App shell.
@@ -20,10 +21,12 @@ import { Icon } from './shared/icon';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav],
   template: `
-    <div class="shell" [class.shell--bare]="bare()">
-      @if (!bare()) {
+    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()">
+      @if (websiteWorkspace()) {
+        <app-website-admin-nav />
+      } @else if (!bare()) {
         <aside class="sidebar">
           <div class="sidebar__brand">
             <app-brand-mark subtitle="Sales &amp; Sourcing" />
@@ -113,36 +116,10 @@ import { Icon } from './shared/icon';
               </a>
             </div>
 
-            <button class="sidebar__group" type="button" (click)="toggleGroup('website')"
-                    [attr.aria-expanded]="groupOpen('website')">
-              Website
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('website')">›</span>
-            </button>
-            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('website')">
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website"
-                 routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
-                <app-icon class="sidebar__icon" name="settings" [size]="18" /> Overzicht
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website/layout" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Indeling &amp; preview
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website/texts" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Websiteteksten
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website/seo" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> SEO
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website/products" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="products" [size]="18" /> Publieke producten
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website/categories" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="more" [size]="18" /> Categorieën &amp; menu
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website/publication" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Publicatiestatus
-              </a>
-            </div>
+            <a class="sidebar__link sidebar__link--workspace" routerLink="/website" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="settings" [size]="18" />
+              <span>Website beheren</span><i aria-hidden="true">↗</i>
+            </a>
 
             <button class="sidebar__group" type="button" (click)="toggleGroup('bedrijf')"
                     [attr.aria-expanded]="groupOpen('bedrijf')">
@@ -190,7 +167,7 @@ import { Icon } from './shared/icon';
         <router-outlet />
       </div>
 
-      @if (!bare()) {
+      @if (!bare() && !websiteWorkspace()) {
         <nav class="tabbar">
           <a class="tabbar__item" routerLink="/dashboard" routerLinkActive="active"
              [attr.aria-current]="url().startsWith('/dashboard') ? 'page' : null">
@@ -238,7 +215,7 @@ export class App {
 
   /** Open fold-downs. Day-to-day work stays in view; only Bedrijf starts folded. */
   private readonly openGroups = signal<Set<string>>(
-    new Set(['verkoop', 'inkoop', 'producten', 'website']),
+    new Set(['verkoop', 'inkoop', 'producten']),
   );
 
   groupOpen(group: string): boolean {
@@ -282,6 +259,9 @@ export class App {
     return url.startsWith('/login') || url.startsWith('/offerte')
         || url.startsWith('/voorwaarden');
   });
+
+  /** Website editing is a separate desktop workspace, not an ERP submenu. */
+  readonly websiteWorkspace = computed(() => this.url().startsWith('/website'));
 
   readonly salesRoute = computed(() => {
     const url = this.url();

@@ -6,12 +6,11 @@ import { messageOf } from '../../core/api/errors';
 import { WebsiteBuilderHomepage } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
-import { WebsiteAdminNav } from './website-admin-nav';
 
 @Component({
   selector: 'app-website-publication-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, RouterLink, WebsiteAdminNav, WebsiteSyncStatus],
+  imports: [PageHeader, RouterLink, WebsiteSyncStatus],
   template: `
     <app-page-header
       title="Website publiceren"
@@ -24,8 +23,6 @@ import { WebsiteAdminNav } from './website-admin-nav';
     </app-page-header>
 
     <main class="content publication-page">
-      <app-website-admin-nav active="publication" />
-
       <section class="publication-guide" role="note">
         <span aria-hidden="true">1</span><div><b>Opslaan</b><small>Bewaart een concept in het ERP.</small></div>
         <i aria-hidden="true">→</i>

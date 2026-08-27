@@ -58,6 +58,13 @@ export interface StockLocation {
   /** Purchase receipts land here unless the order says otherwise. */
   receivesByDefault: boolean;
   position: number;
+  /** Makes this active location available as a free collection choice online. */
+  publicPickupPoint: boolean;
+  /** Customer-facing pickup facts; kept separate from internal warehouse data. */
+  publicPickupLabel: string | null;
+  publicPickupAddress: string | null;
+  publicPickupInstructions: string | null;
+  publicPickupPosition: number | null;
 }
 
 /** How many pieces of one product lie at one location. */

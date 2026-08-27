@@ -29,6 +29,7 @@ import { Sheet, Ui } from '../../shared/ui';
         <div class="explainer__body">
           <p>Website, portaal en offertes tellen alleen de voorraad van locaties die <b>ter beschikking staan voor alle verkoopkanalen</b> - normaal het magazijn.</p>
           <p>Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die daar ter plaatse verkocht wordt; die telt niet mee voor de website. Verplaatsen tussen locaties doe je onder Voorraad.</p>
+          <p>Een locatie kan daarnaast een <b>publiek afhaalpunt</b> zijn. Afhalen is gratis; klanten zien alleen de publieke naam, het publieke adres en de instructies die u hieronder invult.</p>
         </div>
       </details>
 
@@ -46,6 +47,7 @@ import { Sheet, Ui } from '../../shared/ui';
             <div class="list-item__end location-flags">
               @if (location.countsForWebsite) { <span class="badge badge--ok">alle kanalen</span> }
               @else { <span class="badge">enkel ter plaatse</span> }
+              @if (location.publicPickupPoint) { <span class="badge badge--rose">publiek afhaalpunt</span> }
               @if (!location.active) { <span class="badge">inactief</span> }
             </div>
             <span class="list-item__chev">›</span>
@@ -88,6 +90,56 @@ import { Sheet, Ui } from '../../shared/ui';
               <span class="hint">Wat hier ligt, wordt alleen ter plaatse verkocht (bv. een TICA-stand); website, portaal en offertes tellen deze voorraad niet mee.</span>
             }
           </div>
+          <section class="public-pickup span-2" aria-labelledby="public-pickup-title">
+            <div class="public-pickup__head">
+              <div>
+                <b id="public-pickup-title">Publiek afhaalpunt</b>
+                <span>Gratis afhalen als leveringskeuze in het online offertesysteem.</span>
+              </div>
+              <label class="switch-row">
+                <input type="checkbox" [ngModel]="draft().publicPickupPoint"
+                       (ngModelChange)="patch({ publicPickupPoint: $event })" />
+                <span>Tonen aan klanten</span>
+              </label>
+            </div>
+            @if (draft().publicPickupPoint) {
+              <div class="public-pickup__fields">
+                <div class="field">
+                  <label class="req" for="l-pickup-label">Naam voor klanten</label>
+                  <input class="input" id="l-pickup-label" [ngModel]="draft().publicPickupLabel"
+                         placeholder="Afhalen bij Enrosed, Aartselaar"
+                         (ngModelChange)="patch({ publicPickupLabel: $event })" />
+                </div>
+                <div class="field">
+                  <label for="l-pickup-position">Volgorde</label>
+                  <input class="input num" id="l-pickup-position" type="number" min="0" step="1"
+                         [ngModel]="draft().publicPickupPosition"
+                         (ngModelChange)="patch({ publicPickupPosition: numberOrNull($event) })" />
+                </div>
+                <div class="field span-2">
+                  <label class="req" for="l-pickup-address">Adres voor klanten</label>
+                  <input class="input" id="l-pickup-address" [ngModel]="draft().publicPickupAddress"
+                         placeholder="Straat 1, 2630 Aartselaar, België"
+                         (ngModelChange)="patch({ publicPickupAddress: $event })" />
+                  <span class="hint">Dit adres staat letterlijk bij de gratis afhaaloptie op de website.</span>
+                </div>
+                <div class="field span-2">
+                  <label for="l-pickup-instructions">Afhaalinstructies <span class="opt"></span></label>
+                  <textarea class="textarea" id="l-pickup-instructions" rows="3"
+                            [ngModel]="draft().publicPickupInstructions"
+                            placeholder="Bijvoorbeeld: aanmelden aan de receptie, ma-vr tussen 9:00 en 16:00."
+                            (ngModelChange)="patch({ publicPickupInstructions: $event })"></textarea>
+                </div>
+                @if (!draft().active) {
+                  <div class="public-pickup__warning span-2" role="note">
+                    Deze locatie is inactief en verschijnt pas als afhaalpunt wanneer u ze opnieuw activeert.
+                  </div>
+                }
+              </div>
+            } @else {
+              <p>Interne locatiegegevens blijven onzichtbaar op de website.</p>
+            }
+          </section>
           @if (!isMain()) {
             <div class="field span-2">
               <label class="row" style="gap:8px;cursor:pointer">
@@ -114,6 +166,20 @@ import { Sheet, Ui } from '../../shared/ui';
   styles: `
     .location-flags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
     .list-item--inactive { opacity: .6; }
+    .public-pickup { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--rose-line); border-radius: var(--r-sm); background: var(--rose-soft); }
+    .public-pickup__head { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+    .public-pickup__head > div { display: grid; gap: 3px; }
+    .public-pickup__head b { font-size: 16px; }
+    .public-pickup__head span, .public-pickup > p { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .switch-row { display: flex; min-height: 44px; flex: none; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid var(--rose-line); border-radius: 10px; background: var(--surface); cursor: pointer; }
+    .switch-row span { color: var(--rose-dark); font-weight: 750; }
+    .public-pickup__fields { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 12px; }
+    .public-pickup__warning { padding: 10px 12px; border-radius: 9px; background: var(--warn-soft); color: var(--warn); font-size: 13px; }
+    @media (max-width: 620px) {
+      .public-pickup__head { align-items: stretch; flex-direction: column; }
+      .public-pickup__fields { grid-template-columns: 1fr; }
+      .public-pickup__fields .span-2 { grid-column: auto; }
+    }
   `,
 })
 export class StockLocationList {
@@ -134,14 +200,14 @@ export class StockLocationList {
 
   private async load(): Promise<void> {
     try {
-      this.locations.set(await this.catalog.stockLocations());
+      this.locations.set((await this.catalog.stockLocations()).map(normalizePickupFields));
     } finally {
       this.loading.set(false);
     }
   }
 
   open(location: StockLocation | null): void {
-    this.draft.set(location ? { ...location } : blank(this.locations().length));
+    this.draft.set(location ? normalizePickupFields({ ...location }) : blank(this.locations().length));
     this.editing.set(true);
   }
 
@@ -149,9 +215,20 @@ export class StockLocationList {
     this.draft.update((location) => ({ ...location, ...changes }));
   }
 
+  numberOrNull(value: number | string | null): number | null {
+    if (value === null || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.trunc(number)) : null;
+  }
+
   async save(): Promise<void> {
     if (!this.draft().name.trim()) {
       this.ui.toast('Geef de locatie een naam', 'err');
+      return;
+    }
+    if (this.draft().publicPickupPoint
+        && (!this.draft().publicPickupLabel?.trim() || !this.draft().publicPickupAddress?.trim())) {
+      this.ui.toast('Vul voor het publieke afhaalpunt een klantnaam en adres in', 'err');
       return;
     }
     this.saving.set(true);
@@ -188,5 +265,19 @@ export class StockLocationList {
 
 function blank(position = 0): StockLocation {
   return { id: null, code: null, name: '', kind: 'SALES_POINT', address: null, active: true,
-    countsForWebsite: true, receivesByDefault: false, position };
+    countsForWebsite: true, receivesByDefault: false, position,
+    publicPickupPoint: false, publicPickupLabel: null, publicPickupAddress: null,
+    publicPickupInstructions: null, publicPickupPosition: position };
+}
+
+/** Allows the editor to open while an older TEST response is being replaced. */
+function normalizePickupFields(location: StockLocation): StockLocation {
+  return {
+    ...location,
+    publicPickupPoint: location.publicPickupPoint ?? false,
+    publicPickupLabel: location.publicPickupLabel ?? null,
+    publicPickupAddress: location.publicPickupAddress ?? null,
+    publicPickupInstructions: location.publicPickupInstructions ?? null,
+    publicPickupPosition: location.publicPickupPosition ?? location.position,
+  };
 }

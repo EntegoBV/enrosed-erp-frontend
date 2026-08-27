@@ -7,7 +7,6 @@ import { Skeleton } from '../../shared/skeleton';
 import { ProductTranslationEditor } from './product-translation-editor';
 import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import { messageOf } from '../../core/api/errors';
-import { WebsiteAdminNav } from '../website-builder/website-admin-nav';
 
 /**
  * Website translations on a page of their own.
@@ -21,7 +20,7 @@ import { WebsiteAdminNav } from '../website-builder/website-admin-nav';
 @Component({
   selector: 'app-product-translations-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, Skeleton, ProductTranslationEditor, WebsiteAdminNav],
+  imports: [RouterLink, PageHeader, Skeleton, ProductTranslationEditor],
   template: `
     @if (loadError()) {
       <app-page-header title="Productvertalingen" subtitle="Product niet beschikbaar"
@@ -57,7 +56,6 @@ import { WebsiteAdminNav } from '../website-builder/website-admin-nav';
         <a class="btn" [routerLink]="['/products', product.id, 'edit']">Productgegevens</a>
       </app-page-header>
       <div class="content translations-page">
-        <app-website-admin-nav active="products" />
         <nav class="translation-hub" aria-label="Kies het soort vertaling">
           <div class="translation-route translation-route--active" aria-current="page">
             <span class="translation-route__letter" aria-hidden="true">A</span>

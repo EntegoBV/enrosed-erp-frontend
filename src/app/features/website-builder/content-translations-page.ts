@@ -3,7 +3,6 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import { PageHeader } from '../../shared/page-header';
 import { ContentTranslationWorkspace } from '../settings/content-translation-workspace';
-import { WebsiteAdminNav } from './website-admin-nav';
 import { WebsiteProductSeoAudit } from './website-product-seo-audit';
 
 @Component({
@@ -13,7 +12,6 @@ import { WebsiteProductSeoAudit } from './website-product-seo-audit';
     ContentTranslationWorkspace,
     PageHeader,
     RouterLink,
-    WebsiteAdminNav,
     WebsiteProductSeoAudit,
   ],
   template: `
@@ -29,10 +27,6 @@ import { WebsiteProductSeoAudit } from './website-product-seo-audit';
       [showBell]="false"
     />
     <main class="content content-page">
-      @if (!catalogMode) {
-        <app-website-admin-nav [active]="seoMode ? 'seo' : 'texts'" />
-      }
-
       <section class="ownership-guide" [class.ownership-guide--catalog]="catalogMode" role="note">
         <div>
           <span>{{ catalogMode ? 'PDF-catalogus' : (seoMode ? 'Pagina-SEO' : 'Algemene websitecopy') }}</span>

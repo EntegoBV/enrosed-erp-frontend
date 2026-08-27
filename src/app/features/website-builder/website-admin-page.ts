@@ -3,13 +3,12 @@ import { RouterLink } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { PageHeader } from '../../shared/page-header';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
-import { WebsiteAdminNav } from './website-admin-nav';
 import { WebsiteTranslationQueue } from './website-translation-queue';
 
 @Component({
   selector: 'app-website-admin-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, RouterLink, WebsiteAdminNav, WebsiteSyncStatus, WebsiteTranslationQueue],
+  imports: [PageHeader, RouterLink, WebsiteSyncStatus, WebsiteTranslationQueue],
   template: `
     <app-page-header
       title="Website beheren"
@@ -22,8 +21,6 @@ import { WebsiteTranslationQueue } from './website-translation-queue';
     </app-page-header>
 
     <main class="content website-home">
-      <app-website-admin-nav active="overview" />
-
       <section class="workspace-intro">
         <div>
           <span class="eyebrow">Website workspace</span>

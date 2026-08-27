@@ -5,7 +5,6 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import { LANGUAGES, ProductFamily, PublicationStatus } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
-import { WebsiteAdminNav } from './website-admin-nav';
 import { publicFamilyName } from './website-family-label';
 
 type ProductWebsiteFilter = 'ATTENTION' | 'ALL' | 'PUBLISHED' | 'DRAFT';
@@ -24,7 +23,7 @@ interface WebsiteProductRow {
 @Component({
   selector: 'app-website-products-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, RouterLink, WebsiteAdminNav],
+  imports: [FormsModule, PageHeader, RouterLink],
   template: `
     <app-page-header
       title="Publieke productinhoud"
@@ -35,8 +34,6 @@ interface WebsiteProductRow {
     </app-page-header>
 
     <main class="content website-products-page">
-      <app-website-admin-nav active="products" />
-
       <section class="product-ownership" role="note">
         <div>
           <b>Websitegegevens per productreeks</b>

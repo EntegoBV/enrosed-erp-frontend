@@ -32,7 +32,6 @@ import {
 } from '../../shared/product-featured-eligibility';
 import { CategoryTranslationEditor } from './category-translation-editor';
 import { WebsiteSyncStatus } from './website-sync-status';
-import { WebsiteAdminNav } from '../website-builder/website-admin-nav';
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -59,7 +58,6 @@ const normalizeCategoryCode = (value: string): string => value
     CategoryTranslationEditor,
     FormsModule,
     PageHeader,
-    WebsiteAdminNav,
     WebsiteSyncStatus,
   ],
   template: `
@@ -75,7 +73,6 @@ const normalizeCategoryCode = (value: string): string => value
 
     @if (websiteCategoryMode) {
       <div class="content website-category-nav">
-        <app-website-admin-nav active="categories" />
         <section class="category-ownership" role="note">
           <div><b>Collectiekaart en menu</b><span>De volgorde en korte namen sturen het websitemenu, mobiel menu en de footer.</span></div>
           <div><b>Uitgelicht product</b><span>De featured SKU kiest het collectiebeeld. Vaste homepage-highlights worden door hun eigen websitecomponent bepaald.</span></div>

@@ -181,8 +181,13 @@ export const routes: Routes = [
       import('./features/website-builder/content-translations-page')
         .then((m) => m.ContentTranslationsPage),
   },
-  /* Keep old bookmarks working while the canonical website workspace uses /website. */
+  /* Keep all older builder bookmarks stable while /website is canonical. */
+  { path: 'website-builder/layout', pathMatch: 'full', redirectTo: 'website/layout' },
   { path: 'website-builder/texts', pathMatch: 'full', redirectTo: 'website/texts' },
+  { path: 'website-builder/products', pathMatch: 'full', redirectTo: 'website/products' },
+  { path: 'website-builder/categories', pathMatch: 'full', redirectTo: 'website/categories' },
+  { path: 'website-builder/seo', pathMatch: 'full', redirectTo: 'website/seo' },
+  { path: 'website-builder/publication', pathMatch: 'full', redirectTo: 'website/publication' },
   { path: 'website-builder', pathMatch: 'full', redirectTo: 'website/layout' },
   {
     path: 'countries',
