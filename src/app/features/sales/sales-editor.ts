@@ -2280,7 +2280,7 @@ export class SalesEditor {
     } catch (failure: unknown) {
       const message = messageOf(
         failure,
-        'Controleer de verbinding met de testomgeving en probeer opnieuw.',
+        'Controleer de verbinding met Enrosed en probeer opnieuw.',
       );
       this.saveError.set(message);
       this.ui.toast(message, 'err');

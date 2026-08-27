@@ -16,7 +16,7 @@ import { WebsiteTranslationQueue } from './website-translation-queue';
       [showBell]="false"
     >
       <a class="btn btn--primary btn--sm" [href]="previewBaseUrl" target="_blank" rel="noopener">
-        Testsite openen ↗
+        {{ previewSiteLabel }} openen ↗
       </a>
     </app-page-header>
 
@@ -39,7 +39,7 @@ import { WebsiteTranslationQueue } from './website-translation-queue';
       <section class="workspace-grid" aria-label="Website beheertaken">
         <a class="workspace-card workspace-card--primary" routerLink="/website/layout">
           <span aria-hidden="true">01</span>
-          <div><b>Homepage-indeling &amp; live voorbeeld</b><small>Zet onderdelen in de juiste volgorde, verberg wat minder belangrijk is en controleer de testsite.</small></div>
+          <div><b>Homepage-indeling &amp; live voorbeeld</b><small>Zet onderdelen in de juiste volgorde, verberg wat minder belangrijk is en controleer de {{ previewSiteName }}.</small></div>
           <strong>Indeling openen →</strong>
         </a>
         <a class="workspace-card" routerLink="/website/texts">
@@ -134,4 +134,8 @@ import { WebsiteTranslationQueue } from './website-translation-queue';
 })
 export class WebsiteAdminPage {
   readonly previewBaseUrl = environment.websitePreviewUrl;
+  readonly previewSiteLabel = environment.environmentLabel === 'TEST'
+    ? 'Testsite'
+    : environment.environmentLabel === 'LOCAL' ? 'Lokale website' : 'Website';
+  readonly previewSiteName = this.previewSiteLabel.toLocaleLowerCase('nl-BE');
 }

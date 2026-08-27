@@ -10,6 +10,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { SupplierAddress } from '../../shared/supplier-address';
+import { Auth } from '../../core/api/auth';
 
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Vertrokken', ONTVANGEN: 'Ontvangen',
@@ -76,7 +77,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                    its own identity: the nickname or the number. -->
               <div class="list-item__title">{{ row.order.alias || row.order.number }}</div>
               <div class="list-item__meta">
-                @if (row.order.alias) { <b class="po-row__number">{{ row.order.number }}</b> · }{{ row.order.orderDate | dateNl }}
+                {{ creatorName(row) }} · {{ row.order.orderDate | dateNl }}
+                @if (row.order.alias) { · <b class="po-row__number">{{ row.order.number }}</b> }
               </div>
               <div class="list-item__meta hide-mobile">
                 {{ containerLabel(row.order.containerType) }} ·
@@ -174,6 +176,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             De koersen worden op de order vastgeklikt, zodat een oude calculatie niet verandert
             als de koers beweegt.
           </p>
+          <p class="po-creator-note">
+            <span aria-hidden="true">●</span>
+            Aangemeld als <b>{{ auth.username() || 'onbekend' }}</b> · wordt als maker opgeslagen
+          </p>
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="picking.set(false)">Annuleren</button>
@@ -228,6 +234,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     .chosen-supplier{display:grid;grid-template-columns:36px minmax(0,1fr);gap:9px;margin:0 0 14px;padding:10px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}
     .chosen-supplier__mark{display:grid;width:36px;height:36px;place-items:center;border-radius:10px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760;text-transform:uppercase}
     .chosen-supplier__copy{display:flex;min-width:0;flex-direction:column}.chosen-supplier__copy strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.chosen-supplier__copy small{color:var(--muted);font-size:9.5px}
+    .po-creator-note{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--muted);font-size:11.5px}.po-creator-note span{color:var(--ok);font-size:7px}.po-creator-note b{color:var(--ink-2)}
   `],
 })
 export class PurchaseList {
@@ -240,6 +247,7 @@ export class PurchaseList {
   private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
+  readonly auth = inject(Auth);
 
   readonly orders = signal<PurchaseOrderView[]>([]);
   readonly statusOptions: { key: string; label: string }[] = [
@@ -309,6 +317,10 @@ export class PurchaseList {
 
   supplierName(id: number): string {
     return this.suppliers().find((supplier) => supplier.id === id)?.name ?? 'Onbekend';
+  }
+
+  creatorName(row: PurchaseOrderView): string {
+    return row.createdBy?.displayName || 'Maker onbekend';
   }
 
   chosenSupplier(): Supplier | null {

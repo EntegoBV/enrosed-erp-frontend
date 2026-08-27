@@ -32,6 +32,12 @@ export interface CatalogExportRequest {
   brochure?: CatalogBrochureOptions;
 }
 
+export interface WebsiteVisibilityResult {
+  family: ProductFamily;
+  rebuildQueued: boolean;
+  notice: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CatalogApi {
   private readonly http = inject(HttpClient);
@@ -118,6 +124,14 @@ export class CatalogApi {
   updateProductFamily(id: number, family: ProductFamily): Promise<ProductFamily> {
     return firstValueFrom(
       this.http.put<ProductFamily>(api(`/api/product-families/${id}`), family));
+  }
+
+  /** Changes only website visibility; never rewrites a stale family snapshot. */
+  setProductFamilyWebsiteVisibility(id: number, visible: boolean): Promise<WebsiteVisibilityResult> {
+    return firstValueFrom(this.http.put<WebsiteVisibilityResult>(
+      api(`/api/product-families/${id}/website-visibility`),
+      { visible },
+    ));
   }
 
   uploadProductFamilyImage(

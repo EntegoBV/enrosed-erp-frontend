@@ -14,14 +14,14 @@ import { Icon } from '../../shared/icon';
     <aside class="website-sidebar" aria-label="Website beheren">
       <header class="website-sidebar__brand">
         <app-brand-mark subtitle="Website workspace" />
-        <span>TEST</span>
+        @if (environmentLabel) { <span>{{ environmentLabel }}</span> }
       </header>
 
       <div class="website-sidebar__context">
         <small>Website beheren</small>
         <strong>Enrosed B2B</strong>
         <a [href]="previewBaseUrl" target="_blank" rel="noopener">
-          Testsite bekijken <span aria-hidden="true">↗</span>
+          {{ previewLinkLabel }} <span aria-hidden="true">↗</span>
         </a>
       </div>
 
@@ -152,7 +152,13 @@ import { Icon } from '../../shared/icon';
 })
 export class WebsiteAdminNav {
   readonly auth = inject(Auth);
+  readonly environmentLabel = environment.environmentLabel;
   readonly previewBaseUrl = environment.websitePreviewUrl;
+  readonly previewLinkLabel = environment.environmentLabel === 'TEST'
+    ? 'Testsite bekijken'
+    : environment.environmentLabel === 'LOCAL'
+      ? 'Lokale website bekijken'
+      : 'Website bekijken';
   private readonly router = inject(Router);
 
   logout(): void {

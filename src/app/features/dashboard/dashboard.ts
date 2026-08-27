@@ -74,13 +74,6 @@ interface FreightHorizon {
           </section>
         }
 
-        <nav class="dashboard-shortcuts" aria-label="Snel naar">
-          <a routerLink="/sales"><app-icon name="sales" [size]="17" /> Verkoop</a>
-          <a routerLink="/purchasing"><app-icon name="purchase" [size]="17" /> Inkoop</a>
-          <a routerLink="/stock"><app-icon name="stock" [size]="17" /> Voorraad</a>
-          <a routerLink="/website"><app-icon name="products" [size]="17" /> Website</a>
-        </nav>
-
         <div class="dashboard-command-grid">
           <section class="card dashboard-work" aria-labelledby="dashboard-work-title">
             <header class="dashboard-card-head">
@@ -927,14 +920,6 @@ interface FreightHorizon {
     .dashboard-sync-warning strong { display:block;color:var(--ink);font-size:15px }
     .dashboard-sync-warning p { margin-top:2px;font-size:13.5px;line-height:1.45 }
 
-    .dashboard-shortcuts { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:14px }
-    .dashboard-shortcuts a { display:flex;min-height:48px;align-items:center;justify-content:center;gap:7px;
-      border:1px solid var(--line);border-radius:13px;background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
-      box-shadow:0 3px 12px rgb(26 22 20 / 4%);color:var(--ink-2);font-size:14px;font-weight:680;
-      text-decoration:none;transition:border-color .15s ease,background .15s ease,transform .15s ease }
-    .dashboard-shortcuts a:hover { border-color:var(--rose-line);background:var(--rose-soft);color:var(--rose-dark) }
-    .dashboard-shortcuts a:active { transform:scale(.98) }
-
     .dashboard-command-grid { display:grid;gap:18px;align-items:start }
     .dashboard-work { border-color:color-mix(in srgb,var(--rose-line) 72%,white);box-shadow:var(--sh-2) }
     .dashboard-card-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 18px 15px;
@@ -997,10 +982,8 @@ interface FreightHorizon {
     @media (min-width:960px) {
       .dashboard-command-grid { grid-template-columns:minmax(0,1.24fr) minmax(380px,.76fr);gap:24px }
       .dashboard-work { min-height:100% }
-      .dashboard-shortcuts { width:max-content;grid-template-columns:repeat(4,minmax(118px,1fr)) }
     }
     @media (max-width:679.98px) {
-      .dashboard-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)) }
       .dashboard-sync-warning { grid-template-columns:auto minmax(0,1fr) }
       .dashboard-sync-warning .btn { grid-column:1/-1;width:100% }
       .dashboard-card-head { padding:16px 14px 14px }
@@ -1019,7 +1002,7 @@ interface FreightHorizon {
       .dashboard-kpis .kpi__meta { font-size:12.5px }
     }
     @media (prefers-reduced-motion:reduce) {
-      .dashboard-shortcuts a,.dashboard-work-row { transition:none }
+      .dashboard-work-row { transition:none }
     }
   `,
 })

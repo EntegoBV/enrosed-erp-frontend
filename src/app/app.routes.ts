@@ -218,6 +218,12 @@ export const routes: Routes = [
       import('./features/settings/settings-page').then((m) => m.SettingsPage),
   },
   {
+    path: 'activity',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/activity/activity-page').then((m) => m.ActivityPage),
+  },
+  {
     path: 'more',
     canActivate: [authGuard],
     loadComponent: () => import('./features/more/more-page').then((m) => m.MorePage),

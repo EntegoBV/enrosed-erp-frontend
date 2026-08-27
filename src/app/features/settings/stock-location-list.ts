@@ -270,7 +270,7 @@ function blank(position = 0): StockLocation {
     publicPickupInstructions: null, publicPickupPosition: position };
 }
 
-/** Allows the editor to open while an older TEST response is being replaced. */
+/** Allows the editor to open while an older server response is being replaced. */
 function normalizePickupFields(location: StockLocation): StockLocation {
   return {
     ...location,

@@ -26,7 +26,9 @@ npm start
 | App | <http://localhost:4321> |
 | API | <http://localhost:8080> |
 
-**Aanmelden:** `enrosedadmin` en het bijbehorende wachtwoord.
+**Aanmelden:** kies `Emre` of `Berat`; beide accounts gebruiken voorlopig hetzelfde beheerde
+wachtwoord. De server geeft na aanmelden altijd de canonieke accountnaam terug en wisselt het
+wachtwoord meteen in voor een ondertekende sessietoken; het wachtwoord wordt niet lokaal bewaard.
 
 ## Wat je moet weten voor je iets aanpast
 

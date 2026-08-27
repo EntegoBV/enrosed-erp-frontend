@@ -16,7 +16,9 @@ digital signing, change proposals) served by the same app.
 - Prod: Vercel, https://enrosed-erp-frontend.vercel.app, API base from
   `src/environments/environment.prod.ts` (Railway domain) via
   fileReplacements
-- Login: Basic auth (`enrosedadmin`); portal routes are public via token
+- Login: named `emre` and `berat` staff accounts; the password is exchanged once via
+  `POST /api/auth/session` and only the signed, expiring session token is persisted.
+  Portal routes remain public via their customer token.
 
 ## Standing conventions (agreed with the owner)
 

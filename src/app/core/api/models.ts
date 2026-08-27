@@ -15,6 +15,42 @@ export type DocumentType = 'OFFERTE' | 'FACTUUR';
 export type PublicationStatus = 'DRAFT' | 'READY' | 'PUBLISHED';
 export type CatalogChannel = 'WEBSITE' | 'ORDER_APP' | 'CATALOGUE';
 
+/** Canonical staff identity returned by the server after authentication. */
+export interface CurrentUser {
+  username: string;
+  displayName: string;
+  roles: string[];
+}
+
+/** Password exchange response; only the signed session token may be persisted. */
+export interface AuthSession extends CurrentUser {
+  token: string;
+  expiresAt: string;
+}
+
+/** Small immutable actor snapshot used by creators and the activity log. */
+export interface ActorRef {
+  username: string;
+  displayName: string;
+}
+
+/** One durable business action in the company-wide logbook. */
+export interface ActivityEvent {
+  id: number;
+  at: string;
+  actor: ActorRef | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  entityLabel: string | null;
+  summary: string;
+}
+
+export interface ActivityPage {
+  items: ActivityEvent[];
+  nextBefore: number | null;
+}
+
 export type QuoteStatus =
   | 'CONCEPT' | 'VERZONDEN' | 'BEKEKEN' | 'WIJZIGING_GEVRAAGD'
   | 'GEACCEPTEERD' | 'AFGEWEZEN' | 'VERLOPEN' | 'BETAALD';
@@ -871,6 +907,9 @@ export interface PurchaseOrderView {
   order: PurchaseOrder;
   costing: LandedCost;
   adjustments: CartonAdjustment[];
+  /** Server-owned creator metadata; null for orders from before the logbook. */
+  createdBy: ActorRef | null;
+  createdAt: string | null;
   /** Optional while a cached/older backend response is still in the browser. */
   costLabels?: PurchaseCostLabels;
   payable?: Payable;

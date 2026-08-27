@@ -699,7 +699,7 @@ export class SalesList {
     } catch (failure: unknown) {
       this.loadError.set(messageOf(
         failure,
-        'Controleer de verbinding met de testomgeving en probeer opnieuw.',
+        'Controleer de verbinding met Enrosed en probeer opnieuw.',
       ));
     } finally {
       this.loading.set(false);

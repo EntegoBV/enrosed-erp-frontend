@@ -18,6 +18,7 @@ import {
 import { containerLabel } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
+import { PurchaseActivity } from '../activity/purchase-activity';
 
 /**
  * Read-only control room for one incoming container.
@@ -30,7 +31,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet],
+            EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity],
   template: `
     @if (view(); as data) {
       @if (desktop.active()) {
@@ -68,6 +69,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
               <p>
                 {{ data.order.orderDate | dateNl }}
                 @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
+                <span aria-hidden="true"> · </span>gemaakt door {{ creatorName(data) }}
               </p>
             </div>
             @if (desktop.active()) {
@@ -424,7 +426,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                 </div>
                 <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SUPPLIER'), supplierOwed())"></div></div>
                 @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
-                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                 }
               </div>
               @if ((data.payable?.logisticsEur ?? 0) > 0 || paymentsTo('LOGISTICS').length) {
@@ -435,7 +437,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                   </div>
                   <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
                   @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
-                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                   }
                 </div>
               }
@@ -461,7 +463,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                   <ul class="doc-list">
                     @for (doc of docs; track doc.id) {
                       <li>
-                        <span class="pay-line__what"><b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b><small>{{ doc.originalFilename }} · {{ doc.addedAt | dateNl }}</small></span>
+                        <span class="pay-line__what"><b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b><small>{{ doc.originalFilename }} · {{ doc.addedAt | dateNl }}@if (doc.actor) { · {{ actorLabel(doc.actor) }} }</small></span>
                         <button class="btn btn--sm" type="button" (click)="downloadDocument(doc)">Openen</button>
                       </li>
                     }
@@ -469,6 +471,8 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                 </section>
               }
             }
+
+            <app-purchase-activity [orderId]="data.order.id" />
 
             <section class="card action-card" aria-labelledby="purchase-actions-title">
               <span class="section-kicker">Volgende actie</span>
@@ -628,6 +632,17 @@ export class PurchaseView {
   async downloadDocument(doc: PurchaseDocument): Promise<void> {
     try { saveBlob(await this.sourcing.documentFile(doc.orderId, doc.id), doc.originalFilename); }
     catch { this.ui.toast('Document openen mislukt', 'err'); }
+  }
+
+  creatorName(data: PurchaseOrderView): string {
+    return data.createdBy?.displayName || 'maker onbekend';
+  }
+
+  actorLabel(actor: string): string {
+    const canonical = actor.trim().toLocaleLowerCase('nl-BE');
+    if (canonical === 'emre') return 'Emre';
+    if (canonical === 'berat') return 'Berat';
+    return actor;
   }
   private readonly products = signal<Product[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);

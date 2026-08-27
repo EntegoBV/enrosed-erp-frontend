@@ -2,12 +2,14 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
+import { AuthImage } from '../../core/api/auth-image';
 import { messageOf } from '../../core/api/errors';
 import { LANGUAGES, ProductFamily, PublicationStatus } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { WebsiteSyncStatus } from '../settings/website-sync-status';
 import { publicFamilyName } from './website-family-label';
 
-type ProductWebsiteFilter = 'ATTENTION' | 'ALL' | 'PUBLISHED' | 'DRAFT';
+type ProductWebsiteFilter = 'ATTENTION' | 'ALL' | 'PUBLISHED' | 'HIDDEN';
 
 const GLASS_BOWL_FAMILY_KEYS = new Set(['bowl-rose-xl', 'preserved-bowl-rose']);
 
@@ -18,12 +20,13 @@ interface WebsiteProductRow {
   translatedLanguages: number;
   seoLanguages: number;
   attention: boolean;
+  thumbnail: string | null;
 }
 
 @Component({
   selector: 'app-website-products-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, RouterLink],
+  imports: [AuthImage, FormsModule, PageHeader, RouterLink, WebsiteSyncStatus],
   template: `
     <app-page-header
       title="Publieke productinhoud"
@@ -45,6 +48,8 @@ interface WebsiteProductRow {
         </div>
       </section>
 
+      <app-website-sync-status [refreshKey]="syncRefreshKey()" />
+
       @if (loadError()) {
         <section class="products-state products-state--error card" role="alert">
           <div><b>Publieke producten konden niet worden geladen</b><small>{{ loadError() }}</small></div>
@@ -53,6 +58,18 @@ interface WebsiteProductRow {
       } @else if (loading()) {
         <section class="products-state card" role="status">Productreeksen en publicatiestatus laden…</section>
       } @else {
+        @if (actionError()) {
+          <section class="products-action-error card" role="alert">
+            <span><b>Websitezichtbaarheid is niet gewijzigd</b><small>{{ actionError() }}</small></span>
+            <button class="btn btn--sm" type="button" (click)="actionError.set(null)">Sluiten</button>
+          </section>
+        }
+        @if (actionNotice()) {
+          <section class="products-action-notice card" role="status">
+            <span><b>Wijziging opgeslagen</b><small>{{ actionNotice() }}</small></span>
+            <a class="btn btn--sm" routerLink="/website/publication">Publicatie bekijken</a>
+          </section>
+        }
         <section class="products-toolbar card" aria-label="Publieke producten zoeken en filteren">
           <label>
             <span class="sr-only">Product zoeken</span>
@@ -70,9 +87,9 @@ interface WebsiteProductRow {
             <button type="button" [class.active]="filter() === 'PUBLISHED'"
                     [attr.aria-pressed]="filter() === 'PUBLISHED'"
                     (click)="filter.set('PUBLISHED')">Website live</button>
-            <button type="button" [class.active]="filter() === 'DRAFT'"
-                    [attr.aria-pressed]="filter() === 'DRAFT'"
-                    (click)="filter.set('DRAFT')">Concept</button>
+            <button type="button" [class.active]="filter() === 'HIDDEN'"
+                    [attr.aria-pressed]="filter() === 'HIDDEN'"
+                    (click)="filter.set('HIDDEN')">Verborgen</button>
           </div>
         </section>
 
@@ -91,7 +108,9 @@ interface WebsiteProductRow {
           @for (row of visibleRows(); track row.family.id ?? row.family.familyKey) {
             <article class="product-row" role="row">
               <div class="product-main" role="cell">
-                <span class="product-swatch" [class.product-swatch--glass]="isGlassBowl(row.family)" aria-hidden="true"></span>
+                <span class="product-photo" [class.product-photo--empty]="!row.thumbnail" aria-hidden="true">
+                  @if (row.thumbnail) { <img [appAuthSrc]="row.thumbnail" alt="" /> }
+                </span>
                 <span>
                   <b>{{ row.publicName }}</b>
                   <small>{{ row.family.categoryName || 'Zonder categorie' }} · {{ row.family.variantCount }} varianten</small>
@@ -100,9 +119,32 @@ interface WebsiteProductRow {
               </div>
               <div class="product-status" role="cell">
                 <span class="status-badge" [class.status-badge--live]="row.family.websiteStatus === 'PUBLISHED'">
-                  {{ publicationLabel(row.family.websiteStatus) }}
+                  {{ row.family.active ? publicationLabel(row.family.websiteStatus) : 'ERP inactief' }}
                 </span>
-                <small>/products/{{ row.family.publicHandle }}</small>
+                @if (row.family.publicHandle) {
+                  <small>/products/{{ row.family.publicHandle }}</small>
+                } @else {
+                  <small>Nog geen publieke URL</small>
+                }
+                <label class="website-switch" [class.website-switch--busy]="savingFamilyId() === row.family.id">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    [attr.aria-label]="'Op website: ' + row.publicName"
+                    [checked]="row.family.websiteStatus === 'PUBLISHED'"
+                    [disabled]="!canToggle(row) || savingFamilyId() === row.family.id"
+                    (change)="toggleWebsite(row, $any($event.target).checked)"
+                  />
+                  <span aria-hidden="true"><i></i></span>
+                  <b>{{ savingFamilyId() === row.family.id ? 'Opslaan…' : 'Op website' }}</b>
+                </label>
+                @if (!row.family.active && row.family.websiteStatus !== 'PUBLISHED') {
+                  <small class="switch-hint">Activeer deze reeks eerst in ERP.</small>
+                } @else if (!row.family.active) {
+                  <small class="switch-hint">ERP inactief; u kunt deze reeks nog van de website halen.</small>
+                } @else if (row.family.websiteStatus !== 'PUBLISHED' && row.family.publicationIssues.length) {
+                  <small class="switch-hint">Werk eerst de publicatiepunten af.</small>
+                }
               </div>
               <div class="product-completion" role="cell">
                 <span [class.done]="row.translatedLanguages === languages.length">
@@ -143,6 +185,12 @@ interface WebsiteProductRow {
     .products-state--error > div { display: grid; gap: 3px; }
     .products-state--error small { color: var(--muted); }
     .products-state .btn { min-height: 48px; }
+    .products-action-error { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding: 14px 16px; border-color: #efcdc9; background: var(--danger-soft); color: var(--danger); }
+    .products-action-error > span { display: grid; gap: 2px; }
+    .products-action-error small { color: var(--ink-2); font-size: 13px; }
+    .products-action-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding: 14px 16px; border-color: var(--warn); background: var(--warn-soft); color: var(--ink); }
+    .products-action-notice > span { display: grid; gap: 2px; }
+    .products-action-notice small { color: var(--ink-2); font-size: 13px; }
     .products-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; }
     .products-toolbar label { flex: 1; max-width: 560px; }
     .products-toolbar .input { min-height: 48px; }
@@ -161,11 +209,24 @@ interface WebsiteProductRow {
     .product-main b { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
     .product-main small, .product-status small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .product-main em { justify-self: start; padding: 3px 6px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); font-size: 10px; font-style: normal; font-weight: 850; text-transform: uppercase; }
-    .product-swatch { flex: none; width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(145deg, var(--surface-2), var(--line-strong)); }
-    .product-swatch--glass { background: radial-gradient(circle at 35% 30%, #fff 0 10%, transparent 11%), linear-gradient(145deg, #d5e9ec, #784f64); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%); }
+    .product-photo { display: grid; flex: none; width: 58px; height: 58px; overflow: hidden; place-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+    .product-photo img { width: 100%; height: 100%; object-fit: contain; }
+    .product-photo--empty::after { color: var(--muted-2); font-size: 22px; content: "◇"; }
     .product-status { display: grid; min-width: 0; justify-items: start; gap: 5px; }
     .status-badge { display: inline-flex; min-height: 28px; align-items: center; padding: 4px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 12px; font-weight: 800; }
     .status-badge--live { background: var(--ok-soft); color: var(--ok); }
+    .website-switch { display: inline-flex; min-height: 44px; align-items: center; gap: 9px; cursor: pointer; }
+    .website-switch input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+    .website-switch > span { position: relative; width: 42px; height: 24px; flex: none; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface-2); transition: background .16s ease, border-color .16s ease; }
+    .website-switch i { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted-2); transition: transform .16s ease, background .16s ease; }
+    .website-switch input:checked + span { border-color: var(--ok); background: var(--ok-soft); }
+    .website-switch input:checked + span i { background: var(--ok); transform: translateX(18px); }
+    .website-switch input:focus-visible + span { outline: 3px solid var(--rose); outline-offset: 2px; }
+    .website-switch input:disabled + span { opacity: .48; }
+    .website-switch:has(input:disabled) { color: var(--muted); cursor: not-allowed; }
+    .website-switch b { font-size: 12px; }
+    .website-switch--busy { opacity: .68; }
+    .switch-hint { max-width: 24ch; color: var(--warn) !important; white-space: normal !important; }
     .product-completion { display: flex; flex-wrap: wrap; gap: 5px; }
     .product-completion > span { padding: 5px 7px; border-radius: 7px; background: var(--warn-soft); color: var(--ink-2); font-size: 11px; }
     .product-completion > span.done { background: var(--ok-soft); color: var(--ok); }
@@ -184,7 +245,7 @@ interface WebsiteProductRow {
     @media (max-width: 720px) {
       .website-products-page { padding-inline: 12px; }
       .product-ownership, .product-row { grid-template-columns: 1fr; }
-      .products-toolbar, .products-state--error { align-items: stretch; flex-direction: column; }
+      .products-toolbar, .products-state--error, .products-action-error, .products-action-notice { align-items: stretch; flex-direction: column; }
       .products-toolbar label { max-width: none; }
       .products-filters { overflow-x: auto; }
       .products-summary { align-items: flex-start; flex-direction: column; }
@@ -202,9 +263,12 @@ export class WebsiteProductsPage {
   readonly families = signal<ProductFamily[]>([]);
   readonly search = signal('');
   readonly filter = signal<ProductWebsiteFilter>('ALL');
+  readonly savingFamilyId = signal<number | null>(null);
+  readonly actionError = signal<string | null>(null);
+  readonly actionNotice = signal<string | null>(null);
+  readonly syncRefreshKey = signal(0);
 
   readonly rows = computed<WebsiteProductRow[]>(() => this.families()
-    .filter((family) => family.active)
     .map((family) => {
       const translatedLanguages = this.languages.filter((language) => {
         const text = family.texts.find((item) => item.language === language.code);
@@ -223,9 +287,11 @@ export class WebsiteProductsPage {
         translatedLanguages,
         seoLanguages,
         attention: family.websiteStatus !== 'PUBLISHED'
+          || !family.active
           || family.publicationIssues.length > 0
           || translatedLanguages < this.languages.length
           || seoLanguages < this.languages.length,
+        thumbnail: this.familyThumbnail(family),
       };
     })
     .sort((left, right) => {
@@ -242,7 +308,8 @@ export class WebsiteProductsPage {
       .filter((row) => {
         if (this.filter() === 'ALL') return true;
         if (this.filter() === 'ATTENTION') return row.attention;
-        return row.family.websiteStatus === this.filter();
+        if (this.filter() === 'PUBLISHED') return row.family.websiteStatus === 'PUBLISHED';
+        return row.family.websiteStatus !== 'PUBLISHED';
       })
       .filter((row) => !query || this.normalize([
         row.publicName,
@@ -260,7 +327,7 @@ export class WebsiteProductsPage {
     try {
       this.families.set(await this.catalog.productFamilies());
     } catch (failure: unknown) {
-      this.loadError.set(messageOf(failure, 'Controleer de verbinding met de testomgeving.'));
+      this.loadError.set(messageOf(failure, 'Controleer de verbinding met Enrosed.'));
     } finally {
       this.loading.set(false);
     }
@@ -273,6 +340,46 @@ export class WebsiteProductsPage {
 
   isGlassBowl(family: ProductFamily): boolean {
     return GLASS_BOWL_FAMILY_KEYS.has(family.familyKey);
+  }
+
+  canToggle(row: WebsiteProductRow): boolean {
+    if (row.family.id === null) return false;
+    if (row.family.websiteStatus === 'PUBLISHED') return true;
+    return row.family.active && row.family.publicationIssues.length === 0;
+  }
+
+  async toggleWebsite(row: WebsiteProductRow, visible: boolean): Promise<void> {
+    const id = row.family.id;
+    if (id === null || this.savingFamilyId() !== null) return;
+    if (visible && !this.canToggle(row)) return;
+    this.actionError.set(null);
+    this.actionNotice.set(null);
+    this.savingFamilyId.set(id);
+    try {
+      const result = await this.catalog.setProductFamilyWebsiteVisibility(id, visible);
+      this.families.update((families) => families.map((family) => family.id === id ? result.family : family));
+      if (!result.rebuildQueued && result.notice) this.actionNotice.set(result.notice);
+      this.syncRefreshKey.update((value) => value + 1);
+    } catch (failure: unknown) {
+      this.actionError.set(messageOf(
+        failure,
+        visible
+          ? 'Controleer foto’s, teksten en vertalingen en probeer opnieuw.'
+          : 'Herlaad de productlijst en probeer opnieuw.',
+      ));
+      await this.load();
+    } finally {
+      this.savingFamilyId.set(null);
+    }
+  }
+
+  private familyThumbnail(family: ProductFamily): string | null {
+    const websiteImage = family.images
+      .filter((image) => image.publishedChannels.includes('WEBSITE'))
+      .sort((left, right) => left.position - right.position)[0];
+    return websiteImage?.smallUrl
+      ?? [...family.images].sort((left, right) => left.position - right.position)[0]?.smallUrl
+      ?? null;
   }
 
   private normalize(value: string): string {

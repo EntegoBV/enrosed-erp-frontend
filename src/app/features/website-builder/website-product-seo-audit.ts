@@ -217,7 +217,7 @@ export class WebsiteProductSeoAudit {
     try {
       this.families.set(await this.catalog.productFamilies());
     } catch (failure: unknown) {
-      this.loadError.set(messageOf(failure, 'Controleer de verbinding met de testomgeving.'));
+      this.loadError.set(messageOf(failure, 'Controleer de verbinding met Enrosed.'));
     } finally {
       this.loading.set(false);
     }

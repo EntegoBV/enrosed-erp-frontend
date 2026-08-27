@@ -57,7 +57,7 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
       [showBell]="false"
     >
       <a class="btn btn--sm" [href]="previewBaseUrl" target="_blank" rel="noopener">
-        Testsite openen
+        {{ previewSiteLabel }} openen
       </a>
     </app-page-header>
 
@@ -183,7 +183,7 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
             <div class="builder-actions" [attr.aria-busy]="busy()">
               <div>
                 <b>{{ dirty() ? 'Wijzigingen nog niet opgeslagen' : 'Concept opgeslagen' }}</b>
-                <small>Publiceren maakt het concept zichtbaar op de testsite.</small>
+                <small>Publiceren maakt het concept zichtbaar op de {{ previewSiteName }}.</small>
               </div>
               <button class="btn" type="button" [disabled]="!dirty() || busy()" (click)="saveDraft()">
                 {{ saving() ? 'Opslaan…' : 'Concept opslaan' }}
@@ -198,7 +198,7 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
           <aside class="builder-pane preview-pane" aria-labelledby="preview-title">
             <div class="preview-head">
               <div>
-                <span>Live testsite</span>
+                <span>Live {{ previewSiteName }}</span>
                 <h2 id="preview-title">Voorbeeld van de website</h2>
                 <small>Na publiceren kan de nieuwe build enkele minuten duren.</small>
               </div>
@@ -213,19 +213,19 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
                   <div>
                     <button class="btn" type="button" (click)="refreshPreview()">Opnieuw laden</button>
                     <a class="btn btn--primary" [href]="previewBaseUrl" target="_blank" rel="noopener">
-                      Testsite openen ↗
+                      {{ previewSiteLabel }} openen ↗
                     </a>
                   </div>
                 </div>
               } @else if (!previewLoaded()) {
-                <div class="preview-loading" role="status">Testsite laden…</div>
+                <div class="preview-loading" role="status">{{ previewSiteLabel }} laden…</div>
               }
-              <iframe [src]="previewUrl()" title="Live voorbeeld van de Enrosed testwebsite"
+              <iframe [src]="previewUrl()" [title]="'Live voorbeeld van de Enrosed ' + previewSiteName"
                       loading="lazy" referrerpolicy="strict-origin-when-cross-origin"
                       (load)="markPreviewLoaded()" (error)="markPreviewFailed()"></iframe>
             </div>
             <a class="preview-external" [href]="previewBaseUrl" target="_blank" rel="noopener">
-              Open de testsite in een nieuw venster <span aria-hidden="true">↗</span>
+              Open de {{ previewSiteName }} in een nieuw venster <span aria-hidden="true">↗</span>
             </a>
           </aside>
         </div>
@@ -363,6 +363,10 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly previewBaseUrl = environment.websitePreviewUrl;
+  readonly previewSiteLabel = environment.environmentLabel === 'TEST'
+    ? 'Testsite'
+    : environment.environmentLabel === 'LOCAL' ? 'Lokale website' : 'Website';
+  readonly previewSiteName = this.previewSiteLabel.toLocaleLowerCase('nl-BE');
   readonly snapshot = signal<WebsiteBuilderHomepage | null>(null);
   readonly sections = signal<WebsiteBuilderSection[]>([]);
   private readonly baseline = signal('');
@@ -454,7 +458,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     try {
       this.applySnapshot(await this.catalog.websiteBuilderHomepage());
     } catch (failure: unknown) {
-      this.loadError.set(messageOf(failure, 'Controleer de verbinding met de testomgeving.'));
+      this.loadError.set(messageOf(failure, 'Controleer de verbinding met Enrosed.'));
     } finally {
       this.loading.set(false);
     }
@@ -534,7 +538,9 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   markPreviewFailed(): void {
     this.clearPreviewWatch();
     this.previewLoaded.set(false);
-    this.previewError.set('Ververs het voorbeeld of open de testsite apart om de buildmelding te bekijken.');
+    this.previewError.set(
+      `Ververs het voorbeeld of open de ${this.previewSiteName} apart om de buildmelding te bekijken.`,
+    );
   }
 
   private startPreviewWatch(): void {
@@ -545,7 +551,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
       this.previewWatch = null;
       if (!this.previewLoaded()) {
         this.previewError.set(
-          'De testsite bleef te lang laden. De Vercel-build kan nog bezig zijn of een fout bevatten.',
+          `De ${this.previewSiteName} bleef te lang laden. De Vercel-build kan nog bezig zijn of een fout bevatten.`,
         );
       }
     }, 15_000);

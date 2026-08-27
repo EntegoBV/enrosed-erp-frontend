@@ -1287,7 +1287,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     } catch (failure: unknown) {
       this.settingsLoadError.set(messageOf(
         failure,
-        'Controleer de verbinding met de testomgeving en probeer opnieuw.',
+        'Controleer de verbinding met Enrosed en probeer opnieuw.',
       ));
     } finally {
       this.loadingSettings.set(false);

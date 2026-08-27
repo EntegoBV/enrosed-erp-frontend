@@ -7,4 +7,5 @@
 export const environment = {
   apiBase: 'https://enrosed-erp-backend-production.up.railway.app',
   websitePreviewUrl: 'https://enrosed.com',
+  environmentLabel: null,
 };

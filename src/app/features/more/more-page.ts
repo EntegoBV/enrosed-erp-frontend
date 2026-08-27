@@ -125,10 +125,16 @@ import { THEMES, Theme } from '../../core/platform/theme';
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="settings" /></span>
           <span class="more-group__copy"><strong>Bedrijf</strong>
-            <small>Bedrijfsgegevens · Voorwaarden &amp; privacy</small></span>
+            <small>Logboek · Bedrijfsgegevens · Voorwaarden &amp; privacy</small></span>
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
+          <a class="list-item" routerLink="/activity">
+            <span class="thumb thumb--placeholder"><app-icon name="activity" /></span>
+            <div class="list-item__body"><div class="list-item__title">Logboek</div>
+              <div class="list-item__meta">Belangrijke bedrijfsacties per medewerker</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
           <a class="list-item" [routerLink]="['/settings']" [queryParams]="{ sectie: 'company' }">
             <span class="thumb thumb--placeholder"><app-icon name="settings" /></span>
             <div class="list-item__body"><div class="list-item__title">Bedrijfsgegevens</div>

@@ -128,6 +128,9 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
                     [class.sidebar__group-chev--open]="groupOpen('bedrijf')">›</span>
             </button>
             <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('bedrijf')">
+              <a class="sidebar__link sidebar__link--wide" routerLink="/activity" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="activity" [size]="18" /> Logboek
+              </a>
               <a class="sidebar__link sidebar__link--wide" [routerLink]="['/settings']"
                  [queryParams]="{ sectie: 'company' }" [class.active]="settingsActive('company')">
                 <app-icon class="sidebar__icon" name="settings" [size]="18" /> Bedrijfsgegevens
@@ -276,7 +279,7 @@ export class App {
 
   readonly moreRoute = computed(() => {
     const url = this.url();
-    return ['/more', '/customers', '/suppliers', '/countries', '/settings', '/voorwaarden']
+    return ['/more', '/customers', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
       .some((path) => url.startsWith(path));
   });
 

@@ -18,7 +18,7 @@ import { WebsiteSyncStatus } from '../settings/website-sync-status';
       [showBell]="false"
     >
       <a class="btn btn--primary btn--sm" [href]="previewBaseUrl" target="_blank" rel="noopener">
-        Testsite openen ↗
+        {{ previewSiteLabel }} openen ↗
       </a>
     </app-page-header>
 
@@ -28,7 +28,7 @@ import { WebsiteSyncStatus } from '../settings/website-sync-status';
         <i aria-hidden="true">→</i>
         <span aria-hidden="true">2</span><div><b>Publiceren</b><small>Maakt de gekozen homepage-indeling actief.</small></div>
         <i aria-hidden="true">→</i>
-        <span aria-hidden="true">3</span><div><b>Website-build</b><small>Vercel verwerkt de nieuwe data op de testsite.</small></div>
+        <span aria-hidden="true">3</span><div><b>Website-build</b><small>Vercel verwerkt de nieuwe data op de {{ previewSiteName }}.</small></div>
       </section>
 
       <app-website-sync-status />
@@ -113,6 +113,10 @@ import { WebsiteSyncStatus } from '../settings/website-sync-status';
 export class WebsitePublicationPage {
   private readonly catalog = inject(CatalogApi);
   readonly previewBaseUrl = environment.websitePreviewUrl;
+  readonly previewSiteLabel = environment.environmentLabel === 'TEST'
+    ? 'Testsite'
+    : environment.environmentLabel === 'LOCAL' ? 'Lokale website' : 'Website';
+  readonly previewSiteName = this.previewSiteLabel.toLocaleLowerCase('nl-BE');
   readonly loading = signal(true);
   readonly loadError = signal<string | null>(null);
   readonly snapshot = signal<WebsiteBuilderHomepage | null>(null);
@@ -142,7 +146,7 @@ export class WebsitePublicationPage {
     try {
       this.snapshot.set(await this.catalog.websiteBuilderHomepage());
     } catch (failure: unknown) {
-      this.loadError.set(messageOf(failure, 'Controleer de verbinding met de testomgeving.'));
+      this.loadError.set(messageOf(failure, 'Controleer de verbinding met Enrosed.'));
     } finally {
       this.loading.set(false);
     }

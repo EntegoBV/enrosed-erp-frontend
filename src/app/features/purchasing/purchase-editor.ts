@@ -34,6 +34,7 @@ import {
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
+import { PurchaseActivity } from '../activity/purchase-activity';
 
 /**
  * Landed-cost calculation of a container.
@@ -61,7 +62,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
-            PurchasePdfSheet, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
+            PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -99,6 +100,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <p>
                 {{ data.order.orderDate | dateNl }}
                 @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
+                <span aria-hidden="true"> · </span>gemaakt door {{ creatorName(data) }}
               </p>
             </div>
             <span class="po-status"
@@ -896,7 +898,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
                   <div class="pay-line">
                     <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
-                      <small>{{ payment.paidOn | dateNl }}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
+                      <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
                     <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                     <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                   </div>
@@ -917,7 +919,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
                     <div class="pay-line">
                       <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
-                        <small>{{ payment.paidOn | dateNl }}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                        <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
                       <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                       <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                     </div>
@@ -978,7 +980,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         } @else {
                           <span class="files-list__name">
                             <b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b>
-                            <small>{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}</small>
+                            <small>{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}@if (doc.actor) { · {{ actorLabel(doc.actor) }} }</small>
                           </span>
                         }
                         <span class="files-list__actions">
@@ -1002,6 +1004,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <button class="btn btn--block" type="button" (click)="openDocument()">Document toevoegen</button>
               </div>
             </section>
+
+            <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
 
             <section class="card action-card" aria-labelledby="purchase-actions-title">
               <div class="action-card__head">
@@ -2065,6 +2069,17 @@ export class PurchaseEditor {
   }
 
   supplierName(): string { return this.supplier()?.name ?? 'Onbekend'; }
+
+  creatorName(data: PurchaseOrderView): string {
+    return data.createdBy?.displayName || 'maker onbekend';
+  }
+
+  actorLabel(actor: string): string {
+    const canonical = actor.trim().toLocaleLowerCase('nl-BE');
+    if (canonical === 'emre') return 'Emre';
+    if (canonical === 'berat') return 'Berat';
+    return actor;
+  }
 
   readonly available = computed(() => {
     const used = new Set((this.view()?.order.lines ?? []).map((line) => line.productId));
