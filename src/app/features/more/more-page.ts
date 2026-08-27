@@ -88,22 +88,22 @@ import { THEMES, Theme } from '../../core/platform/theme';
               <div class="list-item__meta">Magazijn, stand en wat de website telt</div></div>
             <span class="list-item__chev">›</span>
           </a>
-          <a class="list-item" [routerLink]="['/settings']" [queryParams]="{ sectie: 'categories' }">
+          <a class="list-item" routerLink="/website/categories">
             <span class="thumb thumb--placeholder"><app-icon name="products" /></span>
             <div class="list-item__body"><div class="list-item__title">Categorieën</div>
               <div class="list-item__meta">Productgroepen en volgorde</div></div>
             <span class="list-item__chev">›</span>
           </a>
-          <a class="list-item" routerLink="/website-builder">
+          <a class="list-item" routerLink="/website">
             <span class="thumb thumb--placeholder"><app-icon name="settings" /></span>
             <div class="list-item__body"><div class="list-item__title">Website beheren</div>
-              <div class="list-item__meta">Volgorde, zichtbaarheid en testvoorbeeld</div></div>
+              <div class="list-item__meta">Indeling, teksten, SEO, producten en publicatie</div></div>
             <span class="list-item__chev">›</span>
           </a>
           <a class="list-item" [routerLink]="['/settings']" [queryParams]="{ sectie: 'catalog-data' }">
             <span class="thumb thumb--placeholder"><app-icon name="products" /></span>
             <div class="list-item__body"><div class="list-item__title">Catalogusdata</div>
-              <div class="list-item__meta">Teksten en vertalingen in bulk</div></div>
+              <div class="list-item__meta">Excel-import en -export van productgegevens</div></div>
             <span class="list-item__chev">›</span>
           </a>
           <a class="list-item" routerLink="/barcodes">

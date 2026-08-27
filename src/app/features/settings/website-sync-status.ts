@@ -11,7 +11,8 @@ import {
 } from '@angular/core';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
-import { WebsiteRebuildState, WebsiteRebuildStatus } from '../../core/api/models';
+import { WebsiteRebuildStatus } from '../../core/api/models';
+import { RouterLink } from '@angular/router';
 
 interface WebsiteRebuildCopy {
   label: string;
@@ -25,6 +26,7 @@ const MAX_POLL_WINDOW_MS = 5 * 60_000;
 @Component({
   selector: 'app-website-sync-status',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink],
   template: `
     <section class="website-sync" aria-labelledby="website-sync-title"
              [attr.aria-busy]="loading() || retrying()">
@@ -56,17 +58,21 @@ const MAX_POLL_WINDOW_MS = 5 * 60_000;
             @if (statusMoment(current); as moment) {
               <small>{{ moment.label }} · {{ formatDate(moment.value) }}</small>
             }
-            @if (current.nextAttemptAt && current.status === 'FAILED_OR_STALE') {
+            @if (current.nextAttemptAt && current.status === 'FAILED_OR_STALE' && !translationPending()) {
               <small>Volgende automatische poging · {{ formatDate(current.nextAttemptAt) }}</small>
             }
-            @if (current.lastError && current.status === 'FAILED_OR_STALE') {
+            @if (current.lastError && current.status === 'FAILED_OR_STALE' && !translationPending()) {
               <small class="sync-error">{{ current.lastError }}</small>
             }
           </div>
           <div class="sync-actions">
             <button class="btn btn--sm" type="button" [disabled]="loading() || retrying()"
                     (click)="load()">Status vernieuwen</button>
-            @if (current.status === 'FAILED_OR_STALE') {
+            @if (translationPending()) {
+              <a class="btn btn--sm btn--primary" routerLink="/website" fragment="translation-work">
+                Open vertaalwerk
+              </a>
+            } @else if (current.status === 'FAILED_OR_STALE') {
               <button class="btn btn--sm btn--primary" type="button"
                       [disabled]="loading() || retrying()" (click)="retry()">
                 {{ retrying() ? 'Opnieuw starten…' : 'Opnieuw proberen' }}
@@ -80,7 +86,7 @@ const MAX_POLL_WINDOW_MS = 5 * 60_000;
   styles: `
     :host { display: block; }
     .website-sync {
-      margin-bottom: 12px; padding: 11px 12px; border: 1px solid var(--line);
+      margin-bottom: 12px; padding: 14px; border: 1px solid var(--line);
       border-radius: var(--r-sm); background: var(--surface-2);
     }
     .website-sync__heading, .sync-summary, .sync-state {
@@ -89,25 +95,33 @@ const MAX_POLL_WINDOW_MS = 5 * 60_000;
     .website-sync__heading > div, .sync-summary > div:first-child, .sync-state > div {
       display: grid; min-width: 0; gap: 2px;
     }
-    .website-sync h3 { font-size: 12px; }
+    .website-sync h3 { font-size: 17px; }
     .website-sync p, .sync-summary small, .sync-state small {
-      color: var(--muted); font-size: 9.5px; line-height: 1.4;
+      color: var(--muted); font-size: 14px; line-height: 1.45;
     }
     .sync-badge {
       display: inline-flex; flex: none; min-height: 25px; align-items: center; gap: 5px;
       padding: 4px 8px; border-radius: 999px; background: var(--surface);
-      color: var(--muted); font-size: 8.5px; font-weight: 750;
+      color: var(--muted); font-size: 13px; font-weight: 750;
     }
     .sync-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     .sync-badge--pending { background: var(--warn-soft); color: var(--warn); }
     .sync-badge--ok { background: var(--ok-soft); color: var(--ok); }
     .sync-badge--danger { background: var(--danger-soft); color: var(--danger); }
     .sync-summary, .sync-state { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
-    .sync-summary b, .sync-state b { font-size: 10px; }
+    .sync-summary b, .sync-state b { font-size: 15px; line-height: 1.4; }
     .sync-error { color: var(--danger) !important; }
-    .sync-state { min-height: 43px; color: var(--muted); font-size: 10px; }
+    .sync-state { min-height: 48px; color: var(--muted); font-size: 14px; }
     .sync-state--error { color: var(--danger); }
     .sync-actions { display: flex; flex: none; gap: 6px; }
+    .sync-actions .btn, .sync-state .btn { min-height: 48px; }
+
+    @media (max-width: 560px) {
+      .website-sync__heading, .sync-summary, .sync-state { align-items: stretch; flex-direction: column; }
+      .sync-badge { align-self: flex-start; }
+      .sync-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
+      .sync-actions .btn, .sync-state .btn { width: 100%; }
+    }
   `,
 })
 export class WebsiteSyncStatus {
@@ -122,7 +136,8 @@ export class WebsiteSyncStatus {
   readonly loading = signal(false);
   readonly retrying = signal(false);
   readonly loadError = signal<string | null>(null);
-  readonly copy = computed(() => this.statusCopy(this.status()?.status));
+  readonly translationPending = computed(() => this.isTranslationPending(this.status()));
+  readonly copy = computed(() => this.statusCopy(this.status()));
 
   private readonly dateFormatter = new Intl.DateTimeFormat('nl-BE', {
     dateStyle: 'short',
@@ -211,7 +226,15 @@ export class WebsiteSyncStatus {
     return Number.isNaN(date.getTime()) ? 'tijdstip onbekend' : this.dateFormatter.format(date);
   }
 
-  private statusCopy(status?: WebsiteRebuildState): WebsiteRebuildCopy {
+  private statusCopy(current: WebsiteRebuildStatus | null): WebsiteRebuildCopy {
+    const status = current?.status;
+    if (this.isTranslationPending(current)) {
+      return {
+        label: 'Wacht op vertalingen',
+        detail: 'Opgeslagen; de website wacht nog op verplichte vertalingen. De invoer is niet verloren.',
+        tone: 'pending',
+      };
+    }
     switch (status) {
       case 'NOT_CONFIGURED':
         return {
@@ -249,6 +272,12 @@ export class WebsiteSyncStatus {
       default:
         return { label: 'Status laden', detail: 'Status wordt gecontroleerd.', tone: 'muted' };
     }
+  }
+
+  private isTranslationPending(current: WebsiteRebuildStatus | null): boolean {
+    if (current?.status !== 'FAILED_OR_STALE' || !current.lastError) return false;
+    return /missing required translation|translation entry|invalid public website copy|vertal|ontbrekende?\s+taal/i
+      .test(current.lastError);
   }
 
   private schedulePoll(status: WebsiteRebuildStatus): void {

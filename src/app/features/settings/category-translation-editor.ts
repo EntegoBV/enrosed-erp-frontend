@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Category, CategoryText, LanguageCode } from '../../core/api/models';
 import { TRANSLATION_LANGUAGES } from '../products/product-translation-adapter';
+import { Ui } from '../../shared/ui';
 
 interface CategoryLanguageState {
   code: LanguageCode;
@@ -25,6 +26,26 @@ interface CategoryLanguageState {
         </span>
       </div>
 
+      @if (completeCount() < languages.length) {
+        <div class="partial-save-note" role="note">
+          <span aria-hidden="true">✓</span>
+          <p><b>Later vertalen is prima.</b> Gebruik de categorieknop onderaan om de huidige invoer op te slaan. Ontbrekende talen blokkeren deze opslag niet en blijven in de vertaalwerkvoorraad staan.</p>
+        </div>
+      }
+
+      <div class="codex-brief-action" role="note">
+        <div>
+          <b>Opnieuw laten vertalen na een bronwijziging</b>
+          <small>De opdracht bevat uitsluitend de vaste categorie-identiteit en publieke tekstvelden in acht talen.</small>
+        </div>
+        <button class="btn btn--sm btn--primary" type="button"
+                [disabled]="busy() || category().id === null"
+                [title]="category().id === null ? 'Sla de categorie eerst op voor een vaste categoryId' : null"
+                (click)="copyCodexBrief()">
+          Kopieer deze vertaalopdracht voor Codex
+        </button>
+      </div>
+
       <div class="language-tabs" role="group" aria-label="Categorietaal bewerken">
         @for (state of states(); track state.code) {
           <button type="button"
@@ -38,6 +59,17 @@ interface CategoryLanguageState {
           </button>
         }
       </div>
+      <label class="mobile-language-picker">
+        <span>Taal kiezen</span>
+        <select class="select" [ngModel]="language()" [disabled]="busy()"
+                (ngModelChange)="language.set($any($event))">
+          @for (state of states(); track state.code) {
+            <option [ngValue]="state.code">
+              {{ state.label }} — {{ state.missing.length ? state.missing.length + ' ontbreekt' : 'compleet' }}
+            </option>
+          }
+        </select>
+      </label>
 
       <fieldset [disabled]="busy()" [attr.aria-busy]="busy()">
         <legend class="sr-only">{{ selectedState().label }} categorietekst</legend>
@@ -105,53 +137,80 @@ interface CategoryLanguageState {
       padding: 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff;
     }
     .translation-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-    .translation-head h4 { font-size: 13px; }
-    .translation-head p { margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .translation-head h4 { font-size: 18px; }
+    .translation-head p { margin-top: 3px; color: var(--muted); font-size: 15px; line-height: 1.45; }
     .translation-head > span {
       flex: none; padding: 5px 8px; border-radius: 999px; background: var(--warn-soft);
-      color: var(--ink-2); font-size: 9px; font-weight: 750;
+      color: var(--ink-2); font-size: 13px; font-weight: 750;
     }
     .translation-head > span.done { background: var(--ok-soft); color: var(--ok); }
+    .partial-save-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--rose-line); border-radius: 9px; background: var(--rose-soft); }
+    .partial-save-note > span { display: grid; width: 24px; height: 24px; flex: none; place-items: center; border-radius: 999px; background: var(--surface); color: var(--rose-dark); font-weight: 850; }
+    .partial-save-note p { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .partial-save-note b { color: var(--ink-2); }
+    .codex-brief-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+    .codex-brief-action > div { display: grid; gap: 2px; }
+    .codex-brief-action b { color: var(--ink-2); font-size: 13px; }
+    .codex-brief-action small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .codex-brief-action .btn { flex: none; min-height: 44px; white-space: nowrap; }
     .language-tabs {
       display: grid; grid-template-columns: repeat(8, minmax(48px, 1fr)); gap: 5px;
       margin-top: 11px; overflow-x: auto; padding-bottom: 3px;
     }
     .language-tabs button {
-      display: flex; min-width: 48px; min-height: 40px; align-items: center; justify-content: center;
+      display: flex; min-width: 54px; min-height: 48px; align-items: center; justify-content: center;
       gap: 4px; border: 1px solid var(--line); border-radius: 8px;
       background: var(--surface-2); color: var(--ink-2); cursor: pointer;
     }
     .language-tabs button.active { border-color: var(--rose); background: var(--rose-soft); }
-    .language-tabs b { font-size: 9.5px; }
+    .language-tabs b { font-size: 13px; }
     .language-tabs small {
       display: grid; min-width: 16px; height: 16px; place-items: center; border-radius: 999px;
-      background: var(--warn-soft); color: var(--warn); font-size: 8px;
+      background: var(--warn-soft); color: var(--warn); font-size: 11px;
     }
     .language-tabs button.complete small { background: var(--ok-soft); color: var(--ok); }
-    fieldset { min-inline-size: 0; margin: 10px 0 0; padding: 0; border: 0; }
+    .mobile-language-picker { display: none; }
+    fieldset { min-inline-size: 0; margin: 12px 0 0; padding: 0; border: 0; }
     .language-state {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
       padding: 9px 10px; border-radius: 9px; background: var(--warn-soft);
     }
     .language-state.complete { background: var(--ok-soft); }
     .language-state > span { display: grid; gap: 1px; }
-    .language-state b { font-size: 10.5px; }
-    .language-state small { color: var(--muted); font-size: 9px; }
+    .language-state b { font-size: 15px; }
+    .language-state small { color: var(--muted); font-size: 14px; line-height: 1.4; }
     .language-state i { color: var(--ok); font-style: normal; font-weight: 800; }
     .translation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 11px; }
     .translation-grid .field { min-width: 0; }
     .translation-grid .span-2 { grid-column: 1 / -1; }
+    .translation-grid .input, .translation-grid .select { min-height: 48px; font-size: 16px; }
+    .translation-grid .textarea { font-size: 16px; line-height: 1.5; }
     .dirty {
       display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 10px;
       border-radius: 9px; background: var(--rose-soft); color: var(--rose-dark);
     }
     .dirty > div { display: grid; gap: 1px; }
-    .dirty b { font-size: 10px; }
-    .dirty small { color: var(--muted); font-size: 9px; }
+    .dirty b { font-size: 14px; }
+    .dirty small { color: var(--muted); font-size: 13px; line-height: 1.4; }
     .dirty--error { background: var(--danger-soft); color: var(--danger); }
+
+    @media (max-width: 620px) {
+      .category-translations { padding: 14px; }
+      .translation-head { align-items: stretch; flex-direction: column; }
+      .translation-head > span { align-self: flex-start; }
+      .language-tabs { display: none; }
+      .mobile-language-picker { display: grid; gap: 7px; margin-top: 14px; }
+      .mobile-language-picker > span { font-size: 15px; font-weight: 700; }
+      .mobile-language-picker .select { min-height: 48px; font-size: 16px; }
+      .translation-grid { grid-template-columns: 1fr; }
+      .translation-grid .span-2 { grid-column: auto; }
+      .codex-brief-action { align-items: stretch; flex-direction: column; }
+      .codex-brief-action .btn { width: 100%; white-space: normal; }
+    }
   `,
 })
 export class CategoryTranslationEditor {
+  private readonly ui = inject(Ui);
   readonly languages = TRANSLATION_LANGUAGES;
   readonly category = input.required<Category>();
   readonly busy = input(false);
@@ -186,6 +245,54 @@ export class CategoryTranslationEditor {
       : [...existing, text];
     this.touched.set(true);
     this.categoryChange.emit({ ...category, texts });
+  }
+
+  async copyCodexBrief(): Promise<void> {
+    const category = this.category();
+    if (category.id === null) {
+      this.ui.toast('Sla de categorie eerst op zodat de opdracht een vaste categoryId krijgt.', 'err');
+      return;
+    }
+    const lines = [
+      'ENROSED categorievertaling voor Codex',
+      '',
+      'Vertaal of hercontroleer uitsluitend de publieke categorieteksten hieronder naar alle doeltalen. Wijzig categoryId en categoryKey nooit. Behoud betekenis, merktoon en menu-lengte; verzin geen nieuwe claims.',
+      '',
+      `categoryId: ${category.id}`,
+      `categoryKey: ${category.code}`,
+      `revision: ${category.revision ?? 'niet beschikbaar'}`,
+      `doeltalen: ${this.languages.map((language) => language.code).join(', ')}`,
+      `basisnaam/fallback: ${this.promptValue(category.name)}`,
+      `basis navigatienaam/fallback: ${this.promptValue(category.navigationName)}`,
+      `basis mobiele naam/fallback: ${this.promptValue(category.mobileName)}`,
+      `basis footernaam/fallback: ${this.promptValue(category.footerName)}`,
+      `basis bovenregel/fallback: ${this.promptValue(category.eyebrow)}`,
+      `basis beschrijving/fallback: ${this.promptValue(category.description)}`,
+      '',
+    ];
+    for (const language of this.languages) {
+      const text = category.texts?.find((item) => item.language === language.code);
+      lines.push(
+        `## ${language.code} — ${language.label}`,
+        `naam: ${this.promptValue(text?.name)}`,
+        `navigatienaam desktop: ${this.promptValue(text?.navigationName)}`,
+        `mobiele naam: ${this.promptValue(text?.mobileName)}`,
+        `footernaam: ${this.promptValue(text?.footerName)}`,
+        `bovenregel: ${this.promptValue(text?.eyebrow)}`,
+        `beschrijving: ${this.promptValue(text?.description)}`,
+        '',
+      );
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      this.ui.toast('Veilige categorievertaalopdracht gekopieerd');
+    } catch {
+      this.ui.toast('Kopiëren is niet gelukt. Controleer de browsertoestemming.', 'err');
+    }
+  }
+
+  private promptValue(value: string | null | undefined): string {
+    return JSON.stringify(value?.trim() ?? '');
   }
 
   private missing(language: LanguageCode): string[] {

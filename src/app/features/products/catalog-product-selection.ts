@@ -19,16 +19,16 @@ import { Skeleton } from '../../shared/skeleton';
     <section class="card product-selector" aria-labelledby="catalog-products-title">
       <div class="card__head product-selector__head">
         <div>
-          <h2 id="catalog-products-title">Producten</h2>
-          <p>{{ selected().size }} geselecteerd</p>
+          <h2 id="catalog-products-title">Assortiment</h2>
+          <p>{{ selected().size }} van {{ products().length }} producten opgenomen</p>
         </div>
         <div class="visible-actions">
           <button class="btn btn--sm" type="button"
                   [disabled]="disabled() || !visibleProducts().length"
-                  (click)="selectVisible()">Zichtbare selecteren</button>
+                  (click)="selectVisible()">Alles in beeld kiezen</button>
           <button class="btn btn--sm" type="button"
                   [disabled]="disabled() || !visibleSelectedCount()"
-                  (click)="clearVisible()">Zichtbare wissen</button>
+                  (click)="clearVisible()">Keuze in beeld wissen</button>
         </div>
       </div>
 
@@ -47,7 +47,7 @@ import { Skeleton } from '../../shared/skeleton';
           <input type="checkbox" [ngModel]="selectedOnly()"
                  [disabled]="disabled()"
                  (ngModelChange)="selectedOnly.set($event)" />
-          Alleen gekozen
+          Alleen opgenomen
         </label>
       </div>
 
@@ -97,7 +97,14 @@ import { Skeleton } from '../../shared/skeleton';
                 <b>{{ product.name }}</b>
                 <small>{{ productMeta(product) }}</small>
               </span>
-              @if (product.colourHex) {
+              @if (showReferencePrices()) {
+                <span class="product-choice__price"
+                      [class.product-choice__price--missing]="!hasReferencePrice(product)">
+                  <small>Referentieprijs</small>
+                  <b>{{ referencePrice(product) }}</b>
+                  <i>per stuk</i>
+                </span>
+              } @else if (product.colourHex) {
                 <i class="colour-dot" [style.backgroundColor]="product.colourHex"
                    aria-hidden="true"></i>
               }
@@ -117,34 +124,35 @@ import { Skeleton } from '../../shared/skeleton';
   styles: `
     :host { display: block; min-width: 0; }
     .card__head > div { min-width: 0; }
-    .card__head p { margin-top: 2px; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+    .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
     .product-selector__head { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
     .visible-actions { display: flex; flex: 1 1 250px; justify-content: flex-end; gap: 6px; }
-    .visible-actions .btn { min-height: 36px; padding-inline: 9px; font-size: 10px; }
-    .selection-tools { display: grid; gap: 8px; padding: 12px 14px 8px; }
+    .visible-actions .btn { min-height: 48px; padding-inline: 12px; font-size: 14px; }
+    .selection-tools { display: grid; gap: 8px; padding: 14px 14px 10px; }
     .product-search { position: relative; display: block; }
     .product-search svg {
       position: absolute; left: 12px; top: 50%; width: 17px; height: 17px;
       transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8;
       pointer-events: none;
     }
-    .product-search .input { padding-left: 39px; }
+    .product-search .input { min-height: 48px; padding-left: 39px; font-size: 16px; }
     .selected-only {
-      display: flex; min-height: 40px; align-items: center; gap: 8px;
-      color: var(--ink-2); font-size: 11px; font-weight: 650; cursor: pointer;
+      display: flex; min-height: 48px; align-items: center; gap: 9px;
+      color: var(--ink-2); font-size: 14px; font-weight: 700; cursor: pointer;
     }
     .selected-only input, .product-choice > input {
-      width: 18px; height: 18px; flex: none; accent-color: var(--rose);
+      width: 22px; height: 22px; flex: none; accent-color: var(--rose);
     }
     .category-chips { margin: 0; padding: 0 14px 7px; }
+    .category-chips .chip { min-height: 48px; padding-inline: 14px; font-size: 14px; }
     .selection-summary {
-      display: flex; justify-content: space-between; gap: 10px; padding: 7px 14px;
-      border-block: 1px solid var(--line); color: var(--muted); font-size: 9.5px;
+      display: flex; justify-content: space-between; gap: 10px; padding: 10px 14px;
+      border-block: 1px solid var(--line); color: var(--muted); font-size: 14px;
     }
     .product-choice-list { display: grid; }
     .product-choice {
-      display: grid; grid-template-columns: 22px 48px minmax(0, 1fr) auto;
-      min-width: 0; align-items: center; gap: 10px; min-height: 68px; padding: 9px 14px;
+      display: grid; grid-template-columns: 24px 60px minmax(0, 1fr) auto;
+      min-width: 0; align-items: center; gap: 11px; min-height: 88px; padding: 12px 14px;
       border-bottom: 1px solid var(--line); background: var(--surface); cursor: pointer;
     }
     .product-choice:last-child { border-bottom: 0; }
@@ -152,15 +160,25 @@ import { Skeleton } from '../../shared/skeleton';
       background: color-mix(in srgb, var(--rose-soft) 42%, var(--surface));
     }
     .product-choice img, .product-choice__empty {
-      display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid var(--line);
-      border-radius: 9px; background: var(--surface-2); object-fit: cover;
+      display: grid; width: 60px; height: 60px; place-items: center; border: 1px solid var(--line);
+      border-radius: 11px; background: var(--surface-2); object-fit: cover;
     }
     .product-choice__copy { display: grid; min-width: 0; gap: 2px; }
     .product-choice__copy b, .product-choice__copy small {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .product-choice__copy b { font-size: 12.5px; }
-    .product-choice__copy small { color: var(--muted); font-size: 10px; }
+    .product-choice__copy b { font-size: 15px; line-height: 1.3; }
+    .product-choice__copy small { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .product-choice__price {
+      display: grid; min-width: 92px; justify-items: end; gap: 1px; text-align: right;
+    }
+    .product-choice__price small {
+      color: var(--muted); font-size: 11px; font-weight: 700;
+      letter-spacing: .04em; text-transform: uppercase;
+    }
+    .product-choice__price b { color: var(--rose-dark); font-size: 16px; white-space: nowrap; }
+    .product-choice__price i { color: var(--muted); font-size: 11px; font-style: normal; }
+    .product-choice__price--missing b { color: var(--warn); font-size: 14px; }
     .colour-dot {
       width: 15px; height: 15px; border: 1px solid rgb(0 0 0 / 12%); border-radius: 50%;
     }
@@ -169,8 +187,8 @@ import { Skeleton } from '../../shared/skeleton';
       gap: 14px; padding: 18px; color: var(--muted); text-align: center;
     }
     .load-state > div { display: grid; gap: 3px; }
-    .load-state b { color: var(--ink-2); font-size: 12px; }
-    .load-state small { font-size: 10px; }
+    .load-state b { color: var(--ink-2); font-size: 15px; }
+    .load-state small { font-size: 14px; }
     .load-state--error { border-top: 1px solid var(--line); color: var(--danger); }
     @media (min-width: 620px) {
       .selection-tools { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
@@ -178,15 +196,33 @@ import { Skeleton } from '../../shared/skeleton';
     @media (min-width: 680px) {
       .product-choice-list { max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain; }
     }
+    @media (max-width: 520px) {
+      .product-selector__head { display: grid; }
+      .visible-actions { width: 100%; justify-content: stretch; }
+      .visible-actions .btn { flex: 1 1 0; white-space: normal; }
+      .product-choice { grid-template-columns: 24px 60px minmax(0, 1fr); }
+      .product-choice__price {
+        grid-column: 3; min-width: 0; justify-items: start; margin-top: 4px; text-align: left;
+      }
+      .colour-dot { display: none; }
+    }
   `,
 })
 export class CatalogProductSelection {
+  private readonly referencePriceFormat = new Intl.NumberFormat('nl-BE', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
   readonly products = input<Product[]>([]);
   readonly categories = input<Category[]>([]);
   readonly selected = input<ReadonlySet<number>>(new Set());
   readonly loading = input(false);
   readonly loadError = input<string | null>(null);
   readonly disabled = input(false);
+  readonly showReferencePrices = input(true);
   readonly selectedChange = output<Set<number>>();
   readonly retry = output<void>();
 
@@ -254,6 +290,16 @@ export class CatalogProductSelection {
     const variant = [product.colour, product.variantSize].filter(Boolean).join(' · ');
     const dimensions = this.dimensions(product);
     return [product.sku || 'Zonder SKU', variant, dimensions].filter(Boolean).join(' · ');
+  }
+
+  hasReferencePrice(product: Product): boolean {
+    const price = Number(product.computedSalesPriceEur);
+    return Number.isFinite(price) && price > 0;
+  }
+
+  referencePrice(product: Product): string {
+    if (!this.hasReferencePrice(product)) return 'Op aanvraag';
+    return this.referencePriceFormat.format(product.computedSalesPriceEur);
   }
 
   private dimensions(product: Product): string | null {

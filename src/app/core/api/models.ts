@@ -1137,7 +1137,8 @@ export interface CatalogImportResult {
 
 /** Notification for the bell in the top right. */
 export interface AppNotification {
-  kind: 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL' | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN';
+  kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL'
+    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN';
   orderId: number | null;
   orderNumber: string;
   customer: string | null;

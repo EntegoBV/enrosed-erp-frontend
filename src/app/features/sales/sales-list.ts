@@ -8,7 +8,9 @@ import { WorkQueue } from '../../core/api/work-queue';
 import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
-import { STATUS_LABEL, actionNeeded, statusClass } from './quote-status';
+import {
+  STATUS_LABEL, actionNeeded, isWebsiteQuoteRequest, statusClass,
+} from './quote-status';
 import { messageOf } from '../../core/api/errors';
 
 @Component({
@@ -24,16 +26,25 @@ import { messageOf } from '../../core/api/errors';
     </app-page-header>
 
     <div class="content">
+      @if (loadError()) {
+        <section class="sales-load-error" role="alert">
+          <span aria-hidden="true">!</span>
+          <div><b>Verkoopoverzicht kon niet worden vernieuwd</b><small>{{ loadError() }}</small></div>
+          <button class="btn" type="button" [disabled]="loading()" (click)="load()">
+            {{ loading() ? 'Laden…' : 'Opnieuw proberen' }}
+          </button>
+        </section>
+      }
       <!-- What waits on us sits at the top, not tucked under Meer: this is
            the list you keep up with, not something you go look up. -->
-      @if (openWork().length) {
+      @if (attentionCount()) {
         <!-- The card appears and disappears; without its own bottom margin it
              lands right on top of the search bar. -->
         <div class="card" style="border-color:var(--rose-line);margin-bottom:14px">
           <div class="card__head">
             <h2>Klant wacht op ons</h2>
             <span class="spacer"></span>
-            <span class="badge badge--todo">{{ openWork().length }}</span>
+            <span class="badge badge--todo">{{ attentionCount() }}</span>
           </div>
           <div class="card__body card__body--flush">
             <div class="list">
@@ -93,6 +104,15 @@ import { messageOf } from '../../core/api/errors';
           @if (activeFilterCount(); as n) { <b class="filter-toggle__count">{{ n }}</b> }
           <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
         </button>
+        @if (docTab() === 'OFFERTE' && websiteRequests().length) {
+          <button class="website-filter" type="button"
+                  [class.website-filter--active]="websiteOnly()"
+                  [attr.aria-pressed]="websiteOnly()"
+                  (click)="websiteOnly.set(!websiteOnly())">
+            <span>Websiteaanvragen</span>
+            <b>{{ websiteRequests().length }}</b>
+          </button>
+        }
         @if (filtersOpen()) {
           <div class="filter-grid">
             <label class="filter-field">
@@ -154,6 +174,9 @@ import { messageOf } from '../../core/api/errors';
                 </div>
               </div>
               <div class="list-item__end list-item__end--stacked">
+                @if (websiteRequest(row.order)) {
+                  <span class="so-source-mini">Websiteaanvraag</span>
+                }
                 <div class="strong num">{{ row.priced.totals.total | eur: 0 }}</div>
                 <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + cls(row.order.status)">
                   <i aria-hidden="true"></i>{{ label(row.order.status) }}
@@ -174,6 +197,12 @@ import { messageOf } from '../../core/api/errors';
           } @empty {
             @if (loading()) {
               <app-skeleton kind="list" [rows]="5" />
+            } @else if (loadError()) {
+              <div class="empty">
+                <div class="empty__icon">!</div>
+                <div class="empty__title">Orders niet geladen</div>
+                <p class="muted">Gebruik ‘Opnieuw proberen’ bovenaan.</p>
+              </div>
             } @else if (activeFilterCount()) {
               <div class="empty">
                 <div class="empty__icon">⌕</div>
@@ -313,6 +342,13 @@ import { messageOf } from '../../core/api/errors';
     .so-status-mini--blue { color:var(--blue) }
     .so-status-mini--neutral { color:var(--muted) }
     .so-status-mini--warn { color:var(--warn) }
+    .so-source-mini { display:inline-flex;align-items:center;max-width:100%;padding:4px 9px;
+      border:1px solid color-mix(in srgb,var(--rose) 38%,transparent);border-radius:999px;
+      background:var(--rose);color:#fff;font-size:10px;font-weight:780;line-height:1.2;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 12px rgb(103 31 52/14%) }
+    .website-request-item { background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface)) }
+    .website-request-item__icon { border:1px solid var(--rose-line);background:#fff!important;
+      color:var(--rose-dark);font-weight:850 }
 
     .doc-tabs { display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:10px;padding:4px;
       border:1px solid var(--line);border-radius:14px;background:var(--surface) }
@@ -327,6 +363,15 @@ import { messageOf } from '../../core/api/errors';
     .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px;padding:12px;
       border:1px solid var(--line);border-radius:var(--r);background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
       box-shadow:0 5px 18px rgb(31 25 22/4%) }
+    .sales-load-error { display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
+      gap:12px;margin-bottom:14px;padding:14px;border:1px solid var(--danger);border-radius:var(--r-sm);
+      background:var(--danger-soft);color:var(--danger) }
+    .sales-load-error>span { display:grid;width:38px;height:38px;place-items:center;border-radius:50%;
+      background:var(--surface);font-size:18px;font-weight:800 }
+    .sales-load-error>div { display:grid;gap:2px;min-width:0 }
+    .sales-load-error b { font-size:15px }
+    .sales-load-error small { color:var(--muted);font-size:14px;line-height:1.45 }
+    .sales-load-error .btn { min-height:48px }
     .filter-toggle { display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 13px;border:1px solid var(--line);
       border-radius:13px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:13px;font-weight:650;cursor:pointer }
     .filter-toggle--active { border-color:var(--rose-line);color:var(--rose-dark);background:var(--rose-soft) }
@@ -336,6 +381,13 @@ import { messageOf } from '../../core/api/errors';
     .filter-toggle__chev { width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
       transform:rotate(45deg);transition:transform .15s ease }
     .filter-toggle__chev--open { transform:rotate(-135deg) }
+    .website-filter { display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 12px;
+      border:1px solid var(--rose-line);border-radius:13px;background:var(--rose-soft);
+      color:var(--rose-dark);font:inherit;font-size:12px;font-weight:720;cursor:pointer }
+    .website-filter b { display:grid;min-width:20px;height:20px;padding:0 5px;place-items:center;
+      border-radius:999px;background:#fff;color:var(--rose-dark);font-size:10px;font-variant-numeric:tabular-nums }
+    .website-filter--active { border-color:var(--rose);background:var(--rose);color:#fff }
+    .website-filter--active b { color:var(--rose-dark) }
     .filter-grid { flex:1 0 100%;display:grid;gap:10px }
     @media (min-width:680px) { .filter-grid { grid-template-columns:1fr 1fr } }
     .filter-field__label { display:block;margin:0 0 5px 2px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.055em;text-transform:uppercase }
@@ -476,6 +528,11 @@ import { messageOf } from '../../core/api/errors';
     }
     .empty p { margin: 5px 0 13px; font-size: 13px; }
 
+    @media (max-width: 560px) {
+      .sales-load-error { grid-template-columns:auto minmax(0,1fr) }
+      .sales-load-error .btn { grid-column:1/-1;width:100% }
+    }
+
     @media (min-width: 620px) {
       .filter-controls { grid-template-columns: minmax(0, 1.5fr) minmax(190px, .75fr); }
     }
@@ -558,12 +615,14 @@ export class SalesList {
   readonly filter = signal<QuoteStatus | ''>('');
   readonly docTab = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
   readonly newDocType = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
+  readonly websiteOnly = signal(false);
 
   switchTab(tab: 'OFFERTE' | 'FACTUUR'): void {
     if (this.docTab() === tab) return;
     this.docTab.set(tab);
     /* Quote statuses and invoice statuses are different vocabularies. */
     this.filter.set('');
+    this.websiteOnly.set(false);
   }
 
   docCount(tab: 'OFFERTE' | 'FACTUUR'): number {
@@ -600,6 +659,7 @@ export class SalesList {
   readonly chosen = signal<number | null>(null);
   readonly creating = signal(false);
   readonly loading = signal(true);
+  readonly loadError = signal<string | null>(null);
 
   readonly all = signal<SalesOrderView[]>([]);
   readonly customers = signal<Customer[]>([]);
@@ -616,20 +676,33 @@ export class SalesList {
     void this.load();
   }
 
-  private async load(): Promise<void> {
-    const [orders, customers, countries] = await Promise.all([
-      this.sales.orders(), this.sales.customers(), this.sales.countries(),
-    ]);
-    this.all.set(orders);
-    this.customers.set(customers);
-    this.countries.set(countries);
-    this.chosen.set(customers[0]?.id ?? null);
-    this.loading.set(false);
-    /* The user may already be in the new-order sheet; now the real
-       decision can be made. */
-    if (this.picking() && !customers.length) {
-      this.addingCustomer.set(true);
-      this.startAddCustomer();
+  async load(): Promise<void> {
+    if (this.loading() && this.all().length) return;
+    this.loading.set(true);
+    this.loadError.set(null);
+    try {
+      const [orders, customers, countries] = await Promise.all([
+        this.sales.orders(), this.sales.customers(), this.sales.countries(),
+      ]);
+      this.all.set(orders);
+      this.customers.set(customers);
+      this.countries.set(countries);
+      const selected = this.chosen();
+      this.chosen.set(customers.some((customer) => customer.id === selected)
+        ? selected : customers[0]?.id ?? null);
+      /* The user may already be in the new-order sheet; now the real
+         decision can be made. */
+      if (this.picking() && !customers.length) {
+        this.addingCustomer.set(true);
+        this.startAddCustomer();
+      }
+    } catch (failure: unknown) {
+      this.loadError.set(messageOf(
+        failure,
+        'Controleer de verbinding met de testomgeving en probeer opnieuw.',
+      ));
+    } finally {
+      this.loading.set(false);
     }
   }
 
@@ -657,8 +730,7 @@ export class SalesList {
       this.addingCustomer.set(false);
       this.ui.toast(`${saved.company} toegevoegd`);
     } catch (failure: unknown) {
-      const message = (failure as { error?: { message?: string } }).error?.message;
-      this.ui.toast(message ?? 'Klant opslaan mislukt', 'err');
+      this.ui.toast(messageOf(failure, 'Klant opslaan mislukt'), 'err');
     } finally {
       this.busy.set(false);
     }
@@ -667,10 +739,12 @@ export class SalesList {
   readonly rows = computed(() => {
     const status = this.filter();
     const customer = this.customerFilter();
+    const websiteOnly = this.websiteOnly();
     const needle = this.query().toLowerCase().trim();
     return this.inTab().filter((row) => {
       if (status && row.order.status !== status) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
+      if (websiteOnly && !isWebsiteQuoteRequest(row.order)) return false;
       if (!needle) return true;
       /* Customer and number are how anyone refers to an order out loud. */
       return (this.customerName(row) + ' ' + row.order.number)
@@ -694,7 +768,8 @@ export class SalesList {
     this.customers().find((customer) => customer.id === this.customerFilter())?.company ?? 'Alle klanten');
 
   readonly activeFilterCount = computed(() =>
-    (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0) + (this.query().trim() ? 1 : 0));
+    (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
+      + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0));
 
   readonly activeStatusLabel = computed(() =>
     this.filters.find((option) => option.value === this.filter())?.label ?? 'Alle orders');
@@ -707,6 +782,7 @@ export class SalesList {
     this.query.set('');
     this.filter.set('');
     this.customerFilter.set('');
+    this.websiteOnly.set(false);
   }
 
   statusCount(status: QuoteStatus | ''): number {
@@ -724,8 +800,16 @@ export class SalesList {
   /** What is waiting on us; the same source as the bell and the dot. */
   readonly openWork = this.work.actions;
 
+  /** The order marker remains visible in filters and rows, independent of a
+      personally dismissed bell item. */
+  readonly websiteRequests = computed(() => this.all().filter((row) =>
+    (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && isWebsiteQuoteRequest(row.order)));
+  readonly attentionCount = computed(() => this.openWork().length);
+  readonly websiteRequest = isWebsiteQuoteRequest;
+
   workIcon(kind: string): string {
     switch (kind) {
+      case 'WEBSITE_AANVRAAG': return '↗';
       case 'LEVERTERMIJN': return '◷';
       case 'VRACHT': return '▤';
       case 'VOORSTEL': return '⇄';

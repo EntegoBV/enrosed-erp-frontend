@@ -33,6 +33,7 @@ import {
 } from './purchase-cost-labels';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
+import { PurchasePdfSheet } from './purchase-pdf-sheet';
 
 /**
  * Landed-cost calculation of a container.
@@ -60,7 +61,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
-            EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
+            PurchasePdfSheet, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -68,7 +69,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="true"
                        (titleChange)="patch({ number: $event })">
-        <button class="btn btn--sm pdf-header-button" type="button" (click)="downloadPdf()"
+        <button class="btn btn--sm pdf-header-button" type="button" (click)="pdfOpen.set(true)"
                 [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
           PDF
         </button>
@@ -1334,6 +1335,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                      (closed)="statusCelebration.set(null)"
                                      (action)="celebrationAction(celebration)" />
       }
+      @if (pdfOpen()) {
+        <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
+                                [dirty]="dirty()" [saving]="saving()"
+                                (saveRequested)="save()" (closed)="pdfOpen.set(false)" />
+      }
     } @else {
       <app-page-header title="Inkoop" subtitle="Inkooporder laden…"
                        [showBack]="true" [showBell]="false" />
@@ -1346,7 +1352,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     }
   `,
   styles: [`
-    @media(max-width:679px) { .pdf-header-button { display:none } }
     :host{display:block;min-width:0}.po-page{max-width:1180px}.po-notice{margin-bottom:12px}
     .po-overview{position:relative;margin-bottom:14px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
     .po-overview:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--rose)}
@@ -1415,6 +1420,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   `]
 })
 export class PurchaseEditor {
+  readonly pdfOpen = signal(false);
   /** Cost breakdowns as totals or per piece; one switch for all lines. */
   /* Per piece is what the buying conversation is about; totals are the
      exception you toggle to. */
@@ -2416,29 +2422,6 @@ export class PurchaseEditor {
     void this.router.navigate(['/products', 'new'], {
       queryParams: { supplier: data?.order.supplierId, returnTo: `/purchasing/${data?.order.id}` },
     });
-  }
-
-  /**
-   * The calculation as a PDF.
-   *
-   * What goes on it follows the double-tap switch: with the purchase
-   * figures on screen, the desired extra revenue is on the sheet too.
-   * Hidden, that line disappears but stays folded into the total - that
-   * sheet you can show a customer.
-   *
-   * Deliberately the same switch and no second checkbox: otherwise you
-   * cover the screen and still print the wrong sheet.
-   */
-  async downloadPdf(): Promise<void> {
-    const data = this.view();
-    if (!data) return;
-    try {
-      const blob = await this.sourcing.purchasePdf(data.order.id, true);
-      saveBlob(blob, `${data.order.number}.pdf`);
-      this.ui.toast('PDF gedownload — Enrosed kost als aparte regel');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'PDF maken mislukt'), 'err');
-    }
   }
 
   /** Copies the calculation to price a variant quickly. */

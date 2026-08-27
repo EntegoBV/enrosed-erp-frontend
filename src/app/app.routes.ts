@@ -118,7 +118,23 @@ export const routes: Routes = [
     canDeactivate: [unsavedChangesGuard],
   },
   {
-    path: 'website-builder/texts',
+    path: 'website',
+    pathMatch: 'full',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/website-builder/website-admin-page')
+        .then((m) => m.WebsiteAdminPage),
+  },
+  {
+    path: 'website/layout',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () =>
+      import('./features/website-builder/website-builder-page')
+        .then((m) => m.WebsiteBuilderPage),
+  },
+  {
+    path: 'website/texts',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -126,13 +142,48 @@ export const routes: Routes = [
         .then((m) => m.ContentTranslationsPage),
   },
   {
-    path: 'website-builder',
+    path: 'website/products',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/website-builder/website-products-page')
+        .then((m) => m.WebsiteProductsPage),
+  },
+  {
+    path: 'website/categories',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
+    data: { websiteCategoryMode: true },
     loadComponent: () =>
-      import('./features/website-builder/website-builder-page')
-        .then((m) => m.WebsiteBuilderPage),
+      import('./features/settings/settings-page').then((m) => m.SettingsPage),
   },
+  {
+    path: 'website/seo',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    data: { seoMode: true },
+    loadComponent: () =>
+      import('./features/website-builder/content-translations-page')
+        .then((m) => m.ContentTranslationsPage),
+  },
+  {
+    path: 'website/publication',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/website-builder/website-publication-page')
+        .then((m) => m.WebsitePublicationPage),
+  },
+  {
+    path: 'catalog/texts',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    data: { catalogMode: true },
+    loadComponent: () =>
+      import('./features/website-builder/content-translations-page')
+        .then((m) => m.ContentTranslationsPage),
+  },
+  /* Keep old bookmarks working while the canonical website workspace uses /website. */
+  { path: 'website-builder/texts', pathMatch: 'full', redirectTo: 'website/texts' },
+  { path: 'website-builder', pathMatch: 'full', redirectTo: 'website/layout' },
   {
     path: 'countries',
     canActivate: [authGuard],

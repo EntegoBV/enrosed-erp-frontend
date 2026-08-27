@@ -32,6 +32,14 @@ import { Icon } from './icon';
     @if (sheet()) {
       <app-sheet title="Meldingen" (closed)="sheet.set(false)">
         <div body>
+          @if (error()) {
+            <div class="notification-error" role="alert">
+              <div><b>Meldingen niet vernieuwd</b><small>{{ error() }}</small></div>
+              <button class="btn" type="button" [disabled]="loading()" (click)="refresh()">
+                {{ loading() ? 'Laden…' : 'Opnieuw proberen' }}
+              </button>
+            </div>
+          }
           @if (actions().length) {
             <div class="section-title" style="margin-top:0">Wij zijn aan zet</div>
             @for (item of actions(); track $index) {
@@ -84,7 +92,9 @@ import { Icon } from './icon';
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="sheet.set(false)">Sluiten</button>
-          <button class="btn btn--primary" type="button" (click)="refresh()">Vernieuwen</button>
+          <button class="btn btn--primary" type="button" [disabled]="loading()" (click)="refresh()">
+            {{ loading() ? 'Vernieuwen…' : 'Vernieuwen' }}
+          </button>
         </div>
       </app-sheet>
     }
@@ -160,6 +170,13 @@ import { Icon } from './icon';
     }
     .note-row--action .note__dismiss { background: var(--rose-soft); }
     .note__dismiss:active { background: var(--line); }
+    .notification-error { display: grid; gap: 10px; margin-bottom: 12px; padding: 12px;
+      border: 1px solid var(--danger); border-radius: var(--r-sm); background: var(--danger-soft);
+      color: var(--danger); }
+    .notification-error > div { display: grid; gap: 2px; }
+    .notification-error b { font-size: 15px; }
+    .notification-error small { color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .notification-error .btn { width: 100%; min-height: 48px; }
   `,
 })
 export class NotificationBell {
@@ -175,6 +192,8 @@ export class NotificationBell {
   readonly count = this.work.actionCount;
   readonly actions = this.work.actions;
   readonly news = this.work.news;
+  readonly loading = this.work.loading;
+  readonly error = this.work.error;
 
   refresh(): Promise<void> {
     return this.work.refresh();
@@ -198,6 +217,7 @@ export class NotificationBell {
 
   icon(kind: AppNotification['kind']): string {
     switch (kind) {
+      case 'WEBSITE_AANVRAAG': return '↗';
       case 'LEVERTERMIJN': return '◷';
       case 'VRACHT': return '▤';
       case 'VOORSTEL': return '⇄';

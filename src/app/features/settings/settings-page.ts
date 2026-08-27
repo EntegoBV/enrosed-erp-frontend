@@ -15,12 +15,13 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
 import {
-  CatalogImportResult, Category, CompanyProfile, DiscountTier, HsCode, Product, ProductFamily,
+  CatalogImportResult, Category, CompanyProfile, DiscountTier, HsCode, LANGUAGES, LanguageCode,
+  Product, ProductFamily,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
-import { messageOf } from '../../core/api/errors';
+import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { THEMES, Theme } from '../../core/platform/theme';
 import {
@@ -30,7 +31,8 @@ import {
   productBelongsToCategory,
 } from '../../shared/product-featured-eligibility';
 import { CategoryTranslationEditor } from './category-translation-editor';
-import { ContentTranslationWorkspace } from './content-translation-workspace';
+import { WebsiteSyncStatus } from './website-sync-status';
+import { WebsiteAdminNav } from '../website-builder/website-admin-nav';
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -55,13 +57,39 @@ const normalizeCategoryCode = (value: string): string => value
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CategoryTranslationEditor,
-    ContentTranslationWorkspace,
     FormsModule,
     PageHeader,
+    WebsiteAdminNav,
+    WebsiteSyncStatus,
   ],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="Instellingen" subtitle="Categorieën, tarieven en staffels" />
+    <app-page-header
+      [showBack]="!websiteCategoryMode"
+      [backTo]="websiteCategoryMode ? null : '/more'"
+      [title]="websiteCategoryMode ? 'Categorieën & websitemenu' : 'Instellingen'"
+      [subtitle]="websiteCategoryMode
+        ? 'Beheer collectievolgorde, uitgelicht product en menunamen per taal.'
+        : 'Categorieën, tarieven en staffels'"
+      [showBell]="!websiteCategoryMode"
+    />
 
+    @if (websiteCategoryMode) {
+      <div class="content website-category-nav">
+        <app-website-admin-nav active="categories" />
+        <section class="category-ownership" role="note">
+          <div><b>Collectiekaart en menu</b><span>De volgorde en korte namen sturen het websitemenu, mobiel menu en de footer.</span></div>
+          <div><b>Uitgelicht product</b><span>De featured SKU kiest het collectiebeeld. Vaste homepage-highlights worden door hun eigen websitecomponent bepaald.</span></div>
+        </section>
+        @if (categoryDependencyWarning()) {
+          <section class="category-dependency-warning" role="alert">
+            <div><b>Uitgelichte producten niet volledig geladen</b><span>{{ categoryDependencyWarning() }}</span></div>
+            <button class="btn" type="button" [disabled]="loadingSettings()" (click)="load()">Opnieuw laden</button>
+          </section>
+        }
+      </div>
+    }
+
+    @if (!websiteCategoryMode) {
     <nav class="settings-nav" aria-label="Snel naar instelling">
       <div class="settings-nav__rail">
         @for (section of settingsSections; track section.id) {
@@ -74,8 +102,23 @@ const normalizeCategoryCode = (value: string): string => value
         }
       </div>
     </nav>
+    }
 
-    <div class="content settings-content">
+    <div class="content settings-content" [class.settings-content--website]="websiteCategoryMode">
+      @if (settingsLoadError()) {
+        <section class="settings-load-error" role="alert">
+          <span aria-hidden="true">!</span>
+          <div>
+            <b>{{ websiteCategoryMode
+              ? 'Categorieën konden niet worden geladen'
+              : 'Instellingen konden niet volledig worden geladen' }}</b>
+            <small>{{ settingsLoadError() }}</small>
+          </div>
+          <button class="btn" type="button" [disabled]="loadingSettings()" (click)="load()">
+            {{ loadingSettings() ? 'Laden…' : 'Opnieuw laden' }}
+          </button>
+        </section>
+      }
       <!-- ======================================= bedrijfsgegevens -->
       <div [class.settings-section--folded]="folded('company')" class="card settings-section" id="company">
         <div (click)="toggleSection('company', $event)" class="card__head settings-head"><h2>Onze bedrijfsgegevens</h2></div>
@@ -256,6 +299,8 @@ const normalizeCategoryCode = (value: string): string => value
             Wijzigingen worden pas verwerkt wanneer je ze opslaat.
           </p>
 
+          <app-website-sync-status [refreshKey]="websiteSyncRefresh()" />
+
           @if (categoryDraft(); as draft) {
             <section class="category-form" aria-labelledby="category-form-title">
               <div class="category-form__heading">
@@ -321,15 +366,20 @@ const normalizeCategoryCode = (value: string): string => value
                   </span>
                 </div>
                 <div class="field">
-                  <label class="req" for="category-code">Code</label>
+                  <label class="req" for="category-code">Vaste URL-code</label>
                   <input class="input mono" id="category-code" autocomplete="off"
                          [ngModel]="draft.code"
+                         [readOnly]="draft.id !== null"
                          (ngModelChange)="updateCategoryDraft({ code: $event })"
                          (blur)="normalizeCategoryDraftCode()"
                          autocapitalize="none" spellcheck="false"
                          placeholder="display-roses" />
                   <span class="hint">
-                    Publieke URL-code met kleine letters, cijfers en streepjes. Spaties worden streepjes.
+                    @if (draft.id === null) {
+                      Kies deze permanente sleutel één keer bij het aanmaken. De categorietitel en vertalingen kunnen later wel veranderen.
+                    } @else {
+                      Permanent na aanmaak: deze sleutel houdt collectie- en menulinks stabiel. Voor een URL-migratie is een aparte redirect nodig.
+                    }
                   </span>
                 </div>
                 <div class="field">
@@ -343,7 +393,7 @@ const normalizeCategoryCode = (value: string): string => value
                   <label for="category-featured-product">Uitgelicht product <span class="opt"></span></label>
                   <select class="select" id="category-featured-product"
                           [ngModel]="draft.featuredProductId ?? null"
-                          [disabled]="draft.id === null"
+                          [disabled]="draft.id === null || !!categoryDependencyWarning()"
                           (ngModelChange)="updateCategoryDraft({ featuredProductId: numberOrNull($event) })">
                     <option [ngValue]="null">Automatisch</option>
                     @for (option of categoryFeaturedOptions(draft); track option.product.id) {
@@ -351,7 +401,11 @@ const normalizeCategoryCode = (value: string): string => value
                         {{ productOptionLabel(option.product) }}{{ categoryEligibilityLabel(option) }}
                       </option>
                     }
-                    @if (missingFeaturedProductId(draft) !== null) {
+                    @if (categoryDependencyWarning() && draft.featuredProductId !== null) {
+                      <option [ngValue]="draft.featuredProductId" disabled>
+                        Huidige keuze #{{ draft.featuredProductId }} · productgegevens niet geladen
+                      </option>
+                    } @else if (missingFeaturedProductId(draft) !== null) {
                       <option [ngValue]="missingFeaturedProductId(draft)" disabled>
                         SKU #{{ missingFeaturedProductId(draft) }} · geen publieke foto
                       </option>
@@ -360,6 +414,8 @@ const normalizeCategoryCode = (value: string): string => value
                   <span class="hint">
                     @if (draft.id === null) {
                       Sla de categorie eerst op en koppel daarna producten.
+                    } @else if (categoryDependencyWarning()) {
+                      Laad de productgegevens opnieuw voordat u de featured SKU wijzigt.
                     } @else {
                       Actieve SKU die deze collectie visueel vertegenwoordigt.
                     }
@@ -373,14 +429,12 @@ const normalizeCategoryCode = (value: string): string => value
                             placeholder="Korte omschrijving voor catalogus, bestelapp en website…"></textarea>
                 </div>
 
-                @if (desktop.active()) {
-                  <app-category-translation-editor
-                    [category]="draft"
-                    [busy]="savingCategory()"
-                    [saveError]="categorySaveError()"
-                    (categoryChange)="categoryDraft.set($event)"
-                  />
-                }
+                <app-category-translation-editor
+                  [category]="draft"
+                  [busy]="savingCategory()"
+                  [saveError]="categorySaveError()"
+                  (categoryChange)="updateCategoryTranslations($event)"
+                />
               </div>
 
               @if (categoryCodeExists(draft)) {
@@ -395,11 +449,20 @@ const normalizeCategoryCode = (value: string): string => value
 
               @if (categoryConflict()) {
                 <div class="category-conflict" role="alert">
-                  <span>Deze categorie is intussen elders gewijzigd. Je lokale invoer is niet overschreven.</span>
-                  <button class="btn btn--sm" type="button" [disabled]="savingCategory()"
-                          (click)="reloadConflictedCategory()">
-                    Laatste versie laden
-                  </button>
+                  <span><b>Nieuwere categorieversie beschikbaar.</b> Je lokale invoer is niet overschreven.</span>
+                  <div class="category-conflict__actions">
+                    <button class="btn btn--sm" type="button" [disabled]="savingCategory()"
+                            (click)="cancelCategoryEdit()">Formulier sluiten</button>
+                    <button class="btn btn--sm btn--primary" type="button" [disabled]="savingCategory()"
+                            (click)="reloadConflictedCategory()">Laatste versie laden</button>
+                  </div>
+                </div>
+              } @else if (categorySaveError()) {
+                <div class="category-conflict" role="alert">
+                  <span><b>Categorie is nog niet opgeslagen.</b> {{ categorySaveError() }}</span>
+                  <button class="btn btn--sm btn--primary" type="button"
+                          [disabled]="savingCategory() || !categoryDraftValid()"
+                          (click)="saveCategory()">Opnieuw opslaan</button>
                 </div>
               }
 
@@ -628,13 +691,6 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       </div>
 
-      <app-content-translation-workspace
-        [visible]="desktop.active()"
-        [syncRefreshKey]="websiteSyncRefresh()"
-        (dirtyChange)="contentTranslationDirty.set($event)"
-        (busyChange)="contentTranslationBusy.set($event)"
-      />
-
       <!-- ======================================= categorieen -->
 
       <!-- ======================================= weergave -->
@@ -698,6 +754,13 @@ const normalizeCategoryCode = (value: string): string => value
               {{ push.busy() ? 'Bezig…' : 'Meldingen aanzetten op dit toestel' }}
             </button>
           }
+          @if (pushActionError()) {
+            <div class="push-error" role="alert">
+              <div><b>Meldingsactie mislukt</b><small>{{ pushActionError() }}</small></div>
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="retryPushAction()">Opnieuw proberen</button>
+            </div>
+          }
           <div class="push-sounds">
             <button class="btn btn--sm" type="button" (click)="previewSound('sale-quote')">
               🔔 Geluid nieuwe offerte
@@ -712,6 +775,23 @@ const normalizeCategoryCode = (value: string): string => value
     </div>
   `,
   styles: `
+    .website-category-nav { max-width: 1540px; padding-bottom: 0; }
+    .category-ownership {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+      margin-bottom: 14px; padding: 14px; border: 1px solid var(--rose-line);
+      border-radius: var(--r); background: var(--rose-soft);
+    }
+    .category-ownership > div { display: grid; gap: 3px; }
+    .category-ownership b { color: var(--rose-dark); font-size: 15px; }
+    .category-ownership span { color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .category-dependency-warning { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--warn); border-radius: var(--r-sm); background: var(--warn-soft); }
+    .category-dependency-warning > div { display: grid; gap: 3px; }
+    .category-dependency-warning b { color: var(--ink-2); font-size: 14px; }
+    .category-dependency-warning span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .category-dependency-warning .btn { min-height: 48px; }
+    .settings-content--website { max-width: 1540px; padding-top: 0; }
+    .settings-content--website > .settings-section:not(.category-section) { display: none; }
+    .settings-content--website > .app-settings-kicker { display: none; }
     .settings-nav {
       position: sticky; top: var(--appbar-h); z-index: 50;
       width: 100%; margin: 0; border-bottom: 1px solid var(--line);
@@ -722,6 +802,17 @@ const normalizeCategoryCode = (value: string): string => value
       padding: 6px 12px; overflow-x: auto; overscroll-behavior-x: contain;
       scrollbar-width: none;
     }
+    .settings-load-error {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+      margin-bottom: 14px; padding: 14px; border: 1px solid var(--danger); border-radius: var(--r-sm);
+      background: var(--danger-soft); color: var(--danger);
+    }
+    .settings-load-error > span { display: grid; width: 38px; height: 38px; place-items: center;
+      border-radius: 50%; background: var(--surface); font-size: 18px; font-weight: 800; }
+    .settings-load-error > div { display: grid; gap: 3px; min-width: 0; }
+    .settings-load-error b { font-size: 15px; }
+    .settings-load-error small { color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .settings-load-error .btn { min-height: 48px; }
     .settings-nav__rail::-webkit-scrollbar { display: none; }
     @media (max-width: 679px) {
       .settings-nav__rail { padding-right: 36px; mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
@@ -809,13 +900,16 @@ const normalizeCategoryCode = (value: string): string => value
     .category-form__close { min-height: 36px; padding: 0 4px; border: 0; background: transparent;
       color: var(--muted); font-size: 12px; font-weight: 650; cursor: pointer; }
     .category-form__grid { display: grid; gap: 12px; }
+    #category-code[readonly] { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
     .category-form__description { grid-column: 1 / -1; }
     .category-form__error { margin-top: 10px; color: var(--danger); font-size: 12.5px; font-weight: 600; }
     .category-conflict {
       display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
       margin-top: 10px; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 10px;
-      color: var(--danger); background: var(--danger-soft); font-size: 12px; font-weight: 600;
+      color: var(--danger); background: var(--danger-soft); font-size: 14px; font-weight: 600;
     }
+    .category-conflict > span { min-width: 0; line-height: 1.45; }
+    .category-conflict__actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .category-form__actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 14px; }
     .category-form__actions .btn { width: 100%; }
     .category-order { display: inline-flex; gap: 4px; margin-right: 4px; }
@@ -839,9 +933,17 @@ const normalizeCategoryCode = (value: string): string => value
     .category-item__actions .btn { width: 100%; }
     .category-empty { padding-block: 30px; }
     @media (max-width: 520px) {
+      .website-category-nav { padding-inline: 12px; }
+      .category-ownership { grid-template-columns: 1fr; }
+      .category-dependency-warning { align-items: stretch; flex-direction: column; }
+      .category-dependency-warning .btn { width: 100%; }
+      .settings-load-error { grid-template-columns: auto minmax(0, 1fr); }
+      .settings-load-error .btn { grid-column: 1 / -1; width: 100%; }
       .category-section__head { align-items: flex-start; flex-wrap: wrap; }
       .category-section__head .spacer { display: none; }
       .category-section__head .btn { width: 100%; }
+      .category-conflict, .category-conflict__actions { align-items: stretch; flex-direction: column; }
+      .category-conflict .btn { width: 100%; min-height: 48px; }
     }
     @media (min-width: 680px) {
       .workbook-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -863,6 +965,7 @@ const normalizeCategoryCode = (value: string): string => value
       .settings-nav { top: 62px; }
       .settings-nav__rail { padding-inline: 26px; }
       .settings-content { padding-top: 16px; }
+      .settings-content--website { padding-top: 0; }
       .settings-section { scroll-margin-top: 119px; }
     }
     .push-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -872,34 +975,75 @@ const normalizeCategoryCode = (value: string): string => value
       font-size: 11px; }
     .push-device span { color: var(--muted); }
     .push-sounds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .push-error { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;
+      padding:12px;border:1px solid var(--danger);border-radius:12px;background:var(--danger-soft);color:var(--danger) }
+    .push-error>div { display:grid;gap:2px;min-width:0 }
+    .push-error small { color:var(--muted);font-size:13px;line-height:1.45 }
+    .push-error .btn { flex:none;min-height:48px }
+    @media(max-width:560px) { .push-error { align-items:stretch;flex-direction:column }.push-error .btn { width:100% } }
     .app-settings-kicker { margin: 22px 2px 8px; color: var(--muted); font-size: 10px;
       font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly push = inject(PushSetup);
+  readonly pushActionError = signal<string | null>(null);
+  private lastPushAction: 'enable' | 'disable' | 'test' = 'enable';
   /** The device list fills in once the worker knows whether we are enabled. */
   private readonly pushDevicesLoad = setTimeout(() => void this.loadPushDevices(), 1500);
 
   async enablePush(): Promise<void> {
-    const error = await this.push.enable();
-    if (error) this.ui.toast(error, 'err');
-    else this.ui.toast('Meldingen aangezet — je krijgt zo een testmelding');
-    if (!error) {
-      void this.push.sendTest();
+    this.lastPushAction = 'enable';
+    this.pushActionError.set(null);
+    try {
+      const error = await this.push.enable();
+      if (error) {
+        this.pushActionError.set(error);
+        this.ui.toast(error, 'err');
+        return;
+      }
+      this.ui.toast('Meldingen aangezet — je krijgt zo een testmelding');
+      this.lastPushAction = 'test';
+      await this.push.sendTest();
       setTimeout(() => void this.loadPushDevices(), 4000);
+    } catch (failure: unknown) {
+      const message = messageOf(failure, 'Controleer de verbinding en de browsertoestemming.');
+      this.pushActionError.set(message);
+      this.ui.toast(message, 'err');
     }
   }
 
   async disablePush(): Promise<void> {
-    await this.push.disable();
-    this.ui.toast('Meldingen uitgezet op dit toestel');
+    this.lastPushAction = 'disable';
+    this.pushActionError.set(null);
+    try {
+      await this.push.disable();
+      this.ui.toast('Meldingen uitgezet op dit toestel');
+    } catch (failure: unknown) {
+      const message = messageOf(failure, 'Meldingen uitzetten mislukt.');
+      this.pushActionError.set(message);
+      this.ui.toast(message, 'err');
+    }
   }
 
   async testPush(): Promise<void> {
-    await this.push.sendTest();
-    this.ui.toast('Testmelding onderweg');
-    setTimeout(() => void this.loadPushDevices(), 4000);
+    this.lastPushAction = 'test';
+    this.pushActionError.set(null);
+    try {
+      await this.push.sendTest();
+      this.ui.toast('Testmelding onderweg');
+      setTimeout(() => void this.loadPushDevices(), 4000);
+    } catch (failure: unknown) {
+      const message = messageOf(failure, 'Testmelding versturen mislukt.');
+      this.pushActionError.set(message);
+      this.ui.toast(message, 'err');
+    }
+  }
+
+  retryPushAction(): void {
+    if (this.lastPushAction === 'disable') void this.disablePush();
+    else if (this.lastPushAction === 'test') void this.testPush();
+    else void this.enablePush();
   }
 
   readonly pushDevices = signal<{ id: number; device: string;
@@ -922,9 +1066,10 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly selectedWorkbook = signal<File | null>(null);
   readonly exportingWorkbook = signal(false);
   readonly importingWorkbook = signal(false);
-  readonly contentTranslationDirty = signal(false);
-  readonly contentTranslationBusy = signal(false);
   readonly websiteSyncRefresh = signal(0);
+  readonly loadingSettings = signal(true);
+  readonly settingsLoadError = signal<string | null>(null);
+  readonly categoryDependencyWarning = signal<string | null>(null);
 
   async exportWorkbook(): Promise<void> {
     if (this.exportingWorkbook()) return;
@@ -988,6 +1133,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   private readonly ui = inject(Ui);
   private readonly document = inject(DOCUMENT);
   private readonly route = inject(ActivatedRoute);
+  readonly websiteCategoryMode = this.route.snapshot.data['websiteCategoryMode'] === true;
   private scrollSpyFrame: number | null = null;
   private removeScrollSpyListeners?: () => void;
   private contentResizeObserver?: ResizeObserver;
@@ -1001,9 +1147,11 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     { id: 'appearance', label: 'Weergave' },
     { id: 'notifications', label: 'Meldingen' },
   ] as const;
-  readonly activeSection = signal<SettingsSectionId>('company');
+  readonly activeSection = signal<SettingsSectionId>(
+    this.websiteCategoryMode ? 'categories' : 'company',
+  );
   /** Phone: the one section that is unfolded; desktop shows them all. */
-  readonly openSection = signal<string>('company');
+  readonly openSection = signal<string>(this.websiteCategoryMode ? 'categories' : 'company');
   folded(section: string): boolean {
     return !this.desktop.active() && this.openSection() !== section;
   }
@@ -1072,7 +1220,9 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
    */
   private scrollToDeepLink(): void {
     const view = this.document.defaultView;
-    const wanted = this.route.snapshot.queryParamMap.get('sectie') as SettingsSectionId | null;
+    const wanted = (this.websiteCategoryMode
+      ? 'categories'
+      : this.route.snapshot.queryParamMap.get('sectie')) as SettingsSectionId | null;
     if (!view || !wanted || !this.settingsSections.some((section) => section.id === wanted)) return;
     view.setTimeout(() => this.scrollToSection(wanted), 150);
   }
@@ -1084,26 +1234,67 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     if (view && this.scrollSpyFrame !== null) view.cancelAnimationFrame(this.scrollSpyFrame);
   }
 
-  private async load(): Promise<void> {
-    const [categories, products, families, hsCodes, line, order, company] = await Promise.all([
-      this.catalog.categories(), this.catalog.products().catch(() => []),
-      this.catalog.productFamilies().catch(() => []), this.catalog.hsCodes(),
-      this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
-      this.sales.company(),
-    ]);
-    this.company.set(company);
-    this.categories.set(categories.map((category) => ({
-      ...category,
-      revision: category.revision ?? null,
-      texts: category.texts ?? [],
-    })));
-    this.products.set(products);
-    this.families.set(families);
-    this.hsCodes.set(hsCodes);
-    this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
-    this.lineTiers.set(line);
-    this.orderTiers.set(order);
-    this.scrollToDeepLink();
+  async load(): Promise<void> {
+    if (this.loadingSettings() && this.company()) return;
+    this.loadingSettings.set(true);
+    this.settingsLoadError.set(null);
+    this.categoryDependencyWarning.set(null);
+    try {
+      if (this.websiteCategoryMode) {
+        let dependencyFailure = false;
+        const [categories, products, families] = await Promise.all([
+          this.catalog.categories(),
+          this.catalog.products().catch(() => {
+            dependencyFailure = true;
+            return [];
+          }),
+          this.catalog.productFamilies().catch(() => {
+            dependencyFailure = true;
+            return [];
+          }),
+        ]);
+        this.categories.set(categories.map((category) => ({
+          ...category,
+          revision: category.revision ?? null,
+          texts: category.texts ?? [],
+        })));
+        this.products.set(products);
+        this.families.set(families);
+        if (dependencyFailure) {
+          this.categoryDependencyWarning.set(
+            'Categorieën kunt u blijven bewerken. De keuzelijst voor featured SKU’s is tijdelijk onvolledig.',
+          );
+        }
+        this.scrollToDeepLink();
+        return;
+      }
+      const [categories, products, families, hsCodes, line, order, company] = await Promise.all([
+        this.catalog.categories(), this.catalog.products().catch(() => []),
+        this.catalog.productFamilies().catch(() => []), this.catalog.hsCodes(),
+        this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
+        this.sales.company(),
+      ]);
+      this.company.set(company);
+      this.categories.set(categories.map((category) => ({
+        ...category,
+        revision: category.revision ?? null,
+        texts: category.texts ?? [],
+      })));
+      this.products.set(products);
+      this.families.set(families);
+      this.hsCodes.set(hsCodes);
+      this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
+      this.lineTiers.set(line);
+      this.orderTiers.set(order);
+      this.scrollToDeepLink();
+    } catch (failure: unknown) {
+      this.settingsLoadError.set(messageOf(
+        failure,
+        'Controleer de verbinding met de testomgeving en probeer opnieuw.',
+      ));
+    } finally {
+      this.loadingSettings.set(false);
+    }
   }
 
   patchCompany(changes: Partial<CompanyProfile>): void {
@@ -1264,17 +1455,28 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 
   cancelCategoryEdit(): void {
-    if (!this.savingCategory()) {
-      this.categoryDraft.set(null);
-      this.savedCategoryDraft.set(null);
-      this.categorySaveError.set(null);
-      this.categoryConflict.set(false);
+    if (this.savingCategory()) return;
+    if (this.categoryDirty()) {
+      this.ui.confirm({
+        title: 'Categorieformulier sluiten',
+        message: 'De niet-opgeslagen categorie- en vertaalwijzigingen gaan verloren.',
+        confirmLabel: 'Wijzigingen wissen',
+        danger: true,
+      }, () => this.clearCategoryDraft());
+      return;
     }
+    this.clearCategoryDraft();
   }
 
   updateCategoryDraft(changes: Partial<Category>): void {
     this.categorySaveError.set(null);
     this.categoryDraft.update((draft) => draft ? { ...draft, ...changes } : draft);
+  }
+
+  updateCategoryTranslations(category: Category): void {
+    this.categorySaveError.set(null);
+    this.categoryConflict.set(false);
+    this.categoryDraft.set(category);
   }
 
   normalizeCategoryDraftCode(): void {
@@ -1411,9 +1613,12 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       this.categoryDraft.set(null);
       this.savedCategoryDraft.set(null);
       this.websiteSyncRefresh.update((value) => value + 1);
-      this.ui.toast(payload.id === null ? 'Categorie toegevoegd' : 'Categorie opgeslagen');
+      const missingLanguageCount = this.categoryMissingLanguages(saved).length;
+      this.ui.toast(missingLanguageCount
+        ? `${payload.id === null ? 'Categorie toegevoegd' : 'Categorie opgeslagen'} · ${missingLanguageCount} taal/talen later aanvullen`
+        : (payload.id === null ? 'Categorie toegevoegd' : 'Categorie opgeslagen'));
     } catch (failure: unknown) {
-      const conflict = (failure as { status?: number }).status === 409;
+      const conflict = isRevisionConflict(failure);
       const message = conflict
         ? 'Deze categorie is intussen gewijzigd. Laad de laatste versie en controleer je aanpassing opnieuw.'
         : messageOf(failure, 'Opslaan mislukt');
@@ -1460,6 +1665,26 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     }
   }
 
+  private categoryMissingLanguages(category: Category): LanguageCode[] {
+    return LANGUAGES.filter((language) => {
+      const text = category.texts?.find((item) => item.language === language.code);
+      return !text?.name?.trim()
+        || (this.categoryTranslationFieldUsed(category, 'navigationName') && !text?.navigationName?.trim())
+        || (this.categoryTranslationFieldUsed(category, 'footerName') && !text?.footerName?.trim())
+        || (this.categoryTranslationFieldUsed(category, 'mobileName') && !text?.mobileName?.trim())
+        || (this.categoryTranslationFieldUsed(category, 'eyebrow') && !text?.eyebrow?.trim())
+        || (this.categoryTranslationFieldUsed(category, 'description') && !text?.description?.trim());
+    }).map((language) => language.code);
+  }
+
+  private categoryTranslationFieldUsed(
+    category: Category,
+    field: 'navigationName' | 'footerName' | 'mobileName' | 'eyebrow' | 'description',
+  ): boolean {
+    return !!category[field]?.trim()
+      || (category.texts ?? []).some((text) => !!text[field]?.trim());
+  }
+
   /** Delete lives inside the edit form: you look at it before you lose it. */
   removeCategoryDraft(): void {
     const draft = this.categoryDraft();
@@ -1477,9 +1702,12 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
           await this.catalog.deleteCategory(category.id!);
           this.categories.update((categories) =>
             categories.filter((current) => current.id !== category.id));
+          if (this.categoryDraft()?.id === category.id) this.clearCategoryDraft();
+          this.websiteSyncRefresh.update((value) => value + 1);
           this.ui.toast('Categorie verwijderd');
         } catch (failure: unknown) {
-          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+          const message = messageOf(failure, 'Categorie verwijderen mislukt');
+          this.ui.toast(message, 'err');
         } finally {
           this.deletingCategoryId.set(null);
         }
@@ -1548,8 +1776,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 
   canDeactivate(): boolean {
-    if (this.savingCategory() || this.contentTranslationBusy()) return false;
-    if (!this.contentTranslationDirty() && !this.categoryDirty()) return true;
+    if (this.savingCategory()) return false;
+    if (!this.categoryDirty()) return true;
     return window.confirm(
       'Je hebt categorie- of vertaalwijzigingen die nog niet zijn opgeslagen. Dit scherm toch verlaten?',
     );
@@ -1557,10 +1785,16 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (!this.contentTranslationDirty() && !this.categoryDirty()
-        && !this.savingCategory() && !this.contentTranslationBusy()) return;
+    if (!this.categoryDirty() && !this.savingCategory()) return;
     event.preventDefault();
     event.returnValue = '';
+  }
+
+  private clearCategoryDraft(): void {
+    this.categoryDraft.set(null);
+    this.savedCategoryDraft.set(null);
+    this.categorySaveError.set(null);
+    this.categoryConflict.set(false);
   }
 }
 

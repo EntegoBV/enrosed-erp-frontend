@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { messageOf } from '../../core/api/errors';
+import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import {
   ContentTranslationGroup,
   ContentTranslationScope,
@@ -32,6 +32,7 @@ interface ContentPrefixOption {
 
 interface LanguageCompletion {
   code: LanguageCode;
+  label: string;
   complete: number;
   total: number;
 }
@@ -64,13 +65,18 @@ const PREFIX_LABELS: Record<string, string> = {
     <section class="card content-translations" aria-labelledby="content-translations-title">
       <div class="card__head content-translations__head">
         <div>
-          <h2 id="content-translations-title">Website- en catalogusteksten</h2>
-          <p>Algemene klantteksten, los van producten en categorieën.</p>
+          <h2 id="content-translations-title">{{ title() }}</h2>
+          <p>{{ description() }}</p>
         </div>
         @if (!loading() && !loadError()) {
-          <span class="overview-progress" [class.overview-progress--done]="requiredMissing() === 0">
-            {{ requiredMissing() ? requiredMissing() + ' taalvelden ontbreken' : 'Verplichte teksten compleet' }}
-          </span>
+          <div class="overview-progress" [class.overview-progress--done]="requiredMissing() === 0">
+            <span><b>{{ completionPercent() }}%</b> compleet</span>
+            <small>{{ requiredMissing() ? requiredMissing() + ' verplichte taalvelden ontbreken' : 'Alle verplichte teksten zijn ingevuld' }}</small>
+            <span class="overview-progress__bar" role="progressbar" [attr.aria-label]="'Voortgang ' + title()"
+                  aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="completionPercent()">
+              <i [style.width.%]="completionPercent()"></i>
+            </span>
+          </div>
         }
       </div>
 
@@ -88,23 +94,38 @@ const PREFIX_LABELS: Record<string, string> = {
         } @else {
           <div class="workspace-controls">
             <div class="workspace-toolbar">
-              <div class="scope-switch" role="group" aria-label="Soort algemene tekst">
-                <button type="button" [class.active]="scope() === 'WEBSITE'"
-                        [attr.aria-pressed]="scope() === 'WEBSITE'"
-                        [disabled]="hasPendingChanges() || busy()" (click)="changeScope('WEBSITE')">Website</button>
-                <button type="button" [class.active]="scope() === 'CATALOG'"
-                        [attr.aria-pressed]="scope() === 'CATALOG'"
-                        [disabled]="hasPendingChanges() || busy()" (click)="changeScope('CATALOG')">Catalogus</button>
-              </div>
-              <button class="btn btn--sm" type="button" [disabled]="dirty() || busy() || creating()"
-                      (click)="startCreate()">Tekstgroep toevoegen</button>
+              @if (!lockScope()) {
+                <div class="scope-switch" role="group" aria-label="Soort algemene tekst">
+                  <button type="button" [class.active]="scope() === 'WEBSITE'"
+                          [attr.aria-pressed]="scope() === 'WEBSITE'"
+                          [disabled]="hasPendingChanges() || busy()" (click)="changeScope('WEBSITE')">Websitepagina’s</button>
+                  <button type="button" [class.active]="scope() === 'CATALOG'"
+                          [attr.aria-pressed]="scope() === 'CATALOG'"
+                          [disabled]="hasPendingChanges() || busy()" (click)="changeScope('CATALOG')">Cataloguslabels</button>
+                </div>
+              } @else {
+                <span class="locked-scope">{{ scope() === 'WEBSITE' ? 'Websitepagina’s' : 'Cataloguslabels' }}</span>
+              }
+              @if (allowAdvanced()) {
+                <button class="advanced-toggle" type="button" [attr.aria-expanded]="advancedOpen()"
+                        [disabled]="busy()" (click)="advancedOpen.set(!advancedOpen())">
+                  Geavanceerd <span aria-hidden="true">{{ advancedOpen() ? '−' : '+' }}</span>
+                </button>
+              }
+            </div>
+
+            <div class="scope-guide" role="note">
+              <b>{{ scope() === 'WEBSITE' ? 'Websitepagina’s' : 'Cataloguslabels' }}</b>
+              <span>{{ scope() === 'WEBSITE'
+                ? 'Teksten voor homepage-onderdelen, navigatie, footer, juridische pagina’s en SEO per pagina.'
+                : 'Algemene labels rond de collectie en productpagina’s. Productspecifieke tekst blijft bij Productvertalingen.' }}</span>
             </div>
 
             <div class="language-overview" aria-label="Voortgang verplichte teksten per taal">
               @for (item of languageCompletion(); track item.code) {
                 <span [class.complete]="item.total > 0 && item.complete === item.total">
-                  <b>{{ item.code }}</b>
-                  <small>{{ item.total ? item.complete + '/' + item.total : '—' }}</small>
+                  <b>{{ item.label }}</b>
+                  <small>{{ item.total ? item.complete + ' van ' + item.total : 'Geen verplichte velden' }}</small>
                 </span>
               }
             </div>
@@ -114,13 +135,19 @@ const PREFIX_LABELS: Record<string, string> = {
                 <span class="sr-only">Tekstgroep zoeken</span>
                 <input class="input" type="search" [ngModel]="search()"
                        (ngModelChange)="search.set($event)"
-                       placeholder="Zoek op naam, sleutel of tekst…" />
+                       placeholder="Zoek op naam of tekst…" />
               </label>
               <span class="result-count" aria-live="polite">
                 {{ visibleGroups().length }} van {{ scopeGroups().length }} tekstgroepen
               </span>
             </div>
 
+            @if (lockPrefix()) {
+              <div class="locked-prefix" role="status">
+                <span>Actieve filter</span><b>{{ prefixLabelForDisplay(prefix()) }}</b>
+                <small>Deze SEO-werkplek toont alleen algemene meta- en paginatitels.</small>
+              </div>
+            } @else {
             <div class="prefix-filters" role="group" aria-label="Pagina of onderdeel filteren">
               <button type="button" [class.active]="prefix() === 'ALL'"
                       [attr.aria-pressed]="prefix() === 'ALL'" (click)="prefix.set('ALL')">
@@ -134,34 +161,80 @@ const PREFIX_LABELS: Record<string, string> = {
                 </button>
               }
             </div>
+            }
           </div>
 
-          @if (creating()) {
-            <div class="create-group">
-              <div class="field">
-                <label for="content-new-label">Naam in het dashboard</label>
-                <input class="input" id="content-new-label" [ngModel]="newLabel()"
-                       (ngModelChange)="newLabel.set($event)" placeholder="Bijv. Intro maatwerk" />
+          @if (advancedOpen()) {
+            <section class="advanced-panel" aria-labelledby="advanced-content-title">
+              <div class="advanced-panel__head">
+                <div>
+                  <h3 id="advanced-content-title">Geavanceerd beheer</h3>
+                  <p>Technische sleutels, revisies en het aanmaken of verwijderen van tekstgroepen.</p>
+                </div>
+                <button class="btn" type="button" [disabled]="dirty() || busy() || creating()"
+                        (click)="startCreate()">Nieuwe tekstgroep</button>
               </div>
-              <div class="field">
-                <label for="content-new-key">Vaste sleutel</label>
-                <input class="input mono" id="content-new-key" [ngModel]="newKey()"
-                       (ngModelChange)="newKey.set($event.toLowerCase())"
-                       (blur)="normalizeNewKey()"
-                       pattern="[a-z0-9]+(?:[.-][a-z0-9]+)*"
-                       placeholder="customisation.intro" />
-              </div>
-              <p class="small muted create-group__hint">
-                Een nieuwe sleutel start optioneel. Vul eerst alle acht talen in voordat je hem verplicht maakt.
-              </p>
-              <div class="create-group__actions">
-                <button class="btn btn--sm" type="button" [disabled]="busy()"
-                        (click)="cancelCreate()">Annuleren</button>
-                <button class="btn btn--sm btn--primary" type="button"
-                        [disabled]="busy() || !newLabel().trim() || !keyValid()"
-                        (click)="createGroup()">Toevoegen</button>
-              </div>
-            </div>
+
+              @if (creating()) {
+                <div class="create-group">
+                  <div class="field">
+                    <label for="content-new-label">Naam in het dashboard</label>
+                    <input class="input" id="content-new-label" [ngModel]="newLabel()"
+                           (ngModelChange)="patchNewLabel($event)" placeholder="Bijv. Intro maatwerk" />
+                  </div>
+                  <div class="field">
+                    <label for="content-new-key">Vaste sleutel</label>
+                    <input class="input mono" id="content-new-key" [ngModel]="newKey()"
+                           (ngModelChange)="patchNewKey($event)"
+                           (blur)="normalizeNewKey()"
+                           pattern="[a-z0-9]+(?:[.-][a-z0-9]+)*"
+                           placeholder="customisation.intro" />
+                  </div>
+                  <p class="create-group__hint">
+                    Een nieuwe sleutel start optioneel. Vul eerst alle acht talen in voordat u hem verplicht maakt.
+                  </p>
+                  @if (createError()) {
+                    <p class="create-group__error" role="alert">{{ createError() }}</p>
+                  }
+                  <div class="create-group__actions">
+                    <button class="btn" type="button" [disabled]="busy()"
+                            (click)="cancelCreate()">Annuleren</button>
+                    <button class="btn btn--primary" type="button"
+                            [disabled]="busy() || !newLabel().trim() || !keyValid()"
+                            (click)="createGroup()">Toevoegen</button>
+                  </div>
+                </div>
+              }
+
+              @if (draft(); as technicalGroup) {
+                <div class="advanced-selected">
+                  <label class="field advanced-selected__label">
+                    <span>Naam in het dashboard</span>
+                    <input class="input" [ngModel]="technicalGroup.label"
+                           [readOnly]="technicalGroup.system"
+                           (ngModelChange)="patchGroup({ label: $event })" />
+                  </label>
+                  <label class="required-toggle">
+                    <input type="checkbox" [ngModel]="technicalGroup.required"
+                           [disabled]="technicalGroup.system || (!technicalGroup.required && technicalGroup.missingLanguages.length > 0)"
+                           [title]="!technicalGroup.required && technicalGroup.missingLanguages.length > 0
+                             ? 'Vul eerst alle acht talen in'
+                             : null"
+                           (ngModelChange)="patchGroup({ required: $event })" />
+                    Verplicht in alle talen
+                  </label>
+                  <dl class="technical-meta">
+                    <div><dt>Sleutel</dt><dd class="mono">{{ technicalGroup.key }}</dd></div>
+                    <div><dt>Revisie</dt><dd>{{ technicalGroup.revision }}</dd></div>
+                    <div><dt>Type</dt><dd>{{ technicalGroup.system ? 'Vaste systeemtekst' : 'Eigen tekstgroep' }}</dd></div>
+                  </dl>
+                  @if (!technicalGroup.system) {
+                    <button class="btn danger-link" type="button" [disabled]="dirty()"
+                            (click)="deleteSelected()">Tekstgroep verwijderen</button>
+                  }
+                </div>
+              }
+            </section>
           }
 
           <div class="workspace-grid">
@@ -173,7 +246,7 @@ const PREFIX_LABELS: Record<string, string> = {
                         (click)="select(group)">
                   <span>
                     <b>{{ group.label }}</b>
-                    <small class="mono">{{ group.key }}{{ group.system ? ' · vast' : '' }}</small>
+                    <small>{{ groupArea(group) }} · {{ completedLanguages(group) }} van {{ languages.length }} talen</small>
                   </span>
                   @if (group.required) {
                     <em [class.complete]="!group.missingLanguages.length">
@@ -196,24 +269,20 @@ const PREFIX_LABELS: Record<string, string> = {
                 <legend class="sr-only">{{ group.label }} vertalen</legend>
                 <div class="group-editor__head">
                   <div>
-                    <span class="eyebrow">{{ group.scope === 'WEBSITE' ? 'Website' : 'Catalogus' }}</span>
-                    <input class="group-label" [ngModel]="group.label"
-                           aria-label="Naam van tekstgroep"
-                           [readOnly]="group.system"
-                           (ngModelChange)="patchGroup({ label: $event })" />
-                    <small class="mono">
-                      {{ group.key }} · revisie {{ group.revision }}{{ group.system ? ' · vaste sleutel' : '' }}
-                    </small>
+                    <span class="eyebrow">{{ groupArea(group) }}</span>
+                    <h3>{{ group.label }}</h3>
+                    <small>{{ group.required
+                      ? completedLanguages(group) + ' van ' + languages.length + ' verplichte talen ingevuld'
+                      : 'Optionele tekstgroep' }}</small>
                   </div>
-                  <label class="required-toggle">
-                    <input type="checkbox" [ngModel]="group.required"
-                           [disabled]="group.system || (!group.required && group.missingLanguages.length > 0)"
-                           [title]="!group.required && group.missingLanguages.length > 0
-                             ? 'Vul eerst alle acht talen in'
-                             : null"
-                           (ngModelChange)="patchGroup({ required: $event })" />
-                    Verplicht
-                  </label>
+                  <div class="group-editor__head-actions">
+                    <span class="group-status" [class.complete]="!group.missingLanguages.length">
+                      {{ group.missingLanguages.length ? group.missingLanguages.length + ' talen ontbreken' : 'Compleet' }}
+                    </span>
+                    <button class="btn btn--sm btn--primary" type="button" (click)="copySelectedCodexBrief()">
+                      Kopieer deze vertaalopdracht voor Codex
+                    </button>
+                  </div>
                 </div>
 
                 @if (legalReview()) {
@@ -230,8 +299,8 @@ const PREFIX_LABELS: Record<string, string> = {
                             [class.active]="selectedLanguage() === language.code"
                             [class.complete]="hasText(group, language.code)"
                             (click)="selectedLanguage.set(language.code)">
-                      <b>{{ language.code }}</b>
-                      <small>{{ hasText(group, language.code) ? '✓' : (group.required ? '!' : '—') }}</small>
+                      <b>{{ language.label }}</b>
+                      <small>{{ hasText(group, language.code) ? 'Compleet' : (group.required ? 'Ontbreekt' : 'Nog leeg') }}</small>
                     </button>
                   }
                 </div>
@@ -276,14 +345,10 @@ const PREFIX_LABELS: Record<string, string> = {
                 }
 
                 <div class="group-editor__actions">
-                  @if (!group.system) {
-                    <button class="btn btn--sm danger-link" type="button" [disabled]="dirty()"
-                            (click)="deleteSelected()">Verwijderen</button>
-                  }
-                  <span class="spacer"></span>
-                  <button class="btn btn--sm" type="button" [disabled]="!dirty()"
+                  <span class="save-state" aria-live="polite">{{ dirty() ? 'Wijzigingen nog niet opgeslagen' : 'Tekst bijgewerkt' }}</span>
+                  <button class="btn" type="button" [disabled]="!dirty()"
                           (click)="revertSelected()">Wijzigingen wissen</button>
-                  <button class="btn btn--sm btn--primary" type="button"
+                  <button class="btn btn--primary" type="button"
                           [disabled]="!dirty() || !draftValid()"
                           (click)="saveSelected()">{{ saving() ? 'Opslaan…' : 'Opslaan' }}</button>
                 </div>
@@ -299,171 +364,199 @@ const PREFIX_LABELS: Record<string, string> = {
   `,
   styles: `
     :host { display: block; }
-    .content-translations__head { align-items: flex-start; gap: 12px; }
+    .content-translations__head { align-items: flex-start; gap: 20px; }
     .content-translations__head > div { min-width: 0; }
-    .content-translations__head p { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
+    .content-translations__head h2 { font-size: 24px; }
+    .content-translations__head p {
+      max-width: 72ch; margin-top: 5px; color: var(--muted); font-size: 16px; line-height: 1.55;
+    }
     .overview-progress {
-      flex: none; padding: 5px 8px; border-radius: 999px; background: var(--warn-soft);
-      color: var(--ink-2); font-size: 9px; font-weight: 750;
+      display: grid; width: min(260px, 100%); flex: none; gap: 5px; padding: 12px 14px;
+      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--warn-soft); color: var(--ink-2);
     }
+    .overview-progress span:first-child { display: flex; align-items: baseline; gap: 5px; font-size: 15px; }
+    .overview-progress b { font-size: 20px; }
+    .overview-progress small { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .overview-progress__bar { display: block; height: 7px; overflow: hidden; border-radius: 999px; background: rgb(0 0 0 / 9%); }
+    .overview-progress__bar i { display: block; height: 100%; border-radius: inherit; background: var(--warn); }
     .overview-progress--done { background: var(--ok-soft); color: var(--ok); }
+    .overview-progress--done .overview-progress__bar i { background: var(--ok); }
     .workspace-state {
-      display: flex; min-height: 120px; align-items: center; justify-content: center;
-      gap: 12px; color: var(--muted); font-size: 11px; text-align: center;
+      display: flex; min-height: 140px; align-items: center; justify-content: center;
+      gap: 12px; color: var(--muted); font-size: 16px; line-height: 1.5; text-align: center;
     }
-    .workspace-state > div { display: grid; gap: 2px; }
+    .workspace-state > div { display: grid; gap: 3px; }
+    .workspace-state small { font-size: 15px; }
     .workspace-state--error { color: var(--danger); }
-    .workspace-controls {
-      position: sticky; z-index: 2; top: 116px; margin: -4px -4px 0; padding: 4px;
-      border-radius: 10px; background: color-mix(in srgb, var(--surface) 94%, transparent);
-      backdrop-filter: blur(8px);
+    .workspace-controls { display: grid; gap: 14px; }
+    .workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .scope-switch { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); }
+    .scope-switch button, .advanced-toggle {
+      min-height: 48px; padding: 10px 16px; border: 1px solid transparent; border-radius: 9px;
+      background: transparent; color: var(--muted); font-size: 15px; font-weight: 750; cursor: pointer;
     }
-    .workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .scope-switch { display: flex; padding: 3px; border-radius: 10px; background: var(--surface-2); }
-    .scope-switch button {
-      min-height: 34px; padding: 6px 12px; border: 0; border-radius: 8px;
-      background: transparent; color: var(--muted); font-size: 10.5px; font-weight: 700; cursor: pointer;
+    .scope-switch button.active { border-color: var(--line); background: #fff; color: var(--rose-dark); box-shadow: var(--shadow-xs); }
+    .locked-scope {
+      display: inline-flex; min-height: 48px; align-items: center; padding: 10px 14px;
+      border-radius: 10px; background: var(--rose-soft); color: var(--rose-dark);
+      font-size: 15px; font-weight: 800;
     }
-    .scope-switch button.active { background: #fff; color: var(--rose-dark); box-shadow: var(--shadow-xs); }
-    .language-overview {
-      display: grid; grid-template-columns: repeat(8, minmax(48px, 1fr)); gap: 4px; margin-top: 8px;
+    .locked-prefix {
+      display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center;
+      gap: 8px; padding: 11px 13px; border: 1px solid var(--rose-line); border-radius: 10px;
+      background: var(--rose-soft);
     }
+    .locked-prefix > span { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .locked-prefix b { color: var(--rose-dark); font-size: 14px; }
+    .locked-prefix small { justify-self: end; color: var(--muted); font-size: 13px; }
+    .advanced-toggle { display: inline-flex; align-items: center; gap: 10px; border-color: var(--line); background: var(--surface); color: var(--ink-2); }
+    .advanced-toggle span { font-size: 20px; line-height: 1; }
+    .scope-guide { display: grid; gap: 3px; padding: 14px 16px; border-left: 4px solid var(--rose); background: var(--rose-soft); }
+    .scope-guide b { font-size: 16px; }
+    .scope-guide span { color: var(--muted); font-size: 16px; line-height: 1.5; }
+    .language-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
     .language-overview > span {
-      display: flex; min-width: 0; min-height: 27px; align-items: center; justify-content: center;
-      gap: 4px; padding: 4px; border-radius: 7px; background: var(--warn-soft); color: var(--ink-2);
+      display: grid; min-width: 0; min-height: 58px; align-content: center; gap: 2px; padding: 9px 11px;
+      border: 1px solid transparent; border-radius: 10px; background: var(--warn-soft); color: var(--ink-2);
     }
-    .language-overview > span.complete { background: var(--ok-soft); color: var(--ok); }
-    .language-overview b { font-size: 8.5px; }
-    .language-overview small { color: inherit; font-size: 8px; }
-    .filter-row { display: flex; align-items: center; gap: 9px; margin-top: 8px; }
+    .language-overview > span.complete { border-color: color-mix(in srgb, var(--ok) 32%, transparent); background: var(--ok-soft); color: var(--ok); }
+    .language-overview b { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+    .language-overview small { color: inherit; font-size: 13px; line-height: 1.3; }
+    .filter-row { display: flex; align-items: center; gap: 12px; }
     .content-search { flex: 1; min-width: 0; }
-    .content-search .input { min-height: 36px; }
-    .result-count { flex: none; color: var(--muted); font-size: 8.5px; font-weight: 650; }
-    .prefix-filters {
-      display: flex; gap: 4px; margin-top: 6px; overflow-x: auto; padding-bottom: 3px;
-      scrollbar-width: thin;
-    }
+    .content-search .input { min-height: 48px; font-size: 16px; }
+    .result-count { flex: none; color: var(--muted); font-size: 14px; font-weight: 650; }
+    .prefix-filters { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px; scrollbar-width: thin; }
     .prefix-filters button {
-      display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 5px;
-      padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px;
-      background: var(--surface-2); color: var(--muted); font-size: 8.5px; font-weight: 700; cursor: pointer;
+      display: inline-flex; flex: none; min-height: 48px; align-items: center; gap: 7px;
+      padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px;
+      background: var(--surface-2); color: var(--muted); font-size: 15px; font-weight: 700; cursor: pointer;
     }
     .prefix-filters button.active { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
-    .prefix-filters small { font-size: 7.5px; }
+    .prefix-filters small { font-size: 13px; }
+    .advanced-panel { margin-top: 16px; padding: 18px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface-2); }
+    .advanced-panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .advanced-panel__head h3 { font-size: 20px; }
+    .advanced-panel__head p { margin-top: 4px; color: var(--muted); font-size: 16px; line-height: 1.45; }
+    .advanced-panel .btn { min-height: 48px; font-size: 15px; }
     .create-group {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;
-      padding: 12px; border: 1px solid var(--rose-line); border-radius: var(--r-sm); background: var(--rose-soft);
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px;
+      padding: 16px; border: 1px solid var(--rose-line); border-radius: var(--r-sm); background: var(--rose-soft);
     }
-    .create-group__hint { margin: 0; align-self: end; }
-    .required-toggle { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 650; }
-    .required-toggle input { width: 17px; height: 17px; accent-color: var(--rose); }
-    .create-group__actions { display: flex; justify-content: flex-end; gap: 6px; }
-    .workspace-grid { display: grid; grid-template-columns: minmax(210px, .42fr) minmax(0, 1fr); gap: 12px; margin-top: 12px; }
-    .group-list {
-      display: grid; max-height: min(640px, calc(100vh - 170px)); align-content: start;
-      gap: 5px; overflow-y: auto; padding-right: 3px; scrollbar-width: thin;
-    }
+    .create-group .field, .advanced-selected__label { display: grid; gap: 6px; }
+    .create-group label, .advanced-selected__label > span { font-size: 16px; font-weight: 700; }
+    .create-group .input, .advanced-selected .input { min-height: 48px; font-size: 16px; }
+    .create-group__hint { align-self: end; color: var(--muted); font-size: 15px; line-height: 1.45; }
+    .create-group__error { grid-column: 1 / -1; padding: 10px 12px; border-radius: 9px;
+      background: var(--danger-soft); color: var(--danger); font-size: 14px; line-height: 1.45; }
+    .create-group__actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .advanced-selected { display: grid; grid-template-columns: minmax(240px, 1fr) auto; align-items: end; gap: 14px 18px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .required-toggle { display: flex; min-height: 48px; align-items: center; gap: 9px; font-size: 16px; font-weight: 700; }
+    .required-toggle input { width: 22px; height: 22px; accent-color: var(--rose); }
+    .technical-meta { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+    .technical-meta div { min-width: 0; padding: 10px 12px; border-radius: 9px; background: var(--surface); }
+    .technical-meta dt { color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; }
+    .technical-meta dd { margin-top: 3px; overflow-wrap: anywhere; color: var(--ink-2); font-size: 15px; }
+    .danger-link { justify-self: start; color: var(--danger); }
+    .workspace-grid { display: grid; grid-template-columns: minmax(280px, .42fr) minmax(0, 1fr); gap: 16px; margin-top: 18px; }
+    .group-list { display: grid; max-height: min(720px, calc(100vh - 180px)); align-content: start; gap: 8px; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; }
     .group-list > button {
-      display: flex; min-width: 0; min-height: 55px; align-items: center; justify-content: space-between;
-      gap: 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px;
+      display: flex; min-width: 0; min-height: 72px; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 10px;
       background: var(--surface-2); color: var(--ink-2); text-align: left; cursor: pointer;
     }
-    .group-list > button.active { border-color: var(--rose); background: var(--rose-soft); }
-    .group-list > button > span { display: grid; min-width: 0; gap: 2px; }
+    .group-list > button.active { border-color: var(--rose); background: var(--rose-soft); box-shadow: inset 3px 0 0 var(--rose); }
+    .group-list > button > span { display: grid; min-width: 0; gap: 4px; }
     .group-list b, .group-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .group-list b { font-size: 10.5px; }
-    .group-list small { color: var(--muted); font-size: 8.5px; }
+    .group-list b { font-size: 16px; }
+    .group-list small { color: var(--muted); font-size: 14px; }
     .group-list em {
-      display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 999px;
-      background: var(--warn-soft); color: var(--warn); font-size: 8px; font-style: normal; font-weight: 750;
+      display: grid; min-width: 30px; height: 30px; place-items: center; border-radius: 999px;
+      background: var(--warn-soft); color: var(--warn); font-size: 13px; font-style: normal; font-weight: 800;
     }
     .group-list em.complete { background: var(--ok-soft); color: var(--ok); }
-    .group-list em.optional { width: auto; padding-inline: 5px; background: var(--surface); color: var(--muted); }
-    .empty-groups { padding: 20px 8px; color: var(--muted); font-size: 10px; text-align: center; }
-    .group-editor { min-inline-size: 0; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
-    .group-editor__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-    .group-editor__head > div { display: grid; min-width: 0; gap: 2px; }
-    .eyebrow { color: var(--rose-dark); font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .group-label { width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); font: 700 14px var(--font); }
-    .group-editor__head small { color: var(--muted); font-size: 8.5px; }
-    .legal-review {
-      display: flex; gap: 9px; margin-top: 10px; padding: 9px 10px;
-      border-radius: 9px; background: var(--warn-soft); color: var(--ink-2);
-    }
-    .legal-review > span { font-size: 16px; }
-    .legal-review > div { display: grid; gap: 1px; }
-    .legal-review b { font-size: 10px; }
-    .legal-review small { color: var(--muted); font-size: 9px; }
-    .language-tabs { display: grid; grid-template-columns: repeat(8, minmax(42px, 1fr)); gap: 4px; margin-top: 11px; }
+    .group-list em.optional { width: auto; padding-inline: 8px; background: var(--surface); color: var(--muted); }
+    .empty-groups { padding: 24px 10px; color: var(--muted); font-size: 16px; line-height: 1.5; text-align: center; }
+    .group-editor { min-inline-size: 0; margin: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+    .group-editor__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .group-editor__head > div { display: grid; min-width: 0; gap: 4px; }
+    .group-editor__head h3 { font-size: 22px; line-height: 1.25; }
+    .eyebrow { color: var(--rose-dark); font-size: 14px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .group-editor__head small { color: var(--muted); font-size: 15px; line-height: 1.4; }
+    .group-status { flex: none; padding: 8px 10px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 14px; font-weight: 750; }
+    .group-status.complete { background: var(--ok-soft); color: var(--ok); }
+    .group-editor__head-actions { display: grid; justify-items: end; gap: 7px; }
+    .group-editor__head-actions .btn { min-height: 44px; white-space: nowrap; }
+    .legal-review { display: flex; gap: 11px; margin-top: 16px; padding: 13px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--ink-2); }
+    .legal-review > span { font-size: 22px; }
+    .legal-review > div { display: grid; gap: 2px; }
+    .legal-review b { font-size: 16px; }
+    .legal-review small { color: var(--muted); font-size: 15px; line-height: 1.4; }
+    .language-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 18px; }
     .language-tabs button {
-      display: flex; min-width: 0; min-height: 38px; align-items: center; justify-content: center;
-      gap: 3px; border: 1px solid var(--line); border-radius: 8px;
-      background: var(--surface-2); color: var(--ink-2); cursor: pointer;
+      display: grid; min-width: 0; min-height: 58px; align-content: center; justify-items: start; gap: 2px;
+      padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
+      background: var(--surface-2); color: var(--ink-2); text-align: left; cursor: pointer;
     }
-    .language-tabs button.active { border-color: var(--rose); background: var(--rose-soft); }
-    .language-tabs b { font-size: 9px; }
-    .language-tabs small { color: var(--warn); font-size: 8px; }
+    .language-tabs button.active { border-color: var(--rose); background: var(--rose-soft); box-shadow: inset 0 0 0 1px var(--rose); }
+    .language-tabs b { overflow: hidden; width: 100%; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+    .language-tabs small { color: var(--warn); font-size: 13px; }
     .language-tabs button.complete small { color: var(--ok); }
     .mobile-language-picker { display: none; }
-    .translation-value { display: grid; gap: 5px; margin-top: 11px; }
-    .translation-value > span { font-size: 10.5px; font-weight: 650; }
-    .conflict, .save-error {
-      margin-top: 10px; padding: 9px 10px; border-radius: 9px;
-      background: var(--danger-soft); color: var(--danger); font-size: 10px;
-    }
-    .conflict { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .conflict > div { display: grid; gap: 1px; }
-    .conflict small { font-size: 9px; }
-    .group-editor__actions { display: flex; align-items: center; gap: 6px; margin-top: 11px; }
-    .next-language { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: flex-start; gap: 5px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 13px; cursor: pointer; }
-    .next-language span { margin-left: auto; color: var(--rose-dark); font-size: 21px; }
-    .danger-link { color: var(--danger); }
+    .translation-value { display: grid; gap: 7px; margin-top: 18px; }
+    .translation-value > span { font-size: 16px; font-weight: 700; }
+    .translation-value .textarea { min-height: 210px; font-size: 16px; line-height: 1.55; }
+    .next-language { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: flex-start; gap: 6px; margin-top: 10px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 15px; cursor: pointer; }
+    .next-language span { margin-left: auto; color: var(--rose-dark); font-size: 22px; }
+    .conflict, .save-error { margin-top: 14px; padding: 12px 13px; border-radius: 9px; background: var(--danger-soft); color: var(--danger); font-size: 15px; line-height: 1.45; }
+    .conflict { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .conflict > div { display: grid; gap: 2px; }
+    .conflict small { font-size: 14px; }
+    .group-editor__actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+    .group-editor__actions .btn { min-height: 48px; font-size: 15px; }
+    .save-state { margin-right: auto; color: var(--muted); font-size: 15px; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
 
-    @media (max-width: 720px) {
+    @media (max-width: 820px) {
       .content-translations__head { align-items: stretch; flex-direction: column; }
-      .content-translations__head h2 { font-size: 18px; }
-      .content-translations__head p, .overview-progress, .workspace-state { font-size: 13px; line-height: 1.45; }
-      .overview-progress { align-self: flex-start; }
-      .workspace-controls { position: static; margin: 0; padding: 0; background: var(--surface); backdrop-filter: none; }
+      .content-translations__head h2 { font-size: 22px; }
+      .overview-progress { width: 100%; }
       .workspace-toolbar { align-items: stretch; flex-direction: column; }
       .scope-switch { display: grid; grid-template-columns: 1fr 1fr; }
-      .scope-switch button, .content-translations .btn { min-height: 48px; font-size: 14px; }
-      .language-overview { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-      .language-overview > span { min-height: 42px; }
-      .language-overview b, .language-overview small { font-size: 12px; }
+      .advanced-toggle { justify-content: space-between; }
+      .language-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .filter-row { align-items: stretch; flex-direction: column; }
-      .content-search .input { min-height: 48px; }
-      .result-count { font-size: 13px; }
-      .prefix-filters { gap: 7px; padding-block: 2px 7px; }
-      .prefix-filters button { min-height: 48px; padding-inline: 14px; font-size: 13px; }
-      .prefix-filters small { font-size: 12px; }
-      .create-group { grid-template-columns: 1fr; }
-      .create-group__actions .btn { flex: 1; }
+      .result-count { font-size: 15px; }
+      .advanced-panel__head { align-items: stretch; flex-direction: column; }
+      .advanced-panel__head .btn { width: 100%; }
+      .create-group, .advanced-selected { grid-template-columns: 1fr; }
+      .create-group__actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .technical-meta { grid-column: auto; grid-template-columns: 1fr; }
       .workspace-grid { grid-template-columns: 1fr; }
-      .group-list { max-height: 300px; padding-right: 0; }
-      .group-list > button { min-height: 64px; padding: 11px 12px; }
-      .group-list b { font-size: 15px; }
-      .group-list small { font-size: 12px; }
-      .group-list em { min-width: 28px; height: 28px; font-size: 12px; }
-      .group-editor { padding: 13px; }
+      .group-list { max-height: 340px; padding-right: 0; }
       .group-editor__head { align-items: stretch; flex-direction: column; }
-      .group-label { min-height: 48px; font-size: 17px; }
-      .group-editor__head small, .eyebrow { font-size: 12px; }
-      .required-toggle { min-height: 48px; font-size: 14px; }
-      .required-toggle input { width: 22px; height: 22px; }
-      .legal-review b { font-size: 14px; }
-      .legal-review small { font-size: 13px; }
+      .group-editor__head-actions { justify-items: stretch; }
+      .group-status { justify-self: start; }
+      .group-editor__head-actions .btn { width: 100%; white-space: normal; }
       .language-tabs { display: none; }
-      .mobile-language-picker { display: grid; gap: 6px; margin-top: 12px; }
-      .mobile-language-picker > span, .translation-value > span { font-size: 14px; font-weight: 700; }
+      .mobile-language-picker { display: grid; gap: 7px; margin-top: 18px; }
+      .mobile-language-picker > span { font-size: 16px; font-weight: 700; }
       .mobile-language-picker .select { min-height: 48px; font-size: 16px; }
-      .translation-value .textarea { min-height: 190px; font-size: 16px; }
-      .conflict, .save-error { font-size: 13px; }
       .conflict { align-items: stretch; flex-direction: column; }
-      .conflict small { font-size: 13px; }
       .group-editor__actions { display: grid; grid-template-columns: 1fr 1fr; }
-      .group-editor__actions .spacer { display: none; }
-      .group-editor__actions .danger-link { grid-column: 1 / -1; }
+      .save-state { grid-column: 1 / -1; margin: 0; }
+    }
+
+    @media (max-width: 480px) {
+      .card__body { padding-inline: 14px; }
+      .scope-switch { grid-template-columns: 1fr; }
+      .scope-guide { padding-inline: 13px; }
+      .language-overview { grid-template-columns: 1fr; }
+      .language-overview > span { min-height: 54px; }
+      .prefix-filters { margin-inline: -2px; }
+      .advanced-panel, .group-editor { padding: 15px; }
+      .group-editor__actions { grid-template-columns: 1fr; }
+      .save-state { grid-column: auto; }
     }
   `,
 })
@@ -475,6 +568,16 @@ export class ContentTranslationWorkspace {
   readonly languages = TRANSLATION_LANGUAGES;
   readonly visible = input(true);
   readonly syncRefreshKey = input(0);
+  readonly title = input('Website Content');
+  readonly description = input(
+    'Homepage, navigatie, footer, juridische pagina’s en algemene SEO-teksten. '
+      + 'Productnamen en productbeschrijvingen beheert u per product.',
+  );
+  readonly initialScope = input<ContentTranslationScope>('WEBSITE');
+  readonly initialPrefix = input('ALL');
+  readonly lockScope = input(false);
+  readonly lockPrefix = input(false);
+  readonly allowAdvanced = input(true);
   readonly dirtyChange = output<boolean>();
   readonly busyChange = output<boolean>();
   readonly scope = signal<ContentTranslationScope>('WEBSITE');
@@ -492,9 +595,11 @@ export class ContentTranslationWorkspace {
   readonly conflict = signal(false);
   readonly newKey = signal('');
   readonly newLabel = signal('');
+  readonly createError = signal<string | null>(null);
   readonly websiteSyncRefresh = signal(0);
   readonly search = signal('');
   readonly prefix = signal('ALL');
+  readonly advancedOpen = signal(false);
 
   readonly busy = computed(() => this.saving() || this.deleting() || this.creatingRequest());
   readonly hasPendingChanges = computed(() => this.dirty()
@@ -506,6 +611,9 @@ export class ContentTranslationWorkspace {
   readonly dirty = computed(() => JSON.stringify(this.draft()) !== JSON.stringify(this.saved()));
   readonly scopeGroups = computed(() => this.groups()
     .filter((group) => group.scope === this.scope()));
+  readonly completionGroups = computed(() => this.lockPrefix()
+    ? this.scopeGroups().filter((group) => this.groupPrefix(group.key) === this.prefix())
+    : this.scopeGroups());
   readonly prefixOptions = computed<ContentPrefixOption[]>(() => {
     const counts = new Map<string, number>();
     for (const group of this.scopeGroups()) {
@@ -529,19 +637,28 @@ export class ContentTranslationWorkspace {
       .sort((left, right) => left.label.localeCompare(right.label, 'nl'));
   });
   readonly languageCompletion = computed<LanguageCompletion[]>(() => {
-    const required = this.scopeGroups().filter((group) => group.required);
+    const required = this.completionGroups().filter((group) => group.required);
     return this.languages.map((language) => ({
       code: language.code,
+      label: language.label,
       total: required.length,
       complete: required.filter(
         (group) => !group.missingLanguages.includes(language.code),
       ).length,
     }));
   });
-  readonly requiredMissing = computed(() => this.groups()
+  readonly requiredMissing = computed(() => this.completionGroups()
     .filter((group) => group.required)
     .reduce((total, group) => total + group.missingLanguages.length, 0),
   );
+  readonly requiredFieldCount = computed(() => this.completionGroups()
+    .filter((group) => group.required).length * this.languages.length);
+  readonly requiredComplete = computed(() =>
+    this.requiredFieldCount() - this.requiredMissing());
+  readonly completionPercent = computed(() => {
+    const total = this.requiredFieldCount();
+    return total ? Math.round((this.requiredComplete() / total) * 100) : 100;
+  });
   readonly selectedLanguageLabel = computed(() =>
     this.languages.find((item) => item.code === this.selectedLanguage())?.label
       ?? this.selectedLanguage(),
@@ -576,7 +693,11 @@ export class ContentTranslationWorkspace {
     effect(() => {
       if (!this.visible() || this.loadStarted) return;
       this.loadStarted = true;
-      untracked(() => void this.load());
+      untracked(() => {
+        this.scope.set(this.initialScope());
+        this.prefix.set(this.initialPrefix());
+        void this.load();
+      });
     });
     effect(() => this.dirtyChange.emit(this.hasPendingChanges()));
     effect(() => this.busyChange.emit(this.busy()));
@@ -587,16 +708,24 @@ export class ContentTranslationWorkspace {
     this.loading.set(true);
     this.loadError.set(null);
     try {
-      const [website, catalog] = await Promise.all([
-        this.catalog.contentTranslations('WEBSITE'),
-        this.catalog.contentTranslations('CATALOG'),
-      ]);
-      const groups = [...website.groups, ...catalog.groups];
+      const scopes: ContentTranslationScope[] = this.lockScope()
+        ? [this.initialScope()]
+        : ['WEBSITE', 'CATALOG'];
+      const overviews = await Promise.all(scopes.map((scope) =>
+        this.catalog.contentTranslations(scope)));
+      const groups = overviews.flatMap((overview) => overview.groups);
       this.groups.set(groups);
       const current = this.draft();
+      const wantedPrefix = this.initialPrefix();
+      const candidates = groups.filter((group) => group.scope === this.scope())
+        .filter((group) => wantedPrefix === 'ALL' || this.groupPrefix(group.key) === wantedPrefix);
+      if (wantedPrefix !== 'ALL' && !candidates.length && !this.lockPrefix()) {
+        this.prefix.set('ALL');
+      }
       const selected = current
         ? groups.find((group) => group.scope === current.scope && group.key === current.key)
-        : groups.find((group) => group.scope === this.scope()) ?? groups[0];
+        : candidates[0]
+          ?? (this.lockPrefix() ? null : groups.find((group) => group.scope === this.scope()) ?? groups[0]);
       this.setSelected(selected ?? null);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
@@ -607,14 +736,17 @@ export class ContentTranslationWorkspace {
 
   select(group: ContentTranslationGroup): void {
     if (this.busy() || (this.hasPendingChanges() && this.draft()?.key !== group.key)) return;
+    this.advancedOpen.set(false);
     this.setSelected(group);
   }
 
   changeScope(scope: ContentTranslationScope): void {
-    if (this.busy() || this.hasPendingChanges() || scope === this.scope()) return;
+    if (this.lockScope() || this.busy() || this.hasPendingChanges() || scope === this.scope()) return;
     this.scope.set(scope);
     this.search.set('');
     this.prefix.set('ALL');
+    this.advancedOpen.set(false);
+    this.creating.set(false);
     this.setSelected(this.groups().find((group) => group.scope === scope) ?? null);
   }
 
@@ -638,8 +770,48 @@ export class ContentTranslationWorkspace {
     this.patchGroup({ texts, missingLanguages: this.missingLanguages({ ...group, texts }) });
   }
 
+  async copySelectedCodexBrief(): Promise<void> {
+    const group = this.draft();
+    if (!group) return;
+    const lines = [
+      'ENROSED websitetekstvertaling voor Codex',
+      '',
+      'Vertaal of hercontroleer deze ene publieke websitecopy-groep naar alle doeltalen. Wijzig scope, contentKey, revision en placeholders zoals {name} nooit. Behoud betekenis en merktoon; juridische copy moet na vertaling handmatig worden nagekeken.',
+      '',
+      `scope: ${group.scope}`,
+      `contentKey: ${group.key}`,
+      `revision: ${group.revision}`,
+      `dashboardlabel: ${JSON.stringify(group.label)}`,
+      `verplicht: ${group.required ? 'ja' : 'nee'}`,
+      `doeltalen: ${this.languages.map((language) => language.code).join(', ')}`,
+      '',
+    ];
+    for (const language of this.languages) {
+      const value = group.texts.find((text) => text.language === language.code)?.value;
+      lines.push(
+        `## ${language.code} — ${language.label}`,
+        `tekst: ${JSON.stringify(value?.trim() ?? '')}`,
+        '',
+      );
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      this.ui.toast('Veilige websitevertaalopdracht gekopieerd');
+    } catch {
+      this.ui.toast('Kopiëren is niet gelukt. Controleer de browsertoestemming.', 'err');
+    }
+  }
+
   hasText(group: ContentTranslationGroup, language: LanguageCode): boolean {
     return !!group.texts.find((text) => text.language === language)?.value?.trim();
+  }
+
+  completedLanguages(group: ContentTranslationGroup): number {
+    return this.languages.length - group.missingLanguages.length;
+  }
+
+  groupArea(group: ContentTranslationGroup): string {
+    return this.prefixLabel(this.groupPrefix(group.key));
   }
 
   async saveSelected(): Promise<void> {
@@ -663,9 +835,9 @@ export class ContentTranslationWorkspace {
       this.websiteSyncRefresh.update((value) => value + 1);
       this.ui.toast('Tekstvertalingen opgeslagen');
     } catch (failure: unknown) {
-      const status = (failure as { status?: number }).status;
-      this.conflict.set(status === 409);
-      this.saveError.set(status === 409
+      const conflict = isRevisionConflict(failure);
+      this.conflict.set(conflict);
+      this.saveError.set(conflict
         ? 'Iemand heeft deze tekst intussen gewijzigd. Laad de laatste versie en controleer je aanpassing opnieuw.'
         : messageOf(failure, 'Tekstvertalingen opslaan mislukt.'));
     } finally {
@@ -690,21 +862,44 @@ export class ContentTranslationWorkspace {
 
   revertSelected(): void {
     const saved = this.saved();
-    if (!this.busy()) this.draft.set(saved ? this.copy(saved) : null);
-    this.saveError.set(null);
-    this.conflict.set(false);
+    if (this.busy() || !this.dirty()) return;
+    this.ui.confirm({
+      title: 'Tekstwijzigingen wissen',
+      message: 'De niet-opgeslagen wijzigingen in deze tekstgroep gaan verloren.',
+      confirmLabel: 'Wijzigingen wissen',
+      danger: true,
+    }, () => {
+      this.draft.set(saved ? this.copy(saved) : null);
+      this.saveError.set(null);
+      this.conflict.set(false);
+    });
   }
 
   startCreate(): void {
+    if (!this.allowAdvanced()) return;
     this.search.set('');
     this.prefix.set('ALL');
     this.newKey.set('');
     this.newLabel.set('');
+    this.createError.set(null);
     this.creating.set(true);
   }
 
   cancelCreate(): void {
-    if (!this.creatingRequest()) this.creating.set(false);
+    if (!this.creatingRequest()) {
+      this.creating.set(false);
+      this.createError.set(null);
+    }
+  }
+
+  patchNewLabel(value: string): void {
+    this.newLabel.set(value);
+    this.createError.set(null);
+  }
+
+  patchNewKey(value: string): void {
+    this.newKey.set(value.toLowerCase());
+    this.createError.set(null);
   }
 
   normalizeKey(value: string): string {
@@ -725,6 +920,7 @@ export class ContentTranslationWorkspace {
   async createGroup(): Promise<void> {
     if (!this.keyValid() || !this.newLabel().trim() || this.busy()) return;
     this.creatingRequest.set(true);
+    this.createError.set(null);
     try {
       const created = await this.catalog.createContentTranslation({
         scope: this.scope(),
@@ -739,7 +935,12 @@ export class ContentTranslationWorkspace {
       this.websiteSyncRefresh.update((value) => value + 1);
       this.ui.toast('Tekstgroep toegevoegd');
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Tekstgroep toevoegen mislukt'), 'err');
+      const message = messageOf(
+        failure,
+        'Tekstgroep toevoegen mislukt. Controleer de invoer en probeer opnieuw.',
+      );
+      this.createError.set(message);
+      this.ui.toast(message, 'err');
     } finally {
       this.creatingRequest.set(false);
     }
@@ -764,9 +965,9 @@ export class ContentTranslationWorkspace {
         this.websiteSyncRefresh.update((value) => value + 1);
         this.ui.toast('Tekstgroep verwijderd');
       } catch (failure: unknown) {
-        const status = (failure as { status?: number }).status;
-        this.conflict.set(status === 409);
-        this.saveError.set(status === 409
+        const conflict = isRevisionConflict(failure);
+        this.conflict.set(conflict);
+        this.saveError.set(conflict
           ? 'Deze tekstgroep is intussen gewijzigd. Laad de laatste versie.'
           : messageOf(failure, 'Tekstgroep verwijderen mislukt.'));
       } finally {
@@ -810,6 +1011,10 @@ export class ContentTranslationWorkspace {
   private prefixLabel(prefix: string): string {
     return PREFIX_LABELS[prefix]
       ?? prefix.charAt(0).toUpperCase() + prefix.slice(1).replaceAll('-', ' ');
+  }
+
+  prefixLabelForDisplay(prefix: string): string {
+    return this.prefixLabel(prefix);
   }
 
   private searchTerm(value: string): string {

@@ -15,9 +15,10 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { FreightRate, MarketSourceStatus, PurchaseOrderView, QuoteRevision, SalesOrderView, ExpectedStock, Product, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
-import { CbmPipe, EurPipe, NumPipe, PctPipe, DateNlPipe } from '../../shared/pipes';
-import { STATUS_LABEL, statusClass } from '../sales/quote-status';
+import { EurPipe, NumPipe, DateNlPipe } from '../../shared/pipes';
+import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from '../sales/quote-status';
 import { containerLabel } from '../../core/api/geo';
+import { messageOf } from '../../core/api/errors';
 
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen',
@@ -34,138 +35,286 @@ interface FreightHorizon {
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Skeleton, Sparkline, Icon, Sheet, FormsModule, RouterLink, PageHeader,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, PlannerCards, AuthImage],
+            EurPipe, NumPipe, DateNlPipe, PlannerCards, AuthImage],
   template: `
     <app-page-header [title]="greeting()" [subtitle]="today()">
     </app-page-header>
 
-    <!-- Sections stack: future blocks (stock levels, reports, fair
-         planning) slot in as another .section-title + card pair. -->
-    <div class="content anim-stagger">
+    <div class="content dashboard-page anim-stagger">
       @if (loading()) {
-        <app-skeleton kind="stats" [rows]="4" />
+        <section class="dashboard-loading" aria-live="polite" aria-label="Dashboard laden">
+          <app-skeleton kind="stats" [rows]="4" />
+          <app-skeleton kind="card" [rows]="3" />
+        </section>
       } @else {
-      <!-- A pinned appointment rides on top of everything until unpinned. -->
-      @for (pin of pinnedItems(); track pin.id) {
-        <div class="pin-line">
-          <span class="pin-line__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="M12 16.5V21M8.5 4h7l-.9 6.3 3.4 3.2H6l3.4-3.2L8.5 4z"/></svg>
-          </span>
-          <span class="pin-line__what">
-            <b>{{ pin.title }}</b>
-            <small>@if (pin.onDate) { {{ pin.onDate | dateNl }}@if (pin.atTime) { · {{ pin.atTime }} } }
-              @if (pin.note) { · {{ pin.note }} }</small>
-          </span>
-        </div>
-      }
-
-      <!-- Each tile opens its own analysis: what the figure is made of. -->
-      <div class="kpis">
-        <button class="kpi kpi--dark" type="button" (click)="kpiSheet.set('SALES')">
-          <svg class="kpi__rose" viewBox="0 0 24 24" fill="none" stroke="#e8b7c0"
-               stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="8" r="3.2" />
-            <path d="M12 11.2V20" />
-            <path d="M12 16.5c-2.6 0-4.5-1.3-4.8-3.4 2.6 0 4.4 1.2 4.8 3.4z" />
-            <path d="M12 16.5c2.6 0 4.5-1.3 4.8-3.4-2.6 0-4.4 1.2-4.8 3.4z" />
-            <path d="M12 8m-1.4 0a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0" />
-          </svg>
-          <div class="kpi__label">Open verkoop</div>
-          <div class="kpi__value">{{ openValue() | eur: 0 }}</div>
-          <div class="kpi__meta">{{ openOrders().length }} order(s)</div>
-        </button>
-        <button class="kpi" type="button" (click)="kpiSheet.set('MARGIN')">
-          <div class="kpi__label">Winst open orders</div>
-          <div class="kpi__value">{{ marginEur() | eur: 0 }}</div>
-          <div class="kpi__meta">{{ marginPct() | num: 1 }}% marge op de goederen</div>
-        </button>
-        <button class="kpi" type="button" (click)="kpiSheet.set('PURCHASE')">
-          <div class="kpi__label">Inkoop onderweg</div>
-          <div class="kpi__value">{{ incomingValue() | eur: 0 }}</div>
-          <div class="kpi__meta">{{ incomingLabel() }}</div>
-          @if (incomingPieces()) {
-            <div class="kpi__meta kpi__meta--expected">+{{ incomingPieces() | num }} st onderweg</div>
-          }
-        </button>
-        <button class="kpi" type="button" (click)="kpiSheet.set('STOCK')">
-          <div class="kpi__label">Voorraadwaarde</div>
-          <div class="kpi__value">{{ stockValue() | eur: 0 }}</div>
-          <div class="kpi__value-sub">kostprijs</div>
-          <div class="kpi__meta">{{ stockPieces() | num }} st</div>
-          <div class="kpi__meta kpi__meta--sales">verkoop {{ stockSalesValue() | eur: 0 }}</div>
-        </button>
-      </div>
-      }
-
-      @if (revisions().length) {
-        <a class="alert alert--warn mt-12" routerLink="/revisions"
-           style="text-decoration:none;color:inherit">
-          <span class="alert__icon">⇄</span>
-          <div>
-            <b>{{ revisions().length }} klant(en)</b> vragen een wijziging op hun offerte.
-            Tik om te behandelen.
+        @for (pin of pinnedItems(); track pin.id) {
+          <div class="pin-line">
+            <span class="pin-line__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 16.5V21M8.5 4h7l-.9 6.3 3.4 3.2H6l3.4-3.2L8.5 4z"/></svg>
+            </span>
+            <span class="pin-line__what">
+              <b>{{ pin.title }}</b>
+              <small>@if (pin.onDate) { {{ pin.onDate | dateNl }}@if (pin.atTime) { · {{ pin.atTime }} } }
+                @if (pin.note) { · {{ pin.note }} }</small>
+            </span>
           </div>
-        </a>
-      }
-
-      <app-planner-cards class="planner-mount" [milestones]="purchaseMilestones()" />
-
-      @if (catalogAttention()) {
-        <a class="alert alert--warn mt-12" routerLink="/products"
-           style="text-decoration:none;color:inherit">
-          <span class="alert__icon">◈</span>
-          <div>
-            <b>{{ catalogAttention() }} productfamilie(s)</b> missen nog informatie voor website of
-            orderapp. Tik om de productmaster af te werken.
-          </div>
-        </a>
-      }
-
-      @if (purchaseActions().length) {
-        <div class="section-title">Actie vereist <span class="section-count">{{ actionCount() }}</span></div>
-        <div class="card"><div class="list">
-          @for (row of visibleActions(); track row.order.id) {
-            <!-- One quiet line per order: the first open point, the rest as a count. -->
-            <a class="list-item action-mini" [routerLink]="['/purchasing', row.order.id]">
-              <b class="action-mini__order">{{ row.order.alias || row.order.number }}</b>
-              <span class="action-mini__what">{{ row.attention![0] }}</span>
-              @if (row.attention!.length > 1) { <small class="action-mini__more">+{{ row.attention!.length - 1 }}</small> }
-            </a>
-          }
-        </div>
-        @if (hiddenActionCount() > 0) {
-          <button class="list-more" type="button" (click)="actionsOpen.set(true)">
-            Meer weergeven ({{ hiddenActionCount() }})
-          </button>
         }
-        </div>
-      }
 
-      @if (incomingStock().length) {
-        <div class="section-title">Onderweg naar het magazijn
-          <span class="section-count">{{ incomingPieces() | num }} st</span></div>
-        <div class="card"><div class="list">
-          @for (item of incomingStock().slice(0, 4); track item.name) {
-            <a class="list-item" [routerLink]="item.orderId !== null ? ['/purchasing', item.orderId] : null">
-              @if (item.photo) {
-                <img class="thumb thumb--sm" [appAuthSrc]="item.photo" alt="" />
+        @if (dataWarnings().length) {
+          <section class="dashboard-sync-warning" role="alert">
+            <span class="dashboard-sync-warning__icon" aria-hidden="true">!</span>
+            <div>
+              <strong>Niet alle cijfers konden worden bijgewerkt</strong>
+              <p>{{ warningLabel() }}. {{ warningDetail() || 'Controleer de verbinding en probeer opnieuw.' }}
+                De overige gegevens blijven beschikbaar.</p>
+            </div>
+            <button class="btn btn--sm" type="button" [disabled]="refreshing()" (click)="load()">
+              {{ refreshing() ? 'Bezig…' : 'Opnieuw proberen' }}
+            </button>
+          </section>
+        }
+
+        <nav class="dashboard-shortcuts" aria-label="Snel naar">
+          <a routerLink="/sales"><app-icon name="sales" [size]="17" /> Verkoop</a>
+          <a routerLink="/purchasing"><app-icon name="purchase" [size]="17" /> Inkoop</a>
+          <a routerLink="/stock"><app-icon name="stock" [size]="17" /> Voorraad</a>
+          <a routerLink="/website"><app-icon name="products" [size]="17" /> Website</a>
+        </nav>
+
+        <div class="dashboard-command-grid">
+          <section class="card dashboard-work" aria-labelledby="dashboard-work-title">
+            <header class="dashboard-card-head">
+              <div>
+                <span class="dashboard-eyebrow">Dagstart</span>
+                <h2 id="dashboard-work-title">{{ dailyHeadline() }}</h2>
+                <p>{{ dailySubline() }}</p>
+              </div>
+              @if (dailyActionCount()) {
+                <span class="dashboard-total" aria-label="Aantal open aandachtspunten">
+                  {{ dailyActionCount() }}
+                </span>
               } @else {
-                <span class="thumb thumb--sm thumb--placeholder" aria-hidden="true">◈</span>
+                <span class="dashboard-done" aria-label="Geen open aandachtspunten">✓</span>
               }
-              <div class="list-item__body">
-                <div class="list-item__title">{{ item.name }}</div>
-                <div class="list-item__meta">{{ item.orderNumbers }}</div>
+            </header>
+
+            <div class="dashboard-work-list">
+              @for (row of websiteRequests().slice(0, 3); track row.order.id) {
+                <a class="dashboard-work-row dashboard-work-row--primary"
+                   [routerLink]="['/sales', row.order.id]">
+                  <span class="dashboard-work-row__icon"><app-icon name="sales" [size]="18" /></span>
+                  <span class="dashboard-work-row__body">
+                    <strong>Nieuwe websiteaanvraag</strong>
+                    <small>{{ row.order.number }} · {{ row.priced.totals.pieces | num }} st · {{ row.order.orderDate | dateNl }}</small>
+                  </span>
+                  <span class="dashboard-work-row__value num">{{ row.priced.totals.total | eur: 0 }}</span>
+                  <span class="dashboard-work-row__arrow" aria-hidden="true">›</span>
+                </a>
+              }
+              @if (websiteRequests().length > 3) {
+                <a class="dashboard-more-row" routerLink="/sales">
+                  Nog {{ websiteRequests().length - 3 }}
+                  {{ websiteRequests().length - 3 === 1 ? 'websiteaanvraag' : 'websiteaanvragen' }} bekijken <span>›</span>
+                </a>
+              }
+
+              @if (revisions().length) {
+                <a class="dashboard-work-row dashboard-work-row--warn" routerLink="/revisions">
+                  <span class="dashboard-work-row__icon"><app-icon name="exchange" [size]="18" /></span>
+                  <span class="dashboard-work-row__body">
+                    <strong>{{ revisions().length }}
+                      {{ revisions().length === 1 ? 'offertewijziging' : 'offertewijzigingen' }} beoordelen</strong>
+                    <small>De klant wacht op een antwoord of aangepaste versie.</small>
+                  </span>
+                  <span class="dashboard-work-row__arrow" aria-hidden="true">›</span>
+                </a>
+              }
+
+              @for (row of visibleActions(); track row.order.id) {
+                <a class="dashboard-work-row" [routerLink]="['/purchasing', row.order.id]">
+                  <span class="dashboard-work-row__icon"><app-icon name="purchase" [size]="18" /></span>
+                  <span class="dashboard-work-row__body">
+                    <strong>{{ row.order.alias || row.order.number }}</strong>
+                    <small>{{ row.attention![0] }}@if (row.attention!.length > 1) { · nog {{ row.attention!.length - 1 }}
+                      {{ row.attention!.length - 1 === 1 ? 'punt' : 'punten' }} }</small>
+                  </span>
+                  <span class="dashboard-work-row__arrow" aria-hidden="true">›</span>
+                </a>
+              }
+              @if (hiddenActionCount() > 0) {
+                <button class="dashboard-more-row" type="button" (click)="actionsOpen.set(true)">
+                  Nog {{ hiddenActionCount() }}
+                  {{ hiddenActionCount() === 1 ? 'inkooporder' : 'inkooporders' }} tonen <span>⌄</span>
+                </button>
+              }
+
+              @if (zeroStockCount()) {
+                <a class="dashboard-work-row" routerLink="/stock">
+                  <span class="dashboard-work-row__icon"><app-icon name="stock" [size]="18" /></span>
+                  <span class="dashboard-work-row__body">
+                    <strong>{{ zeroStockCount() }}
+                      {{ zeroStockCount() === 1 ? 'actief artikel' : 'actieve artikelen' }} op nul</strong>
+                    <small>Controleer of voorraad, inkoop of beschikbaarheid moet worden aangepast.</small>
+                  </span>
+                  <span class="dashboard-work-row__arrow" aria-hidden="true">›</span>
+                </a>
+              }
+
+              @if (catalogAttention()) {
+                <a class="dashboard-work-row" routerLink="/website/products">
+                  <span class="dashboard-work-row__icon"><app-icon name="products" [size]="18" /></span>
+                  <span class="dashboard-work-row__body">
+                    <strong>{{ catalogAttention() }}
+                      {{ catalogAttention() === 1 ? 'productfamilie is' : 'productfamilies zijn' }} niet publicatieklaar</strong>
+                    <small>Ontbrekende productdata of website-inhoud staat in de werklijst.</small>
+                  </span>
+                  <span class="dashboard-work-row__arrow" aria-hidden="true">›</span>
+                </a>
+              }
+
+              @if (!dailyActionCount() && dataWarnings().length) {
+                <div class="dashboard-work-empty dashboard-work-empty--unknown">
+                  <span aria-hidden="true">!</span>
+                  <div>
+                    <strong>Nog geen betrouwbare all-clear</strong>
+                    <p>Een deel van het open werk kon niet worden gecontroleerd. Probeer de ontbrekende cijfers opnieuw te laden.</p>
+                  </div>
+                </div>
+              } @else if (!dailyActionCount()) {
+                <div class="dashboard-work-empty">
+                  <span aria-hidden="true">✓</span>
+                  <div>
+                    <strong>Alles voor nu bijgewerkt</strong>
+                    <p>Geen nieuwe websiteaanvragen, klantwijzigingen of operationele blokkades.</p>
+                  </div>
+                  <a class="btn btn--sm" routerLink="/sales">Verkoop bekijken</a>
+                </div>
+              }
+            </div>
+          </section>
+
+          <section class="dashboard-snapshot" aria-labelledby="dashboard-snapshot-title">
+            <div class="dashboard-section-copy">
+              <span class="dashboard-eyebrow">Bedrijfsfoto</span>
+              <h2 id="dashboard-snapshot-title">Verkoop, marge en voorraad</h2>
+              <p>Tik op een cijfer voor de onderliggende orders en producten.</p>
+            </div>
+            <div class="kpis dashboard-kpis">
+              <button class="kpi kpi--dark" type="button" (click)="kpiSheet.set('SALES')">
+                <svg class="kpi__rose" viewBox="0 0 24 24" fill="none" stroke="#e8b7c0"
+                     stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="8" r="3.2" />
+                  <path d="M12 11.2V20" />
+                  <path d="M12 16.5c-2.6 0-4.5-1.3-4.8-3.4 2.6 0 4.4 1.2 4.8 3.4z" />
+                  <path d="M12 16.5c2.6 0 4.5-1.3 4.8-3.4-2.6 0-4.4 1.2-4.8 3.4z" />
+                  <path d="M12 8m-1.4 0a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0" />
+                </svg>
+                <div class="kpi__label">Open offertes</div>
+                <div class="kpi__value">{{ openValue() | eur: 0 }}</div>
+                <div class="kpi__meta">{{ openOrders().length }} bij klanten of in concept</div>
+              </button>
+              <button class="kpi" type="button" (click)="kpiSheet.set('MARGIN')">
+                <div class="kpi__label">Brutomarge offertes</div>
+                <div class="kpi__value">{{ marginEur() | eur: 0 }}</div>
+                <div class="kpi__meta">{{ marginPct() | num: 1 }}% op goederen</div>
+              </button>
+              <button class="kpi" type="button" (click)="kpiSheet.set('PURCHASE')">
+                <div class="kpi__label">Inkoop onderweg</div>
+                <div class="kpi__value">{{ incomingValue() | eur: 0 }}</div>
+                <div class="kpi__meta">{{ incomingLabel() }}</div>
+                @if (incomingPieces()) {
+                  <div class="kpi__meta kpi__meta--expected">+{{ incomingPieces() | num }} st verwacht</div>
+                }
+              </button>
+              <button class="kpi" type="button" (click)="kpiSheet.set('STOCK')">
+                <div class="kpi__label">Voorraadwaarde</div>
+                <div class="kpi__value">{{ stockValue() | eur: 0 }}</div>
+                <div class="kpi__value-sub">kostprijs</div>
+                <div class="kpi__meta">{{ stockPieces() | num }} st</div>
+                <div class="kpi__meta kpi__meta--sales">verkoop {{ stockSalesValue() | eur: 0 }}</div>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <section class="dashboard-block" aria-labelledby="dashboard-planning-title">
+          <div class="dashboard-section-head">
+            <div class="dashboard-section-copy">
+              <span class="dashboard-eyebrow">Planning</span>
+              <h2 id="dashboard-planning-title">Agenda en taken</h2>
+              <p>Afspraken, eigen taken en containerdata op één tijdlijn.</p>
+            </div>
+          </div>
+          <app-planner-cards class="planner-mount" [milestones]="purchaseMilestones()" />
+        </section>
+
+        <section class="dashboard-block" aria-labelledby="dashboard-incoming-title">
+          <div class="dashboard-section-head">
+            <div class="dashboard-section-copy">
+              <span class="dashboard-eyebrow">Logistiek</span>
+              <h2 id="dashboard-incoming-title">Onderweg naar het magazijn</h2>
+              <p>{{ incomingPieces() | num }} st verwacht uit {{ incoming().length }} open
+                {{ incoming().length === 1 ? 'inkooporder' : 'inkooporders' }}.</p>
+            </div>
+            <a class="dashboard-section-link" routerLink="/purchasing">Alle inkooporders <span>›</span></a>
+          </div>
+          <div class="card dashboard-incoming-card">
+            @if (incomingStock().length) {
+              <div class="list">
+                @for (item of incomingStock().slice(0, 5); track item.productId) {
+                  <a class="list-item" [routerLink]="item.orderId !== null ? ['/purchasing', item.orderId] : null">
+                    @if (item.photo) {
+                      <img class="thumb thumb--sm" [appAuthSrc]="item.photo" alt="" />
+                    } @else {
+                      <span class="thumb thumb--sm thumb--placeholder dashboard-product-placeholder" aria-hidden="true">
+                        <app-icon name="products" [size]="18" />
+                      </span>
+                    }
+                    <div class="list-item__body">
+                      <div class="list-item__title">{{ item.name }}</div>
+                      <div class="list-item__meta">{{ item.orderNumbers }}</div>
+                    </div>
+                    <div class="list-item__end">
+                      <div class="strong num">+{{ item.quantity | num }}</div>
+                      <span class="tiny muted">{{ item.arrival ? (item.arrival | dateNl) : 'Aankomstdatum nog invullen' }}</span>
+                    </div>
+                  </a>
+                }
               </div>
-              <div class="list-item__end">
-                <div class="strong num">+{{ item.quantity | num }}</div>
-                <span class="tiny muted">{{ item.arrival ? (item.arrival | dateNl) : 'datum volgt' }}</span>
+            } @else {
+              <div class="dashboard-empty-state">
+                <span class="dashboard-empty-state__icon"><app-icon name="purchase" [size]="22" /></span>
+                <div>
+                  <strong>Geen inkomende producten gepland</strong>
+                  <p>Bestelde of verscheepte voorraad verschijnt hier automatisch.</p>
+                </div>
+                <a class="btn btn--sm" routerLink="/purchasing">Inkoop openen</a>
               </div>
-            </a>
-          }
-        </div></div>
+            }
+          </div>
+        </section>
       }
 
-      <div class="section-title">Markt</div>
+      <section class="dashboard-block dashboard-block--market" aria-labelledby="dashboard-market-title">
+        <div class="dashboard-section-head">
+          <div class="dashboard-section-copy">
+            <span class="dashboard-eyebrow">Marktcontext</span>
+            <h2 id="dashboard-market-title">Valuta en containervracht</h2>
+            <p>Beslissingsinformatie voor inkoop; standaard compact gehouden.</p>
+          </div>
+        </div>
+        @if (fx.failed() || freightMarketFailed()) {
+          <div class="dashboard-market-state" role="status">
+            <span aria-hidden="true">!</span>
+            <div>
+              <strong>Marktdata is tijdelijk onvolledig</strong>
+              <p>De operationele cijfers hierboven blijven bruikbaar. Vernieuw alleen deze marktbronnen.</p>
+            </div>
+            <button class="btn btn--sm" type="button" [disabled]="marketRefreshing()" (click)="refreshMarket()">
+              {{ marketRefreshing() ? 'Bezig…' : 'Marktdata vernieuwen' }}
+            </button>
+          </div>
+        }
       @if (fx.series(); as rates) {
         <div class="card">
           <button class="card__head market-toggle" type="button" [attr.aria-expanded]="fxOpen()"
@@ -484,6 +633,7 @@ interface FreightHorizon {
         </div>
         }
       </div>
+      </section>
 
     </div>
 
@@ -755,6 +905,121 @@ interface FreightHorizon {
           <button class="btn" type="button" (click)="kpiSheet.set(null)">Sluiten</button>
         </div>
       </app-sheet>
+    }
+  `,
+  styles: `
+    :host { display:block }
+    .dashboard-page { max-width:1360px }
+    .dashboard-loading { display:grid;gap:16px }
+    .dashboard-eyebrow { display:block;margin-bottom:4px;color:var(--rose);font-size:12px;
+      font-weight:800;letter-spacing:.12em;text-transform:uppercase }
+    .dashboard-section-copy { min-width:0 }
+    .dashboard-section-copy h2,.dashboard-card-head h2 { color:var(--ink);font-size:19px;
+      font-weight:760;letter-spacing:-.02em;line-height:1.2 }
+    .dashboard-section-copy p,.dashboard-card-head p { margin-top:4px;color:var(--muted);
+      font-size:14px;line-height:1.5 }
+
+    .dashboard-sync-warning { display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
+      gap:12px;margin-bottom:14px;padding:13px 14px;border:1px solid color-mix(in srgb,var(--warn) 30%,var(--line));
+      border-radius:var(--r);background:var(--warn-soft);color:var(--ink-2) }
+    .dashboard-sync-warning__icon { display:grid;width:34px;height:34px;place-items:center;border-radius:50%;
+      background:var(--surface);color:var(--warn);font-weight:850;box-shadow:var(--sh-1) }
+    .dashboard-sync-warning strong { display:block;color:var(--ink);font-size:15px }
+    .dashboard-sync-warning p { margin-top:2px;font-size:13.5px;line-height:1.45 }
+
+    .dashboard-shortcuts { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:14px }
+    .dashboard-shortcuts a { display:flex;min-height:48px;align-items:center;justify-content:center;gap:7px;
+      border:1px solid var(--line);border-radius:13px;background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
+      box-shadow:0 3px 12px rgb(26 22 20 / 4%);color:var(--ink-2);font-size:14px;font-weight:680;
+      text-decoration:none;transition:border-color .15s ease,background .15s ease,transform .15s ease }
+    .dashboard-shortcuts a:hover { border-color:var(--rose-line);background:var(--rose-soft);color:var(--rose-dark) }
+    .dashboard-shortcuts a:active { transform:scale(.98) }
+
+    .dashboard-command-grid { display:grid;gap:18px;align-items:start }
+    .dashboard-work { border-color:color-mix(in srgb,var(--rose-line) 72%,white);box-shadow:var(--sh-2) }
+    .dashboard-card-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 18px 15px;
+      border-bottom:1px solid var(--line);background:linear-gradient(135deg,var(--surface),color-mix(in srgb,var(--rose-soft) 58%,white)) }
+    .dashboard-card-head>div { min-width:0 }
+    .dashboard-total,.dashboard-done { display:grid;flex:none;width:38px;height:38px;place-items:center;border-radius:13px;
+      background:var(--rose);color:#fff;font-size:15px;font-weight:820;box-shadow:0 7px 18px color-mix(in srgb,var(--rose) 23%,transparent) }
+    .dashboard-done { background:var(--ok);box-shadow:0 7px 18px color-mix(in srgb,var(--ok) 20%,transparent) }
+    .dashboard-work-list { display:flex;flex-direction:column }
+    .dashboard-work-row { display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:11px;
+      min-height:64px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface);
+      color:inherit;text-decoration:none;transition:background .15s ease }
+    .dashboard-work-row:last-child { border-bottom:0 }
+    .dashboard-work-row:hover { background:var(--surface-2) }
+    .dashboard-work-row--primary { background:color-mix(in srgb,var(--rose-soft) 64%,var(--surface)) }
+    .dashboard-work-row--primary .dashboard-work-row__icon { background:var(--rose);color:#fff }
+    .dashboard-work-row--warn .dashboard-work-row__icon { background:var(--warn-soft);color:var(--warn) }
+    .dashboard-work-row__icon { display:grid;width:38px;height:38px;place-items:center;border-radius:12px;
+      background:var(--surface-2);color:var(--rose-dark);box-shadow:inset 0 0 0 1px var(--line) }
+    .dashboard-work-row__body { display:grid;min-width:0;gap:2px }
+    .dashboard-work-row__body strong { overflow:hidden;font-size:15px;font-weight:720;text-overflow:ellipsis;white-space:nowrap }
+    .dashboard-work-row__body small { overflow:hidden;color:var(--muted);font-size:13.5px;text-overflow:ellipsis;white-space:nowrap }
+    .dashboard-work-row__value { color:var(--ink-2);font-size:14px;font-weight:720;white-space:nowrap }
+    .dashboard-work-row__arrow { color:var(--muted-2);font-size:20px;line-height:1 }
+    .dashboard-more-row { display:flex;min-height:48px;width:100%;align-items:center;justify-content:center;gap:6px;padding:8px 14px;
+      border:0;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--rose);font:inherit;
+      font-size:13.5px;font-weight:720;text-decoration:none;cursor:pointer }
+    .dashboard-more-row span { font-size:16px }
+    .dashboard-work-empty,.dashboard-empty-state { display:grid;grid-template-columns:auto minmax(0,1fr) auto;
+      align-items:center;gap:13px;padding:18px }
+    .dashboard-work-empty>span { display:grid;width:42px;height:42px;place-items:center;border-radius:50%;
+      background:var(--ok-soft);color:var(--ok);font-size:18px;font-weight:850 }
+    .dashboard-work-empty--unknown>span { background:var(--warn-soft);color:var(--warn) }
+    .dashboard-work-empty strong,.dashboard-empty-state strong { display:block;font-size:15px }
+    .dashboard-work-empty p,.dashboard-empty-state p { margin-top:2px;color:var(--muted);font-size:13.5px;line-height:1.45 }
+
+    .dashboard-snapshot { min-width:0;padding:3px 0 }
+    .dashboard-snapshot>.dashboard-section-copy { margin-bottom:10px;padding-inline:2px }
+    .dashboard-kpis { grid-template-columns:repeat(2,minmax(0,1fr)) }
+    .dashboard-kpis .kpi { min-height:126px;padding:15px;text-align:left }
+    .dashboard-kpis .kpi__value { font-size:23px }
+    .dashboard-kpis .kpi__meta { line-height:1.35 }
+
+    .dashboard-block { margin-top:30px }
+    .dashboard-section-head { display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:10px;padding-inline:2px }
+    .dashboard-section-link { flex:none;min-height:44px;padding:11px 0;color:var(--rose);font-size:14px;font-weight:700;text-decoration:none }
+    .dashboard-section-link span { margin-left:3px;font-size:17px;vertical-align:-1px }
+    .dashboard-incoming-card { min-height:76px }
+    .dashboard-product-placeholder { justify-content:center;color:var(--rose);font-size:0 }
+    .dashboard-empty-state__icon { display:grid;width:44px;height:44px;place-items:center;border-radius:13px;
+      background:var(--surface-2);color:var(--muted);box-shadow:inset 0 0 0 1px var(--line) }
+    .dashboard-block--market { margin-top:34px;padding-top:24px;border-top:1px solid var(--line) }
+    .dashboard-market-state { display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;
+      margin-bottom:12px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2) }
+    .dashboard-market-state>span { display:grid;width:32px;height:32px;place-items:center;border-radius:50%;
+      background:var(--warn-soft);color:var(--warn);font-weight:800 }
+    .dashboard-market-state strong { display:block;font-size:14.5px }
+    .dashboard-market-state p { margin-top:2px;color:var(--muted);font-size:13.5px }
+
+    @media (min-width:960px) {
+      .dashboard-command-grid { grid-template-columns:minmax(0,1.24fr) minmax(380px,.76fr);gap:24px }
+      .dashboard-work { min-height:100% }
+      .dashboard-shortcuts { width:max-content;grid-template-columns:repeat(4,minmax(118px,1fr)) }
+    }
+    @media (max-width:679.98px) {
+      .dashboard-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)) }
+      .dashboard-sync-warning { grid-template-columns:auto minmax(0,1fr) }
+      .dashboard-sync-warning .btn { grid-column:1/-1;width:100% }
+      .dashboard-card-head { padding:16px 14px 14px }
+      .dashboard-work-row { grid-template-columns:auto minmax(0,1fr) auto;padding-inline:12px }
+      .dashboard-work-row__value { grid-column:2;color:var(--ink);font-size:13px }
+      .dashboard-work-row__arrow { grid-column:3;grid-row:1/span 2 }
+      .dashboard-work-empty,.dashboard-empty-state { grid-template-columns:auto minmax(0,1fr);padding:16px 14px }
+      .dashboard-work-empty .btn,.dashboard-empty-state .btn { grid-column:1/-1;width:100% }
+      .dashboard-section-head { align-items:flex-start }
+      .dashboard-section-copy h2,.dashboard-card-head h2 { font-size:17px }
+      .dashboard-section-link { max-width:112px;text-align:right }
+      .dashboard-market-state { grid-template-columns:auto minmax(0,1fr) }
+      .dashboard-market-state .btn { grid-column:1/-1;width:100% }
+      .dashboard-kpis .kpi { min-height:118px;padding:13px 12px }
+      .dashboard-kpis .kpi__value { font-size:20px }
+      .dashboard-kpis .kpi__meta { font-size:12.5px }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      .dashboard-shortcuts a,.dashboard-work-row { transition:none }
     }
   `,
 })
@@ -1448,13 +1713,13 @@ export class Dashboard {
 
   readonly containerLabel = containerLabel;
 
-  /** Warm at nine in the morning, calm at eleven at night. */
+  /** Friendly during office hours; unambiguous during overnight work. */
   greeting(): string {
     const hour = new Date().getHours();
-    if (hour < 6) return 'Nog wakker?';
-    if (hour < 12) return 'Goeiemorgen';
-    if (hour < 18) return 'Goeiemiddag';
-    return 'Goeieavond';
+    if (hour < 6) return 'Dagoverzicht';
+    if (hour < 12) return 'Goedemorgen';
+    if (hour < 18) return 'Goedemiddag';
+    return 'Goedenavond';
   }
 
   today(): string {
@@ -1475,7 +1740,7 @@ export class Dashboard {
   readonly pinnedItems = computed(() => this.planner.items().filter((item) => item.pinned));
 
   kpiTitle(kind: 'SALES' | 'MARGIN' | 'PURCHASE' | 'STOCK'): string {
-    return kind === 'SALES' ? 'Open verkoop'
+    return kind === 'SALES' ? 'Open offertes'
       : kind === 'MARGIN' ? 'Brutomarge'
       : kind === 'PURCHASE' ? 'Inkoop onderweg' : 'Voorraadwaarde';
   }
@@ -1559,6 +1824,8 @@ export class Dashboard {
     return { count: Math.max(0, all - top.length), value: Math.max(0, this.stockValue() - topValue) };
   });
   readonly freightOpen = signal(false);
+  readonly freightMarketFailed = signal(false);
+  readonly marketRefreshing = signal(false);
   readonly products = signal<Product[]>([]);
 
   /** What the shelf is worth at cost: pieces times landed cost, demo included. */
@@ -1584,7 +1851,8 @@ export class Dashboard {
   readonly actionsOpen = signal(false);
   readonly visibleActions = computed(() => {
     const rows = this.purchaseActions();
-    return this.actionsOpen() || this.desktop.active() ? rows : rows.slice(0, 3);
+    if (this.actionsOpen()) return rows;
+    return rows.slice(0, this.desktop.active() ? 5 : 3);
   });
   readonly hiddenActionCount = computed(() =>
     this.purchaseActions().length - this.visibleActions().length);
@@ -1592,8 +1860,7 @@ export class Dashboard {
   readonly purchaseActions = computed(() =>
     this.allPurchases()
       .filter((row) => (row.attention?.length ?? 0) > 0)
-      .sort((a, b) => (b.attention!.length - a.attention!.length))
-      .slice(0, 5));
+      .sort((a, b) => (b.attention!.length - a.attention!.length)));
   readonly actionCount = computed(() =>
     this.allPurchases().reduce((sum, row) => sum + (row.attention?.length ?? 0), 0));
 
@@ -1604,6 +1871,7 @@ export class Dashboard {
       .slice()
       .sort((a, b) => (a.expectedArrival ?? '9999').localeCompare(b.expectedArrival ?? '9999'))
       .map((item) => ({
+        productId: item.productId,
         name: byId.get(item.productId) ?? `product ${item.productId}`,
         photo: this.products().find((product) => product.id === item.productId)?.photos?.[0]?.url ?? null,
         quantity: item.quantity,
@@ -1619,42 +1887,135 @@ export class Dashboard {
   readonly skuCount = signal(0);
   readonly catalogAttention = signal(0);
   readonly loading = signal(true);
+  readonly refreshing = signal(false);
+  readonly dataWarnings = signal<string[]>([]);
+  readonly warningDetail = signal<string | null>(null);
+  private loadedOnce = false;
+
+  /** Website requests are ordinary concept quotes with a stable source marker. */
+  readonly websiteRequests = computed(() => this.salesOrders()
+    .filter((row) => isWebsiteQuoteRequest(row.order))
+    .slice()
+    .sort((left, right) => right.order.orderDate.localeCompare(left.order.orderDate)));
+
+  /** A factual stock signal: only active, non-demo variants with known inventory count. */
+  readonly zeroStockCount = computed(() => this.products().filter((product) =>
+    product.active && !product.demo && product.inventoryKnown === true &&
+    (product.stockQuantity ?? 0) <= 0).length);
+
+  readonly dailyActionCount = computed(() => this.websiteRequests().length + this.revisions().length +
+    this.actionCount() + this.zeroStockCount() + this.catalogAttention());
+
+  dailyHeadline(): string {
+    const count = this.dailyActionCount();
+    if (count) return `${count} aandachtspunt${count === 1 ? '' : 'en'}`;
+    return this.dataWarnings().length ? 'Overzicht nog niet volledig' : 'Alles voor nu bijgewerkt';
+  }
+
+  dailySubline(): string {
+    if (this.websiteRequests().length) {
+      return `${this.websiteRequests().length} nieuwe websiteaanvraag${this.websiteRequests().length === 1 ? '' : 'en'} wacht${this.websiteRequests().length === 1 ? '' : 'en'} als eerste.`;
+    }
+    if (this.revisions().length) return 'Begin bij de klanten die een aangepaste offerte verwachten.';
+    if (this.actionCount()) return 'De open punten zitten nu vooral bij lopende inkooporders.';
+    if (this.zeroStockCount()) return 'Verkoop en inkoop zijn rustig; controleer de artikelen zonder voorraad.';
+    if (this.catalogAttention()) return 'De operatie is rustig; productdata voor publicatie blijft nog open.';
+    if (this.dataWarnings().length) return 'Herlaad de ontbrekende bronnen voordat je de dagstart afrondt.';
+    return 'Geen klantaanvragen of operationele blokkades die nu een antwoord vragen.';
+  }
+
+  warningLabel(): string {
+    return `Niet bijgewerkt: ${this.dataWarnings().join(', ')}`;
+  }
 
   constructor() {
     void this.load();
   }
 
-  private async load(): Promise<void> {
+  async load(): Promise<void> {
+    if (this.refreshing()) return;
+    if (this.loadedOnce) this.refreshing.set(true);
+    else {
+      this.loading.set(true);
+      this.dataWarnings.set([]);
+      this.warningDetail.set(null);
+    }
+
     /* Market data loads independently: a slow external feed must never
        hold up the work overview. */
+    this.fx.failed.set(false);
     void this.fx.load();
     void this.loadFreightMarket();
 
-    const [orders, purchases, revisions, products, families, suppliers] = await Promise.all([
-      this.sales.orders(), this.sourcing.purchaseOrders(),
-      this.sales.pendingRevisions(), this.catalog.products(),
-      this.catalog.productFamilies().catch(() => []),
-      this.sourcing.suppliers().catch(() => []),
-    ]);
-    this.suppliers.set(suppliers);
-    this.salesOrders.set(orders);
-    this.allPurchases.set(purchases);
-    this.purchases.set(purchases.slice(0, 5));
-    void this.sourcing.expectedStock()
-      .then((expected) => this.expected.set(expected))
-      .catch(() => this.expected.set([]));
-    this.revisions.set(revisions);
-    this.products.set(products);
-    this.productCount.set(families.length || products.length);
-    this.skuCount.set(products.length);
-    this.catalogAttention.set(families.length
-      ? families.filter((family) => family.active && family.publicationIssues.length > 0).length
-      : products.filter((product) =>
-        product.active && (product.publicationIssues?.length ?? 0) > 0).length);
-    this.loading.set(false);
+    try {
+      const [orders, purchases, revisions, products, families, suppliers, expected] =
+        await Promise.allSettled([
+          this.sales.orders(), this.sourcing.purchaseOrders(),
+          this.sales.pendingRevisions(), this.catalog.products(),
+          this.catalog.productFamilies(), this.sourcing.suppliers(),
+          this.sourcing.expectedStock(),
+        ] as const);
+
+      const warnings: string[] = [];
+      const failures: unknown[] = [];
+      const noteFailure = (result: PromiseSettledResult<unknown>, label: string): void => {
+        if (result.status !== 'rejected') return;
+        warnings.push(label);
+        failures.push(result.reason);
+      };
+
+      noteFailure(orders, 'verkoop');
+      noteFailure(purchases, 'inkoop');
+      noteFailure(revisions, 'offertewijzigingen');
+      noteFailure(products, 'voorraad en producten');
+      noteFailure(suppliers, 'leveranciers');
+      noteFailure(expected, 'verwachte voorraad');
+      noteFailure(families, 'websiteproductdata');
+
+      if (orders.status === 'fulfilled') this.salesOrders.set(orders.value);
+      if (purchases.status === 'fulfilled') {
+        this.allPurchases.set(purchases.value);
+        this.purchases.set(purchases.value.slice(0, 5));
+      }
+      if (revisions.status === 'fulfilled') this.revisions.set(revisions.value);
+      if (products.status === 'fulfilled') this.products.set(products.value);
+      if (suppliers.status === 'fulfilled') this.suppliers.set(suppliers.value);
+      if (expected.status === 'fulfilled') this.expected.set(expected.value);
+
+      const currentProducts = products.status === 'fulfilled' ? products.value : this.products();
+      if (families.status === 'fulfilled') {
+        this.productCount.set(families.value.length || currentProducts.length);
+        this.catalogAttention.set(families.value.length
+          ? families.value.filter((family) => family.active && family.publicationIssues.length > 0).length
+          : currentProducts.filter((product) =>
+            product.active && (product.publicationIssues?.length ?? 0) > 0).length);
+      } else if (products.status === 'fulfilled') {
+        /* Variant issues are a safe fallback when the family endpoint is temporarily unavailable. */
+        this.productCount.set(currentProducts.length);
+        this.catalogAttention.set(currentProducts.filter((product) =>
+          product.active && (product.publicationIssues?.length ?? 0) > 0).length);
+      }
+      if (products.status === 'fulfilled') this.skuCount.set(products.value.length);
+
+      this.dataWarnings.set(warnings);
+      this.warningDetail.set(failures.length
+        ? messageOf(failures[0], 'Controleer de verbinding en probeer opnieuw.')
+        : null);
+    } catch (failure: unknown) {
+      this.dataWarnings.set(['dashboard']);
+      this.warningDetail.set(messageOf(
+        failure,
+        'Het overzicht kon niet volledig worden opgebouwd. Probeer opnieuw.',
+      ));
+    } finally {
+      this.loadedOnce = true;
+      this.loading.set(false);
+      this.refreshing.set(false);
+    }
   }
 
   private async loadFreightMarket(): Promise<void> {
+    this.freightMarketFailed.set(false);
     try {
       /* Own quotes and existing cache render immediately. The slower licensed
          provider checks then refresh statuses and observations in place. */
@@ -1663,11 +2024,24 @@ export class Dashboard {
       this.freightRates.set(await this.sourcing.freightRates());
     } catch {
       /* Market context is advisory and must never block the work dashboard. */
+      this.freightMarketFailed.set(true);
+    }
+  }
+
+  async refreshMarket(): Promise<void> {
+    if (this.marketRefreshing()) return;
+    this.marketRefreshing.set(true);
+    this.fx.failed.set(false);
+    try {
+      await Promise.all([this.fx.load(), this.loadFreightMarket()]);
+    } finally {
+      this.marketRefreshing.set(false);
     }
   }
 
   readonly openOrders = computed(() =>
     this.salesOrders().filter((row) =>
+      (row.order.docType ?? 'OFFERTE') === 'OFFERTE' &&
       ['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAAGD'].includes(row.order.status)));
 
   readonly openValue = computed(() =>

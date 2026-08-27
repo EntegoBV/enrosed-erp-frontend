@@ -1,15 +1,15 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   HostListener,
   computed,
   inject,
   signal,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { messageOf } from '../../core/api/errors';
+import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import {
   WebsiteBuilderHomepage,
@@ -20,6 +20,7 @@ import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
 import { environment } from '../../../environments/environment';
+import { WebsiteAdminNav } from './website-admin-nav';
 
 interface SectionDefinition {
   key: WebsiteBuilderSectionKey;
@@ -33,8 +34,8 @@ const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   { key: 'range', label: 'Ons assortiment', description: 'Een snelle introductie van de productreeksen.' },
   { key: 'order', label: 'Zo bestelt u', description: 'De stappen van aanvraag tot levering.' },
   { key: 'counter', label: 'Counterdisplays', description: 'Producten die direct op de toonbank kunnen.' },
-  { key: 'flowerbox', label: 'Flowerboxes', description: 'De bloemendozen en glazen presentatie.' },
-  { key: 'soap', label: 'Zeep- en foamrozen', description: 'Het verhaal en assortiment van de zachte rozen.' },
+  { key: 'flowerbox', label: 'Glass bowls & flowerboxes', description: 'Bestsellers; houd de glazen presentaties prominent en hoog op de homepage.' },
+  { key: 'soap', label: 'Zeep- en foamrozen', description: 'Ondersteunende collectie; geen hoofdrol ten koste van de bestsellers.' },
   { key: 'occasion', label: 'Kleine cadeaus', description: 'Compacte producten voor een klein gebaar.' },
   { key: 'retail', label: 'Geschikt voor retail', description: 'Mogelijke verkoopomgevingen en toepassingen.' },
   { key: 'faq', label: 'Veelgestelde vragen', description: 'Praktische antwoorden voor professionele klanten.' },
@@ -49,11 +50,11 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
 @Component({
   selector: 'app-website-builder-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, RouterLink, WebsiteSyncStatus],
+  imports: [PageHeader, WebsiteAdminNav, WebsiteSyncStatus],
   template: `
     <app-page-header
-      title="Website beheren"
-      subtitle="Bepaal rustig wat bezoekers zien en in welke volgorde."
+      title="Homepage-indeling"
+      subtitle="Bepaal de volgorde, zichtbaarheid en controleer het desktopvoorbeeld."
       [showBell]="false"
     >
       <a class="btn btn--sm" [href]="previewBaseUrl" target="_blank" rel="noopener">
@@ -62,6 +63,19 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
     </app-page-header>
 
     <main class="content builder-page">
+      <app-website-admin-nav active="layout" />
+
+      <section class="merchandising-note" role="note">
+        <div>
+          <b>Glass bowls eerst</b>
+          <span>Dit is de bestseller. Zet Glass bowls &amp; flowerboxes prominent; zeep- en foamrozen zijn ondersteunend.</span>
+        </div>
+        <small>
+          Deze pagina bepaalt alleen volgorde en zichtbaarheid. Een collectiebeeld kiest u via
+          Categorieën &amp; menu; vaste homepage-highlights volgen de websitecomponent.
+        </small>
+      </section>
+
       <nav class="mobile-tabs" aria-label="Website-builder weergave">
         <button type="button" [class.active]="mobileTab() === 'edit'"
                 [attr.aria-pressed]="mobileTab() === 'edit'" (click)="mobileTab.set('edit')">
@@ -109,7 +123,21 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
                 </button>
               </section>
             } @else if (actionError()) {
-              <section class="error-card" role="alert">{{ actionError() }}</section>
+              <section class="error-card" role="alert">
+                <div><b>{{ lastAction() === 'publish' ? 'Publiceren mislukt' : 'Opslaan mislukt' }}</b><small>{{ actionError() }}</small></div>
+                <div class="error-card__actions">
+                  <button class="btn" type="button" [disabled]="busy()" (click)="reloadLatest()">
+                    Laatste versie laden
+                  </button>
+                  @if (lastAction() === 'publish') {
+                    <button class="btn btn--primary" type="button" [disabled]="busy()"
+                            (click)="publish()">Opnieuw publiceren</button>
+                  } @else {
+                    <button class="btn btn--primary" type="button" [disabled]="busy() || !dirty()"
+                            (click)="saveDraft()">Opnieuw opslaan</button>
+                  }
+                </div>
+              </section>
             }
 
             <section class="card section-editor" aria-labelledby="sections-title">
@@ -153,33 +181,6 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
               </fieldset>
             </section>
 
-            <section class="quick-section" aria-labelledby="quick-title">
-              <div class="quick-heading">
-                <h2 id="quick-title">Ook snel aanpassen</h2>
-                <p>Deze inhoud blijft netjes gescheiden van de volgorde hierboven.</p>
-              </div>
-              <div class="quick-grid">
-                <a class="quick-card" routerLink="/products">
-                  <span aria-hidden="true">Aa</span>
-                  <b>Productnamen &amp; vertalingen</b>
-                  <small>De publieke naam staat apart van de interne productnaam.</small>
-                  <i aria-hidden="true">›</i>
-                </a>
-                <a class="quick-card" [routerLink]="['/settings']" [queryParams]="{ sectie: 'categories' }">
-                  <span aria-hidden="true">≡</span>
-                  <b>Categorieën</b>
-                  <small>Menu-, mobiele en footernamen per taal.</small>
-                  <i aria-hidden="true">›</i>
-                </a>
-                <a class="quick-card" routerLink="/website-builder/texts">
-                  <span aria-hidden="true">¶</span>
-                  <b>Website- &amp; SEO-teksten</b>
-                  <small>Algemene pagina-, juridische en catalogusteksten.</small>
-                  <i aria-hidden="true">›</i>
-                </a>
-              </div>
-            </section>
-
             <app-website-sync-status [refreshKey]="syncRefreshKey()" />
 
             <div class="builder-actions" [attr.aria-busy]="busy()">
@@ -206,13 +207,25 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
               </div>
               <button class="btn" type="button" (click)="refreshPreview()">Voorbeeld verversen</button>
             </div>
-            <div class="preview-frame" [class.preview-frame--loaded]="previewLoaded()">
-              @if (!previewLoaded()) {
+            <div class="preview-frame" [class.preview-frame--loaded]="previewLoaded() && !previewError()">
+              @if (previewError()) {
+                <div class="preview-failed" role="alert">
+                  <span aria-hidden="true">!</span>
+                  <b>Het websitevoorbeeld reageert niet</b>
+                  <small>{{ previewError() }}</small>
+                  <div>
+                    <button class="btn" type="button" (click)="refreshPreview()">Opnieuw laden</button>
+                    <a class="btn btn--primary" [href]="previewBaseUrl" target="_blank" rel="noopener">
+                      Testsite openen ↗
+                    </a>
+                  </div>
+                </div>
+              } @else if (!previewLoaded()) {
                 <div class="preview-loading" role="status">Testsite laden…</div>
               }
               <iframe [src]="previewUrl()" title="Live voorbeeld van de Enrosed testwebsite"
                       loading="lazy" referrerpolicy="strict-origin-when-cross-origin"
-                      (load)="previewLoaded.set(true)"></iframe>
+                      (load)="markPreviewLoaded()" (error)="markPreviewFailed()"></iframe>
             </div>
             <a class="preview-external" [href]="previewBaseUrl" target="_blank" rel="noopener">
               Open de testsite in een nieuw venster <span aria-hidden="true">↗</span>
@@ -225,6 +238,15 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
   styles: `
     :host { display: block; }
     .builder-page { max-width: 1540px; padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
+    .merchandising-note {
+      display: grid; grid-template-columns: minmax(0, .8fr) minmax(360px, 1.2fr); gap: 18px;
+      margin-bottom: 16px; padding: 14px 16px; border: 1px solid var(--rose-line);
+      border-radius: var(--r-sm); background: var(--rose-soft);
+    }
+    .merchandising-note > div { display: grid; gap: 2px; }
+    .merchandising-note b { color: var(--rose-dark); font-size: 16px; }
+    .merchandising-note span, .merchandising-note small { color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+    .merchandising-note small { align-self: center; color: var(--muted); }
     .mobile-tabs { display: none; }
     .builder-layout { display: grid; grid-template-columns: minmax(520px, .92fr) minmax(460px, 1.08fr); gap: 18px; align-items: start; }
     .builder-pane { min-width: 0; }
@@ -240,10 +262,15 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
     .conflict-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
     .conflict-card > div { display: grid; gap: 2px; }
     .conflict-card small { font-size: 13px; line-height: 1.45; }
+    .error-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .error-card > div:first-child { display: grid; gap: 3px; }
+    .error-card small { color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .error-card__actions { display: flex; flex: none; gap: 8px; }
+    .error-card .btn { min-height: 48px; }
     .section-editor { overflow: hidden; }
     .section-editor__head { align-items: flex-start; gap: 14px; }
-    .section-editor__head h2, .quick-heading h2, .preview-head h2 { font-size: 19px; line-height: 1.2; }
-    .section-editor__head p, .quick-heading p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .section-editor__head h2, .preview-head h2 { font-size: 19px; line-height: 1.2; }
+    .section-editor__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
     .section-editor__head > span { flex: none; padding: 7px 10px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); font-size: 13px; font-weight: 750; }
     .section-list { min-inline-size: 0; margin: 0; padding: 0 14px 14px; border: 0; }
     .section-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 74px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -259,14 +286,6 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
     .visibility-toggle span { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); }
     .visibility-toggle[aria-checked='true'] { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
     .visibility-toggle[aria-checked='true'] span { background: var(--ok); }
-    .quick-section { display: grid; gap: 11px; }
-    .quick-heading { padding-inline: 2px; }
-    .quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-    .quick-card { position: relative; display: grid; min-height: 152px; align-content: start; gap: 7px; padding: 15px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); text-decoration: none; box-shadow: var(--sh-1); }
-    .quick-card > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; background: var(--rose-soft); color: var(--rose-dark); font-size: 15px; font-weight: 800; }
-    .quick-card b { font-size: 15px; line-height: 1.25; }
-    .quick-card small { color: var(--muted); font-size: 13px; line-height: 1.4; }
-    .quick-card i { position: absolute; right: 14px; top: 16px; color: var(--muted); font-size: 22px; font-style: normal; }
     .builder-actions { position: sticky; z-index: 4; bottom: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-2); }
     .builder-actions > div { display: grid; gap: 2px; }
     .builder-actions b { font-size: 14px; }
@@ -282,6 +301,13 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
     .preview-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; opacity: 0; }
     .preview-frame--loaded iframe { opacity: 1; }
     .preview-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #e8ded7; font-size: 14px; }
+    .preview-failed { position:absolute;z-index:2;inset:0;display:flex;align-items:center;justify-content:center;
+      flex-direction:column;gap:8px;padding:24px;background:#100b09;color:#fff;text-align:center }
+    .preview-failed>span { display:grid;width:48px;height:48px;place-items:center;border-radius:16px;
+      background:rgb(255 255 255/.1);color:#ffd1c8;font-size:20px;font-weight:800 }
+    .preview-failed b { font-size:18px }
+    .preview-failed small { max-width:420px;color:#d5c9c3;font-size:14px;line-height:1.45 }
+    .preview-failed>div { display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:5px }
     .preview-external { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--rose-dark); font-size: 14px; font-weight: 700; text-decoration: none; }
     .load-state { display: flex; min-height: 160px; align-items: center; justify-content: center; gap: 12px; padding: 24px; }
     .load-state > div { display: grid; gap: 3px; }
@@ -294,13 +320,11 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
 
     @media (max-width: 1100px) and (min-width: 801px) {
       .builder-layout { grid-template-columns: minmax(470px, 1fr) minmax(380px, .88fr); }
-      .quick-grid { grid-template-columns: 1fr; }
-      .quick-card { min-height: 104px; padding-left: 68px; }
-      .quick-card > span { position: absolute; left: 14px; top: 14px; }
     }
 
     @media (max-width: 800px) {
       .builder-page { padding-inline: 12px; padding-bottom: calc(126px + env(safe-area-inset-bottom)); }
+      .merchandising-note { grid-template-columns: 1fr; gap: 7px; }
       .mobile-tabs { position: sticky; z-index: 6; top: var(--appbar-h); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 0 12px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--sh-1); }
       .mobile-tabs button { min-height: 48px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 15px; font-weight: 750; }
       .mobile-tabs button.active { background: var(--rose-soft); color: var(--rose-dark); }
@@ -315,9 +339,6 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
       .section-order button { width: 48px; height: 48px; }
       .fixed-badge, .visibility-toggle { grid-column: 2; justify-self: start; }
       .visibility-toggle { min-width: 148px; }
-      .quick-grid { grid-template-columns: 1fr; }
-      .quick-card { min-height: 112px; padding: 14px 42px 14px 68px; }
-      .quick-card > span { position: absolute; left: 14px; top: 14px; }
       .builder-actions { position: fixed; right: 0; bottom: 0; left: 0; grid-template-columns: 1fr 1fr; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 0; }
       .builder-actions > div { grid-column: 1 / -1; }
       .builder-actions .btn { width: 100%; }
@@ -325,8 +346,12 @@ const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
       .preview-head { align-items: flex-start; flex-direction: column; }
       .preview-head .btn { width: 100%; }
       .preview-frame { height: calc(100vh - var(--appbar-h) - 195px); height: calc(100dvh - var(--appbar-h) - 195px); min-height: 480px; border-radius: 14px; }
-      .conflict-card { align-items: stretch; flex-direction: column; }
-      .conflict-card .btn { min-height: 48px; }
+      .preview-failed>div { display:grid;width:100%;max-width:320px;grid-template-columns:1fr }
+      .preview-failed .btn { width:100% }
+      .conflict-card, .error-card { align-items: stretch; flex-direction: column; }
+      .conflict-card .btn, .error-card .btn { min-height: 48px; }
+      .error-card__actions { display: grid; grid-template-columns: 1fr; }
+      .error-card__actions .btn { width: 100%; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -338,6 +363,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly previewBaseUrl = environment.websitePreviewUrl;
   readonly snapshot = signal<WebsiteBuilderHomepage | null>(null);
@@ -349,10 +375,13 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   readonly loadError = signal<string | null>(null);
   readonly actionError = signal<string | null>(null);
   readonly conflict = signal(false);
+  readonly lastAction = signal<'save' | 'publish' | null>(null);
   readonly mobileTab = signal<'edit' | 'preview'>('edit');
   readonly previewNonce = signal(0);
   readonly previewLoaded = signal(false);
+  readonly previewError = signal<string | null>(null);
   readonly syncRefreshKey = signal(0);
+  private previewWatch: ReturnType<typeof setTimeout> | null = null;
 
   readonly busy = computed(() => this.loading() || this.saving() || this.publishing());
   readonly dirty = computed(() => this.baseline() !== JSON.stringify(this.sections()));
@@ -382,6 +411,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   });
 
   constructor() {
+    this.destroyRef.onDestroy(() => this.clearPreviewWatch());
     void this.load();
   }
 
@@ -438,6 +468,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     if (!snapshot || !this.dirty() || this.busy()) return;
     this.saving.set(true);
     this.resetActionState();
+    this.lastAction.set('save');
     try {
       const saved = await this.catalog.saveWebsiteBuilderHomepage(
         snapshot.revision,
@@ -457,6 +488,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     if (!snapshot || this.busy()) return;
     this.publishing.set(true);
     this.resetActionState();
+    this.lastAction.set('publish');
     try {
       if (this.dirty()) {
         snapshot = await this.catalog.saveWebsiteBuilderHomepage(
@@ -465,6 +497,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
         );
         this.applySnapshot(snapshot);
       }
+      this.lastAction.set('publish');
       const published = await this.catalog.publishWebsiteBuilderHomepage(snapshot.revision);
       this.applySnapshot(published);
       this.syncRefreshKey.update((value) => value + 1);
@@ -491,8 +524,40 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   }
 
   refreshPreview(): void {
-    this.previewLoaded.set(false);
+    this.startPreviewWatch();
     this.previewNonce.update((value) => value + 1);
+  }
+
+  markPreviewLoaded(): void {
+    this.clearPreviewWatch();
+    this.previewError.set(null);
+    this.previewLoaded.set(true);
+  }
+
+  markPreviewFailed(): void {
+    this.clearPreviewWatch();
+    this.previewLoaded.set(false);
+    this.previewError.set('Ververs het voorbeeld of open de testsite apart om de buildmelding te bekijken.');
+  }
+
+  private startPreviewWatch(): void {
+    this.clearPreviewWatch();
+    this.previewLoaded.set(false);
+    this.previewError.set(null);
+    this.previewWatch = setTimeout(() => {
+      this.previewWatch = null;
+      if (!this.previewLoaded()) {
+        this.previewError.set(
+          'De testsite bleef te lang laden. De Vercel-build kan nog bezig zijn of een fout bevatten.',
+        );
+      }
+    }, 15_000);
+  }
+
+  private clearPreviewWatch(): void {
+    if (this.previewWatch === null) return;
+    clearTimeout(this.previewWatch);
+    this.previewWatch = null;
   }
 
   formatMoment(value: string): string {
@@ -528,6 +593,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.baseline.set(JSON.stringify(sections));
     this.loadError.set(null);
     this.resetActionState();
+    if (!this.previewLoaded()) this.startPreviewWatch();
   }
 
   private normalize(input: WebsiteBuilderSection[]): WebsiteBuilderSection[] {
@@ -555,7 +621,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   }
 
   private handleActionFailure(failure: unknown, fallback: string): void {
-    const conflict = (failure as { status?: number }).status === 409;
+    const conflict = isRevisionConflict(failure);
     this.conflict.set(conflict);
     this.actionError.set(conflict
       ? 'Laad de nieuwste versie en controleer uw wijzigingen opnieuw.'
@@ -565,5 +631,6 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   private resetActionState(): void {
     this.actionError.set(null);
     this.conflict.set(false);
+    this.lastAction.set(null);
   }
 }

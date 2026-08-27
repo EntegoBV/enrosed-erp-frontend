@@ -6,6 +6,8 @@ import {
   FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt, ExpectedStock, PurchasePayment, Currency, Payee, PurchaseDocument, DocumentKind,
 } from './models';
 
+export type PurchasePdfLayout = 'PORTRAIT' | 'LANDSCAPE';
+
 @Injectable({ providedIn: 'root' })
 export class SourcingApi {
   private readonly http = inject(HttpClient);
@@ -51,10 +53,15 @@ export class SourcingApi {
       this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}`), order));
   }
 
-  /** The calculation as a PDF; with or without the extra revenue as a line. */
-  purchasePdf(id: number, showRevenue: boolean): Promise<Blob> {
+  /**
+   * Purchase PDF in one of two explicit paper jobs. Existing callers keep the
+   * historical landscape calculation because LANDSCAPE remains the default.
+   */
+  purchasePdf(id: number, showRevenue: boolean,
+              layout: PurchasePdfLayout = 'LANDSCAPE'): Promise<Blob> {
     return firstValueFrom(this.http.get(
-      api(`/api/purchase-orders/${id}/pdf?showRevenue=${showRevenue}`), { responseType: 'blob' }));
+      api(`/api/purchase-orders/${id}/pdf?showRevenue=${showRevenue}&layout=${layout}`),
+      { responseType: 'blob' }));
   }
 
   /** The container is in: counts, damage, payment, and optionally the booking. */

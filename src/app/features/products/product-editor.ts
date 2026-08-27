@@ -2806,9 +2806,15 @@ export class ProductEditor implements OnDestroy {
       this.draft.set(saved);
       this.markClean();
       this.savedProductFamilyId.set(saved.familyId ?? null);
-      this.ui.toast(wasNew
-        ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
-        : 'Opgeslagen');
+      const publicationIssueCount = Math.max(
+        this.family()?.publicationIssues.length ?? 0,
+        saved.publicationIssues.length,
+      );
+      this.ui.toast(publicationIssueCount
+        ? `Opgeslagen · nog ${publicationIssueCount} publicatiepunt(en)`
+        : (wasNew
+          ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
+          : 'Opgeslagen'));
       /* Saving keeps you on the form: the next tweak is usually seconds
          away. A caller that sent us here with a return address (a sales
          order creating a product) still gets its product back. */

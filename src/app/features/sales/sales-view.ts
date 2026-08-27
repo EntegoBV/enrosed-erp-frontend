@@ -17,7 +17,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
-import { STATUS_LABEL, statusClass } from './quote-status';
+import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status';
 
 /**
  * Read-first sales order.
@@ -72,9 +72,16 @@ import { STATUS_LABEL, statusClass } from './quote-status';
                 {{ countryName() }}
               </p>
             </div>
-            <span class="status-pill" [class]="'status-pill status-pill--' + cls(data.order.status)">
-              <span aria-hidden="true"></span>{{ label(data.order.status) }}
-            </span>
+            <div class="sales-hero__badges">
+              @if (websiteRequest(data.order)) {
+                <span class="website-request-pill">
+                  <span aria-hidden="true">↗</span> Websiteaanvraag
+                </span>
+              }
+              <span class="status-pill" [class]="'status-pill status-pill--' + cls(data.order.status)">
+                <span aria-hidden="true"></span>{{ label(data.order.status) }}
+              </span>
+            </div>
           </div>
 
           <div class="hero-facts" aria-label="Offerte in cijfers">
@@ -492,7 +499,12 @@ import { STATUS_LABEL, statusClass } from './quote-status';
           <span aria-hidden="true">!</span>
           <h1>Deze offerte kon niet worden geopend</h1>
           <p>{{ loadError() }}</p>
-          <button class="btn btn--primary" type="button" (click)="retry()">Opnieuw proberen</button>
+          <div class="load-error__actions">
+            <a class="btn" routerLink="/sales">Terug naar verkoop</a>
+            @if (validOrderId()) {
+              <button class="btn btn--primary" type="button" (click)="retry()">Opnieuw proberen</button>
+            }
+          </div>
         </section>
       </main>
     }
@@ -514,6 +526,7 @@ import { STATUS_LABEL, statusClass } from './quote-status';
       .sales-hero { margin:-14px -12px 0;border-radius:0 0 22px 22px;padding:calc(12px + env(safe-area-inset-top, 0px)) 16px 15px }
       .sales-hero__top { flex-direction:column;align-items:center;gap:9px;text-align:center }
       .sales-hero__identity { display:flex;flex-direction:column;align-items:center }
+      .sales-hero__top .sales-hero__badges { justify-content:center }
     }
     .sales-hero h1 a { color:inherit;text-decoration:none }
     .sales-hero h1 a:active { opacity:.75 }
@@ -521,7 +534,13 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .sales-hero .eyebrow { color:#efb8c4 }
     .sales-hero h1 { margin:3px 0 0;color:#fff;font-size:clamp(21px,6vw,30px);line-height:1.14;letter-spacing:-.03em }
     .sales-hero__identity p { margin:5px 0 0;color:rgb(255 255 255/.62);font-size:11.5px }
+    .sales-hero__badges { display:flex;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;gap:6px }
+    .website-request-pill { display:inline-flex;align-items:center;gap:6px;padding:6px 10px;
+      border:1px solid rgb(255 255 255/.3);border-radius:999px;background:#fff;color:#5f2437;
+      font-size:10.5px;font-weight:800;box-shadow:0 5px 16px rgb(0 0 0/.16) }
+    .website-request-pill>span { font-size:12px;line-height:1 }
     .status-pill { display:inline-flex;flex:0 0 auto;align-items:center;gap:6px;max-width:44%;padding:6px 9px;border:1px solid rgb(255 255 255/.18);border-radius:999px;background:rgb(255 255 255/.08);font-size:10.5px;font-weight:750;text-align:center }
+    .sales-hero__badges .status-pill { max-width:none }
     .status-pill>span { width:7px;height:7px;border-radius:50%;background:#c6beb9 }
     .status-pill--ok>span { background:#50cc8c }.status-pill--danger>span { background:#ff8076 }.status-pill--gold>span { background:#f1c66d }.status-pill--rose>span { background:#ef8ba2 }.status-pill--blue>span { background:#81b9f5 }
     .hero-facts { display:grid;grid-template-columns:.72fr .72fr 1.35fr;gap:1px;margin-top:18px;overflow:hidden;border:1px solid rgb(255 255 255/.1);border-radius:14px;background:rgb(255 255 255/.1) }
@@ -655,9 +674,9 @@ import { STATUS_LABEL, statusClass } from './quote-status';
     .totals-list__incl { border-bottom:0!important }.totals-list__incl dt,.totals-list__incl dd { color:var(--ink-2);font-weight:730 }
     .totals-profit { margin:10px 0 12px;padding:10px;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft) }.totals-profit>span { color:var(--rose-dark);font-size:8.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase }.totals-profit>div { display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:3px }.totals-profit b { font-size:11px }.totals-profit strong { color:var(--ok);font-size:14px;font-variant-numeric:tabular-nums }.totals-profit small { display:block;margin-top:3px;color:var(--muted);font-size:9.5px }
     .manage-actions { display:grid;gap:7px }.manage-actions .btn { margin:0 }.link-explainer { margin:1px 3px 0;color:var(--muted);font-size:9.5px;line-height:1.4;text-align:center }
-    .sales-side { min-width:0 }.load-error { max-width:520px;margin:28px auto!important;padding:34px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:center;box-shadow:var(--sh-1) }.load-error>span { display:grid;width:46px;height:46px;margin:0 auto 11px;place-items:center;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:800 }.load-error h1 { font-size:17px }.load-error p { margin:5px 0 15px;color:var(--muted);font-size:12px }.loading-grid { display:grid;gap:12px;margin-top:12px }
+    .sales-side { min-width:0 }.load-error { max-width:520px;margin:28px auto!important;padding:34px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:center;box-shadow:var(--sh-1) }.load-error>span { display:grid;width:46px;height:46px;margin:0 auto 11px;place-items:center;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:800 }.load-error h1 { font-size:17px }.load-error p { margin:5px 0 15px;color:var(--muted);font-size:13px;line-height:1.45 }.load-error__actions { display:flex;justify-content:center;flex-wrap:wrap;gap:8px }.load-error__actions .btn { min-height:48px }.loading-grid { display:grid;gap:12px;margin-top:12px }
     .vat-detail__short { display:none }
-    @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em } }
+    @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em }.load-error__actions { display:grid;grid-template-columns:1fr }.load-error__actions .btn { width:100% } }
     @media(min-width: 680px) { .sales-hero { padding:22px }.hero-facts { max-width:700px }.revision-alert { grid-template-columns:auto minmax(0,1fr) auto;align-items:center }.revision-alert .btn { grid-column:auto }.sales-line { padding:15px 18px }.sales-line__identity { grid-template-columns:52px minmax(0,1fr) }.sales-line__photo { width:52px;height:52px }.loading-grid { grid-template-columns:1fr 1fr } }
     @media(min-width:680px) { .sales-layout { grid-template-columns:minmax(0,1fr) minmax(250px,310px);align-items:start }.sales-main { grid-column:1;grid-row:1 }.sales-side { grid-column:2;grid-row:1/3;position:sticky;top:78px }.history-card { grid-column:1;grid-row:2 }.details-grid { grid-template-columns:repeat(3,1fr) }.details-grid>.detail-item:last-child:nth-child(odd) { grid-column:auto }.sales-hero__top { align-items:center }.sales-hero h1 { max-width:700px }.sales-side .btn { min-height:46px } }
   `],
@@ -668,6 +687,10 @@ export class SalesView {
   private readonly ui = inject(Ui);
 
   readonly id = input<string>('');
+  readonly validOrderId = computed(() => {
+    const value = Number(this.id());
+    return Number.isInteger(value) && value > 0;
+  });
   readonly view = signal<SalesOrderView | null>(null);
   readonly customers = signal<Customer[]>([]);
   readonly countries = signal<Country[]>([]);
@@ -1066,6 +1089,7 @@ export class SalesView {
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];
   cls = statusClass;
+  readonly websiteRequest = isWebsiteQuoteRequest;
 
   async downloadPdf(): Promise<void> {
     const data = this.view();

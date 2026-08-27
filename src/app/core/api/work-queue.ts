@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { SalesApi } from './sales-api';
 import { AppNotification } from './models';
+import { messageOf } from './errors';
 
 const DISMISSED_KEY = 'enrosed.dismissedNotifications';
 
@@ -22,7 +23,10 @@ export class WorkQueue {
   private readonly sales = inject(SalesApi);
 
   readonly items = signal<AppNotification[]>([]);
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
   private readonly dismissed = signal<Set<string>>(this.restore());
+  private refreshVersion = 0;
 
   /** Everything not dismissed. */
   readonly visible = computed(() =>
@@ -36,13 +40,23 @@ export class WorkQueue {
   readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded));
 
   async refresh(): Promise<void> {
+    const version = ++this.refreshVersion;
+    this.loading.set(true);
+    this.error.set(null);
     try {
       const feed = await this.sales.notifications();
+      if (version !== this.refreshVersion) return;
       this.items.set(feed.items);
-    } catch {
-      /* Not signed in, or the backend briefly gone: then no dot, rather
-         than an error about something the user cannot act on. */
-      this.items.set([]);
+    } catch (failure: unknown) {
+      if (version !== this.refreshVersion) return;
+      /* Keep the last known queue visible. A transient network failure must
+         not make open work appear completed. */
+      this.error.set(messageOf(
+        failure,
+        'Meldingen konden niet worden vernieuwd. Controleer de verbinding en probeer opnieuw.',
+      ));
+    } finally {
+      if (version === this.refreshVersion) this.loading.set(false);
     }
   }
 

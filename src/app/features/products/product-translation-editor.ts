@@ -11,9 +11,10 @@ import {
   untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { messageOf } from '../../core/api/errors';
+import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import {
   LanguageCode,
   Product,
@@ -41,24 +42,47 @@ import {
 @Component({
   selector: 'app-product-translation-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, FormsModule],
+  imports: [AuthImage, FormsModule, RouterLink],
   template: `
     @if (visible()) {
     <section class="translations" aria-labelledby="product-translations-title"
              [attr.aria-busy]="loading() || effectiveBusy()">
       <div class="translations__head">
         <div>
-          <h3 id="product-translations-title">Vertalingen</h3>
+          <h3 id="product-translations-title">Productvertalingen</h3>
           <p>{{ familyDraft()
-            ? 'Gedeelde producttekst, deze variant en fototeksten worden samen opgeslagen.'
-            : 'Klantgerichte teksten voor dit losse product worden samen opgeslagen.' }}</p>
+            ? 'Publieke naam, product- en familietekst, variantkleur en -maat, SEO en foto-alt worden samen opgeslagen.'
+            : 'Publieke naam, klantbeschrijving en varianttekst voor dit losse product worden samen opgeslagen.' }}</p>
         </div>
         @if (snapshot()) {
-          <span class="completion-badge" [class.completion-badge--done]="completeCount() === languages.length">
-            {{ completeCount() }}/{{ languages.length }} compleet
-          </span>
+          <div class="completion-badge" [class.completion-badge--done]="completeCount() === languages.length">
+            <span><b>{{ completeCount() }}</b> van {{ languages.length }} talen compleet</span>
+            <span class="completion-badge__bar" role="progressbar" aria-label="Voortgang productvertalingen"
+                  aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="completionPercent()">
+              <i [style.width.%]="completionPercent()"></i>
+            </span>
+          </div>
         }
       </div>
+
+      @if (snapshot() && completeCount() < languages.length) {
+        <div class="partial-save-note" role="note">
+          <span aria-hidden="true">✓</span>
+          <p><b>U mag dit werk tussentijds opslaan.</b> Lege talen blokkeren productwijzigingen niet en blijven als vertaaltaak zichtbaar in <a routerLink="/website" fragment="translation-work">Website beheren</a>. Alleen publiceren wacht indien verplichte publieke copy nog ontbreekt.</p>
+        </div>
+      }
+
+      @if (snapshot()) {
+        <div class="codex-brief-action" role="note">
+          <div>
+            <b>Brontekst gewijzigd of opnieuw laten controleren?</b>
+            <small>Kopieert alle huidige publieke taalwaarden en vaste productkoppelingen, ook wanneer 8/8 al compleet staat. Voorraad, prijzen, kosten en leverancier worden nooit meegenomen.</small>
+          </div>
+          <button class="btn btn--sm btn--primary" type="button" (click)="copyCodexBrief()">
+            Kopieer deze vertaalopdracht voor Codex
+          </button>
+        </div>
+      }
 
       @if (!canLoad()) {
         <div class="editor-state">
@@ -163,8 +187,8 @@ import {
           <section class="translation-group" aria-labelledby="shared-translation-title">
             <div class="translation-group__head">
               <div>
-                <h4 id="shared-translation-title">Gedeelde producttekst</h4>
-                <p>Wordt gebruikt voor alle gekoppelde kleuren en maten.</p>
+                <h4 id="shared-translation-title">Product- en familietekst</h4>
+                <p>Naam, samenvatting en beschrijving die alle gekoppelde kleuren en maten delen.</p>
               </div>
               <span>Productreeks</span>
             </div>
@@ -217,7 +241,7 @@ import {
             </div>
             <div class="form-grid">
               <label class="field">
-                <span>{{ familyDraft() ? 'Documentnaam variant in ' + language() : 'Documentnaam in ' + language() }}</span>
+                <span>Naam op offerte en documenten in {{ language() }}</span>
                 <input class="input" [ngModel]="variantText().name"
                        [placeholder]="(productDraft() ?? product()).name"
                        (ngModelChange)="patchVariant({ name: $event })" />
@@ -253,8 +277,8 @@ import {
           <section class="translation-group" aria-labelledby="seo-translation-title">
             <div class="translation-group__head">
               <div>
-                <h4 id="seo-translation-title">Zoekresultaat</h4>
-                <p>Valt in dezelfde taal terug op naam en samenvatting of beschrijving.</p>
+                <h4 id="seo-translation-title">SEO voor de productpagina</h4>
+                <p>Titel en beschrijving voor zoekresultaten; leeg valt dit terug op naam en producttekst.</p>
               </div>
               <span>SEO</span>
             </div>
@@ -315,7 +339,7 @@ import {
                   (click)="revert()">Wijzigingen wissen</button>
           <button class="btn btn--sm btn--primary" type="button"
                   [disabled]="!dirty() || effectiveBusy()" (click)="save()">
-            {{ saving() ? 'Opslaan…' : 'Vertalingen opslaan' }}
+            {{ saving() ? 'Opslaan…' : (completeCount() < languages.length ? 'Opslaan en later aanvullen' : 'Vertalingen opslaan') }}
           </button>
         </div>
       }
@@ -324,91 +348,106 @@ import {
   `,
   styles: `
     :host { display: block; border-bottom: 1px solid var(--line); }
-    .translations { padding: 18px 0; }
+    .translations { padding: 22px 0; }
     .translations__head, .translation-group__head, .language-state, .editor-state {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
     }
-    .translations__head h3 { font-size: 17px; }
+    .translations__head h3 { font-size: 23px; }
     .translations__head p, .translation-group__head p {
-      margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.45;
+      max-width: 72ch; margin-top: 5px; color: var(--muted); font-size: 16px; line-height: 1.55;
     }
     .completion-badge {
-      flex: none; padding: 5px 8px; border: 1px solid var(--warn); border-radius: 999px;
-      background: var(--warn-soft); color: var(--ink-2); font-size: 13px; font-weight: 750;
+      display: grid; width: min(230px, 100%); flex: none; gap: 7px; padding: 11px 13px;
+      border: 1px solid var(--warn); border-radius: var(--r-sm);
+      background: var(--warn-soft); color: var(--ink-2); font-size: 15px; font-weight: 700;
     }
+    .completion-badge b { font-size: 19px; }
+    .completion-badge__bar { display: block; height: 7px; overflow: hidden; border-radius: 999px; background: rgb(0 0 0 / 9%); }
+    .completion-badge__bar i { display: block; height: 100%; border-radius: inherit; background: var(--warn); }
     .completion-badge--done { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
+    .completion-badge--done .completion-badge__bar i { background: var(--ok); }
+    .partial-save-note { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 10px 11px; border: 1px solid var(--rose-line); border-radius: var(--r-sm); background: var(--rose-soft); }
+    .partial-save-note > span { display: grid; width: 25px; height: 25px; flex: none; place-items: center; border-radius: 999px; background: var(--surface); color: var(--rose-dark); font-weight: 850; }
+    .partial-save-note p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .partial-save-note b { color: var(--ink-2); }
+    .partial-save-note a { color: var(--rose-dark); font-weight: 750; }
+    .codex-brief-action { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+    .codex-brief-action > div { display: grid; min-width: 0; gap: 2px; }
+    .codex-brief-action b { color: var(--ink-2); font-size: 14px; }
+    .codex-brief-action small { max-width: 78ch; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .codex-brief-action .btn { flex: none; min-height: 46px; white-space: nowrap; }
     .editor-state {
       min-height: 64px; align-items: center; margin-top: 12px; padding: 11px;
-      border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: 14px;
+      border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: 16px;
     }
     .editor-state > div { display: grid; gap: 2px; }
-    .editor-state small { font-size: 13px; }
+    .editor-state small { font-size: 15px; }
     .editor-state--error { background: var(--danger-soft); color: var(--danger); }
     .language-tabs {
-      display: grid; grid-template-columns: repeat(4, minmax(112px, 1fr)); gap: 7px;
-      margin-top: 12px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin;
+      display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 8px;
+      margin-top: 18px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin;
     }
     .language-tabs button {
-      display: grid; min-width: 112px; min-height: 56px; align-content: center; justify-items: start;
-      gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
+      display: grid; min-width: 140px; min-height: 64px; align-content: center; justify-items: start;
+      gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
       background: var(--surface-2); color: var(--ink-2); cursor: pointer;
     }
-    .language-tabs button span { font-size: 14px; font-weight: 750; }
+    .language-tabs button span { font-size: 16px; font-weight: 750; }
     .language-tabs button small {
-      color: var(--warn); font-size: 12px; font-weight: 650;
+      color: var(--warn); font-size: 14px; font-weight: 650;
     }
     .language-tabs button.complete small { color: var(--ok); }
     .language-tabs button.active {
       border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark);
       box-shadow: inset 0 0 0 1px var(--rose);
     }
-    .translation-fields { min-inline-size: 0; margin: 12px 0 0; padding: 0; border: 0; }
+    .translation-fields { min-inline-size: 0; margin: 18px 0 0; padding: 0; border: 0; }
     .mobile-language-picker { display: none; }
     .language-state {
-      align-items: center; padding: 10px 11px; border: 1px solid var(--warn);
+      align-items: center; padding: 13px 14px; border: 1px solid var(--warn);
       border-radius: var(--r-sm); background: var(--warn-soft);
     }
     .language-state--complete { border-color: var(--ok); background: var(--ok-soft); }
     .language-state > div:first-child { display: grid; gap: 1px; }
-    .language-state b { font-size: 15px; }
-    .language-state small { color: var(--muted); font-size: 13px; }
-    .language-state__check { color: var(--ok); font-size: 16px; font-weight: 800; }
+    .language-state b { font-size: 17px; }
+    .language-state small { color: var(--muted); font-size: 15px; }
+    .language-state__check { color: var(--ok); font-size: 20px; font-weight: 800; }
     .missing-fields { display: flex; max-width: 64%; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
     .missing-fields span {
       padding: 4px 6px; border-radius: 999px; background: rgb(255 255 255 / 72%);
-      color: var(--ink-2); font-size: 12px; font-weight: 650;
+      color: var(--ink-2); font-size: 14px; font-weight: 650;
     }
-    .next-language { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: flex-start; gap: 5px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 13px; cursor: pointer; }
+    .next-language { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: flex-start; gap: 6px; margin-top: 10px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 15px; cursor: pointer; }
     .next-language span { margin-left: auto; color: var(--rose-dark); font-size: 21px; }
-    .translation-group { padding: 16px 0; border-bottom: 1px solid var(--line); }
-    .translation-group__head { margin-bottom: 11px; }
-    .translation-group__head h4 { font-size: 16px; }
+    .translation-group { padding: 24px 0; border-bottom: 1px solid var(--line); }
+    .translation-group__head { margin-bottom: 16px; }
+    .translation-group__head h4 { font-size: 20px; }
     .translation-group__head > span {
-      flex: none; color: var(--muted); font-size: 12px; font-weight: 750;
+      flex: none; color: var(--muted); font-size: 14px; font-weight: 750;
       letter-spacing: .07em; text-transform: uppercase;
     }
-    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .field { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
-    .field > span { color: var(--ink-2); font-size: 14px; font-weight: 650; }
-    .field__hint { color: var(--muted); font-size: 13px; line-height: 1.4; }
-    .public-name-group { border: 1px solid var(--rose); border-radius: var(--r-sm); margin-top: 14px; padding: 15px; background: var(--rose-soft); }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .field { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
+    .field > span { color: var(--ink-2); font-size: 16px; font-weight: 700; }
+    .field__hint { color: var(--muted); font-size: 15px; line-height: 1.45; }
+    .public-name-group { border: 1px solid var(--rose); border-radius: var(--r-sm); margin-top: 18px; padding: 18px; background: var(--rose-soft); }
     .public-name-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); align-items: stretch; gap: 12px; }
-    .internal-name-card { display: grid; align-content: center; gap: 4px; min-height: 92px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
-    .internal-name-card > span { color: var(--muted); font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
-    .internal-name-card b { overflow-wrap: anywhere; color: var(--ink-2); font-size: 15px; }
-    .internal-name-card small { color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .internal-name-card { display: grid; align-content: center; gap: 5px; min-height: 108px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .internal-name-card > span { color: var(--muted); font-size: 14px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+    .internal-name-card b { overflow-wrap: anywhere; color: var(--ink-2); font-size: 17px; }
+    .internal-name-card small { color: var(--muted); font-size: 15px; line-height: 1.45; }
     .public-name-field { justify-content: center; }
     .span-2 { grid-column: 1 / -1; }
-    .photo-alt-list { display: grid; gap: 6px; }
+    .photo-alt-list { display: grid; gap: 9px; }
     .photo-alt-row {
       display: grid; grid-template-columns: 46px minmax(90px, .28fr) minmax(0, 1fr);
-      align-items: center; gap: 9px; padding: 7px; border: 1px solid var(--line);
+      align-items: center; gap: 11px; padding: 9px; border: 1px solid var(--line);
       border-radius: 9px; background: var(--surface-2);
     }
     .photo-alt-row img { width: 46px; height: 46px; border-radius: 7px; object-fit: cover; }
     .photo-alt-row > span { display: grid; gap: 1px; }
-    .photo-alt-row b { font-size: 13px; }
-    .photo-alt-row small, .empty-photos { color: var(--muted); font-size: 12px; }
+    .photo-alt-row b { font-size: 16px; }
+    .photo-alt-row small, .empty-photos { color: var(--muted); font-size: 14px; }
     .empty-photos { padding: 10px 0; }
     .conflict, .save-error {
       margin-top: 10px; padding: 9px 10px; border-radius: 9px;
@@ -418,16 +457,20 @@ import {
     .conflict > div { display: grid; gap: 1px; }
     .conflict small { font-size: 12px; }
     .translation-actions { display: flex; align-items: center; gap: 6px; margin-top: 11px; }
-    .translation-actions > span { margin-right: auto; color: var(--muted); font-size: 13px; }
-    .translations .btn { min-height: 48px; font-size: 14px; }
-    .translations .input, .translations .select { min-height: 48px; }
+    .translation-actions > span { margin-right: auto; color: var(--muted); font-size: 15px; }
+    .translations .btn { min-height: 48px; font-size: 15px; }
+    .translations .input, .translations .select { min-height: 48px; font-size: 16px; }
+    .translations .textarea { font-size: 16px; line-height: 1.55; }
     @media (max-width: 720px) {
+      .translations__head, .translation-group__head { align-items: stretch; flex-direction: column; }
+      .completion-badge { width: 100%; }
       .language-tabs { display: none; }
       .mobile-language-picker { display: grid; gap: 6px; margin-top: 14px; }
-      .mobile-language-picker > span { color: var(--ink-2); font-size: 14px; font-weight: 700; }
+      .mobile-language-picker > span { color: var(--ink-2); font-size: 16px; font-weight: 700; }
+      .mobile-language-picker .select { font-size: 16px; }
       .public-name-grid, .form-grid { grid-template-columns: 1fr; }
       .span-2 { grid-column: auto; }
-      .public-name-group { padding: 13px; }
+      .public-name-group { padding: 15px; }
       .public-name-field .input { min-height: 48px; }
       .language-state { align-items: flex-start; flex-direction: column; }
       .missing-fields { max-width: 100%; justify-content: flex-start; }
@@ -437,6 +480,8 @@ import {
       .translation-actions { align-items: stretch; flex-direction: column; }
       .translation-actions > span { margin: 0 0 3px; }
       .translation-actions .btn { width: 100%; }
+      .codex-brief-action { align-items: stretch; flex-direction: column; }
+      .codex-brief-action .btn { width: 100%; white-space: normal; }
     }
   `,
 })
@@ -506,6 +551,8 @@ export class ProductTranslationEditor {
   }));
   readonly completeCount = computed(() =>
     this.languageStates().filter((state) => state.gaps === 0).length);
+  readonly completionPercent = computed(() =>
+    Math.round((this.completeCount() / this.languages.length) * 100));
   readonly nextIncompleteLanguage = computed(() => {
     const states = this.languageStates();
     const currentIndex = states.findIndex((state) => state.code === this.language());
@@ -632,6 +679,62 @@ export class ProductTranslationEditor {
     this.resetSaveState();
   }
 
+  async copyCodexBrief(): Promise<void> {
+    const snapshot = this.snapshot();
+    const family = this.familyDraft();
+    const product = this.productDraft();
+    const publicCopy = this.publicCopyDraft();
+    if (!snapshot || !product || !publicCopy) return;
+    const lines = [
+      'ENROSED productvertaling voor Codex',
+      '',
+      'Werk uitsluitend met de publieke velden hieronder. Vertaal of hercontroleer naar alle doeltalen zonder vaste identifiers, productspecificaties of merknaam te wijzigen. Geef de output per taal en veld terug. Vul niets aan dat niet uit de bronwaarden volgt.',
+      '',
+      `productId: ${snapshot.productId}`,
+      `familyId: ${snapshot.familyId ?? 'standalone'}`,
+      `familyKey: ${family?.familyKey ?? product.familyKey ?? 'standalone'}`,
+      `snapshotRevision: ${snapshot.revision}`,
+      `doeltalen: ${this.languages.map((language) => language.code).join(', ')}`,
+      '',
+    ];
+    for (const language of this.languages) {
+      const familyText = family?.texts.find((text) => text.language === language.code);
+      const productText = product.texts.find((text) => text.language === language.code);
+      const publicName = publicCopy.texts.find((text) => text.language === language.code)?.publicName
+        ?? (language.code === 'EN' ? publicCopy.publicName : null);
+      lines.push(
+        `## ${language.code} — ${language.label}`,
+        `publieke naam: ${this.promptValue(publicName)}`,
+        `familienaam: ${this.promptValue(familyText?.name)}`,
+        `familiesamenvatting: ${this.promptValue(familyText?.summary)}`,
+        `familiebeschrijving: ${this.promptValue(familyText?.description)}`,
+        `formaat: ${this.promptValue(familyText?.format)}`,
+        `highlights: ${JSON.stringify(familyText?.highlights ?? [])}`,
+        `SEO-titel: ${this.promptValue(familyText?.seoTitle)}`,
+        `SEO-beschrijving: ${this.promptValue(familyText?.seoDescription)}`,
+        `variantnaam documenten: ${this.promptValue(productText?.name)}`,
+        `variantkleur: ${this.promptValue(productText?.colour)}`,
+        `variantmaat: ${this.promptValue(productText?.variantSize)}`,
+        `variantbeschrijving: ${this.promptValue(productText?.description)}`,
+      );
+      for (const image of family?.images ?? []) {
+        const alt = image.altTexts.find((text) => text.language === language.code)?.alt;
+        lines.push(`foto-alt imageId=${image.id}: ${this.promptValue(alt)}`);
+      }
+      lines.push('');
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      this.ui.toast('Veilige productvertaalopdracht gekopieerd');
+    } catch {
+      this.ui.toast('Kopiëren is niet gelukt. Controleer de browsertoestemming.', 'err');
+    }
+  }
+
+  private promptValue(value: string | null | undefined): string {
+    return JSON.stringify(value?.trim() ?? '');
+  }
+
   async reload(): Promise<void> {
     const productId = this.product().id;
     const familyId = this.product().familyId;
@@ -641,7 +744,13 @@ export class ProductTranslationEditor {
 
   revert(): void {
     const snapshot = this.snapshot();
-    if (snapshot && !this.effectiveBusy()) this.applySnapshot(snapshot);
+    if (!snapshot || this.effectiveBusy() || !this.dirty()) return;
+    this.ui.confirm({
+      title: 'Vertaalwijzigingen wissen',
+      message: 'Alle niet-opgeslagen wijzigingen op dit vertaalscherm gaan verloren.',
+      confirmLabel: 'Wijzigingen wissen',
+      danger: true,
+    }, () => this.applySnapshot(snapshot));
   }
 
   async save(): Promise<void> {
@@ -656,12 +765,18 @@ export class ProductTranslationEditor {
       if (this.destroyRef.destroyed) return;
       this.applySnapshot(saved);
       this.saved.emit(saved);
-      this.ui.toast('Productvertalingen opgeslagen');
+      const publicationIssueCount = Math.max(
+        saved.family?.publicationIssues.length ?? 0,
+        saved.product.publicationIssues.length,
+      );
+      this.ui.toast(publicationIssueCount
+        ? `Vertalingen opgeslagen · nog ${publicationIssueCount} publicatiepunt(en)`
+        : 'Productvertalingen opgeslagen');
     } catch (failure: unknown) {
       if (this.destroyRef.destroyed) return;
-      const status = (failure as { status?: number }).status;
-      this.conflict.set(status === 409);
-      this.saveError.set(status === 409
+      const conflict = isRevisionConflict(failure);
+      this.conflict.set(conflict);
+      this.saveError.set(conflict
         ? 'Deze vertalingen of foto’s zijn intussen gewijzigd. Laad de laatste versie en controleer je werk opnieuw.'
         : messageOf(failure, 'Productvertalingen opslaan mislukt.'));
     } finally {

@@ -91,9 +91,6 @@ import { Icon } from './shared/icon';
               <a class="sidebar__link" routerLink="/products" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
               </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/website-builder" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="settings" [size]="18" /> Website beheren
-              </a>
               <a class="sidebar__link" routerLink="/stock" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
               </a>
@@ -113,6 +110,37 @@ import { Icon } from './shared/icon';
               </a>
               <a class="sidebar__link sidebar__link--wide" routerLink="/catalog-export" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="pdf" [size]="18" /> Catalogus PDF
+              </a>
+            </div>
+
+            <button class="sidebar__group" type="button" (click)="toggleGroup('website')"
+                    [attr.aria-expanded]="groupOpen('website')">
+              Website
+              <span class="sidebar__group-chev" aria-hidden="true"
+                    [class.sidebar__group-chev--open]="groupOpen('website')">›</span>
+            </button>
+            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('website')">
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website"
+                 routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+                <app-icon class="sidebar__icon" name="settings" [size]="18" /> Overzicht
+              </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website/layout" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Indeling &amp; preview
+              </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website/texts" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Websiteteksten
+              </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website/seo" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> SEO
+              </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website/products" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="products" [size]="18" /> Publieke producten
+              </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website/categories" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="more" [size]="18" /> Categorieën &amp; menu
+              </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/website/publication" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Publicatiestatus
               </a>
             </div>
 
@@ -209,7 +237,9 @@ export class App {
   readonly themes = THEMES;
 
   /** Open fold-downs. Day-to-day work stays in view; only Bedrijf starts folded. */
-  private readonly openGroups = signal<Set<string>>(new Set(['verkoop', 'inkoop', 'producten']));
+  private readonly openGroups = signal<Set<string>>(
+    new Set(['verkoop', 'inkoop', 'producten', 'website']),
+  );
 
   groupOpen(group: string): boolean {
     return this.openGroups().has(group);
@@ -261,7 +291,7 @@ export class App {
   readonly catalogRoute = computed(() => {
     const url = this.url();
     return url.startsWith('/products') || url.startsWith('/catalog-export')
-      || url.startsWith('/website-builder');
+      || url.startsWith('/website');
   });
 
   readonly moreRoute = computed(() => {

@@ -157,6 +157,7 @@ interface FamilyFeaturedOption {
               <div class="readiness" role="status">
                 <div class="readiness__head">
                   <b>Nog {{ readableIssues().length }} punt(en) voordat dit live kan</b>
+                  <small>U kunt productgegevens en gedeeltelijke vertalingen wel gewoon opslaan; alleen publicatie wacht.</small>
                 </div>
                 <ul>
                   @for (issue of readableIssues(); track issue) {
@@ -173,7 +174,7 @@ interface FamilyFeaturedOption {
             <div class="translations-row">
               <div>
                 <b>Vertalingen</b>
-                <small>Naam, beschrijving, variantteksten en foto-alt-teksten in acht talen.</small>
+                <small>Naam, beschrijving, variantteksten en foto-alt-teksten in acht talen. Ontbrekende talen blijven als vervolgtaken staan.</small>
               </div>
               @if (product().id !== null) {
                 <a class="btn btn--sm btn--primary" [routerLink]="['/products', product().id, 'translations']">
@@ -241,31 +242,41 @@ interface FamilyFeaturedOption {
           <section class="subsection" aria-labelledby="publication-identity-title">
             <div class="subsection__head">
               <div>
-                <h3 id="publication-identity-title">Productnaam &amp; URL</h3>
-                <p>Gedeelde naam en stabiele URL voor alle gekoppelde varianten.</p>
+                <h3 id="publication-identity-title">Vaste koppeling &amp; URL</h3>
+                <p>Vaste koppeling en permanente URL voor alle gekoppelde varianten.</p>
               </div>
+            </div>
+            <div class="stable-identity-note" role="note">
+              <span aria-hidden="true">🔗</span>
+              <p><b>De klanttitel mag later veranderen.</b> De vaste reeks-sleutel en URL worden één keer bij het aanmaken gekozen. Een latere URL-migratie hoort buiten dit formulier en vereist een gecontroleerde redirect.</p>
             </div>
             <div class="form-grid">
               <label class="field">
-                <span>Interne groepscode</span>
+                <span>Vaste productreeks-sleutel</span>
                 <input
                   class="input mono"
                   [ngModel]="family.familyKey"
+                  [readOnly]="family.id !== null"
                   (ngModelChange)="patch({ familyKey: $event })"
                   placeholder="bijv. rose-in-dome-xl"
                 />
+                <small class="field__hint">Permanente technische koppeling tussen varianten; alleen te kiezen wanneer een nieuwe reeks wordt aangemaakt.</small>
               </label>
               <label class="field">
-                <span>Publieke URL</span>
+                <span>Permanente publieke URL</span>
                 <span class="url-field">
                   <small>/products/</small>
                   <input
                     class="input mono"
                     [ngModel]="family.publicHandle"
+                    [readOnly]="family.id !== null"
                     (ngModelChange)="patch({ publicHandle: $event })"
                     placeholder="rose-in-dome-xl"
                   />
                 </span>
+                <small class="field__hint">{{ family.id !== null
+                  ? 'Permanent na aanmaak. Gebruik een gecontroleerde redirect buiten dit formulier voor een URL-migratie.'
+                  : 'Kies deze permanente URL één keer voor de nieuwe reeks; een titelwijziging past hem later niet automatisch aan.' }}</small>
               </label>
             </div>
           </section>
@@ -457,6 +468,11 @@ interface FamilyFeaturedOption {
       font-size: 10.5px;
       line-height: 1.35;
     }
+    .stable-identity-note { display: flex; align-items: flex-start; gap: 8px; margin: -2px 0 12px; padding: 9px 10px; border: 1px solid var(--rose-line); border-radius: 10px; background: var(--rose-soft); }
+    .stable-identity-note > span { flex: none; font-size: 13px; }
+    .stable-identity-note p { color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+    .stable-identity-note b { color: var(--ink-2); }
+    .field .input[readonly] { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
     .url-field {
       min-width: 0;
       display: flex;
@@ -533,7 +549,8 @@ interface FamilyFeaturedOption {
       background: var(--warn-soft);
       font-size: 11.5px;
     }
-    .readiness__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+    .readiness__head { display: grid; gap: 2px; margin-bottom: 6px; }
+    .readiness__head small { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
     .readiness--ok { background: var(--ok-soft, #eaf5ee); color: var(--ok, #2e7d4f); border-color: transparent; }
     .translations-row {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;

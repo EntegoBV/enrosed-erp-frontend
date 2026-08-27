@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Auth } from '../../core/api/auth';
+import { messageOf } from '../../core/api/errors';
 
 /** Aanmeldscherm. */
 @Component({
@@ -100,7 +101,10 @@ export class LoginPage {
       this.error.set(
         status === 401
           ? 'Gebruikersnaam of wachtwoord klopt niet.'
-          : 'Geen verbinding met de server. Draait de backend op localhost:8080?',
+          : messageOf(
+              failure,
+              'Aanmelden mislukt. Controleer of u de juiste dashboard-URL gebruikt en probeer opnieuw.',
+            ),
       );
     } finally {
       this.busy.set(false);

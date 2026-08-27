@@ -22,7 +22,10 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
-import { STATUS_LABEL, statusClass } from './quote-status';
+import {
+  STATUS_LABEL, internalNotesForDisplay, isWebsiteQuoteRequest,
+  replaceInternalNotesForDisplay, statusClass, websiteCartonRequests,
+} from './quote-status';
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
@@ -87,8 +90,15 @@ import {
         <section class="quote-hero" aria-labelledby="quote-overview-title">
           <div class="quote-hero__top">
             <div>
-              <div class="quote-hero__eyebrow" id="quote-overview-title">
-                {{ isInvoiceDoc() ? 'Factuur' : 'Verkoopofferte' }}
+              <div class="quote-hero__label-row">
+                <div class="quote-hero__eyebrow" id="quote-overview-title">
+                  {{ isInvoiceDoc() ? 'Factuur' : 'Verkoopofferte' }}
+                </div>
+                @if (websiteRequest(data.order)) {
+                  <span class="website-request-pill">
+                    <span aria-hidden="true">↗</span> Nieuwe aanvraag
+                  </span>
+                }
               </div>
               <div class="quote-hero__customer">{{ customerName() }}</div>
               <div class="quote-hero__meta">
@@ -180,6 +190,25 @@ import {
           }
         </section>
 
+        @if (saveError()) {
+          <div class="alert alert--warn quote-action-error" role="alert">
+            <span class="alert__icon">!</span>
+            <div class="grow"><b>Offerte is nog niet opgeslagen</b><div class="small">{{ saveError() }}</div></div>
+            <div class="quote-action-error__actions">
+              <button class="btn btn--sm" type="button" [disabled]="saving()"
+                      (click)="reloadLatestOrder()">Serverversie laden</button>
+              <button class="btn btn--sm btn--primary" type="button" [disabled]="saving() || !dirty()"
+                      (click)="save()">Opnieuw opslaan</button>
+            </div>
+          </div>
+        } @else if (previewError()) {
+          <div class="alert alert--warn quote-action-error" role="alert">
+            <span class="alert__icon">!</span>
+            <div class="grow"><b>Prijsvoorbeeld is mogelijk verouderd</b><div class="small">{{ previewError() }}</div></div>
+            <button class="btn btn--sm" type="button" (click)="retryPreview()">Prijzen opnieuw berekenen</button>
+          </div>
+        }
+
         @if (referenceError()) {
           <div class="alert alert--warn reference-alert" role="status">
             <span class="alert__icon">!</span>
@@ -189,6 +218,67 @@ import {
             </div>
             <button class="btn btn--sm" type="button" (click)="retryReference()">Opnieuw</button>
           </div>
+        }
+
+        @if (websiteRequest(data.order)) {
+          <section class="website-review card" aria-labelledby="website-review-title">
+            <header class="website-review__head">
+              <div>
+                <span class="website-review__eyebrow">Eerste controle</span>
+                <h2 id="website-review-title">Maak de websiteaanvraag klaar als offerte</h2>
+                <p>Controleer de aanvraag op deze drie punten vóór u ze naar de klant verstuurt.</p>
+              </div>
+              <span class="website-review__source">Bron: website</span>
+            </header>
+            <div class="website-review__grid">
+              <button type="button" (click)="scrollToSection('order-lines')">
+                <span class="website-review__step">1 · Producten, dozen &amp; prijzen</span>
+                <strong>{{ data.priced.totals.pieces | num }} stuks · {{ data.priced.totals.cartons | num }} dozen</strong>
+                <small>Huidig offertetotaal {{ data.priced.totals.total | eur }} · controleer de stukprijzen.</small>
+                @if (websiteCartons(data.order).length) {
+                  <em class="website-review__warning">
+                    {{ websiteCartons(data.order).length }}
+                    {{ websiteCartons(data.order).length === 1 ? 'product heeft' : 'producten hebben' }}
+                    nog geen bevestigde doosinhoud
+                  </em>
+                  @for (request of websiteCartons(data.order); track request.productId ?? request.sku) {
+                    <small>
+                      {{ request.sku || ('Product ' + request.productId) }} ·
+                      {{ request.cartons || '?' }} aangevraagde dozen
+                    </small>
+                  }
+                } @else {
+                  <small>Aantallen zijn door de server naar volle dozen berekend.</small>
+                }
+                <span class="website-review__go">Productregels controleren ›</span>
+              </button>
+              <button type="button" (click)="scrollToSection('quote-setup')">
+                <span class="website-review__step">2 · Klant &amp; btw</span>
+                <strong>{{ vatLabel(data.priced.totals.vatTreatment) }}</strong>
+                <small>BTW-nummer: {{ customerVatNumber() || 'ontbreekt' }}</small>
+                @if (data.priced.totals.vatTreatment === 'INTRACOMMUNAUTAIR') {
+                  <em class="website-review__warning">
+                    Controleer het BTW-nummer handmatig in VIES; automatische VIES-controle is nog niet aangesloten.
+                  </em>
+                } @else {
+                  <small>Controleer klant, land en btw-behandeling.</small>
+                }
+                <span class="website-review__go">Klantgegevens controleren ›</span>
+              </button>
+              <button type="button" (click)="scrollToSection('quote-logistics')">
+                <span class="website-review__step">3 · Levering &amp; vracht</span>
+                <strong>{{ freightStrategyLabel(data) }}</strong>
+                <small>
+                  @if (data.order.freight === 'TE_BEPALEN') {
+                    Vrachtprijs moet nog worden ingevuld
+                  } @else {
+                    {{ data.priced.totals.freight | eur }} vracht
+                  }
+                </small>
+                <span class="website-review__go">Levering controleren ›</span>
+              </button>
+            </div>
+          </section>
         }
 
         @if (!canEdit()) {
@@ -358,11 +448,12 @@ import {
               }
             </div>
 
-            <details class="progressive-panel" [open]="!!data.order.notes || !!data.order.internalNotes">
+            <details class="progressive-panel"
+                     [open]="!!data.order.notes || !!visibleInternalNotes(data.order)">
               <summary>
                 <span>Notities</span>
                 <span class="progressive-panel__summary">
-                  {{ data.order.notes || data.order.internalNotes ? 'ingevuld' : 'optioneel' }}
+                  {{ data.order.notes || visibleInternalNotes(data.order) ? 'ingevuld' : 'optioneel' }}
                 </span>
               </summary>
               <div class="progressive-panel__body form-grid">
@@ -376,8 +467,8 @@ import {
                 <div class="field span-2">
                   <label for="so-internal">Interne notities <span class="opt"></span></label>
                   <textarea class="textarea" id="so-internal"
-                            [ngModel]="data.order.internalNotes"
-                            (ngModelChange)="patch({ internalNotes: $event })"
+                            [ngModel]="visibleInternalNotes(data.order)"
+                            (ngModelChange)="setVisibleInternalNotes($event)"
                             placeholder="Wat moet het team over deze order weten?"></textarea>
                   <span class="hint">Alleen zichtbaar in het ERP.</span>
                 </div>
@@ -1128,9 +1219,14 @@ import {
             <div class="load-error__icon" aria-hidden="true">!</div>
             <h2>Offerte niet beschikbaar</h2>
             <p>{{ loadError() }}</p>
-            <button class="btn btn--primary" type="button" (click)="retryLoad()">
-              Opnieuw proberen
-            </button>
+            <div class="load-error__actions">
+              <a class="btn" routerLink="/sales">Terug naar verkoop</a>
+              @if (validOrderId()) {
+                <button class="btn btn--primary" type="button" (click)="retryLoad()">
+                  Opnieuw proberen
+                </button>
+              }
+            </div>
           </section>
         } @else if (loading()) {
           <div class="skel loading-hero" aria-hidden="true"></div>
@@ -1142,6 +1238,7 @@ import {
             <div class="load-error__icon" aria-hidden="true">?</div>
             <h2>Geen offerte geselecteerd</h2>
             <p>Ga terug naar Verkoop en open een offerte.</p>
+            <a class="btn btn--primary" routerLink="/sales">Naar verkoop</a>
           </section>
         }
       </main>
@@ -1182,7 +1279,12 @@ import {
     .quote-hero { overflow:hidden;border-radius:22px;color:#fff;background:radial-gradient(circle at 92% 0%,color-mix(in srgb,var(--rose-mid) 42%,transparent),transparent 42%),linear-gradient(145deg,#211a17,#33251f 62%,color-mix(in srgb,var(--rose-dark) 58%,#211a17));box-shadow:0 12px 32px rgb(26 22 20/.15) }
     .quote-hero__top { display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px }
     .quote-hero__top>div:first-child { min-width:0;flex:1 }
+    .quote-hero__label-row { display:flex;align-items:center;flex-wrap:wrap;gap:7px }
     .quote-hero__eyebrow { color:rgb(255 255 255/.58);font-size:10px;font-weight:750;letter-spacing:.14em;text-transform:uppercase }
+    .website-request-pill { display:inline-flex;align-items:center;gap:5px;padding:4px 8px;
+      border:1px solid rgb(255 255 255/.3);border-radius:999px;background:#fff;color:#5f2437;
+      font-size:9.5px;font-weight:800;letter-spacing:.02em;box-shadow:0 4px 14px rgb(0 0 0/.14) }
+    .website-request-pill>span { font-size:11px;line-height:1 }
     .quote-hero__customer { margin-top:3px;font-size:clamp(20px,6vw,28px);font-weight:740;line-height:1.18;letter-spacing:-.025em }
     .quote-hero__meta { margin-top:4px;color:rgb(255 255 255/.66);font-size:12px }
     .history-button { min-height:44px;padding:5px 8px 5px 6px;display:flex;align-items:center;gap:5px;border:1px solid rgb(255 255 255/.14);border-radius:99px;background:rgb(255 255 255/.09);cursor:pointer;flex:none }
@@ -1203,6 +1305,39 @@ import {
     .quote-history .step__dot { background:rgb(255 255 255/.42) }
     .reference-alert,.quote-lock { align-items:center;flex-wrap:wrap }
     .reference-alert .btn,.quote-lock .btn { min-height:44px;margin-left:auto }
+    .quote-action-error { align-items:center;flex-wrap:wrap }
+    .quote-action-error__actions { display:flex;flex-wrap:wrap;gap:8px }
+    .quote-action-error .btn { min-height:48px }
+    .website-review { overflow:hidden;border-color:color-mix(in srgb,var(--gold) 58%,var(--line));
+      background:linear-gradient(145deg,color-mix(in srgb,var(--gold-soft) 42%,var(--surface)),var(--surface) 56%) }
+    .website-review__head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px;
+      border-bottom:1px solid color-mix(in srgb,var(--gold) 34%,var(--line)) }
+    .website-review__eyebrow { display:block;margin-bottom:4px;color:var(--rose-dark);font-size:11px;font-weight:820;
+      letter-spacing:.11em;text-transform:uppercase }
+    .website-review h2 { font-size:18px;line-height:1.25 }
+    .website-review__head p { margin-top:5px;color:var(--muted);font-size:14px;line-height:1.45 }
+    .website-review__source { flex:none;padding:7px 10px;border:1px solid color-mix(in srgb,var(--gold) 45%,var(--line));
+      border-radius:999px;background:var(--surface);color:var(--rose-dark);font-size:12px;font-weight:780 }
+    .website-review__grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:color-mix(in srgb,var(--gold) 30%,var(--line)) }
+    .website-review__grid>button { min-width:0;min-height:172px;padding:16px;display:flex;align-items:flex-start;
+      flex-direction:column;gap:5px;border:0;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer }
+    .website-review__grid>button:hover { background:color-mix(in srgb,var(--gold-soft) 36%,var(--surface)) }
+    .website-review__grid>button:focus-visible { position:relative;z-index:1;outline:3px solid var(--rose);outline-offset:-3px }
+    .website-review__step { color:var(--rose-dark);font-size:11px;font-weight:820;letter-spacing:.06em;text-transform:uppercase }
+    .website-review__grid strong { font-size:15px;line-height:1.35 }
+    .website-review__grid small,.website-review__warning { color:var(--muted);font-size:13px;line-height:1.4;font-style:normal }
+    .website-review__warning { color:var(--danger);font-weight:680 }
+    .website-review__go { margin-top:auto;color:var(--rose-dark);font-size:13px;font-weight:780 }
+    @media(max-width:560px) {
+      .quote-action-error { align-items:stretch;flex-direction:column }
+      .quote-action-error__actions { display:grid;grid-template-columns:1fr }
+      .quote-action-error .btn { width:100% }
+      .website-review__head { align-items:stretch;flex-direction:column;padding:16px }
+      .website-review__source { align-self:flex-start }
+      .website-review__grid { grid-template-columns:1fr }
+      .website-review__grid>button { min-height:0;padding:16px }
+      .website-review__go { margin-top:7px }
+    }
     .revision-card { border-color:color-mix(in srgb,var(--gold) 48%,var(--line)) }
 
   `, `
@@ -1525,8 +1660,12 @@ import {
     .load-error__icon { width:48px;height:48px;margin:0 auto 12px;display:grid;place-items:center;border-radius:16px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:760 }
     .load-error h2 { font-size:17px }
     .load-error p { max-width:420px;margin:5px auto 16px;color:var(--muted);font-size:13px }
+    .load-error__actions { display:flex;justify-content:center;flex-wrap:wrap;gap:8px }
+    .load-error .btn { min-height:48px }
 
     @media(max-width:520px) {
+      .load-error__actions { display:grid;grid-template-columns:1fr }
+      .load-error__actions .btn { width:100% }
       .reference-alert .btn,.quote-lock .btn { margin-left:0;width:100% }
       .products-card__head { align-items:flex-start }
       .add-product { min-height:42px;padding-inline:12px }
@@ -1567,6 +1706,10 @@ export class SalesEditor {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly id = input<string>('');
+  readonly validOrderId = computed(() => {
+    const value = Number(this.id());
+    return Number.isInteger(value) && value > 0;
+  });
   /* ---- the discount field hides behind its vertical tab ---- */
   private readonly discountOpens = signal(new Map<number, boolean>());
 
@@ -1720,6 +1863,8 @@ export class SalesEditor {
   readonly loading = signal(true);
   readonly loadError = signal('');
   readonly referenceError = signal('');
+  readonly saveError = signal<string | null>(null);
+  readonly previewError = signal<string | null>(null);
   readonly customers = signal<Customer[]>([]);
   readonly carriers = signal<Carrier[]>([]);
 
@@ -1816,9 +1961,15 @@ export class SalesEditor {
   constructor() {
     void this.loadReference();
     effect(() => {
-      const routeId = this.id();
-      if (routeId) void this.reload(+routeId);
-      else this.loading.set(false);
+      const rawId = this.id();
+      const routeId = Number(rawId);
+      if (Number.isInteger(routeId) && routeId > 0) {
+        void this.reload(routeId);
+      } else {
+        this.loading.set(false);
+        this.view.set(null);
+        this.loadError.set(rawId ? 'Het ordernummer in de link is ongeldig.' : '');
+      }
     });
     const scheduleSectionUpdate = () => this.scheduleSectionUpdate();
     window.addEventListener('scroll', scheduleSectionUpdate, { passive: true });
@@ -1883,8 +2034,8 @@ export class SalesEditor {
   }
 
   retryLoad(): void {
-    const routeId = +this.id();
-    if (routeId) void this.reload(routeId);
+    const routeId = Number(this.id());
+    if (Number.isInteger(routeId) && routeId > 0) void this.reload(routeId);
   }
 
   readonly pendingRevision = computed(
@@ -1928,6 +2079,14 @@ export class SalesEditor {
     else if (!customer.email?.trim()) issues.push(`${customer.company} heeft geen e-mailadres`);
     if (!data.order.countryCode) issues.push('Kies een land van levering');
     if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
+    if (data.priced.lines.some((line) => line.quantity <= 0)) {
+      issues.push(websiteCartonRequests(data.order).length
+        ? 'Bepaal de doosinhoud en vul voor elk aangevraagd product een positief aantal in'
+        : 'Vul voor elk product een positief aantal in');
+    }
+    if (data.priced.lines.some((line) => !(line.unitPrice > 0))) {
+      issues.push('Vul voor elk product een geldige stukprijs groter dan € 0 in');
+    }
     if (data.order.loadMode === 'LOOSE_CARTONS'
         && data.priced.validation.productsWithoutCartonDimensions?.length) {
       issues.push('Vul de buitenmaten van alle omdozen in');
@@ -1987,10 +2146,24 @@ export class SalesEditor {
 
   label = (status: SalesOrder['status']) => STATUS_LABEL[status];
   cls = statusClass;
+  readonly websiteRequest = isWebsiteQuoteRequest;
+  readonly websiteCartons = websiteCartonRequests;
+  readonly visibleInternalNotes = internalNotesForDisplay;
+
+  setVisibleInternalNotes(notes: string): void {
+    this.patch({
+      internalNotes: replaceInternalNotesForDisplay(this.view()?.order, notes),
+    });
+  }
 
   customerName(): string {
     const id = this.view()?.order.customerId;
     return this.customers().find((c) => c.id === id)?.company ?? 'Geen klant';
+  }
+
+  customerVatNumber(): string | null {
+    const id = this.view()?.order.customerId;
+    return this.customers().find((customer) => customer.id === id)?.vatNumber?.trim() || null;
   }
 
   productName(productId: number): string {
@@ -2037,6 +2210,8 @@ export class SalesEditor {
     ++this.previewVersion;
     this.view.set(view);
     this.savedOrder.set(JSON.stringify(view.order));
+    this.saveError.set(null);
+    this.previewError.set(null);
   }
 
   /** Applies a change to the draft and re-prices it. */
@@ -2063,9 +2238,18 @@ export class SalesEditor {
       const current = this.view();
       if (version !== this.previewVersion || !current) return;
       this.view.set({ ...fresh, order: current.order });
+      this.previewError.set(null);
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Prijzen vernieuwen mislukt'), 'err');
+      if (version !== this.previewVersion) return;
+      this.previewError.set(messageOf(
+        failure,
+        'Controleer de verbinding voordat je de offerte opslaat of verstuurt.',
+      ));
     }
+  }
+
+  retryPreview(): void {
+    void this.preview();
   }
 
   /** Writes the draft. Returns false when it could not be written. */
@@ -2075,6 +2259,7 @@ export class SalesEditor {
     if (!this.dirty()) return true;
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
+    this.saveError.set(null);
     const sentQuantities = new Map(data.order.lines.map((line) => [line.productId, line.quantity]));
     try {
       const saved = await this.sales.updateOrder(data.order.id, data.order);
@@ -2093,7 +2278,12 @@ export class SalesEditor {
       this.linePending.set({});
       return true;
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
+      const message = messageOf(
+        failure,
+        'Controleer de verbinding met de testomgeving en probeer opnieuw.',
+      );
+      this.saveError.set(message);
+      this.ui.toast(message, 'err');
       return false;
     } finally {
       this.saving.set(false);
@@ -2119,7 +2309,25 @@ export class SalesEditor {
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (this.dirty()) event.preventDefault();
+    if (!this.dirty()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
+  reloadLatestOrder(): void {
+    const data = this.view();
+    if (!data || this.loading() || this.saving()) return;
+    const reload = (): void => void this.reload(data.order.id);
+    if (!this.dirty()) {
+      reload();
+      return;
+    }
+    this.ui.confirm({
+      title: 'Serverversie laden',
+      message: 'Je niet-opgeslagen offertewijzigingen worden vervangen door de laatst opgeslagen versie.',
+      confirmLabel: 'Serverversie laden',
+      danger: true,
+    }, reload);
   }
 
   patch(changes: Partial<SalesOrder>): void {
@@ -2127,6 +2335,7 @@ export class SalesEditor {
       this.ui.toast('Deze offerteversie staat vast. Maak een nieuwe kopie om prijzen of aantallen te wijzigen.', 'err');
       return;
     }
+    this.saveError.set(null);
     this.enqueue((order) => ({ ...order, ...changes }));
   }
 

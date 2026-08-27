@@ -5,6 +5,7 @@ import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
+import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PageHeader } from '../../shared/page-header';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
@@ -29,14 +30,14 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            EurPipe, NumPipe, PctPipe, Diary],
+            EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet],
   template: `
     @if (view(); as data) {
       @if (desktop.active()) {
         <app-page-header [title]="data.order.number"
                          [subtitle]="data.order.alias ? data.order.alias + ' · ' + supplierName() : supplierName()"
                          [showBack]="true" [showBell]="false">
-          <button class="btn btn--sm" type="button" (click)="downloadPdf()"
+          <button class="btn btn--sm" type="button" (click)="pdfOpen.set(true)"
                   [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
             PDF
           </button>
@@ -56,7 +57,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
             <div class="jhero-bar">
               <button class="jhero-back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
               <span class="jhero-spacer"></span>
-              <button class="jhero-pdf" type="button" (click)="downloadPdf()">PDF</button>
+              <button class="jhero-pdf" type="button" (click)="pdfOpen.set(true)">PDF</button>
               <a class="jhero-edit" [routerLink]="['/purchasing', data.order.id, 'edit']">Bewerken</a>
             </div>
           }
@@ -480,7 +481,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
                    [routerLink]="['/purchasing', data.order.id, 'edit']">
                   {{ data.costing.lines.length ? 'Order bewerken' : 'Producten toevoegen' }}
                 </a>
-                <button class="btn btn--block" type="button" (click)="downloadPdf()">
+                <button class="btn btn--block" type="button" (click)="pdfOpen.set(true)">
                   PDF downloaden
                 </button>
               </div>
@@ -488,6 +489,10 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
           </aside>
         </div>
       </div>
+      @if (pdfOpen()) {
+        <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
+                                (closed)="pdfOpen.set(false)" />
+      }
     } @else {
       <app-page-header title="Inkoop" [showBack]="true" [showBell]="false" />
       <div class="content purchase-view-page">
@@ -586,6 +591,7 @@ import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
   `],
 })
 export class PurchaseView {
+  readonly pdfOpen = signal(false);
   readonly desktop = inject(DesktopViewport);
   private readonly browserLocation = inject(Location);
   private readonly routerNav = inject(Router);
@@ -749,11 +755,4 @@ export class PurchaseView {
     return Math.min(100, Math.max(0, percent));
   }
 
-  async downloadPdf(): Promise<void> {
-    const data = this.view();
-    if (!data) return;
-    const blob = await this.sourcing.purchasePdf(data.order.id, true);
-    saveBlob(blob, `${data.order.number}.pdf`);
-    this.ui.toast('PDF gedownload — Enrosed kost als aparte regel');
-  }
 }

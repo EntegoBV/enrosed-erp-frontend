@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from '../api/api.config';
 import { Ui } from '../../shared/ui';
+import { WorkQueue } from '../api/work-queue';
 
 /**
  * Phone notifications for this device, via web push.
@@ -16,6 +17,7 @@ import { Ui } from '../../shared/ui';
 export class PushSetup {
   private readonly http = inject(HttpClient);
   private readonly ui = inject(Ui);
+  private readonly work = inject(WorkQueue);
 
   readonly supported = signal(false);
   readonly enabled = signal(false);
@@ -34,6 +36,7 @@ export class PushSetup {
       navigator.serviceWorker.addEventListener('message', (event) => {
         const data = event.data;
         if (data?.source !== 'enrosed-push') return;
+        void this.work.refresh();
         /* Only the fronted app speaks: sound plus a toast instead of the
            suppressed system banner. */
         if (document.visibilityState !== 'visible') return;

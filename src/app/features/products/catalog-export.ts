@@ -8,6 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import {
   CatalogApi,
   CatalogExportRequest,
@@ -24,10 +25,10 @@ import {
 } from './catalog-brochure-settings';
 import { CatalogProductSelection } from './catalog-product-selection';
 
-const STATE_KEY = 'enrosed.catalogBuilder.v1';
+const STATE_KEY = 'enrosed.catalogBuilder.v2';
 
 interface CatalogBuilderState extends CatalogBrochureDraft {
-  version: 1;
+  version: 2;
   layout: CatalogLayout;
   language: LanguageCode;
   intro: string;
@@ -37,14 +38,14 @@ interface CatalogBuilderState extends CatalogBrochureDraft {
 }
 
 const DEFAULT_BROCHURE: CatalogBrochureDraft = {
-  photosPerProduct: 4,
+  photosPerProduct: 2,
   coverTitle: '',
   coverSubtitle: '',
   includeOverview: true,
-  includeCategoryIntros: true,
-  includeCustomisation: true,
+  includeCategoryIntros: false,
+  includeCustomisation: false,
   includeOrdering: true,
-  includeBackCover: true,
+  includeBackCover: false,
 };
 
 @Component({
@@ -55,11 +56,12 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     CatalogProductSelection,
     FormsModule,
     PageHeader,
+    RouterLink,
   ],
   template: `
     <app-page-header
-      title="Catalogus maken"
-      [subtitle]="selected().size + ' van ' + products().length + ' producten'"
+      title="Handelscatalogus maken"
+      [subtitle]="selected().size + ' van ' + products().length + ' producten opgenomen'"
       [showBack]="true"
       [showBell]="false"
     />
@@ -73,25 +75,26 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
           <section class="card mode-card" aria-labelledby="catalog-mode-title">
             <div class="card__head">
               <div>
-                <h2 id="catalog-mode-title">Kies je catalogus</h2>
-                <p>Je productselectie blijft behouden wanneer je wisselt.</p>
+                <h2 id="catalog-mode-title">Kies het document</h2>
+                <p>De handelscatalogus is de aanbevolen versie voor klanten en inkopers.</p>
               </div>
             </div>
             <div class="card__body">
               <div class="mode-choice" role="group" aria-label="Soort catalogus">
-                <button type="button" [class.active]="layout() === 'SIMPLE'"
-                        [attr.aria-pressed]="layout() === 'SIMPLE'"
-                        (click)="layout.set('SIMPLE')">
-                  <span aria-hidden="true">▦</span>
-                  <b>Eenvoudige catalogus</b>
-                  <small>Verzorgd productoverzicht, direct klaar als PDF</small>
-                </button>
                 <button type="button" [class.active]="layout() === 'BROCHURE'"
                         [attr.aria-pressed]="layout() === 'BROCHURE'"
                         (click)="layout.set('BROCHURE')">
                   <span aria-hidden="true">▤</span>
-                  <b>Uitgebreide brochure</b>
-                  <small>Voorpagina, hoofdstukken en merkverhaal</small>
+                  <b>B2B-handelscatalogus</b>
+                  <small>Cover, productoverzicht, details en bestellen</small>
+                  <i>Aanbevolen</i>
+                </button>
+                <button type="button" [class.active]="layout() === 'SIMPLE'"
+                        [attr.aria-pressed]="layout() === 'SIMPLE'"
+                        (click)="layout.set('SIMPLE')">
+                  <span aria-hidden="true">▦</span>
+                  <b>Compacte prijslijst</b>
+                  <small>Een snelle SKU-lijst zonder uitgebreide productpagina’s</small>
                 </button>
               </div>
             </div>
@@ -100,8 +103,8 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
           <section class="card" aria-labelledby="catalog-content-title">
             <div class="card__head">
               <div>
-                <h2 id="catalog-content-title">Inhoud</h2>
-                <p>Productgegevens komen rechtstreeks uit het dashboard.</p>
+                <h2 id="catalog-content-title">Taal en prijzen</h2>
+                <p>Productgegevens en prijzen komen rechtstreeks uit het dashboard.</p>
               </div>
             </div>
             <div class="card__body">
@@ -119,7 +122,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
                 <label class="option-toggle">
                   <input type="checkbox" [ngModel]="includePrices()"
                          (ngModelChange)="includePrices.set($event)" />
-                  <span><b>Verkoopprijzen</b><small>Prijs per stuk tonen</small></span>
+                  <span><b>Referentieprijzen</b><small>Per stuk, exclusief btw en levering</small></span>
                 </label>
                 <label class="option-toggle">
                   <input type="checkbox" [ngModel]="includePhotos()"
@@ -128,18 +131,16 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
                 </label>
               </div>
 
-              @if (desktop()) {
-                <label class="field intro-field">
-                  <span>Inleiding <small>optioneel</small></span>
-                  <textarea class="textarea" rows="3" [ngModel]="intro()"
-                            (ngModelChange)="intro.set($event)"
-                            placeholder="Korte boodschap voor deze klant of gelegenheid"></textarea>
-                </label>
-              }
+              <label class="field intro-field">
+                <span>Korte inleiding <small>optioneel</small></span>
+                <textarea class="textarea" rows="3" [ngModel]="intro()"
+                          (ngModelChange)="intro.set($event)"
+                          placeholder="Bijvoorbeeld: samengesteld voor uw winkel of verkoopkanaal"></textarea>
+              </label>
             </div>
           </section>
 
-          @if (layout() === 'BROCHURE' && desktop()) {
+          @if (layout() === 'BROCHURE') {
             <app-catalog-brochure-settings
               [disabled]="busy()"
               [includePhotos]="includePhotos()"
@@ -158,6 +159,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
             [loading]="loading()"
             [loadError]="loadError()"
             [disabled]="busy()"
+            [showReferencePrices]="includePrices()"
             (selectedChange)="selected.set($event)"
             (retry)="load()"
           />
@@ -178,8 +180,16 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
                 <b>PDF kon niet worden gemaakt</b>
                 <small>{{ error }}</small>
               </div>
-              <button class="btn btn--sm" type="button" [disabled]="busy()"
-                      (click)="retryRender()">Opnieuw proberen</button>
+              <div class="render-error__actions">
+                @if (renderTranslationError()) {
+                  <a class="btn btn--sm" routerLink="/catalog/texts">Catalogusteksten</a>
+                  <a class="btn btn--sm" routerLink="/settings"
+                     [queryParams]="{ sectie: 'categories' }">Categorieën</a>
+                  <a class="btn btn--sm" routerLink="/products">Productvertalingen</a>
+                }
+                <button class="btn btn--sm btn--primary" type="button" [disabled]="busy()"
+                        (click)="retryRender()">Opnieuw proberen</button>
+              </div>
             </section>
           }
         </div>
@@ -189,14 +199,14 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     <div class="action-bar catalog-action" [attr.aria-busy]="busy()">
       <div class="action-bar__total">
         <div class="action-bar__label">
-          {{ layout() === 'SIMPLE' ? 'Eenvoudige catalogus' : 'Brochure' }}
+          {{ layout() === 'SIMPLE' ? 'Compacte prijslijst' : 'B2B-handelscatalogus' }}
         </div>
         <div class="action-bar__value">{{ selected().size }} product(en)</div>
       </div>
       <div class="catalog-action__buttons">
         <button class="btn btn--primary" type="button"
                 [disabled]="!canExport() || busy()" (click)="download()">
-          {{ downloading() ? 'PDF maken…' : 'PDF maken & downloaden' }}
+          {{ downloading() ? 'PDF wordt gemaakt…' : 'PDF maken & downloaden' }}
         </button>
       </div>
       <span class="sr-only" aria-live="polite">{{ actionStatus() }}</span>
@@ -211,37 +221,46 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     }
     .catalog-output { margin-top: 12px; }
     .card__head > div { min-width: 0; }
-    .card__head p { margin-top: 2px; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
-    .field > span { color: var(--ink-2); font-size: 11.5px; font-weight: 650; }
-    .field > span > small { color: var(--muted); font-size: 9px; font-weight: 500; }
+    .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .field > span { color: var(--ink-2); font-size: 14px; font-weight: 700; }
+    .field > span > small { color: var(--muted); font-size: 14px; font-weight: 500; }
 
-    .mode-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .mode-choice { display: grid; gap: 10px; }
     .mode-choice button {
-      display: grid; min-width: 0; min-height: 112px; align-content: start; gap: 3px;
-      padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm);
+      position: relative; display: grid; min-width: 0; min-height: 132px;
+      align-content: start; gap: 5px; padding: 16px; border: 1px solid var(--line);
+      border-radius: var(--r-sm);
       background: var(--surface-2); color: var(--ink-2); text-align: left; cursor: pointer;
     }
-    .mode-choice button > span { color: var(--muted); font-size: 19px; line-height: 1; }
-    .mode-choice button b { margin-top: 4px; font-size: 12px; line-height: 1.25; }
-    .mode-choice button small { color: var(--muted); font-size: 9.5px; line-height: 1.35; }
+    .mode-choice button > span { color: var(--muted); font-size: 22px; line-height: 1; }
+    .mode-choice button b { margin-top: 4px; font-size: 16px; line-height: 1.25; }
+    .mode-choice button small { max-width: 34ch; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .mode-choice button i {
+      position: absolute; top: 12px; right: 12px; padding: 5px 8px; border-radius: 999px;
+      background: var(--rose); color: #fff; font-size: 11px; font-style: normal;
+      font-weight: 750; letter-spacing: .04em; text-transform: uppercase;
+    }
     .mode-choice button.active {
       border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark);
       box-shadow: inset 0 0 0 1px var(--rose);
     }
     .mode-choice button.active > span { color: var(--rose); }
 
-    .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .option-grid__language { grid-column: 1 / -1; margin: 0; }
+    .option-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .option-grid__language { margin: 0; }
+    .option-grid__language .select { min-height: 48px; font-size: 16px; }
     .option-toggle {
-      display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 10px;
+      display: flex; min-width: 0; min-height: 68px; align-items: flex-start; gap: 11px;
+      padding: 13px;
       border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
       cursor: pointer;
     }
-    .option-toggle input { width: 18px; height: 18px; flex: none; accent-color: var(--rose); }
+    .option-toggle input { width: 22px; height: 22px; flex: none; accent-color: var(--rose); }
     .option-toggle span { display: grid; min-width: 0; gap: 1px; }
-    .option-toggle b { font-size: 11px; }
-    .option-toggle small { color: var(--muted); font-size: 9px; line-height: 1.3; }
-    .intro-field { margin: 13px 0 0; }
+    .option-toggle b { font-size: 15px; }
+    .option-toggle small { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .intro-field { margin: 16px 0 0; }
+    .intro-field .textarea { min-height: 96px; padding: 13px; font-size: 16px; line-height: 1.45; }
 
     .render-status, .render-error {
       display: flex; min-height: 76px; align-items: center; gap: 12px; padding: 14px;
@@ -251,17 +270,24 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
       border-top-color: var(--rose); border-radius: 50%; animation: spin .8s linear infinite;
     }
     .render-status div, .render-error div { display: grid; min-width: 0; gap: 2px; }
-    .render-status b, .render-error b { color: var(--ink-2); font-size: 12px; }
-    .render-status small, .render-error small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .render-status b, .render-error b { color: var(--ink-2); font-size: 15px; }
+    .render-status small, .render-error small { color: var(--muted); font-size: 14px; line-height: 1.45; }
     .render-error { justify-content: space-between; border-color: var(--danger); }
     .render-error small { color: var(--danger); }
+    .render-error__actions { display:flex;justify-content:flex-end;flex-wrap:wrap;gap:7px }
+    .render-error__actions .btn { min-height:48px }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .catalog-action__buttons { display: flex; gap: 7px; }
-    .catalog-action__buttons .btn { min-height: 42px; padding-inline: 12px; white-space: nowrap; }
+    .catalog-action__buttons .btn { min-height: 48px; padding-inline: 16px; font-size: 14px; white-space: nowrap; }
 
     @media (prefers-reduced-motion: reduce) {
       .render-status__mark { animation: none; }
+    }
+    @media (min-width: 520px) {
+      .mode-choice { grid-template-columns: 1fr 1fr; }
+      .option-grid { grid-template-columns: 1fr 1fr; }
+      .option-grid__language { grid-column: 1 / -1; }
     }
     @media (min-width: 680px) {
       .catalog-workspace {
@@ -272,11 +298,14 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
       .catalog-action__buttons .btn { min-width: 132px; }
     }
     @media (max-width: 430px) {
+      .render-error { align-items:stretch;flex-direction:column }
+      .render-error__actions { display:grid;grid-template-columns:1fr }
+      .render-error__actions .btn { width:100% }
       .catalog-action { padding-inline: 10px; gap: 7px; }
       .catalog-action .action-bar__label { display: none; }
-      .catalog-action .action-bar__value { font-size: 14px; }
+      .catalog-action .action-bar__value { font-size: 15px; }
       .catalog-action__buttons { gap: 5px; }
-      .catalog-action__buttons .btn { min-height: 40px; padding-inline: 9px; font-size: 11px; }
+      .catalog-action__buttons .btn { min-height: 48px; padding-inline: 12px; font-size: 13px; }
     }
   `,
 })
@@ -286,12 +315,11 @@ export class CatalogExport {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
   private readonly destroyRef = inject(DestroyRef);
-  private mediaQuery: MediaQueryList | null = null;
   private storedSelection: number[] | null = null;
   private selectionInitialized = false;
   private destroyed = false;
 
-  readonly layout = signal<CatalogLayout>('SIMPLE');
+  readonly layout = signal<CatalogLayout>('BROCHURE');
   readonly language = signal<LanguageCode>('NL');
   readonly intro = signal('');
   readonly includePrices = signal(true);
@@ -306,7 +334,7 @@ export class CatalogExport {
   readonly dataReady = signal(false);
   readonly downloading = signal(false);
   readonly renderError = signal<string | null>(null);
-  readonly desktop = signal(false);
+  readonly renderTranslationError = signal(false);
 
   readonly busy = computed(() => this.downloading());
   readonly canExport = computed(() =>
@@ -328,14 +356,13 @@ export class CatalogExport {
 
   constructor() {
     this.restoreState();
-    this.bindDesktopQuery();
     void this.load();
 
     effect(() => {
       if (!this.dataReady()) return;
       const brochure = this.brochure();
       const state: CatalogBuilderState = {
-        version: 1,
+        version: 2,
         layout: this.layout(),
         language: this.language(),
         intro: this.intro(),
@@ -354,13 +381,15 @@ export class CatalogExport {
     let previousRequest = '';
     effect(() => {
       const currentRequest = this.requestKey();
-      if (previousRequest && previousRequest !== currentRequest) this.renderError.set(null);
+      if (previousRequest && previousRequest !== currentRequest) {
+        this.renderError.set(null);
+        this.renderTranslationError.set(false);
+      }
       previousRequest = currentRequest;
     });
 
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
-      if (this.mediaQuery) this.mediaQuery.removeEventListener('change', this.handleDesktopChange);
     });
   }
 
@@ -390,6 +419,7 @@ export class CatalogExport {
       }
       this.dataReady.set(true);
       this.renderError.set(null);
+      this.renderTranslationError.set(false);
     } catch (failure) {
       if (!this.destroyed) {
         this.loadError.set(messageOf(
@@ -407,6 +437,7 @@ export class CatalogExport {
     const request = this.buildRequest();
     const key = JSON.stringify(request);
     this.renderError.set(null);
+    this.renderTranslationError.set(false);
     this.downloading.set(true);
     try {
       const blob = await this.catalog.exportCatalog(request);
@@ -431,7 +462,9 @@ export class CatalogExport {
   private buildRequest(): CatalogExportRequest {
     const brochure = this.brochure();
     return {
-      productIds: [...this.selected()].sort((a, b) => a - b),
+      productIds: this.products()
+        .filter((product) => product.id !== null && this.selected().has(product.id))
+        .map((product) => product.id!),
       includePrices: this.includePrices(),
       includePhotos: this.includePhotos(),
       strictLanguage: true,
@@ -444,10 +477,10 @@ export class CatalogExport {
       layout: this.layout(),
       brochure: this.layout() === 'BROCHURE'
         ? {
-            includeOverview: brochure.includeOverview,
+            includeOverview: true,
             includeCategoryIntros: brochure.includeCategoryIntros,
             includeCustomisation: brochure.includeCustomisation,
-            includeOrdering: brochure.includeOrdering,
+            includeOrdering: true,
             includeBackCover: brochure.includeBackCover,
             coverTitle: brochure.coverTitle.trim() || undefined,
             coverSubtitle: brochure.coverSubtitle.trim() || undefined,
@@ -462,6 +495,7 @@ export class CatalogExport {
     const missingTranslations = this.missingTranslationMessage(decodedFailure);
     const message = missingTranslations ?? messageOf(decodedFailure, fallback);
     this.renderError.set(message);
+    this.renderTranslationError.set(missingTranslations !== null);
     this.ui.toast(missingTranslations ?? messageOf(decodedFailure, toastFallback), 'err');
   }
 
@@ -505,22 +539,11 @@ export class CatalogExport {
       ?? this.language();
   }
 
-  private bindDesktopQuery(): void {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    this.mediaQuery = window.matchMedia('(min-width: 680px)');
-    this.desktop.set(this.mediaQuery.matches);
-    this.mediaQuery.addEventListener('change', this.handleDesktopChange);
-  }
-
-  private readonly handleDesktopChange = (event: MediaQueryListEvent): void => {
-    this.desktop.set(event.matches);
-  };
-
   private restoreState(): void {
     try {
       const parsed = JSON.parse(sessionStorage.getItem(STATE_KEY) ?? 'null') as
         Partial<CatalogBuilderState> | null;
-      if (parsed?.version !== 1) return;
+      if (parsed?.version !== 2) return;
       if (parsed.layout === 'SIMPLE' || parsed.layout === 'BROCHURE') {
         this.layout.set(parsed.layout);
       }
