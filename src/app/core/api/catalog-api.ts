@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
+  CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -162,6 +162,17 @@ export class CatalogApi {
     return firstValueFrom(this.http.put<ProductFamily>(
       api(`/api/product-families/${familyId}/images/${imageId}/variant`),
       { variantProductId },
+    ));
+  }
+
+  updateProductFamilyImagePublication(
+    familyId: number,
+    imageId: number,
+    channels: CatalogChannel[],
+  ): Promise<ProductFamily> {
+    return firstValueFrom(this.http.put<ProductFamily>(
+      api(`/api/product-families/${familyId}/images/${imageId}/publication`),
+      { channels },
     ));
   }
 

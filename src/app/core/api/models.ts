@@ -13,6 +13,7 @@ export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
 export type DocumentType = 'OFFERTE' | 'FACTUUR';
 export type PublicationStatus = 'DRAFT' | 'READY' | 'PUBLISHED';
+export type CatalogChannel = 'WEBSITE' | 'ORDER_APP' | 'CATALOGUE';
 
 export type QuoteStatus =
   | 'CONCEPT' | 'VERZONDEN' | 'BEKEKEN' | 'WIJZIGING_GEVRAAGD'
@@ -229,6 +230,8 @@ export interface ProductFamilyImage {
   variantColor: string | null;
   altTextSource: string | null;
   altTexts: ProductFamilyImageAlt[];
+  /** Explicit destinations for this asset; an empty list keeps it internal. */
+  publishedChannels: CatalogChannel[];
 }
 
 export interface ProductPublicTranslationImage {

@@ -309,13 +309,16 @@ import {
               @for (image of images(); track image.id; let index = $index) {
                 <label class="photo-alt-row">
                   <img [appAuthSrc]="image.smallUrl || image.largeUrl" alt="" />
-                  <span><b>Foto {{ index + 1 }}</b><small>{{ languageLabel() }}</small></span>
+                  <span>
+                    <b>Foto {{ index + 1 }}</b>
+                    <small>{{ languageLabel() }}{{ imageIsInternal(image) ? ' · intern, optioneel' : '' }}</small>
+                  </span>
                   <input class="input" [ngModel]="imageAlt(image)"
                          (ngModelChange)="patchImageAlt(image.id, $event)"
                          [placeholder]="'Beschrijf foto ' + (index + 1)" />
                 </label>
               } @empty {
-                <p class="empty-photos">Voeg eerst foto’s toe aan de websitegalerij.</p>
+                <p class="empty-photos">Voeg eerst productfoto’s toe.</p>
               }
             </div>
           </section>
@@ -660,6 +663,10 @@ export class ProductTranslationEditor {
 
   imageAlt(image: ProductFamilyImage): string {
     return image.altTexts.find((item) => item.language === this.language())?.alt ?? '';
+  }
+
+  imageIsInternal(image: ProductFamilyImage): boolean {
+    return Array.isArray(image.publishedChannels) && image.publishedChannels.length === 0;
   }
 
   patchImageAlt(imageId: number, alt: string): void {

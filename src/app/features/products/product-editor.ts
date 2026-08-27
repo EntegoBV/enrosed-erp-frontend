@@ -26,7 +26,10 @@ import { CbmPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
-import { ProductFamilyImageVariantChange } from './product-family-gallery';
+import {
+  ProductFamilyImagePublicationChange,
+  ProductFamilyImageVariantChange,
+} from './product-family-gallery';
 import { ProductVariantGroup } from './product-variant-group';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
@@ -788,6 +791,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         (imageUploadRequested)="uploadFamilyImage($event)"
         (imageDeleteRequested)="removeFamilyImage($event)"
         (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
+        (imagePublicationChangeRequested)="setFamilyImagePublication($event)"
         (translationDirtyChange)="translationDirty.set($event)"
         (translationSavingChange)="translationSaving.set($event)"
         (translationsSaved)="onPublicTranslationsSaved($event)"
@@ -2443,7 +2447,7 @@ export class ProductEditor implements OnDestroy {
       await this.persistFamilyDraft();
       const familyId = this.family()?.id;
       if (familyId === null || familyId === undefined) {
-        throw new Error('Websitegegevens konden niet worden aangemaakt');
+        throw new Error('Gedeelde productgegevens konden niet worden aangemaakt');
       }
       const saved = await this.catalog.uploadProductFamilyImage(
         familyId,
@@ -2451,9 +2455,9 @@ export class ProductEditor implements OnDestroy {
         this.currentFamilyMemberId(),
       );
       this.replaceFamily(saved);
-      this.ui.toast('Websitefoto toegevoegd');
+      this.ui.toast('Productfoto toegevoegd · alleen intern');
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Websitefoto toevoegen mislukt'), 'err');
+      this.ui.toast(messageOf(failure, 'Productfoto toevoegen mislukt'), 'err');
     } finally {
       this.saving.set(false);
     }
@@ -2464,8 +2468,8 @@ export class ProductEditor implements OnDestroy {
     if (!family?.id || this.saving() || this.translationDirty() || this.translationSaving()) return;
     this.ui.confirm(
       {
-        title: 'Websitefoto verwijderen',
-        message: 'Deze foto uit de publieke galerij verwijderen?',
+        title: 'Productfoto verwijderen',
+        message: 'Deze foto definitief uit het product en alle publicatiekanalen verwijderen?',
         confirmLabel: 'Verwijderen',
         danger: true,
       },
@@ -2475,9 +2479,9 @@ export class ProductEditor implements OnDestroy {
           await this.persistFamilyDraft();
           const saved = await this.catalog.deleteProductFamilyImage(family.id!, imageId);
           this.replaceFamily(saved);
-          this.ui.toast('Websitefoto verwijderd');
+          this.ui.toast('Productfoto verwijderd');
         } catch (failure: unknown) {
-          this.ui.toast(messageOf(failure, 'Websitefoto verwijderen mislukt'), 'err');
+          this.ui.toast(messageOf(failure, 'Productfoto verwijderen mislukt'), 'err');
         } finally {
           this.saving.set(false);
         }
@@ -2516,6 +2520,49 @@ export class ProductEditor implements OnDestroy {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  async setFamilyImagePublication(change: ProductFamilyImagePublicationChange): Promise<void> {
+    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
+    this.saving.set(true);
+    try {
+      await this.persistFamilyDraft();
+      const familyId = this.family()?.id;
+      if (familyId === null || familyId === undefined) {
+        throw new Error('Sla de gedeelde productgegevens eerst op');
+      }
+      const saved = await this.catalog.updateProductFamilyImagePublication(
+        familyId,
+        change.imageId,
+        change.channels,
+      );
+      this.replaceFamily(saved);
+      this.ui.toast(change.channels.length
+        ? `Foto gepubliceerd naar ${this.publicationChannelLabels(change.channels)}`
+        : 'Foto is nu alleen intern');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(
+        failure,
+        'Publicatie kon niet worden aangepast. Controleer de alt-tekst en variantkoppeling.',
+      ), 'err');
+      const familyId = this.family()?.id;
+      if (familyId !== null && familyId !== undefined) {
+        try {
+          this.replaceFamily(await this.catalog.productFamily(familyId));
+        } catch {
+          /* The publication error above remains the useful feedback. */
+        }
+      }
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private publicationChannelLabels(
+    channels: ProductFamilyImagePublicationChange['channels'],
+  ): string {
+    const labels = { WEBSITE: 'website', CATALOGUE: 'catalogus', ORDER_APP: 'bestelapp' } as const;
+    return channels.map((channel) => labels[channel]).join(', ');
   }
 
   private replaceFamily(family: ProductFamily): void {

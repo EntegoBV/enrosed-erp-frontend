@@ -142,6 +142,9 @@ export function translationGaps(
   );
 
   for (const [index, image] of (family?.images ?? []).entries()) {
+    // Internal reference photos are useful in the ERP but must not block public copy.
+    // A missing field is the legacy API contract, where every valid image was public.
+    if (Array.isArray(image.publishedChannels) && image.publishedChannels.length === 0) continue;
     const alt = image.altTexts.find((item) => item.language === language)?.alt;
     required(gaps, 'IMAGE', `image-${image.id}`, `Fototekst ${index + 1}`, true, alt);
   }

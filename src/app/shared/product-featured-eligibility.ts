@@ -23,7 +23,10 @@ export function isPublicReadyImage(image: ProductFamilyImage): boolean {
   return Boolean(
     image.sourceKey?.trim()
       && image.smallUrl?.trim()
-      && image.largeUrl?.trim(),
+      && image.largeUrl?.trim()
+      // A missing field is the legacy API contract: every valid image was public.
+      && (!Array.isArray(image.publishedChannels)
+        || image.publishedChannels.includes('WEBSITE')),
   )
     && renditionDimensions.every((dimension) =>
       typeof dimension === 'number' && Number.isFinite(dimension) && dimension > 0)

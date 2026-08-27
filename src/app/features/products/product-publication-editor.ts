@@ -13,6 +13,7 @@ import {
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   ProductFamilyGallery,
+  ProductFamilyImagePublicationChange,
   ProductFamilyImageVariantChange,
 } from './product-family-gallery';
 import { ProductFamilySourceDetails } from './product-family-source-details';
@@ -351,6 +352,7 @@ interface FamilyFeaturedOption {
             (imageUploadRequested)="requestImageUpload($event)"
             (imageDeleteRequested)="requestImageDelete($event)"
             (imageVariantChangeRequested)="requestImageVariantChange($event)"
+            (imagePublicationChangeRequested)="requestImagePublicationChange($event)"
           />
 
           <app-product-family-source-details [product]="product()" [family]="family" />
@@ -686,6 +688,7 @@ export class ProductPublicationEditor {
   readonly imageUploadRequested = output<File>();
   readonly imageDeleteRequested = output<number>();
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
+  readonly imagePublicationChangeRequested = output<ProductFamilyImagePublicationChange>();
   readonly translationsSaved = output<ProductPublicTranslationsSnapshot>();
 
   readonly translationDirtyChange = output<boolean>();
@@ -799,6 +802,11 @@ export class ProductPublicationEditor {
   requestImageVariantChange(change: ProductFamilyImageVariantChange): void {
     if (this.busy()) return;
     this.imageVariantChangeRequested.emit(change);
+  }
+
+  requestImagePublicationChange(change: ProductFamilyImagePublicationChange): void {
+    if (this.busy()) return;
+    this.imagePublicationChangeRequested.emit(change);
   }
 
   setTranslationDirty(dirty: boolean): void {

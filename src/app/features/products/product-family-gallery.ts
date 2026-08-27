@@ -1,12 +1,40 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  HostListener,
+  computed,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
-import { LanguageCode, ProductFamily, ProductFamilyImage } from '../../core/api/models';
+import {
+  CatalogChannel,
+  LanguageCode,
+  ProductFamily,
+  ProductFamilyImage,
+} from '../../core/api/models';
 
 export interface ProductFamilyImageVariantChange {
   imageId: number;
   variantProductId: number | null;
 }
+
+export interface ProductFamilyImagePublicationChange {
+  imageId: number;
+  channels: CatalogChannel[];
+}
+
+const PUBLICATION_CHANNELS: ReadonlyArray<{
+  channel: CatalogChannel;
+  label: string;
+  description: string;
+}> = [
+  { channel: 'WEBSITE', label: 'Website', description: 'Productpagina en websitegalerij' },
+  { channel: 'ORDER_APP', label: 'Bestelapp', description: 'Assortiment in de bestelapp' },
+  { channel: 'CATALOGUE', label: 'Catalogus', description: 'Catalogus en catalogus-pdf' },
+];
 
 interface GalleryPointerReorder {
   pointerId: number;
@@ -26,8 +54,10 @@ interface GalleryPointerReorder {
     <section aria-labelledby="publication-gallery-title" [attr.aria-busy]="busy()">
       <div class="section-head">
         <div>
-          <h3 id="publication-gallery-title">Websitegalerij</h3>
-          <p id="gallery-order-help">Sleep of veeg de greep om de volgorde te bepalen.</p>
+          <h3 id="publication-gallery-title">Productfoto's</h3>
+          <p id="gallery-order-help">
+            Nieuwe foto's blijven intern. Publiceer ze bewust via ⋮; sleep de greep voor de volgorde.
+          </p>
         </div>
         <div class="gallery-actions">
           <span>{{ family().images.length }} foto('s)</span>
@@ -56,7 +86,9 @@ interface GalleryPointerReorder {
           @for (image of orderedImages(); track image.id; let i = $index) {
             <li [class.image-row--dragging]="draggingIndex() === i"
                 [class.image-row--drop]="draggingIndex() !== null && draggingIndex() !== i && dropTargetIndex() === i"
-                [attr.data-family-image-index]="i">
+                [class.image-row--menu-open]="publicationMenuImageId() === image.id"
+                [attr.data-family-image-index]="i"
+                (contextmenu)="openPublicationMenu($event, image.id)">
               <button class="drag-handle" type="button"
                       [disabled]="busy() || orderedImages().length < 2"
                       aria-keyshortcuts="ArrowUp ArrowDown Home End"
@@ -72,6 +104,24 @@ interface GalleryPointerReorder {
               <img [appAuthSrc]="image.smallUrl" alt="" />
               <div class="image-copy">
                 <b>{{ image.originalFilename }}</b>
+                <div class="publication-state" [attr.aria-label]="publicationSummary(image)">
+                  @if (!publishedChannels(image).length) {
+                    <span class="publication-chip publication-chip--internal">Alleen intern</span>
+                  }
+                  <span
+                    class="publication-chip"
+                    [class.publication-chip--on]="isPublishedTo(image, 'WEBSITE')"
+                    [attr.aria-label]="channelAriaLabel(image, 'WEBSITE', 'Website')"
+                  ><i aria-hidden="true"></i>Website</span>
+                  <span
+                    class="publication-chip"
+                    [class.publication-chip--on]="isPublishedTo(image, 'CATALOGUE')"
+                    [attr.aria-label]="channelAriaLabel(image, 'CATALOGUE', 'Catalogus')"
+                  ><i aria-hidden="true"></i>Catalogus</span>
+                  @if (isPublishedTo(image, 'ORDER_APP')) {
+                    <span class="publication-chip publication-chip--on"><i aria-hidden="true"></i>Bestelapp</span>
+                  }
+                </div>
                 <label class="variant-link">
                   <span>Foto voor</span>
                   <select class="select input--sm" [ngModel]="image.variantProductId ?? null"
@@ -97,6 +147,63 @@ interface GalleryPointerReorder {
                 }
               </div>
               <div class="image-actions">
+                <div class="publication-menu-anchor" data-image-publication-menu>
+                  <button
+                    class="publication-menu-trigger"
+                    type="button"
+                    [disabled]="busy()"
+                    aria-haspopup="menu"
+                    [attr.aria-expanded]="publicationMenuImageId() === image.id"
+                    [attr.aria-controls]="'image-publication-menu-' + image.id"
+                    [attr.aria-label]="'Publicatie van ' + image.originalFilename + ' instellen'"
+                    (click)="togglePublicationMenu($event, image.id)"
+                  >⋮</button>
+                  @if (publicationMenuImageId() === image.id) {
+                    <div
+                      class="publication-menu"
+                      role="menu"
+                      [id]="'image-publication-menu-' + image.id"
+                      [attr.aria-label]="'Publicatie van ' + image.originalFilename"
+                    >
+                      <div class="publication-menu__head">
+                        <b>Publiceren naar</b>
+                        <small>Kies waar klanten deze foto zien.</small>
+                      </div>
+                      @for (option of publicationChannels; track option.channel) {
+                        <button
+                          class="publication-option"
+                          type="button"
+                          role="menuitemcheckbox"
+                          [disabled]="busy()"
+                          [attr.aria-checked]="isPublishedTo(image, option.channel)"
+                          (click)="togglePublicationChannel(image, option.channel)"
+                        >
+                          <span
+                            class="publication-option__check"
+                            [class.publication-option__check--on]="isPublishedTo(image, option.channel)"
+                            aria-hidden="true"
+                          >{{ isPublishedTo(image, option.channel) ? '✓' : '' }}</span>
+                          <span>
+                            <b>{{ option.label }}</b>
+                            <small>{{ option.description }}</small>
+                          </span>
+                        </button>
+                      }
+                      <div class="publication-menu__footer">
+                        <button
+                          class="internal-only"
+                          type="button"
+                          role="menuitem"
+                          [disabled]="busy() || !publishedChannels(image).length"
+                          (click)="keepInternal(image)"
+                        >Alleen intern bewaren</button>
+                        @if (!hasAltText(image)) {
+                          <small>Voor publicatie is minstens één alt-tekst nodig via Vertalingen.</small>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
                 <button
                   class="delete"
                   type="button"
@@ -115,8 +222,8 @@ interface GalleryPointerReorder {
         <div class="empty-gallery">
           <span aria-hidden="true">◇</span>
           <div>
-            <b>Nog geen publieke foto's</b
-            ><small>De migratie koppelt de bronfoto's aan deze productreeks.</small>
+            <b>Nog geen productfoto's</b
+            ><small>Voeg een foto toe. Ze blijft intern tot je zelf een publicatiekanaal kiest.</small>
           </div>
         </div>
       }
@@ -138,13 +245,13 @@ interface GalleryPointerReorder {
       margin-bottom: 12px;
     }
     h3 {
-      font-size: 13.5px;
+      font-size: 14px;
       line-height: 1.25;
     }
     .section-head p {
       margin-top: 2px;
       color: var(--muted);
-      font-size: 10.5px;
+      font-size: 12px;
       line-height: 1.35;
     }
     .gallery-actions {
@@ -154,7 +261,7 @@ interface GalleryPointerReorder {
     }
     .gallery-actions > span {
       color: var(--muted);
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
     }
@@ -164,7 +271,7 @@ interface GalleryPointerReorder {
       border-radius: 9px;
       background: var(--warn-soft);
       color: var(--ink-2);
-      font-size: 10px;
+      font-size: 12px;
       line-height: 1.4;
     }
     .file-input {
@@ -182,6 +289,7 @@ interface GalleryPointerReorder {
       list-style: none;
     }
     .image-list li {
+      position: relative;
       min-width: 0;
       display: grid;
       grid-template-columns: 36px 58px minmax(0, 1fr) auto;
@@ -195,6 +303,7 @@ interface GalleryPointerReorder {
     }
     .image-list .image-row--dragging { opacity: .5; transform: scale(.985); }
     .image-list .image-row--drop { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-line); }
+    .image-list .image-row--menu-open { border-color: var(--line-strong); z-index: 3; }
     .drag-handle {
       width: 36px; height: 44px; border: 1px solid var(--line); border-radius: 9px;
       background: var(--surface); color: var(--muted); font: 800 17px/1 var(--mono);
@@ -218,21 +327,57 @@ interface GalleryPointerReorder {
     }
     .image-copy b {
       overflow: hidden;
-      font-size: 10px;
+      font-size: 12px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .publication-state {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .publication-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 24px;
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1;
+    }
+    .publication-chip i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--line-strong);
+    }
+    .publication-chip--on {
+      border-color: color-mix(in srgb, var(--ok) 28%, var(--line));
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+    .publication-chip--on i { background: currentColor; }
+    .publication-chip--internal {
+      border-color: var(--line-strong);
+      background: var(--surface-2);
+      color: var(--ink-2);
+    }
     .variant-link { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
-    .variant-link > span { color: var(--muted); font-size: 8.5px; font-weight: 700; }
-    .variant-link .select { min-width: 0; height: 31px; padding-block: 4px; font-size: 9.5px; }
+    .variant-link > span { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .variant-link .select { min-width: 0; height: 36px; padding-block: 4px; font-size: 12px; }
     .image-actions {
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       gap: 3px;
     }
     .image-actions button {
-      width: 36px;
-      height: 38px;
+      width: 44px;
+      height: 44px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--surface);
@@ -246,6 +391,81 @@ interface GalleryPointerReorder {
     .image-actions .delete {
       color: var(--danger);
     }
+    .publication-menu-anchor { position: relative; }
+    .publication-menu-trigger {
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .publication-menu {
+      position: absolute;
+      z-index: 20;
+      top: calc(100% + 6px);
+      right: 0;
+      width: min(320px, calc(100vw - 32px));
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 13px;
+      background: var(--surface);
+      box-shadow: 0 16px 42px rgb(30 18 20 / 18%);
+      color: var(--ink);
+    }
+    .publication-menu__head {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 11px 12px 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+    .publication-menu__head b { font-size: 14px; }
+    .publication-menu__head small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .image-actions .publication-option {
+      display: grid;
+      width: 100%;
+      min-height: 56px;
+      height: auto;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      padding: 9px 12px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      text-align: left;
+    }
+    .image-actions .publication-option:hover { background: var(--surface-2); }
+    .publication-option > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+    .publication-option b { font-size: 14px; }
+    .publication-option small { color: var(--muted); font-size: 12px; line-height: 1.3; }
+    .publication-option__check {
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--surface);
+      color: #fff;
+      font-size: 12px;
+    }
+    .publication-option__check--on { border-color: var(--rose); background: var(--rose); }
+    .publication-menu__footer { display: grid; gap: 6px; padding: 9px 12px 11px; }
+    .image-actions .internal-only {
+      width: 100%;
+      min-height: 44px;
+      height: 44px;
+      justify-self: stretch;
+      padding: 0 4px;
+      border: 0;
+      background: transparent;
+      color: var(--rose);
+      font-size: 14px;
+      font-weight: 750;
+      text-align: left;
+    }
+    .image-actions .internal-only:disabled { color: var(--muted); }
+    .publication-menu__footer small { color: var(--warn); font-size: 12px; line-height: 1.35; }
     .empty-gallery {
       display: flex;
       align-items: center;
@@ -269,7 +489,7 @@ interface GalleryPointerReorder {
     .empty-gallery small {
       margin-top: 2px;
       color: var(--muted);
-      font-size: 10.5px;
+      font-size: 12px;
       line-height: 1.4;
     }
     .sr-only {
@@ -284,8 +504,9 @@ interface GalleryPointerReorder {
       border: 0;
     }
     @media (max-width: 520px) {
-      .image-list li { grid-template-columns: 36px 50px minmax(0, 1fr) auto; gap: 6px; }
+      .image-list li { grid-template-columns: 36px 50px minmax(0, 1fr); gap: 6px; }
       .image-list img { width: 50px; height: 50px; }
+      .image-actions { grid-column: 2 / -1; justify-content: flex-end; }
       .variant-link { grid-template-columns: 1fr; gap: 2px; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -305,10 +526,13 @@ export class ProductFamilyGallery {
   readonly imageUploadRequested = output<File>();
   readonly imageDeleteRequested = output<number>();
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
+  readonly imagePublicationChangeRequested = output<ProductFamilyImagePublicationChange>();
 
   readonly draggingIndex = signal<number | null>(null);
   readonly dropTargetIndex = signal<number | null>(null);
   readonly reorderAnnouncement = signal('');
+  readonly publicationMenuImageId = signal<number | null>(null);
+  readonly publicationChannels = PUBLICATION_CHANNELS;
 
   readonly orderedImages = computed(() =>
     [...this.family().images].sort((left, right) => left.position - right.position),
@@ -360,6 +584,79 @@ export class ProductFamilyGallery {
         item.id === imageId ? { ...item, variantProductId } : item),
     });
     this.imageVariantChangeRequested.emit({ imageId, variantProductId });
+  }
+
+  publishedChannels(image: ProductFamilyImage): CatalogChannel[] {
+    // During a rolling deployment the old API omits the field; its implicit contract
+    // made every valid image public on every channel, so preserve that projection.
+    return Array.isArray(image.publishedChannels)
+      ? image.publishedChannels
+      : PUBLICATION_CHANNELS.map((option) => option.channel);
+  }
+
+  isPublishedTo(image: ProductFamilyImage, channel: CatalogChannel): boolean {
+    return this.publishedChannels(image).includes(channel);
+  }
+
+  publicationSummary(image: ProductFamilyImage): string {
+    const channels = this.publishedChannels(image);
+    if (!channels.length) return 'Alleen intern; niet gepubliceerd';
+    const labels = PUBLICATION_CHANNELS
+      .filter((option) => channels.includes(option.channel))
+      .map((option) => option.label);
+    return `Gepubliceerd naar ${labels.join(', ')}`;
+  }
+
+  channelAriaLabel(image: ProductFamilyImage, channel: CatalogChannel, label: string): string {
+    return `${label}: ${this.isPublishedTo(image, channel) ? 'gepubliceerd' : 'niet gepubliceerd'}`;
+  }
+
+  hasAltText(image: ProductFamilyImage): boolean {
+    return image.altTexts.some((item) => Boolean(item.alt?.trim()));
+  }
+
+  togglePublicationMenu(event: MouseEvent, imageId: number): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.busy()) return;
+    this.publicationMenuImageId.update((current) => current === imageId ? null : imageId);
+  }
+
+  openPublicationMenu(event: MouseEvent, imageId: number): void {
+    if (this.busy()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.publicationMenuImageId.set(imageId);
+  }
+
+  togglePublicationChannel(image: ProductFamilyImage, channel: CatalogChannel): void {
+    if (this.busy()) return;
+    const selected = new Set(this.publishedChannels(image));
+    if (selected.has(channel)) selected.delete(channel); else selected.add(channel);
+    const channels = PUBLICATION_CHANNELS
+      .map((option) => option.channel)
+      .filter((option) => selected.has(option));
+    this.publicationMenuImageId.set(null);
+    this.imagePublicationChangeRequested.emit({ imageId: image.id, channels });
+  }
+
+  keepInternal(image: ProductFamilyImage): void {
+    if (this.busy() || !this.publishedChannels(image).length) return;
+    this.publicationMenuImageId.set(null);
+    this.imagePublicationChangeRequested.emit({ imageId: image.id, channels: [] });
+  }
+
+  @HostListener('document:pointerdown', ['$event'])
+  closePublicationMenuOnOutsidePress(event: PointerEvent): void {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest('[data-image-publication-menu]')) {
+      this.publicationMenuImageId.set(null);
+    }
+  }
+
+  @HostListener('document:keydown.escape')
+  closePublicationMenu(): void {
+    this.publicationMenuImageId.set(null);
   }
 
   memberLabel(member: ProductFamily['members'][number]): string {
