@@ -403,9 +403,12 @@ export class CatalogExport {
         this.catalog.categories(),
       ]);
       if (this.destroyed) return;
-      this.products.set(products);
+      /* Internal assessment products stay in product management but never appear in a
+         customer-facing PDF or return through an older saved browser selection. */
+      const customerCatalogue = products.filter((product) => !product.demo);
+      this.products.set(customerCatalogue);
       this.categories.set(categories);
-      const available = new Set(products.flatMap((product) =>
+      const available = new Set(customerCatalogue.flatMap((product) =>
         product.id === null ? [] : [product.id]));
       if (!this.selectionInitialized) {
         const initial = this.storedSelection === null
