@@ -47,7 +47,9 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
             </button>
             <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('verkoop')">
               <a class="sidebar__link" routerLink="/sales" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkooporders
+                <app-icon class="sidebar__icon" name="sales" [size]="18" />
+                <span class="sidebar__text sidebar__text--full">Verkooporders</span>
+                <span class="sidebar__text sidebar__text--rail">Verkoop</span>
               </a>
               <a class="sidebar__link" routerLink="/revisions" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Wijzigingen
@@ -98,7 +100,9 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
                 <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
               </a>
               <a class="sidebar__link" routerLink="/stock-locations" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraadlocaties
+                <app-icon class="sidebar__icon" name="stock" [size]="18" />
+                <span class="sidebar__text sidebar__text--full">Voorraadlocaties</span>
+                <span class="sidebar__text sidebar__text--rail">Locaties</span>
               </a>
               <a class="sidebar__link" routerLink="/barcodes" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="barcode" [size]="18" /> EAN-codes

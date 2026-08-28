@@ -353,7 +353,7 @@ export interface PlannerMilestone {
   styles: `
     .planner-duo { display: grid; gap: 12px; }
     .tasks-card__count { color: var(--muted); font-size: 11.5px; font-weight: 650; }
-    @media (min-width: 980px) {
+    @media (min-width: 1280px) {
       .planner-duo { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; }
     }
     .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -384,7 +384,7 @@ export interface PlannerMilestone {
     .cal-agenda { margin-top: 8px; border-top: 1px solid var(--line); }
     /* Desktop: the little calendar sits left like a paper desk planner,
        the day's list gets the rest of the width. */
-    @media (min-width: 680px) {
+    @media (min-width: 840px) {
       .planner-card .card__body { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 4px 26px; align-items: start; }
       .planner-card .overdue { grid-column: 1 / -1; }
       .cal-pane { min-width: 0; }

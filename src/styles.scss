@@ -50,9 +50,12 @@
   --sh-2: 0 2px 6px rgb(26 22 20 / 6%), 0 10px 24px rgb(26 22 20 / 8%);
   --sh-3: 0 -4px 24px rgb(26 22 20 / 12%);
 
-  --tabbar-h: 58px;
-  --appbar-h: 56px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --tabbar-h: 58px;
+  --appbar-h: calc(56px + var(--safe-t));
 
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
@@ -143,6 +146,8 @@ a { color: var(--rose); }
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  padding-left: var(--safe-l);
+  padding-right: var(--safe-r);
 }
 
 /* Routed pages must be allowed to shrink on phones too. Without min-width: 0,
@@ -172,7 +177,7 @@ a { color: var(--rose); }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: var(--safe-t) 12px 0;
   /* Translucent so the pseudo-element blur below shows through. */
   background: rgb(255 255 255 / 80%);
   border-bottom: 1px solid rgb(26 22 20 / 6%);
@@ -236,8 +241,8 @@ a { color: var(--rose); }
    content instead of fencing it off, and the blur keeps context visible. */
 .tabbar {
   position: fixed;
-  left: 10px;
-  right: 10px;
+  left: calc(var(--safe-l) + 10px);
+  right: calc(var(--safe-r) + 10px);
   bottom: calc(var(--safe-b) + 10px);
   z-index: 40;
   height: var(--tabbar-h);
@@ -280,6 +285,7 @@ a { color: var(--rose); }
 
 /* --- zijbalk (desktop) --- */
 .sidebar { display: none; }
+.sidebar__text--rail { display: none; }
 
 /* From 680px the phone chrome goes: an unfolded Galaxy Fold (about 690px
    wide) or a tablet wants the desktop idiom, not a thumb bar. Up to 1023px
@@ -296,6 +302,7 @@ a { color: var(--rose); }
     position: sticky;
     top: 0;
     height: 100dvh;
+    padding-top: var(--safe-t);
   }
   .tabbar { display: none; }
   .appbar__back { display: none; }
@@ -305,7 +312,7 @@ a { color: var(--rose); }
 }
 
 @media (min-width: 680px) and (max-width: 1023.98px) {
-  .sidebar { width: 84px; flex: 0 0 84px; }
+  .sidebar { width: 84px; flex: 0 0 84px; overflow-x: clip; }
   .sidebar__brand {
     display: flex;
     justify-content: center;
@@ -337,6 +344,9 @@ a { color: var(--rose); }
     line-height: 1.1;
     text-align: center;
   }
+  .sidebar__text { min-width: 0; max-width: 100%; }
+  .sidebar__text--full { display: none; }
+  .sidebar__text--rail { display: inline; }
   .sidebar__link:hover { background: var(--surface-2); color: var(--ink); }
   .sidebar__link.active { background: var(--rose-soft); color: var(--rose-dark); font-weight: 700; }
   .sidebar__icon { width: 20px; display: inline-flex; justify-content: center; }
@@ -362,10 +372,11 @@ a { color: var(--rose); }
     cursor: pointer;
   }
   .content { padding: 18px 20px 60px; }
-  .appbar { padding: 0 20px; }
+  .appbar { padding: var(--safe-t) 20px 0; }
 }
 
 @media (min-width: 1024px) {
+  :root { --appbar-h: calc(62px + var(--safe-t)); }
   .shell { flex-direction: row; }
 
   /* Light sidebar in the tab bar's idiom: white surface, hairline edge,
@@ -468,7 +479,7 @@ a { color: var(--rose); }
 
   .tabbar { display: none; }
   .content { padding: 22px 26px 60px; }
-  .appbar { padding: 0 26px; height: 62px; }
+  .appbar { padding: var(--safe-t) 26px 0; height: var(--appbar-h); }
   .appbar__back { display: none; }
   .hide-mobile.hide-mobile { display: revert; }
   /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
@@ -1961,6 +1972,22 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
     min-width: 44px;
     min-height: 44px;
   }
+  .sidebar__logout,
+  .cal-nav,
+  .cal-title,
+  .cal-day,
+  .market-compact__row,
+  .task__remove,
+  .attach-remove,
+  .cal-agenda__row,
+  .upcoming__row,
+  .snooze,
+  .task__body,
+  .task-list__toggle,
+  .attach-name {
+    min-height: 44px;
+  }
+  .cal-nav { min-width: 44px; }
 }
 
 /* Bottom chrome honours the iPhone safe area; buttons under the home

@@ -1001,6 +1001,11 @@ interface FreightHorizon {
       .dashboard-kpis .kpi__value { font-size:20px }
       .dashboard-kpis .kpi__meta { font-size:12.5px }
     }
+    @media (max-width:379.98px) {
+      .dashboard-section-head { display:grid;grid-template-columns:minmax(0,1fr);gap:2px }
+      .dashboard-section-link { max-width:none;padding:4px 0 8px;text-align:left }
+      .dashboard-kpis .kpi__label { font-size:10px;letter-spacing:.05em }
+    }
     @media (prefers-reduced-motion:reduce) {
       .dashboard-work-row { transition:none }
     }
