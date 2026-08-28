@@ -41,6 +41,12 @@ export interface WebsiteVisibilityResult {
 @Injectable({ providedIn: 'root' })
 export class CatalogApi {
   private readonly http = inject(HttpClient);
+  /**
+   * Share only identical photo requests that are currently in flight. The
+   * completed response is intentionally not cached, so replacing a photo on
+   * the server can never leave a stale image for the lifetime of this app.
+   */
+  private readonly pendingPhotoBlobs = new Map<string, Promise<Blob>>();
 
   /* ---------------------------------------------------------- producten */
 
@@ -315,7 +321,15 @@ export class CatalogApi {
 
   /** Fetches the bytes; the caller makes a blob URL or a download of them. */
   photoBlob(url: string): Promise<Blob> {
-    return firstValueFrom(this.http.get(api(url), { responseType: 'blob' }));
+    const pending = this.pendingPhotoBlobs.get(url);
+    if (pending) return pending;
+
+    const request = firstValueFrom(this.http.get(api(url), { responseType: 'blob' }));
+    this.pendingPhotoBlobs.set(url, request);
+    void request.finally(() => {
+      if (this.pendingPhotoBlobs.get(url) === request) this.pendingPhotoBlobs.delete(url);
+    }).catch(() => undefined);
+    return request;
   }
 
   /** One native Excel workbook with master data and customer-facing translations. */

@@ -255,6 +255,16 @@ export class PurchaseList {
     { key: 'ONDERWEG', label: 'Vertrokken' }, { key: 'ONTVANGEN', label: 'Ontvangen' }, { key: 'ATTENTION', label: 'Actie vereist' },
   ];
   readonly statusFilter = signal('ALL');
+  private readonly statusCounts = computed(() => {
+    const counts = new Map<string, number>();
+    let attention = 0;
+    for (const row of this.orders()) {
+      counts.set(row.order.status, (counts.get(row.order.status) ?? 0) + 1);
+      if (row.attention?.length) attention++;
+    }
+    counts.set('ATTENTION', attention);
+    return counts;
+  });
   readonly filtered = computed(() => {
     const key = this.statusFilter();
     const rows = key === 'ALL' ? this.orders()
@@ -290,10 +300,11 @@ export class PurchaseList {
     this.statusOptions.find((option) => option.key === this.statusFilter())?.label ?? 'Alle');
   countFor(key: string): number {
     if (key === 'ALL') return 0;
-    if (key === 'ATTENTION') return this.orders().filter((row) => row.attention?.length).length;
-    return this.orders().filter((row) => row.order.status === key).length;
+    return this.statusCounts().get(key) ?? 0;
   }
   readonly suppliers = signal<Supplier[]>([]);
+  private readonly supplierById = computed(() =>
+    new Map(this.suppliers().map((supplier) => [supplier.id, supplier])));
   readonly loading = signal(true);
   readonly picking = signal(false);
   readonly chosen = signal<number | null>(null);
@@ -316,16 +327,17 @@ export class PurchaseList {
   }
 
   supplierName(id: number): string {
-    return this.suppliers().find((supplier) => supplier.id === id)?.name ?? 'Onbekend';
+    return this.supplierById().get(id)?.name ?? 'Onbekend';
   }
 
   creatorName(row: PurchaseOrderView): string {
     return row.createdBy?.displayName || 'Maker onbekend';
   }
 
-  chosenSupplier(): Supplier | null {
-    return this.suppliers().find((supplier) => supplier.id === this.chosen()) ?? null;
-  }
+  readonly chosenSupplier = computed(() => {
+    const id = this.chosen();
+    return id === null ? null : this.supplierById().get(id) ?? null;
+  });
 
   /** Which row shows its delete button; only one at a time, like iOS. */
   readonly swiped = signal<number | null>(null);

@@ -626,12 +626,12 @@ export class SalesList {
   }
 
   docCount(tab: 'OFFERTE' | 'FACTUUR'): number {
-    return this.all().filter((row) => (row.order.docType ?? 'OFFERTE') === tab).length;
+    return this.rowsByDocument()[tab].length;
   }
 
   /** Rows of the active tab, before search and filters. */
   private inTab(): SalesOrderView[] {
-    return this.all().filter((row) => (row.order.docType ?? 'OFFERTE') === this.docTab());
+    return this.rowsByDocument()[this.docTab()];
   }
 
   readonly visibleFilters = computed(() => this.docTab() === 'FACTUUR'
@@ -663,6 +663,23 @@ export class SalesList {
 
   readonly all = signal<SalesOrderView[]>([]);
   readonly customers = signal<Customer[]>([]);
+  private readonly customerById = computed(() =>
+    new Map(this.customers().map((customer) => [customer.id, customer])));
+  private readonly rowsByDocument = computed(() => {
+    const quotes: SalesOrderView[] = [];
+    const invoices: SalesOrderView[] = [];
+    for (const row of this.all()) {
+      ((row.order.docType ?? 'OFFERTE') === 'FACTUUR' ? invoices : quotes).push(row);
+    }
+    return { OFFERTE: quotes, FACTUUR: invoices };
+  });
+  private readonly statusCounts = computed(() => {
+    const counts = new Map<string, number>();
+    for (const row of this.inTab()) {
+      counts.set(row.order.status, (counts.get(row.order.status) ?? 0) + 1);
+    }
+    return counts;
+  });
   readonly languages = LANGUAGES;
   readonly countries = signal<Country[]>([]);
 
@@ -765,7 +782,7 @@ export class SalesList {
   });
 
   readonly activeCustomerLabel = computed(() =>
-    this.customers().find((customer) => customer.id === this.customerFilter())?.company ?? 'Alle klanten');
+    this.customerById().get(this.customerFilter() as number)?.company ?? 'Alle klanten');
 
   readonly activeFilterCount = computed(() =>
     (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
@@ -786,12 +803,11 @@ export class SalesList {
   }
 
   statusCount(status: QuoteStatus | ''): number {
-    const rows = this.inTab();
-    return status ? rows.filter((row) => row.order.status === status).length : rows.length;
+    return status ? this.statusCounts().get(status) ?? 0 : this.inTab().length;
   }
 
   customerName(row: SalesOrderView): string {
-    return this.customers().find((c) => c.id === row.order.customerId)?.company ?? 'Geen klant';
+    return this.customerById().get(row.order.customerId)?.company ?? 'Geen klant';
   }
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];

@@ -186,7 +186,7 @@ export class NotificationBell {
   readonly sheet = signal(false);
 
   constructor() {
-    void this.refresh();
+    void this.work.refresh();
   }
 
   readonly count = this.work.actionCount;
@@ -196,7 +196,7 @@ export class NotificationBell {
   readonly error = this.work.error;
 
   refresh(): Promise<void> {
-    return this.work.refresh();
+    return this.work.refresh(true);
   }
 
   /** Weggeklikt: verdwijnt tot de melding iets anders te zeggen heeft. */

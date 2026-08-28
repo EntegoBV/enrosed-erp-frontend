@@ -82,7 +82,7 @@ export interface PlannerMilestone {
                   </button>
                 </div>
               }
-              @for (stone of milestonesOn(selectedDate()); track stone.title) {
+              @for (stone of selectedMilestones(); track stone.title) {
                 <!-- The containers keep their own diary in here: read-only,
                      one tap opens the order. -->
                 <button class="cal-agenda__row cal-agenda__row--stone" type="button" (click)="openMilestone(stone)">
@@ -93,7 +93,7 @@ export interface PlannerMilestone {
                   </span>
                 </button>
               }
-              @if (!dayItems().length && !milestonesOn(selectedDate()).length) {
+              @if (!dayItems().length && !selectedMilestones().length) {
                 <p class="cal-empty">niets gepland</p>
               }
               @if (!items.length && upcoming().length) {
@@ -495,11 +495,22 @@ export class PlannerCards {
   readonly noteDraft = signal('');
   readonly childDraft = signal('');
   readonly dragging = signal(false);
+  private readonly itemById = computed(() =>
+    new Map(this.items().filter((item) => item.id !== null).map((item) => [item.id!, item])));
+  private readonly childrenByParent = computed(() => {
+    const children = new Map<number | null | undefined, PlannerItem[]>();
+    for (const task of this.items()) {
+      const own = children.get(task.parentId) ?? [];
+      own.push(task);
+      children.set(task.parentId, own);
+    }
+    return children;
+  });
 
   /** The live item behind the view, so uploads and ticks refresh in place. */
   readonly viewItem = computed(() => {
     const id = this.viewing();
-    return id === null ? null : this.items().find((item) => item.id === id) ?? null;
+    return id === null ? null : this.itemById().get(id) ?? null;
   });
 
   openView(item: PlannerItem): void {
@@ -514,7 +525,7 @@ export class PlannerCards {
   }
 
   childTasks(item: PlannerItem): PlannerItem[] {
-    return this.items().filter((task) => task.parentId === item.id);
+    return this.childrenByParent().get(item.id) ?? [];
   }
 
   async saveNote(item: PlannerItem): Promise<void> {
@@ -632,7 +643,7 @@ export class PlannerCards {
 
   parentOf(task: PlannerItem): PlannerItem | null {
     return task.parentId == null ? null
-      : this.items().find((item) => item.id === task.parentId) ?? null;
+      : this.itemById().get(task.parentId) ?? null;
   }
 
   openParent(parent: PlannerItem): void {
@@ -648,14 +659,21 @@ export class PlannerCards {
   readonly weekDays = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
   /** Container milestones, derived by the dashboard - never stored, never stale. */
   readonly milestones = input<PlannerMilestone[]>([]);
+  private readonly milestonesByDate = computed(() => {
+    const grouped = new Map<string, PlannerMilestone[]>();
+    for (const stone of this.milestones()) {
+      const entries = grouped.get(stone.date) ?? [];
+      entries.push(stone);
+      grouped.set(stone.date, entries);
+    }
+    return grouped;
+  });
+  readonly selectedMilestones = computed(() =>
+    this.milestonesByDate().get(this.selectedDate()) ?? []);
   private readonly router = inject(Router);
 
   openMilestone(stone: PlannerMilestone): void {
     void this.router.navigate(['/purchasing', stone.orderId]);
-  }
-
-  milestonesOn(date: string): PlannerMilestone[] {
-    return this.milestones().filter((stone) => stone.date === date);
   }
 
   constructor() {

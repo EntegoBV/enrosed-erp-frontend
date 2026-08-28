@@ -1051,9 +1051,7 @@ export class Dashboard {
     const code = this.trendOptions().some((option) => option.code === this.trendCode())
         ? this.trendCode() : this.trendOptions()[0]?.code;
     if (!code) return null;
-    const entries = this.freightRates()
-        .filter((rate) => rate.route === code)
-        .slice().sort((a, b) => a.quotedOn.localeCompare(b.quotedOn));
+    const entries = this.ratesFor(code);
     return { dates: entries.map((e) => e.quotedOn), values: entries.map((e) => e.usdPerContainer) };
   });
 
@@ -1065,6 +1063,20 @@ export class Dashboard {
   ];
   readonly freightRates = signal<FreightRate[]>([]);
   readonly marketSources = signal<MarketSourceStatus[]>([]);
+  private readonly ratesByRoute = computed(() => {
+    const routes = new Map<string, FreightRate[]>();
+    for (const rate of this.freightRates()) {
+      const entries = routes.get(rate.route) ?? [];
+      entries.push(rate);
+      routes.set(rate.route, entries);
+    }
+    for (const entries of routes.values()) {
+      entries.sort((a, b) => a.quotedOn.localeCompare(b.quotedOn));
+    }
+    return routes;
+  });
+  private readonly marketSourceByCode = computed(() =>
+    new Map(this.marketSources().map((source) => [source.code, source])));
   readonly rateSheet = signal(false);
   readonly newRoute = signal('NINGBO');
   readonly newRate = signal(0);
@@ -1208,7 +1220,7 @@ export class Dashboard {
 
   /** Newest first: the question is what it costs now and how it got there. */
   historyFor(code: string): FreightRate[] {
-    return this.ratesFor(code).reverse();
+    return this.ratesFor(code).slice().reverse();
   }
 
   async deleteRate(rate: FreightRate): Promise<void> {
@@ -1217,8 +1229,7 @@ export class Dashboard {
     this.freightRates.set(await this.sourcing.freightRates());
   }
 
-  readonly wciSeries = computed(() => this.freightRates()
-      .filter((rate) => rate.route === 'WCI SHA-RTM')
+  readonly wciSeries = computed(() => this.ratesFor('WCI SHA-RTM')
       .map((rate) => rate.usdPerContainer));
 
   seriesFor(route: string): number[] {
@@ -1243,7 +1254,7 @@ export class Dashboard {
   }
 
   sourceFor(code: string): MarketSourceStatus | null {
-    return this.marketSources().find((source) => source.code === code) ?? null;
+    return this.marketSourceByCode().get(code) ?? null;
   }
 
   sourceStateLabel(state: MarketSourceStatus['state']): string {
@@ -1381,10 +1392,7 @@ export class Dashboard {
   }
 
   private ratesFor(code: string): FreightRate[] {
-    return this.freightRates()
-        .filter((rate) => rate.route === code)
-        .slice()
-        .sort((a, b) => a.quotedOn.localeCompare(b.quotedOn));
+    return this.ratesByRoute().get(code) ?? [];
   }
 
   horizonWord(code: string, pct: number): string {
@@ -1740,8 +1748,11 @@ export class Dashboard {
 
   /** Containers grouped by leg: on the water first, then still at the factory. */
   readonly incomingBuckets = computed(() => {
-    const sailing = this.incoming().filter((row) => row.order.status === 'ONDERWEG');
-    const ordered = this.incoming().filter((row) => row.order.status === 'BESTELD');
+    const sailing: PurchaseOrderView[] = [];
+    const ordered: PurchaseOrderView[] = [];
+    for (const row of this.incoming()) {
+      (row.order.status === 'ONDERWEG' ? sailing : ordered).push(row);
+    }
     const buckets = [];
     if (sailing.length) buckets.push({ label: 'Op zee', rows: sailing });
     if (ordered.length) buckets.push({ label: 'Besteld, nog niet vertrokken', rows: ordered });
@@ -1758,6 +1769,8 @@ export class Dashboard {
   });
 
   readonly suppliers = signal<Supplier[]>([]);
+  private readonly supplierNameById = computed(() =>
+    new Map(this.suppliers().map((supplier) => [supplier.id, supplier.name])));
 
   /** The containers write their own lines into the agenda: ordered, sailed,
       expected and received - derived live, so never stale. */
@@ -1787,8 +1800,7 @@ export class Dashboard {
   });
 
   supplierNameOf(row: PurchaseOrderView): string {
-    return this.suppliers().find((supplier) => supplier.id === row.order.supplierId)?.name
-      ?? row.order.number;
+    return this.supplierNameById().get(row.order.supplierId) ?? row.order.number;
   }
 
   /** The shelf's heaviest lines by value, the ones worth watching. */
@@ -1815,6 +1827,8 @@ export class Dashboard {
   readonly freightMarketFailed = signal(false);
   readonly marketRefreshing = signal(false);
   readonly products = signal<Product[]>([]);
+  private readonly productById = computed(() =>
+    new Map(this.products().map((product) => [product.id, product])));
 
   /** What the shelf is worth at cost: pieces times landed cost, demo included. */
   readonly stockValue = computed(() => this.products()
@@ -1854,14 +1868,14 @@ export class Dashboard {
 
   /** What is on the water, soonest first, with the product's name. */
   readonly incomingStock = computed(() => {
-    const byId = new Map(this.products().map((product) => [product.id, product.name]));
+    const byId = this.productById();
     return this.expected()
       .slice()
       .sort((a, b) => (a.expectedArrival ?? '9999').localeCompare(b.expectedArrival ?? '9999'))
       .map((item) => ({
         productId: item.productId,
-        name: byId.get(item.productId) ?? `product ${item.productId}`,
-        photo: this.products().find((product) => product.id === item.productId)?.photos?.[0]?.url ?? null,
+        name: byId.get(item.productId)?.name ?? `product ${item.productId}`,
+        photo: byId.get(item.productId)?.photos?.[0]?.url ?? null,
         quantity: item.quantity,
         arrival: item.expectedArrival,
         orderId: item.orderIds[0] ?? null,
@@ -2044,7 +2058,7 @@ export class Dashboard {
     this.openOrders().slice().sort((a, b) => a.priced.totals.marginPct - b.priced.totals.marginPct));
 
   readonly marginPct = computed(() => {
-    const goods = this.openOrders().reduce((sum, row) => sum + row.priced.totals.goodsTotal, 0);
+    const goods = this.openGoods();
     return goods > 0 ? (this.marginEur() / goods) * 100 : 0;
   });
 
@@ -2055,8 +2069,12 @@ export class Dashboard {
 
   /** "1 besteld · 1 op zee" says more than a bare container count. */
   readonly incomingLabel = computed(() => {
-    const ordered = this.incoming().filter((row) => row.order.status === 'BESTELD').length;
-    const sailing = this.incoming().filter((row) => row.order.status === 'ONDERWEG').length;
+    let ordered = 0;
+    let sailing = 0;
+    for (const row of this.incoming()) {
+      if (row.order.status === 'BESTELD') ordered++;
+      else if (row.order.status === 'ONDERWEG') sailing++;
+    }
     const parts = [];
     if (ordered) parts.push(`${ordered} besteld`);
     if (sailing) parts.push(`${sailing} op zee`);

@@ -2493,7 +2493,7 @@ export class SalesEditor {
       const sent = await this.sales.sendQuote(data.order.id, this.sendMessage());
       this.adopt(sent);
       this.sendSheet.set(false);
-      void this.work.refresh();
+      void this.work.refresh(true);
       this.ui.toast('Offerte verstuurd naar de klant');
       await this.router.navigate(['/sales', sent.order.id]);
     } catch (failure: unknown) {
@@ -2748,7 +2748,7 @@ export class SalesEditor {
         void this.loadCustomerPortalLink(revision.salesOrderId);
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
         /* The tab counter and the bell must drop this immediately. */
-        void this.work.refresh();
+        void this.work.refresh(true);
         this.ui.toast(thenEdit ? 'Overgenomen — pas gerust nog aan' : 'Voorstel overgenomen');
 
         if (thenEdit) {
@@ -2773,7 +2773,7 @@ export class SalesEditor {
       async () => {
         this.adopt(await this.sales.rejectRevision(revision.id, 'Verkoop', ''));
         this.revisions.set(await this.sales.revisionsFor(revision.salesOrderId));
-        void this.work.refresh();
+        void this.work.refresh(true);
         this.ui.toast('Voorstel afgewezen');
       },
     );

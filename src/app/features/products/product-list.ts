@@ -697,6 +697,8 @@ export class ProductList {
 
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
+  private readonly categoryMap = computed(() =>
+    new Map(this.categories().map((category) => [category.id, category])));
   readonly families = signal<ProductFamily[]>([]);
   readonly familyLoading = signal(true);
   readonly familyLoadError = signal(false);
@@ -901,7 +903,7 @@ export class ProductList {
       const categoryId = group.lead.categoryId ?? null;
       let section = byCategory.get(categoryId);
       if (!section) {
-        const category = this.categories().find((item) => item.id === categoryId);
+        const category = this.categoryMap().get(categoryId);
         section = {
           key: categoryId === null ? 'none' : `c${categoryId}`,
           name: category?.name ?? 'Zonder categorie',
@@ -973,11 +975,23 @@ export class ProductList {
     return this.stockTotals().get(product.id!) ?? product.stockQuantity ?? 0;
   }
 
-  stockBreakdown(product: Product): string | null {
+  private readonly stockBreakdowns = computed(() => {
     const names = this.locationNames();
-    if (names.size <= 1) return null;
-    const own = this.levels().filter((level) => level.productId === product.id);
-    return own.map((level) => `${names.get(level.locationId) ?? '?'}: ${level.quantity.toLocaleString('nl-BE')}`).join(' · ');
+    const result = new Map<number, string>();
+    if (names.size <= 1) return result;
+    const lines = new Map<number, string[]>();
+    for (const level of this.levels()) {
+      const own = lines.get(level.productId) ?? [];
+      own.push(`${names.get(level.locationId) ?? '?'}: ${level.quantity.toLocaleString('nl-BE')}`);
+      lines.set(level.productId, own);
+    }
+    for (const [productId, own] of lines) result.set(productId, own.join(' · '));
+    return result;
+  });
+
+  stockBreakdown(product: Product): string | null {
+    if (this.locationNames().size <= 1) return null;
+    return this.stockBreakdowns().get(product.id!) ?? '';
   }
 
   stockLabel(quantity: number | null): string {

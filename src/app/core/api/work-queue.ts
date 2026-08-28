@@ -27,6 +27,7 @@ export class WorkQueue {
   readonly error = signal<string | null>(null);
   private readonly dismissed = signal<Set<string>>(this.restore());
   private refreshVersion = 0;
+  private refreshPromise: Promise<void> | null = null;
 
   /** Everything not dismissed. */
   readonly visible = computed(() =>
@@ -39,7 +40,17 @@ export class WorkQueue {
   readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded));
   readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded));
 
-  async refresh(): Promise<void> {
+  refresh(force = false): Promise<void> {
+    if (!force && this.refreshPromise) return this.refreshPromise;
+    const request = this.fetch();
+    this.refreshPromise = request;
+    void request.finally(() => {
+      if (this.refreshPromise === request) this.refreshPromise = null;
+    });
+    return request;
+  }
+
+  private async fetch(): Promise<void> {
     const version = ++this.refreshVersion;
     this.loading.set(true);
     this.error.set(null);

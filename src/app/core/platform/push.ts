@@ -36,7 +36,7 @@ export class PushSetup {
       navigator.serviceWorker.addEventListener('message', (event) => {
         const data = event.data;
         if (data?.source !== 'enrosed-push') return;
-        void this.work.refresh();
+        void this.work.refresh(true);
         /* Only the fronted app speaks: sound plus a toast instead of the
            suppressed system banner. */
         if (document.visibilityState !== 'visible') return;

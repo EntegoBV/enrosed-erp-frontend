@@ -2081,7 +2081,7 @@ export class ProductEditor implements OnDestroy {
       this.activeProductId = productId;
       this.draft.set(product);
       void this.loadStockHistory(productId);
-      void this.loadStockLevels(productId);
+      const stockLevelsRequest = this.loadStockLevels(productId);
       const wanted = this.tab();
       if (wanted && this.tabs().some((item) => item.id === wanted)) {
         setTimeout(() => this.showTab(wanted), 50);
@@ -2089,7 +2089,7 @@ export class ProductEditor implements OnDestroy {
       /* Arriving from the product page's "Beschadigd" / "Demo": open that form at once. */
       const action = this.action();
       if (action === 'damaged' || action === 'demo') {
-        const levels = await this.loadStockLevels(productId).then(() => this.stockLevels() ?? []);
+        const levels = await stockLevelsRequest.then(() => this.stockLevels() ?? []);
         if (levels.length) this.startTakeOut(levels, action === 'damaged' ? 'DAMAGED' : 'DEMO');
       }
       this.syncPriceStrategy(product);

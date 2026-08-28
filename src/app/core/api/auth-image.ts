@@ -17,10 +17,12 @@ export class AuthImage implements OnDestroy {
   readonly source = input.required<string | null>({ alias: 'appAuthSrc' });
 
   private objectUrl: string | null = null;
+  private requestVersion = 0;
 
   constructor() {
     effect(() => {
       const url = this.source();
+      const version = ++this.requestVersion;
       this.release();
       if (!url) {
         this.element.nativeElement.removeAttribute('src');
@@ -29,14 +31,18 @@ export class AuthImage implements OnDestroy {
       this.catalog
         .photoBlob(url)
         .then((blob) => {
+          if (version !== this.requestVersion) return;
           this.objectUrl = URL.createObjectURL(blob);
           this.element.nativeElement.src = this.objectUrl;
         })
-        .catch(() => this.element.nativeElement.removeAttribute('src'));
+        .catch(() => {
+          if (version === this.requestVersion) this.element.nativeElement.removeAttribute('src');
+        });
     });
   }
 
   ngOnDestroy(): void {
+    this.requestVersion++;
     this.release();
   }
 
