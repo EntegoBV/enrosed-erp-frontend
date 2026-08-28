@@ -53,10 +53,7 @@ export class SourcingApi {
       this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}`), order));
   }
 
-  /**
-   * Purchase PDF in one of two explicit paper jobs. Existing callers keep the
-   * historical landscape calculation because LANDSCAPE remains the default.
-   */
+  /** Purchase PDF in one of two explicit A4 orientations. */
   purchasePdf(id: number, showRevenue: boolean,
               layout: PurchasePdfLayout = 'LANDSCAPE'): Promise<Blob> {
     return firstValueFrom(this.http.get(

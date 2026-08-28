@@ -4,17 +4,17 @@ import { messageOf } from '../../core/api/errors';
 import { PurchasePdfLayout, SourcingApi } from '../../core/api/sourcing-api';
 import { Sheet, Ui } from '../../shared/ui';
 
-/** One shared, explicit PDF choice for the purchase read and edit screens. */
+/** One shared orientation choice for the purchase read and edit screens. */
 @Component({
   selector: 'app-purchase-pdf-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet],
   template: `
-    <app-sheet title="Welke PDF heb je nodig?" (closed)="close()">
+    <app-sheet title="Inkooporder exporteren" (closed)="close()">
       <div body>
         <p class="intro">
-          Kies de leesbare inkooporder of de volledige interne kostencalculatie.
-          De twee documenten bevatten bewust andere informatie.
+          Kies A4 verticaal of horizontaal. Beide versies tonen dezelfde duidelijke
+          productregels en afgesproken inkoopprijzen; alleen de bladindeling verschilt.
         </p>
 
         @if (dirty()) {
@@ -43,10 +43,10 @@ import { Sheet, Ui } from '../../shared/ui';
               <span></span><span></span><span></span>
             </span>
             <span class="choice-copy">
-              <span class="choice-kicker">A4 staand · leesversie</span>
-              <strong>Inkooporder</strong>
-              <span>Leverancier, kleine productfoto's, aantallen en de afgesproken inkoopprijs per valuta.</span>
-              <small>Geen interne kostopbouw of betaalhistoriek.</small>
+              <span class="choice-kicker">A4 verticaal</span>
+              <strong>Inkooporder · staand</strong>
+              <span>Compacte productregels met foto, SKU, maat, stuks per karton, aantallen en inkoopprijs.</span>
+              <small>Handig om te controleren, af te drukken of door te sturen.</small>
             </span>
             <span class="choice-action">
               {{ busyLayout() === 'PORTRAIT' ? 'Maken…' : 'Download' }}
@@ -60,10 +60,10 @@ import { Sheet, Ui } from '../../shared/ui';
               <span></span><span></span><span></span>
             </span>
             <span class="choice-copy">
-              <span class="choice-kicker">A4 liggend · alleen intern</span>
-              <strong>Interne calculatie</strong>
-              <span>Alle kostkolommen, route, invoerrechten, betalingsstand en notities in één dossier.</span>
-              <small>Niet delen met leverancier of klant.</small>
+              <span class="choice-kicker">A4 horizontaal</span>
+              <strong>Inkooporder · liggend</strong>
+              <span>Dezelfde productfoto's en kartoninfo, met extra breedte voor lange namen en specificaties.</span>
+              <small>Geen vracht-, douane- of andere interne tussenprijzen.</small>
             </span>
             <span class="choice-action">
               {{ busyLayout() === 'LANDSCAPE' ? 'Maken…' : 'Download' }}
@@ -72,8 +72,8 @@ import { Sheet, Ui } from '../../shared/ui';
         </div>
 
         <p class="read-copy-note">
-          De staande inkooporder is een controle- en leesversie uit het actuele dossier.
-          Controleer deze voor verzending; uitgiftegegevens zijn nog niet historisch vastgezet.
+          Beide exports komen uit het actuele dossier. Controleer ze voor verzending;
+          product-, karton- en leveranciersgegevens zijn nog niet historisch vastgezet.
         </p>
       </div>
 
@@ -117,15 +117,14 @@ export class PurchasePdfSheet {
     this.error.set(null);
     this.busyLayout.set(layout);
     try {
-      const internal = layout === 'LANDSCAPE';
-      const blob = await this.sourcing.purchasePdf(this.orderId(), internal, layout);
+      const blob = await this.sourcing.purchasePdf(this.orderId(), false, layout);
       const stem = this.safeFilename(this.orderNumber());
       saveBlob(blob, layout === 'PORTRAIT'
-        ? `${stem}-inkooporder-leesversie.pdf`
-        : `${stem}-interne-calculatie.pdf`);
+        ? `${stem}-inkooporder-verticaal.pdf`
+        : `${stem}-inkooporder-horizontaal.pdf`);
       this.ui.toast(layout === 'PORTRAIT'
-        ? 'Staande inkooporder gedownload'
-        : 'Interne calculatie gedownload');
+        ? 'Verticale inkooporder gedownload'
+        : 'Horizontale inkooporder gedownload');
       this.closed.emit();
     } catch (failure: unknown) {
       const detail = messageOf(failure, 'Probeer het opnieuw of controleer de productgegevens.');
