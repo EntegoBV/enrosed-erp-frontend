@@ -214,11 +214,12 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
   `,
   styles: `
     :host { display: block; }
-    .catalog-page { max-width: 1320px; }
+    .catalog-page { max-width: 1320px; container: catalog-page / inline-size; }
     .catalog-workspace { min-width: 0; margin: 0; padding: 0; border: 0; }
     .catalog-settings, .catalog-output {
       display: grid; min-width: 0; gap: 12px; align-content: start;
     }
+    .catalog-settings { container: catalog-settings / inline-size; }
     .catalog-output { margin-top: 12px; }
     .card__head > div { min-width: 0; }
     .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
@@ -255,10 +256,14 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
       border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
       cursor: pointer;
     }
-    .option-toggle input { width: 22px; height: 22px; flex: none; accent-color: var(--rose); }
+    .option-toggle input {
+      width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--rose);
+    }
     .option-toggle span { display: grid; min-width: 0; gap: 1px; }
-    .option-toggle b { font-size: 15px; }
-    .option-toggle small { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .option-toggle b { font-size: 15px; overflow-wrap: anywhere; }
+    .option-toggle small {
+      color: var(--muted); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere;
+    }
     .intro-field { margin: 16px 0 0; }
     .intro-field .textarea { min-height: 96px; padding: 13px; font-size: 16px; line-height: 1.45; }
 
@@ -284,14 +289,14 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     @media (prefers-reduced-motion: reduce) {
       .render-status__mark { animation: none; }
     }
-    @media (min-width: 520px) {
+    @container catalog-settings (min-width: 560px) {
       .mode-choice { grid-template-columns: 1fr 1fr; }
       .option-grid { grid-template-columns: 1fr 1fr; }
       .option-grid__language { grid-column: 1 / -1; }
     }
-    @media (min-width: 680px) {
+    @container catalog-page (min-width: 980px) {
       .catalog-workspace {
-        display: grid; grid-template-columns: minmax(330px, .78fr) minmax(440px, 1.22fr);
+        display: grid; grid-template-columns: minmax(360px, .72fr) minmax(580px, 1.28fr);
         align-items: start; gap: 14px;
       }
       .catalog-output { margin-top: 0; }

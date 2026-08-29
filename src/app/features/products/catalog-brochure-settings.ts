@@ -27,7 +27,7 @@ export interface CatalogBrochureDraft {
         <div class="card__head">
           <div>
             <h2 id="brochure-layout-title">Opbouw handelscatalogus</h2>
-            <p>Een vaste, duidelijke B2B-flow met maximaal twee overzichtspagina’s.</p>
+            <p>Een vaste, duidelijke B2B-flow die het overzicht automatisch over pagina’s verdeelt.</p>
           </div>
         </div>
         <div class="card__body">
@@ -62,7 +62,7 @@ export interface CatalogBrochureDraft {
           <div class="required-pages" aria-label="Vaste cataloguspagina’s">
             <div>
               <i aria-hidden="true">✓</i>
-              <span><b>Volledig productoverzicht</b><small>Alle gekozen producten op maximaal twee pagina’s, met doorklik naar het juiste detail.</small></span>
+              <span><b>Volledig productoverzicht</b><small>Alle gekozen producten worden automatisch over overzichtspagina’s verdeeld, met doorklik naar het juiste detail.</small></span>
             </div>
             <div>
               <i aria-hidden="true">✓</i>
@@ -111,7 +111,9 @@ export interface CatalogBrochureDraft {
     </section>
   `,
   styles: `
-    :host { display: grid; min-width: 0; gap: 12px; }
+    :host {
+      display: grid; min-width: 0; gap: 12px; container: brochure-settings / inline-size;
+    }
     .card__head > div { min-width: 0; }
     .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
     .field > span { color: var(--ink-2); font-size: 14px; font-weight: 700; }
@@ -166,7 +168,7 @@ export interface CatalogBrochureDraft {
       display: grid; width: 28px; height: 28px; flex: none; place-items: center;
       border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 12px;
     }
-    @media (min-width: 620px) {
+    @container brochure-settings (min-width: 620px) {
       .brochure-fields { grid-template-columns: 1fr 1fr; }
       .brochure-fields .field:last-child { grid-column: 1 / -1; }
     }
@@ -182,7 +184,7 @@ export class CatalogBrochureSettings {
   readonly pagePlan = computed(() => {
     const settings = this.settings();
     const plan = ['Voorpagina'];
-    plan.push('Volledig productoverzicht · maximaal 2 pagina’s');
+    plan.push('Volledig productoverzicht · automatisch verdeeld');
     if (settings.includeCategoryIntros) plan.push('Optionele categorie-intro’s');
     const families = this.selectedFamilyCount();
     plan.push(`Productdetails · ${families} groep${families === 1 ? '' : 'en'}`);

@@ -122,7 +122,7 @@ import { Skeleton } from '../../shared/skeleton';
     </section>
   `,
   styles: `
-    :host { display: block; min-width: 0; }
+    :host { display: block; min-width: 0; container: product-selector / inline-size; }
     .card__head > div { min-width: 0; }
     .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
     .product-selector__head { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
@@ -161,8 +161,9 @@ import { Skeleton } from '../../shared/skeleton';
     }
     .product-choice img, .product-choice__empty {
       display: grid; width: 60px; height: 60px; place-items: center; border: 1px solid var(--line);
-      border-radius: 11px; background: var(--surface-2); object-fit: cover;
+      border-radius: 11px; background: var(--surface-2);
     }
+    .product-choice img { box-sizing: border-box; padding: 5px; object-fit: contain; }
     .product-choice__copy { display: grid; min-width: 0; gap: 2px; }
     .product-choice__copy b, .product-choice__copy small {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -190,13 +191,13 @@ import { Skeleton } from '../../shared/skeleton';
     .load-state b { color: var(--ink-2); font-size: 15px; }
     .load-state small { font-size: 14px; }
     .load-state--error { border-top: 1px solid var(--line); color: var(--danger); }
-    @media (min-width: 620px) {
+    @container product-selector (min-width: 620px) {
       .selection-tools { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
     }
-    @media (min-width: 680px) {
+    @container catalog-page (min-width: 980px) {
       .product-choice-list { max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain; }
     }
-    @media (max-width: 520px) {
+    @container product-selector (max-width: 520px) {
       .product-selector__head { display: grid; }
       .visible-actions { width: 100%; justify-content: stretch; }
       .visible-actions .btn { flex: 1 1 0; white-space: normal; }
