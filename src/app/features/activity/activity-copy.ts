@@ -1,4 +1,4 @@
-import { ActivityEvent } from '../../core/api/models';
+import { ActivityCategory, ActivityEvent } from '../../core/api/models';
 
 const ACTION_LABELS: Record<string, string> = {
   CREATED: 'Aangemaakt',
@@ -14,17 +14,62 @@ const ACTION_LABELS: Record<string, string> = {
   DOCUMENT_ADDED: 'Document toegevoegd',
   DOCUMENT_RENAMED: 'Document hernoemd',
   DOCUMENT_DELETED: 'Document verwijderd',
+  PHOTO_ADDED: 'Foto toegevoegd',
+  PHOTO_DELETED: 'Foto verwijderd',
+  PHOTO_REORDERED: 'Foto’s herschikt',
   STOCK_BOOKED: 'Voorraad bijgeboekt',
   COSTS_APPLIED: 'Kostprijzen toegepast',
   DELETED: 'Verwijderd',
   CUSTOMER_ACCEPTED: 'Door klant aanvaard',
   CUSTOMER_REJECTED: 'Door klant afgewezen',
   CUSTOMER_CHANGE_REQUESTED: 'Wijziging gevraagd',
+  IDENTITY_FINALIZED: 'Identiteit vastgelegd',
+};
+
+const ENTITY_CATEGORIES: Record<string, ActivityCategory> = {
+  SALES_ORDER: 'SALES',
+  PURCHASE_ORDER: 'PURCHASING',
+  SUPPLIER: 'PURCHASING',
+  PRODUCT: 'CATALOGUE',
+  PRODUCT_FAMILY: 'CATALOGUE',
+  CUSTOMER: 'RELATIONS',
+  PLANNER_ITEM: 'PLANNING',
+};
+
+const CATEGORY_LABELS: Record<ActivityCategory, string> = {
+  SALES: 'Verkoop',
+  PURCHASING: 'Inkoop',
+  CATALOGUE: 'Producten',
+  RELATIONS: 'Relaties',
+  PLANNING: 'Planning',
+  OTHER: 'Overig',
+};
+
+const CATEGORY_ICONS: Record<ActivityCategory, string> = {
+  SALES: 'sales',
+  PURCHASING: 'purchase',
+  CATALOGUE: 'products',
+  RELATIONS: 'customers',
+  PLANNING: 'activity',
+  OTHER: 'more',
 };
 
 export function activityActionLabel(action: string): string {
   const key = action.trim().toUpperCase();
   return ACTION_LABELS[key] ?? action.replaceAll('_', ' ').toLocaleLowerCase('nl-BE');
+}
+
+export function activityCategory(event: ActivityEvent): ActivityCategory {
+  if (event.category && CATEGORY_LABELS[event.category]) return event.category;
+  return ENTITY_CATEGORIES[event.entityType.trim().toUpperCase()] ?? 'OTHER';
+}
+
+export function activityCategoryLabel(category: ActivityCategory): string {
+  return CATEGORY_LABELS[category];
+}
+
+export function activityCategoryIcon(category: ActivityCategory): string {
+  return CATEGORY_ICONS[category];
 }
 
 export function activityEntityLabel(event: ActivityEvent): string {

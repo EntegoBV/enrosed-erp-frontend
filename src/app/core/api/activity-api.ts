@@ -2,10 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
-import { ActivityPage } from './models';
+import { ActivityCategory, ActivityPage } from './models';
 
 export interface ActivityFilters {
   actor?: string;
+  category?: ActivityCategory;
   entityType?: string;
   entityId?: string | number;
   before?: number;
@@ -20,6 +21,7 @@ export class ActivityApi {
   list(filters: ActivityFilters = {}): Promise<ActivityPage> {
     let params = new HttpParams().set('limit', String(filters.limit ?? 50));
     if (filters.actor) params = params.set('actor', filters.actor);
+    if (filters.category) params = params.set('category', filters.category);
     if (filters.entityType) params = params.set('entityType', filters.entityType);
     if (filters.entityId !== undefined) params = params.set('entityId', String(filters.entityId));
     if (filters.before !== undefined) params = params.set('before', String(filters.before));

@@ -35,6 +35,16 @@ export interface ActorRef {
 }
 
 /** One durable business action in the company-wide logbook. */
+export type ActivityCategory =
+  | 'SALES' | 'PURCHASING' | 'CATALOGUE' | 'RELATIONS' | 'PLANNING' | 'OTHER';
+
+export interface ActivityChange {
+  field: string;
+  label: string;
+  beforeValue: string | null;
+  afterValue: string | null;
+}
+
 export interface ActivityEvent {
   id: number;
   at: string;
@@ -44,6 +54,9 @@ export interface ActivityEvent {
   entityId: string | null;
   entityLabel: string | null;
   summary: string;
+  /** Optional during the rolling backend/frontend deployment; old events simply have no delta. */
+  category?: ActivityCategory | null;
+  changes?: ActivityChange[] | null;
 }
 
 export interface ActivityPage {
