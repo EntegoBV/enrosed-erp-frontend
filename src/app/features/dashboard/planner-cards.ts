@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { PlannerApi, PlannerItem, PlannerStore } from '../../core/api/planner-api';
 import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
+import { plannedBusinessDay } from '../../shared/business-days';
 import { Sheet, Ui } from '../../shared/ui';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -259,8 +260,8 @@ export interface PlannerMilestone {
               <!-- Pushing work out is one tap, not a date picker. -->
               <div class="snooze-row" role="group" aria-label="Snel plannen">
                 <button class="snooze" type="button" (click)="snooze(0)">Vandaag</button>
-                <button class="snooze" type="button" (click)="snooze(1)">Morgen</button>
-                <button class="snooze" type="button" (click)="snooze(7)">+1 week</button>
+                <button class="snooze" type="button" (click)="snooze(1)">Volgende werkdag</button>
+                <button class="snooze" type="button" (click)="snooze(5)">+5 werkdagen</button>
                 @if (draft.onDate) { <button class="snooze snooze--clear" type="button" (click)="patch({ onDate: null })">Los</button> }
               </div>
             </div>
@@ -770,9 +771,9 @@ export class PlannerCards {
     return draft.id === null ? 'Nieuwe afspraak' : 'Afspraak';
   }
 
-  /** Today, tomorrow or a week out - the classic snooze buttons. */
+  /** Quick planning counts Monday through Friday and never lands on a weekend. */
   snooze(days: number): void {
-    const date = new Date(Date.now() + days * DAY_MS);
+    const date = plannedBusinessDay(new Date(), days);
     this.patch({ onDate: isoDate(date) });
   }
 

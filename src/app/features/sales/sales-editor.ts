@@ -741,7 +741,7 @@ import {
                   <span>{{ freightStrategyLabel(data) }} · {{ data.priced.totals.freight | eur }}</span>
                 }
                 @if (transitDays(); as days) {
-                  <span>Transittijd ± {{ days }} {{ days === 1 ? 'dag' : 'dagen' }}
+                  <span>Transittijd ± {{ days }} {{ days === 1 ? 'werkdag' : 'werkdagen' }}
                     naar {{ orderCountryName() }}</span>
                 }
               </div>
@@ -1778,7 +1778,7 @@ export class SalesEditor {
     const lines = data.priced.lines;
     const transit = this.transitDays();
     const transitText = transit
-      ? ` Transittijd ± ${transit} ${transit === 1 ? 'dag' : 'dagen'} naar ${this.orderCountryName()}.`
+      ? ` Transittijd ± ${transit} ${transit === 1 ? 'werkdag' : 'werkdagen'} naar ${this.orderCountryName()}.`
       : '';
     if (lines.every((line) => line.inStock)) {
       return 'Alles op voorraad - kan meteen geleverd worden.' + transitText;

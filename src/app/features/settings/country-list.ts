@@ -8,8 +8,8 @@ import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
 import { Sheet, Ui } from '../../shared/ui';
 
 function blank(): Country {
-  return { code: '', name: '', minOrderValue: 2500, freightPerPallet: 95,
-           minFreight: 250, handling: 35, vatRatePct: 21, transitDays: 3, euMember: true };
+  return { code: '', name: '', minOrderValue: 1500, freightPerPallet: 95,
+           minFreight: 250, handling: 0, vatRatePct: 21, transitDays: 5, euMember: true };
 }
 
 @Component({
@@ -45,8 +45,8 @@ function blank(): Country {
       <details class="explainer">
         <summary>Hoe wordt vracht berekend?</summary>
         <div class="explainer__body">
-          <p>Verkoop gaat op pallets over de weg. Per land staat een tarief per pallet, een minimum per zending en een vaste administratiekost.</p>
-          <p>Vracht = <b>pallets × tarief</b>, maar nooit minder dan het <b>minimum</b>, plus de <b>administratie</b>. Onder het minimum orderbedrag kan een klant uit dat land niet bestellen.</p>
+          <p>Verkoop gaat op pallets over de weg. Per land staat een tarief per pallet, een minimum per zending en de transittijd in werkdagen.</p>
+          <p>Vracht = <b>pallets × tarief</b>, maar nooit minder dan het <b>minimum</b>. De administratie staat standaard op <b>0 EUR</b>. Onder het minimum orderbedrag kan een klant uit dat land niet bestellen.</p>
         </div>
       </details>
 
@@ -63,7 +63,7 @@ function blank(): Country {
             <div class="list-item__body">
               <div class="list-item__title">{{ country.name }}</div>
               <div class="list-item__meta">
-                min. {{ country.minOrderValue }} EUR · {{ country.transitDays }} dagen ·
+                min. {{ country.minOrderValue }} EUR · {{ country.transitDays }} werkdagen ·
                 BTW {{ country.vatRatePct }}%
                 @if (!country.euMember) { · <span class="warn-text">buiten EU</span> }
               </div>
@@ -147,7 +147,7 @@ function blank(): Country {
               <input class="input num right" id="k-transit" type="number" step="1"
                      [ngModel]="draft().transitDays"
                      (ngModelChange)="patch({ transitDays: +$event })" />
-              <span class="input-affix__suffix">dagen</span></div></div>
+              <span class="input-affix__suffix">werkdagen</span></div></div>
         </div>
         <div class="alert alert--info mt-8">
           <span class="alert__icon">≈</span>
