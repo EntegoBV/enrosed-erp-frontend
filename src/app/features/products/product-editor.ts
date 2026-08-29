@@ -31,6 +31,7 @@ import {
   ProductFamilyImageVariantChange,
 } from './product-family-gallery';
 import { ProductVariantGroup } from './product-variant-group';
+import { planProductFamilyIdentityFinalization } from './product-family-identity';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -2218,7 +2219,7 @@ export class ProductEditor implements OnDestroy {
       issues.push('Start gedeelde websitegegevens voor deze productreeks.');
     } else {
       if (!family.name.trim()) issues.push('Vul de publieke productnaam in.');
-      if (!family.publicHandle.trim()) issues.push('Vul een stabiele publieke URL in.');
+      if (!family.publicHandle?.trim()) issues.push('Vul een stabiele publieke URL in.');
       if (!family.images.length) issues.push('Voeg minstens één publieke productfoto toe.');
     }
     if (this.salesPrice() <= 0) issues.push('Stel een verkoopprijs in.');
@@ -2900,9 +2901,29 @@ export class ProductEditor implements OnDestroy {
     if (!desired || !this.familyDirty()) return;
 
     const previous = this.savedFamily();
-    let saved = desired.id === null
-      ? await this.catalog.createProductFamily(desired)
-      : await this.catalog.updateProductFamily(desired.id, desired);
+    let saved: ProductFamily;
+    if (desired.id === null) {
+      saved = await this.catalog.createProductFamily(desired);
+    } else {
+      const finalization = planProductFamilyIdentityFinalization(previous, desired);
+      if (finalization) {
+        const finalized = await this.catalog.finalizeDraftProductFamilyIdentity(
+          desired.id,
+          finalization,
+        );
+        /* The one-time command owns immutable identity. Feed its authoritative result into the
+           ordinary editable-fields update, never the stale pre-finalization projection. */
+        saved = await this.catalog.updateProductFamily(desired.id, {
+          ...desired,
+          familyKey: finalized.familyKey,
+          publicHandle: finalized.publicHandle,
+          members: finalized.members,
+          variantCount: finalized.variantCount,
+        });
+      } else {
+        saved = await this.catalog.updateProductFamily(desired.id, desired);
+      }
+    }
 
     if (saved.id !== null && desired.id !== null && previous?.id === desired.id) {
       const familyId = saved.id;
@@ -2934,9 +2955,16 @@ export class ProductEditor implements OnDestroy {
         ? [...families, saved]
         : families.map((item) => item.id === saved.id ? saved : item);
     });
+    const savedMember = saved.members.find((member) => member.productId === this.draft().id);
     this.patch({
       familyId: saved.id,
       familyKey: saved.familyKey,
+      ...(savedMember
+        ? {
+            canonicalVariantKey: savedMember.canonicalVariantKey,
+            variantPosition: savedMember.position,
+          }
+        : {}),
       ...this.variantPublicationFields(),
     });
   }

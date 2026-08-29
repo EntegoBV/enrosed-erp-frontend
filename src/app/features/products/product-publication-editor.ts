@@ -21,6 +21,10 @@ import {
   FeaturedProductEligibility,
   featuredProductEligibility,
 } from '../../shared/product-featured-eligibility';
+import {
+  canEditProductFamilyIdentity,
+  hasFinalizableDraftIdentity,
+} from './product-family-identity';
 
 interface FamilyFeaturedOption {
   member: ProductFamily['members'][number];
@@ -249,7 +253,11 @@ interface FamilyFeaturedOption {
             </div>
             <div class="stable-identity-note" role="note">
               <span aria-hidden="true">🔗</span>
-              <p><b>De klanttitel mag later veranderen.</b> De vaste reeks-sleutel en URL worden één keer bij het aanmaken gekozen. Een latere URL-migratie hoort buiten dit formulier en vereist een gecontroleerde redirect.</p>
+              @if (identityFinalizationPending()) {
+                <p><b>Deze geïmporteerde conceptreeks mist nog haar vaste identiteit.</b> Vul de reeks-sleutel, URL en alle variantcodes één keer in. Opslaan finaliseert ze samen; de reeks en alle SKU's moeten daarvoor op elk kanaal Concept staan.</p>
+              } @else {
+                <p><b>De klanttitel mag later veranderen.</b> De vaste reeks-sleutel en URL worden één keer bij het aanmaken gekozen. Een latere URL-migratie hoort buiten dit formulier en vereist een gecontroleerde redirect.</p>
+              }
             </div>
             <div class="form-grid">
               <label class="field">
@@ -257,11 +265,13 @@ interface FamilyFeaturedOption {
                 <input
                   class="input mono"
                   [ngModel]="family.familyKey"
-                  [readOnly]="family.id !== null"
+                  [readOnly]="!identityEditable()"
                   (ngModelChange)="patch({ familyKey: $event })"
                   placeholder="bijv. rose-in-dome-xl"
                 />
-                <small class="field__hint">Permanente technische koppeling tussen varianten; alleen te kiezen wanneer een nieuwe reeks wordt aangemaakt.</small>
+                <small class="field__hint">{{ identityFinalizationPending()
+                  ? 'Nog één keer te kiezen omdat deze geïmporteerde conceptreeks geen publieke URL heeft.'
+                  : 'Permanente technische koppeling tussen varianten; alleen te kiezen wanneer een nieuwe reeks wordt aangemaakt.' }}</small>
               </label>
               <label class="field">
                 <span>Permanente publieke URL</span>
@@ -270,16 +280,46 @@ interface FamilyFeaturedOption {
                   <input
                     class="input mono"
                     [ngModel]="family.publicHandle"
-                    [readOnly]="family.id !== null"
+                    [readOnly]="!identityEditable()"
                     (ngModelChange)="patch({ publicHandle: $event })"
                     placeholder="rose-in-dome-xl"
                   />
                 </span>
-                <small class="field__hint">{{ family.id !== null
-                  ? 'Permanent na aanmaak. Gebruik een gecontroleerde redirect buiten dit formulier voor een URL-migratie.'
+                <small class="field__hint">{{ identityFinalizationPending()
+                  ? 'Wordt samen met de reeks- en variantcodes definitief zodra u opslaat.'
+                  : family.id !== null
+                    ? 'Permanent na aanmaak. Gebruik een gecontroleerde redirect buiten dit formulier voor een URL-migratie.'
                   : 'Kies deze permanente URL één keer voor de nieuwe reeks; een titelwijziging past hem later niet automatisch aan.' }}</small>
               </label>
             </div>
+            @if (family.members.length) {
+              <div class="identity-variants">
+                <div class="identity-variants__head">
+                  <span>Canonieke variantcodes</span>
+                  <small>Een vaste technische code per SKU.</small>
+                </div>
+                <div class="identity-variants__list">
+                  @for (member of family.members; track member.productId) {
+                    <label class="identity-variant">
+                      <span>
+                        <b>{{ memberOptionLabel(member) }}</b>
+                        <small>SKU {{ member.sku || 'ontbreekt' }}</small>
+                      </span>
+                      <input
+                        class="input mono"
+                        [ngModel]="member.canonicalVariantKey ?? ''"
+                        [readOnly]="!identityEditable()"
+                        (ngModelChange)="patchCanonicalVariantKey(member.productId, $event)"
+                        placeholder="bijv. rose-in-dome-xl-red"
+                      />
+                    </label>
+                  }
+                </div>
+                @if (identityFinalizationPending()) {
+                  <small class="field__hint">Alle SKU's zijn verplicht en elke variantcode moet uniek zijn.</small>
+                }
+              </div>
+            }
           </section>
 
           <section class="subsection" aria-labelledby="publication-merchandising-title">
@@ -475,6 +515,16 @@ interface FamilyFeaturedOption {
     .stable-identity-note p { color: var(--muted); font-size: 10.5px; line-height: 1.45; }
     .stable-identity-note b { color: var(--ink-2); }
     .field .input[readonly] { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
+    .identity-variants { display: grid; gap: 8px; margin-top: 13px; }
+    .identity-variants__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .identity-variants__head > span { color: var(--ink-2); font-size: 12px; font-weight: 650; }
+    .identity-variants__head small { color: var(--muted); font-size: 10.5px; }
+    .identity-variants__list { display: grid; gap: 7px; }
+    .identity-variant { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 8px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+    .identity-variant > span { min-width: 0; display: grid; gap: 2px; }
+    .identity-variant b { overflow: hidden; color: var(--ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .identity-variant small { color: var(--muted); font: 9.5px var(--mono); }
+    .identity-variant .input { background: var(--surface); }
     .url-field {
       min-width: 0;
       display: flex;
@@ -655,6 +705,10 @@ interface FamilyFeaturedOption {
         width: auto;
         min-width: 150px;
       }
+      .identity-variant {
+        grid-template-columns: minmax(150px, .85fr) minmax(220px, 1.15fr);
+        gap: 12px;
+      }
     }
     @media (min-width: 680px) {
       .channel-grid {
@@ -730,6 +784,12 @@ export class ProductPublicationEditor {
   );
   readonly issueCount = computed(
     () => (this.family()?.publicationIssues ?? []).length,
+  );
+  readonly identityFinalizationPending = computed(
+    () => hasFinalizableDraftIdentity(this.family()),
+  );
+  readonly identityEditable = computed(
+    () => canEditProductFamilyIdentity(this.family()),
   );
   readonly members = computed(() => this.family()?.members ?? []);
   readonly cardFeaturedOptions = computed<FamilyFeaturedOption[]>(() => {
@@ -819,6 +879,18 @@ export class ProductPublicationEditor {
     const family = this.family();
     if (!family) return;
     this.familyChange.emit({ ...family, ...changes });
+  }
+
+  patchCanonicalVariantKey(productId: number, canonicalVariantKey: string): void {
+    if (this.busy() || !this.identityEditable()) return;
+    const family = this.family();
+    if (!family) return;
+    this.familyChange.emit({
+      ...family,
+      members: family.members.map((member) => member.productId === productId
+        ? { ...member, canonicalVariantKey }
+        : member),
+    });
   }
 
   patchTags(value: string): void {

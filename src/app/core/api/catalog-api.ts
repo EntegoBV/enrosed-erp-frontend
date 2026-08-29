@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
+  CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -130,6 +130,20 @@ export class CatalogApi {
   updateProductFamily(id: number, family: ProductFamily): Promise<ProductFamily> {
     return firstValueFrom(
       this.http.put<ProductFamily>(api(`/api/product-families/${id}`), family));
+  }
+
+  /**
+   * Finalizes placeholder identity only while the persisted family and every SKU are drafts.
+   * Expected keys and the complete SKU membership make this safe against stale editor state.
+   */
+  finalizeDraftProductFamilyIdentity(
+    id: number,
+    request: ProductFamilyIdentityFinalization,
+  ): Promise<ProductFamily> {
+    return firstValueFrom(this.http.put<ProductFamily>(
+      api(`/api/product-families/${id}/finalize-draft-identity`),
+      request,
+    ));
   }
 
   /** Changes only website visibility; never rewrites a stale family snapshot. */

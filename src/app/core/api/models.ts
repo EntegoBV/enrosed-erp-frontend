@@ -404,6 +404,24 @@ export interface ProductFamilyMember {
   active: boolean;
 }
 
+/** Optimistic identity precondition and target for one persisted family member. */
+export interface ProductFamilyVariantIdentityFinalization {
+  sku: string;
+  expectedCanonicalVariantKey: string | null;
+  canonicalVariantKey: string;
+}
+
+/**
+ * One-time identity finalization for an imported family that is still fully in draft.
+ * The complete SKU list prevents a stale editor from silently missing a moved variant.
+ */
+export interface ProductFamilyIdentityFinalization {
+  expectedFamilyKey: string;
+  familyKey: string;
+  publicHandle: string;
+  variants: ProductFamilyVariantIdentityFinalization[];
+}
+
 /**
  * Customer-facing model data. Operational stock, purchase and packaging fields
  * remain on Product, while this record is shared by every colour variant.
@@ -411,7 +429,7 @@ export interface ProductFamilyMember {
 export interface ProductFamily {
   id: number | null;
   familyKey: string;
-  publicHandle: string;
+  publicHandle: string | null;
   categoryId: number | null;
   categoryKey: string | null;
   categoryName: string | null;
