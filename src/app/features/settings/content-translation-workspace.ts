@@ -62,16 +62,20 @@ const PREFIX_LABELS: Record<string, string> = {
   imports: [FormsModule, WebsiteSyncStatus],
   template: `
     @if (visible()) {
-    <section class="card content-translations" aria-labelledby="content-translations-title">
+    <section class="card content-translations" [class.content-translations--compact]="compact()"
+             aria-labelledby="content-translations-title">
       <div class="card__head content-translations__head">
         <div>
           <h2 id="content-translations-title">{{ title() }}</h2>
           <p>{{ description() }}</p>
         </div>
         @if (!loading() && !loadError()) {
-          <div class="overview-progress" [class.overview-progress--done]="requiredMissing() === 0">
+          <div class="overview-progress"
+               [class.overview-progress--done]="scopeGroups().length > 0 && requiredMissing() === 0">
             <span><b>{{ completionPercent() }}%</b> compleet</span>
-            <small>{{ requiredMissing() ? requiredMissing() + ' verplichte taalvelden ontbreken' : 'Alle verplichte teksten zijn ingevuld' }}</small>
+            <small>{{ !scopeGroups().length ? 'Geen teksten gevonden voor dit onderdeel'
+              : requiredMissing() ? requiredMissing() + ' verplichte taalvelden ontbreken'
+              : 'Alle verplichte teksten zijn ingevuld' }}</small>
             <span class="overview-progress__bar" role="progressbar" [attr.aria-label]="'Voortgang ' + title()"
                   aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="completionPercent()">
               <i [style.width.%]="completionPercent()"></i>
@@ -81,7 +85,9 @@ const PREFIX_LABELS: Record<string, string> = {
       </div>
 
       <div class="card__body">
-        <app-website-sync-status [refreshKey]="websiteSyncRefreshKey()" />
+        @if (!compact()) {
+          <app-website-sync-status [refreshKey]="websiteSyncRefreshKey()" />
+        }
 
         @if (loadError()) {
           <div class="workspace-state workspace-state--error" role="alert">
@@ -242,6 +248,7 @@ const PREFIX_LABELS: Record<string, string> = {
               @for (group of visibleGroups(); track group.key) {
                 <button type="button"
                         [class.active]="draft()?.key === group.key && draft()?.scope === group.scope"
+                        [attr.aria-current]="draft()?.key === group.key && draft()?.scope === group.scope ? 'true' : null"
                         [disabled]="busy() || (hasPendingChanges() && draft()?.key !== group.key)"
                         (click)="select(group)">
                   <span>
@@ -514,6 +521,20 @@ const PREFIX_LABELS: Record<string, string> = {
     .conflict small { font-size: 14px; }
     .group-editor__actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
     .group-editor__actions .btn { min-height: 48px; font-size: 15px; }
+    .content-translations--compact { border: 0; border-radius: 0; box-shadow: none; }
+    .content-translations--compact > .card__head { padding: 18px 18px 14px; }
+    .content-translations--compact > .card__body { padding: 0 18px 18px; }
+    .content-translations--compact .workspace-toolbar,
+    .content-translations--compact .scope-guide,
+    .content-translations--compact .language-overview,
+    .content-translations--compact .prefix-filters { display: none; }
+    .content-translations--compact .workspace-controls { gap: 9px; }
+    .content-translations--compact .workspace-grid { grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+    .content-translations--compact .group-list { display: flex; max-height: none; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 1px 1px 8px; scroll-padding-inline: 1px; scroll-snap-type: inline mandatory; scrollbar-width: thin; }
+    .content-translations--compact .group-list > button { width: min(280px, 78vw); min-width: min(280px, 78vw); min-height: 74px; flex: 0 0 min(280px, 78vw); scroll-snap-align: start; }
+    .content-translations--compact .group-list > button.active { box-shadow: inset 0 -3px 0 var(--rose); }
+    .content-translations--compact .group-editor { padding: 17px; }
+    .content-translations--compact .translation-value textarea { min-height: 150px; }
     .save-state { margin-right: auto; color: var(--muted); font-size: 15px; }
     button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
 
@@ -557,6 +578,10 @@ const PREFIX_LABELS: Record<string, string> = {
       .advanced-panel, .group-editor { padding: 15px; }
       .group-editor__actions { grid-template-columns: 1fr; }
       .save-state { grid-column: auto; }
+      .content-translations--compact > .card__head,
+      .content-translations--compact > .card__body { padding-inline: 14px; }
+      .content-translations--compact .filter-row { display: grid; }
+      .content-translations--compact .group-list > button { width: 82vw; min-width: 82vw; flex-basis: 82vw; }
     }
   `,
 })
@@ -575,11 +600,14 @@ export class ContentTranslationWorkspace {
   );
   readonly initialScope = input<ContentTranslationScope>('WEBSITE');
   readonly initialPrefix = input('ALL');
+  readonly keyPrefixes = input<readonly string[]>([]);
+  readonly compact = input(false);
   readonly lockScope = input(false);
   readonly lockPrefix = input(false);
   readonly allowAdvanced = input(true);
   readonly dirtyChange = output<boolean>();
   readonly busyChange = output<boolean>();
+  readonly contentSaved = output<void>();
   readonly scope = signal<ContentTranslationScope>('WEBSITE');
   readonly groups = signal<ContentTranslationGroup[]>([]);
   readonly draft = signal<ContentTranslationGroup | null>(null);
@@ -610,7 +638,8 @@ export class ContentTranslationWorkspace {
     this.websiteSyncRefresh() + this.syncRefreshKey());
   readonly dirty = computed(() => JSON.stringify(this.draft()) !== JSON.stringify(this.saved()));
   readonly scopeGroups = computed(() => this.groups()
-    .filter((group) => group.scope === this.scope()));
+    .filter((group) => group.scope === this.scope())
+    .filter((group) => this.inSelectedKeys(group)));
   readonly completionGroups = computed(() => this.lockPrefix()
     ? this.scopeGroups().filter((group) => this.groupPrefix(group.key) === this.prefix())
     : this.scopeGroups());
@@ -657,7 +686,9 @@ export class ContentTranslationWorkspace {
     this.requiredFieldCount() - this.requiredMissing());
   readonly completionPercent = computed(() => {
     const total = this.requiredFieldCount();
-    return total ? Math.round((this.requiredComplete() / total) * 100) : 100;
+    if (total) return Math.round((this.requiredComplete() / total) * 100);
+    return !this.scopeGroups().length
+      && this.keyPrefixes().some((key) => key.trim().length > 0) ? 0 : 100;
   });
   readonly selectedLanguageLabel = computed(() =>
     this.languages.find((item) => item.code === this.selectedLanguage())?.label
@@ -718,14 +749,19 @@ export class ContentTranslationWorkspace {
       const current = this.draft();
       const wantedPrefix = this.initialPrefix();
       const candidates = groups.filter((group) => group.scope === this.scope())
-        .filter((group) => wantedPrefix === 'ALL' || this.groupPrefix(group.key) === wantedPrefix);
+        .filter((group) => this.inSelectedKeys(group))
+        .filter((group) => wantedPrefix === 'ALL' || this.groupPrefix(group.key) === wantedPrefix)
+        .sort((left, right) => left.label.localeCompare(right.label, 'nl'));
       if (wantedPrefix !== 'ALL' && !candidates.length && !this.lockPrefix()) {
         this.prefix.set('ALL');
       }
-      const selected = current
-        ? groups.find((group) => group.scope === current.scope && group.key === current.key)
-        : candidates[0]
-          ?? (this.lockPrefix() ? null : groups.find((group) => group.scope === this.scope()) ?? groups[0]);
+      const hasSelectedKeyFilter = this.keyPrefixes().some((key) => key.trim().length > 0);
+      const selected = candidates.find((group) =>
+        !!current && group.scope === current.scope && group.key === current.key)
+        ?? candidates[0]
+        ?? (this.lockPrefix() || hasSelectedKeyFilter
+          ? null
+          : groups.find((group) => group.scope === this.scope()) ?? groups[0]);
       this.setSelected(selected ?? null);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
@@ -833,6 +869,7 @@ export class ContentTranslationWorkspace {
       this.replaceGroup(saved);
       this.setSelected(saved);
       this.websiteSyncRefresh.update((value) => value + 1);
+      this.contentSaved.emit();
       this.ui.toast('Tekstvertalingen opgeslagen');
     } catch (failure: unknown) {
       const conflict = isRevisionConflict(failure);
@@ -933,6 +970,7 @@ export class ContentTranslationWorkspace {
       this.creating.set(false);
       this.setSelected(created);
       this.websiteSyncRefresh.update((value) => value + 1);
+      this.contentSaved.emit();
       this.ui.toast('Tekstgroep toegevoegd');
     } catch (failure: unknown) {
       const message = messageOf(
@@ -963,6 +1001,7 @@ export class ContentTranslationWorkspace {
         ));
         this.setSelected(this.visibleGroups()[0] ?? null);
         this.websiteSyncRefresh.update((value) => value + 1);
+        this.contentSaved.emit();
         this.ui.toast('Tekstgroep verwijderd');
       } catch (failure: unknown) {
         const conflict = isRevisionConflict(failure);
@@ -1006,6 +1045,16 @@ export class ContentTranslationWorkspace {
   private groupPrefix(key: string): string {
     const parts = key.toLowerCase().split(/[._:/-]+/).filter(Boolean);
     return parts.find((part) => PREFIX_LABELS[part]) ?? parts[0] ?? 'other';
+  }
+
+  private inSelectedKeys(group: ContentTranslationGroup): boolean {
+    const roots = this.keyPrefixes()
+      .map((root) => root.trim().toLowerCase())
+      .filter(Boolean);
+    if (!roots.length) return true;
+    const key = group.key.toLowerCase();
+    return roots.some((root) => key === root
+      || key.startsWith(root.endsWith('.') ? root : `${root}.`));
   }
 
   private prefixLabel(prefix: string): string {
