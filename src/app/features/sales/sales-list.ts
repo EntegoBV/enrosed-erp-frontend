@@ -5,13 +5,20 @@ import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrder, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { WorkQueue } from '../../core/api/work-queue';
-import { Sheet, Ui } from '../../shared/ui';
+import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
   STATUS_LABEL, actionNeeded, isWebsiteQuoteRequest, statusClass,
 } from './quote-status';
 import { messageOf } from '../../core/api/errors';
+import {
+  SALES_SWIPE_ACTION_PX,
+  clampSalesSwipeOffset,
+  isLocallyDeletableSalesDocument,
+  salesDocumentLabel,
+  salesSwipeDecision,
+} from './sales-list-swipe';
 
 @Component({
   selector: 'app-sales-list',
@@ -146,7 +153,18 @@ import { messageOf } from '../../core/api/errors';
       <div class="card">
         <div class="list">
           @for (row of rows(); track row.order.id) {
-            <a class="list-item" [routerLink]="['/sales', row.order.id]">
+            <div class="swipe"
+                 [class.swipe--open]="swiped() === row.order.id"
+                 [class.swipe--dragging]="draggingOrderId() === row.order.id"
+                 [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
+            <a class="list-item swipe__row" [routerLink]="['/sales', row.order.id]"
+               (pointerdown)="startSwipe($event, row)"
+               (pointermove)="moveSwipe($event, row)"
+               (pointerup)="finishSwipe($event, row)"
+               (pointercancel)="cancelSwipe($event)"
+               (wheel)="wheelSwipe($event, row)"
+               (dragstart)="$event.preventDefault()"
+               (click)="blockWhenSwiped($event)">
               <div class="list-item__body">
                 <div class="list-item__title">{{ customerName(row) }}</div>
                 <!-- No country chip: it repeats what the customer name already
@@ -194,6 +212,22 @@ import { messageOf } from '../../core/api/errors';
               </div>
               <span class="list-item__chev">›</span>
             </a>
+            @if (canDelete(row.order)) {
+              <button class="swipe__delete" type="button"
+                      [disabled]="deletingOrderId() !== null"
+                      [attr.aria-busy]="deletingOrderId() === row.order.id"
+                      (click)="remove(row)"
+                      [attr.aria-label]="documentLabel(row.order) + ' ' + row.order.number + ' verwijderen'"
+                      [title]="documentLabel(row.order) + ' verwijderen'">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true" focusable="false">
+                  <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                  <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+                </svg>
+              </button>
+            }
+            </div>
           } @empty {
             @if (loading()) {
               <app-skeleton kind="list" [rows]="5" />
@@ -331,6 +365,9 @@ import { messageOf } from '../../core/api/errors';
     }
   `,
   styles: `
+    .swipe--dragging { user-select:none }
+    .swipe--dragging .swipe__row { transform:translateX(var(--swipe-offset, 0px));transition:none }
+    .swipe__row { touch-action:pan-y }
     .so-status-mini { display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 9px;
       border-radius:999px;background:color-mix(in srgb,currentColor 10%,transparent);
       font-size:10.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
@@ -617,12 +654,26 @@ export class SalesList {
   readonly newDocType = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
   readonly websiteOnly = signal(false);
 
+  /** One open row at a time; a committed swipe still asks for confirmation. */
+  readonly swiped = signal<number | null>(null);
+  readonly draggingOrderId = signal<number | null>(null);
+  readonly swipeOffset = signal(0);
+  readonly deletingOrderId = signal<number | null>(null);
+  private swipeHandled = false;
+  private pointerSwipe: { pointerId: number; orderId: number; startX: number; startY: number;
+    startOffset: number; horizontal: boolean; row: HTMLElement } | null = null;
+  private swipeResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private wheelTotal = 0;
+  private wheelOrderId: number | null = null;
+  private wheelTimer: ReturnType<typeof setTimeout> | null = null;
+
   switchTab(tab: 'OFFERTE' | 'FACTUUR'): void {
     if (this.docTab() === tab) return;
     this.docTab.set(tab);
     /* Quote statuses and invoice statuses are different vocabularies. */
     this.filter.set('');
     this.websiteOnly.set(false);
+    this.swiped.set(null);
   }
 
   docCount(tab: 'OFFERTE' | 'FACTUUR'): number {
@@ -808,6 +859,180 @@ export class SalesList {
 
   customerName(row: SalesOrderView): string {
     return this.customerById().get(row.order.customerId)?.company ?? 'Geen klant';
+  }
+
+  canDelete(order: SalesOrder): boolean {
+    return isLocallyDeletableSalesDocument(order);
+  }
+
+  documentLabel(order: SalesOrder): 'Offerte' | 'Verkoopfactuur' {
+    return salesDocumentLabel(order.docType);
+  }
+
+  startSwipe(event: PointerEvent, row: SalesOrderView): void {
+    if (!this.canDelete(row.order) || !event.isPrimary || event.button !== 0
+        || this.deletingOrderId() !== null) return;
+    if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
+    this.swipeHandled = false;
+    if (this.swiped() !== null && this.swiped() !== row.order.id) this.swiped.set(null);
+    const target = event.currentTarget as HTMLElement;
+    this.pointerSwipe = {
+      pointerId: event.pointerId,
+      orderId: row.order.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      startOffset: this.swiped() === row.order.id ? -SALES_SWIPE_ACTION_PX : 0,
+      horizontal: false,
+      row: target,
+    };
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch {
+      this.pointerSwipe = null;
+    }
+  }
+
+  moveSwipe(event: PointerEvent, row: SalesOrderView): void {
+    const active = this.pointerSwipe;
+    if (!active || active.pointerId !== event.pointerId || active.orderId !== row.order.id
+        || this.deletingOrderId() !== null) return;
+    const dx = event.clientX - active.startX;
+    const dy = event.clientY - active.startY;
+    if (!active.horizontal) {
+      if (Math.hypot(dx, dy) < 8) return;
+      if (Math.abs(dx) <= Math.abs(dy) * 1.2) return;
+      active.horizontal = true;
+      this.swipeHandled = true;
+      this.draggingOrderId.set(active.orderId);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.swipeOffset.set(clampSalesSwipeOffset(active.startOffset + dx));
+  }
+
+  finishSwipe(event: PointerEvent, row: SalesOrderView): void {
+    const active = this.pointerSwipe;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.horizontal) {
+      event.preventDefault();
+      event.stopPropagation();
+      const decision = salesSwipeDecision(this.swipeOffset());
+      if (decision === 'commit') {
+        this.swiped.set(null);
+        this.remove(row);
+      } else {
+        this.swiped.set(decision === 'reveal' ? active.orderId : null);
+      }
+      this.deferSwipeClickRelease();
+    }
+    this.releaseSwipePointer(active);
+    this.resetPointerSwipe();
+  }
+
+  cancelSwipe(event: PointerEvent): void {
+    const active = this.pointerSwipe;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.horizontal) this.deferSwipeClickRelease();
+    else this.swipeHandled = false;
+    this.releaseSwipePointer(active);
+    this.resetPointerSwipe();
+  }
+
+  /** A horizontal two-finger trackpad gesture follows the same thresholds. */
+  wheelSwipe(event: WheelEvent, row: SalesOrderView): void {
+    if (!this.canDelete(row.order) || this.deletingOrderId() !== null) return;
+    if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    if (this.wheelOrderId !== row.order.id) {
+      if (this.swiped() !== null && this.swiped() !== row.order.id) this.swiped.set(null);
+      this.wheelOrderId = row.order.id;
+      this.wheelTotal = 0;
+    }
+    this.wheelTotal += event.deltaX;
+    if (this.wheelTimer !== null) clearTimeout(this.wheelTimer);
+    this.wheelTimer = setTimeout(() => {
+      this.wheelOrderId = null;
+      this.wheelTotal = 0;
+    }, 250);
+    const decision = salesSwipeDecision(-this.wheelTotal);
+    if (decision === 'commit') {
+      this.wheelOrderId = null;
+      this.wheelTotal = 0;
+      this.swiped.set(null);
+      this.remove(row);
+    } else if (decision === 'reveal') {
+      this.swiped.set(row.order.id);
+    } else if (this.wheelTotal <= -SALES_SWIPE_ACTION_PX / 2) {
+      this.swiped.set(null);
+    }
+  }
+
+  /** A tap after swiping closes the action rather than opening the document. */
+  blockWhenSwiped(event: Event): void {
+    if (this.swiped() !== null || this.swipeHandled) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!this.swipeHandled) this.swiped.set(null);
+    }
+  }
+
+  remove(row: SalesOrderView): void {
+    const order = row.order;
+    if (!this.canDelete(order) || this.deletingOrderId() !== null
+        || this.ui.confirmRequest() !== null) return;
+    const label = this.documentLabel(order);
+    const customer = this.customerName(row);
+    this.swiped.set(null);
+    this.ui.confirm(
+      {
+        title: `${label} verwijderen`,
+        message: `Weet je zeker dat je ${label.toLowerCase()} <b>${escapeHtml(order.number)}</b> `
+          + `van <b>${escapeHtml(customer)}</b> wilt verwijderen?<br><br>`
+          + 'Dit kan niet ongedaan worden gemaakt.',
+        confirmLabel: 'Verwijderen',
+        danger: true,
+      },
+      async () => {
+        if (this.deletingOrderId() !== null) return;
+        this.deletingOrderId.set(order.id);
+        try {
+          await this.sales.deleteOrder(order.id);
+          this.all.update((orders) =>
+            orders.filter((candidate) => candidate.order.id !== order.id));
+          this.swiped.set(null);
+          await this.work.refresh(true);
+          this.ui.toast(`${label} verwijderd`);
+        } catch (failure: unknown) {
+          this.ui.toast(messageOf(failure, `${label} verwijderen mislukt`), 'err');
+        } finally {
+          if (this.deletingOrderId() === order.id) this.deletingOrderId.set(null);
+        }
+      },
+    );
+  }
+
+  private deferSwipeClickRelease(): void {
+    if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
+    this.swipeResetTimer = setTimeout(() => {
+      this.swipeHandled = false;
+      this.swipeResetTimer = null;
+    }, 400);
+  }
+
+  private releaseSwipePointer(active: { pointerId: number; row: HTMLElement }): void {
+    try {
+      if (active.row.hasPointerCapture(active.pointerId)) {
+        active.row.releasePointerCapture(active.pointerId);
+      }
+    } catch {
+      /* A cancelled pointer has already been released by the browser. */
+    }
+  }
+
+  private resetPointerSwipe(): void {
+    this.pointerSwipe = null;
+    this.draggingOrderId.set(null);
+    this.swipeOffset.set(0);
   }
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];

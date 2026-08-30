@@ -5,7 +5,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { containerLabel } from '../../core/api/geo';
-import { Sheet, Ui } from '../../shared/ui';
+import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
@@ -104,8 +104,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             </a>
             @if (row.order.status !== 'ONTVANGEN') {
               <button class="swipe__delete" type="button" (click)="remove(row.order.id, row.order.number)"
+                      [disabled]="deletingOrderId() === row.order.id"
+                      [attr.aria-busy]="deletingOrderId() === row.order.id"
                       [attr.aria-label]="'Inkooporder ' + row.order.number + ' verwijderen'"
-                      title="Calculatie verwijderen">
+                      title="Inkooporder verwijderen">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
                      stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                      aria-hidden="true" focusable="false">
@@ -343,6 +345,7 @@ export class PurchaseList {
   readonly swiped = signal<number | null>(null);
   readonly draggingOrderId = signal<number | null>(null);
   readonly swipeOffset = signal(0);
+  readonly deletingOrderId = signal<number | null>(null);
   private swipeHandled = false;
   private pointerSwipe: { pointerId: number; orderId: number; startX: number; startY: number;
     startOffset: number; horizontal: boolean; row: HTMLElement } | null = null;
@@ -471,6 +474,7 @@ export class PurchaseList {
   }
 
   remove(id: number, number: string): void {
+    if (this.deletingOrderId() !== null || this.ui.confirmRequest() !== null) return;
     const row = this.orders().find((candidate) => candidate.order.id === id);
     if (row?.order.status === 'ONTVANGEN') {
       this.swiped.set(null);
@@ -478,18 +482,22 @@ export class PurchaseList {
       return;
     }
     this.ui.confirm(
-      { title: 'Calculatie verwijderen',
-        message: `Inkooporder <b>${number}</b> verwijderen?`,
+      { title: 'Inkooporder verwijderen',
+        message: `Inkooporder <b>${escapeHtml(number)}</b> definitief verwijderen?`
+          + '<br><small>Dit kan niet ongedaan worden gemaakt.</small>',
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
+        this.deletingOrderId.set(id);
         try {
           await this.sourcing.deletePurchaseOrder(id);
           this.swiped.set(null);
           this.orders.update((orders) =>
             orders.filter((candidate) => candidate.order.id !== id));
-          this.ui.toast('Calculatie verwijderd');
+          this.ui.toast('Inkooporder verwijderd');
         } catch (failure: unknown) {
           this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+        } finally {
+          this.deletingOrderId.set(null);
         }
       });
   }
