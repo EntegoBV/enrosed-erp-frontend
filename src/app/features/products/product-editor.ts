@@ -41,7 +41,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
     packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null },
     colour: null, colourHex: null, variantSize: null,
-    description: null, categoryId: null, supplierId, active: true, demo: false,
+    description: null, categoryId: null, supplierId, supplierNote: null, active: true, demo: false,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
     barcodeInner: '', barcodeOuter: '', hsCode: '',
     carton: { lengthCm: null, widthCm: null, heightCm: null, piecesPerCarton: 1, weightKg: null },
@@ -145,6 +145,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   </option>
                 }
               </select>
+            </div>
+            <div class="field span-2">
+              <label for="p-supplier-note">Leveranciersnotitie <span class="opt"></span></label>
+              <textarea class="textarea" id="p-supplier-note" rows="3" maxlength="4000"
+                        placeholder="Bijv. kleurcontrole, verpakking, bedrukking of andere afspraak"
+                        [ngModel]="draft().supplierNote"
+                        (ngModelChange)="patch({ supplierNote: emptyToNull($event) })"></textarea>
+              <span class="hint">Intern opgeslagen bij dit product en alleen opgenomen in de leveranciersversie van de inkooporder.</span>
             </div>
             <div class="field">
               <label class="req" for="p-name">Productnaam intern</label>
@@ -2664,10 +2672,17 @@ export class ProductEditor implements OnDestroy {
 
   setSupplier(supplierId: number): void {
     const supplier = this.suppliers().find((s) => s.id === supplierId);
+    const supplierChanged = this.draft().supplierId !== null
+      && this.draft().supplierId !== supplierId;
+    const clearedSupplierNote = supplierChanged && !!this.draft().supplierNote?.trim();
     if (this.isNew() && supplier) {
-      this.patch({ supplierId, exwCurrency: supplier.currency });
+      this.patch({ supplierId, exwCurrency: supplier.currency,
+        ...(supplierChanged ? { supplierNote: null } : {}) });
     } else {
-      this.patch({ supplierId });
+      this.patch({ supplierId, ...(supplierChanged ? { supplierNote: null } : {}) });
+    }
+    if (clearedSupplierNote) {
+      this.ui.toast('Leveranciersnotitie gewist omdat de leverancier is gewijzigd');
     }
   }
 

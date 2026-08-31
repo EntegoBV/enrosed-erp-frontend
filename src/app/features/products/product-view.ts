@@ -221,6 +221,14 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 <div><h2 id="dossier-title">Product &amp; prijzen</h2><p>Identificatie, inkoop en verkoop</p></div>
               </header>
 
+              @if (product.supplierNote; as supplierNote) {
+                <div class="supplier-note">
+                  <span>Leveranciersnotitie</span>
+                  <p>{{ supplierNote }}</p>
+                  <small>Wordt opgenomen in de leveranciers-PDF van een inkooporder.</small>
+                </div>
+              }
+
               <div class="tiles-kicker tiles-kicker--first">Identificatie</div>
               <div class="tiles">
                 <div class="tile"><span>Afmeting B × D × H</span><b class="num">{{ size(product.dimensions) }}</b></div>
@@ -835,6 +843,13 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     .info-card header p { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
     .info-card--internal { border-color: #eddcb9; }
     .info-card--internal .info-card__icon { background: var(--warn-soft); color: var(--warn); }
+    .supplier-note { margin: 12px 14px 0; padding: 12px 13px; border: 1px solid #eddcb9;
+      border-radius: var(--r-sm); background: var(--warn-soft); }
+    .supplier-note > span { color: var(--warn); font-size: 10.5px; font-weight: 800;
+      letter-spacing: .06em; text-transform: uppercase; }
+    .supplier-note p { margin-top: 5px; color: var(--ink); font-size: 13px; line-height: 1.5;
+      white-space: pre-wrap; overflow-wrap: anywhere; }
+    .supplier-note small { display: block; margin-top: 5px; color: var(--muted); font-size: 10.5px; }
 
     .barcode-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
       color: inherit; font: inherit; cursor: pointer; }

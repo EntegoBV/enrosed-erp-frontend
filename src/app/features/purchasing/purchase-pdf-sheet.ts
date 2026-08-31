@@ -4,6 +4,8 @@ import { messageOf } from '../../core/api/errors';
 import { PurchasePdfLayout, SourcingApi } from '../../core/api/sourcing-api';
 import { Sheet, Ui } from '../../shared/ui';
 
+type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
+
 /** One shared orientation choice for the purchase read and edit screens. */
 @Component({
   selector: 'app-purchase-pdf-sheet',
@@ -13,8 +15,8 @@ import { Sheet, Ui } from '../../shared/ui';
     <app-sheet title="Inkooporder exporteren" (closed)="close()">
       <div body>
         <p class="intro">
-          Kies A4 verticaal of horizontaal. Beide versies tonen dezelfde duidelijke
-          productregels en afgesproken inkoopprijzen; alleen de bladindeling verschilt.
+          Kies eerst voor wie de PDF bedoeld is. De leveranciersversie bevat alleen
+          de afgesproken gegevens; de twee interne versies verschillen in bladindeling.
         </p>
 
         @if (dirty()) {
@@ -36,8 +38,25 @@ import { Sheet, Ui } from '../../shared/ui';
         }
 
         <div class="choices">
+          <button class="pdf-choice pdf-choice--supplier" type="button"
+                  [disabled]="dirty() || busyChoice() !== null"
+                  (click)="download('SUPPLIER')">
+            <span class="paper paper--portrait paper--supplier" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </span>
+            <span class="choice-copy">
+              <span class="choice-kicker">A4 verticaal · extern</span>
+              <strong>Leverancier</strong>
+              <span>Afgesproken stukprijs en prijsbasis, aantallen, karton-CBM, EAN en de leveranciersnotitie per product.</span>
+              <small>Geen interne kosten, marges, omzet, betaalinformatie of verkoopprijzen.</small>
+            </span>
+            <span class="choice-action">
+              {{ busyChoice() === 'SUPPLIER' ? 'Maken…' : 'Download' }}
+            </span>
+          </button>
+
           <button class="pdf-choice pdf-choice--portrait" type="button"
-                  [disabled]="dirty() || busyLayout() !== null"
+                  [disabled]="dirty() || busyChoice() !== null"
                   (click)="download('PORTRAIT')">
             <span class="paper paper--portrait" aria-hidden="true">
               <span></span><span></span><span></span>
@@ -49,12 +68,12 @@ import { Sheet, Ui } from '../../shared/ui';
               <small>Handig om te controleren, af te drukken of door te sturen.</small>
             </span>
             <span class="choice-action">
-              {{ busyLayout() === 'PORTRAIT' ? 'Maken…' : 'Download' }}
+              {{ busyChoice() === 'PORTRAIT' ? 'Maken…' : 'Download' }}
             </span>
           </button>
 
           <button class="pdf-choice pdf-choice--landscape" type="button"
-                  [disabled]="dirty() || busyLayout() !== null"
+                  [disabled]="dirty() || busyChoice() !== null"
                   (click)="download('LANDSCAPE')">
             <span class="paper paper--landscape" aria-hidden="true">
               <span></span><span></span><span></span>
@@ -66,19 +85,19 @@ import { Sheet, Ui } from '../../shared/ui';
               <small>Geen vracht-, douane- of andere interne tussenprijzen.</small>
             </span>
             <span class="choice-action">
-              {{ busyLayout() === 'LANDSCAPE' ? 'Maken…' : 'Download' }}
+              {{ busyChoice() === 'LANDSCAPE' ? 'Maken…' : 'Download' }}
             </span>
           </button>
         </div>
 
         <p class="read-copy-note">
-          Beide exports komen uit het actuele dossier. Controleer ze voor verzending;
+          Alle exports komen uit het actuele dossier. Controleer ze voor verzending;
           product-, karton- en leveranciersgegevens zijn nog niet historisch vastgezet.
         </p>
       </div>
 
       <div foot class="sheet-actions">
-        <button class="btn" type="button" [disabled]="busyLayout() !== null" (click)="close()">
+        <button class="btn" type="button" [disabled]="busyChoice() !== null" (click)="close()">
           Sluiten
         </button>
         @if (dirty()) {
@@ -91,7 +110,7 @@ import { Sheet, Ui } from '../../shared/ui';
   `,
   styles: [`
     :host{display:contents}.intro{margin:0;color:var(--muted);font-size:15px;line-height:1.55}
-    .choices{display:grid;gap:12px;margin-top:18px}.pdf-choice{display:grid;min-height:108px;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:15px;width:100%;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease}.pdf-choice:hover:not(:disabled){transform:translateY(-1px);border-color:var(--gold);box-shadow:0 12px 28px rgb(45 31 23/.09)}.pdf-choice:focus-visible{outline:3px solid color-mix(in srgb,var(--gold) 38%,transparent);outline-offset:2px}.pdf-choice:disabled{cursor:not-allowed;opacity:.55}.paper{display:grid;align-content:center;gap:5px;justify-self:center;border:1px solid color-mix(in srgb,var(--gold) 64%,var(--line));border-radius:5px;background:#fff8ef;box-shadow:0 7px 15px rgb(45 31 23/.1);padding:8px}.paper--portrait{width:38px;height:52px}.paper--landscape{width:52px;height:38px}.paper span{display:block;height:2px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent)}.paper span:first-child{width:64%;background:var(--rose)}.choice-copy{display:flex;min-width:0;flex-direction:column;gap:4px}.choice-kicker{color:var(--rose);font-size:12.5px;font-weight:780;letter-spacing:.06em;text-transform:uppercase}.choice-copy strong{font-size:17px}.choice-copy>span:not(.choice-kicker){color:var(--ink-2);font-size:14px;line-height:1.45}.choice-copy small{color:var(--muted);font-size:12.5px;line-height:1.4}.choice-action{align-self:center;color:var(--rose);font-size:13px;font-weight:780}.save-warning,.download-error{display:flex;gap:10px;margin-top:14px;padding:13px;border-radius:12px;font-size:14px;line-height:1.5}.save-warning{border:1px solid var(--warn);background:var(--warn-soft)}.save-warning>span{display:grid;width:26px;height:26px;flex:none;place-items:center;border-radius:50%;background:var(--warn);color:#fff;font-weight:800}.save-warning b{display:block}.download-error{flex-direction:column;border:1px solid var(--danger);background:var(--danger-soft);color:var(--danger)}.read-copy-note{margin:14px 2px 0;color:var(--muted);font-size:13px;line-height:1.5}.sheet-actions{display:contents}@media(max-width:560px){.pdf-choice{min-height:104px;grid-template-columns:52px minmax(0,1fr);gap:12px;padding:13px}.choice-action{grid-column:2;justify-self:start}.paper--portrait{width:32px;height:44px}.paper--landscape{width:44px;height:32px}.choice-kicker{font-size:12px}.choice-copy strong{font-size:16px}.choice-copy>span:not(.choice-kicker){font-size:13.5px}}
+    .choices{display:grid;gap:12px;margin-top:18px}.pdf-choice{display:grid;min-height:108px;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:15px;width:100%;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease}.pdf-choice--supplier{border-color:#ddc08a;background:linear-gradient(135deg,#fffaf1,var(--surface))}.pdf-choice:hover:not(:disabled){transform:translateY(-1px);border-color:var(--gold);box-shadow:0 12px 28px rgb(45 31 23/.09)}.pdf-choice:focus-visible{outline:3px solid color-mix(in srgb,var(--gold) 38%,transparent);outline-offset:2px}.pdf-choice:disabled{cursor:not-allowed;opacity:.55}.paper{display:grid;align-content:center;gap:5px;justify-self:center;border:1px solid color-mix(in srgb,var(--gold) 64%,var(--line));border-radius:5px;background:#fff8ef;box-shadow:0 7px 15px rgb(45 31 23/.1);padding:8px}.paper--portrait{width:38px;height:52px}.paper--landscape{width:52px;height:38px}.paper--supplier{border-color:var(--gold);background:#fff}.paper span{display:block;height:2px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent)}.paper span:first-child{width:64%;background:var(--rose)}.choice-copy{display:flex;min-width:0;flex-direction:column;gap:4px}.choice-kicker{color:var(--rose);font-size:12.5px;font-weight:780;letter-spacing:.06em;text-transform:uppercase}.choice-copy strong{font-size:17px}.choice-copy>span:not(.choice-kicker){color:var(--ink-2);font-size:14px;line-height:1.45}.choice-copy small{color:var(--muted);font-size:12.5px;line-height:1.4}.choice-action{align-self:center;color:var(--rose);font-size:13px;font-weight:780}.save-warning,.download-error{display:flex;gap:10px;margin-top:14px;padding:13px;border-radius:12px;font-size:14px;line-height:1.5}.save-warning{border:1px solid var(--warn);background:var(--warn-soft)}.save-warning>span{display:grid;width:26px;height:26px;flex:none;place-items:center;border-radius:50%;background:var(--warn);color:#fff;font-weight:800}.save-warning b{display:block}.download-error{flex-direction:column;border:1px solid var(--danger);background:var(--danger-soft);color:var(--danger)}.read-copy-note{margin:14px 2px 0;color:var(--muted);font-size:13px;line-height:1.5}.sheet-actions{display:contents}@media(max-width:560px){.pdf-choice{min-height:104px;grid-template-columns:52px minmax(0,1fr);gap:12px;padding:13px}.choice-action{grid-column:2;justify-self:start}.paper--portrait{width:32px;height:44px}.paper--landscape{width:44px;height:32px}.choice-kicker{font-size:12px}.choice-copy strong{font-size:16px}.choice-copy>span:not(.choice-kicker){font-size:13.5px}}
   `],
 })
 export class PurchasePdfSheet {
@@ -105,33 +124,40 @@ export class PurchasePdfSheet {
   readonly closed = output<void>();
   readonly saveRequested = output<void>();
 
-  readonly busyLayout = signal<PurchasePdfLayout | null>(null);
+  readonly busyChoice = signal<PurchasePdfChoice | null>(null);
   readonly error = signal<string | null>(null);
 
   close(): void {
-    if (this.busyLayout() === null) this.closed.emit();
+    if (this.busyChoice() === null) this.closed.emit();
   }
 
-  async download(layout: PurchasePdfLayout): Promise<void> {
-    if (this.dirty() || this.busyLayout() !== null) return;
+  async download(choice: PurchasePdfChoice): Promise<void> {
+    if (this.dirty() || this.busyChoice() !== null) return;
+    const supplierCopy = choice === 'SUPPLIER';
+    const layout: PurchasePdfLayout = supplierCopy ? 'PORTRAIT' : choice;
     this.error.set(null);
-    this.busyLayout.set(layout);
+    this.busyChoice.set(choice);
     try {
-      const blob = await this.sourcing.purchasePdf(this.orderId(), false, layout);
+      const blob = await this.sourcing.purchasePdf(
+        this.orderId(), false, layout, supplierCopy ? 'SUPPLIER' : undefined);
       const stem = this.safeFilename(this.orderNumber());
-      saveBlob(blob, layout === 'PORTRAIT'
-        ? `${stem}-inkooporder-verticaal.pdf`
-        : `${stem}-inkooporder-horizontaal.pdf`);
-      this.ui.toast(layout === 'PORTRAIT'
-        ? 'Verticale inkooporder gedownload'
-        : 'Horizontale inkooporder gedownload');
+      saveBlob(blob, supplierCopy
+        ? `${stem}-leverancier-verticaal.pdf`
+        : layout === 'PORTRAIT'
+          ? `${stem}-inkooporder-verticaal.pdf`
+          : `${stem}-inkooporder-horizontaal.pdf`);
+      this.ui.toast(supplierCopy
+        ? 'Leveranciers-PDF gedownload'
+        : layout === 'PORTRAIT'
+          ? 'Verticale inkooporder gedownload'
+          : 'Horizontale inkooporder gedownload');
       this.closed.emit();
     } catch (failure: unknown) {
       const detail = messageOf(failure, 'Probeer het opnieuw of controleer de productgegevens.');
       this.error.set(detail);
       this.ui.toast('PDF maken mislukt', 'err');
     } finally {
-      this.busyLayout.set(null);
+      this.busyChoice.set(null);
     }
   }
 

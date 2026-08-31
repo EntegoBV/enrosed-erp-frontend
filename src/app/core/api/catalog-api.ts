@@ -93,6 +93,9 @@ export class CatalogApi {
   private productWriteBody(product: Product): Product {
     return {
       ...product,
+      /* The backend treats null as "legacy client omitted this field"; an empty
+         string is the explicit command to clear a saved supplier note. */
+      supplierNote: product.supplierNote ?? '',
       colourHex: product.colourHex ?? '',
       variantSize: product.variantSize ?? '',
     };

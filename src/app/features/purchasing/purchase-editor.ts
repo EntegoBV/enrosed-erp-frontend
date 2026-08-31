@@ -424,7 +424,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                  (ngModelChange)="setExwPrice(line.productId, $event)" />
                           <select class="input-affix__suffix line-currency"
                                   aria-label="Munt van de prijs"
-                                  [ngModel]="orderLine(line.productId)?.exwCurrency ?? 'USD'"
+                                  [disabled]="isReceived() || orderLine(line.productId)?.exwPrice == null"
+                                  [ngModel]="effectiveExwCurrency(line.productId)"
                                   (ngModelChange)="setExwCurrency(line.productId, $event)">
                             <option value="USD">USD</option>
                             <option value="CNY">CNY</option>
@@ -2317,13 +2318,22 @@ export class PurchaseEditor {
   setExwPrice(productId: number, raw: unknown): void {
     const empty = raw === null || raw === undefined || raw === '';
     const line = this.orderLine(productId);
+    const inheritedCurrency = this.products()
+      .find((product) => product.id === productId)?.exwCurrency ?? 'USD';
     this.setLine(productId, empty
       ? { exwPrice: null, exwCurrency: null }
-      : { exwPrice: +String(raw), exwCurrency: line?.exwCurrency ?? 'USD' });
+      : { exwPrice: +String(raw), exwCurrency: line?.exwCurrency ?? inheritedCurrency });
   }
 
   setExwCurrency(productId: number, currency: Currency): void {
+    if (this.orderLine(productId)?.exwPrice == null) return;
     this.setLine(productId, { exwCurrency: currency });
+  }
+
+  effectiveExwCurrency(productId: number): Currency {
+    return this.orderLine(productId)?.exwCurrency
+      ?? this.products().find((product) => product.id === productId)?.exwCurrency
+      ?? 'USD';
   }
 
   /* ---- damage or shortfall on a received order, via one small button ---- */
@@ -2436,7 +2446,7 @@ export class PurchaseEditor {
       packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null }, barcode: null },
       colour: null, colourHex: null, variantSize: null,
       description: '', categoryId: null,
-      supplierId: data.order.supplierId, active: true,
+      supplierId: data.order.supplierId, supplierNote: null, active: true,
       barcodeInner: '', barcodeOuter: '', hsCode: '',
       carton: { lengthCm: draft.cartonLengthCm, widthCm: draft.cartonWidthCm,
           heightCm: draft.cartonHeightCm,

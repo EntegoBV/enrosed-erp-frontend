@@ -207,6 +207,8 @@ export interface Product {
   description: string | null;
   categoryId: number | null;
   supplierId: number | null;
+  /** Internal product instruction included only on supplier purchase PDFs. */
+  supplierNote: string | null;
   active: boolean;
   /** A demo piece: shown, never sold; invisible to every public channel. */
   demo?: boolean;
