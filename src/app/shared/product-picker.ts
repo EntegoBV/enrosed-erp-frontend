@@ -5,6 +5,7 @@ import { AuthImage } from '../core/api/auth-image';
 import { Product } from '../core/api/models';
 import { Sheet } from './ui';
 import { EurPipe, NumPipe } from './pipes';
+import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
 
 /**
  * Picking a product with a search field instead of a dropdown.
@@ -386,6 +387,8 @@ export class ProductPicker implements OnDestroy {
   readonly mode = input<'single' | 'multi'>('single');
   /** Whether stock levels and shortfall warnings are shown - selling from stock cares, buying does not. */
   readonly stockAware = input(true);
+  /** Purchasing opts in because its source is already in canonical catalogue order. */
+  readonly preserveSourceOrder = input(false);
 
   /* ---- multi mode ---- */
   readonly selected = signal(new Map<number, { product: Product; quantity: number }>());
@@ -400,7 +403,8 @@ export class ProductPicker implements OnDestroy {
     this.query.set(value);
     if (this.quantityStep()) this.quantityStep.set(false);
   }
-  readonly batch = computed(() => [...this.selected().values()]);
+  readonly batch = computed(() => orderPickerBatch(
+    [...this.selected().values()], this.products(), this.preserveSourceOrder()));
   readonly batchReady = computed(() => this.batch().length > 0 && this.batch().every((entry) => entry.quantity > 0));
 
   isSelected(product: Product): boolean {
@@ -482,14 +486,7 @@ export class ProductPicker implements OnDestroy {
 
   readonly matches = computed(() => {
     const needle = this.query().toLowerCase().trim();
-    /* Name first, colour second: a family's variants stand side by side
-       with the colours in a fixed order, instead of database order. */
-    /* Colour groups first (all Rood together), alphabetical inside each;
-       colourless products close the list. */
-    const all = this.products().slice().sort((a, b) =>
-      Number(!a.colour) - Number(!b.colour)
-      || (a.colour ?? '').localeCompare(b.colour ?? '', 'nl')
-      || a.name.localeCompare(b.name, 'nl'));
+    const all = orderPickerProducts(this.products(), this.preserveSourceOrder());
     if (!needle) return all.slice(0, 50);
     return all
       .filter((product) =>

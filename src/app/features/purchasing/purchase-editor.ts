@@ -1072,6 +1072,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [priceOf]="exwPriceOf"
           [enforceCartons]="false"
           mode="multi"
+          [preserveSourceOrder]="true"
           [stockAware]="false"
           (picked)="addLine($event)"
           (pickedMany)="addLines($event)"
