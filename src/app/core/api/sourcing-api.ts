@@ -7,9 +7,13 @@ import {
   ReceiptVarianceFilters, ReceiptVarianceReport, ExpectedStock, PurchasePayment, Currency, Payee,
   PurchaseDocument, DocumentKind,
 } from './models';
+import {
+  PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
+} from './purchase-pdf-options';
 
-export type PurchasePdfLayout = 'PORTRAIT' | 'LANDSCAPE';
-export type PurchasePdfAudience = 'INTERNAL' | 'STANDARD' | 'SUPPLIER';
+export type {
+  NormalizedPurchasePdfOptions, PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions,
+} from './purchase-pdf-options';
 
 @Injectable({ providedIn: 'root' })
 export class SourcingApi {
@@ -56,13 +60,19 @@ export class SourcingApi {
       this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}`), order));
   }
 
-  /** Purchase PDF in one of two A4 orientations, optionally reduced to a supplier-safe copy. */
+  /** Purchase PDF in one of two A4 orientations, with explicit portrait display options. */
+  purchasePdf(id: number, options: PurchasePdfOptions): Promise<Blob>;
+  /** Backwards-compatible signature for older callers. */
   purchasePdf(id: number, showRevenue: boolean,
+              layout?: PurchasePdfLayout, audience?: PurchasePdfAudience): Promise<Blob>;
+  purchasePdf(id: number, optionsOrRevenue: PurchasePdfOptions | boolean,
               layout: PurchasePdfLayout = 'LANDSCAPE',
               audience?: PurchasePdfAudience): Promise<Blob> {
-    const audienceQuery = audience ? `&audience=${audience}` : '';
+    const options: PurchasePdfOptions = typeof optionsOrRevenue === 'boolean'
+      ? { showRevenue: optionsOrRevenue, layout, audience }
+      : optionsOrRevenue;
     return firstValueFrom(this.http.get(
-      api(`/api/purchase-orders/${id}/pdf?showRevenue=${showRevenue}&layout=${layout}${audienceQuery}`),
+      api(`/api/purchase-orders/${id}/pdf?${purchasePdfQuery(options)}`),
       { responseType: 'blob' }));
   }
 
