@@ -1,12 +1,25 @@
 import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
-import { LanguageCode, Product, ProductFamily } from '../../core/api/models';
+import { LANGUAGES, LanguageCode, Product, ProductFamily } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { ProductTranslationEditor } from './product-translation-editor';
 import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import { messageOf } from '../../core/api/errors';
+
+const PRODUCT_TRANSLATION_FOCUS = new Set([
+  'public-name',
+  'family-name',
+  'family-summary',
+  'family-description',
+  'family-format',
+  'family-highlights',
+  'variant-name',
+  'variant-colour',
+  'variant-size',
+  'variant-description',
+]);
 
 /**
  * Website translations on a page of their own.
@@ -24,7 +37,7 @@ import { messageOf } from '../../core/api/errors';
   template: `
     @if (loadError()) {
       <app-page-header title="Productvertalingen" subtitle="Product niet beschikbaar"
-                       [showBack]="true" [showBell]="false" />
+                       [showBack]="true" [backTo]="returnTo" [showBell]="false" />
       <main class="content translations-page">
         <section class="translation-load-error" role="alert">
           <span aria-hidden="true">!</span>
@@ -45,14 +58,17 @@ import { messageOf } from '../../core/api/errors';
       </main>
     } @else if (loading()) {
       <app-page-header title="Productvertalingen" subtitle="Product laden…"
-                       [showBack]="true" [showBell]="false" />
+                       [showBack]="true" [backTo]="returnTo" [showBell]="false" />
       <main class="content translations-page" aria-live="polite">
         <app-skeleton kind="card" [rows]="2" />
         <span class="sr-only">Product en vertalingen laden…</span>
       </main>
     } @else if (product(); as product) {
       <app-page-header title="Productvertalingen" [subtitle]="product.name"
-                       [showBack]="true" [showBell]="false">
+                       [showBack]="true" [backTo]="returnTo" [showBell]="false">
+        @if (returnTo === '/catalog-export') {
+          <a class="btn" [routerLink]="returnTo">Terug naar catalogus</a>
+        }
         <a class="btn" [routerLink]="['/products', product.id, 'edit']">Productgegevens</a>
       </app-page-header>
       <div class="content translations-page">
@@ -79,6 +95,7 @@ import { messageOf } from '../../core/api/errors';
           [product]="product"
           [family]="family()"
           [language]="language()"
+          [focusField]="focusField"
           [visible]="true"
           (languageChange)="language.set($event)"
           (dirtyChange)="dirty.set($event)"
@@ -87,7 +104,7 @@ import { messageOf } from '../../core/api/errors';
       </div>
     } @else {
       <app-page-header title="Productvertalingen" subtitle="Geen product geselecteerd"
-                       [showBack]="true" [showBell]="false" />
+                       [showBack]="true" [backTo]="returnTo" [showBell]="false" />
       <main class="content translations-page">
         <section class="translation-load-error" role="status">
           <span aria-hidden="true">?</span>
@@ -151,11 +168,29 @@ export class ProductTranslationsPage implements HasUnsavedChanges {
   readonly family = signal<ProductFamily | null>(null);
   readonly loading = signal(true);
   readonly loadError = signal<string | null>(null);
-  readonly language = signal<LanguageCode>('NL');
+  readonly language = signal<LanguageCode>(this.requestedLanguage());
+  readonly focusField = this.requestedFocus();
+  readonly returnTo = this.requestedReturnTo('/products');
   readonly dirty = signal(false);
   readonly saving = signal(false);
   private readonly productId = +(this.route.snapshot.paramMap.get('id') ?? 0);
   readonly validProductId = Number.isInteger(this.productId) && this.productId > 0;
+
+  private requestedLanguage(): LanguageCode {
+    const requested = this.route.snapshot.queryParamMap.get('language')?.toUpperCase();
+    return LANGUAGES.some((language) => language.code === requested)
+      ? requested as LanguageCode : 'NL';
+  }
+
+  private requestedFocus(): string | null {
+    const focus = this.route.snapshot.queryParamMap.get('focus')?.trim() ?? '';
+    return PRODUCT_TRANSLATION_FOCUS.has(focus) ? focus : null;
+  }
+
+  private requestedReturnTo(fallback: string): string {
+    const returnTo = this.route.snapshot.queryParamMap.get('returnTo')?.trim() ?? '';
+    return returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : fallback;
+  }
 
   constructor() {
     void this.load();

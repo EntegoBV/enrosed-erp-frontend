@@ -9,6 +9,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
@@ -326,7 +327,8 @@ const PREFIX_LABELS: Record<string, string> = {
 
                 <label class="translation-value">
                   <span>{{ selectedLanguageLabel() }}</span>
-                  <textarea class="textarea" rows="7" [ngModel]="selectedValue()"
+                  <textarea class="textarea" id="content-translation-value"
+                            rows="7" [ngModel]="selectedValue()"
                             (ngModelChange)="patchValue($event)"
                             [placeholder]="group.required ? 'Verplichte vertaling' : 'Optionele vertaling'"></textarea>
                 </label>
@@ -588,7 +590,9 @@ const PREFIX_LABELS: Record<string, string> = {
 export class ContentTranslationWorkspace {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
+  private readonly document = inject(DOCUMENT);
   private loadStarted = false;
+  private focusedInitialKey: string | null = null;
 
   readonly languages = TRANSLATION_LANGUAGES;
   readonly visible = input(true);
@@ -600,6 +604,8 @@ export class ContentTranslationWorkspace {
   );
   readonly initialScope = input<ContentTranslationScope>('WEBSITE');
   readonly initialPrefix = input('ALL');
+  readonly initialLanguage = input<LanguageCode>('NL');
+  readonly initialKey = input<string | null>(null);
   readonly keyPrefixes = input<readonly string[]>([]);
   readonly compact = input(false);
   readonly lockScope = input(false);
@@ -727,8 +733,17 @@ export class ContentTranslationWorkspace {
       untracked(() => {
         this.scope.set(this.initialScope());
         this.prefix.set(this.initialPrefix());
+        this.selectedLanguage.set(this.initialLanguage());
         void this.load();
       });
+    });
+    effect(() => {
+      const initialKey = this.initialKey()?.trim();
+      const group = this.draft();
+      if (!initialKey || group?.key !== initialKey || this.loading()) return;
+      if (this.focusedInitialKey === initialKey) return;
+      this.focusedInitialKey = initialKey;
+      queueMicrotask(() => this.focusInitialTranslation());
     });
     effect(() => this.dirtyChange.emit(this.hasPendingChanges()));
     effect(() => this.busyChange.emit(this.busy()));
@@ -747,6 +762,7 @@ export class ContentTranslationWorkspace {
       const groups = overviews.flatMap((overview) => overview.groups);
       this.groups.set(groups);
       const current = this.draft();
+      const initialKey = this.initialKey()?.trim();
       const wantedPrefix = this.initialPrefix();
       const candidates = groups.filter((group) => group.scope === this.scope())
         .filter((group) => this.inSelectedKeys(group))
@@ -756,7 +772,9 @@ export class ContentTranslationWorkspace {
         this.prefix.set('ALL');
       }
       const hasSelectedKeyFilter = this.keyPrefixes().some((key) => key.trim().length > 0);
-      const selected = candidates.find((group) =>
+      const selected = groups.find((group) =>
+        !!initialKey && group.scope === this.scope() && group.key === initialKey)
+        ?? candidates.find((group) =>
         !!current && group.scope === current.scope && group.key === current.key)
         ?? candidates[0]
         ?? (this.lockPrefix() || hasSelectedKeyFilter
@@ -1022,6 +1040,19 @@ export class ContentTranslationWorkspace {
     this.draft.set(copy);
     this.saveError.set(null);
     this.conflict.set(false);
+  }
+
+  private focusInitialTranslation(attempt = 0): void {
+    const view = this.document.defaultView;
+    const target = this.document.getElementById('content-translation-value');
+    if (!view) return;
+    if (!target && attempt < 3) {
+      view.requestAnimationFrame(() => this.focusInitialTranslation(attempt + 1));
+      return;
+    }
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.focus({ preventScroll: true });
   }
 
   private replaceGroup(group: ContentTranslationGroup): void {

@@ -175,7 +175,8 @@ import {
               </div>
               <label class="field public-name-field">
                 <span>Publieke naam in {{ languageLabel() }}</span>
-                <input class="input" maxlength="255" [ngModel]="publicName()"
+                <input class="input" id="product-translation-public-name"
+                       maxlength="255" [ngModel]="publicName()"
                        [placeholder]="(productDraft() ?? product()).name"
                        (ngModelChange)="patchPublicName($event)" />
                 <small class="field__hint">Dit is de naam die bezoekers op de website zien.</small>
@@ -195,29 +196,34 @@ import {
             <div class="form-grid">
               <label class="field span-2">
                 <span>Naam voor klanten</span>
-                <input class="input" [ngModel]="sharedText().name"
+                <input class="input" id="product-translation-family-name"
+                       [ngModel]="sharedText().name"
                        (ngModelChange)="patchFamily({ name: $event })" />
               </label>
               <label class="field span-2">
                 <span>Korte samenvatting</span>
-                <textarea class="textarea" rows="2" maxlength="240"
+                <textarea class="textarea" id="product-translation-family-summary"
+                          rows="2" maxlength="240"
                           [ngModel]="sharedText().summary"
                           (ngModelChange)="patchFamily({ summary: $event })"></textarea>
                 <small class="field__hint">Voor productkaarten en de intro van de detailpagina.</small>
               </label>
               <label class="field span-2">
                 <span>Beschrijving</span>
-                <textarea class="textarea" rows="5" [ngModel]="sharedText().description"
+                <textarea class="textarea" id="product-translation-family-description"
+                          rows="5" [ngModel]="sharedText().description"
                           (ngModelChange)="patchFamily({ description: $event })"></textarea>
               </label>
               <label class="field">
                 <span>Formaat</span>
-                <input class="input" [ngModel]="sharedText().format"
+                <input class="input" id="product-translation-family-format"
+                       [ngModel]="sharedText().format"
                        (ngModelChange)="patchFamily({ format: $event })" />
               </label>
               <label class="field">
                 <span>Highlights</span>
-                <textarea class="textarea" rows="3" [ngModel]="highlightsText()"
+                <textarea class="textarea" id="product-translation-family-highlights"
+                          rows="3" [ngModel]="highlightsText()"
                           (ngModelChange)="patchHighlights($event)"
                           placeholder="Eén voordeel per regel"></textarea>
               </label>
@@ -242,24 +248,27 @@ import {
             <div class="form-grid">
               <label class="field">
                 <span>Naam op offerte en documenten in {{ language() }}</span>
-                <input class="input" [ngModel]="variantText().name"
+                <input class="input" id="product-translation-variant-name"
+                       [ngModel]="variantText().name"
                        [placeholder]="(productDraft() ?? product()).name"
                        (ngModelChange)="patchVariant({ name: $event })" />
                 <small class="field__hint">Voor offertes en klantdocumenten. De websitenaam staat hierboven apart.</small>
               </label>
-              @if ((productDraft() ?? product()).colour) {
+              @if (showVariantColour()) {
                 <label class="field">
                   <span>Kleur "{{ (productDraft() ?? product()).colour }}" in {{ language() }}</span>
-                  <input class="input" [ngModel]="variantText().colour"
+                  <input class="input" id="product-translation-variant-colour"
+                         [ngModel]="variantText().colour"
                          [placeholder]="(productDraft() ?? product()).colour ?? ''"
                          (ngModelChange)="patchVariant({ colour: $event })" />
                   <small class="field__hint">Het woord zoals de klant het leest, bv. Rood → Rouge.</small>
                 </label>
               }
-              @if ((productDraft() ?? product()).variantSize) {
+              @if (showVariantSize()) {
                 <label class="field">
                   <span>Maat "{{ (productDraft() ?? product()).variantSize }}" in {{ language() }}</span>
-                  <input class="input" [ngModel]="variantText().variantSize"
+                  <input class="input" id="product-translation-variant-size"
+                         [ngModel]="variantText().variantSize"
                          [placeholder]="(productDraft() ?? product()).variantSize ?? ''"
                          (ngModelChange)="patchVariant({ variantSize: $event })" />
                   <small class="field__hint">Woorden vertalen (Small → Klein); codes en afmetingen zoals S of 12x25 blijven gelijk.</small>
@@ -267,7 +276,8 @@ import {
               }
               <label class="field span-2">
                 <span>{{ familyDraft() ? 'Variantbeschrijving' : 'Productbeschrijving' }}</span>
-                <textarea class="textarea" rows="3" [ngModel]="variantText().description"
+                <textarea class="textarea" id="product-translation-variant-description"
+                          rows="3" [ngModel]="variantText().description"
                           (ngModelChange)="patchVariant({ description: $event })"></textarea>
               </label>
             </div>
@@ -494,11 +504,13 @@ export class ProductTranslationEditor {
   private readonly destroyRef = inject(DestroyRef);
   private loadVersion = 0;
   private loadedIdentity = '';
+  private focusedTarget = '';
 
   readonly languages = TRANSLATION_LANGUAGES;
   readonly product = input.required<Product>();
   readonly family = input<ProductFamily | null>(null);
   readonly language = input.required<LanguageCode>();
+  readonly focusField = input<string | null>(null);
   readonly busy = input(false);
   readonly visible = input(true);
   readonly saved = output<ProductPublicTranslationsSnapshot>();
@@ -571,6 +583,18 @@ export class ProductTranslationEditor {
     const product = this.productDraft() ?? this.product();
     return [product.colour || 'zonder kleur', product.variantSize].filter(Boolean).join(' · ');
   });
+  readonly showVariantColour = computed(() => {
+    const product = this.productDraft() ?? this.product();
+    return !!product.colour?.trim()
+      || product.texts.some((text) => !!text.colour?.trim())
+      || this.focusField() === 'variant-colour';
+  });
+  readonly showVariantSize = computed(() => {
+    const product = this.productDraft() ?? this.product();
+    return !!product.variantSize?.trim()
+      || product.texts.some((text) => !!text.variantSize?.trim())
+      || this.focusField() === 'variant-size';
+  });
   readonly images = computed(() => [...(this.familyDraft()?.images ?? [])]
     .sort((left, right) => left.position - right.position));
   /* Dirty means: different from what the form showed right after loading
@@ -604,6 +628,14 @@ export class ProductTranslationEditor {
     });
     effect(() => this.dirtyChange.emit(this.dirty()));
     effect(() => this.savingChange.emit(this.saving()));
+    effect(() => {
+      const snapshot = this.snapshot();
+      const focus = this.focusField()?.trim();
+      if (!snapshot || !focus || this.loading()) return;
+      const target = `${snapshot.productId}:${focus}`;
+      if (target === this.focusedTarget) return;
+      queueMicrotask(() => this.focusDeepLinkedField(target, focus));
+    });
   }
 
   selectLanguage(language: LanguageCode): void {
@@ -621,6 +653,20 @@ export class ProductTranslationEditor {
     this.languageChange.emit(this.languages[target].code);
     queueMicrotask(() => document.getElementById(
       `translation-tab-${this.languages[target].code}`)?.focus());
+  }
+
+  private focusDeepLinkedField(target: string, focus: string, attempt = 0): void {
+    if (this.destroyRef.destroyed || target === this.focusedTarget) return;
+    const field = document.getElementById(`product-translation-${focus}`);
+    if (!(field instanceof HTMLElement)) {
+      if (attempt < 2 && typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => this.focusDeepLinkedField(target, focus, attempt + 1));
+      }
+      return;
+    }
+    this.focusedTarget = target;
+    field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    field.focus({ preventScroll: true });
   }
 
   patchFamily(changes: Partial<ProductFamilyText>): void {

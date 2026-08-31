@@ -1,4 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Category, CategoryText, LanguageCode } from '../../core/api/models';
 import { TRANSLATION_LANGUAGES } from '../products/product-translation-adapter';
@@ -88,32 +98,37 @@ interface CategoryLanguageState {
         <div class="translation-grid">
           <label class="field span-2">
             <span>Naam</span>
-            <input class="input" [ngModel]="text().name"
+            <input class="input" id="category-translation-category-name" [ngModel]="text().name"
                    (ngModelChange)="patch({ name: $event })" />
           </label>
           <label class="field">
             <span>Korte navigatienaam (desktop)</span>
-            <input class="input" maxlength="40" [ngModel]="text().navigationName"
+            <input class="input" id="category-translation-category-navigation-name"
+                   maxlength="40" [ngModel]="text().navigationName"
                    (ngModelChange)="patch({ navigationName: $event })" />
           </label>
           <label class="field">
             <span>Korte mobiele naam</span>
-            <input class="input" maxlength="40" [ngModel]="text().mobileName"
+            <input class="input" id="category-translation-category-mobile-name"
+                   maxlength="40" [ngModel]="text().mobileName"
                    (ngModelChange)="patch({ mobileName: $event })" />
           </label>
           <label class="field span-2">
             <span>Naam in websitefooter</span>
-            <input class="input" [ngModel]="text().footerName"
+            <input class="input" id="category-translation-category-footer-name"
+                   [ngModel]="text().footerName"
                    (ngModelChange)="patch({ footerName: $event })" />
           </label>
           <label class="field span-2">
             <span>Bovenregel website</span>
-            <input class="input" [ngModel]="text().eyebrow"
+            <input class="input" id="category-translation-category-eyebrow"
+                   [ngModel]="text().eyebrow"
                    (ngModelChange)="patch({ eyebrow: $event })" />
           </label>
           <label class="field span-2">
             <span>Beschrijving</span>
-            <textarea class="textarea" rows="3" [ngModel]="text().description"
+            <textarea class="textarea" id="category-translation-category-description"
+                      rows="3" [ngModel]="text().description"
                       (ngModelChange)="patch({ description: $event })"></textarea>
           </label>
         </div>
@@ -211,10 +226,15 @@ interface CategoryLanguageState {
 })
 export class CategoryTranslationEditor {
   private readonly ui = inject(Ui);
+  private readonly document = inject(DOCUMENT);
+  private initialLanguageApplied = false;
+  private focusedTarget: string | null = null;
   readonly languages = TRANSLATION_LANGUAGES;
   readonly category = input.required<Category>();
   readonly busy = input(false);
   readonly saveError = input<string | null>(null);
+  readonly initialLanguage = input<LanguageCode>('NL');
+  readonly focusField = input<string | null>(null);
   readonly categoryChange = output<Category>();
   readonly language = signal<LanguageCode>('NL');
   readonly touched = signal(false);
@@ -232,6 +252,24 @@ export class CategoryTranslationEditor {
   readonly completeCount = computed(() =>
     this.states().filter((state) => !state.missing.length).length,
   );
+
+  constructor() {
+    effect(() => {
+      const language = this.initialLanguage();
+      if (this.initialLanguageApplied) return;
+      this.initialLanguageApplied = true;
+      this.language.set(language);
+    });
+    effect(() => {
+      const focus = this.focusField();
+      const category = this.category();
+      if (!focus || this.busy()) return;
+      const target = `${category.code}:${focus}`;
+      if (this.focusedTarget === target) return;
+      this.focusedTarget = target;
+      this.document.defaultView?.setTimeout(() => this.focusDeepLinkedField(focus), 220);
+    });
+  }
 
   patch(changes: Partial<CategoryText>): void {
     if (this.busy()) return;
@@ -293,6 +331,19 @@ export class CategoryTranslationEditor {
 
   private promptValue(value: string | null | undefined): string {
     return JSON.stringify(value?.trim() ?? '');
+  }
+
+  private focusDeepLinkedField(focus: string, attempt = 0): void {
+    const view = this.document.defaultView;
+    const target = this.document.getElementById(`category-translation-${focus}`);
+    if (!view) return;
+    if (!target && attempt < 3) {
+      view.requestAnimationFrame(() => this.focusDeepLinkedField(focus, attempt + 1));
+      return;
+    }
+    if (!(target instanceof HTMLElement)) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.focus({ preventScroll: true });
   }
 
   private missing(language: LanguageCode): string[] {

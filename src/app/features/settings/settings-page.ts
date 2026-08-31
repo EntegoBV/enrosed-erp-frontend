@@ -41,6 +41,14 @@ interface CategoryFeaturedOption {
 }
 
 const CATEGORY_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const CATEGORY_TRANSLATION_FOCUS = new Set([
+  'category-name',
+  'category-navigation-name',
+  'category-mobile-name',
+  'category-footer-name',
+  'category-eyebrow',
+  'category-description',
+]);
 
 /** Category codes are also public URL keys, so one canonical form is used everywhere. */
 const normalizeCategoryCode = (value: string): string => value
@@ -63,7 +71,7 @@ const normalizeCategoryCode = (value: string): string => value
   template: `
     <app-page-header
       [showBack]="!websiteCategoryMode"
-      [backTo]="websiteCategoryMode ? null : '/more'"
+      [backTo]="websiteCategoryMode ? null : settingsBackTo"
       [title]="websiteCategoryMode ? 'Categorieën & websitemenu' : 'Instellingen'"
       [subtitle]="websiteCategoryMode
         ? 'Beheer collectievolgorde, uitgelicht product en menunamen per taal.'
@@ -430,6 +438,8 @@ const normalizeCategoryCode = (value: string): string => value
                   [category]="draft"
                   [busy]="savingCategory()"
                   [saveError]="categorySaveError()"
+                  [initialLanguage]="categoryDeepLinkLanguage"
+                  [focusField]="categoryDeepLinkFocus"
                   (categoryChange)="updateCategoryTranslations($event)"
                 />
               </div>
@@ -1131,6 +1141,14 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   private readonly document = inject(DOCUMENT);
   private readonly route = inject(ActivatedRoute);
   readonly websiteCategoryMode = this.route.snapshot.data['websiteCategoryMode'] === true;
+  readonly categoryDeepLinkCode = this.route.snapshot.queryParamMap.get('category')?.trim() || null;
+  readonly categoryDeepLinkLanguage = this.queryLanguage();
+  readonly categoryDeepLinkFocus = this.queryCategoryFocus();
+  readonly settingsBackTo = this.safeInternalRoute(
+    this.route.snapshot.queryParamMap.get('returnTo'),
+    '/more',
+  );
+  private categoryDeepLinkOpened = false;
   private scrollSpyFrame: number | null = null;
   private removeScrollSpyListeners?: () => void;
   private contentResizeObserver?: ResizeObserver;
@@ -1217,11 +1235,37 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
    */
   private scrollToDeepLink(): void {
     const view = this.document.defaultView;
+    this.openDeepLinkedCategory();
     const wanted = (this.websiteCategoryMode
       ? 'categories'
       : this.route.snapshot.queryParamMap.get('sectie')) as SettingsSectionId | null;
     if (!view || !wanted || !this.settingsSections.some((section) => section.id === wanted)) return;
     view.setTimeout(() => this.scrollToSection(wanted), 150);
+  }
+
+  private openDeepLinkedCategory(): void {
+    if (this.categoryDeepLinkOpened || !this.categoryDeepLinkCode || this.categoryDraft()) return;
+    const category = this.categories().find((candidate) =>
+      candidate.code === this.categoryDeepLinkCode);
+    if (!category) return;
+    this.categoryDeepLinkOpened = true;
+    this.editCategory(category);
+  }
+
+  private queryLanguage(): LanguageCode {
+    const requested = this.route.snapshot.queryParamMap.get('language')?.toUpperCase();
+    return LANGUAGES.some((language) => language.code === requested)
+      ? requested as LanguageCode
+      : 'NL';
+  }
+
+  private queryCategoryFocus(): string | null {
+    const focus = this.route.snapshot.queryParamMap.get('focus');
+    return focus && CATEGORY_TRANSLATION_FOCUS.has(focus) ? focus : null;
+  }
+
+  private safeInternalRoute(value: string | null, fallback: string): string {
+    return value?.startsWith('/') && !value.startsWith('//') ? value : fallback;
   }
 
   ngOnDestroy(): void {

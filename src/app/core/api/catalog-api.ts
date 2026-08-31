@@ -32,6 +32,11 @@ export interface CatalogExportRequest {
   brochure?: CatalogBrochureOptions;
 }
 
+export interface CatalogPreflightResult {
+  ready: boolean;
+  missingPaths: string[];
+}
+
 export interface WebsiteVisibilityResult {
   family: ProductFamily;
   rebuildQueued: boolean;
@@ -360,6 +365,12 @@ export class CatalogApi {
   }
 
   /** The catalogue as a PDF, with a hand-picked selection. */
+  preflightCatalog(request: CatalogExportRequest): Promise<CatalogPreflightResult> {
+    return firstValueFrom(
+      this.http.post<CatalogPreflightResult>(api('/api/catalog/preflight'), request));
+  }
+
+  /** The catalogue as a PDF, after the lightweight translation preflight succeeds. */
   exportCatalog(request: CatalogExportRequest): Promise<Blob> {
     return firstValueFrom(
       this.http.post(api('/api/catalog/export'), request, { responseType: 'blob' }));

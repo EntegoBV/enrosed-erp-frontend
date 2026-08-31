@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
+import { LANGUAGES, LanguageCode } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ContentTranslationWorkspace } from '../settings/content-translation-workspace';
 import { WebsiteProductSeoAudit } from './website-product-seo-audit';
@@ -23,7 +24,7 @@ import { WebsiteProductSeoAudit } from './website-product-seo-audit';
           ? 'Algemene pagina-SEO hier; product-SEO blijft bij het product.'
           : 'Beheer algemene websitecopy per taal. Productteksten blijven bij het product.')"
       [showBack]="catalogMode"
-      [backTo]="catalogMode ? '/catalog-export' : null"
+      [backTo]="catalogMode ? returnTo : null"
       [showBell]="false"
     />
     <main class="content content-page">
@@ -63,6 +64,8 @@ import { WebsiteProductSeoAudit } from './website-product-seo-audit';
             : 'Homepage, navigatie, footer en juridische pagina’s in acht talen. Productinhoud blijft bij het product.')"
         [initialScope]="catalogMode ? 'CATALOG' : 'WEBSITE'"
         [initialPrefix]="seoMode ? 'meta' : 'ALL'"
+        [initialLanguage]="initialLanguage"
+        [initialKey]="initialKey"
         [lockScope]="true"
         [lockPrefix]="seoMode"
         [allowAdvanced]="!seoMode"
@@ -99,6 +102,12 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
   private readonly route = inject(ActivatedRoute);
   readonly seoMode = this.route.snapshot.data['seoMode'] === true;
   readonly catalogMode = this.route.snapshot.data['catalogMode'] === true;
+  readonly initialLanguage = this.queryLanguage();
+  readonly initialKey = this.route.snapshot.queryParamMap.get('key')?.trim() || null;
+  readonly returnTo = this.safeInternalRoute(
+    this.route.snapshot.queryParamMap.get('returnTo'),
+    '/catalog-export',
+  );
   readonly dirty = signal(false);
   readonly busy = signal(false);
 
@@ -113,5 +122,16 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
     if (!this.dirty() && !this.busy()) return;
     event.preventDefault();
     event.returnValue = '';
+  }
+
+  private queryLanguage(): LanguageCode {
+    const requested = this.route.snapshot.queryParamMap.get('language')?.toUpperCase();
+    return LANGUAGES.some((language) => language.code === requested)
+      ? requested as LanguageCode
+      : 'NL';
+  }
+
+  private safeInternalRoute(value: string | null, fallback: string): string {
+    return value?.startsWith('/') && !value.startsWith('//') ? value : fallback;
   }
 }

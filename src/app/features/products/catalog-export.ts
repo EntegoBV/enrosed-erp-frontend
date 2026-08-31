@@ -24,6 +24,7 @@ import {
   CatalogBrochureSettings,
 } from './catalog-brochure-settings';
 import { CatalogProductSelection } from './catalog-product-selection';
+import { catalogTranslationLinks } from './catalog-translation-issues';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v2';
 
@@ -176,16 +177,33 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
 
           @if (renderError(); as error) {
             <section class="card render-error" role="alert">
-              <div>
+              <div class="render-error__body">
                 <b>PDF kon niet worden gemaakt</b>
                 <small>{{ error }}</small>
+                @if (renderTranslationIssues().length) {
+                  <div class="translation-issues" aria-label="Ontbrekende vertalingen">
+                    @for (issue of renderTranslationIssues(); track issue.path) {
+                      @if (issue.route) {
+                        <a [routerLink]="issue.route" [queryParams]="issue.queryParams">
+                          <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
+                          <i aria-hidden="true">Aanvullen →</i>
+                        </a>
+                      } @else {
+                        <div>
+                          <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
+                          <i>Niet automatisch gevonden</i>
+                        </div>
+                      }
+                    }
+                  </div>
+                }
               </div>
               <div class="render-error__actions">
-                @if (renderTranslationError()) {
-                  <a class="btn btn--sm" routerLink="/catalog/texts">Catalogusteksten</a>
-                  <a class="btn btn--sm" routerLink="/settings"
-                     [queryParams]="{ sectie: 'categories' }">Categorieën</a>
-                  <a class="btn btn--sm" routerLink="/products">Productvertalingen</a>
+                @if (renderTranslationError() && !renderTranslationIssues().length) {
+                  <a class="btn btn--sm" routerLink="/catalog/texts"
+                     [queryParams]="{ language: language(), returnTo: '/catalog-export' }">
+                    Catalogusteksten openen
+                  </a>
                 }
                 <button class="btn btn--sm btn--primary" type="button" [disabled]="busy()"
                         (click)="retryRender()">Opnieuw proberen</button>
@@ -274,13 +292,26 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
       width: 22px; height: 22px; flex: none; border: 2px solid var(--rose-line);
       border-top-color: var(--rose); border-radius: 50%; animation: spin .8s linear infinite;
     }
-    .render-status div, .render-error div { display: grid; min-width: 0; gap: 2px; }
+    .render-status > div, .render-error__body { display: grid; min-width: 0; gap: 2px; }
     .render-status b, .render-error b { color: var(--ink-2); font-size: 15px; }
     .render-status small, .render-error small { color: var(--muted); font-size: 14px; line-height: 1.45; }
-    .render-error { justify-content: space-between; border-color: var(--danger); }
+    .render-error { align-items: flex-start; justify-content: space-between; border-color: var(--danger); }
+    .render-error__body { flex: 1 1 auto; }
     .render-error small { color: var(--danger); }
     .render-error__actions { display:flex;justify-content:flex-end;flex-wrap:wrap;gap:7px }
     .render-error__actions .btn { min-height:48px }
+    .translation-issues { display: grid; gap: 7px; margin-top: 10px; }
+    .translation-issues > a, .translation-issues > div {
+      display: flex; min-width: 0; min-height: 54px; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+      border-radius: 10px; background: var(--surface); color: var(--ink); text-decoration: none;
+    }
+    .translation-issues > a:hover { border-color: var(--rose); background: var(--rose-soft); }
+    .translation-issues > a:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+    .translation-issues span { display: grid; min-width: 0; gap: 1px; }
+    .translation-issues span b { overflow-wrap: anywhere; }
+    .translation-issues span small { color: var(--muted); }
+    .translation-issues i { flex: none; color: var(--rose-dark); font-size: 13px; font-style: normal; font-weight: 750; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .catalog-action__buttons { display: flex; gap: 7px; }
@@ -306,6 +337,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
       .render-error { align-items:stretch;flex-direction:column }
       .render-error__actions { display:grid;grid-template-columns:1fr }
       .render-error__actions .btn { width:100% }
+      .translation-issues > a, .translation-issues > div { align-items: flex-start; flex-direction: column; gap: 4px; }
       .catalog-action { padding-inline: 10px; gap: 7px; }
       .catalog-action .action-bar__label { display: none; }
       .catalog-action .action-bar__value { font-size: 15px; }
@@ -340,6 +372,7 @@ export class CatalogExport {
   readonly downloading = signal(false);
   readonly renderError = signal<string | null>(null);
   readonly renderTranslationError = signal(false);
+  readonly missingTranslationPaths = signal<string[]>([]);
 
   readonly busy = computed(() => this.downloading());
   readonly canExport = computed(() =>
@@ -348,6 +381,13 @@ export class CatalogExport {
     if (this.downloading()) return 'PDF wordt gemaakt. Dit kan enkele minuten duren.';
     return this.renderError() ?? '';
   });
+  readonly renderTranslationIssues = computed(() => catalogTranslationLinks(
+    this.missingTranslationPaths(),
+    this.language(),
+    this.products(),
+    this.categories(),
+    this.selected(),
+  ));
   readonly selectedFamilyCount = computed(() => {
     const selected = this.selected();
     const groups = new Set<string>();
@@ -389,6 +429,7 @@ export class CatalogExport {
       if (previousRequest && previousRequest !== currentRequest) {
         this.renderError.set(null);
         this.renderTranslationError.set(false);
+        this.missingTranslationPaths.set([]);
       }
       previousRequest = currentRequest;
     });
@@ -428,6 +469,7 @@ export class CatalogExport {
       this.dataReady.set(true);
       this.renderError.set(null);
       this.renderTranslationError.set(false);
+      this.missingTranslationPaths.set([]);
     } catch (failure) {
       if (!this.destroyed) {
         this.loadError.set(messageOf(
@@ -446,8 +488,16 @@ export class CatalogExport {
     const key = JSON.stringify(request);
     this.renderError.set(null);
     this.renderTranslationError.set(false);
+    this.missingTranslationPaths.set([]);
     this.downloading.set(true);
     try {
+      const preflight = await this.catalog.preflightCatalog(request);
+      if (this.destroyed || key !== this.requestKey()) return;
+      const missingPaths = this.validMissingPaths(preflight.missingPaths);
+      if (!preflight.ready || missingPaths.length) {
+        this.showMissingTranslations(missingPaths);
+        return;
+      }
       const blob = await this.catalog.exportCatalog(request);
       if (this.destroyed || key !== this.requestKey()) return;
       saveBlob(
@@ -499,12 +549,17 @@ export class CatalogExport {
 
   private async handleRenderFailure(failure: unknown, toastFallback: string): Promise<void> {
     const decodedFailure = await this.decodeBlobError(failure);
+    const missingTranslations = this.missingTranslationsFromFailure(decodedFailure);
+    if (missingTranslations !== null) {
+      this.showMissingTranslations(missingTranslations);
+      return;
+    }
     const fallback = 'De PDF-rendering mislukte of duurde te lang. Probeer opnieuw of selecteer minder producten.';
-    const missingTranslations = this.missingTranslationMessage(decodedFailure);
-    const message = missingTranslations ?? messageOf(decodedFailure, fallback);
+    const message = messageOf(decodedFailure, fallback);
     this.renderError.set(message);
-    this.renderTranslationError.set(missingTranslations !== null);
-    this.ui.toast(missingTranslations ?? messageOf(decodedFailure, toastFallback), 'err');
+    this.renderTranslationError.set(false);
+    this.missingTranslationPaths.set([]);
+    this.ui.toast(messageOf(decodedFailure, toastFallback), 'err');
   }
 
   private async decodeBlobError(failure: unknown): Promise<unknown> {
@@ -519,27 +574,35 @@ export class CatalogExport {
     }
   }
 
-  private missingTranslationMessage(failure: unknown): string | null {
+  private missingTranslationsFromFailure(failure: unknown): string[] | null {
     const response = failure as {
       status?: number;
-      error?: { message?: string; missingPaths?: unknown };
+      error?: { missingPaths?: unknown };
     };
-    if (response.status !== 409) return null;
-    const paths = Array.isArray(response.error?.missingPaths)
-      ? response.error.missingPaths.filter(
-          (path): path is string => typeof path === 'string' && !!path.trim(),
-        )
-      : [];
-    if (!paths.length) {
-      return response.error?.message
-        ?? `De ${this.languageLabel()} catalogus mist nog verplichte vertalingen.`;
-    }
-    const visible = paths.slice(0, 4).join(' · ');
-    const remaining = paths.length - 4;
-    return `De ${this.languageLabel()} catalogus mist ${paths.length} verplichte `
-      + `vertaling${paths.length === 1 ? '' : 'en'}: ${visible}`
-      + (remaining > 0 ? ` · en nog ${remaining}` : '')
-      + '. Vul deze teksten in het dashboard aan en probeer opnieuw.';
+    if (response.status !== 409 || !Array.isArray(response.error?.missingPaths)) return null;
+    return this.validMissingPaths(response.error.missingPaths);
+  }
+
+  private showMissingTranslations(paths: readonly unknown[]): void {
+    const missingPaths = this.validMissingPaths(paths);
+    const count = missingPaths.length;
+    const message = count
+      ? `De ${this.languageLabel()} catalogus mist ${count} verplichte `
+        + `vertaling${count === 1 ? '' : 'en'}. Open elk onderdeel hieronder en vul het direct aan.`
+      : `De ${this.languageLabel()} catalogus mist nog verplichte vertalingen. `
+        + 'Open de catalogusteksten en probeer daarna opnieuw.';
+    this.missingTranslationPaths.set(missingPaths);
+    this.renderTranslationError.set(true);
+    this.renderError.set(message);
+    this.ui.toast(message, 'err');
+  }
+
+  private validMissingPaths(paths: readonly unknown[] | null | undefined): string[] {
+    if (!Array.isArray(paths)) return [];
+    return [...new Set(paths
+      .filter((path): path is string => typeof path === 'string')
+      .map((path) => path.trim())
+      .filter(Boolean))];
   }
 
   private languageLabel(): string {
