@@ -35,6 +35,9 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
             <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
             </a>
+            <a class="sidebar__link" routerLink="/analyses" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Analyses
+            </a>
 
             <button class="sidebar__group" type="button" (click)="toggleGroup('verkoop')"
                     [attr.aria-expanded]="groupOpen('verkoop')">
@@ -283,7 +286,7 @@ export class App {
 
   readonly moreRoute = computed(() => {
     const url = this.url();
-    return ['/more', '/customers', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
+    return ['/more', '/analyses', '/customers', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
       .some((path) => url.startsWith(path));
   });
 

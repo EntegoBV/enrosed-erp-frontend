@@ -13,12 +13,13 @@ import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
-  Product, PurchaseOrderView, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
+  Product, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
 } from '../../core/api/models';
 import { containerLabel } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 import { PurchaseActivity } from '../activity/purchase-activity';
+import { receiptMetrics } from '../analyses/receipt-metrics';
 
 /**
  * Read-only control room for one incoming container.
@@ -160,6 +161,37 @@ import { PurchaseActivity } from '../activity/purchase-activity';
             </div>
           </div>
         </section>
+
+        @if (receiptSummary(); as receipt) {
+          <section class="card receipt-summary" aria-labelledby="purchase-receipt-title">
+            <header class="receipt-summary__head">
+              <span class="receipt-summary__mark"
+                    [class.receipt-summary__mark--warn]="receipt.affectedLines || !receiptSnapshotComplete()"
+                    aria-hidden="true">{{ receipt.affectedLines ? '!' : receiptSnapshotComplete() ? '✓' : '?' }}</span>
+              <span class="receipt-summary__copy">
+                <small>Ontvangstcontrole</small>
+                <h2 id="purchase-receipt-title">
+                  {{ receipt.affectedLines
+                    ? receipt.affectedLines + ' afwijkende productregel(s)'
+                    : receiptSnapshotComplete() ? 'Alles volgens bestelling' : 'Ontvangst vastgelegd' }}
+                </h2>
+                <p>Ontvangen {{ data.order.receivedOn | dateNl }} · {{ receipt.usablePieces | num }} stuks bruikbaar
+                  @if (!receiptSnapshotComplete()) { · bestelsnapshot onvolledig }</p>
+              </span>
+              <a class="receipt-summary__link" routerLink="/analyses"
+                 [queryParams]="{ orderId: data.order.id }">Open analyse ›</a>
+            </header>
+            <div class="receipt-summary__metrics">
+              <span><small>Besteld</small><b>{{ receiptSnapshotComplete() ? (receipt.orderedPieces | num) : '—' }}</b></span>
+              <span><small>Ontbreekt</small><b [class.warn-text]="receipt.missingPieces">{{ receipt.missingPieces | num }}</b></span>
+              <span><small>Beschadigd</small><b [class.danger-text]="receipt.damagedPieces">{{ receipt.damagedPieces | num }}</b></span>
+              <span><small>Inkoopimpact</small><b>{{ receipt.totalLossValueEur | eur: 0 }}</b></span>
+            </div>
+            @if (!receipt.valuationComplete) {
+              <p class="receipt-summary__warning">{{ receipt.unvaluedLossPieces | num }} afwijkende stuks hebben nog geen bevroren inkoopwaarde en tellen nog niet mee in het bedrag.</p>
+            }
+          </section>
+        }
 
         @if (isDdp()) {
           <!-- DDP: the supplier's container - its fill is their concern. -->
@@ -566,6 +598,8 @@ import { PurchaseActivity } from '../activity/purchase-activity';
     .capacity-card__percentage.fill-pct--over{color:var(--warn)}.capacity-card__percentage.fill-pct--danger{color:var(--danger)}.capacity-state--tight{color:var(--warn);font-weight:650}.meter__fill--danger{background:var(--danger)}
     .overview-fact{min-width:0;padding:9px 10px;background:var(--surface)}.overview-fact span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.overview-fact strong{display:block;overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 
+    .receipt-summary{margin-bottom:12px;overflow:hidden}.receipt-summary__head{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;padding:13px 14px}.receipt-summary__mark{display:grid;width:34px;height:34px;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:800}.receipt-summary__mark--warn{background:var(--warn-soft);color:var(--warn)}.receipt-summary__copy{display:grid;min-width:0}.receipt-summary__copy small{color:var(--rose);font-size:9px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.receipt-summary__copy h2{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.receipt-summary__copy p{color:var(--muted);font-size:10.5px}.receipt-summary__link{grid-column:1/-1;min-height:40px;padding:10px 0 0;border-top:1px solid var(--line);color:var(--rose-dark);font-size:12px;font-weight:720;text-align:center;text-decoration:none}.receipt-summary__metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border-top:1px solid var(--line);background:var(--line)}.receipt-summary__metrics>span{display:grid;padding:9px 12px;background:var(--surface-2)}.receipt-summary__metrics small{color:var(--muted);font-size:9px;text-transform:uppercase}.receipt-summary__metrics b{font-size:13px}.receipt-summary__warning{padding:9px 12px;border-top:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2);font-size:10.5px}
+
     .capacity-card{margin-bottom:12px;padding:14px;overflow:hidden}.capacity-card__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.capacity-card h2{font-size:16px}.capacity-card__top p{color:var(--muted);font-size:11px}.capacity-card__percentage{color:var(--rose);font-size:25px;line-height:1}.capacity-card__percentage--over{color:var(--danger)}
     .capacity-meter{height:11px;margin-top:13px}.capacity-card__footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-top:9px;color:var(--muted);font-size:11px}.capacity-state{display:flex;align-items:center;gap:5px;font-weight:680}.capacity-state--ok{color:var(--ok)}.capacity-state--danger{color:var(--danger)}
   `, `
@@ -589,7 +623,7 @@ import { PurchaseActivity } from '../activity/purchase-activity';
     .safe-card{display:flex;align-items:flex-start;gap:10px;padding:14px}.safe-card__icon{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:760}.safe-card h2{font-size:14px}.safe-card p{color:var(--muted);font-size:11px}
     .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
 
-    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}}
+    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
     @media(min-width: 680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
     @media(min-width:680px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.72fr);gap:16px;align-items:start}.view-sidebar{margin-top:0}}
   `],
@@ -613,6 +647,38 @@ export class PurchaseView {
   private readonly ui = inject(Ui);
 
   readonly view = signal<PurchaseOrderView | null>(null);
+  /** Prefer the server aggregate; derive a compatible fallback during a rolling deployment. */
+  readonly receiptSummary = computed<ReceiptVarianceTotals | null>(() => {
+    const data = this.view();
+    if (!data || data.order.status !== 'ONTVANGEN') return null;
+    if (data.receiptVariance) return data.receiptVariance;
+    const metrics = receiptMetrics(data.order.lines.map((line) => ({
+      orderedPieces: line.orderedQuantity ?? line.quantity,
+      receivedPieces: line.quantity,
+      damagedPieces: line.damagedQuantity ?? 0,
+      unitValueEur: line.receiptUnitValueEur,
+    })));
+    return {
+      affectedOrders: metrics.affectedLines > 0 ? 1 : 0,
+      affectedLines: metrics.affectedLines,
+      orderedPieces: metrics.orderedPieces,
+      receivedPieces: metrics.receivedPieces,
+      missingPieces: metrics.missingPieces,
+      overReceivedPieces: metrics.overReceivedPieces,
+      damagedPieces: metrics.damagedPieces,
+      usablePieces: metrics.usablePieces,
+      missingValueEur: metrics.missingValueEur,
+      damagedValueEur: metrics.damagedValueEur,
+      totalLossValueEur: metrics.totalLossValueEur,
+      unvaluedLossPieces: metrics.unvaluedLossPieces,
+      valuationComplete: metrics.valuationComplete,
+    };
+  });
+  readonly receiptSnapshotComplete = computed(() => {
+    const data = this.view();
+    return !!data && data.order.lines.length > 0
+      && data.order.lines.every((line) => line.orderedQuantity != null);
+  });
   readonly payments = signal<PurchasePayment[] | null>(null);
   readonly documents = signal<PurchaseDocument[] | null>(null);
   readonly supplierOwed = computed(() => this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);

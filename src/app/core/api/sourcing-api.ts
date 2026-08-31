@@ -3,7 +3,9 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt, ExpectedStock, PurchasePayment, Currency, Payee, PurchaseDocument, DocumentKind,
+  FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
+  ReceiptVarianceFilters, ReceiptVarianceReport, ExpectedStock, PurchasePayment, Currency, Payee,
+  PurchaseDocument, DocumentKind,
 } from './models';
 
 export type PurchasePdfLayout = 'PORTRAIT' | 'LANDSCAPE';
@@ -64,6 +66,25 @@ export class SourcingApi {
   /** The container is in: counts, damage, payment, and optionally the booking. */
   receivePurchaseOrder(id: number, receipt: Receipt): Promise<PurchaseOrderView> {
     return firstValueFrom(this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${id}/receive`), receipt));
+  }
+
+  /** Historical shortages and damage, optionally narrowed to a reporting period or entity. */
+  receiptVariances(filters: ReceiptVarianceFilters = {}): Promise<ReceiptVarianceReport> {
+    const query = new URLSearchParams();
+    if (filters.from) query.set('from', filters.from);
+    if (filters.to) query.set('to', filters.to);
+    if (filters.supplierId != null) query.set('supplierId', String(filters.supplierId));
+    if (filters.productId != null) query.set('productId', String(filters.productId));
+    if (filters.orderId != null) query.set('orderId', String(filters.orderId));
+    const suffix = query.size ? `?${query}` : '';
+    return firstValueFrom(this.http.get<ReceiptVarianceReport>(
+      api('/api/purchase-orders/receipt-variances' + suffix)));
+  }
+
+  /** Supplies or clears the frozen receipt value for one legacy/unknown line. */
+  setReceiptLineValue(orderId: number, lineId: number, unitValueEur: number | null): Promise<void> {
+    return firstValueFrom(this.http.put<void>(
+      api(`/api/purchase-orders/${orderId}/receipt-lines/${lineId}/value`), { unitValueEur }));
   }
 
   /** Books the usable pieces of a received container into stock - once. */

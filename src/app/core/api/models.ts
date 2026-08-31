@@ -738,10 +738,18 @@ export interface PurchaseOrderLine {
   priceBasis?: 'EXW' | 'DDP' | null;
   /** Pieces that arrived broken; in quantity, never in stock. */
   damagedQuantity?: number | null;
+  /** Frozen supplier/purchase value per piece at receipt; null when a legacy receipt still needs valuation. */
+  receiptUnitValueEur?: number | null;
 }
 
 /** What arrived of one line, and how much of that was broken. */
-export interface ReceivedLine { productId: number; received: number; damaged: number; }
+export interface ReceivedLine {
+  productId: number;
+  received: number;
+  damaged: number;
+  /** Value snapshot used for durable receipt-loss reporting. */
+  unitValueEur?: number | null;
+}
 
 export interface Receipt {
   lines: ReceivedLine[];
@@ -749,6 +757,62 @@ export interface Receipt {
   paidTotalEur: number | null;
   receivedOn: string | null;
   note: string | null;
+}
+
+/** Aggregate over receipt lines that arrived short or damaged. */
+export interface ReceiptVarianceTotals {
+  affectedOrders: number;
+  affectedLines: number;
+  orderedPieces: number;
+  receivedPieces: number;
+  missingPieces: number;
+  overReceivedPieces: number;
+  damagedPieces: number;
+  usablePieces: number;
+  missingValueEur: number;
+  damagedValueEur: number;
+  totalLossValueEur: number;
+  unvaluedLossPieces: number;
+  valuationComplete: boolean;
+}
+
+/** One durable product-level deviation from a received purchase order. */
+export interface ReceiptVarianceRow {
+  orderId: number;
+  orderNumber: string;
+  orderAlias: string | null;
+  receivedOn: string | null;
+  expectedArrival: string | null;
+  supplierId: number | null;
+  supplierName: string;
+  lineId: number | null;
+  productId: number;
+  productSku: string | null;
+  productName: string;
+  orderedPieces: number;
+  receivedPieces: number;
+  missingPieces: number;
+  overReceivedPieces: number;
+  damagedPieces: number;
+  usablePieces: number;
+  receiptUnitValueEur: number | null;
+  missingValueEur: number | null;
+  damagedValueEur: number | null;
+  totalLossValueEur: number | null;
+  valuationComplete: boolean;
+}
+
+export interface ReceiptVarianceReport {
+  totals: ReceiptVarianceTotals;
+  rows: ReceiptVarianceRow[];
+}
+
+export interface ReceiptVarianceFilters {
+  from?: string | null;
+  to?: string | null;
+  supplierId?: number | null;
+  productId?: number | null;
+  orderId?: number | null;
 }
 
 export type PaymentTerms = 'THIRDS' | 'HALF_HALF' | 'DEPOSIT_30_70' | 'DEPOSIT_30_40_30' | 'FULL_UPFRONT' | 'FULL_ON_ARRIVAL' | 'CUSTOM';
@@ -938,6 +1002,8 @@ export interface PurchaseOrderView {
   order: PurchaseOrder;
   costing: LandedCost;
   adjustments: CartonAdjustment[];
+  /** Receipt-only loss summary; optional while frontend and backend roll out independently. */
+  receiptVariance?: ReceiptVarianceTotals;
   /** Server-owned creator metadata; null for orders from before the logbook. */
   createdBy: ActorRef | null;
   createdAt: string | null;

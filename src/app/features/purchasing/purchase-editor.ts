@@ -35,6 +35,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
+import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
 
 /**
  * Landed-cost calculation of a container.
@@ -45,7 +46,16 @@ import { PurchaseActivity } from '../activity/purchase-activity';
  */
 /** What the receive sheet edits before it is sent. */
 interface ReceiveDraft {
-  lines: { productId: number; name: string; sku: string; ordered: number; received: number; damaged: number }[];
+  lines: {
+    productId: number;
+    name: string;
+    sku: string;
+    ordered: number;
+    received: number;
+    damaged: number;
+    /** Frozen supplier/purchase value, not the full landed operational cost. */
+    unitValueEur: number | null;
+  }[];
   bookStock: boolean;
   /** Note the open balance as a final payment while receiving. */
   finalPayment: boolean;
@@ -1262,6 +1272,17 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           <div body>
             <p class="hint">Vul per product in wat er werkelijk in de container zat. Staat alles zoals
               besteld, dan hoef je niets te wijzigen.</p>
+            @if (receiveSummary(); as summary) {
+              <div class="receive-preview" aria-label="Voorbeeld van de ontvangstsamenvatting">
+                <span><small>Bruikbaar</small><b>{{ summary.usablePieces | num }} st</b></span>
+                <span><small>Ontbreekt</small><b [class.warn-text]="summary.missingPieces">{{ summary.missingPieces | num }} st</b></span>
+                <span><small>Beschadigd</small><b [class.danger-text]="summary.damagedPieces">{{ summary.damagedPieces | num }} st</b></span>
+                <span><small>Inkoopimpact</small><b>{{ summary.totalLossValueEur | eur: 0 }}</b></span>
+                @if (!summary.valuationComplete) {
+                  <p>{{ summary.unvaluedLossPieces | num }} afwijkende stuks hebben nog geen inkoopwaarde.</p>
+                }
+              </div>
+            }
             <div class="receive-lines">
               @for (line of draft.lines; track line.productId) {
                 <div class="receive-line" [class.receive-line--short]="line.received < line.ordered"
@@ -1285,6 +1306,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       @if (line.received < line.ordered) { {{ line.ordered - line.received | num }} te weinig }
                       @if (line.received > line.ordered) { {{ line.received - line.ordered | num }} te veel }
                       @if (line.damaged > 0) { · {{ line.damaged | num }} kapot }
+                      @if (receiptLineImpact(line); as impact) { · {{ impact | eur: 2 }} inkoopimpact }
                     </span>
                   }
                 </div>
@@ -1397,8 +1419,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .files-list{list-style:none;margin:0 18px 4px;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-card__hint{padding:6px 18px 14px}.files-list__rename{flex:1;min-width:0}.files-list__pencil{display:inline-grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}.files-list__pencil:hover{background:var(--surface-2);color:var(--ink)}.files-list__pencil svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
     .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
     .receive-balance{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-balance b{font-size:13px}.receive-balance small{display:block;color:var(--muted);font-size:11.5px}.receive-balance__final{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.receive-balance__final input{width:18px;height:18px;accent-color:var(--rose)}
+    .receive-preview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}.receive-preview>span{display:grid;padding:9px 10px;background:var(--surface)}.receive-preview small{color:var(--muted);font-size:9px;text-transform:uppercase}.receive-preview b{font-size:12.5px}.receive-preview>p{grid-column:1/-1;padding:8px 10px;background:var(--warn-soft);color:var(--ink-2);font-size:10.5px}
     .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
     @media(max-width:559px){.receive-line{grid-template-columns:1fr 1fr}.receive-line__name{grid-column:1/-1}}
+    @media(min-width:560px){.receive-preview{grid-template-columns:repeat(4,minmax(0,1fr))}}
     .switch-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:4px 0 10px;cursor:pointer;border-bottom:1px solid var(--line);margin-bottom:4px}.switch-row>span{display:flex;flex-direction:column;gap:2px;min-width:0}.switch-row b{font-size:13px}.switch-row small{color:var(--muted);font-size:11.5px;line-height:1.35}.switch-row input{width:20px;height:20px;flex:none;accent-color:var(--rose)}
     .line-remove{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}.line-remove:active{background:var(--danger-soft);color:var(--danger)}:is(.line-currency,.cost-currency){min-width:74px;border-radius:0}.line-basis{min-width:72px;border-radius:0 var(--r-sm) var(--r-sm) 0;border-left:0}
 
@@ -1810,6 +1834,15 @@ export class PurchaseEditor {
   /* ---- receiving the container ------------------------------------- */
   readonly receiving = signal<ReceiveDraft | null>(null);
   readonly booking = signal(false);
+  readonly receiveSummary = computed(() => {
+    const draft = this.receiving();
+    return draft ? receiptMetrics(draft.lines.map((line) => ({
+      orderedPieces: line.ordered,
+      receivedPieces: line.received,
+      damagedPieces: line.damaged,
+      unitValueEur: line.unitValueEur,
+    }))) : null;
+  });
 
   /** Opens the count sheet; the draft is saved first so the counts land on what is on screen. */
   async openReceive(): Promise<void> {
@@ -1823,6 +1856,13 @@ export class PurchaseEditor {
     this.receiving.set({
       lines: current.order.lines.map((line) => {
         const product = this.products().find((p) => p.id === line.productId);
+        const costing = current.costing.lines.find((candidate) => candidate.productId === line.productId);
+        const currency = line.exwCurrency ?? product?.exwCurrency;
+        const priceKnown = (line.exwPrice ?? product?.exwPrice) != null;
+        const fxKnown = currency === 'EUR' || (current.order.usdToEurGoods > 0
+          && (currency !== 'CNY' || current.order.cnyToUsd > 0));
+        const calculatedUnitValue = priceKnown && fxKnown && costing && costing.quantity > 0
+          ? costing.goodsEur / costing.quantity : null;
         return {
           productId: line.productId,
           name: product?.name ?? `Product ${line.productId}`,
@@ -1830,6 +1870,7 @@ export class PurchaseEditor {
           ordered: line.orderedQuantity ?? line.quantity,
           received: line.quantity,
           damaged: 0,
+          unitValueEur: line.receiptUnitValueEur ?? calculatedUnitValue,
         };
       }),
       bookStock: true,
@@ -1856,6 +1897,15 @@ export class PurchaseEditor {
     });
   }
 
+  receiptLineImpact(line: ReceiveDraft['lines'][number]): number | null {
+    return receiptLineMetrics({
+      orderedPieces: line.ordered,
+      receivedPieces: line.received,
+      damagedPieces: line.damaged,
+      unitValueEur: line.unitValueEur,
+    }).totalLossValueEur;
+  }
+
   async confirmReceive(): Promise<void> {
     const data = this.view();
     const draft = this.receiving();
@@ -1863,7 +1913,8 @@ export class PurchaseEditor {
     this.booking.set(true);
     try {
       const lines: ReceivedLine[] = draft.lines.map((line) => ({
-        productId: line.productId, received: line.received, damaged: line.damaged }));
+        productId: line.productId, received: line.received, damaged: line.damaged,
+        unitValueEur: line.unitValueEur }));
       if (draft.finalPayment && this.remainingEur() > 0.005) {
         await this.sourcing.addPayment(data.order.id, {
           paidOn: new Date().toISOString().slice(0, 10), amount: Math.round(this.remainingEur() * 100) / 100,

@@ -49,10 +49,16 @@ import { THEMES, Theme } from '../../core/platform/theme';
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="purchase" /></span>
           <span class="more-group__copy"><strong>Inkoop</strong>
-            <small>Leveranciers · Douane</small></span>
+            <small>Analyses · Leveranciers · Douane</small></span>
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
+          <a class="list-item" routerLink="/analyses">
+            <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
+            <div class="list-item__body"><div class="list-item__title">Analyses</div>
+              <div class="list-item__meta">Ontvangstkwaliteit, tekorten, schade en bedrijfswaarde</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
           <a class="list-item" routerLink="/suppliers">
             <span class="thumb thumb--placeholder"><app-icon name="suppliers" /></span>
             <div class="list-item__body"><div class="list-item__title">Leveranciers</div>

@@ -86,6 +86,10 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <path d="M12 7.5V12l3 2" />
           <path d="M4.5 5.5 3 8h3" />
         }
+        @case ('analytics') {
+          <path d="M4 20V11.5h4V20M10 20V4h4v16M16 20v-9h4v9" />
+          <path d="M3 20.5h18" />
+        }
         @case ('pdf') {
           <path d="M7 3.5h7l4 4V20.5H7z" /><path d="M14 3.5v4h4" />
         }
