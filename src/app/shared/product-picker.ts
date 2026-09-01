@@ -48,6 +48,23 @@ export interface ProductDraft {
   exwCurrency: string;
 }
 
+type ProductPickerFamilyLanes = readonly [
+  readonly ProductPickerFamilyGroup[],
+  readonly ProductPickerFamilyGroup[],
+  readonly ProductPickerFamilyGroup[],
+];
+
+/** Two independent desktop columns plus a full-width orphan for odd totals. */
+function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): ProductPickerFamilyLanes {
+  const pairedCount = groups.length - (groups.length % 2);
+  const left: ProductPickerFamilyGroup[] = [];
+  const right: ProductPickerFamilyGroup[] = [];
+  for (let index = 0; index < pairedCount; index += 1) {
+    (index % 2 === 0 ? left : right).push(groups[index]);
+  }
+  return [left, right, pairedCount < groups.length ? [groups[pairedCount]] : []];
+}
+
 @Component({
   selector: 'app-product-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -355,8 +372,13 @@ export interface ProductDraft {
                   <strong [id]="'picker-category-' + section.key">{{ section.name }}</strong>
                   <span>{{ section.groups.length }} reeks{{ section.groups.length === 1 ? '' : 'en' }} · {{ section.productCount }} product{{ section.productCount === 1 ? '' : 'en' }}</span>
                 </header>
-                @for (group of section.groups; track group.key) {
-                  <section class="picker-family" [class.picker-family--open]="isGroupOpen(group)">
+                <div class="picker-family-layout">
+                @for (lane of section.lanes; track $index; let laneIndex = $index) {
+                  @if (lane.length) {
+                  <div class="picker-family-lane" [class.picker-family-lane--tail]="laneIndex === 2">
+                  @for (group of lane; track group.key) {
+                  <section class="picker-family" [class.picker-family--open]="isGroupOpen(group)"
+                           [style.order]="section.groups.indexOf(group)">
                     <header class="picker-family__head">
                       <button class="picker-family__toggle" type="button"
                               [attr.aria-expanded]="isGroupOpen(group)"
@@ -441,7 +463,11 @@ export interface ProductDraft {
                       </div>
                     }
                   </section>
+                  }
+                  </div>
+                  }
                 }
+                </div>
               </section>
             } @empty {
               <div class="empty">
@@ -577,6 +603,8 @@ export interface ProductDraft {
     .picker-colour-dot { width: 11px; height: 11px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
     .picker-colour-dot--empty { background: linear-gradient(135deg, transparent 44%, var(--muted) 46% 54%, transparent 56%)!important; }
     .picker-grouped { display: grid; gap: 14px; margin: 0 -16px; }
+    .picker-family-layout { min-width: 0; display: flex; flex-direction: column; }
+    .picker-family-lane { display: contents; }
     .picker-category__head { min-height: 34px; padding: 8px 16px; display: flex; align-items: baseline;
       justify-content: space-between; gap: 10px; background: var(--surface-2); border-block: 1px solid var(--line); }
     .picker-category__head strong { font-size: 10px; font-weight: 780; letter-spacing: .07em; text-transform: uppercase; }
@@ -695,19 +723,23 @@ export interface ProductDraft {
     }
     @media (min-width: 680px) {
       .picker-grouped { margin-inline: 0; grid-template-columns: minmax(0, 1fr); align-items: start; }
-      .picker-category { min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start;
-        gap: 8px; padding: 0 8px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; }
-      .picker-category__head { flex: 0 0 calc(100% + 16px); margin-inline: -8px; border-top: 0; }
-      .picker-family { min-width: 0; flex: 1 1 100%; margin: 0; }
+      .picker-category { min-width: 0; padding: 0 8px 8px; overflow: hidden;
+        border: 1px solid var(--line); border-radius: 16px; }
+      .picker-category__head { margin-inline: -8px; border-top: 0; }
+      .picker-family-layout { gap: 8px; }
+      .picker-family { min-width: 0; margin: 0; }
       .picker-grouped--batch { grid-template-columns: 1fr; }
-      .picker-grouped--batch .picker-family { flex-basis: 100%; }
     }
     @media (min-width: 900px) {
-      .picker-grouped:not(.picker-grouped--batch) .picker-family { flex-basis: calc(50% - 4px); }
-      .picker-grouped:not(.picker-grouped--batch) .picker-family--open { flex-basis: 100%; }
-      .picker-family--open .picker-family__variants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .picker-family--open .picker-item--nested:nth-child(odd):not(:last-child) { border-right: 1px solid var(--line); }
-      .picker-family--open .picker-item--nested:last-child:nth-child(odd) { grid-column: 1 / -1; }
+      .picker-family-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start; gap: 8px; }
+      .picker-family-lane { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+      .picker-family-lane--tail { grid-column: 1 / -1; }
+      .picker-family-lane--tail .picker-family__variants { display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .picker-family-lane--tail .picker-item--nested:nth-child(odd):not(:last-child) {
+        border-right: 1px solid var(--line); }
+      .picker-family-lane--tail .picker-item--nested:last-child:nth-child(odd) { grid-column: 1 / -1; }
     }
     @media (pointer: coarse) {
       .picker-chip, .picker-batch__remove { min-width: 44px; min-height: 44px; }
@@ -900,7 +932,7 @@ export class ProductPicker implements OnDestroy {
     this.families(),
     this.categories(),
     { query: this.query(), category: this.categoryFilter() },
-  ));
+  ).map((section) => ({ ...section, lanes: productPickerFamilyLanes(section.groups) })));
   readonly matches = computed(() => filterProductPicker(
     orderPickerProducts(this.products(), this.preserveSourceOrder()), this.categories(), {
     query: this.query(),
