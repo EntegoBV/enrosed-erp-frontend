@@ -38,8 +38,9 @@ interface CompactAgendaEntry {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, DateField, Sheet],
   template: `
-    @if (compact() && !expanded()) {
-      <section class="card planner-compact" aria-labelledby="planner-compact-title">
+    @if (compact()) {
+      <section class="card planner-compact" [class.planner-compact--hidden]="expanded()"
+               aria-labelledby="planner-compact-title">
         <header class="planner-compact__head">
           <div>
             <span class="planner-compact__eyebrow">Planning</span>
@@ -97,7 +98,8 @@ interface CompactAgendaEntry {
           Volledige agenda en taken <span aria-hidden="true">›</span>
         </button>
       </section>
-    } @else {
+    }
+    <div class="planner-full" [class.planner-full--visible]="!compact() || expanded()">
       @if (compact()) {
         <div class="planner-expanded-head">
           <strong>Volledige planning</strong>
@@ -113,15 +115,11 @@ interface CompactAgendaEntry {
         <div class="card__body">
           <div class="cal-pane">
           <div class="cal-head">
-            <button class="cal-nav" type="button" [attr.aria-label]="calOpen() ? 'Vorige maand' : 'Vorige week'"
-                    (click)="shiftPeriod(-1)">‹</button>
-            <button class="cal-title" type="button" [attr.aria-expanded]="calOpen()"
-                    (click)="calOpen.set(!calOpen())">
-              {{ calOpen() ? monthLabel() : weekLabel() }}
-              <i class="cal-title__chev" [class.cal-title__chev--open]="calOpen()" aria-hidden="true"></i>
-            </button>
-            <button class="cal-nav" type="button" [attr.aria-label]="calOpen() ? 'Volgende maand' : 'Volgende week'"
-                    (click)="shiftPeriod(1)">›</button>
+            <button class="cal-nav" type="button" aria-label="Vorige maand"
+                    (click)="shiftMonth(-1)">‹</button>
+            <strong class="cal-title">{{ monthLabel() }}</strong>
+            <button class="cal-nav" type="button" aria-label="Volgende maand"
+                    (click)="shiftMonth(1)">›</button>
           </div>
           <div class="cal-grid" role="grid">
             @for (day of weekDays; track day) { <span class="cal-dow">{{ day }}</span> }
@@ -240,7 +238,7 @@ interface CompactAgendaEntry {
         </div>
       </div>
     </div>
-    }
+    </div>
 
     <!-- Looking first, editing on demand: the view is where the work
          happens - notes, attachments and the little to-dos of the day. -->
@@ -431,6 +429,8 @@ interface CompactAgendaEntry {
   styles: `
     :host { display: block; min-width: 0; }
     .planner-compact { overflow: hidden; }
+    .planner-compact--hidden,.planner-full { display: none; }
+    .planner-full--visible { display: block; }
     .planner-compact__head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
       padding: 15px 16px 12px; border-bottom: 1px solid var(--line); }
     .planner-compact__eyebrow { display: block; margin-bottom: 2px; color: var(--rose); font-size: 9.5px;
@@ -487,11 +487,7 @@ interface CompactAgendaEntry {
     .cal-day--outside { color: var(--muted-2); }
     .cal-day--today { font-weight: 800; color: var(--rose-dark); box-shadow: inset 0 0 0 1.5px var(--rose-line); }
     .cal-day.cal-day--selected { background: var(--rose); color: #fff; font-weight: 700; box-shadow: none; }
-    .cal-title { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent;
-      font: inherit; font-size: 13.5px; font-weight: 700; text-transform: capitalize; cursor: pointer; color: var(--ink); }
-    .cal-title__chev { width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
-      transform: rotate(45deg); transition: transform .15s ease; }
-    .cal-title__chev--open { transform: rotate(-135deg); }
+    .cal-title { font-size: 13.5px; font-weight: 700; text-transform: capitalize; color: var(--ink); }
     /* How many appointments that day, as a small bubble - a dot said "something". */
     .cal-count { position: absolute; top: 2px; right: 2px; display: grid; place-items: center;
       min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--rose);
@@ -507,6 +503,11 @@ interface CompactAgendaEntry {
       .cal-pane { min-width: 0; }
       .cal-agenda { margin-top: 0; padding-left: 26px; border-top: 0; border-left: 1px solid var(--line); min-height: 100%; }
       .cal-day { min-height: 40px; }
+    }
+    @media (min-width: 1000px) {
+      .planner-compact { display: none; }
+      .planner-full { display: block; }
+      .planner-expanded-head { display: none; }
     }
     .cal-agenda__row { display: flex; gap: 10px; width: 100%; padding: 8px 2px; border: 0; border-bottom: 1px solid var(--line);
       background: transparent; font: inherit; text-align: left; cursor: pointer; align-items: baseline; }
@@ -607,8 +608,6 @@ export class PlannerCards {
 
   readonly items = this.store.items;
   readonly month = signal(startOfMonth(new Date()));
-  /** Closed = one week row; open = the whole month. */
-  readonly calOpen = signal(false);
   readonly selectedDate = signal(isoDate(new Date()));
   readonly editing = signal<PlannerItem | null>(null);
   readonly viewing = signal<number | null>(null);
@@ -875,50 +874,20 @@ export class PlannerCards {
       counts.set(stone.date, (counts.get(stone.date) ?? 0) + 1);
     }
     const today = isoDate(new Date());
-    const build = (start: Date, length: number, monthOf: Date | null) =>
-      Array.from({ length }, (_, index) => {
-        const date = new Date(start.getTime() + index * DAY_MS);
-        const iso = isoDate(date);
-        return {
-          key: iso, date: iso, label: date.getDate(),
-          inMonth: monthOf === null || date.getMonth() === monthOf.getMonth(),
-          today: iso === today,
-          events: counts.get(iso) ?? 0,
-        };
-      });
-    if (!this.calOpen()) {
-      return build(this.weekStart(), 7, null);
-    }
     const first = this.month();
     const startOffset = (first.getDay() + 6) % 7;
-    return build(new Date(first.getTime() - startOffset * DAY_MS), 42, first);
+    const start = new Date(first.getTime() - startOffset * DAY_MS);
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(start.getTime() + index * DAY_MS);
+      const iso = isoDate(date);
+      return {
+        key: iso, date: iso, label: date.getDate(),
+        inMonth: date.getMonth() === first.getMonth(),
+        today: iso === today,
+        events: counts.get(iso) ?? 0,
+      };
+    });
   });
-
-  /** Monday of the week the selected day sits in. */
-  private weekStart(): Date {
-    const selected = new Date(this.selectedDate());
-    const offset = (selected.getDay() + 6) % 7;
-    return new Date(selected.getTime() - offset * DAY_MS);
-  }
-
-  readonly weekLabel = computed(() => {
-    const start = this.weekStart();
-    const end = new Date(start.getTime() + 6 * DAY_MS);
-    const from = start.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
-    const to = end.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
-    return `${from} – ${to}`;
-  });
-
-  shiftPeriod(step: number): void {
-    if (this.calOpen()) {
-      this.shiftMonth(step);
-      return;
-    }
-    const start = this.weekStart();
-    const next = new Date(start.getTime() + step * 7 * DAY_MS);
-    this.selectedDate.set(isoDate(next));
-    this.month.set(startOfMonth(next));
-  }
 
   /** Everything planned that day: appointments and tasks booked onto it. */
   readonly dayItems = computed(() =>
@@ -929,7 +898,9 @@ export class PlannerCards {
 
   shiftMonth(step: number): void {
     const current = this.month();
-    this.month.set(new Date(current.getFullYear(), current.getMonth() + step, 1));
+    const next = new Date(current.getFullYear(), current.getMonth() + step, 1);
+    this.month.set(next);
+    this.selectedDate.set(isoDate(next));
   }
 
   sheetTitle(draft: PlannerItem): string {

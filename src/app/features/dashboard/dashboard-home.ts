@@ -310,7 +310,7 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
       .home-kpi { min-height: 108px; align-content: center; }
     }
     @media (min-width: 1000px) {
-      .home-primary-grid { grid-template-columns: minmax(0, 1.08fr) minmax(380px, .92fr); gap: 16px; }
+      .home-primary-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
     }
     @media (max-width: 579.98px) {
       .home-pins { display: grid; }
