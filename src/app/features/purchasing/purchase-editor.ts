@@ -201,7 +201,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </div>
         </section>
 
-        <nav class="erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
+        <nav class="erp-workspace__nav purchase-editor__mobile-nav" aria-label="Onderdelen van deze inkooporder">
           <button class="erp-workspace__nav-item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-order-section'"
                   [attr.aria-current]="workspaceSection() === 'purchase-order-section' ? 'location' : null"

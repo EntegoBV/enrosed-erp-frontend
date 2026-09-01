@@ -2926,6 +2926,7 @@ app-content-translation-workspace .card + * { margin-top: 12px; }
 }
 
 @media (min-width: 680px) {
+  app-purchase-editor .purchase-editor__mobile-nav { display: none; }
   :is(app-purchase-view, app-sales-view) .purchase-category__head { padding-inline: 18px; }
   :is(app-purchase-view, app-sales-view) .purchase-category__models { padding: 12px 18px; }
 }
