@@ -21,7 +21,7 @@ const products = [
 const lines = [line(1), line(2), line(4), line(3)];
 
 test('purchase view groups by configured category and orders variants by canonical position', () => {
-  const sections = purchaseLineSections(lines, products, categories, null, STANDARD_COLOURS);
+  const sections = purchaseLineSections(lines, products, categories, null);
 
   assert.deepEqual(sections.map((section) => section.name), ['Stolpen', 'Foam']);
   assert.deepEqual(sections[0].entries.map((entry) => entry.line.productId), [2, 4]);
@@ -30,11 +30,37 @@ test('purchase view groups by configured category and orders variants by canonic
 });
 
 test('purchase view filters one colour without losing its category heading', () => {
-  const sections = purchaseLineSections(lines, products, categories, 'blauw', STANDARD_COLOURS);
+  const sections = purchaseLineSections(lines, products, categories, 'blauw');
 
   assert.equal(sections.length, 1);
   assert.equal(sections[0].name, 'Foam');
   assert.deepEqual(sections[0].entries.map((entry) => entry.line.productId), [1]);
+  assert.deepEqual(sections[0].entries.map((entry) => entry.displayIndex), [3]);
+});
+
+test('purchase view uses the canonical variant key fallback just like the editor', () => {
+  const familyProducts = [
+    {
+      ...product(11, 'Foam Fuchsia', 2, 'foam', 'Fuchsia', null),
+      familyId: 7,
+      canonicalVariantKey: 'foam-fuchsia',
+    },
+    {
+      ...product(12, 'Foam Bordeaux', 2, 'foam', 'Bordeaux', null),
+      familyId: 7,
+      canonicalVariantKey: 'foam-bordeaux',
+    },
+  ];
+  const familyLines = [
+    { productId: 11, productName: 'Foam Fuchsia' },
+    { productId: 12, productName: 'Foam Bordeaux' },
+  ] as LandedCostLine[];
+
+  const all = purchaseLineSections(familyLines, familyProducts, categories, null);
+  assert.deepEqual(all[0].entries.map((entry) => entry.line.productId), [12, 11]);
+
+  const filtered = purchaseLineSections(familyLines, familyProducts, categories, 'fuchsia');
+  assert.deepEqual(filtered[0].entries.map((entry) => entry.displayIndex), [2]);
 });
 
 test('colour choices follow the product colour key and keep products without colour last', () => {
@@ -55,7 +81,7 @@ function product(
   categoryId: number,
   familyKey: string,
   colour: string | null,
-  variantPosition: number,
+  variantPosition: number | null,
 ): Product {
   return {
     id,

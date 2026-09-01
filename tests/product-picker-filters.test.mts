@@ -72,6 +72,11 @@ test('unknown category ids join the visible uncategorised choice', () => {
     category: UNCATEGORISED_PICKER_CATEGORY,
     colour: null,
   }).map((item) => item.id), [4, 9]);
+  assert.deepEqual(filterProductPicker([...products, unknown], categories, {
+    query: 'zonder categorie',
+    category: null,
+    colour: null,
+  }).map((item) => item.id), [4, 9]);
 });
 
 function category(id: number, name: string, position: number): Category {

@@ -109,8 +109,6 @@ export function filterProductPicker(
   filter: ProductPickerFilter,
 ): Product[] {
   const needle = normaliseSearch(filter.query);
-  const categoryNames = new Map(categories.flatMap((category) =>
-    category.id === null ? [] : [[category.id, category.name] as const]));
   const knownCategoryIds = categoryIds(categories);
   const limit = filter.limit ?? 50;
 
@@ -127,7 +125,7 @@ export function filterProductPicker(
         product.describedAs,
         product.barcodeInner,
         product.barcodeOuter,
-        product.categoryId === null ? 'Zonder categorie' : categoryNames.get(product.categoryId),
+        productPickerCategoryName(product, categories),
       ].join(' ')).includes(needle);
     })
     .slice(0, limit);

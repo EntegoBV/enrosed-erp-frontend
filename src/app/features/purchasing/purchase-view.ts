@@ -781,7 +781,6 @@ export class PurchaseView {
       this.products(),
       this.categories(),
       this.colourFilter(),
-      STANDARD_COLOURS,
     ));
 
   readonly statusSteps = [

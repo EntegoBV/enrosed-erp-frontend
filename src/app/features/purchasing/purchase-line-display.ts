@@ -73,7 +73,6 @@ export function purchaseLineSections(
   products: readonly Product[],
   categories: readonly Category[],
   selectedColour: string | null,
-  standardColours: readonly string[],
 ): PurchaseLineSection[] {
   const productsById = new Map(products.flatMap((product) =>
     product.id === null ? [] : [[product.id, product] as const]));
@@ -86,25 +85,26 @@ export function purchaseLineSections(
       .flatMap(({ category }, index) => category.id === null ? [] : [[category.id, index] as const]),
   );
 
-  const sorted = lines
+  const ordered = lines
     .map((line, sourceIndex) => ({
       line,
       sourceIndex,
       product: productsById.get(line.productId) ?? null,
     }))
-    .filter(({ product }) => selectedColour === null || colourKey(product) === selectedColour)
     .sort((left, right) =>
       categoryOrder(left.product, categoryRank) - categoryOrder(right.product, categoryRank)
       || compareText(familyKey(left.product, left.line), familyKey(right.product, right.line))
+      || nullableNumber(left.product?.familyId, right.product?.familyId)
       || nullableNumber(left.product?.variantPosition, right.product?.variantPosition)
-      || colourOrder(left.product, standardColours) - colourOrder(right.product, standardColours)
-      || compareText(colourLabel(left.product), colourLabel(right.product), true)
+      || compareText(variantKey(left.product), variantKey(right.product), true)
       || compareText(left.product?.variantSize, right.product?.variantSize, true)
       || compareText(left.product?.sku, right.product?.sku, true)
-      || left.sourceIndex - right.sourceIndex);
+      || left.sourceIndex - right.sourceIndex)
+    .map((item, index) => ({ ...item, displayIndex: index + 1 }))
+    .filter(({ product }) => selectedColour === null || colourKey(product) === selectedColour);
 
   const sections = new Map<number | null, PurchaseLineSection>();
-  sorted.forEach((item, index) => {
+  ordered.forEach((item) => {
     const categoryId = item.product?.categoryId ?? null;
     let section = sections.get(categoryId);
     if (!section) {
@@ -117,7 +117,11 @@ export function purchaseLineSections(
       };
       sections.set(categoryId, section);
     }
-    section.entries.push({ line: item.line, product: item.product, displayIndex: index + 1 });
+    section.entries.push({
+      line: item.line,
+      product: item.product,
+      displayIndex: item.displayIndex,
+    });
   });
 
   return [...sections.values()];
@@ -138,13 +142,6 @@ export function purchaseColourHex(
 ): string | null {
   const label = colourLabel(product);
   return product?.colourHex || (label ? colourSwatches[label] : null) || null;
-}
-
-function colourOrder(product: Product | null, standardColours: readonly string[]): number {
-  const label = colourLabel(product);
-  if (!label) return Number.MAX_SAFE_INTEGER;
-  const index = standardColours.findIndex((colour) => collator.compare(colour, label) === 0);
-  return index < 0 ? standardColours.length : index;
 }
 
 function compareColourOptions(
@@ -174,6 +171,18 @@ function familyKey(product: Product | null, line: LandedCostLine): string {
     || (product?.familyId === null || product?.familyId === undefined ? '' : `family-${product.familyId}`)
     || product?.name
     || line.productName;
+}
+
+/** Same stable variant key used by the product overview and purchase editor. */
+function variantKey(product: Product | null): string | null {
+  if (!product) return null;
+  const canonical = product.canonicalVariantKey?.trim();
+  if (canonical) {
+    const family = product.familyKey?.trim();
+    if (family && canonical.startsWith(`${family}-`)) return canonical.slice(family.length + 1);
+    return canonical;
+  }
+  return product.colour?.trim() || null;
 }
 
 function nullableNumber(left: number | null | undefined, right: number | null | undefined): number {
