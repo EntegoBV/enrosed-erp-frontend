@@ -10,6 +10,7 @@ import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Product } from '../../core/api/models';
 import { Skeleton } from '../../shared/skeleton';
+import { deselectProductIds, selectProductIds } from './catalog-product-selection-state';
 
 @Component({
   selector: 'app-catalog-product-selection',
@@ -20,15 +21,32 @@ import { Skeleton } from '../../shared/skeleton';
       <div class="card__head product-selector__head">
         <div>
           <h2 id="catalog-products-title">Assortiment</h2>
-          <p>{{ selected().size }} van {{ products().length }} producten opgenomen</p>
+          <p>{{ selectedProductCount() }} van {{ selectableIds().length }} producten opgenomen</p>
         </div>
-        <div class="visible-actions">
-          <button class="btn btn--sm" type="button"
-                  [disabled]="disabled() || !visibleProducts().length"
-                  (click)="selectVisible()">Alles in beeld kiezen</button>
-          <button class="btn btn--sm" type="button"
-                  [disabled]="disabled() || !visibleSelectedCount()"
-                  (click)="clearVisible()">Keuze in beeld wissen</button>
+      </div>
+
+      <div class="selection-actions">
+        <div class="selection-actions__group" role="group" aria-label="Selectie voor volledig assortiment">
+          <small>Volledig assortiment</small>
+          <span>
+            <button class="btn btn--sm" type="button"
+                    [disabled]="disabled() || allSelected()"
+                    (click)="selectAll()">Alles selecteren</button>
+            <button class="btn btn--sm" type="button"
+                    [disabled]="disabled() || !selectedProductCount()"
+                    (click)="clearAll()">Alles deselecteren</button>
+          </span>
+        </div>
+        <div class="selection-actions__group" role="group" aria-label="Selectie binnen huidig filter">
+          <small>Huidig filter</small>
+          <span>
+            <button class="btn btn--sm" type="button"
+                    [disabled]="disabled() || !visibleProducts().length || visibleAllSelected()"
+                    (click)="selectVisible()">Zichtbare selecteren</button>
+            <button class="btn btn--sm" type="button"
+                    [disabled]="disabled() || !visibleSelectedCount()"
+                    (click)="clearVisible()">Zichtbare deselecteren</button>
+          </span>
         </div>
       </div>
 
@@ -126,8 +144,17 @@ import { Skeleton } from '../../shared/skeleton';
     .card__head > div { min-width: 0; }
     .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
     .product-selector__head { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
-    .visible-actions { display: flex; flex: 1 1 250px; justify-content: flex-end; gap: 6px; }
-    .visible-actions .btn { min-height: 48px; padding-inline: 12px; font-size: 14px; }
+    .selection-actions {
+      display: grid; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+    .selection-actions__group { display: grid; min-width: 0; gap: 5px; }
+    .selection-actions__group > small {
+      color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .selection-actions__group > span { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .selection-actions .btn { min-height: 48px; padding-inline: 10px; font-size: 13px; white-space: normal; }
     .selection-tools { display: grid; gap: 8px; padding: 14px 14px 10px; }
     .product-search { position: relative; display: block; }
     .product-search svg {
@@ -193,14 +220,13 @@ import { Skeleton } from '../../shared/skeleton';
     .load-state--error { border-top: 1px solid var(--line); color: var(--danger); }
     @container product-selector (min-width: 620px) {
       .selection-tools { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+      .selection-actions { grid-template-columns: 1fr 1fr; }
     }
     @container catalog-page (min-width: 980px) {
       .product-choice-list { max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain; }
     }
     @container product-selector (max-width: 520px) {
       .product-selector__head { display: grid; }
-      .visible-actions { width: 100%; justify-content: stretch; }
-      .visible-actions .btn { flex: 1 1 0; white-space: normal; }
       .product-choice { grid-template-columns: 24px 60px minmax(0, 1fr); }
       .product-choice__price {
         grid-column: 3; min-width: 0; justify-items: start; margin-top: 4px; text-align: left;
@@ -231,6 +257,15 @@ export class CatalogProductSelection {
   readonly query = signal('');
   readonly selectedOnly = signal(false);
 
+  readonly selectableIds = computed(() => this.products().flatMap((product) =>
+    product.id === null ? [] : [product.id]));
+  readonly selectedProductCount = computed(() => {
+    const selected = this.selected();
+    return this.selectableIds().filter((id) => selected.has(id)).length;
+  });
+  readonly allSelected = computed(() =>
+    this.selectableIds().length > 0 && this.selectedProductCount() === this.selectableIds().length);
+
   readonly visibleProducts = computed(() => {
     const category = this.categoryFilter();
     const selected = this.selected();
@@ -256,6 +291,9 @@ export class CatalogProductSelection {
     return this.visibleProducts().filter((product) =>
       product.id !== null && selected.has(product.id)).length;
   });
+  readonly visibleAllSelected = computed(() =>
+    this.visibleProducts().length > 0
+    && this.visibleSelectedCount() === this.visibleProducts().filter((product) => product.id !== null).length);
 
   toggle(id: number | null): void {
     if (this.disabled() || id === null) return;
@@ -265,22 +303,30 @@ export class CatalogProductSelection {
     this.selectedChange.emit(next);
   }
 
+  selectAll(): void {
+    if (this.disabled()) return;
+    this.selectedChange.emit(selectProductIds(this.selected(), this.selectableIds()));
+  }
+
+  clearAll(): void {
+    if (this.disabled()) return;
+    this.selectedChange.emit(deselectProductIds(this.selected(), this.selectableIds()));
+  }
+
   selectVisible(): void {
     if (this.disabled()) return;
-    const next = new Set(this.selected());
-    for (const product of this.visibleProducts()) {
-      if (product.id !== null) next.add(product.id);
-    }
-    this.selectedChange.emit(next);
+    this.selectedChange.emit(selectProductIds(
+      this.selected(),
+      this.visibleProducts().map((product) => product.id),
+    ));
   }
 
   clearVisible(): void {
     if (this.disabled()) return;
-    const next = new Set(this.selected());
-    for (const product of this.visibleProducts()) {
-      if (product.id !== null) next.delete(product.id);
-    }
-    this.selectedChange.emit(next);
+    this.selectedChange.emit(deselectProductIds(
+      this.selected(),
+      this.visibleProducts().map((product) => product.id),
+    ));
   }
 
   isSelected(product: Product): boolean {

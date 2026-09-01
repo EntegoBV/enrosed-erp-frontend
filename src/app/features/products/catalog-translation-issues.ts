@@ -8,10 +8,12 @@ export type CatalogTranslationIssueKind =
 export interface CatalogIssueProduct {
   id: number | null;
   familyKey: string | null;
+  categoryId: number | null;
   name: string;
 }
 
 export interface CatalogIssueCategory {
+  id: number | null;
   code: string;
   name: string;
 }
@@ -23,6 +25,8 @@ export interface CatalogTranslationLink {
   fieldLabel: string;
   route: string | null;
   queryParams: Readonly<Record<string, string>>;
+  /** Selected products that can remove this issue from the current export. */
+  affectedProductIds: readonly number[];
 }
 
 interface ParsedIssue {
@@ -89,6 +93,13 @@ export function catalogTranslationLinks(
   ));
 }
 
+/** Deduplicate every selected product that can be removed to clear an issue. */
+export function catalogTranslationAffectedProductIds(
+  issues: readonly CatalogTranslationLink[],
+): Set<number> {
+  return new Set(issues.flatMap((issue) => issue.affectedProductIds));
+}
+
 function parseCatalogTranslationIssue(path: string): ParsedIssue {
   const catalogCopy = /^catalog\.copy\.(.+)$/.exec(path);
   if (catalogCopy) {
@@ -130,6 +141,7 @@ function linkFor(
       fieldLabel: 'Tekst invullen',
       route: '/catalog/texts',
       queryParams: { ...common, key: issue.entityKey },
+      affectedProductIds: [],
     };
   }
 
@@ -147,6 +159,10 @@ function linkFor(
         category: issue.entityKey,
         focus: categoryFocus(issue.field),
       },
+      affectedProductIds: affectedProductIdsFor(products, selectedProductIds, (product) =>
+        category?.id !== null
+        && category?.id !== undefined
+        && product.categoryId === category.id),
     };
   }
 
@@ -163,6 +179,7 @@ function linkFor(
       route: product?.id === null || product?.id === undefined
         ? null : `/products/${product.id}/translations`,
       queryParams: { ...common, focus: familyFocus(issue.field) },
+      affectedProductIds: affectedProductIdsFor(familyProducts, selectedProductIds),
     };
   }
 
@@ -176,6 +193,8 @@ function linkFor(
       fieldLabel: fieldLabel(issue.field),
       route: `/products/${productId}/translations`,
       queryParams: { ...common, focus: productFocus(issue.field) },
+      affectedProductIds: affectedProductIdsFor(products, selectedProductIds, (candidate) =>
+        candidate.id === productId),
     };
   }
 
@@ -186,7 +205,17 @@ function linkFor(
     fieldLabel: issue.path,
     route: null,
     queryParams: common,
+    affectedProductIds: [],
   };
+}
+
+function affectedProductIdsFor(
+  products: readonly CatalogIssueProduct[],
+  selected: ReadonlySet<number>,
+  include: (product: CatalogIssueProduct) => boolean = () => true,
+): number[] {
+  return products.flatMap((product) =>
+    product.id !== null && selected.has(product.id) && include(product) ? [product.id] : []);
 }
 
 function fieldLabel(field: string): string {

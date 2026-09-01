@@ -24,7 +24,12 @@ import {
   CatalogBrochureSettings,
 } from './catalog-brochure-settings';
 import { CatalogProductSelection } from './catalog-product-selection';
-import { catalogTranslationLinks } from './catalog-translation-issues';
+import {
+  catalogTranslationAffectedProductIds,
+  catalogTranslationLinks,
+} from './catalog-translation-issues';
+import { orderCatalogProducts } from './catalog-product-order';
+import { deselectProductIds } from './catalog-product-selection-state';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v2';
 
@@ -182,18 +187,66 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
                 <small>{{ error }}</small>
                 @if (renderTranslationIssues().length) {
                   <div class="translation-issues" aria-label="Ontbrekende vertalingen">
-                    @for (issue of renderTranslationIssues(); track issue.path) {
-                      @if (issue.route) {
-                        <a [routerLink]="issue.route" [queryParams]="issue.queryParams">
-                          <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
-                          <i aria-hidden="true">Aanvullen →</i>
-                        </a>
-                      } @else {
-                        <div>
-                          <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
-                          <i>Niet automatisch gevonden</i>
+                    @if (selectionTranslationIssues().length) {
+                      <section class="translation-issues__group" aria-labelledby="product-translation-issues-title">
+                        <div class="translation-issues__head">
+                          <span>
+                            <b id="product-translation-issues-title">Productgebonden vertalingen</b>
+                            <small>Vul de vertaling aan of haal de getroffen producten uit deze PDF.</small>
+                          </span>
+                          @if (missingTranslationProductIds().size) {
+                            <button class="btn btn--sm" type="button" [disabled]="busy()"
+                                    (click)="excludeMissingTranslationProducts()">
+                              {{ missingTranslationProductIds().size }} getroffen
+                              product{{ missingTranslationProductIds().size === 1 ? '' : 'en' }} uitsluiten
+                            </button>
+                          }
                         </div>
-                      }
+                        <div class="translation-issues__list">
+                          @for (issue of selectionTranslationIssues(); track issue.path) {
+                            @if (issue.route) {
+                              <a class="translation-issue" [routerLink]="issue.route"
+                                 [queryParams]="issue.queryParams"
+                                 [attr.aria-label]="'Vertaling aanvullen: ' + issue.entityLabel + ', ' + issue.fieldLabel">
+                                <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
+                                <i aria-hidden="true">Vertaling aanvullen →</i>
+                              </a>
+                            } @else {
+                              <div class="translation-issue">
+                                <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
+                                <i>Geen directe editor</i>
+                              </div>
+                            }
+                          }
+                        </div>
+                      </section>
+                    }
+                    @if (catalogTranslationIssues().length) {
+                      <section class="translation-issues__group" aria-labelledby="catalog-translation-issues-title">
+                        <div class="translation-issues__head translation-issues__head--catalog">
+                          <span>
+                            <b id="catalog-translation-issues-title">Algemene catalogusteksten</b>
+                            <small>Deze teksten blijven nodig, ongeacht welke producten je selecteert.</small>
+                          </span>
+                        </div>
+                        <div class="translation-issues__list">
+                          @for (issue of catalogTranslationIssues(); track issue.path) {
+                            @if (issue.route) {
+                              <a class="translation-issue" [routerLink]="issue.route"
+                                 [queryParams]="issue.queryParams"
+                                 [attr.aria-label]="'Catalogustekst aanvullen: ' + issue.entityLabel + ', ' + issue.fieldLabel">
+                                <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
+                                <i aria-hidden="true">Catalogustekst aanvullen →</i>
+                              </a>
+                            } @else {
+                              <div class="translation-issue">
+                                <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
+                                <i>Geen directe editor</i>
+                              </div>
+                            }
+                          }
+                        </div>
+                      </section>
                     }
                   </div>
                 }
@@ -300,18 +353,28 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     .render-error small { color: var(--danger); }
     .render-error__actions { display:flex;justify-content:flex-end;flex-wrap:wrap;gap:7px }
     .render-error__actions .btn { min-height:48px }
-    .translation-issues { display: grid; gap: 7px; margin-top: 10px; }
-    .translation-issues > a, .translation-issues > div {
+    .translation-issues { display: grid; gap: 12px; margin-top: 12px; }
+    .translation-issues__group { display: grid; gap: 7px; }
+    .translation-issues__head {
+      display: flex; min-width: 0; align-items: flex-start; justify-content: space-between;
+      gap: 12px; padding: 10px 11px; border-radius: 10px; background: var(--surface-2);
+    }
+    .translation-issues__head > span { display: grid; min-width: 0; gap: 2px; }
+    .translation-issues__head > span small { color: var(--muted); }
+    .translation-issues__head .btn { min-height: 44px; flex: none; white-space: normal; }
+    .translation-issues__head--catalog { border-left: 3px solid var(--warn); }
+    .translation-issues__list { display: grid; gap: 7px; }
+    .translation-issue {
       display: flex; min-width: 0; min-height: 54px; align-items: center; justify-content: space-between;
       gap: 12px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
       border-radius: 10px; background: var(--surface); color: var(--ink); text-decoration: none;
     }
-    .translation-issues > a:hover { border-color: var(--rose); background: var(--rose-soft); }
-    .translation-issues > a:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
-    .translation-issues span { display: grid; min-width: 0; gap: 1px; }
-    .translation-issues span b { overflow-wrap: anywhere; }
-    .translation-issues span small { color: var(--muted); }
-    .translation-issues i { flex: none; color: var(--rose-dark); font-size: 13px; font-style: normal; font-weight: 750; }
+    a.translation-issue:hover { border-color: var(--rose); background: var(--rose-soft); }
+    a.translation-issue:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+    .translation-issue span { display: grid; min-width: 0; gap: 1px; }
+    .translation-issue span b { overflow-wrap: anywhere; }
+    .translation-issue span small { color: var(--muted); }
+    .translation-issue i { flex: none; color: var(--rose-dark); font-size: 13px; font-style: normal; font-weight: 750; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .catalog-action__buttons { display: flex; gap: 7px; }
@@ -337,7 +400,8 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
       .render-error { align-items:stretch;flex-direction:column }
       .render-error__actions { display:grid;grid-template-columns:1fr }
       .render-error__actions .btn { width:100% }
-      .translation-issues > a, .translation-issues > div { align-items: flex-start; flex-direction: column; gap: 4px; }
+      .translation-issues__head, .translation-issue { align-items: flex-start; flex-direction: column; gap: 6px; }
+      .translation-issues__head .btn { width: 100%; }
       .catalog-action { padding-inline: 10px; gap: 7px; }
       .catalog-action .action-bar__label { display: none; }
       .catalog-action .action-bar__value { font-size: 15px; }
@@ -388,6 +452,12 @@ export class CatalogExport {
     this.categories(),
     this.selected(),
   ));
+  readonly selectionTranslationIssues = computed(() => this.renderTranslationIssues().filter((issue) =>
+    issue.kind === 'CATEGORY' || issue.kind === 'FAMILY' || issue.kind === 'PRODUCT'));
+  readonly catalogTranslationIssues = computed(() => this.renderTranslationIssues().filter((issue) =>
+    issue.kind === 'CATALOG_COPY' || issue.kind === 'UNKNOWN'));
+  readonly missingTranslationProductIds = computed(() =>
+    catalogTranslationAffectedProductIds(this.selectionTranslationIssues()));
   readonly selectedFamilyCount = computed(() => {
     const selected = this.selected();
     const groups = new Set<string>();
@@ -451,7 +521,10 @@ export class CatalogExport {
       if (this.destroyed) return;
       /* Internal assessment products stay in product management but never appear in a
          customer-facing PDF or return through an older saved browser selection. */
-      const customerCatalogue = products.filter((product) => !product.demo);
+      const customerCatalogue = orderCatalogProducts(
+        products.filter((product) => !product.demo),
+        categories,
+      );
       this.products.set(customerCatalogue);
       this.categories.set(categories);
       const available = new Set(customerCatalogue.flatMap((product) =>
@@ -515,6 +588,16 @@ export class CatalogExport {
   retryRender(): void {
     if (this.busy()) return;
     void this.download();
+  }
+
+  excludeMissingTranslationProducts(): void {
+    if (this.busy()) return;
+    const affected = this.missingTranslationProductIds();
+    if (!affected.size) return;
+    this.selected.update((current) => deselectProductIds(current, affected));
+    this.ui.toast(
+      `${affected.size} getroffen product${affected.size === 1 ? '' : 'en'} uit de catalogusselectie gehaald`,
+    );
   }
 
   private buildRequest(): CatalogExportRequest {
@@ -588,7 +671,7 @@ export class CatalogExport {
     const count = missingPaths.length;
     const message = count
       ? `De ${this.languageLabel()} catalogus mist ${count} verplichte `
-        + `vertaling${count === 1 ? '' : 'en'}. Open elk onderdeel hieronder en vul het direct aan.`
+        + `vertaling${count === 1 ? '' : 'en'}. Vul de tekst aan of sluit getroffen producten tijdelijk uit.`
       : `De ${this.languageLabel()} catalogus mist nog verplichte vertalingen. `
         + 'Open de catalogusteksten en probeer daarna opnieuw.';
     this.missingTranslationPaths.set(missingPaths);
