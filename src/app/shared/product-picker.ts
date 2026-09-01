@@ -51,18 +51,12 @@ export interface ProductDraft {
 type ProductPickerFamilyLanes = readonly [
   readonly ProductPickerFamilyGroup[],
   readonly ProductPickerFamilyGroup[],
-  readonly ProductPickerFamilyGroup[],
 ];
 
-/** Two independent desktop columns plus a full-width orphan for odd totals. */
+/** Two independent, contiguous columns; mobile naturally keeps source order. */
 function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): ProductPickerFamilyLanes {
-  const pairedCount = groups.length - (groups.length % 2);
-  const left: ProductPickerFamilyGroup[] = [];
-  const right: ProductPickerFamilyGroup[] = [];
-  for (let index = 0; index < pairedCount; index += 1) {
-    (index % 2 === 0 ? left : right).push(groups[index]);
-  }
-  return [left, right, pairedCount < groups.length ? [groups[pairedCount]] : []];
+  const splitAt = Math.ceil(groups.length / 2);
+  return [groups.slice(0, splitAt), groups.slice(splitAt)];
 }
 
 @Component({
@@ -373,12 +367,11 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                   <span>{{ section.groups.length }} reeks{{ section.groups.length === 1 ? '' : 'en' }} · {{ section.productCount }} product{{ section.productCount === 1 ? '' : 'en' }}</span>
                 </header>
                 <div class="picker-family-layout">
-                @for (lane of section.lanes; track $index; let laneIndex = $index) {
+                @for (lane of section.lanes; track $index) {
                   @if (lane.length) {
-                  <div class="picker-family-lane" [class.picker-family-lane--tail]="laneIndex === 2">
+                  <div class="picker-family-lane">
                   @for (group of lane; track group.key) {
-                  <section class="picker-family" [class.picker-family--open]="isGroupOpen(group)"
-                           [style.order]="section.groups.indexOf(group)">
+                  <section class="picker-family" [class.picker-family--open]="isGroupOpen(group)">
                     <header class="picker-family__head">
                       <button class="picker-family__toggle" type="button"
                               [attr.aria-expanded]="isGroupOpen(group)"
@@ -611,7 +604,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
     .picker-category__head span { min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px;
       text-overflow: ellipsis; white-space: nowrap; }
     .picker-family { margin: 0 10px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 15px;
-      align-self: start; background: var(--surface); box-shadow: 0 2px 9px rgb(0 0 0 / 3%); }
+      align-self: stretch; background: var(--surface); box-shadow: 0 2px 9px rgb(0 0 0 / 3%); }
     .picker-family--open { border-color: var(--rose-line); box-shadow: 0 5px 16px rgb(83 48 59 / 8%); }
     .picker-family__head { display: grid; grid-template-columns: minmax(0,1fr) 44px; align-items: stretch; }
     .picker-family__toggle { min-height: 66px; min-width: 0; padding: 8px 6px 8px 9px; display: grid;
@@ -734,12 +727,6 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
       .picker-family-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
         align-items: start; gap: 8px; }
       .picker-family-lane { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-      .picker-family-lane--tail { grid-column: 1 / -1; }
-      .picker-family-lane--tail .picker-family__variants { display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .picker-family-lane--tail .picker-item--nested:nth-child(odd):not(:last-child) {
-        border-right: 1px solid var(--line); }
-      .picker-family-lane--tail .picker-item--nested:last-child:nth-child(odd) { grid-column: 1 / -1; }
     }
     @media (pointer: coarse) {
       .picker-chip, .picker-batch__remove { min-width: 44px; min-height: 44px; }
@@ -752,7 +739,7 @@ export class ProductPicker implements OnDestroy {
   readonly categories = input<readonly Category[]>([]);
   /** Optional family metadata supplies the shared range name and canonical member order. */
   readonly families = input<readonly ProductFamily[]>([]);
-  /** Purchasing opts in; the sales picker keeps its familiar flat, single-pick flow. */
+  /** Order editors opt in to the shared category -> range -> variant hierarchy. */
   readonly groupByFamily = input(false);
   /** The price to display; the caller decides which one that is. */
   readonly priceOf = input<(product: Product) => number>((product) =>

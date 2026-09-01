@@ -2757,7 +2757,7 @@ app-content-translation-workspace .card + * { margin-top: 12px; }
 /* Purchase product organisation is shared by two already-large screens.
    Keeping these scoped rules global prevents their component CSS budgets
    from growing while the DOM remains isolated by the component hosts. */
-app-purchase-editor {
+:is(app-purchase-editor, app-sales-editor) {
   .line-colour-dot { display: inline-block; width: 11px; height: 11px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
   .line-colour-dot--empty { border-style: dashed; background: transparent; }
   .po-line-section + .po-line-section { margin-top: 18px; }
@@ -2787,6 +2787,7 @@ app-purchase-editor {
   .po-family__totals > b { margin-top: 2px; color: var(--rose-dark); font-size: 12px; }
   .po-family__variants { padding: 10px; background: var(--surface-2); }
   .po-family__variants .po-line { box-shadow: none; }
+  .po-family__variants .order-line { box-shadow: none; }
 }
 
 app-purchase-view {
@@ -2840,7 +2841,7 @@ app-purchase-view {
 }
 
 @media (max-width: 559px) {
-  app-purchase-editor {
+  :is(app-purchase-editor, app-sales-editor) {
     .po-family { border-radius: 14px; }
     .po-family + .po-family { margin-top: 8px; }
     .po-family__head {

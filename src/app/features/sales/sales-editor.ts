@@ -8,7 +8,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
-  MarkupMode, Product, QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
+  MarkupMode, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -32,6 +32,7 @@ import {
 import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
+import { salesLineSections } from './sales-product-line-groups';
 
 /**
  * Sales order and quote.
@@ -516,7 +517,42 @@ import {
           </div>
 
           <div class="product-lines">
-            @for (line of data.priced.lines; track line.productId; let index = $index) {
+            @if (data.priced.lines.length) {
+            @for (section of lineSections(); track section.key) {
+              <section class="po-line-section"
+                       [attr.aria-labelledby]="'sales-line-category-' + section.key">
+                <header class="po-line-section__head">
+                  <h3 [id]="'sales-line-category-' + section.key">{{ section.label }}</h3>
+                  <span>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</span>
+                </header>
+                @for (familyGroup of section.families; track familyGroup.key) {
+                <section class="po-family"
+                         [attr.aria-labelledby]="'sales-line-family-' + familyGroup.key">
+                  <header class="po-family__head">
+                    <span class="po-family__identity">
+                      <small>{{ familyGroup.familyId === null ? 'Los product' : 'Productreeks' }}</small>
+                      <strong [id]="'sales-line-family-' + familyGroup.key">{{ familyGroup.label }}</strong>
+                      @if (familyGroup.swatches.length) {
+                        <span class="po-family__swatches"
+                              [attr.aria-label]="'Kleuren in ' + familyGroup.label">
+                          @for (swatch of familyGroup.swatches; track swatch.key) {
+                            <i class="line-colour-dot" [class.line-colour-dot--empty]="!swatch.hex"
+                               [style.background]="swatch.hex || 'transparent'"
+                               [title]="swatch.label"></i>
+                          }
+                        </span>
+                      }
+                    </span>
+                    <span class="po-family__totals">
+                      <strong>{{ familyGroup.lines.length }}
+                        {{ familyGroup.lines.length === 1 ? 'variant' : 'varianten' }}</strong>
+                      <small>{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen ·
+                        {{ familyGroup.cbm | cbm }}</small>
+                      <b>{{ familyGroup.totalEur | eur }}</b>
+                    </span>
+                  </header>
+                  <div class="po-family__variants">
+            @for (line of familyGroup.lines; track line.productId) {
               <article class="order-line" [attr.aria-labelledby]="'line-title-' + line.productId">
                 <div class="order-line__head">
                   <!-- Photo and name walk through to the product itself. -->
@@ -529,7 +565,7 @@ import {
                     <span class="order-line__photo order-line__photo--empty" aria-hidden="true">◇</span>
                   }
                   <div class="order-line__identity">
-                    <span class="order-line__index">Regel {{ index + 1 }} · {{ line.sku }}</span>
+                    <span class="order-line__index">Regel {{ salesLineNumber(line.productId) }} · {{ line.sku }}</span>
                     <h3 [id]="'line-title-' + line.productId">{{ line.description }}</h3>
                     <span>
                       {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} ·
@@ -705,7 +741,13 @@ import {
                 </details>
 
               </article>
-            } @empty {
+            }
+                  </div>
+                </section>
+                }
+              </section>
+            }
+            } @else {
               <div class="products-empty">
                 <div class="products-empty__art" aria-hidden="true"><span>＋</span></div>
                 <h3>Nog geen producten</h3>
@@ -1241,6 +1283,9 @@ import {
           heading="Product toevoegen"
           [products]="available()"
           [categories]="categories()"
+          [families]="families()"
+          [groupByFamily]="true"
+          [preserveSourceOrder]="true"
           [priceOf]="priceOf"
           (picked)="addLine($event)"
           (cancelled)="picking.set(false)"
@@ -2079,6 +2124,7 @@ export class SalesEditor {
   readonly countries = signal<Country[]>([]);
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
+  readonly families = signal<ProductFamily[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly customerPortalLink = signal<CustomerPortalLink | null>(null);
 
@@ -2138,15 +2184,17 @@ export class SalesEditor {
   private async loadReference(): Promise<void> {
     this.referenceError.set('');
     try {
-      const [customers, countries, products, categories, carriers] = await Promise.all([
+      const [customers, countries, products, categories, families, carriers] = await Promise.all([
         this.sales.customers(), this.sales.countries(), this.catalog.products(),
         this.catalog.categories().catch(() => [] as Category[]),
+        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
         this.sales.carriers().catch(() => []),
       ]);
       this.customers.set(customers);
       this.countries.set(countries);
       this.products.set(products);
       this.categories.set(categories);
+      this.families.set(families);
       this.carriers.set(carriers.filter((carrier) => carrier.active));
     } catch (failure: unknown) {
       this.referenceError.set(messageOf(failure, 'Klanten, landen of producten ontbreken'));
@@ -2198,6 +2246,12 @@ export class SalesEditor {
     const used = new Set((this.view()?.order.lines ?? []).map((line) => line.productId));
     return this.products().filter((product) => !used.has(product.id!));
   });
+  readonly lineSections = computed(() => salesLineSections(
+    this.view()?.priced.lines ?? [], this.products(), this.categories(), this.families()));
+
+  salesLineNumber(productId: number): number {
+    return (this.view()?.priced.lines.findIndex((line) => line.productId === productId) ?? -1) + 1;
+  }
 
   readonly minimumPercent = computed(() => {
     const data = this.view();
