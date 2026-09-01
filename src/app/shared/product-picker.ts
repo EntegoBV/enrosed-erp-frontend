@@ -17,6 +17,8 @@ import {
 } from './product-picker-filters';
 import {
   ProductPickerFamilyGroup,
+  ProductPickerFamilySection,
+  productPickerGroupOpen,
   productPickerFamilySelectionState,
   productPickerFamilySections,
   productPickerGroupSummary,
@@ -349,7 +351,8 @@ export interface ProductDraft {
           @if (groupByFamily()) {
           <div class="picker-grouped">
             @for (section of familySections(); track section.key) {
-              <section class="picker-category" [attr.aria-labelledby]="'picker-category-' + section.key">
+              <section class="picker-category" [class.picker-category--open]="sectionHasOpenGroup(section)"
+                       [attr.aria-labelledby]="'picker-category-' + section.key">
                 <header class="picker-category__head">
                   <strong [id]="'picker-category-' + section.key">{{ section.name }}</strong>
                   <span>{{ section.groups.length }} reeks{{ section.groups.length === 1 ? '' : 'en' }} · {{ section.productCount }} product{{ section.productCount === 1 ? '' : 'en' }}</span>
@@ -515,21 +518,34 @@ export interface ProductDraft {
 
       <div foot style="display:contents">
         @if (createMode()) {
-          <button class="btn" type="button" (click)="createMode.set(false)">Terug</button>
-          <button class="btn btn--primary" type="button"
+          <button class="btn picker-footer-button" type="button" (click)="createMode.set(false)">Terug</button>
+          <button class="btn btn--primary picker-footer-button" type="button"
                   [disabled]="!draftName().trim() || draftPer() < 1"
-                  (click)="submitCreate()">Aanmaken en toevoegen</button>
+                  (click)="submitCreate()">
+            <span class="picker-footer-label--wide">Aanmaken en toevoegen</span>
+            <span class="picker-footer-label--compact">Aanmaken</span>
+          </button>
         } @else if (mode() === 'multi' && quantityStep()) {
-          <button class="btn" type="button" (click)="quantityStep.set(false)">Terug</button>
-          <span class="spacer"></span>
-          <button class="btn btn--primary" type="button" [disabled]="!batchReady()" (click)="confirmBatch()">
-            {{ batch().length }} product{{ batch().length === 1 ? '' : 'en' }} toevoegen
+          <button class="btn picker-footer-button" type="button" (click)="quantityStep.set(false)">Terug</button>
+          <span class="spacer picker-footer-spacer"></span>
+          <button class="btn btn--primary picker-footer-button" type="button"
+                  [disabled]="!batchReady()" (click)="confirmBatch()">
+            <span class="picker-footer-label--wide">
+              {{ batch().length }} product{{ batch().length === 1 ? '' : 'en' }} toevoegen
+            </span>
+            <span class="picker-footer-label--compact">Toevoegen · {{ batch().length }}</span>
           </button>
         } @else if (mode() === 'multi') {
-          <button class="btn" type="button" (click)="cancelled.emit()">Annuleren</button>
-          <span class="spacer"></span>
-          <button class="btn btn--primary" type="button" [disabled]="!selected().size" (click)="toQuantities()">
-            @if (selected().size) { {{ selected().size }} gekozen · aantallen › } @else { Kies producten }
+          <button class="btn picker-footer-button" type="button" (click)="cancelled.emit()">Annuleren</button>
+          <span class="spacer picker-footer-spacer"></span>
+          <button class="btn btn--primary picker-footer-button" type="button"
+                  [disabled]="!selected().size" (click)="toQuantities()">
+            <span class="picker-footer-label--wide">
+              @if (selected().size) { {{ selected().size }} gekozen · aantallen › } @else { Kies producten }
+            </span>
+            <span class="picker-footer-label--compact">
+              @if (selected().size) { Aantallen · {{ selected().size }} › } @else { Kies producten }
+            </span>
           </button>
         } @else {
         <button class="btn" type="button" (click)="cancelled.emit()">Annuleren</button>
@@ -566,9 +582,11 @@ export interface ProductDraft {
     .picker-category__head { min-height: 34px; padding: 8px 16px; display: flex; align-items: baseline;
       justify-content: space-between; gap: 10px; background: var(--surface-2); border-block: 1px solid var(--line); }
     .picker-category__head strong { font-size: 10px; font-weight: 780; letter-spacing: .07em; text-transform: uppercase; }
-    .picker-category__head span { color: var(--muted); font-size: 10px; white-space: nowrap; }
+    .picker-category__head span { min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px;
+      text-overflow: ellipsis; white-space: nowrap; }
     .picker-family { margin: 0 10px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 15px;
-      background: var(--surface); box-shadow: 0 2px 9px rgb(0 0 0 / 3%); }
+      align-self: start; background: var(--surface); box-shadow: 0 2px 9px rgb(0 0 0 / 3%); }
+    .picker-family--open { border-color: var(--rose-line); box-shadow: 0 5px 16px rgb(83 48 59 / 8%); }
     .picker-family__head { display: grid; grid-template-columns: minmax(0,1fr) 44px; align-items: stretch; }
     .picker-family__toggle { min-height: 66px; min-width: 0; padding: 8px 6px 8px 9px; display: grid;
       grid-template-columns: 46px minmax(0,1fr) 24px; align-items: center; gap: 9px; border: 0;
@@ -576,7 +594,8 @@ export interface ProductDraft {
     .picker-family__toggle:active { background: var(--surface-2); }
     .picker-family__photo { width: 46px; height: 46px; border-radius: 12px; }
     .picker-family__copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-    .picker-family__copy>strong { overflow: hidden; font-size: 14px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-family__copy>strong { display: -webkit-box; overflow: hidden; font-size: 14px; font-weight: 680;
+      line-height: 1.15; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .picker-family__summary { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
     .picker-family__dots { min-width: 0; display: inline-flex; align-items: center; gap: 3px; }
     .picker-family__dots i { width: 9px; height: 9px; flex: none; border: 1px solid rgb(0 0 0 / 14%); border-radius: 50%; }
@@ -609,12 +628,14 @@ export interface ProductDraft {
     .picker-batch__row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
     .picker-batch__body { flex: 1; min-width: 0; }
     .picker-batch__body .strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-batch__body .small { overflow-wrap: anywhere; }
     .carton-quantity-note { display: block; margin-top: 2px; color: var(--muted); font-size: 11px;
       line-height: 1.35; }
     .picker-batch__qty { width: 96px; }
     .picker-batch__remove { width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent;
       color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
     .picker-batch__remove:hover { background: var(--surface-2); color: var(--ink); }
+    .picker-footer-label--compact { display: none; }
     .picker-item {
       display: flex;
       align-items: center;
@@ -652,14 +673,42 @@ export interface ProductDraft {
       padding: 12px;
       background: var(--surface-2);
     }
+    @media (max-width: 679px) {
+      .picker-category, .picker-family, .picker-family--batch { min-width: 0; }
+      .picker-family { margin: 0 10px 7px; border-radius: 13px; }
+      .picker-family__toggle { min-height: 62px; padding: 7px 5px 7px 8px;
+        grid-template-columns: 42px minmax(0,1fr) 20px; gap: 8px; }
+      .picker-family__photo { width: 42px; height: 42px; border-radius: 11px; }
+      .picker-family__copy { gap: 3px; }
+      .picker-family__copy>strong { font-size: 13.5px; }
+      .picker-family__summary { gap: 5px; font-size: 10.5px; }
+      .picker-item--nested { min-height: 56px; gap: 9px; padding: 8px 10px 8px 12px!important; }
+      .picker-item--nested .picker-item__meta { font-size: 10.5px; }
+      .picker-item--nested .picker-item__end { font-size: 12px; }
+      .picker-batch__row--nested { display: grid; grid-template-columns: 36px minmax(0,1fr) 64px 44px;
+        gap: 6px; padding: 8px 9px; }
+      .picker-batch__row--nested .thumb--variant { width: 36px; height: 36px; }
+      .picker-batch__qty { width: 64px; min-width: 0; padding-inline: 6px; }
+      .picker-batch__remove { width: 44px; height: 44px; }
+      .picker-footer-button { min-width: 0; padding-inline: 13px; font-size: 13px; }
+      .picker-footer-spacer { display: none; }
+      .picker-footer-label--wide { display: none; }
+      .picker-footer-label--compact { display: inline; }
+    }
     @media (min-width: 680px) {
       .picker-grouped { margin-inline: 0; grid-template-columns: minmax(0, 1fr); align-items: start; }
-      .picker-category { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      .picker-category { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start;
         gap: 8px; padding: 0 8px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; }
       .picker-category__head { grid-column: 1 / -1; margin-inline: -8px; border-top: 0; }
       .picker-family { min-width: 0; margin: 0; }
       .picker-grouped--batch { grid-template-columns: 1fr; }
       .picker-grouped--batch .picker-category { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (min-width: 900px) {
+      .picker-category:not(.picker-category--open) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .picker-category--open .picker-family__variants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .picker-category--open .picker-item--nested:nth-child(odd):not(:last-child) { border-right: 1px solid var(--line); }
+      .picker-category--open .picker-item--nested:last-child:nth-child(odd) { grid-column: 1 / -1; }
     }
     @media (pointer: coarse) {
       .picker-chip, .picker-batch__remove { min-width: 44px; min-height: 44px; }
@@ -765,8 +814,11 @@ export class ProductPicker implements OnDestroy {
   }
 
   isGroupOpen(group: ProductPickerFamilyGroup): boolean {
-    return this.groupOpenOverrides().get(group.key)
-      ?? (this.query().trim().length > 0 || group.products.length === 1);
+    return productPickerGroupOpen(this.query(), this.groupOpenOverrides().get(group.key));
+  }
+
+  sectionHasOpenGroup(section: ProductPickerFamilySection): boolean {
+    return section.groups.some((group) => this.isGroupOpen(group));
   }
 
   toggleGroupOpen(group: ProductPickerFamilyGroup): void {

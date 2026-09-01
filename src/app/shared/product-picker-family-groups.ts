@@ -36,6 +36,15 @@ export interface ProductPickerSelectionEntry {
 
 export type ProductPickerFamilySelectionState = 'none' | 'partial' | 'all';
 
+/**
+ * Product ranges start folded, including ranges with a single variant.
+ * A search may reveal matching variants immediately, while an explicit user
+ * choice always wins until the picker closes.
+ */
+export function productPickerGroupOpen(query: string, override: boolean | undefined): boolean {
+  return override ?? query.trim().length > 0;
+}
+
 const collator = new Intl.Collator('nl-BE', { numeric: true, sensitivity: 'base' });
 
 /**

@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { Category, Product, ProductFamily } from '../src/app/core/api/models.ts';
 import {
   productPickerFamilySections,
+  productPickerGroupOpen,
   productPickerFamilySelectionState,
   productPickerGroupSummary,
   productPickerVariantLabel,
@@ -14,6 +15,14 @@ const categories = [
   category(20, 'Glas', 20),
   category(10, 'Foam', 10),
 ];
+
+test('product ranges start folded while search and explicit choices stay predictable', () => {
+  assert.equal(productPickerGroupOpen('', undefined), false);
+  assert.equal(productPickerGroupOpen('   ', undefined), false);
+  assert.equal(productPickerGroupOpen('red', undefined), true);
+  assert.equal(productPickerGroupOpen('red', false), false);
+  assert.equal(productPickerGroupOpen('', true), true);
+});
 
 test('groups the purchase picker as category, product range and canonical variants', () => {
   const products = [
