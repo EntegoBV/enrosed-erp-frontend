@@ -6,6 +6,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { saveBlob } from '../../core/api/download';
 import {
   CHINESE_DEPARTURE_PORTS,
+  COLOUR_SWATCHES,
   CONTAINER_TYPES,
   DESTINATION_PORTS,
   OTHER_PORT_VALUE,
@@ -38,6 +39,12 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { latestOwnFreightQuote } from './purchase-price-context';
+import {
+  PurchaseLineCategoryFilter,
+  purchaseLineCategoryOptions,
+  purchaseLineColourOptions,
+  purchaseLineSections,
+} from './purchase-product-line-groups';
 
 /**
  * Landed-cost calculation of a container.
@@ -361,9 +368,70 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </button>
               </div>
 
+              <!-- Category and colour stay in view while composing a larger order. -->
+              @if (data.costing.lines.length) {
+                <div class="line-organizer" aria-label="Productregels filteren">
+                  <div class="line-filter">
+                    <span class="line-filter__label">Categorie</span>
+                    <div class="line-filter__chips" role="group" aria-label="Filter op categorie">
+                      <button type="button" [class.active]="lineCategoryFilter() === null"
+                              [attr.aria-pressed]="lineCategoryFilter() === null"
+                              (click)="selectLineCategory(null)">
+                        Alle <small>{{ data.costing.lines.length }}</small>
+                      </button>
+                      @for (option of lineCategoryOptions(); track option.key) {
+                        <button type="button" [class.active]="lineCategoryFilter() === option.key"
+                                [attr.aria-pressed]="lineCategoryFilter() === option.key"
+                                (click)="selectLineCategory(option.key)">
+                          {{ option.label }} <small>{{ option.count }}</small>
+                        </button>
+                      }
+                    </div>
+                  </div>
+
+                  @if (lineColourOptions().length > 1) {
+                    <div class="line-filter">
+                      <span class="line-filter__label">Kleur</span>
+                      <div class="line-filter__chips line-filter__chips--colour"
+                           role="group" aria-label="Filter op kleur">
+                        <button type="button" [class.active]="lineColourFilter() === null"
+                                [attr.aria-pressed]="lineColourFilter() === null"
+                                (click)="lineColourFilter.set(null)">Alle kleuren</button>
+                        @for (option of lineColourOptions(); track option.key) {
+                          <button type="button" [class.active]="lineColourFilter() === option.key"
+                                  [attr.aria-pressed]="lineColourFilter() === option.key"
+                                  (click)="lineColourFilter.set(option.key)">
+                            <i class="line-colour-dot"
+                               [class.line-colour-dot--empty]="!colourHex(option.hex, option.label)"
+                               [style.background]="colourHex(option.hex, option.label) || 'transparent'"
+                               aria-hidden="true"></i>
+                            {{ option.label }} <small>{{ option.count }}</small>
+                          </button>
+                        }
+                      </div>
+                    </div>
+                  }
+
+                  @if (lineFiltersActive()) {
+                    <div class="line-filter__summary" aria-live="polite">
+                      <span>{{ visiblePurchaseLineCount() }} van {{ data.costing.lines.length }} regels zichtbaar</span>
+                      <button type="button" (click)="resetLineFilters()">Filters wissen</button>
+                    </div>
+                  }
+                </div>
+              }
+
               <div class="product-lines">
                 <div class="po-lines">
-                @for (line of data.costing.lines; track line.productId; let lineIndex = $index) {
+                @if (data.costing.lines.length) {
+                  @for (section of lineSections(); track section.key) {
+                    <section class="po-line-section"
+                             [attr.aria-labelledby]="'purchase-line-category-' + section.key">
+                      <header class="po-line-section__head">
+                        <h3 [id]="'purchase-line-category-' + section.key">{{ section.label }}</h3>
+                        <span>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</span>
+                      </header>
+                  @for (line of section.lines; track line.productId) {
                   <article class="po-line">
                     <header class="po-line__head">
                       <!-- The photo says which product faster than a number; the number
@@ -374,10 +442,21 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         @if (photoOf(line.productId); as photo) {
                           <img class="po-line__photo" [appAuthSrc]="photo" alt="" draggable="false" />
                         } @else {
-                          <span class="po-line__index" aria-hidden="true">{{ lineIndex + 1 }}</span>
+                          <span class="po-line__index" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span>
                         }
                         <span class="po-line__identity">
                           <strong>{{ line.productName }}</strong>
+                          @if (productVariantLabel(line.productId); as variant) {
+                            <span class="po-line__variant">
+                              @if (productColour(line.productId)) {
+                                <i class="line-colour-dot"
+                                   [class.line-colour-dot--empty]="!productColourHex(line.productId)"
+                                   [style.background]="productColourHex(line.productId) || 'transparent'"
+                                   aria-hidden="true"></i>
+                              }
+                              {{ variant }}
+                            </span>
+                          }
                           <span>{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
                         </span>
                       </a>
@@ -536,7 +615,17 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       </div>
                     </details>
                   </article>
-                } @empty {
+                  }
+                    </section>
+                  } @empty {
+                    <div class="empty product-empty product-empty--filtered">
+                      <div class="empty__icon" aria-hidden="true">⌕</div>
+                      <div class="empty__title">Geen productregels in dit filter</div>
+                      <p class="empty__text">Kies een andere categorie of kleur om de regels terug te zien.</p>
+                      <button class="btn" type="button" (click)="resetLineFilters()">Filters wissen</button>
+                    </div>
+                  }
+                } @else {
                   <div class="empty product-empty">
                     <div class="empty__icon" aria-hidden="true">◈</div>
                     <div class="empty__title">Bouw je container op</div>
@@ -1427,9 +1516,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   `, `
 
     .products-card{overflow:visible}:is(.products-card .section-heading,.summary-heading){border-bottom:1px solid var(--line)}.add-product{flex:none;min-height:40px;padding-inline:11px}
+    .line-organizer{display:grid;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--surface)}
+    .line-filter{display:grid;gap:5px}.line-filter__label{color:var(--muted);font-size:9.5px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}
+    .line-filter__chips{display:flex;gap:6px;overflow-x:auto;padding:1px 0 3px;scrollbar-width:none}.line-filter__chips::-webkit-scrollbar{display:none}
+    .line-filter__chips button{display:inline-flex;min-height:38px;flex:none;align-items:center;gap:6px;padding:7px 11px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:11.5px;font-weight:680;white-space:nowrap;cursor:pointer}
+    .line-filter__chips button:hover{border-color:var(--rose-line)}.line-filter__chips button.active{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}.line-filter__chips small{color:var(--muted);font-size:9.5px}.line-filter__chips button.active small{color:inherit}
+    .line-colour-dot{display:inline-block;width:11px;height:11px;flex:none;border:1px solid rgb(0 0 0 / 16%);border-radius:50%}.line-colour-dot--empty{border-style:dashed;background:transparent}
+    .line-filter__summary{display:flex;min-height:28px;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:11px}.line-filter__summary button{border:0;background:transparent;color:var(--rose-dark);font:inherit;font-weight:720;cursor:pointer}
     .po-line{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 1px 2px rgb(31 25 22 / 4%)}.po-line+.po-line{margin-top:10px}.po-line__head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
     .po-lines{padding:12px;border-radius:16px;background:var(--surface-2)}
+    .po-line-section+.po-line-section{margin-top:18px}.po-line-section__head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 3px 8px}.po-line-section__head h3{color:var(--ink-2);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.po-line-section__head span{color:var(--muted);font-size:10px}
     .po-line__index{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}.po-line__photo{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
+    .po-line__identity .po-line__variant{display:flex;align-items:center;gap:5px;color:var(--ink-2);font-size:11px;font-weight:650}
     .purchase-summary .cost-hero{grid-template-columns:1fr;gap:8px}.purchase-summary .cost-hero__unit{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line);text-align:left;align-self:auto}
     .pay-stream__head{flex-wrap:wrap}.pay-stream__head>span:last-child{text-align:right;margin-left:auto}
     .po-line__link{display:flex;flex:1;min-width:0;align-items:center;gap:inherit;color:inherit;text-decoration:none}.po-line__link:hover strong{color:var(--rose-dark);text-decoration:underline}
@@ -1583,8 +1681,49 @@ export class PurchaseEditor {
 
 
   photoOf(productId: number): string | null {
-    const product = this.products().find((item) => item.id === productId);
+    const product = this.productById().get(productId);
     return product?.photos?.[0]?.url ?? null;
+  }
+
+  selectLineCategory(filter: PurchaseLineCategoryFilter): void {
+    this.lineCategoryFilter.set(filter);
+    /* A colour from the previous category must never leave a seemingly empty order. */
+    this.lineColourFilter.set(null);
+  }
+
+  resetLineFilters(): void {
+    this.lineCategoryFilter.set(null);
+    this.lineColourFilter.set(null);
+  }
+
+  purchaseLineNumber(productId: number): number {
+    const index = this.unfilteredPurchaseLines().findIndex((line) => line.productId === productId);
+    return index < 0 ? 0 : index + 1;
+  }
+
+  productColour(productId: number): string | null {
+    return this.productById().get(productId)?.colour?.trim() || null;
+  }
+
+  productVariantLabel(productId: number): string | null {
+    const product = this.productById().get(productId);
+    if (!product) return null;
+    const parts = [product.colour, product.variantSize]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  productColourHex(productId: number): string | null {
+    const product = this.productById().get(productId);
+    return this.colourHex(product?.colourHex, product?.colour ?? '');
+  }
+
+  colourHex(explicit: string | null | undefined, label: string): string | null {
+    if (explicit?.trim()) return explicit.trim();
+    const normalized = label.trim().toLocaleLowerCase('nl-BE');
+    return Object.entries(COLOUR_SWATCHES).find(([name]) =>
+      name.toLocaleLowerCase('nl-BE') === normalized)?.[1] ?? null;
   }
 
   /* ---- payments --------------------------------------------------- */
@@ -2101,6 +2240,24 @@ export class PurchaseEditor {
   readonly adjustments = signal<PurchaseOrderView['adjustments']>([]);
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
+  readonly lineCategoryFilter = signal<PurchaseLineCategoryFilter>(null);
+  readonly lineColourFilter = signal<string | null>(null);
+  private readonly productById = computed(() => new Map(this.products().flatMap((product) =>
+    product.id === null ? [] : [[product.id, product] as const])));
+  readonly lineCategoryOptions = computed(() => purchaseLineCategoryOptions(
+    this.view()?.costing.lines ?? [], this.products(), this.categories()));
+  readonly lineColourOptions = computed(() => purchaseLineColourOptions(
+    this.view()?.costing.lines ?? [], this.products(), this.categories(), this.lineCategoryFilter()));
+  readonly lineSections = computed(() => purchaseLineSections(
+    this.view()?.costing.lines ?? [], this.products(), this.categories(),
+    this.lineCategoryFilter(), this.lineColourFilter()));
+  private readonly unfilteredPurchaseLines = computed(() => purchaseLineSections(
+    this.view()?.costing.lines ?? [], this.products(), this.categories(), null, null)
+    .flatMap((section) => section.lines));
+  readonly visiblePurchaseLineCount = computed(() => this.lineSections()
+    .reduce((count, section) => count + section.lines.length, 0));
+  readonly lineFiltersActive = computed(() =>
+    this.lineCategoryFilter() !== null || this.lineColourFilter() !== null);
   readonly freightRates = signal<FreightRate[]>([]);
   /** The order's supplier; drives the header and the origin-cost label. */
   readonly supplier = signal<Supplier | null>(null);
@@ -2134,6 +2291,7 @@ export class PurchaseEditor {
   }
 
   private async load(orderId: number): Promise<void> {
+    this.resetLineFilters();
     const view = await this.sourcing.purchaseOrder(orderId);
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
@@ -2509,6 +2667,7 @@ export class PurchaseEditor {
   addLine(choice: { product: Product; quantity: number }): void {
     this.picking.set(false);
     if (this.isReceived()) return;
+    this.resetLineFilters();
     this.enqueue((order) => ({
       ...order,
       lines: [...order.lines, {
@@ -2525,6 +2684,7 @@ export class PurchaseEditor {
   addLines(choices: { product: Product; quantity: number }[]): void {
     this.picking.set(false);
     if (this.isReceived() || !choices.length) return;
+    this.resetLineFilters();
     this.enqueue((order) => ({
       ...order,
       lines: [...order.lines, ...choices.map((choice) => ({
