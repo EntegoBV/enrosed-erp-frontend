@@ -4,7 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
-import { containerLabel } from '../../core/api/geo';
+import {
+  DEFAULT_PURCHASE_CONTAINER_TYPE, PURCHASE_CONTAINER_TYPES, PurchaseContainerType, containerLabel,
+} from '../../core/api/geo';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -168,6 +170,22 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               </span>
             </div>
           }
+          <fieldset class="container-choice">
+            <legend>Container</legend>
+            <div class="container-choice__grid" aria-label="Containertype kiezen">
+              @for (type of purchaseContainerTypes; track type.value) {
+                <button class="container-choice__option" type="button"
+                        [class.container-choice__option--on]="chosenContainerType() === type.value"
+                        [attr.aria-pressed]="chosenContainerType() === type.value"
+                        (click)="chosenContainerType.set(type.value)">
+                  <span>{{ type.shortLabel }}</span>
+                  <strong>{{ type.capacityCbm }} m³</strong>
+                  <small>{{ type.note }}</small>
+                </button>
+              }
+            </div>
+            <p>Deze laadruimte stuurt de vulgraad, vrije ruimte en eventuele overloop.</p>
+          </fieldset>
           <div class="field-row">
             <div class="field"><label for="po-cny">Koers RMB → USD</label>
               <input class="input num right" id="po-cny" type="number" step="0.0001"
@@ -262,6 +280,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     .chosen-supplier{display:grid;grid-template-columns:36px minmax(0,1fr);gap:9px;margin:0 0 14px;padding:10px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}
     .chosen-supplier__mark{display:grid;width:36px;height:36px;place-items:center;border-radius:10px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760;text-transform:uppercase}
     .chosen-supplier__copy{display:flex;min-width:0;flex-direction:column}.chosen-supplier__copy strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.chosen-supplier__copy small{color:var(--muted);font-size:9.5px}
+    .container-choice{min-width:0;margin:0 0 15px;padding:0;border:0}.container-choice legend{margin-bottom:7px;color:var(--ink-2);font-size:12px;font-weight:700}.container-choice__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.container-choice__option{display:grid;min-width:0;gap:2px;padding:10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink-2);font:inherit;text-align:left;cursor:pointer}.container-choice__option span{font-size:12px;font-weight:760}.container-choice__option strong{font-size:15px}.container-choice__option small{overflow:hidden;color:var(--muted);font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}.container-choice__option--on{border-color:var(--rose);background:var(--rose-soft);box-shadow:0 0 0 1px color-mix(in srgb,var(--rose) 12%,transparent);color:var(--rose-dark)}.container-choice__option--on small{color:var(--rose-dark)}.container-choice>p{margin:6px 1px 0;color:var(--muted);font-size:10.5px}
     .po-creator-note{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--muted);font-size:11.5px}.po-creator-note span{color:var(--ok);font-size:7px}.po-creator-note b{color:var(--ink-2)}
   `],
 })
@@ -337,6 +356,8 @@ export class PurchaseList {
   readonly loading = signal(true);
   readonly picking = signal(false);
   readonly chosen = signal<number | null>(null);
+  readonly purchaseContainerTypes = PURCHASE_CONTAINER_TYPES;
+  readonly chosenContainerType = signal<PurchaseContainerType>(DEFAULT_PURCHASE_CONTAINER_TYPE);
   readonly cnyToUsd = signal<number | null>(null);
   readonly usdToEur = signal<number | null>(null);
   readonly marketReference = computed(() => purchaseFxReference(this.fx.series()));
@@ -548,6 +569,7 @@ export class PurchaseList {
     }
     this.cnyRateEdited = false;
     this.usdRateEdited = false;
+    this.chosenContainerType.set(DEFAULT_PURCHASE_CONTAINER_TYPE);
     this.cnyToUsd.set(null);
     this.usdToEur.set(null);
     this.applyAutomaticRates(this.automaticRates());
@@ -576,7 +598,7 @@ export class PurchaseList {
     const usdToEur = this.usdToEur();
     if (supplierId === null || !positiveRate(cnyToUsd) || !positiveRate(usdToEur)) return;
     const view = await this.sourcing.createPurchaseOrder(
-      supplierId, cnyToUsd, usdToEur, 10);
+      supplierId, cnyToUsd, usdToEur, 10, this.chosenContainerType());
     this.picking.set(false);
     await this.router.navigate(['/purchasing', view.order.id, 'edit']);
   }

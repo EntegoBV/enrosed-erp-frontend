@@ -10,6 +10,7 @@ import {
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
 } from './purchase-pdf-options';
+import { DEFAULT_PURCHASE_CONTAINER_TYPE, PurchaseContainerType } from './geo';
 
 export type {
   NormalizedPurchasePdfOptions, PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions,
@@ -44,9 +45,11 @@ export class SourcingApi {
   }
 
   createPurchaseOrder(supplierId: number, cnyToUsd: number, usdToEur: number,
-                      defaultDutyRatePct: number): Promise<PurchaseOrderView> {
+                      defaultDutyRatePct: number,
+                      containerType: PurchaseContainerType = DEFAULT_PURCHASE_CONTAINER_TYPE)
+      : Promise<PurchaseOrderView> {
     return firstValueFrom(this.http.post<PurchaseOrderView>(api('/api/purchase-orders'),
-      { supplierId, cnyToUsd, usdToEur, defaultDutyRatePct }));
+      { supplierId, cnyToUsd, usdToEur, defaultDutyRatePct, containerType }));
   }
 
   /** The calculation for an order as it stands on screen, without saving. */

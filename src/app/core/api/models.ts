@@ -1000,6 +1000,7 @@ export interface LandedCost {
   containerFill: {
     containerCode: string; capacityCbm: number; usedCbm: number;
     fillPercent: number; freeCbm: number; overflowCbm: number;
+    minimumContainerCount?: number;
   } | null;
 }
 

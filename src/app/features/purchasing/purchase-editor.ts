@@ -11,6 +11,7 @@ import {
   DESTINATION_PORTS,
   OTHER_PORT_VALUE,
   PortOption,
+  containerCountForFill,
   containerLabel,
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
@@ -717,6 +718,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                             · laatste eigen notering:
                             <b>{{ reference.usdPerContainer | cur: 'USD' }}</b>
                             · {{ reference.quotedOn | dateNl }}
+                          } @else if (data.order.containerType === 'TWENTY_GP') {
+                            · vul een eigen 20 ft-offerte in; een 40 ft-notering wordt niet hergebruikt
                           }
                         </span>
                       </div>
@@ -870,7 +873,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <span class="alert__icon" aria-hidden="true">!</span>
                       <div>
                         <b>{{ fill.fillPercent | num: 0 }}%</b> · te vol voor één {{ containerLabel(data.order.containerType) }}:
-                        <b>{{ fill.overflowCbm | cbm }} te veel</b>. Haal er lading af of neem een tweede container.
+                        <b>{{ fill.overflowCbm | cbm }} te veel</b>.
+                        Op basis van volume zijn minimaal <b>{{ containerCountForFill(fill) }} containers</b> nodig;
+                        splits de order of kies een groter type.
                       </div>
                     </div>
                   } @else if (fill.fillPercent > 100) {
@@ -1604,6 +1609,7 @@ export class PurchaseEditor {
 
   readonly containerTypes = CONTAINER_TYPES;
   readonly containerLabel = containerLabel;
+  readonly containerCountForFill = containerCountForFill;
 
   /** The one-way street a container travels: the sailing is a step of its
       own again - a payment falls due on it, and the tracking starts there. */

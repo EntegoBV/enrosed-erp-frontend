@@ -121,17 +121,47 @@ export const DESTINATION_PORTS: readonly PortOption[] = [
  * enum names ("FORTY_HQ") - no option ever matched, so the dropdown sat
  * empty. One list, keyed by what the API actually sends.
  */
+export const PURCHASE_CONTAINER_TYPES = [
+  { value: 'TWENTY_GP', shortLabel: '20 ft', label: "20' Standard — 28 m³",
+    capacityCbm: 28, note: 'Compacte zending' },
+  { value: 'FORTY_GP', shortLabel: '40 ft', label: "40' Standard — 58 m³",
+    capacityCbm: 58, note: 'Standaardhoogte' },
+  { value: 'FORTY_HQ', shortLabel: '40 ft HQ', label: "40' High Cube — 68 m³",
+    capacityCbm: 68, note: 'Meeste laadruimte' },
+] as const;
+
+export type PurchaseContainerType = typeof PURCHASE_CONTAINER_TYPES[number]['value'];
+export const DEFAULT_PURCHASE_CONTAINER_TYPE: PurchaseContainerType = 'FORTY_HQ';
+
 export const CONTAINER_TYPES = [
-  { value: 'TWENTY_GP', label: "20' Standard — 28 m³" },
-  { value: 'FORTY_GP', label: "40' Standard — 58 m³" },
-  { value: 'FORTY_HQ', label: "40' High Cube — 68 m³" },
-  { value: 'LCL', label: 'Groepage (LCL)' },
+  ...PURCHASE_CONTAINER_TYPES,
+  { value: 'LCL', shortLabel: 'LCL', label: 'Groepage (LCL)', capacityCbm: 0,
+    note: 'Deelzending' },
 ] as const;
 
 /** Label for a container enum name; falls back to the raw value. */
 export function containerLabel(value: string | null | undefined): string {
   if (!value) return '';
   return CONTAINER_TYPES.find((type) => type.value === value)?.label ?? value;
+}
+
+/**
+ * Uses the server's CBM result, with a rolling-deploy fallback for responses
+ * from the previous backend version that did not expose the count yet.
+ */
+export function containerCountForFill(fill: {
+  capacityCbm: number;
+  usedCbm: number;
+  minimumContainerCount?: number | null;
+}): number {
+  const supplied = fill.minimumContainerCount;
+  if (typeof supplied === 'number' && Number.isInteger(supplied) && supplied >= 0 &&
+      (fill.usedCbm <= 0 || supplied > 0)) {
+    return supplied;
+  }
+  if (!Number.isFinite(fill.capacityCbm) || fill.capacityCbm <= 0 ||
+      !Number.isFinite(fill.usedCbm) || fill.usedCbm <= 0) return 0;
+  return Math.ceil(fill.usedCbm / fill.capacityCbm);
 }
 
 /**

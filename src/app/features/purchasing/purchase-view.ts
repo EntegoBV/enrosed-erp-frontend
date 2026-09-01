@@ -15,7 +15,9 @@ import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
   Category, Product, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
 } from '../../core/api/models';
-import { COLOUR_SWATCHES, containerLabel, STANDARD_COLOURS } from '../../core/api/geo';
+import {
+  COLOUR_SWATCHES, STANDARD_COLOURS, containerCountForFill, containerLabel,
+} from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 import { PurchaseActivity } from '../activity/purchase-activity';
@@ -234,7 +236,8 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
             <div class="capacity-card__footer">
               @if (fill.fillPercent > 105) {
                 <span class="capacity-state capacity-state--danger">
-                  <span aria-hidden="true">!</span> {{ fill.overflowCbm | cbm }} te veel voor één container
+                  <span aria-hidden="true">!</span> {{ fill.overflowCbm | cbm }} te veel ·
+                  minimaal {{ containerCountForFill(fill) }} containers nodig
                 </span>
               } @else if (fill.fillPercent > 100) {
                 <span class="capacity-state capacity-state--tight">
@@ -692,6 +695,7 @@ export class PurchaseView {
   }
 
   readonly containerLabel = containerLabel;
+  readonly containerCountForFill = containerCountForFill;
 
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
