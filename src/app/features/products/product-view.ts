@@ -731,16 +731,18 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       background: rgb(20 16 14 / 62%); color: #fff; font-size: 9px; font-weight: 750; }
     .phero__nofoto { margin: 12px 0 0; color: rgb(255 255 255 / 55%); font-size: 11.5px; }
     .phero__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+    .phero__facts.erp-workspace__facts { border-color: rgb(255 255 255 / 16%);
+      background: rgb(255 255 255 / 14%); }
     .phero__fact-chev { position: absolute; top: 9px; right: 9px; display: grid; place-items: center;
       width: 22px; height: 22px; border-radius: 50%; background: rgb(255 255 255 / 14%); }
     .phero__fact-chev::before { content: ''; width: 7px; height: 7px; margin-left: -2px;
       border-right: 1.8px solid #fff; border-bottom: 1.8px solid #fff; transform: rotate(-45deg); }
     .phero__fact { position: relative; min-width: 0; display: grid; gap: 1px; align-content: start; padding: 10px 34px 10px 11px;
-      border: 0; border-radius: 13px; background: rgb(255 255 255 / 9%); color: inherit; font: inherit; text-align: left; }
+      border: 0; border-radius: 13px; background: rgb(16 13 12 / 58%); color: #fff; font: inherit; text-align: left; }
     button.phero__fact { cursor: pointer; }
-    button.phero__fact:active { background: rgb(255 255 255 / 16%); }
+    button.phero__fact:hover, button.phero__fact:active { background: rgb(255 255 255 / 16%); }
     .phero__fact--open { background: rgb(255 255 255 / 18%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 35%); }
-    .phero__fact small { overflow: hidden; color: rgb(255 255 255 / 55%); font-size: 8.5px; font-weight: 780;
+    .phero__fact small { overflow: hidden; color: rgb(255 255 255 / 74%); font-size: 8.5px; font-weight: 780;
       letter-spacing: .07em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
     .phero__fact strong { overflow: hidden; font-size: clamp(13px, 4vw, 18px); letter-spacing: -.02em;
       text-overflow: ellipsis; white-space: nowrap; }
@@ -752,6 +754,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       .phero { margin: -14px -12px 0; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 16px;
         border-radius: 0 0 22px 22px; }
       .phero__facts { gap: 6px; }
+      .phero__fact:last-child:nth-child(odd) { grid-column: 1 / -1; }
       .phero__fact { padding: 8px 34px 8px 10px; border-radius: 12px; }
       /* A swiper: every photo shows, side by side, snapping under the
          thumb; with one or two they sit centred. */
@@ -764,7 +767,10 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       .product-detail-nav { top: env(safe-area-inset-top, 0px); margin-inline: -4px; }
       .product-view-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
     }
-    .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 50%); font-size: 9.5px;
+    @media (min-width: 680px) {
+      .phero__facts:not(.phero__facts--photo) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 70%); font-size: 9.5px;
       text-overflow: ellipsis; white-space: nowrap; }
     .phero__neg { color: #ff9d92; }
     .phero__gain { color: #7ddfa6 !important; }
