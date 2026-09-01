@@ -6,7 +6,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, ProductSupplierAgreementPhoto, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductSupplierAgreementPhoto, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
@@ -194,6 +194,38 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
 
             <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
           </section>
+
+          @if (familyLoading()) {
+            <div class="variant-group-state" role="status">Productreeks laden…</div>
+          } @else if (familyLoadError()) {
+            <div class="variant-group-state variant-group-state--error" role="alert">
+              <span>De productreeks is niet geladen.</span>
+              <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
+            </div>
+          } @else if (variantMembers().length > 1) {
+            <section class="variant-links" aria-labelledby="variant-links-title">
+              <b id="variant-links-title">Productreeks</b>
+              <div>
+                @for (member of variantMembers(); track member.productId) {
+                  @if (member.productId === product.id) {
+                    <span class="product-variant-link product-variant-link--current" aria-current="page">
+                      @if (member.colourHex) {
+                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                      }
+                      {{ variantOptionLabel(member) }}
+                    </span>
+                  } @else {
+                    <a class="product-variant-link" [routerLink]="['/products', member.productId]">
+                      @if (member.colourHex) {
+                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                      }
+                      {{ variantOptionLabel(member) }}
+                    </a>
+                  }
+                }
+              </div>
+            </section>
+          }
 
           <nav class="subnav product-detail-nav erp-workspace__nav" aria-label="Productonderdelen">
             <div class="subnav__rail erp-workspace__nav-rail">
@@ -385,45 +417,6 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
             </section>
             <app-product-supplier-agreement-photo-viewer class="agreement-viewer"
               [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
-            @if (familyLoading() || familyLoadError() || variantMembers().length > 1) {
-              <section class="info-card linked-card erp-workspace__section"
-                       id="product-variants" aria-labelledby="linked-products-title">
-                <header class="erp-workspace__section-head">
-                  <span class="info-card__icon" aria-hidden="true">05</span>
-                  <div><h2 id="linked-products-title">Gekoppelde producten</h2><p>Varianten in dezelfde reeks</p></div>
-                </header>
-                @if (familyLoading()) {
-                  <p class="linked-state" role="status">Varianten laden…</p>
-                } @else if (familyLoadError()) {
-                  <div class="linked-state linked-state--error" role="alert">
-                    <span>Varianten zijn niet geladen.</span>
-                    <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
-                  </div>
-                } @else {
-                  <div class="linked-list">
-                    @for (member of variantMembers(); track member.productId) {
-                      @if (member.productId === product.id) {
-                        <span class="linked-row linked-row--current" aria-current="page">
-                          @if (member.colourHex) {
-                            <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                          }
-                          <b>{{ variantMemberLabel(member) }}</b>
-                          <small>huidig</small>
-                        </span>
-                      } @else {
-                        <a class="linked-row" [routerLink]="['/products', member.productId]">
-                          @if (member.colourHex) {
-                            <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                          }
-                          <b>{{ variantMemberLabel(member) }}</b>
-                          <span aria-hidden="true">›</span>
-                        </a>
-                      }
-                    }
-                  </div>
-                }
-              </section>
-            }
             </div>
             <div class="details-col erp-workspace__aside">
             <section class="info-card omdoos-card erp-workspace__section"
@@ -810,20 +803,6 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     .tiles-kicker { padding: 11px 13px 4px; border-top: 1px solid var(--line); background: var(--surface);
       color: var(--warn); font-size: 9px; font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
     .tiles-kicker--first { border-top: 0; }
-    .linked-state { margin: 0; padding: 12px 14px; color: var(--muted); font-size: 12px; }
-    .linked-state--error { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .linked-list { display: grid; }
-    .linked-row { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--line);
-      color: inherit; font-size: 13px; text-decoration: none; }
-    .linked-row:last-child { border-bottom: 0; }
-    .linked-row i { flex: none; width: 14px; height: 14px; border: 1px solid rgb(26 22 20 / 12%); border-radius: 50%; }
-    .linked-row b { flex: 1; min-width: 0; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-    .linked-row > span { color: var(--muted-2); }
-    a.linked-row:hover { background: var(--surface-2); }
-    .linked-row--current { background: var(--rose-soft); }
-    .linked-row--current small { padding: 2px 8px; border-radius: 999px; background: var(--surface);
-      color: var(--rose-dark); font-size: 10px; font-weight: 700; }
-
     .stock-rows--sheet { margin-top: 4px; }
     .stock-rows__head { padding: 10px 2px 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
     .stock-rows--sheet .stock-row__actions { gap: 8px; padding-top: 12px; }
@@ -922,7 +901,6 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     #stock-card { order: 3; }
     .agreement-card { order: 4; }
     .agreement-viewer { order: 5; }
-    .linked-card { order: 6; }
     .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);
       background: var(--surface); box-shadow: var(--sh-1); }
     .info-card > header { display: flex; align-items: center; gap: 10px; min-height: 64px;
@@ -971,7 +949,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       .phero__shots--row .phero__shot { width: 84px; height: 100%; min-height: 62px; border-radius: 13px; }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
-      .product-dossier-card, .agreement-card, .linked-card { grid-column: 1 / -1; }
+      .product-dossier-card, .agreement-card { grid-column: 1 / -1; }
     }
   `,
 })
@@ -1240,9 +1218,7 @@ export class ProductView {
   private loadVersion = 0;
 
   readonly variantMembers = computed(() => {
-    const productId = this.product()?.id;
     return [...(this.family()?.members ?? [])]
-      .filter((member) => member.active || member.productId === productId)
       .sort((a, b) => a.position - b.position || a.productId - b.productId);
   });
 
@@ -1430,14 +1406,6 @@ export class ProductView {
     if (live.length) return `Live op ${live.join(' en ')}`;
     if (this.publicationIssues().length) return 'Nog niet compleet';
     return 'Concept';
-  }
-
-  variantMemberLabel(member: ProductFamilyMember): string {
-    const variant = [member.colour, member.size]
-      .map((value) => value?.trim())
-      .filter((value): value is string => !!value)
-      .join(' · ');
-    return variant || member.name || member.sku || `Product ${member.productId}`;
   }
 
   size(box: { lengthCm: number | null; widthCm: number | null; heightCm: number | null }): string {

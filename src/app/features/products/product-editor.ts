@@ -167,7 +167,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <strong class="erp-workspace__fact-value num">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</strong>
               <small class="erp-workspace__fact-note">{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : 'kost + opslag' }}</small>
             </button>
-            <button class="erp-workspace__fact" type="button" (click)="openPublicationWorkspace()">
+            <button class="erp-workspace__fact product-editor-hero__fact--publication" type="button"
+                    (click)="openPublicationWorkspace()">
               <span class="erp-workspace__fact-label">Publicatie</span>
               <strong class="erp-workspace__fact-value">{{ workspacePublicationShortLabel() }}</strong>
               <small class="erp-workspace__fact-note">Website &amp; orderapp</small>
@@ -1559,6 +1560,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @media (max-width: 679px) {
       .product-editor-lead__content { padding-top: 10px; }
       .product-editor-hero__actions { display: none; }
+      .product-editor-hero__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .product-editor-hero__fact--publication { display: none; }
       .product-editor-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
     }
     @media (min-width: 680px) {

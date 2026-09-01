@@ -2172,6 +2172,13 @@ app-product-view .variant-group-state--error {
   background: var(--warn-soft);
   color: var(--ink-2);
 }
+@media (max-width: 679px) {
+  app-product-view .product-variant-link {
+    min-height: 44px;
+    scroll-snap-align: start;
+  }
+  app-product-view .variant-links > div { scroll-snap-type: x proximity; }
+}
 app-product-view .publication-card { margin-top: 14px; }
 app-product-view .publication-card > summary {
   display: flex;
@@ -3230,6 +3237,12 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
     padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 128px);
   }
   .erp-workspace__hero { border-radius: 20px; }
+  app-purchase-view .journey-hero.erp-workspace__hero,
+  app-sales-view .sales-hero.erp-workspace__hero,
+  app-sales-editor .quote-hero.erp-workspace__hero,
+  app-product-view .phero.erp-workspace__hero {
+    border: 0;
+  }
   .erp-workspace__nav,
   .erp-workspace__section-nav {
     mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
