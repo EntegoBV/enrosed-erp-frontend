@@ -15,6 +15,10 @@ import {
   ProductFamily,
   ProductFamilyImage,
 } from '../../core/api/models';
+import {
+  ProductImagePublicationMenuPlacement,
+  productImagePublicationMenuPlacement,
+} from './product-family-gallery-layout';
 
 export interface ProductFamilyImageVariantChange {
   imageId: number;
@@ -161,6 +165,7 @@ interface GalleryPointerReorder {
                   @if (publicationMenuImageId() === image.id) {
                     <div
                       class="publication-menu"
+                      [class.publication-menu--above]="publicationMenuPlacement() === 'above'"
                       role="menu"
                       [id]="'image-publication-menu-' + image.id"
                       [attr.aria-label]="'Publicatie van ' + image.originalFilename"
@@ -403,12 +408,19 @@ interface GalleryPointerReorder {
       top: calc(100% + 6px);
       right: 0;
       width: min(320px, calc(100vw - 32px));
-      overflow: hidden;
+      max-height: min(430px, calc(100dvh - 24px));
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
       border: 1px solid var(--line-strong);
       border-radius: 13px;
       background: var(--surface);
       box-shadow: 0 16px 42px rgb(30 18 20 / 18%);
       color: var(--ink);
+    }
+    .publication-menu--above {
+      top: auto;
+      bottom: calc(100% + 6px);
     }
     .publication-menu__head {
       display: flex;
@@ -532,6 +544,7 @@ export class ProductFamilyGallery {
   readonly dropTargetIndex = signal<number | null>(null);
   readonly reorderAnnouncement = signal('');
   readonly publicationMenuImageId = signal<number | null>(null);
+  readonly publicationMenuPlacement = signal<ProductImagePublicationMenuPlacement>('below');
   readonly publicationChannels = PUBLICATION_CHANNELS;
 
   readonly orderedImages = computed(() =>
@@ -619,6 +632,7 @@ export class ProductFamilyGallery {
     event.preventDefault();
     event.stopPropagation();
     if (this.busy()) return;
+    if (this.publicationMenuImageId() !== imageId) this.placePublicationMenu(event.currentTarget);
     this.publicationMenuImageId.update((current) => current === imageId ? null : imageId);
   }
 
@@ -626,6 +640,7 @@ export class ProductFamilyGallery {
     if (this.busy()) return;
     event.preventDefault();
     event.stopPropagation();
+    this.placePublicationMenu(event.currentTarget);
     this.publicationMenuImageId.set(imageId);
   }
 
@@ -792,5 +807,18 @@ export class ProductFamilyGallery {
     this.pointerReorder = null;
     this.draggingIndex.set(null);
     this.dropTargetIndex.set(null);
+  }
+
+  private placePublicationMenu(target: EventTarget | null): void {
+    if (!(target instanceof Element)) {
+      this.publicationMenuPlacement.set('below');
+      return;
+    }
+    const bounds = target.getBoundingClientRect();
+    this.publicationMenuPlacement.set(productImagePublicationMenuPlacement(
+      bounds.top,
+      bounds.bottom,
+      window.innerHeight,
+    ));
   }
 }

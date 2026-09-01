@@ -2520,20 +2520,20 @@ app-product-view .website-copy small {
    audit. Keeping this outside the component also keeps Angular's style budget
    focused on the daily product editor itself. */
 app-product-publication-editor .publication {
-  overflow: clip; border: 1px solid var(--rose-line); border-radius: var(--r-lg);
+  overflow: visible; border: 1px solid var(--rose-line); border-radius: var(--r-lg);
   background: var(--surface); box-shadow: var(--sh-1);
 }
 app-product-publication-editor .publication > summary {
   min-width: 0; min-height: 76px; display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
-  gap: 10px; padding: 13px 14px; cursor: pointer; list-style: none;
+  gap: 10px; padding: 13px 14px; border-radius: inherit; cursor: pointer; list-style: none;
 }
 app-product-publication-editor .publication > summary::-webkit-details-marker { display: none; }
 app-product-publication-editor .publication > summary:focus-visible {
   outline: 3px solid var(--rose-line); outline-offset: -3px;
 }
 app-product-publication-editor .publication[open] > summary {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line); border-radius: var(--r-lg) var(--r-lg) 0 0;
   background: color-mix(in srgb, var(--surface) 88%, var(--rose-soft));
 }
 app-product-publication-editor .publication__icon {
