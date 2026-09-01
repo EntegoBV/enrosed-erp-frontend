@@ -5,6 +5,7 @@ export interface SalesLineFamilyGroup {
   key: string;
   familyId: number | null;
   label: string;
+  photoUrl: string | null;
   lines: PricedLine[];
   swatches: { key: string; label: string; hex: string | null }[];
   pieces: number;
@@ -50,8 +51,9 @@ export function salesLineSections(
       });
       return {
         key: group.key,
-        familyId: group.family?.id ?? null,
+        familyId: group.family?.id ?? group.lead.familyId,
         label: group.name,
+        photoUrl: group.photo ?? groupLines.find((line) => line.photoUrl)?.photoUrl ?? null,
         lines: groupLines,
         swatches: group.colours.map((colour) => ({
           key: colour.name.toLocaleLowerCase('nl-BE'),
@@ -82,6 +84,7 @@ export function salesLineSections(
         key: `product-${line.productId}`,
         familyId: null,
         label: line.description,
+        photoUrl: line.photoUrl,
         lines: [line],
         swatches: [],
         pieces: line.quantity,

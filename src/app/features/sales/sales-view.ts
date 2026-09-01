@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
-import { Location } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -7,7 +7,8 @@ import { AuthImage } from '../../core/api/auth-image';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { SalesOrder,
-  Country, Customer, CustomerPortalLink, PricedLine, QuoteEvent, QuoteRevision, QuoteStatus,
+  Category, Country, Customer, CustomerPortalLink, PricedLine, Product, ProductFamily,
+  QuoteEvent, QuoteRevision, QuoteStatus,
   SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -22,6 +23,7 @@ import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status
 import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
+import { salesLineSections } from './sales-product-line-groups';
 
 type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
@@ -35,7 +37,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, Sheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -236,12 +238,90 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 </div>
               </header>
 
-              <div class="product-lines">
-                <!-- Same rhythm as the inkoop detail: identity walks through
-                     to the product, facts sit in a strip, the price build-up
-                     folds open under its own toggle. -->
-                @for (line of data.priced.lines; track line.productId; let lineIndex = $index) {
-                  <article class="sales-line">
+              <div class="product-lines purchase-model-list">
+                @for (section of lineSections(); track section.key) {
+                  <section class="purchase-category" [attr.aria-labelledby]="salesCategoryHeadingId(section.key)">
+                    <h3 class="purchase-category__head" [id]="salesCategoryHeadingId(section.key)">
+                      <span>{{ section.label }}</span>
+                      <small>{{ section.families.length }} {{ section.families.length === 1 ? 'model' : 'modellen' }} ·
+                        {{ section.lines.length }} {{ section.lines.length === 1 ? 'variant' : 'varianten' }}</small>
+                    </h3>
+                    <div class="purchase-category__models">
+                      @for (group of section.families; track group.key) {
+                        @if (group.familyId === null) {
+                          <section class="purchase-model purchase-model--standalone">
+                            @for (line of group.lines; track line.productId; let variantIndex = $index) {
+                              <ng-container *ngTemplateOutlet="salesVariant; context: {
+                                $implicit: line, group: group, section: section, variantIndex: variantIndex
+                              }" />
+                            }
+                          </section>
+                        } @else {
+                          <details class="purchase-model purchase-model--family" open>
+                            <summary class="purchase-model__head">
+                              @if (group.photoUrl; as photo) {
+                                <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
+                              } @else {
+                                <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
+                              }
+                              <span class="purchase-model__copy">
+                                <small>Productmodel</small>
+                                <strong>{{ group.label }}</strong>
+                                <span>
+                                  {{ group.lines.length }} {{ group.lines.length === 1 ? 'variant' : 'varianten' }}
+                                  @if (group.swatches.length) {
+                                    <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
+                                      @for (swatch of group.swatches.slice(0, 8); track swatch.key) {
+                                        <i class="product-colour-dot"
+                                           [class.product-colour-dot--empty]="!swatch.hex"
+                                           [style.background]="swatch.hex || 'transparent'"
+                                           [title]="swatch.label"></i>
+                                      }
+                                      @if (group.swatches.length > 8) {
+                                        <small>+{{ group.swatches.length - 8 }}</small>
+                                      }
+                                    </span>
+                                  }
+                                </span>
+                              </span>
+                              <span class="purchase-model__totals">
+                                <strong>{{ group.pieces | num }} st</strong>
+                                <small>{{ group.cartons | num }} dozen · {{ group.cbm | cbm }}</small>
+                                <small class="purchase-model__cost-label">
+                                  {{ profitMode() === 'UNIT' ? 'Gem. netto / stuk' : 'Netto verkoop' }}
+                                </small>
+                                <b>{{ profitMode() === 'UNIT'
+                                  ? (averageGroupUnitPrice(group.totalEur, group.pieces) | eur: 2)
+                                  : (group.totalEur | eur) }}</b>
+                              </span>
+                              <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                                <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                      stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                              </svg>
+                            </summary>
+                            <div class="purchase-model__variants">
+                              @for (line of group.lines; track line.productId; let variantIndex = $index) {
+                                <ng-container *ngTemplateOutlet="salesVariant; context: {
+                                  $implicit: line, group: group, section: section, variantIndex: variantIndex
+                                }" />
+                              }
+                            </div>
+                          </details>
+                        }
+                      }
+                    </div>
+                  </section>
+                } @empty {
+                  <div class="products-empty">
+                    <span aria-hidden="true">◇</span>
+                    <strong>Nog geen producten</strong>
+                    <p>Open Bewerken om de eerste productregel toe te voegen.</p>
+                  </div>
+                }
+
+                <ng-template #salesVariant let-line let-group="group" let-section="section"
+                             let-variantIndex="variantIndex">
+                  <article class="sales-line" [class.sales-line--variant]="group.familyId !== null">
                     <a class="sales-line__identity" [routerLink]="['/products', line.productId]"
                        [title]="line.description + ' openen'">
                       @if (line.photoUrl) {
@@ -250,9 +330,34 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                         <span class="sales-line__photo sales-line__photo--empty" aria-hidden="true">◈</span>
                       }
                       <span class="sales-line__copy">
-                        <small>Regel {{ lineIndex + 1 }}</small>
-                        <strong>{{ line.description }}</strong>
-                        <span>{{ line.quantity | num }} st · {{ line.cartons | num }} dozen</span>
+                        <small>
+                          @if (group.familyId === null) {
+                            Regel {{ salesLineNumber(line.productId) }} · {{ section.label }}
+                          } @else {
+                            Variant {{ variantIndex + 1 }} van {{ group.lines.length }}
+                            @if (line.sku) { · <span class="mono">{{ line.sku }}</span> }
+                          }
+                        </small>
+                        <strong>{{ group.familyId === null
+                          ? line.description
+                          : salesVariantTitle(line.productId, line.description) }}</strong>
+                        <span class="purchase-line__meta">
+                          @if (productFor(line.productId); as product) {
+                            @if (product.colour; as colour) {
+                              <i class="product-colour-dot"
+                                 [class.product-colour-dot--empty]="!product.colourHex"
+                                 [style.background]="product.colourHex || 'transparent'" aria-hidden="true"></i>
+                              <b>{{ colour }}</b>
+                            }
+                            @if (product.variantSize; as size) {
+                              @if (product.colour) { <span aria-hidden="true"> · </span> }
+                              <b>{{ size }}</b>
+                            }
+                          }
+                          @if (group.familyId === null && line.sku) {
+                            <span aria-hidden="true"> · </span><span class="mono">{{ line.sku }}</span>
+                          }
+                        </span>
                       </span>
                     </a>
 
@@ -304,13 +409,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                       </div>
                     }
                   </article>
-                } @empty {
-                  <div class="products-empty">
-                    <span aria-hidden="true">◇</span>
-                    <strong>Nog geen producten</strong>
-                    <p>Open Bewerken om de eerste productregel toe te voegen.</p>
-                  </div>
-                }
+                </ng-template>
               </div>
             </section>
 
@@ -825,6 +924,9 @@ export class SalesView {
   readonly view = signal<SalesOrderView | null>(null);
   readonly customers = signal<Customer[]>([]);
   readonly countries = signal<Country[]>([]);
+  readonly products = signal<Product[]>([]);
+  readonly categories = signal<Category[]>([]);
+  readonly families = signal<ProductFamily[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly history = signal<QuoteEvent[]>([]);
   readonly desktop = inject(DesktopViewport);
@@ -859,6 +961,11 @@ export class SalesView {
 
   readonly actionLabel = computed(() =>
     this.view()?.order.status === 'CONCEPT' ? 'Bewerken' : 'Beheren');
+
+  readonly lineSections = computed(() => salesLineSections(
+    this.view()?.priced.lines ?? [], this.products(), this.categories(), this.families()));
+  private readonly productsById = computed(() => new Map(this.products().flatMap((product) =>
+    product.id === null ? [] : [[product.id, product] as const])));
 
   readonly detailSections: readonly SalesDetailSectionId[] = [
     'sales-products', 'sales-delivery', 'sales-control', 'sales-status',
@@ -1159,13 +1266,16 @@ export class SalesView {
     this.portalLink.set(null);
     this.openLine.set(null);
     try {
-      const [view, customers, countries, revisions, history, portalLink] = await Promise.all([
+      const [view, customers, countries, revisions, history, portalLink, products, categories, families] = await Promise.all([
         this.sales.order(orderId),
         this.sales.customers(),
         this.sales.countries(),
         this.sales.revisionsFor(orderId).catch(() => [] as QuoteRevision[]),
         this.sales.history(orderId).catch(() => [] as QuoteEvent[]),
         this.sales.portalLink(orderId).catch(() => null),
+        this.catalog.products().catch(() => [] as Product[]),
+        this.catalog.categories().catch(() => [] as Category[]),
+        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
       ]);
       this.view.set(view);
       this.customers.set(customers);
@@ -1173,6 +1283,9 @@ export class SalesView {
       this.revisions.set(revisions);
       this.history.set(history);
       this.portalLink.set(portalLink);
+      this.products.set(products);
+      this.categories.set(categories);
+      this.families.set(families);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
     } finally {
@@ -1183,6 +1296,31 @@ export class SalesView {
   retry(): void {
     const orderId = Number(this.id());
     if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
+  }
+
+  salesLineNumber(productId: number): number {
+    return (this.view()?.priced.lines.findIndex((line) => line.productId === productId) ?? -1) + 1;
+  }
+
+  salesCategoryHeadingId(key: string): string {
+    return `sales-category-${key.replace(/[^a-z0-9-]/gi, '-')}`;
+  }
+
+  productFor(productId: number): Product | null {
+    return this.productsById().get(productId) ?? null;
+  }
+
+  salesVariantTitle(productId: number, fallback: string): string {
+    const product = this.productFor(productId);
+    if (!product) return fallback;
+    const parts = [product.colour, product.variantSize]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    return parts.length ? parts.join(' · ') : fallback;
+  }
+
+  averageGroupUnitPrice(totalEur: number, pieces: number): number {
+    return pieces > 0 ? totalEur / pieces : 0;
   }
 
   customerName(): string {

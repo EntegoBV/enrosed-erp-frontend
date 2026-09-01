@@ -2790,7 +2790,7 @@ app-content-translation-workspace .card + * { margin-top: 12px; }
   .po-family__variants .order-line { box-shadow: none; }
 }
 
-app-purchase-view {
+:is(app-purchase-view, app-sales-view) {
   .product-colour-dot { display: inline-block; width: 10px; height: 10px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
   .product-colour-dot--empty { border-style: dashed; background: transparent !important; }
   .purchase-category + .purchase-category { border-top: 8px solid var(--surface-2); }
@@ -2831,7 +2831,9 @@ app-purchase-view {
   .purchase-model[open] .purchase-model__chevron { transform: rotate(180deg); }
   .purchase-model__variants { border-top: 1px solid var(--rose-line); }
   .purchase-model__variants .purchase-line:last-child,
-  .purchase-model--standalone .purchase-line:last-child { border-bottom: 0; }
+  .purchase-model--standalone .purchase-line:last-child,
+  .purchase-model__variants .sales-line:last-child,
+  .purchase-model--standalone .sales-line:last-child { border-bottom: 0; }
   .purchase-line--variant { background: var(--surface); }
   .purchase-line__meta { display: flex; min-width: 0; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; }
   .purchase-line__meta b { color: var(--ink-2); font-weight: 650; }
@@ -2868,7 +2870,7 @@ app-purchase-view {
     .po-family__totals > b { grid-column: 2; margin-top: 0; font-size: 11px; }
     .po-family__variants { padding: 7px; }
   }
-  app-purchase-view {
+  :is(app-purchase-view, app-sales-view) {
     .purchase-model__head { grid-template-columns: 42px minmax(0, 1fr) 18px; gap: 8px; padding: 10px; }
     .purchase-model__photo { width: 42px; height: 42px; }
     .purchase-model__totals { grid-column: 2; margin-top: 2px; text-align: left; }
@@ -2885,8 +2887,8 @@ app-purchase-view {
 }
 
 @media (min-width: 680px) {
-  app-purchase-view .purchase-category__head { padding-inline: 18px; }
-  app-purchase-view .purchase-category__models { padding: 12px 18px; }
+  :is(app-purchase-view, app-sales-view) .purchase-category__head { padding-inline: 18px; }
+  :is(app-purchase-view, app-sales-view) .purchase-category__models { padding: 12px 18px; }
 }
 
 /* ========================================================================
