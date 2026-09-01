@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
-import { Router, ActivatedRoute, RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
@@ -24,6 +24,7 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
+import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 
 /**
  * Read-only control room for one incoming container.
@@ -336,66 +337,68 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
                     </h3>
                     <div class="purchase-category__models">
                     @for (group of section.groups; track group.key) {
-                      @if (group.standalone) {
-                        <section class="purchase-model purchase-model--standalone">
+                      <section class="purchase-model"
+                               [class.purchase-model--family]="!group.standalone"
+                               [class.purchase-model--standalone]="group.standalone"
+                               [class.purchase-model--open]="productGroupOpen(group.key)">
+                        <button class="purchase-model__head" type="button"
+                                [id]="productGroupPanelId(group.key) + '-toggle'"
+                                [attr.aria-expanded]="productGroupOpen(group.key)"
+                                [attr.aria-controls]="productGroupPanelId(group.key)"
+                                (click)="toggleProductGroup(group.key)">
+                          @if (group.photoUrl; as photo) {
+                            <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
+                          } @else {
+                            <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
+                          }
+                          <span class="purchase-model__copy">
+                            <small>{{ group.standalone ? 'Product' : 'Productmodel' }}</small>
+                            <strong>{{ group.name }}</strong>
+                            <span>
+                              {{ group.entries.length }} {{ group.entries.length === 1 ? 'variant' : 'varianten' }}
+                              @if (group.swatches.length) {
+                                <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
+                                  @for (swatch of group.swatches.slice(0, 8); track swatch.label) {
+                                    <i class="product-colour-dot"
+                                       [class.product-colour-dot--empty]="!swatch.hex"
+                                       [style.background]="swatch.hex || 'transparent'"
+                                       [title]="swatch.label"></i>
+                                  }
+                                  @if (group.swatches.length > 8) {
+                                    <small>+{{ group.swatches.length - 8 }}</small>
+                                  }
+                                </span>
+                              }
+                            </span>
+                          </span>
+                          <span class="purchase-model__totals">
+                            <strong>{{ group.totals.pieces | num }} st</strong>
+                            <small>{{ group.totals.cartons | num }} dozen · {{ group.totals.cbm | cbm }}</small>
+                            <small class="purchase-model__cost-label">
+                              {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
+                            </small>
+                            <b>{{ perPiece()
+                              ? (group.totals.averageUnitEur | eur: 4)
+                              : (group.totals.totalEur | eur) }}</b>
+                          </span>
+                          <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                            <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </button>
+                        @if (productGroupOpen(group.key)) {
+                          <div class="purchase-model__variants"
+                               [id]="productGroupPanelId(group.key)"
+                               role="region"
+                               [attr.aria-labelledby]="productGroupPanelId(group.key) + '-toggle'">
                           @for (entry of group.entries; track entry.line.productId; let variantIndex = $index) {
                             <ng-container *ngTemplateOutlet="purchaseVariant; context: {
                               $implicit: entry, group: group, section: section, variantIndex: variantIndex
                             }" />
                           }
-                        </section>
-                      } @else {
-                        <details class="purchase-model purchase-model--family">
-                          <summary class="purchase-model__head">
-                            @if (group.photoUrl; as photo) {
-                              <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
-                            } @else {
-                              <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
-                            }
-                            <span class="purchase-model__copy">
-                              <small>Productmodel</small>
-                              <strong>{{ group.name }}</strong>
-                              <span>
-                                {{ group.entries.length }} {{ group.entries.length === 1 ? 'variant' : 'varianten' }}
-                                @if (group.swatches.length) {
-                                  <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
-                                    @for (swatch of group.swatches.slice(0, 8); track swatch.label) {
-                                      <i class="product-colour-dot"
-                                         [class.product-colour-dot--empty]="!swatch.hex"
-                                         [style.background]="swatch.hex || 'transparent'"
-                                         [title]="swatch.label"></i>
-                                    }
-                                    @if (group.swatches.length > 8) {
-                                      <small>+{{ group.swatches.length - 8 }}</small>
-                                    }
-                                  </span>
-                                }
-                              </span>
-                            </span>
-                            <span class="purchase-model__totals">
-                              <strong>{{ group.totals.pieces | num }} st</strong>
-                              <small>{{ group.totals.cartons | num }} dozen · {{ group.totals.cbm | cbm }}</small>
-                              <small class="purchase-model__cost-label">
-                                {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
-                              </small>
-                              <b>{{ perPiece()
-                                ? (group.totals.averageUnitEur | eur: 4)
-                                : (group.totals.totalEur | eur) }}</b>
-                            </span>
-                            <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-                              <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
-                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                          </summary>
-                          <div class="purchase-model__variants">
-                            @for (entry of group.entries; track entry.line.productId; let variantIndex = $index) {
-                              <ng-container *ngTemplateOutlet="purchaseVariant; context: {
-                                $implicit: entry, group: group, section: section, variantIndex: variantIndex
-                              }" />
-                            }
                           </div>
-                        </details>
-                      }
+                        }
+                      </section>
                     }
                     </div>
                   </section>
@@ -822,9 +825,9 @@ export class PurchaseView {
 
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
-  private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
 
+  readonly id = input<string>('');
   readonly view = signal<PurchaseOrderView | null>(null);
   /** Prefer the server aggregate; derive a compatible fallback during a rolling deployment. */
   readonly receiptSummary = computed<ReceiptVarianceTotals | null>(() => {
@@ -919,10 +922,13 @@ export class PurchaseView {
 
   /** Which product line shows its cost build-up; null is all folded. */
   readonly openLine = signal<number | null>(null);
+  readonly openProductGroups = signal<ReadonlySet<string>>(new Set());
 
   constructor() {
-    const id = +(this.route.snapshot.paramMap.get('id') ?? 0);
-    void this.load(id);
+    effect(() => {
+      const orderId = Number(this.id());
+      if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
+    });
   }
 
   readonly stockLocations = signal<StockLocation[]>([]);
@@ -934,6 +940,9 @@ export class PurchaseView {
   }
 
   private async load(id: number): Promise<void> {
+    this.view.set(null);
+    this.openLine.set(null);
+    this.openProductGroups.set(new Set());
     void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
     void this.sourcing.documents(id).then((list) => this.documents.set(list)).catch(() => this.documents.set([]));
     /* Family metadata enriches the product groups, but a slow or older API
@@ -971,6 +980,16 @@ export class PurchaseView {
 
   toggleLine(productId: number): void {
     this.openLine.set(this.openLine() === productId ? null : productId);
+  }
+
+  productGroupPanelId(key: string): string {
+    return `purchase-product-group-${key.replace(/[^a-z0-9_-]/gi, '-')}`;
+  }
+
+  productGroupOpen(key: string): boolean { return this.openProductGroups().has(key); }
+
+  toggleProductGroup(key: string): void {
+    this.openProductGroups.update((openGroups) => nextProductGroupDisclosure(openGroups, key));
   }
 
   linePanelId(productId: number): string {

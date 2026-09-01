@@ -24,6 +24,7 @@ import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
 import { salesLineSections } from './sales-product-line-groups';
+import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 
 type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
@@ -248,66 +249,68 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     </h3>
                     <div class="purchase-category__models">
                       @for (group of section.families; track group.key) {
-                        @if (group.familyId === null) {
-                          <section class="purchase-model purchase-model--standalone">
+                        <section class="purchase-model"
+                                 [class.purchase-model--family]="group.familyId !== null"
+                                 [class.purchase-model--standalone]="group.familyId === null"
+                                 [class.purchase-model--open]="productGroupOpen(group.key)">
+                          <button class="purchase-model__head" type="button"
+                                  [id]="productGroupPanelId(group.key) + '-toggle'"
+                                  [attr.aria-expanded]="productGroupOpen(group.key)"
+                                  [attr.aria-controls]="productGroupPanelId(group.key)"
+                                  (click)="toggleProductGroup(group.key)">
+                            @if (group.photoUrl; as photo) {
+                              <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
+                            } @else {
+                              <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
+                            }
+                            <span class="purchase-model__copy">
+                              <small>{{ group.familyId === null ? 'Product' : 'Productmodel' }}</small>
+                              <strong>{{ group.label }}</strong>
+                              <span>
+                                {{ group.lines.length }} {{ group.lines.length === 1 ? 'variant' : 'varianten' }}
+                                @if (group.swatches.length) {
+                                  <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
+                                    @for (swatch of group.swatches.slice(0, 8); track swatch.key) {
+                                      <i class="product-colour-dot"
+                                         [class.product-colour-dot--empty]="!swatch.hex"
+                                         [style.background]="swatch.hex || 'transparent'"
+                                         [title]="swatch.label"></i>
+                                    }
+                                    @if (group.swatches.length > 8) {
+                                      <small>+{{ group.swatches.length - 8 }}</small>
+                                    }
+                                  </span>
+                                }
+                              </span>
+                            </span>
+                            <span class="purchase-model__totals">
+                              <strong>{{ group.pieces | num }} st</strong>
+                              <small>{{ group.cartons | num }} dozen · {{ group.cbm | cbm }}</small>
+                              <small class="purchase-model__cost-label">
+                                {{ profitMode() === 'UNIT' ? 'Gem. netto / stuk' : 'Netto verkoop' }}
+                              </small>
+                              <b>{{ profitMode() === 'UNIT'
+                                ? (averageGroupUnitPrice(group.totalEur, group.pieces) | eur: 2)
+                                : (group.totalEur | eur) }}</b>
+                            </span>
+                            <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                              <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                          </button>
+                          @if (productGroupOpen(group.key)) {
+                            <div class="purchase-model__variants"
+                                 [id]="productGroupPanelId(group.key)"
+                                 role="region"
+                                 [attr.aria-labelledby]="productGroupPanelId(group.key) + '-toggle'">
                             @for (line of group.lines; track line.productId; let variantIndex = $index) {
                               <ng-container *ngTemplateOutlet="salesVariant; context: {
                                 $implicit: line, group: group, section: section, variantIndex: variantIndex
                               }" />
                             }
-                          </section>
-                        } @else {
-                          <details class="purchase-model purchase-model--family">
-                            <summary class="purchase-model__head">
-                              @if (group.photoUrl; as photo) {
-                                <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
-                              } @else {
-                                <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
-                              }
-                              <span class="purchase-model__copy">
-                                <small>Productmodel</small>
-                                <strong>{{ group.label }}</strong>
-                                <span>
-                                  {{ group.lines.length }} {{ group.lines.length === 1 ? 'variant' : 'varianten' }}
-                                  @if (group.swatches.length) {
-                                    <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
-                                      @for (swatch of group.swatches.slice(0, 8); track swatch.key) {
-                                        <i class="product-colour-dot"
-                                           [class.product-colour-dot--empty]="!swatch.hex"
-                                           [style.background]="swatch.hex || 'transparent'"
-                                           [title]="swatch.label"></i>
-                                      }
-                                      @if (group.swatches.length > 8) {
-                                        <small>+{{ group.swatches.length - 8 }}</small>
-                                      }
-                                    </span>
-                                  }
-                                </span>
-                              </span>
-                              <span class="purchase-model__totals">
-                                <strong>{{ group.pieces | num }} st</strong>
-                                <small>{{ group.cartons | num }} dozen · {{ group.cbm | cbm }}</small>
-                                <small class="purchase-model__cost-label">
-                                  {{ profitMode() === 'UNIT' ? 'Gem. netto / stuk' : 'Netto verkoop' }}
-                                </small>
-                                <b>{{ profitMode() === 'UNIT'
-                                  ? (averageGroupUnitPrice(group.totalEur, group.pieces) | eur: 2)
-                                  : (group.totalEur | eur) }}</b>
-                              </span>
-                              <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-                                <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
-                                      stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                              </svg>
-                            </summary>
-                            <div class="purchase-model__variants">
-                              @for (line of group.lines; track line.productId; let variantIndex = $index) {
-                                <ng-container *ngTemplateOutlet="salesVariant; context: {
-                                  $implicit: line, group: group, section: section, variantIndex: variantIndex
-                                }" />
-                              }
                             </div>
-                          </details>
-                        }
+                          }
+                        </section>
                       }
                     </div>
                   </section>
@@ -1265,6 +1268,7 @@ export class SalesView {
     this.view.set(null);
     this.portalLink.set(null);
     this.openLine.set(null);
+    this.openProductGroups.set(new Set());
     try {
       const [view, customers, countries, revisions, history, portalLink, products, categories, families] = await Promise.all([
         this.sales.order(orderId),
@@ -1429,6 +1433,7 @@ export class SalesView {
   }
 
   readonly openLine = signal<number | null>(null);
+  readonly openProductGroups = signal<ReadonlySet<string>>(new Set());
   readonly deliveryInfo = signal<PricedLine | null>(null);
 
   /** The inkoop stepper, retold for a quote: three fixed stops, one outcome. */
@@ -1457,6 +1462,13 @@ export class SalesView {
     }));
   }
   linePanelId(productId: number): string { return `sales-line-breakdown-${productId}`; }
+  productGroupPanelId(key: string): string {
+    return `sales-product-group-${key.replace(/[^a-z0-9_-]/gi, '-')}`;
+  }
+  productGroupOpen(key: string): boolean { return this.openProductGroups().has(key); }
+  toggleProductGroup(key: string): void {
+    this.openProductGroups.update((openGroups) => nextProductGroupDisclosure(openGroups, key));
+  }
   toggleLine(productId: number): void {
     this.openLine.update((current) => (current === productId ? null : productId));
   }
