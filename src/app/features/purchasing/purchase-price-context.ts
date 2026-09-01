@@ -19,8 +19,8 @@ export interface PurchaseFxDefaults extends PurchaseFxReference {
   marginPct: number;
 }
 
-/** Alibaba/payment-provider allowance: three percent per conversion step. */
-export const PURCHASE_FX_MARGIN_PCT = 3;
+/** Alibaba/payment-provider allowance: two percent per conversion step. */
+export const PURCHASE_FX_MARGIN_PCT = 2;
 
 /**
  * Frankfurter supplies both currencies as units bought by one euro. Convert
