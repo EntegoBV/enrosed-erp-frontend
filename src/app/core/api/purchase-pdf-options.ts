@@ -9,7 +9,11 @@ export interface PurchasePdfOptions {
   showSupplier?: boolean;
   showPrices?: boolean;
   showEur?: boolean;
+  /** Shows one all-in EUR cost per product line; never exposes its components. */
+  includeEnrosedCost?: boolean;
+  /** @deprecated Kept only for compatibility with older API deployments. */
   showFreight?: boolean;
+  /** @deprecated Kept only for compatibility with older API deployments. */
   includeFreight?: boolean;
 }
 
@@ -20,29 +24,34 @@ export interface NormalizedPurchasePdfOptions {
   showSupplier: boolean;
   showPrices: boolean;
   showEur: boolean;
+  includeEnrosedCost: boolean;
   showFreight: boolean;
   includeFreight: boolean;
 }
 
 /**
  * Keeps impossible combinations out of both the UI and the request.
- * Logistics stays independently visible because it is an explicit cost block
- * of its own. A combined total needs both visible product prices and freight.
+ * The all-in ENROSED cost is limited to the standard portrait export, but is
+ * independent of visible supplier prices. Legacy freight switches stay off:
+ * cost components must never appear as a separate block in the document.
  */
 export function normalizePurchasePdfOptions(
   options: PurchasePdfOptions = {},
 ): NormalizedPurchasePdfOptions {
+  const layout = options.layout ?? 'LANDSCAPE';
+  const audience = options.audience;
   const showPrices = options.showPrices ?? true;
-  const showFreight = options.showFreight ?? false;
+  const standardPortrait = layout === 'PORTRAIT' && audience === 'STANDARD';
   return {
-    layout: options.layout ?? 'LANDSCAPE',
-    audience: options.audience,
+    layout,
+    audience,
     showRevenue: options.showRevenue ?? false,
     showSupplier: options.showSupplier ?? true,
     showPrices,
     showEur: showPrices && (options.showEur ?? false),
-    showFreight,
-    includeFreight: showPrices && showFreight && (options.includeFreight ?? false),
+    includeEnrosedCost: standardPortrait && (options.includeEnrosedCost ?? false),
+    showFreight: false,
+    includeFreight: false,
   };
 }
 
@@ -56,6 +65,7 @@ export function purchasePdfQuery(options: PurchasePdfOptions = {}): string {
   query.set('showSupplier', String(resolved.showSupplier));
   query.set('showPrices', String(resolved.showPrices));
   query.set('showEur', String(resolved.showEur));
+  query.set('includeEnrosedCost', String(resolved.includeEnrosedCost));
   query.set('showFreight', String(resolved.showFreight));
   query.set('includeFreight', String(resolved.includeFreight));
   return query.toString();

@@ -86,18 +86,13 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
             </label>
 
             <label class="pdf-option">
-              <input type="checkbox" [ngModel]="portraitOptions().showFreight"
+              <input type="checkbox" [ngModel]="portraitOptions().includeEnrosedCost"
                      [disabled]="busyChoice() !== null"
-                     (ngModelChange)="patchPortraitOptions({ showFreight: $event })" />
-              <span><b>Vracht &amp; logistiek tonen</b><small>Voortransport, zeevracht, invoerrechten en transport naar de ontvangstlocatie.</small></span>
-            </label>
-
-            <label class="pdf-option pdf-option--nested"
-                   [class.pdf-option--disabled]="!portraitOptions().showFreight || !portraitOptions().showPrices">
-              <input type="checkbox" [ngModel]="portraitOptions().includeFreight"
-                     [disabled]="!portraitOptions().showFreight || !portraitOptions().showPrices || busyChoice() !== null"
-                     (ngModelChange)="patchPortraitOptions({ includeFreight: $event })" />
-              <span><b>Vracht meetellen in EUR-totaal</b><small>Vereist productprijzen; uit betekent kosten apart tonen zonder ze op te tellen.</small></span>
+                     (ngModelChange)="patchPortraitOptions({ includeEnrosedCost: $event })" />
+              <span>
+                <b>ENROSED-kost inclusief verzending</b>
+                <small>Toont per productregel één all-in EUR-kost. Product, verzending, invoer en overige toegerekende kosten worden niet apart uitgesplitst.</small>
+              </span>
             </label>
           </div>
         } @else {
@@ -129,7 +124,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                 <span class="choice-kicker">A4 verticaal</span>
                 <strong>Inkooporder · staand</strong>
                 <span>Compacte productregels met foto, SKU, maat, stuks per karton, aantallen en inkoopprijs.</span>
-                <small>Kies hierna leverancier, prijzen, EUR-omrekening en vracht.</small>
+                <small>Kies hierna leverancier, prijzen, EUR-omrekening en de all-in ENROSED-kost.</small>
               </span>
               <span class="choice-action">Instellen</span>
             </button>
@@ -153,10 +148,6 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
           </div>
         }
 
-        <p class="read-copy-note">
-          Alle exports komen uit het actuele dossier. Controleer ze voor verzending;
-          product-, karton- en leveranciersgegevens zijn nog niet historisch vastgezet.
-        </p>
       </div>
 
       <div foot class="sheet-actions">
@@ -184,7 +175,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
     :host{display:contents}.intro{margin:0;color:var(--muted);font-size:15px;line-height:1.55}
     .choices{display:grid;gap:12px;margin-top:18px}.pdf-choice{display:grid;min-height:108px;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:15px;width:100%;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease}.pdf-choice--supplier{border-color:#ddc08a;background:linear-gradient(135deg,#fffaf1,var(--surface))}.pdf-choice:hover:not(:disabled){transform:translateY(-1px);border-color:var(--gold);box-shadow:0 12px 28px rgb(45 31 23/.09)}.pdf-choice:focus-visible{outline:3px solid color-mix(in srgb,var(--gold) 38%,transparent);outline-offset:2px}.pdf-choice:disabled{cursor:not-allowed;opacity:.55}.paper{display:grid;align-content:center;gap:5px;justify-self:center;border:1px solid color-mix(in srgb,var(--gold) 64%,var(--line));border-radius:5px;background:#fff8ef;box-shadow:0 7px 15px rgb(45 31 23/.1);padding:8px}.paper--portrait{width:38px;height:52px}.paper--landscape{width:52px;height:38px}.paper--supplier{border-color:var(--gold);background:#fff}.paper span{display:block;height:2px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent)}.paper span:first-child{width:64%;background:var(--rose)}.choice-copy{display:flex;min-width:0;flex-direction:column;gap:4px}.choice-kicker{color:var(--rose);font-size:12.5px;font-weight:780;letter-spacing:.06em;text-transform:uppercase}.choice-copy strong{font-size:17px}.choice-copy>span:not(.choice-kicker){color:var(--ink-2);font-size:14px;line-height:1.45}.choice-copy small{color:var(--muted);font-size:12.5px;line-height:1.4}.choice-action{align-self:center;color:var(--rose);font-size:13px;font-weight:780}
     .portrait-summary{display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:15px;margin-top:16px;padding:14px 16px;border:1px solid var(--rose-line);border-radius:16px;background:var(--rose-soft)}.pdf-options{display:grid;gap:8px;margin-top:12px}.pdf-option{display:flex;min-height:66px;align-items:flex-start;gap:11px;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer}.pdf-option input{width:22px;height:22px;flex:none;margin:0;accent-color:var(--rose)}.pdf-option>span{display:grid;min-width:0;gap:2px}.pdf-option b{font-size:14px}.pdf-option small{color:var(--muted);font-size:12.5px;line-height:1.4}.pdf-option--nested{margin-left:22px;border-left:3px solid var(--rose-line)}.pdf-option--disabled{cursor:not-allowed;opacity:.5}
-    .save-warning,.download-error{display:flex;gap:10px;margin-top:14px;padding:13px;border-radius:12px;font-size:14px;line-height:1.5}.save-warning{border:1px solid var(--warn);background:var(--warn-soft)}.save-warning>span{display:grid;width:26px;height:26px;flex:none;place-items:center;border-radius:50%;background:var(--warn);color:#fff;font-weight:800}.save-warning b{display:block}.download-error{flex-direction:column;border:1px solid var(--danger);background:var(--danger-soft);color:var(--danger)}.read-copy-note{margin:14px 2px 0;color:var(--muted);font-size:13px;line-height:1.5}.sheet-actions{display:contents}@media(max-width:560px){.pdf-choice{min-height:104px;grid-template-columns:52px minmax(0,1fr);gap:12px;padding:13px}.choice-action{grid-column:2;justify-self:start}.paper--portrait{width:32px;height:44px}.paper--landscape{width:44px;height:32px}.choice-kicker{font-size:12px}.choice-copy strong{font-size:16px}.choice-copy>span:not(.choice-kicker){font-size:13.5px}.portrait-summary{grid-template-columns:52px minmax(0,1fr);gap:12px;padding:12px 13px}.pdf-option--nested{margin-left:10px}}
+    .save-warning,.download-error{display:flex;gap:10px;margin-top:14px;padding:13px;border-radius:12px;font-size:14px;line-height:1.5}.save-warning{border:1px solid var(--warn);background:var(--warn-soft)}.save-warning>span{display:grid;width:26px;height:26px;flex:none;place-items:center;border-radius:50%;background:var(--warn);color:#fff;font-weight:800}.save-warning b{display:block}.download-error{flex-direction:column;border:1px solid var(--danger);background:var(--danger-soft);color:var(--danger)}.sheet-actions{display:contents}@media(max-width:560px){.pdf-choice{min-height:104px;grid-template-columns:52px minmax(0,1fr);gap:12px;padding:13px}.choice-action{grid-column:2;justify-self:start}.paper--portrait{width:32px;height:44px}.paper--landscape{width:44px;height:32px}.choice-kicker{font-size:12px}.choice-copy strong{font-size:16px}.choice-copy>span:not(.choice-kicker){font-size:13.5px}.portrait-summary{grid-template-columns:52px minmax(0,1fr);gap:12px;padding:12px 13px}.pdf-option--nested{margin-left:10px}}
   `],
 })
 export class PurchasePdfSheet {
@@ -210,8 +201,7 @@ export class PurchasePdfSheet {
     showSupplier: true,
     showPrices: true,
     showEur: false,
-    showFreight: false,
-    includeFreight: false,
+    includeEnrosedCost: false,
   }));
 
   close(): void {

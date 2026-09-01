@@ -13,30 +13,43 @@ test('purchase PDF defaults preserve the existing output', () => {
     showSupplier: true,
     showPrices: true,
     showEur: false,
+    includeEnrosedCost: false,
     showFreight: false,
     includeFreight: false,
   });
 });
 
-test('hiding product prices also hides EUR conversion and combined freight total', () => {
+test('hiding supplier prices keeps the independent all-in ENROSED cost', () => {
   const options = normalizePurchasePdfOptions({
     layout: 'PORTRAIT',
+    audience: 'STANDARD',
     showPrices: false,
     showEur: true,
-    showFreight: true,
-    includeFreight: true,
+    includeEnrosedCost: true,
   });
 
   assert.equal(options.showPrices, false);
   assert.equal(options.showEur, false);
-  assert.equal(options.showFreight, true);
-  assert.equal(options.includeFreight, false);
+  assert.equal(options.includeEnrosedCost, true);
 });
 
-test('freight cannot be included when its cost block is hidden', () => {
-  const options = normalizePurchasePdfOptions({ showFreight: false, includeFreight: true });
-  assert.equal(options.showFreight, false);
-  assert.equal(options.includeFreight, false);
+test('ENROSED cost is limited to the standard portrait export', () => {
+  const supplier = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', audience: 'SUPPLIER', includeEnrosedCost: true,
+  });
+  const landscape = normalizePurchasePdfOptions({
+    layout: 'LANDSCAPE', audience: 'STANDARD', includeEnrosedCost: true,
+  });
+  const internal = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', audience: 'INTERNAL', includeEnrosedCost: true,
+  });
+  const unspecified = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', includeEnrosedCost: true,
+  });
+  assert.equal(supplier.includeEnrosedCost, false);
+  assert.equal(landscape.includeEnrosedCost, false);
+  assert.equal(internal.includeEnrosedCost, false);
+  assert.equal(unspecified.includeEnrosedCost, false);
 });
 
 test('purchase PDF query uses every explicit backend option name', () => {
@@ -46,8 +59,7 @@ test('purchase PDF query uses every explicit backend option name', () => {
     showSupplier: false,
     showPrices: true,
     showEur: true,
-    showFreight: true,
-    includeFreight: true,
+    includeEnrosedCost: true,
   }));
 
   assert.deepEqual(Object.fromEntries(query), {
@@ -57,7 +69,8 @@ test('purchase PDF query uses every explicit backend option name', () => {
     showSupplier: 'false',
     showPrices: 'true',
     showEur: 'true',
-    showFreight: 'true',
-    includeFreight: 'true',
+    includeEnrosedCost: 'true',
+    showFreight: 'false',
+    includeFreight: 'false',
   });
 });
