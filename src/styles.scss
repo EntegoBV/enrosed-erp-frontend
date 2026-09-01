@@ -2087,6 +2087,45 @@ app-product-view .gallery__dot::before {
 app-product-view .gallery__dot.active::before {
   width: 22px; border-radius: 999px; background: var(--rose);
 }
+@media (min-width: 680px) {
+  app-product-view .phero__gallery {
+    position: relative; min-width: 0; min-height: 108px; align-self: stretch; overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 18%); border-radius: 13px;
+    background: rgb(255 255 255 / 6%);
+  }
+  app-product-view .phero__gallery-main {
+    display: block; width: 100%; height: 100%; min-height: 108px; padding: 0; overflow: hidden;
+    border: 0; background: transparent; cursor: zoom-in; touch-action: pan-y;
+  }
+  app-product-view .phero__gallery-main:focus-visible {
+    outline: 3px solid #fff; outline-offset: -3px;
+  }
+  app-product-view .phero__gallery-main img {
+    width: 100%; height: 100%; min-height: 108px; object-fit: cover;
+  }
+  app-product-view .phero__gallery-count {
+    position: absolute; top: 8px; right: 8px; padding: 3px 7px; border-radius: 999px;
+    background: rgb(20 16 14 / 70%); color: #fff; font-size: 9px; font-weight: 760;
+  }
+  app-product-view .phero__gallery-step {
+    position: absolute; z-index: 2; top: 50%; border-color: rgb(255 255 255 / 42%);
+    background: rgb(20 16 14 / 58%); color: #fff; transform: translateY(-50%);
+    backdrop-filter: blur(8px);
+  }
+  app-product-view .phero__gallery-step:hover {
+    border-color: #fff; background: rgb(20 16 14 / 82%); color: #fff;
+  }
+  app-product-view .phero__gallery-step--previous { left: 8px; }
+  app-product-view .phero__gallery-step--next { right: 8px; }
+  app-product-view .phero__gallery-dots {
+    position: absolute; z-index: 2; right: 50%; bottom: 6px; flex-wrap: nowrap;
+    padding: 1px 5px; border-radius: 999px; background: rgb(20 16 14 / 58%);
+    transform: translateX(50%);
+  }
+  app-product-view .phero__gallery-dots .gallery__dot { width: 28px; height: 28px; }
+  app-product-view .phero__gallery-dots .gallery__dot::before { background: rgb(255 255 255 / 48%); }
+  app-product-view .phero__gallery-dots .gallery__dot.active::before { width: 16px; background: #fff; }
+}
 @media (prefers-reduced-motion: reduce) {
   app-product-view .gallery__dot::before { transition: none; }
 }

@@ -128,14 +128,49 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
 
             <div class="phero__facts erp-workspace__facts" [class.phero__facts--photo]="desktop.active() && product.photos.length > 0">
               @if (desktop.active() && product.photos.length) {
-                <div class="phero__shots phero__shots--row" role="group"
-                     [attr.aria-label]="product.photos.length + ' foto’s'">
-                  @for (photo of product.photos; track photo.id) {
-                    <button class="phero__shot" type="button" (click)="lightbox.set($index)"
-                            [attr.aria-label]="'Foto ' + ($index + 1) + ' van ' + product.photos.length + ' vergroten'">
-                      <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + ($index + 1)"
-                           draggable="false" loading="lazy" />
+                <div class="phero__gallery" role="region" aria-roledescription="carousel"
+                     [attr.aria-label]="'Productfoto’s van ' + product.name">
+                  @if (product.photos[galleryIndex()] || product.photos[0]; as photo) {
+                    <button class="phero__gallery-main" type="button"
+                            (click)="openCurrentGalleryPhoto()"
+                            (pointerdown)="startGallerySwipe($event, product.photos.length)"
+                            (pointerup)="finishGallerySwipe($event, product.photos.length)"
+                            (pointercancel)="cancelGallerySwipe()"
+                            (keydown.arrowleft)="stepGallery(-1, product.photos.length); $event.preventDefault()"
+                            (keydown.arrowright)="stepGallery(1, product.photos.length); $event.preventDefault()"
+                            (keydown.home)="selectGalleryPhoto(0); $event.preventDefault()"
+                            (keydown.end)="selectGalleryPhoto(product.photos.length - 1); $event.preventDefault()"
+                            aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+                            [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
+                      <img [appAuthSrc]="photo.url"
+                           [alt]="product.name + ' — foto ' + (galleryIndex() + 1)"
+                           draggable="false" />
+                      @if (product.photos.length > 1) {
+                        <span class="phero__gallery-count">
+                          {{ galleryIndex() + 1 }} / {{ product.photos.length }}
+                        </span>
+                      }
                     </button>
+                  }
+                  @if (product.photos.length > 1) {
+                    <button class="gallery__step phero__gallery-step phero__gallery-step--previous"
+                            type="button" (click)="stepGallery(-1, product.photos.length)"
+                            aria-label="Vorige productfoto">‹</button>
+                    <button class="gallery__step phero__gallery-step phero__gallery-step--next"
+                            type="button" (click)="stepGallery(1, product.photos.length)"
+                            aria-label="Volgende productfoto">›</button>
+                    <div class="gallery__dots phero__gallery-dots" aria-label="Kies een productfoto">
+                      @for (item of product.photos; track item.id) {
+                        <button class="gallery__dot" type="button"
+                                [class.active]="$index === galleryIndex()"
+                                [attr.aria-current]="$index === galleryIndex() ? 'true' : null"
+                                [attr.aria-label]="'Toon foto ' + ($index + 1)"
+                                (click)="selectGalleryPhoto($index)"></button>
+                      }
+                    </div>
+                    <span class="sr-only" role="status" aria-live="polite">
+                      Foto {{ galleryIndex() + 1 }} van {{ product.photos.length }}
+                    </span>
                   }
                 </div>
               }
@@ -951,8 +986,6 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     @media (min-width: 680px) {
       .phero { padding: 20px 22px; }
       .phero__facts--photo { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(150px, 190px)); }
-      .phero__shots--row { align-self: stretch; margin-bottom: 0; }
-      .phero__shots--row .phero__shot { width: 84px; height: 100%; min-height: 62px; border-radius: 13px; }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
       .product-dossier-card, .agreement-card { grid-column: 1 / -1; }
@@ -961,7 +994,10 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
 })
 export class ProductView {
   readonly lightbox = signal(-1);
+  readonly galleryIndex = signal(0);
   readonly agreementLightbox = signal(-1);
+  private galleryPointer: { id: number; x: number; y: number } | null = null;
+  private gallerySuppressClickUntil = 0;
   readonly detailSections = [
     { id: 'product-overview', label: 'Overzicht' },
     { id: 'product-core', label: 'Product & prijs' },
@@ -1014,6 +1050,46 @@ export class ProductView {
   goBack(): void {
     if (window.history.length <= 1) { void this.router.navigateByUrl('/products'); return; }
     this.location.back();
+  }
+
+  selectGalleryPhoto(index: number): void {
+    const total = this.product()?.photos.length ?? 0;
+    if (!total) return;
+    this.galleryIndex.set(Math.max(0, Math.min(index, total - 1)));
+  }
+
+  stepGallery(direction: -1 | 1, total: number): void {
+    if (total < 2) return;
+    this.galleryIndex.update((index) => (index + direction + total) % total);
+  }
+
+  openCurrentGalleryPhoto(): void {
+    if (performance.now() < this.gallerySuppressClickUntil) return;
+    this.lightbox.set(this.galleryIndex());
+  }
+
+  startGallerySwipe(event: PointerEvent, total: number): void {
+    if (total < 2 || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    this.galleryPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  }
+
+  finishGallerySwipe(event: PointerEvent, total: number): void {
+    const start = this.galleryPointer;
+    if (!start || start.id !== event.pointerId) return;
+    this.galleryPointer = null;
+    const target = event.currentTarget as HTMLElement;
+    if (target.hasPointerCapture?.(event.pointerId)) target.releasePointerCapture(event.pointerId);
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    if (Math.abs(deltaX) < 42 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.15) return;
+    event.preventDefault();
+    this.gallerySuppressClickUntil = performance.now() + 350;
+    this.stepGallery(deltaX < 0 ? 1 : -1, total);
+  }
+
+  cancelGallerySwipe(): void {
+    this.galleryPointer = null;
   }
 
   scrollToStock(): void {
@@ -1322,6 +1398,7 @@ export class ProductView {
     this.familyLoadError.set(false);
     this.familyLoading.set(false);
     this.lightbox.set(-1);
+    this.galleryIndex.set(0);
     this.agreementLightbox.set(-1);
     this.agreementPhotos.set([]);
     this.agreementLoadError.set(null);
