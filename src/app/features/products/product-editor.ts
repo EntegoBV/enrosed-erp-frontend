@@ -1560,8 +1560,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @media (max-width: 679px) {
       .product-editor-lead__content { padding-top: 10px; }
       .product-editor-hero__actions { display: none; }
-      .product-editor-hero__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .product-editor-hero__fact--publication { display: none; }
       .product-editor-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
     }
     @media (min-width: 680px) {

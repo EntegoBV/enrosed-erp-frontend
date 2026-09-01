@@ -3236,6 +3236,10 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
   app-sales-view .content.erp-workspace {
     padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 128px);
   }
+  app-product-editor .product-editor-hero__facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  app-product-editor .product-editor-hero__fact--publication { display: none; }
   .erp-workspace__hero { border-radius: 20px; }
   app-purchase-view .journey-hero.erp-workspace__hero,
   app-sales-view .sales-hero.erp-workspace__hero,
