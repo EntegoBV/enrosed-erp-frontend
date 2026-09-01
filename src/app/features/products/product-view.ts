@@ -990,6 +990,10 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
       .product-dossier-card, .agreement-card { grid-column: 1 / -1; }
     }
+    @media (min-width: 680px) and (max-width: 759px) {
+      .phero__facts--photo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .phero__gallery { grid-column: 1 / -1; min-height: 160px; }
+    }
   `,
 })
 export class ProductView {
