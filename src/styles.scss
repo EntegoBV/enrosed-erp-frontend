@@ -3039,7 +3039,7 @@ button.erp-workspace__fact:focus-visible { position: relative; z-index: 1; outli
   align-items: center;
   gap: 7px;
   padding: 7px 11px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: rgb(255 255 255 / 82%);
   color: var(--muted);
@@ -3057,6 +3057,7 @@ button.erp-workspace__fact:focus-visible { position: relative; z-index: 1; outli
   height: 22px;
   flex: none;
   place-items: center;
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
   background: var(--surface-2);
   color: var(--muted);
@@ -3069,7 +3070,7 @@ button.erp-workspace__fact:focus-visible { position: relative; z-index: 1; outli
   height: 22px;
   flex: none;
   place-items: center;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
   background: var(--surface-2);
   color: var(--muted);
@@ -3093,16 +3094,22 @@ button.erp-workspace__fact:focus-visible { position: relative; z-index: 1; outli
 .erp-workspace__section-copy b { font-size: 11.5px; line-height: 1.15; }
 .erp-workspace__section-copy small { color: currentColor; font-size: 9px; font-weight: 560; opacity: .72; }
 .erp-workspace__nav-item:hover,
-.erp-workspace__section-link:hover,
+.erp-workspace__section-link:hover {
+  border-color: var(--rose-line);
+}
 .erp-workspace__nav-item--active,
 .erp-workspace__section-link.active,
 .erp-workspace__section-link--active {
-  border-color: var(--rose-line);
+  /* Keep every numbered step on the same outline. State is communicated by
+     the tinted fill and numbered mark, so the rail no longer looks pieced
+     together from cards with unrelated borders. */
+  border-color: var(--line-strong);
   background: var(--rose-soft);
   color: var(--rose-dark);
 }
 .erp-workspace__nav-item--active .erp-workspace__nav-index,
 .erp-workspace__nav-item.active .erp-workspace__nav-index {
+  border-color: var(--rose);
   background: var(--rose);
   color: white;
 }
@@ -3113,7 +3120,11 @@ button.erp-workspace__fact:focus-visible { position: relative; z-index: 1; outli
   background: var(--warn-soft);
   color: var(--warn);
 }
-.erp-workspace__nav-item--action,
+.erp-workspace__nav-item--action {
+  border-color: var(--line-strong);
+  background: var(--rose);
+  color: #fff;
+}
 .erp-workspace__primary {
   border-color: var(--rose);
   background: var(--rose);
@@ -3239,11 +3250,45 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
 
 @media (min-width: 680px) {
   .erp-workspace__facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .erp-workspace__nav,
-  .erp-workspace__section-nav {
+  /* Purchase and sales detail rails belong to the centred workspace, not to
+     the full route canvas. Product subnavs and the sales-editor workflow own
+     their own shells and keep their specialised layouts. */
+  .erp-workspace__nav:not(.subnav),
+  .erp-workspace__section-nav:not(.workflow-nav) {
     top: var(--appbar-h);
-    margin: 14px -20px;
-    padding-inline: 20px;
+    width: max-content;
+    max-width: 100%;
+    margin: 14px auto;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+  }
+  /* Product edit uses the same horizontal step language, but its legacy
+     `.subnav` shell lived edge to edge. Wrap only this editor rail; product
+     view already owns a correctly contained navigation card. */
+  app-product-editor .subnav.erp-workspace__nav {
+    width: max-content;
+    max-width: calc(100% - 40px);
+    margin: 14px auto;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgb(247 244 241 / 86%);
+    box-shadow: 0 6px 18px rgb(26 22 20 / 4%);
+  }
+  app-product-editor .subnav.erp-workspace__nav .erp-workspace__nav-rail {
+    width: auto;
+    max-width: 100%;
+    padding: 8px;
+  }
+  app-product-editor .subnav.erp-workspace__nav .erp-workspace__nav-item {
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 82%);
+  }
+  app-product-editor .subnav.erp-workspace__nav .erp-workspace__nav-item.active {
+    background: var(--rose-soft);
   }
   .erp-workspace__mobile-dock,
   .erp-workspace__mobile-actions { display: none; }
@@ -3267,11 +3312,7 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
     scrollbar-width: thin;
   }
   .erp-workspace__priority-card { order: -1; }
-  .erp-workspace__nav,
-  .erp-workspace__section-nav {
-    margin-inline: -26px;
-    padding-inline: 26px;
-  }
+  app-product-editor .subnav.erp-workspace__nav { max-width: calc(100% - 52px); }
 }
 
 @media (pointer: coarse) {
