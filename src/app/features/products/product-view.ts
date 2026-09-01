@@ -12,7 +12,7 @@ interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; n
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
 import {
-  productVariantNavigation,
+  productCatalogNavigation,
   productVariantOptionLabel,
 } from './product-variant-navigation';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
@@ -42,20 +42,31 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       @if (desktop.active()) {
         <app-page-header [title]="product.name" [subtitle]="product.sku || ''"
                          [showBack]="true" [showBell]="false">
-          <!-- Step through colours of this model only, matching the editor. -->
+          <!-- Walk through this model's colours, then continue with the next
+               product model in the canonical catalogue order. -->
           @if (variantNeighbours(); as around) {
-            <span class="product-nav" role="group" aria-label="Kleurvarianten">
+            <span class="product-nav" role="group" aria-label="Producten en kleurvarianten">
               <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
                  [routerLink]="around.previous ? ['/products', around.previous.productId] : null"
                  [attr.aria-disabled]="!around.previous"
-                 [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'"
-                 [title]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Dit is de eerste kleur'">‹</a>
-              <small class="product-nav__pos" [title]="variantOptionLabel(around.current)">Kleur {{ around.index + 1 }}/{{ around.total }}</small>
+                 [attr.aria-label]="around.previous
+                   ? (around.previousChangesProduct ? 'Vorig product: ' + around.previous.groupName : 'Vorige kleur: ' + around.previous.optionLabel)
+                   : 'Geen vorig product'"
+                 [title]="around.previous
+                   ? (around.previousChangesProduct ? 'Vorig product: ' + around.previous.groupName : 'Vorige kleur: ' + around.previous.optionLabel)
+                   : 'Dit is het eerste product'">‹</a>
+              <small class="product-nav__pos" [title]="around.current.groupName + ' · ' + around.current.optionLabel">
+                {{ around.total > 1 ? 'Kleur ' + (around.index + 1) + '/' + around.total : 'Product' }}
+              </small>
               <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
                  [routerLink]="around.next ? ['/products', around.next.productId] : null"
                  [attr.aria-disabled]="!around.next"
-                 [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'"
-                 [title]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Dit is de laatste kleur'">›</a>
+                 [attr.aria-label]="around.next
+                   ? (around.nextChangesProduct ? 'Volgend product: ' + around.next.groupName : 'Volgende kleur: ' + around.next.optionLabel)
+                   : 'Geen volgend product'"
+                 [title]="around.next
+                   ? (around.nextChangesProduct ? 'Volgend product: ' + around.next.groupName : 'Volgende kleur: ' + around.next.optionLabel)
+                   : 'Dit is het laatste product'">›</a>
             </span>
           }
           <a class="btn btn--primary btn--sm" [routerLink]="['/products', product.id, 'edit']">
@@ -1294,12 +1305,19 @@ export class ProductView {
   readonly familyLoading = signal(false);
   readonly familyLoadError = signal(false);
   private readonly categories = signal<Category[]>([]);
+  private readonly catalogueProducts = signal<Product[]>([]);
+  private readonly catalogueFamilies = signal<ProductFamily[]>([]);
+  private catalogueNavigationLoaded = false;
+  private catalogueNavigationRequest: Promise<void> | null = null;
 
   readonly variantOptionLabel = productVariantOptionLabel;
   readonly variantNeighbours = computed(() =>
-    this.familyLoading() || this.familyLoadError()
-      ? null
-      : productVariantNavigation(this.family(), this.product()?.id ?? null));
+    productCatalogNavigation(
+      this.catalogueProducts(),
+      this.catalogueFamilies(),
+      this.categories(),
+      this.product()?.id ?? null,
+    ));
   private readonly suppliers = signal<Supplier[]>([]);
   private loadVersion = 0;
 
@@ -1385,6 +1403,7 @@ export class ProductView {
   }
 
   private async loadProduct(id: number): Promise<void> {
+    void this.loadCatalogueNavigation();
     this.loadStockHistory(id);
     void this.sourcing.expectedStock()
       .then((items) => this.expected.set(items.find((item) => item.productId === id) ?? null))
@@ -1433,6 +1452,25 @@ export class ProductView {
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
     const requestedSection = this.detailSections.find((item) => `#${item.id}` === window.location.hash)?.id;
     if (requestedSection) setTimeout(() => this.scrollToDetailSection(requestedSection), 0);
+  }
+
+  private loadCatalogueNavigation(): Promise<void> {
+    if (this.catalogueNavigationLoaded) return Promise.resolve();
+    if (this.catalogueNavigationRequest) return this.catalogueNavigationRequest;
+    this.catalogueNavigationRequest = Promise.all([
+      this.catalog.products(),
+      this.catalog.productFamilies(),
+    ]).then(([products, families]) => {
+      this.catalogueProducts.set(products);
+      this.catalogueFamilies.set(families);
+      this.catalogueNavigationLoaded = true;
+    }).catch(() => {
+      /* Navigation is an enhancement; a catalogue-index failure may never
+         hold the operational product dossier hostage. */
+    }).finally(() => {
+      this.catalogueNavigationRequest = null;
+    });
+    return this.catalogueNavigationRequest;
   }
 
   private async loadSupplierAgreement(productId: number, version: number): Promise<void> {
