@@ -99,7 +99,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         </button>
       </app-page-header>
 
-      <div class="content po-page">
+      <div class="content po-page erp-workspace erp-workspace--purchase erp-workspace--edit">
 
         @if (isReceived()) {
           <div class="alert alert--info po-notice">
@@ -111,7 +111,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </div>
         }
 
-        <section class="po-overview" aria-labelledby="po-overview-title">
+        <section class="po-overview erp-workspace__hero" id="purchase-overview"
+                 aria-labelledby="po-overview-title" tabindex="-1">
           <div class="po-overview__top">
             <div class="po-overview__copy">
               <span class="po-eyebrow">Inkoopcontainer</span>
@@ -196,9 +197,55 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </div>
         </section>
 
-        <div class="purchase-grid">
-          <main class="purchase-main">
-            <section class="card flow-card">
+        <nav class="erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-order-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-order-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-order-section', 'order')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">1</span>
+            <span><strong>Order</strong><small>{{ containerLabel(data.order.containerType) }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-products-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-products-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-products-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">2</span>
+            <span><strong>Producten</strong><small>{{ data.costing.lines.length }} regels</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-costs-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-costs-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-costs-section', 'costs')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">3</span>
+            <span><strong>Kosten</strong><small>{{ data.costing.totals.totalEur | eur }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-payments-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-payments-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">4</span>
+            <span><strong>Betalingen</strong><small>{{ openAll() | eur }} open</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-files-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-files-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">5</span>
+            <span><strong>Dossier</strong><small>{{ (documents() ?? []).length }} bestanden</small></span>
+          </button>
+          <button class="erp-workspace__nav-item erp-workspace__nav-item--action" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-actions-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-actions-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-actions-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">6</span>
+            <span><strong>Volgende stap</strong><small>{{ nextStep()?.action || 'Afgerond' }}</small></span>
+          </button>
+        </nav>
+
+        <div class="purchase-grid erp-workspace__layout">
+          <main class="purchase-main erp-workspace__main">
+            <section class="card flow-card erp-workspace__section" id="purchase-order-section"
+                     tabindex="-1">
               <button class="section-toggle" type="button"
                       [attr.aria-expanded]="sectionOpen('order')"
                       aria-controls="purchase-order-fields"
@@ -352,7 +399,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               }
             </section>
 
-            <section class="card flow-card products-card" aria-labelledby="purchase-products-title">
+            <section class="card flow-card products-card erp-workspace__section"
+                     id="purchase-products-section" tabindex="-1"
+                     aria-labelledby="purchase-products-title">
               <div class="section-heading">
                 <span class="section-step" aria-hidden="true">2</span>
                 <span class="section-title-block">
@@ -657,7 +706,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
             </section>
 
-            <section class="card flow-card">
+            <section class="card flow-card erp-workspace__section" id="purchase-costs-section"
+                     tabindex="-1">
               <button class="section-toggle" type="button"
                       [attr.aria-expanded]="sectionOpen('costs')"
                       aria-controls="purchase-cost-fields"
@@ -830,8 +880,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             </section>
           </main>
 
-          <aside class="purchase-summary" aria-label="Containersamenvatting">
-            <section class="card summary-card">
+          <aside class="purchase-summary erp-workspace__sidebar" aria-label="Containersamenvatting">
+            <section class="card summary-card erp-workspace__section" id="purchase-summary-section"
+                     tabindex="-1">
               <div class="section-heading summary-heading">
                 <span class="section-step" aria-hidden="true">
                   4
@@ -1000,7 +1051,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                  sea freight when the price is CIF), in the agreed instalments;
                  to the forwarder and customs for the road, once the box is
                  here. The Enrosed kost is ours and nobody's invoice. -->
-            <section class="card payments-card" aria-labelledby="purchase-payments-title">
+            <section class="card payments-card erp-workspace__section"
+                     id="purchase-payments-section" tabindex="-1"
+                     aria-labelledby="purchase-payments-title">
               <div class="action-card__head">
                 <span class="po-eyebrow">Betalingen</span>
                 <h2 id="purchase-payments-title">
@@ -1076,7 +1129,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <!-- The container's diary: agreements, then the receipt, the
                  booking and every payment write themselves in here. -->
-            <section class="card note-card" aria-labelledby="purchase-note-title">
+            <section class="card note-card erp-workspace__section erp-workspace__support-card"
+                     id="purchase-notes-section" tabindex="-1"
+                     aria-labelledby="purchase-note-title">
               <div class="action-card__head note-card__head">
                 <div>
                   <span class="po-eyebrow">Notitie</span>
@@ -1098,7 +1153,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             </section>
 
             <!-- The paper trail of a container: only what was actually added. -->
-            <section class="card files-card" aria-labelledby="purchase-files-title">
+            <section class="card files-card erp-workspace__section erp-workspace__support-card"
+                     id="purchase-files-section" tabindex="-1"
+                     aria-labelledby="purchase-files-title">
               <div class="action-card__head">
                 <span class="po-eyebrow">Bestanden</span>
                 <h2 id="purchase-files-title">Documenten</h2>
@@ -1145,7 +1202,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
 
-            <section class="card action-card" aria-labelledby="purchase-actions-title">
+            <section class="card action-card erp-workspace__section erp-workspace__priority-card"
+                     id="purchase-actions-section" tabindex="-1"
+                     aria-labelledby="purchase-actions-title">
               <div class="action-card__head">
                 <span class="po-eyebrow">Afronden</span>
                 <h2 id="purchase-actions-title">
@@ -1201,6 +1260,21 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             </section>
           </aside>
         </div>
+      </div>
+
+      <div class="erp-workspace__mobile-dock" aria-label="Inkooporder acties">
+        <span class="erp-workspace__mobile-state" aria-live="polite">
+          <small>{{ dirty() ? 'Niet opgeslagen' : 'Alles opgeslagen' }}</small>
+          <strong>{{ dirty() ? 'Bewaar je wijzigingen' : (nextStep()?.action || 'Order afgerond') }}</strong>
+        </span>
+        <button class="btn" type="button" (click)="pdfOpen.set(true)" aria-label="PDF openen">PDF</button>
+        @if (dirty()) {
+          <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Bezig…' : 'Opslaan' }}
+          </button>
+        } @else if (nextStep(); as step) {
+          <button class="btn btn--primary" type="button" (click)="advanceStatus()">{{ step.action }}</button>
+        }
       </div>
 
       @if (picking()) {
@@ -1525,6 +1599,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
+    .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.purchase-summary.erp-workspace__sidebar{margin-top:0}
     :is(.section-toggle,.section-heading){display:flex;width:100%;min-height:72px;align-items:center;gap:10px;padding:12px 14px;border:0;background:var(--surface);text-align:left}
     .section-toggle{cursor:pointer}.section-step{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:750}
     .section-title-block{display:block;min-width:0;flex:1}.section-name{display:block;font-size:15px;font-weight:700}.section-summary{display:block;overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
@@ -1597,15 +1672,35 @@ export class PurchaseEditor {
 
   /** Products and capacity lead; order setup and cost mechanics open on demand. */
   readonly openSections = signal(new Set<string>());
+  /** Mirrors the shared record-workspace navigation without changing order data. */
+  readonly workspaceSection = signal('purchase-products-section');
 
   toggleSection(name: string): void {
     const next = new Set(this.openSections());
     if (next.has(name)) { next.delete(name); } else { next.add(name); }
     this.openSections.set(next);
+    if (next.has(name)) {
+      this.workspaceSection.set(name === 'order' ? 'purchase-order-section' : 'purchase-costs-section');
+    }
   }
 
   sectionOpen(name: string): boolean {
     return this.openSections().has(name);
+  }
+
+  /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
+  jumpToSection(sectionId: string, disclosure?: 'order' | 'costs'): void {
+    if (disclosure && !this.sectionOpen(disclosure)) {
+      const next = new Set(this.openSections());
+      next.add(disclosure);
+      this.openSections.set(next);
+    }
+    this.workspaceSection.set(sectionId);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(sectionId);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.focus({ preventScroll: true });
+    });
   }
 
   orderSummary(): string {
@@ -2457,6 +2552,14 @@ export class PurchaseEditor {
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
     if (this.dirty()) event.preventDefault();
+  }
+
+  /** Familiar desktop shortcut; the mobile dock keeps the same action within thumb reach. */
+  @HostListener('window:keydown', ['$event'])
+  saveShortcut(event: KeyboardEvent): void {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+    event.preventDefault();
+    if (this.dirty() && !this.saving()) void this.save();
   }
 
   piecesPerCarton(productId: number): number {

@@ -54,9 +54,10 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
         </app-page-header>
       }
 
-      <div class="content purchase-view-page anim-rise">
+      <div class="content purchase-view-page anim-rise erp-workspace erp-workspace--purchase erp-workspace--view">
 
-        <section class="journey-hero" aria-labelledby="purchase-overview-title">
+        <section class="journey-hero erp-workspace__hero" id="purchase-overview"
+                 aria-labelledby="purchase-overview-title" tabindex="-1">
           <!-- Phone: the app bar folds into the hero - back, PDF and
                Bewerken live on the dark surface itself. -->
           @if (!desktop.active()) {
@@ -166,8 +167,54 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
           </div>
         </section>
 
+        <nav class="erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-overview'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-overview' ? 'location' : null"
+                  (click)="jumpToSection('purchase-overview')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">1</span>
+            <span><strong>Order</strong><small>{{ statusLabel(data.order.status) }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-products-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-products-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-products-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">2</span>
+            <span><strong>Producten</strong><small>{{ data.costing.lines.length }} regels</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-costs-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-costs-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-costs-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">3</span>
+            <span><strong>Kosten</strong><small>{{ data.costing.totals.totalEur | eur }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-payments-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-payments-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">4</span>
+            <span><strong>Betalingen</strong><small>{{ openAll() | eur }} open</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-files-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-files-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">5</span>
+            <span><strong>Dossier</strong><small>{{ (documents() ?? []).length }} bestanden</small></span>
+          </button>
+          <button class="erp-workspace__nav-item erp-workspace__nav-item--action" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-actions-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-actions-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-actions-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">6</span>
+            <span><strong>Volgende stap</strong><small>{{ actionTitle(data.order.status, data.costing.lines.length) }}</small></span>
+          </button>
+        </nav>
+
         @if (receiptSummary(); as receipt) {
-          <section class="card receipt-summary" aria-labelledby="purchase-receipt-title">
+          <section class="card receipt-summary erp-workspace__section" id="purchase-receipt-section"
+                   tabindex="-1" aria-labelledby="purchase-receipt-title">
             <header class="receipt-summary__head">
               <span class="receipt-summary__mark"
                     [class.receipt-summary__mark--warn]="receipt.affectedLines || !receiptSnapshotComplete()"
@@ -199,7 +246,8 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
 
         @if (isDdp()) {
           <!-- DDP: the supplier's container - its fill is their concern. -->
-          <section class="card capacity-card" aria-label="Lading">
+          <section class="card capacity-card erp-workspace__section" id="purchase-capacity-section"
+                   tabindex="-1" aria-label="Lading">
             <div class="capacity-card__top">
               <div>
                 <span class="section-kicker">Lading</span>
@@ -210,7 +258,8 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
             </div>
           </section>
         } @else if (data.costing.containerFill; as fill) {
-          <section class="card capacity-card" aria-labelledby="container-fill-title">
+          <section class="card capacity-card erp-workspace__section" id="purchase-capacity-section"
+                   tabindex="-1" aria-labelledby="container-fill-title">
             <div class="capacity-card__top">
               <div>
                 <span class="section-kicker">Capaciteit</span>
@@ -253,9 +302,11 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
           </section>
         }
 
-        <div class="view-layout">
-          <main class="view-main">
-            <section class="card products-card" aria-labelledby="purchase-products-title">
+        <div class="view-layout erp-workspace__layout">
+          <main class="view-main erp-workspace__main">
+            <section class="card products-card erp-workspace__section"
+                     id="purchase-products-section" tabindex="-1"
+                     aria-labelledby="purchase-products-title">
               <div class="section-heading">
                 <span class="section-heading__copy">
                   <span class="section-kicker">Lading</span>
@@ -462,8 +513,10 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
 
           </main>
 
-          <aside class="view-sidebar" aria-label="Samenvatting en acties">
-            <section class="card cost-card internal-block" aria-labelledby="purchase-cost-title">
+          <aside class="view-sidebar erp-workspace__sidebar" aria-label="Samenvatting en acties">
+            <section class="card cost-card internal-block erp-workspace__section"
+                     id="purchase-costs-section" tabindex="-1"
+                     aria-labelledby="purchase-cost-title">
               <div class="cost-card__head">
                 <div>
                   <span class="section-kicker">Interne calculatie</span>
@@ -550,7 +603,9 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
 
             <!-- Two streams of money: the factory for the goods, the forwarder
                  and customs for the road. The Enrosed kost is ours. -->
-            <section class="card payments-card" aria-labelledby="purchase-payments-title">
+            <section class="card payments-card erp-workspace__section"
+                     id="purchase-payments-section" tabindex="-1"
+                     aria-labelledby="purchase-payments-title">
               <span class="section-kicker">Betalingen</span>
               <h2 id="purchase-payments-title">
                 @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
@@ -583,9 +638,11 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
               }
             </section>
 
+            <div class="erp-workspace__support-group" id="purchase-files-section" tabindex="-1">
             @if (data.order.notes) {
               <!-- The container's diary, under the money it mostly talks about. -->
-              <section class="card payments-card note-card" aria-labelledby="purchase-note-title">
+              <section class="card payments-card note-card erp-workspace__section erp-workspace__support-card"
+                       aria-labelledby="purchase-note-title">
                 <span class="section-kicker">Notitie</span>
                 <h2 id="purchase-note-title">Dagboek van de container</h2>
                 <app-diary [notes]="data.order.notes" />
@@ -594,7 +651,8 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
 
             @if (documents(); as docs) {
               @if (docs.length) {
-                <section class="card payments-card" aria-label="Documenten">
+                <section class="card payments-card erp-workspace__section erp-workspace__support-card"
+                         aria-label="Documenten">
                   <span class="section-kicker">Bestanden</span>
                   <h2>{{ docs.length }} document{{ docs.length === 1 ? '' : 'en' }}</h2>
                   <ul class="doc-list">
@@ -610,8 +668,11 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
             }
 
             <app-purchase-activity [orderId]="data.order.id" />
+            </div>
 
-            <section class="card action-card" aria-labelledby="purchase-actions-title">
+            <section class="card action-card erp-workspace__section erp-workspace__priority-card"
+                     id="purchase-actions-section" tabindex="-1"
+                     aria-labelledby="purchase-actions-title">
               <span class="section-kicker">Volgende actie</span>
               <h2 id="purchase-actions-title">
                 {{ actionTitle(data.order.status, data.costing.lines.length) }}
@@ -629,6 +690,16 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
             </section>
           </aside>
         </div>
+      </div>
+      <div class="erp-workspace__mobile-dock" aria-label="Inkooporder acties">
+        <span class="erp-workspace__mobile-state">
+          <small>{{ statusLabel(data.order.status) }}</small>
+          <strong>{{ actionTitle(data.order.status, data.costing.lines.length) }}</strong>
+        </span>
+        <button class="btn" type="button" (click)="pdfOpen.set(true)" aria-label="PDF openen">PDF</button>
+        <a class="btn btn--primary" [routerLink]="['/purchasing', data.order.id, 'edit']">
+          {{ data.costing.lines.length ? 'Bewerken' : 'Producten toevoegen' }}
+        </a>
       </div>
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
@@ -709,6 +780,7 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
     .capacity-meter{height:11px;margin-top:13px}.capacity-card__footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-top:9px;color:var(--muted);font-size:11px}.capacity-state{display:flex;align-items:center;gap:5px;font-weight:680}.capacity-state--ok{color:var(--ok)}.capacity-state--danger{color:var(--danger)}
   `, `
     :is(.view-main,.view-sidebar){min-width:0}:is(.view-main,.view-sidebar)>.card+.card{margin-top:12px}.view-sidebar{margin-top:12px}
+    .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.view-sidebar.erp-workspace__sidebar{margin-top:0}
     :is(.products-card,.details-card,.cost-card,.action-card){overflow:hidden}.section-heading{display:flex;min-height:76px;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
     .section-number{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760}
     .section-heading__copy{display:block;min-width:0;flex:1}.section-heading h2{font-size:15px}.section-heading__copy>span:last-child{display:block;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
@@ -735,6 +807,7 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
 })
 export class PurchaseView {
   readonly pdfOpen = signal(false);
+  readonly workspaceSection = signal('purchase-overview');
   readonly desktop = inject(DesktopViewport);
   private readonly browserLocation = inject(Location);
   private readonly routerNav = inject(Router);
@@ -742,6 +815,16 @@ export class PurchaseView {
   goBack(): void {
     if (window.history.length <= 1) { void this.routerNav.navigateByUrl('/purchasing'); return; }
     this.browserLocation.back();
+  }
+
+  /** Keeps the read-only page as scannable as the editor: same rail, same destinations. */
+  jumpToSection(sectionId: string): void {
+    this.workspaceSection.set(sectionId);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(sectionId);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.focus({ preventScroll: true });
+    });
   }
 
   readonly containerLabel = containerLabel;

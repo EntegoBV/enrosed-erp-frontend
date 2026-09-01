@@ -87,10 +87,10 @@ import {
         </div>
       </app-page-header>
 
-      <main class="content sales-page">
+      <main class="content sales-page erp-workspace erp-workspace--edit erp-workspace--sales">
         <!-- A compact cockpit: status, readiness and commercial scale are
              visible before somebody starts editing a long order. -->
-        <section class="quote-hero" aria-labelledby="quote-overview-title">
+        <section class="quote-hero erp-workspace__hero" aria-labelledby="quote-overview-title">
           <div class="quote-hero__top">
             <div>
               <div class="quote-hero__label-row">
@@ -300,7 +300,7 @@ import {
         }
 
         @if (pendingRevision(); as revision) {
-          <section class="card revision-card" aria-labelledby="revision-title">
+          <section class="card revision-card" id="quote-revision" aria-labelledby="revision-title">
             <div class="card__head">
               <h2 id="revision-title">De klant vraagt een wijziging</h2>
               <span class="spacer"></span>
@@ -342,27 +342,36 @@ import {
           </section>
         }
 
-        <div class="workflow-layout">
-        <nav class="workflow-nav" aria-label="Onderdelen van de offerte">
+        <div class="workflow-layout erp-workspace__layout">
+        <nav class="workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van de offerte">
           @for (item of workflowSections; track item.id; let number = $index) {
             <!-- On the phone, Status lives inside the Controle step; an
                  invoice has no send step at all. -->
             @if (item.id !== 'quote-status' ? true : (desktop.active() && !isInvoiceDoc())) {
             <button type="button"
+                    class="erp-workspace__section-link"
                     [class.workflow-nav__active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
+                    [class.active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
+                    [class.erp-workspace__section-link--complete]="workflowComplete(item.id)"
+                    [class.erp-workspace__section-link--attention]="workflowAttention(item.id)"
                     [attr.aria-current]="activeSection() === item.id ? 'step' : null"
+                    [attr.aria-label]="item.label + ': ' + workflowHint(item.id)"
                     (click)="scrollToSection(item.id)">
-              <span>{{ number + 1 }}</span>{{ item.label }}
+              <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ workflowMark(item.id, number + 1) }}</span>
+              <span class="workflow-nav__copy erp-workspace__section-copy">
+                <b>{{ item.label }}</b>
+                <small>{{ workflowHint(item.id) }}</small>
+              </span>
             </button>
             }
           }
         </nav>
-        <div class="workflow-content">
+        <div class="workflow-content erp-workspace__content">
 
 
         <!-- ==================================== order -->
         @if (desktop.active() || phoneStep() === 0) {
-        <section class="card form-card" id="quote-setup" aria-labelledby="quote-setup-title">
+        <section class="card form-card erp-workspace__section" id="quote-setup" aria-labelledby="quote-setup-title">
           <button class="section-toggle" type="button" (click)="toggle('order')"
                   [attr.aria-expanded]="isOpen('order')" aria-controls="quote-setup-body">
             <span class="section-toggle__number">1</span>
@@ -489,7 +498,7 @@ import {
 
         <!-- ==================================== lines -->
         @if (desktop.active() || phoneStep() === 1) {
-        <section class="card products-card" id="order-lines" aria-labelledby="order-lines-title">
+        <section class="card products-card erp-workspace__section" id="order-lines" aria-labelledby="order-lines-title">
           <div class="products-card__head">
             <div class="section-heading">
               <span class="section-heading__number">2</span>
@@ -714,7 +723,7 @@ import {
 
         <!-- ==================================== transport and delivery -->
         @if (desktop.active() || phoneStep() === 2) {
-        <section class="card logistics-card" id="quote-logistics" aria-labelledby="logistics-title">
+        <section class="card logistics-card erp-workspace__section" id="quote-logistics" aria-labelledby="logistics-title">
           <div class="section-card-head">
             <div class="section-heading">
               <span class="section-heading__number">3</span>
@@ -842,7 +851,7 @@ import {
 
         <!-- ==================================== totals: the overview -->
         @if (desktop.active() || phoneStep() === 3) {
-        <section class="card totals-card" id="quote-check" aria-labelledby="totals-title">
+        <section class="card totals-card erp-workspace__section" id="quote-check" aria-labelledby="totals-title">
           <div class="section-card-head">
             <div class="section-heading">
               <span class="section-heading__number">4</span>
@@ -1007,7 +1016,7 @@ import {
 
         <!-- ==================================== sending the quote -->
         @if (!isInvoiceDoc()) {
-        <section class="card send-card" id="quote-status" aria-labelledby="send-title">
+        <section class="card send-card erp-workspace__section" id="quote-status" aria-labelledby="send-title">
           <div class="send-card__head">
             <div class="send-card__icon" [class.send-card__icon--ok]="!sendIssues().length"
                  aria-hidden="true">{{ sendIssues().length ? '!' : '✓' }}</div>
@@ -1074,15 +1083,57 @@ import {
         }
         }
 
-        <!-- Phone: one step at a time; the button walks you forward. -->
-        @if (!desktop.active() && phoneStep() < 3) {
-          <button class="btn btn--primary btn--block phone-next" type="button" (click)="nextPhoneStep()">
-            Volgende: {{ phoneStepLabels[phoneStep() + 1] }} ›
-          </button>
-        }
         </div>
         </div>
       </main>
+
+      @if (!desktop.active()) {
+        <!-- A fixed decision dock keeps navigation and the one relevant action
+             within thumb reach. The form itself remains a single source of truth. -->
+        <div class="sales-mobile-dock erp-workspace__mobile-dock" role="group"
+             aria-label="Offerte navigatie en acties">
+          @if (phoneStep() > 0) {
+            <button class="sales-mobile-dock__back" type="button" (click)="previousPhoneStep()"
+                    [attr.aria-label]="'Terug naar ' + phoneStepLabels[phoneStep() - 1]">‹</button>
+          }
+          <span class="sales-mobile-dock__context">
+            <small>Stap {{ phoneStep() + 1 }} van 4</small>
+            <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
+          </span>
+          <button class="btn sales-mobile-dock__save" type="button"
+                  [class.btn--primary]="dirty()"
+                  [disabled]="saving() || !dirty()" (click)="save()">
+            {{ saving() ? 'Opslaan…' : 'Opslaan' }}
+          </button>
+          @if (phoneStep() < 3) {
+            <button class="sales-mobile-dock__next" type="button" (click)="nextPhoneStep()"
+                    [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">
+              <span aria-hidden="true">›</span>
+            </button>
+          } @else if (!dirty() && pendingRevision()) {
+            <button class="btn btn--primary sales-mobile-dock__primary" type="button"
+                    (click)="focusPendingRevision()">Wijziging beoordelen</button>
+          } @else if (!dirty() && !isInvoiceDoc() && data.order.status === 'GEACCEPTEERD') {
+            <a class="btn btn--primary sales-mobile-dock__primary"
+               [routerLink]="['/sales', data.order.id]">Factuur maken</a>
+          } @else if (!dirty() && !isInvoiceDoc()
+                     && (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN')) {
+            <button class="btn btn--primary sales-mobile-dock__primary" type="button"
+                    [disabled]="busy()" (click)="reopen()">Heropenen</button>
+          } @else if (!dirty() && !isInvoiceDoc() && !sendIssues().length) {
+            <button class="btn btn--primary sales-mobile-dock__primary" type="button"
+                    [disabled]="sending()" (click)="openSend()">Versturen</button>
+          } @else if (!dirty() && !isInvoiceDoc() && sendIssues().length) {
+            <button class="btn btn--primary sales-mobile-dock__primary" type="button"
+                    (click)="fixIssue(sendIssues()[0])">
+              {{ sendIssues().length }} open {{ sendIssues().length === 1 ? 'punt' : 'punten' }}
+            </button>
+          } @else if (!dirty() && isInvoiceDoc()) {
+            <button class="btn btn--primary sales-mobile-dock__primary" type="button"
+                    (click)="openPdfSheet()">PDF bekijken</button>
+          }
+        </div>
+      }
 
       @if (costSheet(); as sheet) {
         <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="costSheet.set(null)">
@@ -1253,7 +1304,7 @@ import {
   `,
   styles: [`
     :host { display:block }
-    .sales-page { max-width:1120px }
+    .sales-page { max-width:1120px;padding-bottom:96px }
     .sales-page>*+* { margin-top:12px }
     #quote-setup,#order-lines,#quote-logistics,#quote-check,#quote-status { scroll-margin-top:calc(var(--appbar-h) + 76px) }
     .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0 }
@@ -1354,11 +1405,16 @@ import {
     .workflow-nav button { min-width:0;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 2px;border:0;border-radius:11px;background:transparent;color:var(--muted);font-size:10px;font-weight:670;cursor:pointer }
     .workflow-nav button:active { background:var(--surface-2) }
     @media (min-width:680px) { .workflow-nav { grid-template-columns:repeat(5,minmax(0,1fr)) } }
-    .workflow-nav button span { width:19px;height:19px;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:50%;color:var(--ink-2) }
+    .workflow-nav button>.workflow-nav__mark { width:19px;height:19px;display:grid;flex:none;place-items:center;border:1px solid var(--line-strong);border-radius:50%;color:var(--ink-2) }
+    .workflow-nav__copy { min-width:0;display:grid;gap:0;text-align:inherit;line-height:1.1 }
+    .workflow-nav__copy b { overflow:hidden;font-size:inherit;font-weight:720;text-overflow:ellipsis;white-space:nowrap }
+    .workflow-nav__copy small { display:none;overflow:hidden;color:var(--muted);font-size:9px;font-weight:540;text-overflow:ellipsis;white-space:nowrap }
     .workflow-nav .workflow-nav__active { background:var(--rose-soft);color:var(--rose-dark) }
-    .workflow-nav .workflow-nav__active span { border-color:var(--rose-line);background:var(--surface);color:var(--rose-dark) }
-    .workflow-content { min-width:0;margin-top:12px }
-    .workflow-content>*+* { margin-top:12px }
+    .workflow-nav .workflow-nav__active>.workflow-nav__mark { border-color:var(--rose-line);background:var(--surface);color:var(--rose-dark) }
+    .workflow-nav .erp-workspace__section-link--complete>.workflow-nav__mark { border-color:var(--ok);background:var(--ok);color:#fff }
+    .workflow-nav .erp-workspace__section-link--attention>.workflow-nav__mark { border-color:var(--warn);background:var(--warn-soft);color:var(--warn) }
+    .workflow-content { min-width:0;margin-top:0 }
+    .workflow-content>*+* { margin-top:0 }
 
     .form-lock { border:0;margin:0;min-inline-size:0;padding:0 }
     .section-toggle { width:100%;min-height:68px;padding:12px 14px;display:flex;align-items:center;gap:11px;border:0;background:var(--surface);text-align:left;cursor:pointer }
@@ -1570,8 +1626,17 @@ import {
     .hero-waiting span { flex:1;min-width:0 }
     .hero-waiting span b { font-weight:800 }
     .hero-waiting__go { flex:none;font-weight:800;white-space:nowrap }
-    .phone-next { margin-top:4px;min-height:50px;border-radius:16px;font-size:15px }
-    @media (min-width:680px) { .phone-next { display:none } }
+    .sales-mobile-dock { display:flex;align-items:center;gap:7px }
+    .sales-mobile-dock__back,.sales-mobile-dock__next { width:42px;height:42px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer }
+    .sales-mobile-dock__next { background:var(--ink);color:#fff }
+    .sales-mobile-dock__context { min-width:52px;display:grid;flex:1;line-height:1.15 }
+    .sales-mobile-dock__context small { color:var(--muted);font-size:8.5px;font-weight:650;text-transform:uppercase }
+    .sales-mobile-dock__context strong { overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap }
+    .sales-mobile-dock .btn { min-height:42px;margin:0;padding-inline:11px }
+    .sales-mobile-dock__save:disabled { opacity:.58 }
+    .sales-mobile-dock__primary { flex:none }
+    @media(max-width:390px) { .sales-mobile-dock__context { display:none }.sales-mobile-dock__primary { flex:1 }.sales-mobile-dock__save { padding-inline:9px!important } }
+    @media (min-width:680px) { .sales-mobile-dock { display:none } }
     .products-empty { padding:38px 18px 42px;text-align:center }
     .products-empty__art { width:64px;height:64px;margin:0 auto 12px;display:grid;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px }
     .products-empty h3 { font-size:16px }
@@ -1692,11 +1757,13 @@ import {
       .line-internal__units .line-internal__unit-profit { grid-column:auto }
     }
     @media(min-width:680px) {
+      .sales-page { padding-bottom:24px }
       #quote-setup,#order-lines,#quote-logistics,#quote-check,#quote-status { scroll-margin-top:calc(var(--appbar-h) + 28px) }
       .workflow-layout { display:grid;grid-template-columns:minmax(0,1fr) 168px;gap:16px;align-items:start }
       .workflow-content { grid-column:1;grid-row:1;margin-top:0 }
       .workflow-nav { grid-column:2;grid-row:1;top:calc(var(--appbar-h) + 16px);max-width:none;margin:0;grid-template-columns:1fr;gap:3px;padding:6px;border-radius:15px }
       .workflow-nav button { min-height:44px;flex-direction:row;justify-content:flex-start;gap:8px;padding:7px 9px;font-size:12px;text-align:left }
+      .workflow-nav__copy small { display:block }
       .quote-hero__customer { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
       .order-line__head { grid-template-columns:56px minmax(0,1fr) auto }
       .order-line__photo { width:56px;height:56px }
@@ -1825,6 +1892,70 @@ export class SalesEditor {
   ] as const;
   readonly activeSection = signal<(typeof this.workflowSections)[number]['id']>('quote-setup');
 
+  /**
+   * The rail is more than navigation: every stop tells the operator whether
+   * that part of the quote is already usable. These checks only explain the
+   * existing server-backed data; sending still uses the full preflight below.
+   */
+  workflowComplete(id: (typeof this.workflowSections)[number]['id']): boolean {
+    const data = this.view();
+    if (!data) return false;
+    if (id === 'quote-setup') {
+      return !!this.customers().find((customer) => customer.id === data.order.customerId)
+        && !!data.order.countryCode;
+    }
+    if (id === 'order-lines') {
+      return data.priced.lines.length > 0
+        && data.priced.lines.every((line) => line.quantity > 0 && line.unitPrice > 0);
+    }
+    if (id === 'quote-logistics') {
+      return !data.priced.validation.freightPricingIssue
+        && (data.priced.totals.unassignedCartons ?? 0) <= 0
+        && !this.overassigned();
+    }
+    if (id === 'quote-check') {
+      return this.isInvoiceDoc()
+        ? this.workflowComplete('quote-setup') && this.workflowComplete('order-lines')
+        : this.sendIssues().length === 0;
+    }
+    return data.order.status !== 'CONCEPT' || (!this.isInvoiceDoc() && this.sendIssues().length === 0);
+  }
+
+  workflowAttention(id: (typeof this.workflowSections)[number]['id']): boolean {
+    return !!this.view() && !this.workflowComplete(id);
+  }
+
+  workflowMark(id: (typeof this.workflowSections)[number]['id'], number: number): string {
+    if (this.workflowComplete(id)) return '✓';
+    if (this.workflowAttention(id)) return '!';
+    return `${number}`;
+  }
+
+  workflowHint(id: (typeof this.workflowSections)[number]['id']): string {
+    const data = this.view();
+    if (!data) return 'Laden…';
+    if (id === 'quote-setup') {
+      const customer = this.customers().find((item) => item.id === data.order.customerId);
+      return customer ? customer.company : 'Klant kiezen';
+    }
+    if (id === 'order-lines') {
+      if (!data.priced.lines.length) return 'Product toevoegen';
+      return `${data.priced.lines.length} ${data.priced.lines.length === 1 ? 'regel' : 'regels'}`;
+    }
+    if (id === 'quote-logistics') {
+      if (data.priced.validation.freightPricingIssue) return 'Vracht nakijken';
+      if (data.priced.totals.unassignedCartons > 0 || this.overassigned()) return 'Indeling nakijken';
+      return data.order.freight === 'TE_BEPALEN' ? 'Vracht later' : 'In orde';
+    }
+    if (id === 'quote-check') {
+      const open = this.isInvoiceDoc()
+        ? Number(!this.workflowComplete('quote-setup')) + Number(!this.workflowComplete('order-lines'))
+        : this.sendIssues().length;
+      return open ? `${open} open ${open === 1 ? 'punt' : 'punten'}` : 'Klaar';
+    }
+    return this.label(data.order.status);
+  }
+
   /* ---- the phone walks the order as a stepper, ending on the overview ---- */
   readonly desktop = inject(DesktopViewport);
   readonly phoneStep = signal(0);
@@ -1842,6 +1973,18 @@ export class SalesEditor {
   nextPhoneStep(): void {
     this.phoneStep.update((step) => Math.min(3, step + 1));
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  previousPhoneStep(): void {
+    this.phoneStep.update((step) => Math.max(0, step - 1));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  focusPendingRevision(): void {
+    this.phoneStep.set(0);
+    requestAnimationFrame(() => {
+      document.getElementById('quote-revision')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   readonly paymentTermsList = STANDARD_PAYMENT_TERMS;
@@ -2327,6 +2470,14 @@ export class SalesEditor {
     if (!this.dirty()) return;
     event.preventDefault();
     event.returnValue = '';
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  saveShortcut(event: KeyboardEvent): void {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's'
+        || !this.dirty() || this.saving()) return;
+    event.preventDefault();
+    void this.save();
   }
 
   reloadLatestOrder(): void {

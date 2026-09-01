@@ -1120,7 +1120,9 @@ table.data tfoot td {
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
+  /* Clear both the floating app tab bar and record-workspace action dock.
+     A confirmation must never hide the button that caused it. */
+  bottom: calc(var(--tabbar-h) + var(--safe-b) + 102px);
   z-index: 200;
   display: flex;
   flex-direction: column;
@@ -2872,4 +2874,389 @@ app-purchase-view {
 @media (min-width: 680px) {
   app-purchase-view .purchase-category__head { padding-inline: 18px; }
   app-purchase-view .purchase-category__models { padding: 12px 18px; }
+}
+
+/* ========================================================================
+   Unified record workspace
+
+   Purchase orders, products and sales documents deliberately share this
+   frame. The content inside each section remains domain-specific, while the
+   location of identity, section navigation, primary action and mobile dock is
+   predictable everywhere in the ERP.
+   ======================================================================== */
+.erp-workspace {
+  min-width: 0;
+  scroll-padding-top: calc(var(--appbar-h) + 76px);
+}
+
+.erp-workspace__hero {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--rose) 18%, var(--line));
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-1);
+}
+
+.erp-workspace__identity { display: grid; min-width: 0; gap: 4px; }
+.erp-workspace__eyebrow {
+  color: var(--rose);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.erp-workspace__title {
+  min-width: 0;
+  color: var(--ink);
+  font-size: clamp(22px, 5vw, 36px);
+  line-height: 1.08;
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+.erp-workspace__meta { color: var(--muted); font-size: 12px; }
+.erp-workspace__badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.erp-workspace__badge {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 72%);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.erp-workspace__badge--ok { border-color: color-mix(in srgb, var(--ok) 24%, var(--line)); background: var(--ok-soft); color: var(--ok); }
+.erp-workspace__badge--warn { border-color: color-mix(in srgb, var(--warn) 24%, var(--line)); background: var(--warn-soft); color: var(--warn); }
+.erp-workspace__badge--dirty { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); }
+
+.erp-workspace__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--line);
+}
+.erp-workspace__fact {
+  display: grid;
+  min-width: 0;
+  min-height: 72px;
+  align-content: center;
+  gap: 2px;
+  padding: 10px 12px;
+  background: rgb(255 255 255 / 90%);
+}
+button.erp-workspace__fact { border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+button.erp-workspace__fact:hover { background: var(--rose-soft); }
+button.erp-workspace__fact:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--rose); outline-offset: -2px; }
+.erp-workspace__fact-label {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.erp-workspace__fact-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 780;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.erp-workspace__fact-note { color: var(--muted); font-size: 10px; line-height: 1.35; }
+
+.erp-workspace__nav,
+.erp-workspace__section-nav {
+  position: sticky;
+  top: var(--appbar-h);
+  z-index: 48;
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  margin: 12px -12px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-block: 1px solid rgb(233 227 222 / 80%);
+  background: rgb(247 244 241 / 86%);
+  box-shadow: 0 6px 18px rgb(26 22 20 / 4%);
+  scrollbar-width: none;
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+.erp-workspace__nav::-webkit-scrollbar,
+.erp-workspace__section-nav::-webkit-scrollbar,
+.erp-workspace__nav-rail::-webkit-scrollbar { display: none; }
+.erp-workspace__nav-rail { display: contents; }
+/* Product editing already owns a full-width `.subnav` shell. Keep the
+   scroll container inside that shell instead of making the shell itself
+   wider than the viewport. */
+.subnav.erp-workspace__nav {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border-top: 0;
+}
+.subnav.erp-workspace__nav .erp-workspace__nav-rail {
+  display: flex;
+  gap: 6px;
+  padding-block: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.erp-workspace__nav-item,
+.erp-workspace__section-link {
+  position: relative;
+  display: inline-flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 82%);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(26 22 20 / 3%);
+}
+.erp-workspace__nav-index {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 820;
+}
+.erp-workspace__section-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 820;
+}
+.erp-workspace__nav-item > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  text-align: left;
+}
+.erp-workspace__nav-item > span:last-child strong { font-size: 11.5px; line-height: 1.15; }
+.erp-workspace__nav-item > span:last-child small { color: currentColor; font-size: 9px; font-weight: 560; opacity: .72; }
+.erp-workspace__section-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  text-align: left;
+}
+.erp-workspace__section-copy b { font-size: 11.5px; line-height: 1.15; }
+.erp-workspace__section-copy small { color: currentColor; font-size: 9px; font-weight: 560; opacity: .72; }
+.erp-workspace__nav-item:hover,
+.erp-workspace__section-link:hover,
+.erp-workspace__nav-item--active,
+.erp-workspace__section-link.active,
+.erp-workspace__section-link--active {
+  border-color: var(--rose-line);
+  background: var(--rose-soft);
+  color: var(--rose-dark);
+}
+.erp-workspace__nav-item--active .erp-workspace__nav-index,
+.erp-workspace__nav-item.active .erp-workspace__nav-index {
+  background: var(--rose);
+  color: white;
+}
+.erp-workspace__section-link--active .erp-workspace__section-mark { border-color: var(--rose); background: var(--rose); color: #fff; }
+.erp-workspace__section-link--complete .erp-workspace__section-mark { border-color: var(--ok); background: var(--ok); color: #fff; }
+.erp-workspace__section-link--attention {
+  border-color: color-mix(in srgb, var(--warn) 36%, var(--line));
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.erp-workspace__nav-item--action,
+.erp-workspace__primary {
+  border-color: var(--rose);
+  background: var(--rose);
+  color: #fff;
+}
+.erp-workspace__nav-item--action:hover,
+.erp-workspace__primary:hover { background: var(--rose-dark); color: #fff; }
+
+.erp-workspace__layout,
+.erp-workspace__content,
+.erp-workspace__main,
+.erp-workspace__sidebar,
+.erp-workspace__aside,
+.erp-workspace__rail { min-width: 0; }
+.erp-workspace__layout { display: grid; gap: 14px; }
+.erp-workspace__main,
+.erp-workspace__content,
+.erp-workspace__sidebar,
+.erp-workspace__aside,
+.erp-workspace__rail { display: grid; align-content: start; gap: 14px; }
+.erp-workspace__section {
+  min-width: 0;
+  scroll-margin-top: calc(var(--appbar-h) + 76px);
+}
+.erp-workspace__section-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.erp-workspace__priority-card {
+  border-color: var(--rose-line);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--rose) 10%, transparent);
+}
+.erp-workspace__decision {
+  border-color: var(--rose-line);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--rose) 8%, transparent);
+}
+.erp-workspace__support-card { background: color-mix(in srgb, var(--surface-2) 84%, var(--rose-soft)); }
+.erp-workspace__support-group { display: grid; min-width: 0; gap: 14px; }
+
+.erp-workspace__mobile-dock,
+.erp-workspace__mobile-actions {
+  position: fixed;
+  z-index: 39;
+  right: calc(var(--safe-r) + 10px);
+  bottom: calc(var(--safe-b) + var(--tabbar-h) + 18px);
+  left: calc(var(--safe-l) + 10px);
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 84%);
+  box-shadow: 0 12px 34px rgb(26 22 20 / 18%);
+  backdrop-filter: blur(22px) saturate(1.55);
+  -webkit-backdrop-filter: blur(22px) saturate(1.55);
+}
+.erp-workspace__mobile-dock > *,
+.erp-workspace__mobile-actions > * { min-width: 0; }
+.erp-workspace__mobile-dock .btn,
+.erp-workspace__mobile-actions .btn,
+.erp-workspace__mobile-dock button,
+.erp-workspace__mobile-actions button,
+.erp-workspace__mobile-dock a,
+.erp-workspace__mobile-actions a { min-height: 46px; }
+.erp-workspace__mobile-dock .erp-workspace__primary,
+.erp-workspace__mobile-actions .erp-workspace__primary { flex: 1; }
+.erp-workspace__mobile-state {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+  padding-inline: 6px;
+}
+.erp-workspace__mobile-state small { color: var(--muted); font-size: 9px; font-weight: 720; text-transform: uppercase; }
+.erp-workspace__mobile-state strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 679px) {
+  .content.erp-workspace { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 118px); }
+  /* Component sheets used smaller legacy paddings. These host-scoped rules
+     keep the last field/action clear of both the workspace dock and the
+     existing floating app tab bar. */
+  app-purchase-editor .content.erp-workspace,
+  app-purchase-view .content.erp-workspace,
+  app-product-editor .content.erp-workspace,
+  app-product-view .content.erp-workspace,
+  app-sales-editor .content.erp-workspace,
+  app-sales-view .content.erp-workspace {
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 128px);
+  }
+  .erp-workspace__hero { border-radius: 20px; }
+  .erp-workspace__nav,
+  .erp-workspace__section-nav {
+    mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  }
+  /* These detail pages fold their app bar into the hero on phones. Their
+     rails therefore start at the safe area, not below an absent 56px bar. */
+  app-purchase-view .erp-workspace__nav,
+  app-sales-view .erp-workspace__section-nav { top: var(--safe-t); }
+
+  /* Sales editing has four fixed-width steps rather than a scroll rail; a
+     fade would make the last step look disabled even though all fit. */
+  app-sales-editor .workflow-nav.erp-workspace__section-nav {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
+
+@media (min-width: 680px) {
+  .erp-workspace__facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .erp-workspace__nav,
+  .erp-workspace__section-nav {
+    top: var(--appbar-h);
+    margin: 14px -20px;
+    padding-inline: 20px;
+  }
+  .erp-workspace__mobile-dock,
+  .erp-workspace__mobile-actions { display: none; }
+}
+
+@media (min-width: 1024px) {
+  .erp-workspace__layout {
+    grid-template-columns: minmax(0, 1fr) minmax(292px, 350px);
+    align-items: start;
+    gap: 18px;
+  }
+  .erp-workspace__sidebar,
+  .erp-workspace__aside,
+  .erp-workspace__rail {
+    position: sticky;
+    top: calc(var(--appbar-h) + 68px);
+    max-height: calc(100dvh - var(--appbar-h) - 84px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+  .erp-workspace__priority-card { order: -1; }
+  .erp-workspace__nav,
+  .erp-workspace__section-nav {
+    margin-inline: -26px;
+    padding-inline: 26px;
+  }
+}
+
+@media (pointer: coarse) {
+  .erp-workspace__nav-item,
+  .erp-workspace__section-link { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .erp-workspace__nav-item,
+  .erp-workspace__section-link { scroll-behavior: auto; }
 }
