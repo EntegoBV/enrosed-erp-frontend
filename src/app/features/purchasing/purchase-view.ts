@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Location } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -13,17 +13,17 @@ import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
-  Category, Product, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
+  Category, Product, ProductFamily, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
 } from '../../core/api/models';
 import {
-  COLOUR_SWATCHES, STANDARD_COLOURS, containerCountForFill, containerLabel,
+  COLOUR_SWATCHES, containerCountForFill, containerLabel,
 } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
-import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from './purchase-line-display';
+import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 
 /**
  * Read-only control room for one incoming container.
@@ -35,7 +35,7 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity],
   template: `
     @if (view(); as data) {
@@ -275,38 +275,94 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
                 }
               </div>
 
-              @if (colourOptions().length) {
-                <nav class="product-colour-filter" aria-label="Productregels op kleur filteren">
-                  <button type="button" class="product-colour-chip"
-                          [class.product-colour-chip--active]="colourFilter() === null"
-                          [attr.aria-pressed]="colourFilter() === null"
-                          (click)="colourFilter.set(null)">
-                    Alle kleuren <small>{{ data.costing.lines.length }}</small>
-                  </button>
-                  @for (option of colourOptions(); track option.key) {
-                    <button type="button" class="product-colour-chip"
-                            [class.product-colour-chip--active]="colourFilter() === option.key"
-                            [attr.aria-pressed]="colourFilter() === option.key"
-                            (click)="toggleColour(option.key)">
-                      <i class="product-colour-dot" [class.product-colour-dot--empty]="!option.hex"
-                         [style.background]="option.hex" aria-hidden="true"></i>
-                      {{ option.label }} <small>{{ option.count }}</small>
-                    </button>
-                  }
-                </nav>
-              }
-
-              <div class="product-lines">
+              <div class="product-lines purchase-model-list">
                 @for (section of lineSections(); track section.key) {
                   <section class="purchase-category" [attr.aria-labelledby]="categoryHeadingId(section.key)">
                     <h3 class="purchase-category__head" [id]="categoryHeadingId(section.key)">
                       <span>{{ section.name }}</span>
-                      <small>{{ section.entries.length }} {{ section.entries.length === 1 ? 'regel' : 'regels' }}</small>
+                      <small>{{ section.groups.length }} {{ section.groups.length === 1 ? 'model' : 'modellen' }} ·
+                        {{ section.lineCount }} {{ section.lineCount === 1 ? 'variant' : 'varianten' }}</small>
                     </h3>
-                  @for (entry of section.entries; track entry.line.productId) {
-                  <article class="purchase-line">
-                    <!-- The line walks through to the product itself; the
-                         back button brings you straight back here. -->
+                    <div class="purchase-category__models">
+                    @for (group of section.groups; track group.key) {
+                      @if (group.standalone) {
+                        <section class="purchase-model purchase-model--standalone">
+                          @for (entry of group.entries; track entry.line.productId; let variantIndex = $index) {
+                            <ng-container *ngTemplateOutlet="purchaseVariant; context: {
+                              $implicit: entry, group: group, section: section, variantIndex: variantIndex
+                            }" />
+                          }
+                        </section>
+                      } @else {
+                        <details class="purchase-model purchase-model--family" open>
+                          <summary class="purchase-model__head">
+                            @if (group.photoUrl; as photo) {
+                              <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
+                            } @else {
+                              <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
+                            }
+                            <span class="purchase-model__copy">
+                              <small>Productmodel</small>
+                              <strong>{{ group.name }}</strong>
+                              <span>
+                                {{ group.entries.length }} {{ group.entries.length === 1 ? 'variant' : 'varianten' }}
+                                @if (group.swatches.length) {
+                                  <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
+                                    @for (swatch of group.swatches.slice(0, 8); track swatch.label) {
+                                      <i class="product-colour-dot"
+                                         [class.product-colour-dot--empty]="!swatch.hex"
+                                         [style.background]="swatch.hex || 'transparent'"
+                                         [title]="swatch.label"></i>
+                                    }
+                                    @if (group.swatches.length > 8) {
+                                      <small>+{{ group.swatches.length - 8 }}</small>
+                                    }
+                                  </span>
+                                }
+                              </span>
+                            </span>
+                            <span class="purchase-model__totals">
+                              <strong>{{ group.totals.pieces | num }} st</strong>
+                              <small>{{ group.totals.cartons | num }} dozen · {{ group.totals.cbm | cbm }}</small>
+                              <small class="purchase-model__cost-label">
+                                {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
+                              </small>
+                              <b>{{ perPiece()
+                                ? (group.totals.averageUnitEur | eur: 4)
+                                : (group.totals.totalEur | eur) }}</b>
+                            </span>
+                            <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                              <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                          </summary>
+                          <div class="purchase-model__variants">
+                            @for (entry of group.entries; track entry.line.productId; let variantIndex = $index) {
+                              <ng-container *ngTemplateOutlet="purchaseVariant; context: {
+                                $implicit: entry, group: group, section: section, variantIndex: variantIndex
+                              }" />
+                            }
+                          </div>
+                        </details>
+                      }
+                    }
+                    </div>
+                  </section>
+                } @empty {
+                  <div class="product-empty">
+                    <span class="product-empty__art" aria-hidden="true">◈</span>
+                    <h3>Nog geen producten geladen</h3>
+                    <p>Voeg producten en aantallen toe om de containervulling en kostprijs te berekenen.</p>
+                    <a class="btn btn--primary"
+                       [routerLink]="['/purchasing', data.order.id, 'edit']">
+                      Producten toevoegen
+                    </a>
+                  </div>
+                }
+
+                <ng-template #purchaseVariant let-entry let-group="group" let-section="section"
+                             let-variantIndex="variantIndex">
+                  <article class="purchase-line" [class.purchase-line--variant]="!group.standalone">
                     <a class="purchase-line__identity" [routerLink]="['/products', entry.line.productId]"
                        [title]="entry.line.productName + ' openen'">
                       @if (photoOf(entry.line.productId); as url) {
@@ -315,26 +371,38 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
                         <span class="purchase-line__photo purchase-line__photo--empty" aria-hidden="true">◈</span>
                       }
                       <span class="purchase-line__copy">
-                        <small>Regel {{ entry.displayIndex }} · {{ section.name }}</small>
-                        <strong>{{ entry.line.productName }}</strong>
+                        <small>
+                          @if (group.standalone) {
+                            Regel {{ entry.displayIndex }} · {{ section.name }}
+                          } @else {
+                            Variant {{ variantIndex + 1 }} van {{ group.entries.length }}
+                            @if (entry.product?.sku; as sku) { · <span class="mono">{{ sku }}</span> }
+                          }
+                        </small>
+                        <strong>{{ group.standalone ? entry.line.productName : variantTitle(entry.product, entry.line.productName) }}</strong>
                         <span class="purchase-line__meta">
                           @if (entry.product?.colour; as colour) {
                             <i class="product-colour-dot" [class.product-colour-dot--empty]="!colourHex(entry.product)"
-                               [style.background]="colourHex(entry.product)" aria-hidden="true"></i>
-                            <b>{{ colour }}</b><span aria-hidden="true"> · </span>
+                               [style.background]="colourHex(entry.product) || 'transparent'" aria-hidden="true"></i>
+                            <b>{{ colour }}</b>
                           }
                           @if (entry.product?.variantSize; as size) {
-                            <b>{{ size }}</b><span aria-hidden="true"> · </span>
+                            @if (entry.product?.colour) { <span aria-hidden="true"> · </span> }
+                            <b>{{ size }}</b>
                           }
-                          {{ entry.line.quantity | num }} st · {{ entry.line.cartons | num }} dozen
+                          @if (group.standalone && entry.product?.sku; as sku) {
+                            <span aria-hidden="true"> · </span><span class="mono">{{ sku }}</span>
+                          }
                         </span>
                       </span>
                     </a>
 
-                    <div class="line-facts">
+                    <div class="line-facts line-facts--purchase">
                       <span><small>Aantal</small><strong>{{ entry.line.quantity | num }} st</strong></span>
                       <span><small>Dozen</small><strong>{{ entry.line.cartons | num }}</strong></span>
                       <span><small>Volume</small><strong>{{ entry.line.cbm | cbm }}</strong></span>
+                      <span><small>Geland / stuk</small><strong>{{ entry.line.landedUnitEur | eur: 4 }}</strong></span>
+                      <span class="line-fact--total"><small>Regeltotaal</small><strong>{{ entry.line.totalEur | eur }}</strong></span>
                     </div>
                     @if (data.order.status !== 'ONTVANGEN') {
                       @if (cartonNotice(entry.line.quantity, entry.line.productId); as cartonNote) {
@@ -388,25 +456,7 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
                       </div>
                     }
                   </article>
-                  }
-                  </section>
-                } @empty {
-                  <div class="product-empty">
-                    <span class="product-empty__art" aria-hidden="true">◈</span>
-                    @if (data.costing.lines.length) {
-                      <h3>Geen productregels in deze kleur</h3>
-                      <p>Kies een andere kleur of toon de volledige inkooporder.</p>
-                      <button class="btn btn--primary" type="button" (click)="colourFilter.set(null)">Alle kleuren tonen</button>
-                    } @else {
-                      <h3>Nog geen producten geladen</h3>
-                      <p>Voeg producten en aantallen toe om de containervulling en kostprijs te berekenen.</p>
-                      <a class="btn btn--primary"
-                         [routerLink]="['/purchasing', data.order.id, 'edit']">
-                        Producten toevoegen
-                      </a>
-                    }
-                  </div>
-                }
+                </ng-template>
               </div>
             </section>
 
@@ -767,24 +817,17 @@ export class PurchaseView {
     return actor;
   }
   private readonly products = signal<Product[]>([]);
+  private readonly families = signal<ProductFamily[]>([]);
   private readonly categories = signal<Category[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);
 
-  /** A null colour shows the complete order; chips expose only colours in this load. */
-  readonly colourFilter = signal<string | null>(null);
-  readonly colourOptions = computed(() =>
-    purchaseColourOptions(
-      this.view()?.costing.lines ?? [],
-      this.products(),
-      STANDARD_COLOURS,
-      COLOUR_SWATCHES,
-    ));
   readonly lineSections = computed(() =>
     purchaseLineSections(
       this.view()?.costing.lines ?? [],
       this.products(),
       this.categories(),
-      this.colourFilter(),
+      this.families(),
+      COLOUR_SWATCHES,
     ));
 
   readonly statusSteps = [
@@ -820,6 +863,11 @@ export class PurchaseView {
   private async load(id: number): Promise<void> {
     void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
     void this.sourcing.documents(id).then((list) => this.documents.set(list)).catch(() => this.documents.set([]));
+    /* Family metadata enriches the product groups, but a slow or older API
+       must never hold the operational order screen hostage. */
+    void this.catalog.productFamilies()
+      .then((families) => this.families.set(families))
+      .catch(() => this.families.set([]));
     const [view, products, categories, suppliers] = await Promise.all([
       this.sourcing.purchaseOrder(id),
       this.catalog.products(),
@@ -880,8 +928,12 @@ export class PurchaseView {
     return purchaseColourHex(product, COLOUR_SWATCHES);
   }
 
-  toggleColour(key: string): void {
-    this.colourFilter.set(this.colourFilter() === key ? null : key);
+  variantTitle(product: Product | null, fallback: string): string {
+    if (!product) return fallback;
+    const parts = [product.colour, product.variantSize]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    return parts.length ? parts.join(' · ') : fallback;
   }
 
   categoryHeadingId(key: string): string {

@@ -2,9 +2,9 @@ import { ChangeDetectionStrategy, Component, OnDestroy, computed, input, output,
 import { CartonQuantity } from './carton-quantity';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../core/api/auth-image';
-import { Category, Product } from '../core/api/models';
+import { Category, Currency, Product, ProductFamily } from '../core/api/models';
 import { Sheet } from './ui';
-import { EurPipe, NumPipe } from './pipes';
+import { CurPipe, NumPipe } from './pipes';
 import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
 import { cartonQuantityNotice } from './carton-quantity-notice';
 import { COLOUR_SWATCHES, STANDARD_COLOURS } from '../core/api/geo';
@@ -15,6 +15,14 @@ import {
   productPickerCategoryName,
   productPickerColours,
 } from './product-picker-filters';
+import {
+  ProductPickerFamilyGroup,
+  productPickerFamilySelectionState,
+  productPickerFamilySections,
+  productPickerGroupSummary,
+  productPickerVariantLabel,
+  toggleProductPickerFamilySelection,
+} from './product-picker-family-groups';
 
 /**
  * Picking a product with a search field instead of a dropdown.
@@ -42,9 +50,9 @@ export interface ProductDraft {
 @Component({
   selector: 'app-product-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, AuthImage, Sheet, EurPipe, NumPipe],
+  imports: [FormsModule, AuthImage, Sheet, CurPipe, NumPipe],
   template: `
-    <app-sheet [title]="heading()" (closed)="cancelled.emit()">
+    <app-sheet [title]="heading()" [wide]="groupByFamily()" (closed)="cancelled.emit()">
       <div body>
         @if (!createMode()) {
         <div class="search-bar">
@@ -79,6 +87,7 @@ export interface ProductDraft {
               </div>
             </div>
 
+            @if (!groupByFamily()) {
             <div class="picker-filter">
               <span class="picker-filter__label">Kleur</span>
               <div class="picker-chips" role="group" aria-label="Filter op kleur">
@@ -100,6 +109,7 @@ export interface ProductDraft {
                 }
               </div>
             </div>
+            }
           </div>
         }
         }
@@ -247,6 +257,63 @@ export interface ProductDraft {
         } @else if (quantityStep()) {
           <!-- Several products at once: every chosen product gets its
                number here, then the whole batch lands on the order. -->
+          @if (groupByFamily()) {
+          <div class="picker-grouped picker-grouped--batch">
+            @for (section of batchFamilySections(); track section.key) {
+              <section class="picker-category" [attr.aria-labelledby]="'picker-batch-' + section.key">
+                <header class="picker-category__head">
+                  <strong [id]="'picker-batch-' + section.key">{{ section.name }}</strong>
+                  <span>{{ section.productCount }} product{{ section.productCount === 1 ? '' : 'en' }}</span>
+                </header>
+                @for (group of section.groups; track group.key) {
+                  <section class="picker-family picker-family--batch">
+                    <header class="picker-family__batch-head">
+                      <strong>{{ group.name }}</strong>
+                      <span>{{ selectedCount(group) }} gekozen</span>
+                    </header>
+                    @for (product of group.products; track product.id) {
+                      @if (batchEntry(product.id); as entry) {
+                      <div class="picker-batch__row picker-batch__row--nested">
+                        @if (entry.product.photos.length) {
+                          <img class="thumb thumb--variant" [appAuthSrc]="entry.product.photos[0].url" [alt]="entry.product.name" />
+                        } @else {
+                          <div class="thumb thumb--variant thumb--placeholder">◈</div>
+                        }
+                        <div class="picker-batch__body">
+                          <div class="strong picker-variant-name">
+                            @if (entry.product.colour) {
+                              <i class="picker-colour-dot"
+                                 [class.picker-colour-dot--empty]="!variantColourHex(entry.product)"
+                                 [style.background]="variantColourHex(entry.product) || 'var(--surface-2)'"
+                                 aria-hidden="true"></i>
+                            }
+                            {{ variantLabel(entry.product) }}
+                          </div>
+                          <div class="small muted">
+                            {{ entry.product.sku }} · {{ entry.product.carton.piecesPerCarton }}/doos
+                            @if (entry.quantity > 0 && (entry.product.carton.piecesPerCarton ?? 0) > 0) {
+                              · {{ entry.quantity / (entry.product.carton.piecesPerCarton ?? 1) | num: 1 }} doos(en)
+                            }
+                          </div>
+                          @if (cartonNotice(entry.quantity, entry.product.carton.piecesPerCarton); as cartonNote) {
+                            <div class="carton-quantity-note" role="status">{{ cartonNote }}</div>
+                          }
+                        </div>
+                        <input class="input num right picker-batch__qty" type="number" min="0" step="1" inputmode="numeric"
+                               [attr.aria-label]="'Aantal stuks ' + variantLabel(entry.product) + ' van ' + group.name"
+                               [ngModel]="entry.quantity" (ngModelChange)="setBatchQuantity(entry.product.id!, +$event)" />
+                        <button class="picker-batch__remove" type="button"
+                                [attr.aria-label]="variantLabel(entry.product) + ' van ' + group.name + ' weglaten'"
+                                (click)="toggle(entry.product)">×</button>
+                      </div>
+                      }
+                    }
+                  </section>
+                }
+              </section>
+            }
+          </div>
+          } @else {
           <div class="picker-batch">
             @for (entry of batch(); track entry.product.id) {
               <div class="picker-batch__row">
@@ -276,8 +343,118 @@ export interface ProductDraft {
               </div>
             }
           </div>
+          }
           <span class="hint">Aantal stuks per product; start op één doos. Een halve doos mag bij inkoop.</span>
         } @else {
+          @if (groupByFamily()) {
+          <div class="picker-grouped">
+            @for (section of familySections(); track section.key) {
+              <section class="picker-category" [attr.aria-labelledby]="'picker-category-' + section.key">
+                <header class="picker-category__head">
+                  <strong [id]="'picker-category-' + section.key">{{ section.name }}</strong>
+                  <span>{{ section.groups.length }} reeks{{ section.groups.length === 1 ? '' : 'en' }} · {{ section.productCount }} product{{ section.productCount === 1 ? '' : 'en' }}</span>
+                </header>
+                @for (group of section.groups; track group.key) {
+                  <section class="picker-family" [class.picker-family--open]="isGroupOpen(group)">
+                    <header class="picker-family__head">
+                      <button class="picker-family__toggle" type="button"
+                              [attr.aria-expanded]="isGroupOpen(group)"
+                              [attr.aria-controls]="'picker-family-' + group.key"
+                              (click)="toggleGroupOpen(group)">
+                        @if (group.photo) {
+                          <img class="thumb picker-family__photo" [appAuthSrc]="group.photo" [alt]="group.name" />
+                        } @else {
+                          <span class="thumb picker-family__photo thumb--placeholder" aria-hidden="true">◈</span>
+                        }
+                        <span class="picker-family__copy">
+                          <strong>{{ group.name }}</strong>
+                          <span class="picker-family__summary">
+                            {{ groupSummary(group) }}
+                            @if (group.colours.length) {
+                              <span class="picker-family__dots" aria-hidden="true">
+                                @for (colour of group.colours.slice(0, 8); track colour.name) {
+                                  <i [class.picker-colour-dot--empty]="!colour.hex"
+                                     [style.background]="colour.hex || 'var(--surface-2)'"></i>
+                                }
+                                @if (group.colours.length > 8) { <small>+{{ group.colours.length - 8 }}</small> }
+                              </span>
+                            }
+                          </span>
+                        </span>
+                        <svg class="picker-family__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                          <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </button>
+                      @if (mode() === 'multi') {
+                        <button class="picker-family__select" type="button"
+                                [class.picker-family__select--partial]="groupSelectionState(group) === 'partial'"
+                                [class.picker-family__select--all]="groupSelectionState(group) === 'all'"
+                                [attr.aria-pressed]="groupSelectionState(group) === 'partial'
+                                  ? 'mixed' : groupSelectionState(group) === 'all'"
+                                [attr.aria-label]="groupSelectionLabel(group)"
+                                (click)="toggleGroupSelection(group)">
+                          <span aria-hidden="true">{{ groupSelectionState(group) === 'all' ? '✓' : groupSelectionState(group) === 'partial' ? '−' : '+' }}</span>
+                        </button>
+                      }
+                    </header>
+                    @if (isGroupOpen(group)) {
+                      <div class="picker-family__variants" [id]="'picker-family-' + group.key"
+                           role="group" [attr.aria-label]="'Varianten van ' + group.name">
+                        @for (product of group.products; track product.id) {
+                          <button class="picker-item picker-item--nested" type="button"
+                                  [class.picker-item--selected]="isSelected(product)"
+                                  [attr.aria-pressed]="mode() === 'multi' ? isSelected(product) : null"
+                                  (click)="mode() === 'multi' ? toggle(product) : choose(product)">
+                            @if (mode() === 'multi') {
+                              <span class="picker-item__check" aria-hidden="true">{{ isSelected(product) ? '✓' : '' }}</span>
+                            }
+                            @if (product.photos.length) {
+                              <img class="thumb thumb--variant" [appAuthSrc]="product.photos[0].url" [alt]="product.name" />
+                            } @else {
+                              <span class="thumb thumb--variant thumb--placeholder" aria-hidden="true">◈</span>
+                            }
+                            <span class="picker-item__body">
+                              <span class="picker-item__title picker-variant-name">
+                                @if (product.colour) {
+                                  <i class="picker-colour-dot"
+                                     [class.picker-colour-dot--empty]="!variantColourHex(product)"
+                                     [style.background]="variantColourHex(product) || 'var(--surface-2)'"
+                                     aria-hidden="true"></i>
+                                }
+                                {{ variantLabel(product) }}
+                              </span>
+                              <span class="picker-item__meta">
+                                {{ product.sku }} · {{ product.carton.piecesPerCarton }}/doos
+                              </span>
+                              @if (stockAware()) {
+                                <span class="picker-item__meta row" style="gap:5px">
+                                  <span class="stock-dot" [class]="'stock-dot--' + stockLevel(product)"></span>
+                                  <span>{{ stockLabel(product) }}</span>
+                                </span>
+                              }
+                            </span>
+                            <span class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</span>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </section>
+                }
+              </section>
+            } @empty {
+              <div class="empty">
+                <div class="empty__title">Niets gevonden</div>
+                <div class="empty__text">Probeer een deel van de reeksnaam, kleur, maat, SKU of barcode.</div>
+                @if (allowCreate() && query().trim().length >= 2) {
+                  <button class="btn btn--primary mt-8" type="button" (click)="startCreate()">
+                    + „{{ query().trim() }}” aanmaken en toevoegen
+                  </button>
+                }
+              </div>
+            }
+          </div>
+          } @else {
           <div class="picker-list">
             @for (product of matches(); track product.id) {
               <button class="picker-item" type="button" [class.picker-item--selected]="isSelected(product)"
@@ -307,7 +484,7 @@ export interface ProductDraft {
                     </div>
                   }
                 </div>
-                <div class="picker-item__end">{{ price(product) | eur }}</div>
+                <div class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</div>
               </button>
             } @empty {
               <div class="empty">
@@ -324,6 +501,7 @@ export interface ProductDraft {
               </div>
             }
           </div>
+          }
           @if (allowCreate()) {
             <!-- Always reachable, not only when the search comes up empty:
                  you should not have to type to discover it. -->
@@ -384,6 +562,43 @@ export interface ProductDraft {
     .picker-chip--active small { color: currentColor; opacity: .72; }
     .picker-colour-dot { width: 11px; height: 11px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
     .picker-colour-dot--empty { background: linear-gradient(135deg, transparent 44%, var(--muted) 46% 54%, transparent 56%)!important; }
+    .picker-grouped { display: grid; gap: 14px; margin: 0 -16px; }
+    .picker-category__head { min-height: 34px; padding: 8px 16px; display: flex; align-items: baseline;
+      justify-content: space-between; gap: 10px; background: var(--surface-2); border-block: 1px solid var(--line); }
+    .picker-category__head strong { font-size: 10px; font-weight: 780; letter-spacing: .07em; text-transform: uppercase; }
+    .picker-category__head span { color: var(--muted); font-size: 10px; white-space: nowrap; }
+    .picker-family { margin: 0 10px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 15px;
+      background: var(--surface); box-shadow: 0 2px 9px rgb(0 0 0 / 3%); }
+    .picker-family__head { display: grid; grid-template-columns: minmax(0,1fr) 44px; align-items: stretch; }
+    .picker-family__toggle { min-height: 66px; min-width: 0; padding: 8px 6px 8px 9px; display: grid;
+      grid-template-columns: 46px minmax(0,1fr) 24px; align-items: center; gap: 9px; border: 0;
+      background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .picker-family__toggle:active { background: var(--surface-2); }
+    .picker-family__photo { width: 46px; height: 46px; border-radius: 12px; }
+    .picker-family__copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .picker-family__copy>strong { overflow: hidden; font-size: 14px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-family__summary { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+    .picker-family__dots { min-width: 0; display: inline-flex; align-items: center; gap: 3px; }
+    .picker-family__dots i { width: 9px; height: 9px; flex: none; border: 1px solid rgb(0 0 0 / 14%); border-radius: 50%; }
+    .picker-family__dots small { font-size: 9px; }
+    .picker-family__chevron { color: var(--muted); transition: transform .16s ease; }
+    .picker-family--open .picker-family__chevron { transform: rotate(180deg); }
+    .picker-family__select { width: 44px; min-height: 44px; display: grid; place-items: center; border: 0;
+      border-left: 1px solid var(--line); background: var(--surface-2); color: var(--rose-dark); font: inherit; cursor: pointer; }
+    .picker-family__select span { width: 24px; height: 24px; display: grid; place-items: center; border: 1.5px solid var(--line-strong);
+      border-radius: 8px; background: var(--surface); font-size: 15px; font-weight: 800; }
+    .picker-family__select--partial span { border-color: var(--rose); background: var(--rose-soft); }
+    .picker-family__select--all span { border-color: var(--rose); background: var(--rose); color: #fff; }
+    .picker-family__variants { border-top: 1px solid var(--line); background: var(--surface-2); box-shadow: inset 3px 0 var(--line-strong); }
+    .picker-item--nested { min-height: 58px; padding-left: 14px!important; background: var(--surface-2); }
+    .picker-item--nested:last-child { border-bottom: 0; }
+    .thumb--variant { width: 38px; height: 38px; border-radius: 10px; }
+    .picker-variant-name { display: flex; align-items: center; gap: 6px; }
+    .picker-family__batch-head { min-height: 40px; padding: 8px 11px; display: flex; align-items: center;
+      justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); }
+    .picker-family__batch-head strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-family__batch-head span { color: var(--muted); font-size: 10px; white-space: nowrap; }
+    .picker-batch__row--nested { padding: 9px 10px; background: var(--surface-2); }
     .picker-list { display: flex; flex-direction: column; margin: 0 -16px; }
     .picker-item--selected { background: var(--rose-soft); }
     .picker-item__check { flex: 0 0 auto; width: 22px; height: 22px; display: inline-flex; align-items: center;
@@ -437,15 +652,33 @@ export interface ProductDraft {
       padding: 12px;
       background: var(--surface-2);
     }
+    @media (min-width: 680px) {
+      .picker-grouped { margin-inline: 0; grid-template-columns: minmax(0, 1fr); align-items: start; }
+      .picker-category { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px; padding: 0 8px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; }
+      .picker-category__head { grid-column: 1 / -1; margin-inline: -8px; border-top: 0; }
+      .picker-family { min-width: 0; margin: 0; }
+      .picker-grouped--batch { grid-template-columns: 1fr; }
+      .picker-grouped--batch .picker-category { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (pointer: coarse) {
+      .picker-chip, .picker-batch__remove { min-width: 44px; min-height: 44px; }
+    }
   `,
 })
 export class ProductPicker implements OnDestroy {
   readonly heading = input('Product toevoegen');
   readonly products = input.required<Product[]>();
   readonly categories = input<readonly Category[]>([]);
+  /** Optional family metadata supplies the shared range name and canonical member order. */
+  readonly families = input<readonly ProductFamily[]>([]);
+  /** Purchasing opts in; the sales picker keeps its familiar flat, single-pick flow. */
+  readonly groupByFamily = input(false);
   /** The price to display; the caller decides which one that is. */
   readonly priceOf = input<(product: Product) => number>((product) =>
     product.computedSalesPriceEur);
+  /** Sales defaults to EUR; purchasing supplies the product's agreed EXW currency. */
+  readonly currencyOf = input<(product: Product) => Currency>(() => 'EUR');
   /**
    * Whether quantities snap to full cartons.
    *
@@ -470,6 +703,7 @@ export class ProductPicker implements OnDestroy {
   /* ---- multi mode ---- */
   readonly selected = signal(new Map<number, { product: Product; quantity: number }>());
   readonly quantityStep = signal(false);
+  private readonly groupOpenOverrides = signal(new Map<string, boolean>());
 
   /**
    * Typing in the search always searches, also from the quantity step:
@@ -482,6 +716,10 @@ export class ProductPicker implements OnDestroy {
   }
   readonly batch = computed(() => orderPickerBatch(
     [...this.selected().values()], this.products(), this.preserveSourceOrder()));
+  readonly batchFamilySections = computed(() => productPickerFamilySections(
+    this.batch().map((entry) => entry.product), this.families(), this.categories(), {
+      query: '', category: null,
+    }));
   readonly batchReady = computed(() => this.batch().length > 0 && this.batch().every((entry) => entry.quantity > 0));
 
   cartonNotice(quantity: number, piecesPerCarton: number | null | undefined): string | null {
@@ -500,6 +738,44 @@ export class ProductPicker implements OnDestroy {
       return next;
     });
     if (this.quantityStep() && !this.selected().size) this.quantityStep.set(false);
+  }
+
+  groupSelectionState(group: ProductPickerFamilyGroup): 'none' | 'partial' | 'all' {
+    return productPickerFamilySelectionState(group, this.selected());
+  }
+
+  selectedCount(group: ProductPickerFamilyGroup): number {
+    const selected = this.selected();
+    return group.products.filter((product) =>
+      product.id !== null && selected.has(product.id)).length;
+  }
+
+  groupSelectionLabel(group: ProductPickerFamilyGroup): string {
+    const state = this.groupSelectionState(group);
+    if (state === 'all') return `Alle varianten van ${group.name} deselecteren`;
+    if (state === 'partial') return `Overige varianten van ${group.name} selecteren`;
+    const available = group.products.filter((product) => product.id !== null).length;
+    return `Alle ${available} varianten van ${group.name} selecteren`;
+  }
+
+  /** One explicit family action, while preserving every variant's carton default. */
+  toggleGroupSelection(group: ProductPickerFamilyGroup): void {
+    this.selected.update((current) => toggleProductPickerFamilySelection(group, current));
+    if (this.quantityStep() && !this.selected().size) this.quantityStep.set(false);
+  }
+
+  isGroupOpen(group: ProductPickerFamilyGroup): boolean {
+    return this.groupOpenOverrides().get(group.key)
+      ?? (this.query().trim().length > 0 || group.products.length === 1);
+  }
+
+  toggleGroupOpen(group: ProductPickerFamilyGroup): void {
+    const open = this.isGroupOpen(group);
+    this.groupOpenOverrides.update((current) => new Map(current).set(group.key, !open));
+  }
+
+  batchEntry(productId: number | null): { product: Product; quantity: number } | null {
+    return productId === null ? null : this.selected().get(productId) ?? null;
   }
 
   toQuantities(): void {
@@ -572,6 +848,12 @@ export class ProductPicker implements OnDestroy {
   readonly colourOptions = computed(() =>
     productPickerColours(
       this.products(), this.categories(), this.categoryFilter(), STANDARD_COLOURS, COLOUR_SWATCHES));
+  readonly familySections = computed(() => productPickerFamilySections(
+    orderPickerProducts(this.products(), this.preserveSourceOrder()),
+    this.families(),
+    this.categories(),
+    { query: this.query(), category: this.categoryFilter() },
+  ));
   readonly matches = computed(() => filterProductPicker(
     orderPickerProducts(this.products(), this.preserveSourceOrder()), this.categories(), {
     query: this.query(),
@@ -589,6 +871,22 @@ export class ProductPicker implements OnDestroy {
 
   categoryName(product: Product): string {
     return productPickerCategoryName(product, this.categories());
+  }
+
+  groupSummary(group: ProductPickerFamilyGroup): string {
+    return productPickerGroupSummary(group);
+  }
+
+  variantLabel(product: Product): string {
+    return productPickerVariantLabel(product);
+  }
+
+  variantColourHex(product: Product): string | null {
+    if (product.colourHex?.trim()) return product.colourHex.trim();
+    const colour = product.colour?.trim().toLocaleLowerCase('nl-BE');
+    if (!colour) return null;
+    return Object.entries(COLOUR_SWATCHES).find(([name]) =>
+      name.toLocaleLowerCase('nl-BE') === colour)?.[1] ?? null;
   }
 
   ngOnDestroy(): void {
@@ -624,6 +922,10 @@ export class ProductPicker implements OnDestroy {
 
   price(product: Product): number {
     return this.priceOf()(product);
+  }
+
+  priceCurrency(product: Product): Currency {
+    return this.currencyOf()(product);
   }
 
   choose(product: Product): void {

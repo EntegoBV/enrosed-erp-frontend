@@ -16,7 +16,7 @@ import {
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import {
-  Allocation, Category, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
+  Allocation, Category, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
   PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -43,7 +43,6 @@ import { latestOwnFreightQuote } from './purchase-price-context';
 import {
   PurchaseLineCategoryFilter,
   purchaseLineCategoryOptions,
-  purchaseLineColourOptions,
   purchaseLineSections,
 } from './purchase-product-line-groups';
 
@@ -369,9 +368,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </button>
               </div>
 
-              <!-- Category and colour stay in view while composing a larger order. -->
+              <!-- Categories are coarse navigation. Colours stay visibly together
+                   inside their product family instead of disappearing behind a filter. -->
               @if (data.costing.lines.length) {
-                <div class="line-organizer" aria-label="Productregels filteren">
+                <div class="line-organizer" aria-label="Productregels per categorie bekijken">
                   <div class="line-filter">
                     <span class="line-filter__label">Categorie</span>
                     <div class="line-filter__chips" role="group" aria-label="Filter op categorie">
@@ -389,29 +389,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       }
                     </div>
                   </div>
-
-                  @if (lineColourOptions().length > 1) {
-                    <div class="line-filter">
-                      <span class="line-filter__label">Kleur</span>
-                      <div class="line-filter__chips line-filter__chips--colour"
-                           role="group" aria-label="Filter op kleur">
-                        <button type="button" [class.active]="lineColourFilter() === null"
-                                [attr.aria-pressed]="lineColourFilter() === null"
-                                (click)="lineColourFilter.set(null)">Alle kleuren</button>
-                        @for (option of lineColourOptions(); track option.key) {
-                          <button type="button" [class.active]="lineColourFilter() === option.key"
-                                  [attr.aria-pressed]="lineColourFilter() === option.key"
-                                  (click)="lineColourFilter.set(option.key)">
-                            <i class="line-colour-dot"
-                               [class.line-colour-dot--empty]="!colourHex(option.hex, option.label)"
-                               [style.background]="colourHex(option.hex, option.label) || 'transparent'"
-                               aria-hidden="true"></i>
-                            {{ option.label }} <small>{{ option.count }}</small>
-                          </button>
-                        }
-                      </div>
-                    </div>
-                  }
 
                   @if (lineFiltersActive()) {
                     <div class="line-filter__summary" aria-live="polite">
@@ -432,7 +409,40 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         <h3 [id]="'purchase-line-category-' + section.key">{{ section.label }}</h3>
                         <span>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</span>
                       </header>
-                  @for (line of section.lines; track line.productId) {
+                  @for (familyGroup of section.families; track familyGroup.key) {
+                  <section class="po-family"
+                           [attr.aria-labelledby]="'purchase-line-family-' + familyGroup.key">
+                    <header class="po-family__head">
+                      <span class="po-family__identity">
+                        <small>{{ familyGroup.familyId === null ? 'Los product' : 'Productreeks' }}</small>
+                        <strong [id]="'purchase-line-family-' + familyGroup.key">{{ familyGroup.label }}</strong>
+                        @if (familyGroup.swatches.length) {
+                          <span class="po-family__swatches"
+                                [attr.aria-label]="'Kleuren in ' + familyGroup.label">
+                            @for (swatch of familyGroup.swatches; track swatch.key) {
+                              <i class="line-colour-dot"
+                                 [class.line-colour-dot--empty]="!colourHex(swatch.hex, swatch.label)"
+                                 [style.background]="colourHex(swatch.hex, swatch.label) || 'transparent'"
+                                 [title]="swatch.label"></i>
+                            }
+                          </span>
+                        }
+                      </span>
+                      <span class="po-family__totals">
+                        <strong>{{ familyGroup.lines.length }}
+                          {{ familyGroup.lines.length === 1 ? 'variant' : 'varianten' }}</strong>
+                        <small>{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen ·
+                          {{ familyGroup.cbm | cbm }}</small>
+                        <small class="po-family__cost-label">
+                          {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
+                        </small>
+                        <b>{{ perPiece()
+                          ? (familyGroup.averageUnitEur | eur: 4)
+                          : (familyGroup.totalEur | eur) }}</b>
+                      </span>
+                    </header>
+                    <div class="po-family__variants">
+                  @for (line of familyGroup.lines; track line.productId) {
                   <article class="po-line">
                     <header class="po-line__head">
                       <!-- The photo says which product faster than a number; the number
@@ -617,12 +627,15 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     </details>
                   </article>
                   }
+                    </div>
+                  </section>
+                  }
                     </section>
                   } @empty {
                     <div class="empty product-empty product-empty--filtered">
                       <div class="empty__icon" aria-hidden="true">⌕</div>
                       <div class="empty__title">Geen productregels in dit filter</div>
-                      <p class="empty__text">Kies een andere categorie of kleur om de regels terug te zien.</p>
+                      <p class="empty__text">Kies een andere categorie om de productreeksen terug te zien.</p>
                       <button class="btn" type="button" (click)="resetLineFilters()">Filters wissen</button>
                     </div>
                   }
@@ -1195,7 +1208,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           heading="Product toevoegen aan de container"
           [products]="available()"
           [categories]="categories()"
+          [families]="families()"
+          [groupByFamily]="true"
           [priceOf]="exwPriceOf"
+          [currencyOf]="exwCurrencyOf"
           [enforceCartons]="false"
           mode="multi"
           [preserveSourceOrder]="true"
@@ -1684,13 +1700,10 @@ export class PurchaseEditor {
 
   selectLineCategory(filter: PurchaseLineCategoryFilter): void {
     this.lineCategoryFilter.set(filter);
-    /* A colour from the previous category must never leave a seemingly empty order. */
-    this.lineColourFilter.set(null);
   }
 
   resetLineFilters(): void {
     this.lineCategoryFilter.set(null);
-    this.lineColourFilter.set(null);
   }
 
   purchaseLineNumber(productId: number): number {
@@ -2237,24 +2250,21 @@ export class PurchaseEditor {
   readonly adjustments = signal<PurchaseOrderView['adjustments']>([]);
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
+  readonly families = signal<ProductFamily[]>([]);
   readonly lineCategoryFilter = signal<PurchaseLineCategoryFilter>(null);
-  readonly lineColourFilter = signal<string | null>(null);
   private readonly productById = computed(() => new Map(this.products().flatMap((product) =>
     product.id === null ? [] : [[product.id, product] as const])));
   readonly lineCategoryOptions = computed(() => purchaseLineCategoryOptions(
     this.view()?.costing.lines ?? [], this.products(), this.categories()));
-  readonly lineColourOptions = computed(() => purchaseLineColourOptions(
-    this.view()?.costing.lines ?? [], this.products(), this.categories(), this.lineCategoryFilter()));
   readonly lineSections = computed(() => purchaseLineSections(
     this.view()?.costing.lines ?? [], this.products(), this.categories(),
-    this.lineCategoryFilter(), this.lineColourFilter()));
+    this.families(), this.lineCategoryFilter()));
   private readonly unfilteredPurchaseLines = computed(() => purchaseLineSections(
-    this.view()?.costing.lines ?? [], this.products(), this.categories(), null, null)
+    this.view()?.costing.lines ?? [], this.products(), this.categories(), this.families(), null)
     .flatMap((section) => section.lines));
   readonly visiblePurchaseLineCount = computed(() => this.lineSections()
     .reduce((count, section) => count + section.lines.length, 0));
-  readonly lineFiltersActive = computed(() =>
-    this.lineCategoryFilter() !== null || this.lineColourFilter() !== null);
+  readonly lineFiltersActive = computed(() => this.lineCategoryFilter() !== null);
   readonly freightRates = signal<FreightRate[]>([]);
   /** The order's supplier; drives the header and the origin-cost label. */
   readonly supplier = signal<Supplier | null>(null);
@@ -2289,6 +2299,12 @@ export class PurchaseEditor {
 
   private async load(orderId: number): Promise<void> {
     this.resetLineFilters();
+    this.families.set([]);
+    /* Family metadata enriches the cards and picker, but an unavailable
+       catalogue endpoint must never hold up opening or editing an order. */
+    void this.catalog.productFamilies()
+      .then((families) => this.families.set(families))
+      .catch(() => this.families.set([]));
     const view = await this.sourcing.purchaseOrder(orderId);
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
@@ -2624,6 +2640,7 @@ export class PurchaseEditor {
 
   /** In the purchase picker the price shows the supplier's EXW price. */
   readonly exwPriceOf = (product: Product): number => product.exwPrice ?? 0;
+  readonly exwCurrencyOf = (product: Product): Currency => product.exwCurrency ?? 'USD';
 
   /**
    * Creates a product from the measurements typed in the picker and puts
