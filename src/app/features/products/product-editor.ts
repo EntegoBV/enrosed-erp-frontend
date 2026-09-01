@@ -1259,10 +1259,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       border-radius: 999px; background: rgb(26 22 20 / 74%); color: #fff; font-size: 9px; font-weight: 750; }
     .product-editor-hero__identity { grid-area: identity; min-width: 0; }
     .product-editor-hero__identity .erp-workspace__title { font-size: clamp(17px, 2.2vw, 24px); }
-    .product-editor-hero__facts { grid-area: facts; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .product-editor-hero__facts { grid-area: facts; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px; border: 1px solid var(--line); border-radius: 14px; background: var(--line); }
     .product-editor-hero__facts .erp-workspace__fact { min-width: 0; display: grid; gap: 2px; padding: 9px 10px;
-      border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: inherit;
+      border: 0; border-radius: 0; background: var(--surface); color: inherit;
       font: inherit; text-align: left; cursor: pointer; }
+    .product-editor-hero__facts button.erp-workspace__fact:hover { background: var(--rose-soft); }
     .product-editor-hero__facts .erp-workspace__fact-value { overflow: hidden; font-size: 14px;
       text-overflow: ellipsis; white-space: nowrap; }
     .product-editor-hero__facts .erp-workspace__fact-label { color: var(--muted); font-size: 8.5px;
