@@ -32,10 +32,13 @@ test('sales swipe offset is clamped to the left-hand rail', () => {
 test('only a never-used concept document is offered for deletion', () => {
   const unused = unusedConcept();
   assert.equal(isLocallyDeletableSalesDocument(unused), true);
+  assert.equal(isLocallyDeletableSalesDocument({
+    ...unused,
+    portalToken: 'not-yet-shared-customer-link',
+  }), true, 'creating a portal token alone does not make a concept used');
 
   for (const used of [
     { ...unused, status: 'VERZONDEN' },
-    { ...unused, portalToken: 'portal-token' },
     { ...unused, sentAt: '2026-08-30T09:00:00Z' },
     { ...unused, viewedAt: '2026-08-30T09:05:00Z' },
     { ...unused, viewCount: 1 },

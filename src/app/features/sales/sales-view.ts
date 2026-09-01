@@ -12,12 +12,16 @@ import { SalesOrder,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { Sheet, Ui } from '../../shared/ui';
+import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { WorkQueue } from '../../core/api/work-queue';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
 import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status';
+import {
+  isLocallyDeletableSalesDocument, salesDocumentLabel,
+} from './sales-list-swipe';
 
 /**
  * Read-first sales order.
@@ -366,6 +370,14 @@ import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status
                 } @else if (data.order.status === 'CONCEPT' && data.order.sentAt) {
                   <p class="link-explainer">De bestaande klantlink blijft verborgen tot deze versie opnieuw is verstuurd.</p>
                 }
+                @if (canDelete()) {
+                  <button class="btn btn--danger btn--block manage-actions__delete" type="button"
+                          [disabled]="deleting()" (click)="remove(data)">
+                    {{ deleting()
+                        ? (isInvoice() ? 'Factuur verwijderen…' : 'Offerte verwijderen…')
+                        : (isInvoice() ? 'Factuur verwijderen' : 'Offerte verwijderen') }}
+                  </button>
+                }
               </div>
             </section>
           </aside>
@@ -673,7 +685,7 @@ import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status
     .totals-list__main { margin-top:4px;padding:12px 0!important;border-top:1px solid var(--line) }.totals-list__main dt { color:var(--ink)!important;font-weight:760 }.totals-list__main dt small { display:block;margin-top:1px;color:var(--muted);font-size:8.5px;font-weight:550 }.totals-list__main dd { font-size:17px!important }
     .totals-list__incl { border-bottom:0!important }.totals-list__incl dt,.totals-list__incl dd { color:var(--ink-2);font-weight:730 }
     .totals-profit { margin:10px 0 12px;padding:10px;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft) }.totals-profit>span { color:var(--rose-dark);font-size:8.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase }.totals-profit>div { display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:3px }.totals-profit b { font-size:11px }.totals-profit strong { color:var(--ok);font-size:14px;font-variant-numeric:tabular-nums }.totals-profit small { display:block;margin-top:3px;color:var(--muted);font-size:9.5px }
-    .manage-actions { display:grid;gap:7px }.manage-actions .btn { margin:0 }.link-explainer { margin:1px 3px 0;color:var(--muted);font-size:9.5px;line-height:1.4;text-align:center }
+    .manage-actions { display:grid;gap:7px }.manage-actions .btn { margin:0 }.manage-actions__delete { margin-top:5px!important }.link-explainer { margin:1px 3px 0;color:var(--muted);font-size:9.5px;line-height:1.4;text-align:center }
     .sales-side { min-width:0 }.load-error { max-width:520px;margin:28px auto!important;padding:34px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:center;box-shadow:var(--sh-1) }.load-error>span { display:grid;width:46px;height:46px;margin:0 auto 11px;place-items:center;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:800 }.load-error h1 { font-size:17px }.load-error p { margin:5px 0 15px;color:var(--muted);font-size:13px;line-height:1.45 }.load-error__actions { display:flex;justify-content:center;flex-wrap:wrap;gap:8px }.load-error__actions .btn { min-height:48px }.loading-grid { display:grid;gap:12px;margin-top:12px }
     .vat-detail__short { display:none }
     @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em }.load-error__actions { display:grid;grid-template-columns:1fr }.load-error__actions .btn { width:100% } }
@@ -685,6 +697,7 @@ export class SalesView {
   private readonly sales = inject(SalesApi);
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
+  private readonly work = inject(WorkQueue);
 
   readonly id = input<string>('');
   readonly validOrderId = computed(() => {
@@ -711,6 +724,7 @@ export class SalesView {
   readonly loadError = signal('');
   readonly downloading = signal(false);
   readonly copyingLink = signal(false);
+  readonly deleting = signal(false);
 
   readonly customer = computed(() => {
     const customerId = this.view()?.order.customerId;
@@ -729,6 +743,11 @@ export class SalesView {
     this.view()?.order.status === 'CONCEPT' ? 'Bewerken' : 'Beheren');
 
   readonly isInvoice = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
+  readonly canDelete = computed(() => {
+    const data = this.view();
+    return !!data && this.revisions().length === 0
+      && isLocallyDeletableSalesDocument(data.order);
+  });
   readonly invoiceBusy = signal(false);
   readonly sendSheetOpen = signal(false);
   readonly packing = signal(false);
@@ -884,6 +903,41 @@ export class SalesView {
       this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
     } finally {
       this.invoiceBusy.set(false);
+    }
+  }
+
+  remove(data: SalesOrderView): void {
+    if (!this.canDelete() || this.deleting() || this.ui.confirmRequest() !== null) return;
+    const label = salesDocumentLabel(data.order.docType);
+    const customer = this.customerName();
+    this.ui.confirm(
+      {
+        title: `${label} verwijderen`,
+        message: `Weet je zeker dat je ${label.toLowerCase()} `
+          + `<b>${escapeHtml(data.order.number)}</b> van `
+          + `<b>${escapeHtml(customer)}</b> wilt verwijderen?<br><br>`
+          + 'Dit kan niet ongedaan worden gemaakt.',
+        confirmLabel: 'Verwijderen',
+        danger: true,
+      },
+      () => { void this.deleteAndLeave(data, label); },
+    );
+  }
+
+  private async deleteAndLeave(
+    data: SalesOrderView,
+    label: 'Offerte' | 'Verkoopfactuur',
+  ): Promise<void> {
+    if (this.deleting()) return;
+    this.deleting.set(true);
+    try {
+      await this.sales.deleteOrder(data.order.id);
+      void this.work.refresh(true);
+      this.ui.toast(`${label} verwijderd`);
+      await this.routerNav.navigate(['/sales']);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, `${label} verwijderen mislukt`), 'err');
+      this.deleting.set(false);
     }
   }
 

@@ -17,7 +17,7 @@ import { WeekField } from '../../shared/week-field';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { WorkQueue } from '../../core/api/work-queue';
-import { Sheet, Ui } from '../../shared/ui';
+import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
@@ -29,6 +29,9 @@ import {
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
+import {
+  isLocallyDeletableSalesDocument, salesDocumentLabel,
+} from './sales-list-swipe';
 
 /**
  * Sales order and quote.
@@ -1045,8 +1048,11 @@ import {
                  forward far right, nothing shouting. -->
             <div class="status-actions">
               @if (canDelete()) {
-                <button class="delete-draft" type="button" (click)="remove()">
-                  Dit concept verwijderen
+                <button class="delete-draft" type="button" [disabled]="deleting()"
+                        (click)="remove()">
+                  {{ deleting()
+                      ? (isInvoiceDoc() ? 'Factuur verwijderen…' : 'Offerte verwijderen…')
+                      : (isInvoiceDoc() ? 'Deze factuur verwijderen' : 'Deze offerte verwijderen') }}
                 </button>
               }
               <span class="status-actions__spacer" aria-hidden="true"></span>
@@ -2057,8 +2063,13 @@ export class SalesEditor {
   /** Commercial fields belong to the draft version only. */
   readonly canEdit = computed(() => this.view()?.order.status === 'CONCEPT');
 
-  /** A quote that has ever reached the customer must remain in the audit trail. */
-  readonly canDelete = computed(() => this.canEdit() && !this.view()?.order.sentAt);
+  /** A customer-link token alone is not use; sending, viewing or deciding is. */
+  readonly canDelete = computed(() => {
+    const data = this.view();
+    return !!data && this.revisions().length === 0
+      && isLocallyDeletableSalesDocument(data.order);
+  });
+  readonly deleting = signal(false);
 
   /** Open delivery promises may still be completed without unlocking prices. */
   readonly canEditTerms = computed(() => {
@@ -2781,19 +2792,40 @@ export class SalesEditor {
 
   remove(): void {
     const data = this.view();
-    if (!data || !this.canDelete()) return;
+    if (!data || !this.canDelete() || this.deleting() || this.ui.confirmRequest() !== null) return;
+    const label = salesDocumentLabel(data.order.docType);
+    const customer = this.customerName();
     this.ui.confirm(
       {
-        title: 'Order verwijderen',
-        message: `Verkooporder <b>${data.order.number}</b> verwijderen?`,
+        title: `${label} verwijderen`,
+        message: `Weet je zeker dat je ${label.toLowerCase()} `
+          + `<b>${escapeHtml(data.order.number)}</b> van `
+          + `<b>${escapeHtml(customer)}</b> wilt verwijderen?<br><br>`
+          + (this.dirty() ? 'Niet-opgeslagen wijzigingen gaan ook verloren.<br><br>' : '')
+          + 'Dit kan niet ongedaan worden gemaakt.',
         confirmLabel: 'Verwijderen', danger: true,
       },
-      async () => {
-        await this.sales.deleteOrder(data.order.id);
-        this.ui.toast('Order verwijderd');
-        await this.router.navigate(['/sales']);
-      },
+      () => { void this.deleteAndLeave(data, label); },
     );
+  }
+
+  private async deleteAndLeave(
+    data: SalesOrderView,
+    label: 'Offerte' | 'Verkoopfactuur',
+  ): Promise<void> {
+    if (this.deleting()) return;
+    this.deleting.set(true);
+    try {
+      await this.sales.deleteOrder(data.order.id);
+      /* Prevent the unsaved-changes guard from trying to save a deleted row. */
+      this.savedOrder.set(JSON.stringify(data.order));
+      void this.work.refresh(true);
+      this.ui.toast(`${label} verwijderd`);
+      await this.router.navigate(['/sales']);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, `${label} verwijderen mislukt`), 'err');
+      this.deleting.set(false);
+    }
   }
   /* --------------------------------------------------------- sections */
 

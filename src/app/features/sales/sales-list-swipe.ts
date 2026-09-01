@@ -19,20 +19,19 @@ export function salesSwipeDecision(offset: number): SalesSwipeDecision {
 }
 
 /**
- * Only a never-used concept is locally offered for deletion. The backend is
- * still authoritative, but failing closed here avoids presenting an action
- * that is certain to be refused.
+ * Only a never-used concept is locally offered for deletion. Creating a
+ * customer-link token alone does not mean the quote left Enrosed, so that is
+ * deliberately not a blocker. The backend remains authoritative for facts
+ * the list cannot know, such as revisions or an invoice derived from a quote.
  */
 export function isLocallyDeletableSalesDocument(order: {
   status: string | null;
-  portalToken: string | null;
   sentAt: string | null;
   viewedAt: string | null;
   viewCount: number;
   decidedAt: string | null;
 }): boolean {
   return order.status === 'CONCEPT'
-    && order.portalToken === null
     && order.sentAt === null
     && order.viewedAt === null
     && order.viewCount === 0
