@@ -1022,7 +1022,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     }
     @media (min-width: 680px) and (max-width: 759px) {
       .phero__facts--photo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .phero__gallery { grid-column: 1 / -1; min-height: 160px; }
+      .phero__gallery { grid-column: 1 / -1; height: 160px; min-height: 0; }
     }
   `,
 })

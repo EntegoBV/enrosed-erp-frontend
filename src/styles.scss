@@ -2126,6 +2126,27 @@ app-product-view .gallery__dot.active::before {
   app-product-view .phero__gallery-dots .gallery__dot::before { background: rgb(255 255 255 / 48%); }
   app-product-view .phero__gallery-dots .gallery__dot.active::before { width: 16px; background: #fff; }
 }
+@media (min-width: 680px) and (max-width: 759px) {
+  app-product-view .phero__facts--photo :is(.phero__gallery-main, .phero__gallery-main img) {
+    height: 100%; min-height: 0;
+  }
+}
+@media (min-width: 760px) {
+  app-product-view .phero__facts.phero__facts--photo {
+    height: clamp(196px, 22vw, 224px);
+    grid-template: repeat(3, minmax(0, 1fr)) / clamp(240px, 34%, 360px) minmax(0, 1fr);
+    align-items: stretch;
+  }
+  app-product-view .phero__facts--photo .phero__gallery {
+    grid-area: 1 / 1 / 4 / 2; height: 100%; min-height: 0;
+  }
+  app-product-view .phero__facts--photo :is(.phero__gallery-main, .phero__gallery-main img) {
+    height: 100%; min-height: 0;
+  }
+  app-product-view .phero__facts--photo .phero__fact {
+    grid-column: 2; min-height: 0; align-content: center; padding-block: 7px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   app-product-view .gallery__dot::before { transition: none; }
 }
