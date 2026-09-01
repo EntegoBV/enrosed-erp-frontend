@@ -107,7 +107,8 @@ interface GalleryPointerReorder {
                   <b [title]="image.originalFilename">{{ image.originalFilename }}</b>
                   @if (!publishedChannels(image).length) {
                     <span>Alleen intern</span>
-                  } @else if (!hasAltText(image)) {
+                  }
+                  @if (!hasAltText(image)) {
                     <span class="image-warning" title="Vul de alt-tekst bij Vertalingen in vóór publicatie">
                       Alt-tekst ontbreekt
                     </span>
@@ -127,11 +128,11 @@ interface GalleryPointerReorder {
                 <div class="publication-controls" role="group"
                      [attr.aria-label]="'Gebruik van ' + image.originalFilename">
                   @for (option of publicationChannels; track option.channel) {
-                    <button type="button" [disabled]="busy()"
+                    <button type="button" [disabled]="publicationControlDisabled(image, option.channel)"
                             [class.publication-control--on]="isPublishedTo(image, option.channel)"
                             [attr.aria-pressed]="isPublishedTo(image, option.channel)"
                             [attr.aria-label]="channelAriaLabel(image, option.channel, option.label)"
-                            [title]="option.description"
+                            [title]="publicationControlTitle(image, option.channel, option.description)"
                             (click)="togglePublicationChannel(image, option.channel)">
                       <i aria-hidden="true">{{ isPublishedTo(image, option.channel) ? '✓' : '' }}</i>
                       <span>{{ option.label }}</span>
@@ -166,7 +167,10 @@ interface GalleryPointerReorder {
             </li>
           }
         </ol>
-        <p class="gallery-footnote">Eén volgorde voor website, catalogus en bestelapp. Uitgeschakelde foto’s worden per kanaal overgeslagen.</p>
+        <p class="gallery-footnote">
+          Sleep de foto’s in de juiste volgorde en klik daarna bovenaan op Opslaan.
+          Dezelfde volgorde geldt voor website, catalogus en bestelapp.
+        </p>
         <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
       } @else {
         <div class="empty-gallery">
@@ -515,8 +519,8 @@ interface GalleryPointerReorder {
       font-size: 9.5px;
       line-height: 1.4;
     }
-    @media (min-width: 521px) and (max-width: 980px) {
-      .image-copy { grid-template-columns: minmax(180px, .9fr) minmax(190px, 1fr); }
+    @media (min-width: 521px) and (max-width: 1280px) {
+      .image-copy { grid-template-columns: minmax(0, .9fr) minmax(160px, 1fr); }
       .publication-controls { grid-column: 1 / -1; }
     }
     @media (max-width: 520px) {
@@ -525,22 +529,27 @@ interface GalleryPointerReorder {
       .gallery-actions { width: 100%; justify-content: space-between; }
       .gallery-actions .btn { min-height: 42px; }
       .image-list li {
-        grid-template-columns: 32px 54px minmax(0, 1fr);
+        grid-template-columns: 44px 54px minmax(0, 1fr);
         align-items: start;
         gap: 7px;
-        padding: 8px 46px 9px 7px;
+        padding: 8px 52px 9px 7px;
       }
-      .drag-handle { width: 32px; min-height: 54px; height: 54px; }
+      .drag-handle { width: 44px; min-height: 54px; height: 54px; }
       .image-preview { width: 54px; height: 54px; }
-      .image-copy { grid-template-columns: minmax(0, 1fr); gap: 7px; }
-      .image-title { min-height: 54px; justify-content: center; }
-      .variant-link { grid-template-columns: 1fr; gap: 3px; }
+      .image-copy { display: contents; }
+      .image-title { grid-column: 3; grid-row: 1; min-height: 54px; justify-content: center; }
+      .variant-link { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 1fr; gap: 3px; }
       .variant-link .select { height: 44px; }
-      .publication-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+      .publication-controls {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+      }
       .publication-controls button { min-height: 44px; padding-inline: 4px; font-size: 9.5px; gap: 4px; }
       .publication-controls i { width: 15px; height: 15px; }
       .image-actions { top: 8px; right: 7px; }
-      .image-actions button { width: 36px; height: 44px; }
+      .image-actions button { width: 44px; height: 44px; }
     }
   `,
 })
@@ -628,7 +637,24 @@ export class ProductFamilyGallery {
   }
 
   channelAriaLabel(image: ProductFamilyImage, channel: CatalogChannel, label: string): string {
+    if (!this.hasAltText(image) && !this.isPublishedTo(image, channel)) {
+      return `${label}: voeg eerst een alt-tekst toe via Website en publicatie`;
+    }
     return `${label}: ${this.isPublishedTo(image, channel) ? 'gepubliceerd' : 'niet gepubliceerd'}`;
+  }
+
+  publicationControlDisabled(image: ProductFamilyImage, channel: CatalogChannel): boolean {
+    return this.busy() || (!this.hasAltText(image) && !this.isPublishedTo(image, channel));
+  }
+
+  publicationControlTitle(
+    image: ProductFamilyImage,
+    channel: CatalogChannel,
+    description: string,
+  ): string {
+    return !this.hasAltText(image) && !this.isPublishedTo(image, channel)
+      ? 'Voeg eerst een alt-tekst toe via Website & publicatie'
+      : description;
   }
 
   hasAltText(image: ProductFamilyImage): boolean {

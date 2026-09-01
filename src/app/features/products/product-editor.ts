@@ -485,7 +485,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <span class="section-head__number erp-workspace__section-index" aria-hidden="true">02</span>
           <div><h2 id="media-title">Foto's</h2><p>Beeldvolgorde voor dossier en productkanalen</p></div>
           <span class="spacer"></span>
-          <span class="badge badge--neutral">{{ photoCount() }}</span>
+          <span class="badge badge--neutral">{{ mediaPhotoCount() }}</span>
         </div>
         <div class="card__body photo-workspace">
           <app-photo-manager
@@ -511,7 +511,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 language="NL"
                 [translationEditing]="false"
                 [currentProductId]="draft().id"
-                [busy]="saving() || translationDirty() || translationSaving()"
+                [busy]="saving() || photoUploading() || translationDirty() || translationSaving()"
                 (familyChange)="onFamilyChange($event)"
                 (imageUploadRequested)="uploadFamilyImage($event)"
                 (imageDeleteRequested)="removeFamilyImage($event)"
@@ -2204,6 +2204,14 @@ export class ProductEditor implements OnDestroy {
   readonly photoUploading = computed(() => this.photoManager()?.busy() ?? false);
   readonly photoCount = computed(() =>
     this.draft().photos.length + (this.photoManager()?.pendingCount() ?? 0));
+  readonly mediaPhotoCount = computed(() => {
+    const product = this.draft();
+    const family = this.family();
+    const savedCount = family
+      ? product.photos.filter((photo) => photo.origin === 'PRODUCT').length + family.images.length
+      : product.photos.length;
+    return savedCount + (this.photoManager()?.pendingCount() ?? 0);
+  });
   readonly agreementEditor = viewChild(ProductSupplierAgreementEditor);
   readonly agreementBusy = computed(() => this.agreementEditor()?.busy() ?? false);
   readonly agreementDirty = computed(() => this.agreementEditor()?.dirty() ?? false);
@@ -2782,7 +2790,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async uploadFamilyImage(file: File): Promise<void> {
-    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -2806,7 +2814,8 @@ export class ProductEditor implements OnDestroy {
 
   removeFamilyImage(imageId: number): void {
     const family = this.family();
-    if (!family?.id || this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (!family?.id || this.saving() || this.photoUploading()
+        || this.translationDirty() || this.translationSaving()) return;
     this.ui.confirm(
       {
         title: 'Productfoto verwijderen',
@@ -2831,7 +2840,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async linkFamilyImageVariant(change: ProductFamilyImageVariantChange): Promise<void> {
-    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -2864,7 +2873,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async setFamilyImagePublication(change: ProductFamilyImagePublicationChange): Promise<void> {
-    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
