@@ -77,7 +77,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
             (ngModelChange)="searchAgain($event)"
           />
         </div>
-        @if (!chosen() && !quantityStep()) {
+        @if (!chosen() && !quantityStep() && !groupByFamily()) {
           <div class="picker-filters" aria-label="Producten filteren">
             <div class="picker-filter">
               <span class="picker-filter__label">Categorie</span>
