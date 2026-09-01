@@ -2914,7 +2914,15 @@ app-purchase-view {
   letter-spacing: -.025em;
   overflow-wrap: anywhere;
 }
-.erp-workspace__meta { color: var(--muted); font-size: 12px; }
+.erp-workspace__meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .erp-workspace__badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .erp-workspace__badge {
   display: inline-flex;
@@ -3142,6 +3150,18 @@ button.erp-workspace__fact:focus-visible { position: relative; z-index: 1; outli
 }
 .erp-workspace__support-card { background: color-mix(in srgb, var(--surface-2) 84%, var(--rose-soft)); }
 .erp-workspace__support-group { display: grid; min-width: 0; gap: 14px; }
+
+/* The purchase detail summary can be only 230-280px wide beside the line
+   table. Stack its two landed-cost figures so labels never collide. */
+app-purchase-view .erp-workspace__sidebar .cost-hero { grid-template-columns: 1fr; gap: 8px; }
+app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
+  min-width: 0;
+  align-self: auto;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  border-left: 0;
+  text-align: left;
+}
 
 .erp-workspace__mobile-dock,
 .erp-workspace__mobile-actions {
