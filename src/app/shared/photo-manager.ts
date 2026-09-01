@@ -78,9 +78,9 @@ export interface PendingPhotoUploadResult {
       }
     <div class="photo-toolbar">
       <div class="photo-toolbar__copy">
-        <b>Eigen productfoto’s</b>
+        <b>Foto’s van deze variant</b>
         <span id="photo-order-help">
-          Voeg foto’s toe (of sleep ze hierheen) en bepaal hun volgorde met slepen, vegen of de pijltjes.
+          Voeg foto’s toe of sleep ze hierheen. Deze beelden horen alleen bij dit artikel.
         </span>
       </div>
 
@@ -97,8 +97,8 @@ export interface PendingPhotoUploadResult {
     @if (ownPhotos().length) {
       <section class="photo-series" aria-labelledby="saved-photo-title">
         <div class="photo-series__head">
-          <h3 id="saved-photo-title">Eigen productfoto’s <span>{{ ownPhotos().length }}</span></h3>
-          <small>Eigen foto’s staan vóór de gedeelde productgalerij</small>
+          <h3 id="saved-photo-title">Variantfoto’s <span>{{ ownPhotos().length }}</span></h3>
+          <small>Sleep, veeg of gebruik de pijltjes om te sorteren</small>
         </div>
 
         <ol class="photo-strip" aria-describedby="photo-order-help">
@@ -239,7 +239,7 @@ export interface PendingPhotoUploadResult {
       </section>
     }
 
-    @if (inheritedPhotos().length) {
+    @if (showInherited() && inheritedPhotos().length) {
       <section class="photo-series photo-series--readonly" aria-labelledby="shared-photo-title">
         <div class="photo-series__head">
           <div>
@@ -293,8 +293,13 @@ export interface PendingPhotoUploadResult {
     }
 
     <p class="photo-help">
-      Eigen foto’s staan vooraan. Zonder eigen foto gebruikt het ERP de eerste foto uit de
-      gedeelde productgalerij. JPEG, PNG, GIF of WebP · max. 25 MB per foto.
+      @if (showInherited()) {
+        Eigen foto’s staan vooraan. Zonder eigen foto gebruikt het ERP de eerste foto uit de
+        gedeelde productgalerij.
+      } @else {
+        Variantfoto’s staan vóór de gedeelde galerij hieronder.
+      }
+      JPEG, PNG, GIF of WebP · max. 25 MB per foto.
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
     </div>
@@ -478,6 +483,8 @@ export class PhotoManager {
   readonly productId = input<number | null>(null);
   readonly photos = input.required<PhotoDto[]>();
   readonly disabled = input(false);
+  /** The product editor renders canonical family images in its gallery below. */
+  readonly showInherited = input(true);
   readonly changed = output<Product>();
 
   readonly busy = signal(false);

@@ -2151,70 +2151,23 @@ app-product-view .gallery__dot.active::before {
   app-product-view .gallery__dot::before { transition: none; }
 }
 
-/* Product media keeps the two everyday publication choices beside the
-   gallery; the full publication workspace remains desktop-only. */
-app-product-editor .photo-channel-selector {
-  margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line);
+/* Product media has one canonical family gallery. Product-owned photos stay
+   above it, while channel use and ordering live on the family image itself. */
+app-product-editor .media-family-gallery {
+  display: block; margin-top: 16px; padding-top: 4px; border-top: 1px solid var(--line);
 }
-app-product-editor .photo-channel-selector > header {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px;
-}
-app-product-editor .photo-channel-selector h3 { font-size: 13.5px; line-height: 1.2; }
-app-product-editor :is(.photo-channel-selector header p, .photo-channel-help) {
-  margin-top: 2px; color: var(--muted); font-size: 10.5px; line-height: 1.4;
-}
-app-product-editor .photo-channel-more {
-  padding: 3px 0; border: 0; background: none; color: var(--rose-dark);
-  font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
-}
-app-product-editor .photo-channel-list { display: grid; gap: 8px; }
-app-product-editor .photo-channel-row {
-  display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center;
-  gap: 10px; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 13px;
-  background: var(--surface-2);
-}
-app-product-editor .photo-channel-row > img {
-  width: 54px; height: 54px; object-fit: cover; border: 1px solid var(--line);
-  border-radius: 10px; background: var(--surface);
-}
-app-product-editor .photo-channel-copy { display: grid; min-width: 0; gap: 2px; }
-app-product-editor .photo-channel-copy b {
-  overflow: hidden; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap;
-}
-app-product-editor .photo-channel-copy small { color: var(--muted); font-size: 9.5px; }
-app-product-editor .photo-channel-actions { display: flex; gap: 6px; }
-app-product-editor .photo-channel-actions button {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 7px 10px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
-  color: var(--ink-2); font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
-}
-app-product-editor .photo-channel-actions button:disabled { cursor: wait; opacity: .55; }
-app-product-editor .photo-channel-actions button.photo-channel-toggle--on {
-  border-color: color-mix(in srgb, var(--ok) 38%, var(--line)); background: var(--ok-soft); color: var(--ok);
-}
-app-product-editor .photo-channel-actions i {
-  display: grid; width: 16px; height: 16px; place-items: center; border: 1px solid currentColor;
-  border-radius: 50%; font-size: 9px; font-style: normal;
-}
-app-product-editor .photo-channel-help { margin: 8px 2px 0; }
-app-product-editor .photo-channel-state {
-  margin: 0; padding: 11px 12px; border-radius: 11px; background: var(--surface-2);
+app-product-editor .media-gallery-state {
+  margin: 16px 0 0; padding: 11px 12px; border-radius: 11px; background: var(--surface-2);
   color: var(--muted); font-size: 11px;
 }
-app-product-editor .photo-channel-state--error {
+app-product-editor .media-gallery-state--error {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--danger);
 }
-app-product-editor .photo-channel-state button {
+app-product-editor .media-gallery-state button {
   padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer;
 }
 @media (max-width: 679px) {
   app-product-editor .product-editor-hero__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  app-product-editor .photo-channel-row { grid-template-columns: 48px minmax(0, 1fr); }
-  app-product-editor .photo-channel-row > img { width: 48px; height: 48px; }
-  app-product-editor .photo-channel-actions {
-    grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  app-product-editor .photo-channel-actions button { justify-content: center; min-height: 44px; }
 }
 
 app-product-view :is(.variant-links, .variant-group-state) {
