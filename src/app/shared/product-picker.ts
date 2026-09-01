@@ -6,6 +6,7 @@ import { Product } from '../core/api/models';
 import { Sheet } from './ui';
 import { EurPipe, NumPipe } from './pipes';
 import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
+import { cartonQuantityNotice } from './carton-quantity-notice';
 
 /**
  * Picking a product with a search field instead of a dropdown.
@@ -150,15 +151,14 @@ export interface ProductDraft {
                 (ngModelChange)="carton.set(+$event)"
               />
               @if (carton.pending(); as note) {
-                <span class="hint warn-text">
-                  @if (enforceCartons()) {
+                @if (enforceCartons()) {
+                  <span class="hint warn-text">
                     Wordt zo <b>{{ note.to | num }}</b> — er gaan er
                     {{ product.carton.piecesPerCarton }} in een doos.
-                  } @else {
-                    Geen volle doos — er gaan er {{ product.carton.piecesPerCarton }} in
-                    een doos. Bij inkoop mag dat, bijvoorbeeld voor stalen.
-                  }
-                </span>
+                  </span>
+                } @else if (cartonNotice(carton.value(), product.carton.piecesPerCarton); as cartonNote) {
+                  <span class="hint carton-quantity-note" role="status">{{ cartonNote }}</span>
+                }
               } @else if (carton.applied(); as note) {
                 <span class="hint warn-text">
                   Bijgesteld van {{ note.from | num }} naar <b>{{ note.to | num }}</b>.
@@ -211,6 +211,9 @@ export interface ProductDraft {
                       · {{ entry.quantity / (entry.product.carton.piecesPerCarton ?? 1) | num: 1 }} doos(en)
                     }
                   </div>
+                  @if (cartonNotice(entry.quantity, entry.product.carton.piecesPerCarton); as cartonNote) {
+                    <div class="carton-quantity-note" role="status">{{ cartonNote }}</div>
+                  }
                 </div>
                 <input class="input num right picker-batch__qty" type="number" min="0" step="1" inputmode="numeric"
                        [attr.aria-label]="'Aantal stuks ' + entry.product.name"
@@ -322,6 +325,8 @@ export interface ProductDraft {
     .picker-batch__row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
     .picker-batch__body { flex: 1; min-width: 0; }
     .picker-batch__body .strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .carton-quantity-note { display: block; margin-top: 2px; color: var(--muted); font-size: 11px;
+      line-height: 1.35; }
     .picker-batch__qty { width: 96px; }
     .picker-batch__remove { width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent;
       color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
@@ -406,6 +411,10 @@ export class ProductPicker implements OnDestroy {
   readonly batch = computed(() => orderPickerBatch(
     [...this.selected().values()], this.products(), this.preserveSourceOrder()));
   readonly batchReady = computed(() => this.batch().length > 0 && this.batch().every((entry) => entry.quantity > 0));
+
+  cartonNotice(quantity: number, piecesPerCarton: number | null | undefined): string | null {
+    return cartonQuantityNotice(quantity, piecesPerCarton);
+  }
 
   isSelected(product: Product): boolean {
     return this.selected().has(product.id!);

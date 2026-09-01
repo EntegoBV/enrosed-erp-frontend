@@ -36,6 +36,7 @@ import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
+import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 
 /**
  * Landed-cost calculation of a container.
@@ -397,6 +398,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                type="number" min="0" step="1" inputmode="numeric"
                                [disabled]="isReceived()" [ngModel]="line.quantity"
                                (ngModelChange)="setQuantity(line.productId, +$event)" />
+                        @if (!isReceived()) {
+                          @if (cartonNotice(line.quantity, line.productId); as cartonNote) {
+                            <span class="hint carton-quantity-note" role="status">{{ cartonNote }}</span>
+                          }
+                        }
                         @if (shortShipped(line.productId); as ordered) {
                           <span class="hint warn-text">
                             Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}
@@ -2210,16 +2216,9 @@ export class PurchaseEditor {
       this.view.set(result);
       this.savedOrder.set(JSON.stringify(result.order));
       this.adjustments.set(result.adjustments ?? []);
-      if (result.adjustments?.length) {
-        /* Warning only: purchasing never rounds. A supplier can ship a sample of
-           three pieces, and silently inflating an order costs real money. */
-        const first = result.adjustments[0];
-        this.ui.toast(
-          `Let op: ${first.requested} stuks is geen volle doos (${first.piecesPerCarton}/doos)`,
-          'err');
-      } else {
-        this.ui.toast('Opgeslagen');
-      }
+      /* Loose purchasing quantities stay untouched. The quiet inline notice
+         already explains the neighbouring full cartons while editing. */
+      this.ui.toast('Opgeslagen');
       /* Stock levels may have just been booked. The order is already saved here,
          so a failed refresh is reported separately. */
       try {
@@ -2262,6 +2261,11 @@ export class PurchaseEditor {
 
   piecesPerCarton(productId: number): number {
     return this.products().find((product) => product.id === productId)?.carton.piecesPerCarton ?? 1;
+  }
+
+  cartonNotice(quantity: number, productId: number): string | null {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton);
   }
 
   stockOf(productId: number): number {
