@@ -98,7 +98,7 @@ export interface PendingPhotoUploadResult {
       <section class="photo-series" aria-labelledby="saved-photo-title">
         <div class="photo-series__head">
           <h3 id="saved-photo-title">Eigen productfoto’s <span>{{ ownPhotos().length }}</span></h3>
-          <small>Eigen foto’s staan vóór de websitegalerij</small>
+          <small>Eigen foto’s staan vóór de gedeelde productgalerij</small>
         </div>
 
         <ol class="photo-strip" aria-describedby="photo-order-help">
@@ -240,15 +240,15 @@ export interface PendingPhotoUploadResult {
     }
 
     @if (inheritedPhotos().length) {
-      <section class="photo-series photo-series--readonly" aria-labelledby="website-photo-title">
+      <section class="photo-series photo-series--readonly" aria-labelledby="shared-photo-title">
         <div class="photo-series__head">
           <div>
-            <h3 id="website-photo-title">Uit websitegalerij <span>{{ inheritedPhotos().length }}</span></h3>
-            <small>Alleen-lezen · beheer deze foto’s bij Website &amp; publicatie</small>
+            <h3 id="shared-photo-title">Gedeelde productgalerij <span>{{ inheritedPhotos().length }}</span></h3>
+            <small>Gekoppeld aan de productreeks · kies het gebruik hieronder</small>
           </div>
         </div>
 
-        <ol class="photo-strip" aria-label="Foto’s uit de websitegalerij">
+        <ol class="photo-strip" aria-label="Foto’s uit de gedeelde productgalerij">
           @for (photo of inheritedPhotos(); track photo.id) {
             <li class="photo-card photo-card--readonly"
                 [class.photo-card--primary]="isEffectivePrimary(photo)">
@@ -259,7 +259,7 @@ export interface PendingPhotoUploadResult {
                 } @else {
                   <span class="photo-card__position" aria-hidden="true">{{ effectivePosition(photo) }}</span>
                 }
-                <span class="photo-card__readonly">Website</span>
+                <span class="photo-card__readonly">Gedeeld</span>
               </div>
 
               <div class="photo-card__footer">
@@ -294,7 +294,7 @@ export interface PendingPhotoUploadResult {
 
     <p class="photo-help">
       Eigen foto’s staan vooraan. Zonder eigen foto gebruikt het ERP de eerste foto uit de
-      websitegalerij. JPEG, PNG, GIF of WebP · max. 25 MB per foto.
+      gedeelde productgalerij. JPEG, PNG, GIF of WebP · max. 25 MB per foto.
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
     </div>

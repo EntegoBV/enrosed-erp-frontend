@@ -15,7 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
+import { CatalogChannel, Category, Currency, HsCode, Product, ProductFamily, ProductFamilyImage, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { PhotoManager } from '../../shared/photo-manager';
@@ -145,11 +145,13 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     [class.erp-workspace__badge--warn]="!draft().active || draft().demo">
                 {{ draft().active ? (draft().demo ? 'Demo' : 'Actief') : 'Inactief' }}
               </span>
-              <span class="erp-workspace__badge"
-                    [class.erp-workspace__badge--ok]="workspacePublicationLive()"
-                    [class.erp-workspace__badge--warn]="workspacePublicationNeedsAttention()">
-                {{ workspacePublicationLabel() }}
-              </span>
+              @if (desktop.active()) {
+                <span class="erp-workspace__badge"
+                      [class.erp-workspace__badge--ok]="workspacePublicationLive()"
+                      [class.erp-workspace__badge--warn]="workspacePublicationNeedsAttention()">
+                  {{ workspacePublicationLabel() }}
+                </span>
+              }
               @if (workspaceDirty()) {
                 <span class="erp-workspace__badge erp-workspace__badge--dirty">Niet opgeslagen</span>
               }
@@ -167,12 +169,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <strong class="erp-workspace__fact-value num">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</strong>
               <small class="erp-workspace__fact-note">{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : 'kost + opslag' }}</small>
             </button>
-            <button class="erp-workspace__fact product-editor-hero__fact--publication" type="button"
-                    (click)="openPublicationWorkspace()">
-              <span class="erp-workspace__fact-label">Publicatie</span>
-              <strong class="erp-workspace__fact-value">{{ workspacePublicationShortLabel() }}</strong>
-              <small class="erp-workspace__fact-note">Website &amp; orderapp</small>
-            </button>
+            @if (desktop.active()) {
+              <button class="erp-workspace__fact product-editor-hero__fact--publication" type="button"
+                      (click)="openPublicationWorkspace()">
+                <span class="erp-workspace__fact-label">Publicatie</span>
+                <strong class="erp-workspace__fact-value">{{ workspacePublicationShortLabel() }}</strong>
+                <small class="erp-workspace__fact-note">Website &amp; orderapp</small>
+              </button>
+            }
           </div>
 
           <div class="product-editor-hero__actions">
@@ -489,6 +493,64 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             [disabled]="saving() || translationSaving() || translationDirty()"
             (changed)="onPhotosChanged($event)"
           />
+
+          @if (!isNew()) {
+            <section class="photo-channel-selector" aria-labelledby="photo-channel-title"
+                     [attr.aria-busy]="saving()">
+              <header>
+                <div>
+                  <h3 id="photo-channel-title">Gebruiken in</h3>
+                  <p>Kies per galerijfoto waar deze zichtbaar mag zijn.</p>
+                </div>
+                @if (desktop.active()) {
+                  <button class="photo-channel-more" type="button" (click)="showTab('publication')">
+                    Meer instellingen
+                  </button>
+                }
+              </header>
+
+              @if (familyLoading()) {
+                <p class="photo-channel-state">Productgalerij laden…</p>
+              } @else if (familyLoadError()) {
+                <div class="photo-channel-state photo-channel-state--error" role="alert">
+                  <span>Productgalerij kon niet worden geladen.</span>
+                  <button type="button" (click)="retryFamily()">Opnieuw</button>
+                </div>
+              } @else if (productGalleryImages().length) {
+                <div class="photo-channel-list">
+                  @for (image of productGalleryImages(); track image.id) {
+                    <article class="photo-channel-row">
+                      <img [appAuthSrc]="image.smallUrl" alt="" />
+                      <div class="photo-channel-copy">
+                        <b>{{ image.originalFilename }}</b>
+                        <small>{{ image.variantProductId === null ? 'Alle kleuren' : 'Deze kleur' }}</small>
+                      </div>
+                      <div class="photo-channel-actions" role="group"
+                           [attr.aria-label]="'Gebruik van ' + image.originalFilename">
+                        <button type="button" [disabled]="saving()"
+                                [class.photo-channel-toggle--on]="familyImagePublishedTo(image, 'WEBSITE')"
+                                [attr.aria-pressed]="familyImagePublishedTo(image, 'WEBSITE')"
+                                (click)="toggleFamilyImageChannel(image, 'WEBSITE')">
+                          <i aria-hidden="true">{{ familyImagePublishedTo(image, 'WEBSITE') ? '✓' : '' }}</i>
+                          Website
+                        </button>
+                        <button type="button" [disabled]="saving()"
+                                [class.photo-channel-toggle--on]="familyImagePublishedTo(image, 'CATALOGUE')"
+                                [attr.aria-pressed]="familyImagePublishedTo(image, 'CATALOGUE')"
+                                (click)="toggleFamilyImageChannel(image, 'CATALOGUE')">
+                          <i aria-hidden="true">{{ familyImagePublishedTo(image, 'CATALOGUE') ? '✓' : '' }}</i>
+                          Catalogus
+                        </button>
+                      </div>
+                    </article>
+                  }
+                </div>
+                <p class="photo-channel-help">De volgorde van de gedeelde galerij blijft per kanaal behouden.</p>
+              } @else {
+                <p class="photo-channel-state">Nog geen foto’s in de gedeelde productgalerij.</p>
+              }
+            </section>
+          }
         </div>
       </section>
 
@@ -1914,6 +1976,13 @@ export class ProductEditor implements OnDestroy {
   private activeProductId: number | null = null;
   readonly familyDirty = computed(() =>
     JSON.stringify(this.family()) !== JSON.stringify(this.savedFamily()));
+  readonly productGalleryImages = computed(() => {
+    const productId = this.draft().id;
+    if (productId === null) return [];
+    return [...(this.family()?.images ?? [])]
+      .filter((image) => image.variantProductId === null || image.variantProductId === productId)
+      .sort((a, b) => a.position - b.position || a.id - b.id);
+  });
   readonly saving = signal(false);
   /** Saved at least once on this screen: the button then reads "Opnieuw opslaan". */
   readonly savedHere = signal(history.state?.savedHere === true);
@@ -2870,6 +2939,28 @@ export class ProductEditor implements OnDestroy {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  familyImagePublishedTo(image: ProductFamilyImage, channel: CatalogChannel): boolean {
+    /* A rolling deployment may still omit the field; that legacy contract
+       exposed a valid image to every channel. */
+    const channels = Array.isArray(image.publishedChannels)
+      ? image.publishedChannels
+      : (['WEBSITE', 'ORDER_APP', 'CATALOGUE'] as CatalogChannel[]);
+    return channels.includes(channel);
+  }
+
+  toggleFamilyImageChannel(image: ProductFamilyImage, channel: 'WEBSITE' | 'CATALOGUE'): void {
+    if (this.saving()) return;
+    const channels = new Set<CatalogChannel>(Array.isArray(image.publishedChannels)
+      ? image.publishedChannels
+      : ['WEBSITE', 'ORDER_APP', 'CATALOGUE']);
+    if (channels.has(channel)) channels.delete(channel); else channels.add(channel);
+    const canonical: CatalogChannel[] = ['WEBSITE', 'ORDER_APP', 'CATALOGUE'];
+    void this.setFamilyImagePublication({
+      imageId: image.id,
+      channels: canonical.filter((candidate) => channels.has(candidate)),
+    });
   }
 
   private publicationChannelLabels(

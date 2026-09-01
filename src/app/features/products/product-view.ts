@@ -98,6 +98,10 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                   </button>
                 }
               </div>
+              <a class="phero__photo-manage phero__photo-manage--mobile"
+                 [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
+                Foto’s beheren
+              </a>
             }
 
             <div class="phero__top">
@@ -141,6 +145,10 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
               @if (desktop.active() && product.photos.length) {
                 <div class="phero__gallery" role="region" aria-roledescription="carousel"
                      [attr.aria-label]="'Productfoto’s van ' + product.name">
+                  <a class="phero__photo-manage phero__photo-manage--desktop"
+                     [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
+                    Foto’s beheren
+                  </a>
                   @if (product.photos[galleryIndex()] || product.photos[0]; as photo) {
                     <button class="phero__gallery-main" type="button"
                             (click)="openCurrentGalleryPhoto()"
@@ -222,13 +230,15 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                   <span>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kost + opslag' }}</span>
                 }
               </button>
-              <button class="phero__fact erp-workspace__fact" type="button"
-                      (click)="scrollToDetailSection('product-publication')">
-                <i class="phero__fact-chev" aria-hidden="true"></i>
-                <small class="erp-workspace__fact-label">Publicatie</small>
-                <strong>{{ publicationSummary() }}</strong>
-                <span>{{ publicationIssues().length ? publicationIssues().length + ' aandachtspunt(en)' : 'website & orderapp' }}</span>
-              </button>
+              @if (desktop.active()) {
+                <button class="phero__fact erp-workspace__fact" type="button"
+                        (click)="scrollToDetailSection('product-publication')">
+                  <i class="phero__fact-chev" aria-hidden="true"></i>
+                  <small class="erp-workspace__fact-label">Publicatie</small>
+                  <strong>{{ publicationSummary() }}</strong>
+                  <span>{{ publicationIssues().length ? publicationIssues().length + ' aandachtspunt(en)' : 'website & orderapp' }}</span>
+                </button>
+              }
             </div>
 
             @if (expected(); as exp) {
@@ -275,7 +285,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
 
           <nav class="subnav product-detail-nav erp-workspace__nav" aria-label="Productonderdelen">
             <div class="subnav__rail erp-workspace__nav-rail">
-              @for (item of detailSections; track item.id) {
+              @for (item of visibleDetailSections(); track item.id) {
                 <a class="erp-workspace__nav-item" [class.active]="activeDetailSection() === item.id"
                    [attr.aria-current]="activeDetailSection() === item.id ? 'location' : null"
                    [href]="'#' + item.id" (click)="scrollToDetailSection(item.id, $event)">
@@ -553,6 +563,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
             </div>
           </div>
 
+          @if (desktop.active()) {
           <details class="info-card publication-card erp-workspace__section" id="product-publication">
             <summary>
               <span class="info-card__icon" aria-hidden="true">WEB</span>
@@ -629,6 +640,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
               }
             </div>
           </details>
+          }
         </div>
       </div>
       @if (!desktop.active()) {
@@ -775,6 +787,13 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     .phero__shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .phero__shot span { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px;
       background: rgb(20 16 14 / 62%); color: #fff; font-size: 9px; font-weight: 750; }
+    .phero__photo-manage { z-index: 3; display: inline-flex; align-items: center; min-height: 30px;
+      padding: 5px 10px; border: 1px solid rgb(255 255 255 / 34%); border-radius: 999px;
+      background: rgb(20 16 14 / 68%); color: #fff; font-size: 10.5px; font-weight: 750;
+      text-decoration: none; backdrop-filter: blur(8px); }
+    .phero__photo-manage:hover, .phero__photo-manage:active { background: rgb(20 16 14 / 88%); }
+    .phero__photo-manage--desktop { position: absolute; top: 8px; left: 8px; }
+    .phero__photo-manage--mobile { width: max-content; margin: -5px auto 12px; }
     .phero__nofoto { margin: 12px 0 0; color: rgb(255 255 255 / 55%); font-size: 11.5px; }
     .phero__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
     .phero__facts.erp-workspace__facts { border-color: rgb(255 255 255 / 16%);
@@ -1011,6 +1030,7 @@ export class ProductView {
   readonly lightbox = signal(-1);
   readonly galleryIndex = signal(0);
   readonly agreementLightbox = signal(-1);
+  readonly desktop = inject(DesktopViewport);
   private galleryPointer: { id: number; x: number; y: number } | null = null;
   private gallerySuppressClickUntil = 0;
   readonly detailSections = [
@@ -1021,6 +1041,9 @@ export class ProductView {
     { id: 'product-agreements', label: 'Afspraken' },
     { id: 'product-publication', label: 'Website' },
   ] as const;
+  readonly visibleDetailSections = computed(() => this.desktop.active()
+    ? this.detailSections
+    : this.detailSections.filter((item) => item.id !== 'product-publication'));
   readonly activeDetailSection = signal<(typeof this.detailSections)[number]['id']>('product-overview');
 
   private readonly catalog = inject(CatalogApi);
@@ -1051,8 +1074,6 @@ export class ProductView {
 
   /* ---- the price, taken apart ---- */
   readonly priceOpen = signal(false);
-  readonly desktop = inject(DesktopViewport);
-
   /** "auto" when the stored figure is exactly what the sizes derive. */
   cartonPiecesAuto(product: Product): boolean {
     return autoPiecesPerCarton(product) === product.carton.piecesPerCarton;
@@ -1364,13 +1385,14 @@ export class ProductView {
       this.detailScrollFrame = 0;
       const railBottom = document.querySelector<HTMLElement>('.product-detail-nav')
         ?.getBoundingClientRect().bottom ?? 0;
-      let current: (typeof this.detailSections)[number]['id'] = this.detailSections[0].id;
-      for (const item of this.detailSections) {
+      const sections = this.visibleDetailSections();
+      let current: (typeof this.detailSections)[number]['id'] = sections[0]?.id ?? 'product-overview';
+      for (const item of sections) {
         const section = document.getElementById(item.id);
         if (section && section.getBoundingClientRect().top <= railBottom + 18) current = item.id;
       }
       if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 3) {
-        current = this.detailSections[this.detailSections.length - 1].id;
+        current = sections[sections.length - 1]?.id ?? 'product-overview';
       }
       if (this.activeDetailSection() !== current) this.activeDetailSection.set(current);
     });
@@ -1450,7 +1472,8 @@ export class ProductView {
       }).catch(() => {});
     }
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
-    const requestedSection = this.detailSections.find((item) => `#${item.id}` === window.location.hash)?.id;
+    const requestedSection = this.visibleDetailSections()
+      .find((item) => `#${item.id}` === window.location.hash)?.id;
     if (requestedSection) setTimeout(() => this.scrollToDetailSection(requestedSection), 0);
   }
 
