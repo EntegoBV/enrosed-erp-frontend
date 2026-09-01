@@ -14,6 +14,14 @@ export interface PurchaseFxReference {
   asOf: string;
 }
 
+export interface PurchaseFxDefaults extends PurchaseFxReference {
+  /** Conservative surcharge applied independently to every conversion step. */
+  marginPct: number;
+}
+
+/** Alibaba/payment-provider allowance: ten cents per dollar = ten percent. */
+export const PURCHASE_FX_MARGIN_PCT = 10;
+
 /**
  * Frankfurter supplies both currencies as units bought by one euro. Convert
  * those values to the directions used by a purchase calculation.
@@ -28,6 +36,29 @@ export function purchaseFxReference(
     cnyToUsd: rates.latestUsd / rates.latestCny,
     usdToEur: 1 / rates.latestUsd,
     asOf: rates.asOf,
+  };
+}
+
+/**
+ * Turns the neutral ECB cross rates into purchase defaults. Each payment
+ * conversion gets the same conservative allowance. That deliberately means
+ * a CNY purchase, which crosses CNY -> USD -> EUR, carries the allowance on
+ * both legs. Round upward so four-decimal form values never lose that buffer.
+ */
+export function purchaseFxDefaults(
+  reference: PurchaseFxReference | null | undefined,
+  marginPct = PURCHASE_FX_MARGIN_PCT,
+): PurchaseFxDefaults | null {
+  if (!reference || !positive(reference.cnyToUsd) || !positive(reference.usdToEur)
+      || !reference.asOf || !Number.isFinite(marginPct) || marginPct < 0) {
+    return null;
+  }
+  const factor = 1 + marginPct / 100;
+  return {
+    cnyToUsd: roundUp(reference.cnyToUsd * factor, 4),
+    usdToEur: roundUp(reference.usdToEur * factor, 4),
+    asOf: reference.asOf,
+    marginPct,
   };
 }
 
@@ -78,4 +109,9 @@ function ownRouteCode(port: string | null | undefined): string | null {
 
 function positive(value: number): boolean {
   return Number.isFinite(value) && value > 0;
+}
+
+function roundUp(value: number, decimals: number): number {
+  const scale = 10 ** decimals;
+  return Math.ceil((value - Number.EPSILON) * scale) / scale;
 }

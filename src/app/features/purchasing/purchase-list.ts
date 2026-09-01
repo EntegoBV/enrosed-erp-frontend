@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -12,7 +12,7 @@ import { messageOf } from '../../core/api/errors';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { Auth } from '../../core/api/auth';
 import { Fx } from '../../core/api/fx';
-import { purchaseFxReference } from './purchase-price-context';
+import { purchaseFxDefaults, purchaseFxReference } from './purchase-price-context';
 
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Vertrokken', ONTVANGEN: 'Ontvangen',
@@ -171,22 +171,32 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
           <div class="field-row">
             <div class="field"><label for="po-cny">Koers RMB → USD</label>
               <input class="input num right" id="po-cny" type="number" step="0.0001"
-                     [ngModel]="cnyToUsd()" (ngModelChange)="cnyToUsd.set(+$event)" />
-              @if (marketReference(); as reference) {
+                     [ngModel]="cnyToUsd()" (ngModelChange)="setCnyToUsd($event)" />
+              @if (automaticRates(); as automatic) {
                 <span class="hint">
-                  ECB-referentie · 1 RMB = {{ reference.cnyToUsd | num: 4 }} USD ·
-                  {{ reference.asOf | dateNl }}
+                  Automatisch · ECB {{ marketReference()!.cnyToUsd | num: 4 }} +
+                  {{ automatic.marginPct | num: 0 }}% marge = {{ automatic.cnyToUsd | num: 4 }} ·
+                  {{ automatic.asOf | dateNl }}
                 </span>
+              } @else if (fx.failed()) {
+                <span class="hint hint--warn">Actuele koers niet beschikbaar · vul handmatig in</span>
+              } @else {
+                <span class="hint">Actuele veilige inkoopkoers laden…</span>
               }
             </div>
             <div class="field"><label for="po-usd">Koers USD → EUR</label>
               <input class="input num right" id="po-usd" type="number" step="0.0001"
-                     [ngModel]="usdToEur()" (ngModelChange)="usdToEur.set(+$event)" />
-              @if (marketReference(); as reference) {
+                     [ngModel]="usdToEur()" (ngModelChange)="setUsdToEur($event)" />
+              @if (automaticRates(); as automatic) {
                 <span class="hint">
-                  ECB-referentie · 1 USD = {{ reference.usdToEur | num: 4 }} EUR ·
-                  {{ reference.asOf | dateNl }}
+                  Automatisch · ECB {{ marketReference()!.usdToEur | num: 4 }} +
+                  {{ automatic.marginPct | num: 0 }}% marge = {{ automatic.usdToEur | num: 4 }} ·
+                  {{ automatic.asOf | dateNl }}
                 </span>
+              } @else if (fx.failed()) {
+                <span class="hint hint--warn">Actuele koers niet beschikbaar · vul handmatig in</span>
+              } @else {
+                <span class="hint">Actuele veilige inkoopkoers laden…</span>
               }
             </div>
           </div>
@@ -201,7 +211,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="picking.set(false)">Annuleren</button>
-          <button class="btn btn--primary" type="button" (click)="create()">Aanmaken</button>
+          <button class="btn btn--primary" type="button" [disabled]="!ratesReady()" (click)="create()">Aanmaken</button>
         </div>
       </app-sheet>
     }
@@ -265,7 +275,7 @@ export class PurchaseList {
   private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
-  private readonly fx = inject(Fx);
+  readonly fx = inject(Fx);
   readonly auth = inject(Auth);
 
   readonly orders = signal<PurchaseOrderView[]>([]);
@@ -327,13 +337,18 @@ export class PurchaseList {
   readonly loading = signal(true);
   readonly picking = signal(false);
   readonly chosen = signal<number | null>(null);
-  readonly cnyToUsd = signal(0.1385);
-  readonly usdToEur = signal(0.89);
+  readonly cnyToUsd = signal<number | null>(null);
+  readonly usdToEur = signal<number | null>(null);
   readonly marketReference = computed(() => purchaseFxReference(this.fx.series()));
+  readonly automaticRates = computed(() => purchaseFxDefaults(this.marketReference()));
+  readonly ratesReady = computed(() => positiveRate(this.cnyToUsd()) && positiveRate(this.usdToEur()));
+  private cnyRateEdited = false;
+  private usdRateEdited = false;
 
   constructor() {
     void this.load();
-    /* Reference only: never replace a buyer's manually entered frozen rate. */
+    /* Fill each untouched field as soon as the daily reference arrives. */
+    effect(() => this.applyAutomaticRates(this.automaticRates()));
     if (!this.fx.series()) void this.fx.load();
   }
 
@@ -531,15 +546,42 @@ export class PurchaseList {
       this.ui.toast('Maak eerst een leverancier aan', 'err');
       return;
     }
+    this.cnyRateEdited = false;
+    this.usdRateEdited = false;
+    this.cnyToUsd.set(null);
+    this.usdToEur.set(null);
+    this.applyAutomaticRates(this.automaticRates());
     this.picking.set(true);
+  }
+
+  setCnyToUsd(value: number | string | null): void {
+    this.cnyRateEdited = true;
+    this.cnyToUsd.set(Number(value));
+  }
+
+  setUsdToEur(value: number | string | null): void {
+    this.usdRateEdited = true;
+    this.usdToEur.set(Number(value));
+  }
+
+  private applyAutomaticRates(rates: ReturnType<typeof purchaseFxDefaults>): void {
+    if (!rates) return;
+    if (!this.cnyRateEdited) this.cnyToUsd.set(rates.cnyToUsd);
+    if (!this.usdRateEdited) this.usdToEur.set(rates.usdToEur);
   }
 
   async create(): Promise<void> {
     const supplierId = this.chosen();
-    if (supplierId === null) return;
+    const cnyToUsd = this.cnyToUsd();
+    const usdToEur = this.usdToEur();
+    if (supplierId === null || !positiveRate(cnyToUsd) || !positiveRate(usdToEur)) return;
     const view = await this.sourcing.createPurchaseOrder(
-      supplierId, this.cnyToUsd(), this.usdToEur(), 10);
+      supplierId, cnyToUsd, usdToEur, 10);
     this.picking.set(false);
     await this.router.navigate(['/purchasing', view.order.id, 'edit']);
   }
+}
+
+function positiveRate(value: number | null): value is number {
+  return value !== null && Number.isFinite(value) && value > 0;
 }

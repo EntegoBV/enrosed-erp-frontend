@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   latestOwnFreightQuote,
+  purchaseFxDefaults,
   purchaseFxReference,
 } from '../src/app/features/purchasing/purchase-price-context.ts';
 
@@ -17,6 +18,37 @@ test('derives the purchase-rate directions from ECB base-EUR rates', () => {
   assert.equal(reference.cnyToUsd, 1.2 / 8.4);
   assert.equal(reference.asOf, '2026-08-31');
   assert.equal(purchaseFxReference({ latestUsd: 0, latestCny: 8.4, asOf: '2026-08-31' }), null);
+});
+
+test('adds the conservative purchase margin to both conversion steps', () => {
+  const defaults = purchaseFxDefaults({
+    usdToEur: 1 / 1.2,
+    cnyToUsd: 1.2 / 8.4,
+    asOf: '2026-08-31',
+  });
+
+  assert.deepEqual(defaults, {
+    usdToEur: 0.9167,
+    cnyToUsd: 0.1572,
+    asOf: '2026-08-31',
+    marginPct: 10,
+  });
+  assert.equal(purchaseFxDefaults(null), null);
+  assert.equal(purchaseFxDefaults({ usdToEur: 0, cnyToUsd: 0.14, asOf: '2026-08-31' }), null);
+  assert.equal(
+    purchaseFxDefaults({ usdToEur: 0.85, cnyToUsd: 0.14, asOf: '2026-08-31' }, -1),
+    null,
+  );
+});
+
+test('keeps the intended double allowance explicit for CNY purchases', () => {
+  const reference = { usdToEur: 0.84, cnyToUsd: 0.14, asOf: '2026-08-31' };
+  const defaults = purchaseFxDefaults(reference);
+
+  assert.ok(defaults);
+  const rawCnyToEur = reference.cnyToUsd * reference.usdToEur;
+  const bufferedCnyToEur = defaults.cnyToUsd * defaults.usdToEur;
+  assert.ok(bufferedCnyToEur >= rawCnyToEur * 1.21);
 });
 
 test('finds the newest comparable own 40ft quote', () => {
