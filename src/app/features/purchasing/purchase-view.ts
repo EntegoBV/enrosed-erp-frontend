@@ -345,7 +345,7 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
                           }
                         </section>
                       } @else {
-                        <details class="purchase-model purchase-model--family" open>
+                        <details class="purchase-model purchase-model--family">
                           <summary class="purchase-model__head">
                             @if (group.photoUrl; as photo) {
                               <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
