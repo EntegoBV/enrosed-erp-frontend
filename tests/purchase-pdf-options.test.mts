@@ -13,13 +13,14 @@ test('purchase PDF defaults preserve the existing output', () => {
     showSupplier: true,
     showPrices: true,
     showEur: false,
+    eurOnly: false,
     includeEnrosedCost: false,
     showFreight: false,
     includeFreight: false,
   });
 });
 
-test('hiding supplier prices keeps the independent all-in ENROSED cost', () => {
+test('hiding supplier prices keeps the independent total landed cost', () => {
   const options = normalizePurchasePdfOptions({
     layout: 'PORTRAIT',
     audience: 'STANDARD',
@@ -30,10 +31,11 @@ test('hiding supplier prices keeps the independent all-in ENROSED cost', () => {
 
   assert.equal(options.showPrices, false);
   assert.equal(options.showEur, false);
+  assert.equal(options.eurOnly, false);
   assert.equal(options.includeEnrosedCost, true);
 });
 
-test('ENROSED cost is limited to the standard portrait export', () => {
+test('total landed cost is limited to the standard portrait export', () => {
   const supplier = normalizePurchasePdfOptions({
     layout: 'PORTRAIT', audience: 'SUPPLIER', includeEnrosedCost: true,
   });
@@ -52,6 +54,23 @@ test('ENROSED cost is limited to the standard portrait export', () => {
   assert.equal(unspecified.includeEnrosedCost, false);
 });
 
+test('EUR-only prices are exclusive and limited to the standard portrait export', () => {
+  const portrait = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', audience: 'STANDARD', showPrices: true, showEur: true, eurOnly: true,
+  });
+  const supplier = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', audience: 'SUPPLIER', eurOnly: true,
+  });
+  const landscape = normalizePurchasePdfOptions({
+    layout: 'LANDSCAPE', audience: 'STANDARD', eurOnly: true,
+  });
+
+  assert.equal(portrait.showEur, false);
+  assert.equal(portrait.eurOnly, true);
+  assert.equal(supplier.eurOnly, false);
+  assert.equal(landscape.eurOnly, false);
+});
+
 test('purchase PDF query uses every explicit backend option name', () => {
   const query = new URLSearchParams(purchasePdfQuery({
     layout: 'PORTRAIT',
@@ -59,6 +78,7 @@ test('purchase PDF query uses every explicit backend option name', () => {
     showSupplier: false,
     showPrices: true,
     showEur: true,
+    eurOnly: false,
     includeEnrosedCost: true,
   }));
 
@@ -69,6 +89,7 @@ test('purchase PDF query uses every explicit backend option name', () => {
     showSupplier: 'false',
     showPrices: 'true',
     showEur: 'true',
+    eurOnly: 'false',
     includeEnrosedCost: 'true',
     showFreight: 'false',
     includeFreight: 'false',

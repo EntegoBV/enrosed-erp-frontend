@@ -81,8 +81,16 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                    [class.pdf-option--disabled]="!portraitOptions().showPrices">
               <input type="checkbox" [ngModel]="portraitOptions().showEur"
                      [disabled]="!portraitOptions().showPrices || busyChoice() !== null"
-                     (ngModelChange)="patchPortraitOptions({ showEur: $event })" />
-              <span><b>Euro onder de prijs</b><small>Subtiele EUR-omrekening onder USD of CNY met de koers van deze order.</small></span>
+                     (ngModelChange)="patchPortraitOptions({ showEur: $event, eurOnly: false })" />
+              <span><b>Euro onder de oorspronkelijke prijs</b><small>Toont een subtiele EUR-omrekening onder USD of CNY met de vastgelegde koers van deze order.</small></span>
+            </label>
+
+            <label class="pdf-option pdf-option--nested"
+                   [class.pdf-option--disabled]="!portraitOptions().showPrices">
+              <input type="checkbox" [ngModel]="portraitOptions().eurOnly"
+                     [disabled]="!portraitOptions().showPrices || busyChoice() !== null"
+                     (ngModelChange)="patchPortraitOptions({ eurOnly: $event, showEur: false })" />
+              <span><b>Alle bedragen alleen in EUR</b><small>Toont stukprijs, regeltotaal en ordertotaal uitsluitend in EUR. USD- en CNY-bedragen worden niet afgedrukt.</small></span>
             </label>
 
             <label class="pdf-option">
@@ -90,8 +98,8 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                      [disabled]="busyChoice() !== null"
                      (ngModelChange)="patchPortraitOptions({ includeEnrosedCost: $event })" />
               <span>
-                <b>ENROSED-kost inclusief verzending</b>
-                <small>Toont per productregel één all-in EUR-kost. Product, verzending, invoer en overige toegerekende kosten worden niet apart uitgesplitst.</small>
+                <b>Totale kosten t/m levering (EUR)</b>
+                <small>Per productregel: inkoopprijs en producttoeslagen plus toegerekende oorsprongskosten, vracht, invoerrechten, transport en afhandeling tot het magazijn en de ingestelde interne kost. Bij DDP zitten vracht en invoer al in de inkoopprijs.</small>
               </span>
             </label>
           </div>
@@ -124,7 +132,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                 <span class="choice-kicker">A4 verticaal</span>
                 <strong>Inkooporder · staand</strong>
                 <span>Compacte productregels met foto, SKU, maat, stuks per karton, aantallen en inkoopprijs.</span>
-                <small>Kies hierna leverancier, prijzen, EUR-omrekening en de all-in ENROSED-kost.</small>
+                <small>Kies hierna leverancier, prijsweergave en eventueel de totale kosten t/m levering.</small>
               </span>
               <span class="choice-action">Instellen</span>
             </button>
@@ -201,6 +209,7 @@ export class PurchasePdfSheet {
     showSupplier: true,
     showPrices: true,
     showEur: false,
+    eurOnly: false,
     includeEnrosedCost: false,
   }));
 

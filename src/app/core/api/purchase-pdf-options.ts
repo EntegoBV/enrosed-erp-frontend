@@ -9,7 +9,9 @@ export interface PurchasePdfOptions {
   showSupplier?: boolean;
   showPrices?: boolean;
   showEur?: boolean;
-  /** Shows one all-in EUR cost per product line; never exposes its components. */
+  /** Replaces original-currency product prices and totals with their EUR values. */
+  eurOnly?: boolean;
+  /** Shows one total landed EUR cost per product line; never exposes its components. */
   includeEnrosedCost?: boolean;
   /** @deprecated Kept only for compatibility with older API deployments. */
   showFreight?: boolean;
@@ -24,6 +26,7 @@ export interface NormalizedPurchasePdfOptions {
   showSupplier: boolean;
   showPrices: boolean;
   showEur: boolean;
+  eurOnly: boolean;
   includeEnrosedCost: boolean;
   showFreight: boolean;
   includeFreight: boolean;
@@ -31,7 +34,7 @@ export interface NormalizedPurchasePdfOptions {
 
 /**
  * Keeps impossible combinations out of both the UI and the request.
- * The all-in ENROSED cost is limited to the standard portrait export, but is
+ * The total landed cost is limited to the standard portrait export, but is
  * independent of visible supplier prices. Legacy freight switches stay off:
  * cost components must never appear as a separate block in the document.
  */
@@ -42,13 +45,15 @@ export function normalizePurchasePdfOptions(
   const audience = options.audience;
   const showPrices = options.showPrices ?? true;
   const standardPortrait = layout === 'PORTRAIT' && audience === 'STANDARD';
+  const eurOnly = standardPortrait && showPrices && (options.eurOnly ?? false);
   return {
     layout,
     audience,
     showRevenue: options.showRevenue ?? false,
     showSupplier: options.showSupplier ?? true,
     showPrices,
-    showEur: showPrices && (options.showEur ?? false),
+    showEur: showPrices && !eurOnly && (options.showEur ?? false),
+    eurOnly,
     includeEnrosedCost: standardPortrait && (options.includeEnrosedCost ?? false),
     showFreight: false,
     includeFreight: false,
@@ -65,6 +70,7 @@ export function purchasePdfQuery(options: PurchasePdfOptions = {}): string {
   query.set('showSupplier', String(resolved.showSupplier));
   query.set('showPrices', String(resolved.showPrices));
   query.set('showEur', String(resolved.showEur));
+  query.set('eurOnly', String(resolved.eurOnly));
   query.set('includeEnrosedCost', String(resolved.includeEnrosedCost));
   query.set('showFreight', String(resolved.showFreight));
   query.set('includeFreight', String(resolved.includeFreight));
