@@ -13,14 +13,15 @@ import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
-  Product, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
+  Category, Product, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
 } from '../../core/api/models';
-import { containerLabel } from '../../core/api/geo';
+import { COLOUR_SWATCHES, containerLabel, STANDARD_COLOURS } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
+import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from './purchase-line-display';
 
 /**
  * Read-only control room for one incoming container.
@@ -271,91 +272,136 @@ import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
                 }
               </div>
 
+              @if (colourOptions().length) {
+                <nav class="product-colour-filter" aria-label="Productregels op kleur filteren">
+                  <button type="button" class="product-colour-chip"
+                          [class.product-colour-chip--active]="colourFilter() === null"
+                          [attr.aria-pressed]="colourFilter() === null"
+                          (click)="colourFilter.set(null)">
+                    Alle kleuren <small>{{ data.costing.lines.length }}</small>
+                  </button>
+                  @for (option of colourOptions(); track option.key) {
+                    <button type="button" class="product-colour-chip"
+                            [class.product-colour-chip--active]="colourFilter() === option.key"
+                            [attr.aria-pressed]="colourFilter() === option.key"
+                            (click)="toggleColour(option.key)">
+                      <i class="product-colour-dot" [class.product-colour-dot--empty]="!option.hex"
+                         [style.background]="option.hex" aria-hidden="true"></i>
+                      {{ option.label }} <small>{{ option.count }}</small>
+                    </button>
+                  }
+                </nav>
+              }
+
               <div class="product-lines">
-                @for (line of data.costing.lines; track line.productId; let lineIndex = $index) {
+                @for (section of lineSections(); track section.key) {
+                  <section class="purchase-category" [attr.aria-labelledby]="categoryHeadingId(section.key)">
+                    <h3 class="purchase-category__head" [id]="categoryHeadingId(section.key)">
+                      <span>{{ section.name }}</span>
+                      <small>{{ section.entries.length }} {{ section.entries.length === 1 ? 'regel' : 'regels' }}</small>
+                    </h3>
+                  @for (entry of section.entries; track entry.line.productId) {
                   <article class="purchase-line">
                     <!-- The line walks through to the product itself; the
                          back button brings you straight back here. -->
-                    <a class="purchase-line__identity" [routerLink]="['/products', line.productId]"
-                       [title]="line.productName + ' openen'">
-                      @if (photoOf(line.productId); as url) {
+                    <a class="purchase-line__identity" [routerLink]="['/products', entry.line.productId]"
+                       [title]="entry.line.productName + ' openen'">
+                      @if (photoOf(entry.line.productId); as url) {
                         <img class="purchase-line__photo" [appAuthSrc]="url" alt="" />
                       } @else {
                         <span class="purchase-line__photo purchase-line__photo--empty" aria-hidden="true">◈</span>
                       }
                       <span class="purchase-line__copy">
-                        <small>Regel {{ lineIndex + 1 }}</small>
-                        <strong>{{ line.productName }}</strong>
-                        <span>{{ line.quantity | num }} st · {{ line.cartons | num }} dozen</span>
+                        <small>Regel {{ entry.displayIndex }} · {{ section.name }}</small>
+                        <strong>{{ entry.line.productName }}</strong>
+                        <span class="purchase-line__meta">
+                          @if (entry.product?.colour; as colour) {
+                            <i class="product-colour-dot" [class.product-colour-dot--empty]="!colourHex(entry.product)"
+                               [style.background]="colourHex(entry.product)" aria-hidden="true"></i>
+                            <b>{{ colour }}</b><span aria-hidden="true"> · </span>
+                          }
+                          @if (entry.product?.variantSize; as size) {
+                            <b>{{ size }}</b><span aria-hidden="true"> · </span>
+                          }
+                          {{ entry.line.quantity | num }} st · {{ entry.line.cartons | num }} dozen
+                        </span>
                       </span>
                     </a>
 
                     <div class="line-facts">
-                      <span><small>Aantal</small><strong>{{ line.quantity | num }} st</strong></span>
-                      <span><small>Dozen</small><strong>{{ line.cartons | num }}</strong></span>
-                      <span><small>Volume</small><strong>{{ line.cbm | cbm }}</strong></span>
+                      <span><small>Aantal</small><strong>{{ entry.line.quantity | num }} st</strong></span>
+                      <span><small>Dozen</small><strong>{{ entry.line.cartons | num }}</strong></span>
+                      <span><small>Volume</small><strong>{{ entry.line.cbm | cbm }}</strong></span>
                     </div>
                     @if (data.order.status !== 'ONTVANGEN') {
-                      @if (cartonNotice(line.quantity, line.productId); as cartonNote) {
+                      @if (cartonNotice(entry.line.quantity, entry.line.productId); as cartonNote) {
                         <p class="purchase-line__carton-note">{{ cartonNote }}</p>
                       }
                     }
 
                     <button class="line-breakdown-toggle" type="button"
-                            [attr.aria-expanded]="openLine() === line.productId"
-                            [attr.aria-controls]="linePanelId(line.productId)"
-                            (click)="toggleLine(line.productId)">
+                            [attr.aria-expanded]="openLine() === entry.line.productId"
+                            [attr.aria-controls]="linePanelId(entry.line.productId)"
+                            (click)="toggleLine(entry.line.productId)">
                       <span>
                         <small>Kostopbouw</small>
                         <strong>{{ perPiece() ? 'Per stuk bekijken' : 'Hele regel bekijken' }}</strong>
                       </span>
                       <span class="line-breakdown-toggle__total">
-                        {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}
+                        {{ perPiece() ? (entry.line.landedUnitEur | eur: 4) : (entry.line.totalEur | eur) }}
                       </span>
                       <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
-                           [class.chevron-open]="openLine() === line.productId">
+                           [class.chevron-open]="openLine() === entry.line.productId">
                         <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
                               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
                     </button>
 
-                    @if (openLine() === line.productId) {
-                      <div class="line-breakdown" [id]="linePanelId(line.productId)">
+                    @if (openLine() === entry.line.productId) {
+                      <div class="line-breakdown" [id]="linePanelId(entry.line.productId)">
                         <div class="stat-row"><span>Goederen</span>
-                          <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
-                        @if (line.originEur) {
+                          <span class="num">{{ amt(entry.line.goodsEur, entry.line) | eur: decimals() }}</span></div>
+                        @if (entry.line.originEur) {
                           <div class="stat-row"><span>{{ costLabels().originCostsLabel }}
                             <small>{{ costLabels().originRoute }}</small>
                           </span>
-                            <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
+                            <span class="num">{{ amt(entry.line.originEur, entry.line) | eur: decimals() }}</span></div>
                         }
                         <div class="stat-row"><span>{{ costLabels().seaFreightLabel }}
                           <small>{{ costLabels().seaFreightRoute }}</small>
                         </span>
-                          <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
+                          <span class="num">{{ amt(entry.line.freightEur, entry.line) | eur: decimals() }}</span></div>
                         <div class="stat-row line-breakdown__subtotal"><span>Douanewaarde</span>
-                          <span class="num">{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
-                        <div class="stat-row"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
-                          @if (line.dutySource) { <small>({{ line.dutySource }})</small> }
-                        </span><span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
+                          <span class="num">{{ amt(entry.line.customsValueEur, entry.line) | eur: decimals() }}</span></div>
+                        <div class="stat-row"><span>Invoerrecht {{ entry.line.dutyRatePct | pct: 1 }}
+                          @if (entry.line.dutySource) { <small>({{ entry.line.dutySource }})</small> }
+                        </span><span class="num">{{ amt(entry.line.dutyEur, entry.line) | eur: decimals() }}</span></div>
                         <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
-                          <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
-                        @if (line.extraRevenueEur) {
+                          <span class="num">{{ amt(entry.line.destinationEur, entry.line) | eur: decimals() }}</span></div>
+                        @if (entry.line.extraRevenueEur) {
                           <div class="stat-row"><span>Enrosed kost</span>
-                            <span class="num">{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
+                            <span class="num">{{ amt(entry.line.extraRevenueEur, entry.line) | eur: decimals() }}</span></div>
                         }
                       </div>
                     }
                   </article>
+                  }
+                  </section>
                 } @empty {
                   <div class="product-empty">
                     <span class="product-empty__art" aria-hidden="true">◈</span>
-                    <h3>Nog geen producten geladen</h3>
-                    <p>Voeg producten en aantallen toe om de containervulling en kostprijs te berekenen.</p>
-                    <a class="btn btn--primary"
-                       [routerLink]="['/purchasing', data.order.id, 'edit']">
-                      Producten toevoegen
-                    </a>
+                    @if (data.costing.lines.length) {
+                      <h3>Geen productregels in deze kleur</h3>
+                      <p>Kies een andere kleur of toon de volledige inkooporder.</p>
+                      <button class="btn btn--primary" type="button" (click)="colourFilter.set(null)">Alle kleuren tonen</button>
+                    } @else {
+                      <h3>Nog geen producten geladen</h3>
+                      <p>Voeg producten en aantallen toe om de containervulling en kostprijs te berekenen.</p>
+                      <a class="btn btn--primary"
+                         [routerLink]="['/purchasing', data.order.id, 'edit']">
+                        Producten toevoegen
+                      </a>
+                    }
                   </div>
                 }
               </div>
@@ -615,9 +661,11 @@ import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
     .section-heading__copy{display:block;min-width:0;flex:1}.section-heading h2{font-size:15px}.section-heading__copy>span:last-child{display:block;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
     .section-heading .per-toggle{flex:none}.section-heading .per-toggle button{padding-inline:8px;font-size:10px}
 
-    .purchase-line{padding:14px;border-bottom:1px solid var(--line)}.purchase-line:last-child{border:0}.purchase-line__identity{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px}.purchase-line__identity{color:inherit;text-decoration:none}a.purchase-line__identity:hover strong{color:var(--rose-dark);text-decoration:underline}
+    .product-colour-filter{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}.product-colour-filter::-webkit-scrollbar{display:none}.product-colour-chip{display:inline-flex;min-height:34px;flex:none;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:11.5px;font-weight:680;white-space:nowrap;cursor:pointer}.product-colour-chip:hover{background:var(--surface-2)}.product-colour-chip--active{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}.product-colour-chip small{display:inline-grid;min-width:18px;height:18px;place-items:center;padding:0 4px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:9px}.product-colour-chip--active small{background:var(--surface);color:var(--rose-dark)}.product-colour-dot{display:inline-block;width:10px;height:10px;flex:none;border:1px solid rgb(0 0 0/.16);border-radius:50%}.product-colour-dot--empty{border-style:dashed;background:transparent!important}
+    .purchase-category+.purchase-category{border-top:8px solid var(--surface-2)}.purchase-category__head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.purchase-category__head small{color:var(--muted);font-size:10px;font-weight:650;letter-spacing:0;text-transform:none}
+    .purchase-line{padding:14px;border-bottom:1px solid var(--line)}.purchase-category .purchase-line:last-child{border:0}.purchase-line__identity{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px}.purchase-line__identity{color:inherit;text-decoration:none}a.purchase-line__identity:hover strong{color:var(--rose-dark);text-decoration:underline}
     .purchase-line__photo{width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover}.purchase-line__photo--empty{display:grid;place-items:center;color:var(--muted);font-size:20px}
-    .purchase-line__copy{display:flex;min-width:0;flex-direction:column}.purchase-line__copy small{color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase}.purchase-line__copy strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__copy>span{color:var(--muted);font-size:11px}
+    .purchase-line__copy{display:flex;min-width:0;flex-direction:column}.purchase-line__copy small{color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase}.purchase-line__copy strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__copy>span{color:var(--muted);font-size:11px}.purchase-line__meta{display:flex;min-width:0;align-items:center;gap:4px;overflow:hidden;white-space:nowrap}.purchase-line__meta b{color:var(--ink-2);font-weight:650}
     .line-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden}.line-facts>span{display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2)}.line-facts small{color:var(--muted);font-size:8.5px;text-transform:uppercase}.line-facts strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__carton-note{margin:7px 0 0;color:var(--muted);font-size:10.5px;line-height:1.35}
     .line-breakdown-toggle{display:flex;width:100%;min-height:48px;align-items:center;gap:8px;margin-top:9px;padding:7px 9px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}.line-breakdown-toggle>span:first-child{display:flex;min-width:0;flex:1;flex-direction:column}.line-breakdown-toggle small{color:var(--muted);font-size:9px}.line-breakdown-toggle strong{font-size:11px}.line-breakdown-toggle__total{color:var(--rose);font-size:12px;font-weight:760}.line-breakdown-toggle svg{flex:none;color:var(--muted);transition:transform .18s}.line-breakdown-toggle svg.chevron-open{transform:rotate(180deg)}
     .line-breakdown{margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease}.line-breakdown .stat-row{padding:4px 0;font-size:11.5px}.line-breakdown small,.cost-stage small{display:block;color:var(--muted);font-size:9px}.line-breakdown__subtotal{border-top:1px solid var(--line)}
@@ -630,7 +678,7 @@ import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
     .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
 
     @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
-    @media(min-width: 680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
+    @media(min-width: 680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.product-colour-filter,.purchase-category__head{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
     @media(min-width:680px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.72fr);gap:16px;align-items:start}.view-sidebar{margin-top:0}}
   `],
 })
@@ -717,7 +765,26 @@ export class PurchaseView {
     return actor;
   }
   private readonly products = signal<Product[]>([]);
+  private readonly categories = signal<Category[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);
+
+  /** A null colour shows the complete order; chips expose only colours in this load. */
+  readonly colourFilter = signal<string | null>(null);
+  readonly colourOptions = computed(() =>
+    purchaseColourOptions(
+      this.view()?.costing.lines ?? [],
+      this.products(),
+      STANDARD_COLOURS,
+      COLOUR_SWATCHES,
+    ));
+  readonly lineSections = computed(() =>
+    purchaseLineSections(
+      this.view()?.costing.lines ?? [],
+      this.products(),
+      this.categories(),
+      this.colourFilter(),
+      STANDARD_COLOURS,
+    ));
 
   readonly statusSteps = [
     { value: 'CONCEPT', label: 'Concept' },
@@ -752,11 +819,16 @@ export class PurchaseView {
   private async load(id: number): Promise<void> {
     void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
     void this.sourcing.documents(id).then((list) => this.documents.set(list)).catch(() => this.documents.set([]));
-    const [view, products, suppliers] = await Promise.all([
-      this.sourcing.purchaseOrder(id), this.catalog.products(), this.sourcing.suppliers()]);
+    const [view, products, categories, suppliers] = await Promise.all([
+      this.sourcing.purchaseOrder(id),
+      this.catalog.products(),
+      this.catalog.categories().catch(() => [] as Category[]),
+      this.sourcing.suppliers(),
+    ]);
     this.catalog.stockLocations().then((locations) => this.stockLocations.set(locations)).catch(() => undefined);
     this.view.set(view);
     this.products.set(products);
+    this.categories.set(categories);
     this.suppliers.set(suppliers);
   }
 
@@ -801,6 +873,18 @@ export class PurchaseView {
   photoOf(productId: number): string | null {
     const product = this.products().find((candidate) => candidate.id === productId);
     return product?.photos?.[0]?.url ?? null;
+  }
+
+  colourHex(product: Product | null): string | null {
+    return purchaseColourHex(product, COLOUR_SWATCHES);
+  }
+
+  toggleColour(key: string): void {
+    this.colourFilter.set(this.colourFilter() === key ? null : key);
+  }
+
+  categoryHeadingId(key: string): string {
+    return `purchase-category-${key.replace(/[^a-z0-9-]/gi, '-')}`;
   }
 
   cartonNotice(quantity: number, productId: number): string | null {
