@@ -26,6 +26,7 @@ import { CbmPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
+import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
 import {
   ProductFamilyImagePublicationChange,
   ProductFamilyImageVariantChange,
@@ -64,7 +65,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    FormsModule, PageHeader, PhotoManager, ProductPublicationEditor,
+    FormsModule, PageHeader, PhotoManager, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, Sheet, EurPipe, NumPipe, CbmPipe, DateTimeNlPipe, DecimalInput, RouterLink,
   ],
   template: `
@@ -90,8 +91,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </span>
       }
       <button class="btn btn--primary btn--sm" type="button"
-              [disabled]="saving() || photoUploading() || translationSaving()"
-              (click)="save()">{{ saving() ? 'Bezig…' : (photoUploading() ? 'Foto’s…' : (savedHere() ? 'Opnieuw opslaan' : 'Opslaan')) }}</button>
+              [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving()"
+              (click)="save()">{{ saving() ? 'Bezig…' : (photoUploading() ? 'Foto’s…' : (agreementBusy() ? 'Afspraken…' : (savedHere() ? 'Opnieuw opslaan' : 'Opslaan'))) }}</button>
     </app-page-header>
 
     @if (productLoadError()) {
@@ -145,14 +146,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   </option>
                 }
               </select>
-            </div>
-            <div class="field span-2">
-              <label for="p-supplier-note">Leveranciersnotitie <span class="opt"></span></label>
-              <textarea class="textarea" id="p-supplier-note" rows="3" maxlength="4000"
-                        placeholder="Bijv. kleurcontrole, verpakking, bedrukking of andere afspraak"
-                        [ngModel]="draft().supplierNote"
-                        (ngModelChange)="patch({ supplierNote: emptyToNull($event) })"></textarea>
-              <span class="hint">Intern opgeslagen bij dit product en alleen opgenomen in de leveranciersversie van de inkooporder.</span>
             </div>
             <div class="field">
               <label class="req" for="p-name">Productnaam intern</label>
@@ -238,7 +231,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             } @else {
               <app-product-variant-group class="variant-editor-group span-2"
                                          [product]="draft()" [family]="family()"
-                                         [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
+                                         [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
                                          (linked)="onVariantLinked($event)"
                                          (familyChange)="onFamilyChange($event)" />
             }
@@ -783,6 +776,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
       </section>
 
+      <app-product-supplier-agreement-editor
+        class="card editor-section" id="agreements"
+        [productId]="draft().id"
+        [supplierId]="draft().supplierId"
+        [persistedSupplierId]="savedSupplierId()"
+        [supplierName]="selectedSupplierName()"
+        [note]="draft().supplierNote"
+        [disabled]="saving() || photoUploading() || translationSaving()"
+        (noteChange)="patch({ supplierNote: $event })"
+      />
+
       <!-- Public content is desktop work: long texts, translations and
            image curation do not belong on a phone at the fair. -->
       <div class="editor-desktop-only" id="publication">
@@ -790,7 +794,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         [product]="draft()"
         [family]="family()"
         [categories]="categories()"
-        [busy]="saving() || photoUploading() || translationSaving()"
+        [busy]="saving() || photoUploading() || agreementBusy() || translationSaving()"
         [familyLoading]="familyLoading()"
         [familyLoadError]="familyLoadError()"
         (productChange)="draft.set($event)"
@@ -816,14 +820,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           Volgende
         </button>
         <button class="btn btn--primary btn--block editor-save" type="button"
-                [disabled]="saving() || photoUploading() || translationSaving()"
+                [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving()"
                 (click)="save()">
           {{ isNew() && photoCount() ? "Product met foto's aanmaken" :
              (isNew() ? 'Product aanmaken' : 'Wijzigingen opslaan') }}
         </button>
         @if (!isNew()) {
           <button class="btn btn--block" type="button"
-                  [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
+                  [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
                   (click)="startCopy()">
             Kopiëren als variant
           </button>
@@ -832,7 +836,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div>
               <p>Staat dit product al op een order of offerte? Zet het dan inactief; gebruikte producten kunnen niet worden verwijderd.</p>
               <button class="btn btn--danger btn--block" type="button"
-                      [disabled]="saving() || photoUploading() || translationSaving() || translationDirty()"
+                      [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
                       (click)="remove()">
                 Product definitief verwijderen
               </button>
@@ -1169,7 +1173,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       .editor-canvas[data-tab="packaging"] #packaging,
       .editor-canvas[data-tab="purchasing"] #purchasing,
       .editor-canvas[data-tab="sales"] #sales,
-      .editor-canvas[data-tab="stock"] #stock { display: block; }
+      .editor-canvas[data-tab="stock"] #stock,
+      .editor-canvas[data-tab="agreements"] #agreements { display: block; }
     }
 
     .editor-section { scroll-margin-top: calc(var(--appbar-h) + 12px); }
@@ -1570,6 +1575,7 @@ export class ProductEditor implements OnDestroy {
       { id: 'purchasing', label: 'Inkoop' },
       { id: 'sales', label: 'Verkoop' },
       { id: 'stock', label: 'Voorraad' },
+      { id: 'agreements', label: 'Afspraken' },
       { id: 'publication', label: 'Website' },
     ];
     return list;
@@ -1719,6 +1725,8 @@ export class ProductEditor implements OnDestroy {
   }
 
   readonly draft = signal<Product>(blankProduct(null, 'USD'));
+  /** Supplier whose private agreement photos currently belong to on the server. */
+  readonly savedSupplierId = signal<number | null>(null);
   readonly suppliers = signal<Supplier[]>([]);
   readonly categories = signal<Category[]>([]);
   readonly hsCodes = signal<HsCode[]>([]);
@@ -1996,6 +2004,11 @@ export class ProductEditor implements OnDestroy {
   readonly photoUploading = computed(() => this.photoManager()?.busy() ?? false);
   readonly photoCount = computed(() =>
     this.draft().photos.length + (this.photoManager()?.pendingCount() ?? 0));
+  readonly agreementEditor = viewChild(ProductSupplierAgreementEditor);
+  readonly agreementBusy = computed(() => this.agreementEditor()?.busy() ?? false);
+  readonly agreementDirty = computed(() => this.agreementEditor()?.dirty() ?? false);
+  readonly selectedSupplierName = computed(() =>
+    this.suppliers().find((supplier) => supplier.id === this.draft().supplierId)?.name ?? '');
 
   /** The duplicate endpoint copies the saved product, not unsaved form edits. */
   readonly copySource = computed(() =>
@@ -2029,6 +2042,7 @@ export class ProductEditor implements OnDestroy {
   readonly canCopyVariant = computed(() =>
     !this.saving()
     && !this.photoUploading()
+    && !this.agreementBusy()
     && !this.translationSaving()
     && !this.translationDirty()
     && !this.copyVariantLoading()
@@ -2078,6 +2092,7 @@ export class ProductEditor implements OnDestroy {
       ++this.familyLoadVersion;
       this.setFamilyDraft(null);
       this.savedProductFamilyId.set(null);
+      this.savedSupplierId.set(null);
       this.translationDirty.set(false);
       this.translationSaving.set(false);
       this.draft.set(blankProduct(null, 'USD'));
@@ -2087,6 +2102,7 @@ export class ProductEditor implements OnDestroy {
       const product = await this.catalog.product(productId);
       if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
       this.savedProductFamilyId.set(product.familyId ?? null);
+      this.savedSupplierId.set(product.supplierId ?? null);
       this.activeProductId = productId;
       this.draft.set(product);
       void this.loadStockHistory(productId);
@@ -2182,6 +2198,7 @@ export class ProductEditor implements OnDestroy {
       const currency = suppliers.find((s) => s.id === supplierId)?.currency ?? 'USD';
       this.draft.set(blankProduct(supplierId, currency));
       this.savedProductFamilyId.set(null);
+      this.savedSupplierId.set(null);
       /* New products open on a fixed price (how fair deals are agreed);
          the 45% markup stays remembered for a tap to the other option. */
       this.lastMarkupPct.set(45);
@@ -2671,19 +2688,36 @@ export class ProductEditor implements OnDestroy {
   }
 
   setSupplier(supplierId: number): void {
-    const supplier = this.suppliers().find((s) => s.id === supplierId);
+    const currentId = this.draft().supplierId;
+    if (currentId === supplierId) return;
+    const hasAgreement = !!this.draft().supplierNote?.trim()
+      || (this.agreementEditor()?.photoCount() ?? 0) > 0;
+    if (currentId !== null && hasAgreement) {
+      const current = this.suppliers().find((supplier) => supplier.id === currentId)?.name
+        ?? 'de huidige leverancier';
+      const next = this.suppliers().find((supplier) => supplier.id === supplierId)?.name
+        ?? 'de nieuwe leverancier';
+      this.ui.confirm({
+        title: 'Leverancier en afspraken wijzigen',
+        message: `De afspraken bij <b>${escapeHtml(current)}</b> worden niet overgenomen naar <b>${escapeHtml(next)}</b>. Opgeslagen foto’s blijven aan de vorige leverancier gekoppeld; niet-geüploade foto’s worden verwijderd. Doorgaan?`,
+        confirmLabel: 'Leverancier wijzigen',
+        danger: true,
+      }, () => this.applySupplier(supplierId));
+      return;
+    }
+    this.applySupplier(supplierId);
+  }
+
+  private applySupplier(supplierId: number): void {
+    const supplier = this.suppliers().find((item) => item.id === supplierId);
     const supplierChanged = this.draft().supplierId !== null
       && this.draft().supplierId !== supplierId;
-    const clearedSupplierNote = supplierChanged && !!this.draft().supplierNote?.trim();
-    if (this.isNew() && supplier) {
-      this.patch({ supplierId, exwCurrency: supplier.currency,
-        ...(supplierChanged ? { supplierNote: null } : {}) });
-    } else {
-      this.patch({ supplierId, ...(supplierChanged ? { supplierNote: null } : {}) });
-    }
-    if (clearedSupplierNote) {
-      this.ui.toast('Leveranciersnotitie gewist omdat de leverancier is gewijzigd');
-    }
+    this.patch({
+      supplierId,
+      ...(this.isNew() && supplier ? { exwCurrency: supplier.currency } : {}),
+      ...(supplierChanged ? { supplierNote: null } : {}),
+    });
+    if (supplierChanged) this.ui.toast('Nieuwe leverancier gekozen · maak de afspraken opnieuw');
   }
 
   /* ---- a free code from the company's EAN list ---- */
@@ -2745,7 +2779,8 @@ export class ProductEditor implements OnDestroy {
   }
 
   startCopy(): void {
-    if (this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
+    if (this.photoUploading() || this.agreementBusy()
+        || this.translationDirty() || this.translationSaving()) return;
     const source = this.draft();
     const colour = source.colour ?? '';
     this.copyColour.set(colour);
@@ -2779,7 +2814,7 @@ export class ProductEditor implements OnDestroy {
 
   /** Makes the copy and jumps straight to it, ready to adjust. */
   async copy(): Promise<void> {
-    if (this.translationDirty() || this.translationSaving()) return;
+    if (this.agreementBusy() || this.translationDirty() || this.translationSaving()) return;
     const source = this.draft();
     const conflict = this.copyVariantConflict();
     if (conflict) {
@@ -2821,7 +2856,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async save(): Promise<void> {
-    if (this.saving() || this.photoUploading() || this.translationSaving()) return;
+    if (this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving()) return;
     /* Every reason not to save is said out loud and the screen jumps to
        the field - a greyed-out button explained nothing. */
     const missing: { tab: string; field: string; label: string }[] = [];
@@ -2867,17 +2902,23 @@ export class ProductEditor implements OnDestroy {
       if (!saved) return;
 
       this.draft.set(saved);
-      this.markClean();
       this.savedProductFamilyId.set(saved.familyId ?? null);
+      this.savedSupplierId.set(saved.supplierId ?? null);
+      const agreementResult = saved.id === null
+        ? null
+        : await this.agreementEditor()?.flush(saved.id) ?? null;
+      this.markClean();
       const publicationIssueCount = Math.max(
         this.family()?.publicationIssues.length ?? 0,
         saved.publicationIssues.length,
       );
-      this.ui.toast(publicationIssueCount
-        ? `Opgeslagen · nog ${publicationIssueCount} publicatiepunt(en)`
-        : (wasNew
-          ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
-          : 'Opgeslagen'));
+      this.ui.toast(agreementResult?.remaining
+        ? `Product opgeslagen · ${agreementResult.remaining} afspraakfoto${agreementResult.remaining === 1 ? '' : '’s'} wacht op opnieuw proberen`
+        : (publicationIssueCount
+          ? `Opgeslagen · nog ${publicationIssueCount} publicatiepunt(en)`
+          : (wasNew
+            ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
+            : 'Opgeslagen')));
       /* Saving keeps you on the form: the next tweak is usually seconds
          away. A caller that sent us here with a return address (a sales
          order creating a product) still gets its product back. */
@@ -3084,7 +3125,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   remove(): void {
-    if (this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
+    if (this.photoUploading() || this.agreementBusy() || this.translationDirty() || this.translationSaving()) return;
     const product = this.draft();
     this.ui.confirm(
       {
@@ -3105,9 +3146,9 @@ export class ProductEditor implements OnDestroy {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
-    if (this.translationSaving()) return false;
+    if (this.translationSaving() || this.agreementBusy()) return false;
     if (this.translationDirty()) return this.confirmDiscardTranslations();
-    if (!this.dirty() || this.saving()) return true;
+    if ((!this.dirty() && !this.agreementDirty()) || this.saving()) return true;
     /* Unsaved product fields: ask in our own words - save, drop, or stay. */
     return new Promise<boolean>((resolve) => {
       this.leaveQuestion.set(async (keep) => {
@@ -3115,7 +3156,7 @@ export class ProductEditor implements OnDestroy {
         if (keep === null) { resolve(false); return; }
         if (keep) {
           await this.save();
-          resolve(!this.dirty());
+          resolve(!this.dirty() && !this.agreementDirty());
           return;
         }
         resolve(true);
@@ -3125,7 +3166,8 @@ export class ProductEditor implements OnDestroy {
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (!this.dirty() && !this.translationDirty() && !this.translationSaving()) return;
+    if (!this.dirty() && !this.agreementDirty()
+        && !this.translationDirty() && !this.translationSaving() && !this.agreementBusy()) return;
     event.preventDefault();
     event.returnValue = '';
   }

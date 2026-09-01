@@ -7,6 +7,7 @@
     "build": "ng build",
     "build:test": "ng build --configuration production,test",
     "test:purchase-pdf-options": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/purchase-pdf-options.test.mts",
+    "test:product-supplier-agreement": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/product-supplier-agreement-state.test.mts",
     "test:product-family-identity": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/product-family-identity.test.mts",
     "watch": "ng build --watch --configuration development"
   },

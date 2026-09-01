@@ -173,6 +173,30 @@ export interface PhotoDto {
   downloadUrl: string;
 }
 
+/**
+ * Private visual instruction for the supplier currently linked to a product.
+ * These images are never part of Product.photos or ProductFamily.images and
+ * therefore cannot enter the website, catalogue or order app by accident.
+ */
+export interface ProductSupplierAgreementPhoto {
+  id: number;
+  productId: number;
+  supplierId: number;
+  /** Stable order used by the supplier purchase PDF. */
+  position: number;
+  /** Short English caption printed with the photo; null means no caption. */
+  caption: string | null;
+  originalFilename: string;
+  contentType: string;
+  sizeBytes: number;
+  widthPx: number | null;
+  heightPx: number | null;
+  /** Authenticated inline image route, relative to the API base. */
+  viewUrl: string;
+  /** Authenticated attachment route, relative to the API base. */
+  downloadUrl: string;
+}
+
 export interface ProductText {
   language: LanguageCode;
   name: string | null;
@@ -207,7 +231,7 @@ export interface Product {
   description: string | null;
   categoryId: number | null;
   supplierId: number | null;
-  /** Internal product instruction included only on supplier purchase PDFs. */
+  /** English internal product instruction included only on supplier purchase PDFs. */
   supplierNote: string | null;
   active: boolean;
   /** A demo piece: shown, never sold; invisible to every public channel. */

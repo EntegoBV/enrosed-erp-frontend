@@ -6,7 +6,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, ProductSupplierAgreementPhoto, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
@@ -18,6 +18,8 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
+import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-state';
 
 /**
  * Read-first product master. The page deliberately separates the customer
@@ -28,7 +30,8 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer,
+    PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -221,14 +224,6 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                 <div><h2 id="dossier-title">Product &amp; prijzen</h2><p>Identificatie, inkoop en verkoop</p></div>
               </header>
 
-              @if (product.supplierNote; as supplierNote) {
-                <div class="supplier-note">
-                  <span>Leveranciersnotitie</span>
-                  <p>{{ supplierNote }}</p>
-                  <small>Wordt opgenomen in de leveranciers-PDF van een inkooporder.</small>
-                </div>
-              }
-
               <div class="tiles-kicker tiles-kicker--first">Identificatie</div>
               <div class="tiles">
                 <div class="tile"><span>Afmeting B × D × H</span><b class="num">{{ size(product.dimensions) }}</b></div>
@@ -310,6 +305,61 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
                   <small>catalogusprijs min kostprijs</small></button>
               </div>
             </section>
+            <section class="info-card info-card--internal agreement-card"
+                     aria-labelledby="supplier-agreement-card-title">
+              <header>
+                <span class="info-card__icon" aria-hidden="true">AGR</span>
+                <div>
+                  <h2 id="supplier-agreement-card-title">Afspraken leverancier</h2>
+                  <p>Engelse instructies en PDF-referentiefoto’s</p>
+                </div>
+                @if (product.id !== null) {
+                  <a class="agreement-edit" [routerLink]="['/products', product.id, 'edit']"
+                     [queryParams]="{ tab: 'agreements' }">Bewerk ›</a>
+                }
+              </header>
+
+              <div class="agreement-private" role="note">
+                <i aria-hidden="true">●</i>
+                <span><b>Alleen leverancier</b><small>Nooit online of in de websitegalerij</small></span>
+              </div>
+
+              @if (product.supplierNote; as supplierNote) {
+                <div class="agreement-instruction">
+                  <span>Product instruction (English)</span>
+                  <p lang="en">{{ supplierNote }}</p>
+                </div>
+              }
+
+              @if (agreementLoading()) {
+                <p class="agreement-state" role="status">Afspraakfoto’s laden…</p>
+              } @else if (agreementLoadError(); as agreementError) {
+                <div class="agreement-state agreement-state--error" role="alert">
+                  <span>{{ agreementError }}</span>
+                  <button class="btn btn--sm" type="button" (click)="retrySupplierAgreement()">
+                    Opnieuw proberen
+                  </button>
+                </div>
+              } @else if (agreementPhotos().length) {
+                <ol class="agreement-gallery" aria-label="Afspraakfoto’s in PDF-volgorde">
+                  @for (photo of agreementPhotos(); track photo.id; let i = $index) {
+                    <li>
+                      <button type="button" (click)="agreementLightbox.set(i)"
+                              [attr.aria-label]="'Afspraakfoto ' + (i + 1) + ' vergroten'">
+                        <img [appAuthSrc]="photo.viewUrl"
+                             [alt]="photo.caption || photo.originalFilename" loading="lazy" />
+                        <span>PDF {{ i + 1 }}</span>
+                      </button>
+                      @if (photo.caption) { <p lang="en">{{ photo.caption }}</p> }
+                    </li>
+                  }
+                </ol>
+              } @else if (!product.supplierNote) {
+                <p class="agreement-state">Nog geen productspecifieke afspraken voor deze leverancier.</p>
+              }
+            </section>
+            <app-product-supplier-agreement-photo-viewer
+              [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
             @if (familyLoading() || familyLoadError() || variantMembers().length > 1) {
               <section class="info-card linked-card" aria-labelledby="linked-products-title">
                 <header>
@@ -683,9 +733,10 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
          products and the stock. */
       .details-grid > .details-col { display: contents; }
       .info-card--internal { order: 1; }
-      .omdoos-card { order: 2; }
-      .linked-card { order: 3; }
-      #stock-card { order: 4; }
+      .agreement-card { order: 2; }
+      .omdoos-card { order: 3; }
+      .linked-card { order: 4; }
+      #stock-card { order: 5; }
     }
     .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 50%); font-size: 9.5px;
       text-overflow: ellipsis; white-space: nowrap; }
@@ -843,13 +894,29 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
     .info-card header p { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
     .info-card--internal { border-color: #eddcb9; }
     .info-card--internal .info-card__icon { background: var(--warn-soft); color: var(--warn); }
-    .supplier-note { margin: 12px 14px 0; padding: 12px 13px; border: 1px solid #eddcb9;
-      border-radius: var(--r-sm); background: var(--warn-soft); }
-    .supplier-note > span { color: var(--warn); font-size: 10.5px; font-weight: 800;
-      letter-spacing: .06em; text-transform: uppercase; }
-    .supplier-note p { margin-top: 5px; color: var(--ink); font-size: 13px; line-height: 1.5;
-      white-space: pre-wrap; overflow-wrap: anywhere; }
-    .supplier-note small { display: block; margin-top: 5px; color: var(--muted); font-size: 10.5px; }
+    .agreement-edit { flex:none; color:var(--rose-dark);font-size:11px;font-weight:750;text-decoration:none }
+    .agreement-private { display:flex;align-items:center;gap:9px;margin:12px 14px 0;padding:9px 11px;
+      border:1px solid #eddcb9;border-radius:var(--r-sm);background:var(--warn-soft) }
+    .agreement-private>i { color:var(--warn);font-size:8px }
+    .agreement-private>span { display:grid;gap:1px }
+    .agreement-private b { color:var(--warn);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em }
+    .agreement-private small { color:var(--muted);font-size:9.5px }
+    .agreement-instruction { margin:10px 14px 0;padding:11px 12px;border-left:3px solid var(--warn);
+      border-radius:0 var(--r-sm) var(--r-sm) 0;background:var(--surface-2) }
+    .agreement-instruction>span { color:var(--muted);font-size:9.5px;font-weight:760;letter-spacing:.05em;text-transform:uppercase }
+    .agreement-instruction p { margin-top:5px;color:var(--ink);font-size:12.5px;line-height:1.5;
+      white-space:pre-wrap;overflow-wrap:anywhere }
+    .agreement-gallery { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:11px 14px 14px;padding:0;list-style:none }
+    .agreement-gallery li { min-width:0 }
+    .agreement-gallery button { position:relative;width:100%;aspect-ratio:1;padding:0;overflow:hidden;border:1px solid var(--line);
+      border-radius:11px;background:var(--surface-2);cursor:zoom-in }
+    .agreement-gallery img { width:100%;height:100%;object-fit:cover }
+    .agreement-gallery button span { position:absolute;left:5px;bottom:5px;padding:3px 6px;border-radius:999px;
+      background:rgb(20 14 12/.76);color:#fff;font-size:9px;font-weight:760 }
+    .agreement-gallery p { margin:4px 2px 0;color:var(--ink-2);font-size:10px;line-height:1.35;
+      overflow-wrap:anywhere }
+    .agreement-state { margin:0;padding:14px;color:var(--muted);font-size:11.5px;line-height:1.45 }
+    .agreement-state--error { display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--danger) }
 
     .barcode-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
       color: inherit; font: inherit; cursor: pointer; }
@@ -872,6 +939,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
 })
 export class ProductView {
   readonly lightbox = signal(-1);
+  readonly agreementLightbox = signal(-1);
 
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
@@ -882,6 +950,9 @@ export class ProductView {
   private readonly ui = inject(Ui);
 
   readonly product = signal<Product | null>(null);
+  readonly agreementPhotos = signal<ProductSupplierAgreementPhoto[]>([]);
+  readonly agreementLoading = signal(false);
+  readonly agreementLoadError = signal<string | null>(null);
 
   /* The stock book, fetched the first time the tile is opened. */
   /** Pieces on the water for this product, from ordered and shipped containers. */
@@ -1167,6 +1238,13 @@ export class ProductView {
     }
   }
 
+  retrySupplierAgreement(): void {
+    const productId = this.product()?.id;
+    if (productId !== null && productId !== undefined && !this.agreementLoading()) {
+      void this.loadSupplierAgreement(productId, this.loadVersion);
+    }
+  }
+
   private async loadProduct(id: number): Promise<void> {
     this.loadStockHistory(id);
     void this.sourcing.expectedStock()
@@ -1185,6 +1263,10 @@ export class ProductView {
     this.familyLoadError.set(false);
     this.familyLoading.set(false);
     this.lightbox.set(-1);
+    this.agreementLightbox.set(-1);
+    this.agreementPhotos.set([]);
+    this.agreementLoadError.set(null);
+    void this.loadSupplierAgreement(id, version);
 
     const [product, categories, suppliers] = await Promise.all([
       this.catalog.product(id),
@@ -1213,6 +1295,23 @@ export class ProductView {
         .catch(() => this.catalogueOrder.set([]));
     }
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
+  }
+
+  private async loadSupplierAgreement(productId: number, version: number): Promise<void> {
+    this.agreementLoading.set(true);
+    this.agreementLoadError.set(null);
+    try {
+      const photos = await this.catalog.supplierAgreementPhotos(productId);
+      if (version !== this.loadVersion) return;
+      this.agreementPhotos.set(orderedSupplierAgreementPhotos(photos));
+    } catch (failure: unknown) {
+      if (version !== this.loadVersion) return;
+      this.agreementPhotos.set([]);
+      this.agreementLoadError.set(messageOf(
+        failure, 'Afspraakfoto’s konden niet worden geladen.'));
+    } finally {
+      if (version === this.loadVersion) this.agreementLoading.set(false);
+    }
   }
 
   private async loadFamily(familyId: number, version: number): Promise<void> {

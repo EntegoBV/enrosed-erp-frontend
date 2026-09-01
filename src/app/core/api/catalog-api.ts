@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
+  CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -339,6 +339,50 @@ export class CatalogApi {
   reorderPhotos(productId: number, photoIds: number[]): Promise<Product> {
     return firstValueFrom(
       this.http.put<Product>(api(`/api/products/${productId}/photos/order`), photoIds));
+  }
+
+  /* ------------------------------------------ leveranciersafspraakfoto's */
+
+  /** Ordered, supplier-scoped photos that only enter the supplier agreement PDF. */
+  supplierAgreementPhotos(productId: number): Promise<ProductSupplierAgreementPhoto[]> {
+    return firstValueFrom(this.http.get<ProductSupplierAgreementPhoto[]>(
+      api(`/api/products/${productId}/supplier-agreement/photos`)));
+  }
+
+  uploadSupplierAgreementPhoto(
+    productId: number,
+    file: File,
+    caption: string | null = null,
+  ): Promise<ProductSupplierAgreementPhoto> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    if (caption?.trim()) form.append('caption', caption.trim());
+    return firstValueFrom(this.http.post<ProductSupplierAgreementPhoto>(
+      api(`/api/products/${productId}/supplier-agreement/photos`), form));
+  }
+
+  updateSupplierAgreementPhotoCaption(
+    productId: number,
+    photoId: number,
+    caption: string | null,
+  ): Promise<ProductSupplierAgreementPhoto> {
+    return firstValueFrom(this.http.put<ProductSupplierAgreementPhoto>(
+      api(`/api/products/${productId}/supplier-agreement/photos/${photoId}`),
+      { caption: caption?.trim() || null },
+    ));
+  }
+
+  reorderSupplierAgreementPhotos(
+    productId: number,
+    photoIds: number[],
+  ): Promise<ProductSupplierAgreementPhoto[]> {
+    return firstValueFrom(this.http.put<ProductSupplierAgreementPhoto[]>(
+      api(`/api/products/${productId}/supplier-agreement/photos/order`), photoIds));
+  }
+
+  deleteSupplierAgreementPhoto(productId: number, photoId: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(
+      api(`/api/products/${productId}/supplier-agreement/photos/${photoId}`)));
   }
 
   /** Fetches the bytes; the caller makes a blob URL or a download of them. */
