@@ -2,11 +2,19 @@ import { ChangeDetectionStrategy, Component, OnDestroy, computed, input, output,
 import { CartonQuantity } from './carton-quantity';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../core/api/auth-image';
-import { Product } from '../core/api/models';
+import { Category, Product } from '../core/api/models';
 import { Sheet } from './ui';
 import { EurPipe, NumPipe } from './pipes';
 import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
 import { cartonQuantityNotice } from './carton-quantity-notice';
+import { COLOUR_SWATCHES, STANDARD_COLOURS } from '../core/api/geo';
+import {
+  ProductPickerCategoryKey,
+  filterProductPicker,
+  productPickerCategories,
+  productPickerCategoryName,
+  productPickerColours,
+} from './product-picker-filters';
 
 /**
  * Picking a product with a search field instead of a dropdown.
@@ -49,6 +57,51 @@ export interface ProductDraft {
             (ngModelChange)="searchAgain($event)"
           />
         </div>
+        @if (!chosen() && !quantityStep()) {
+          <div class="picker-filters" aria-label="Producten filteren">
+            <div class="picker-filter">
+              <span class="picker-filter__label">Categorie</span>
+              <div class="picker-chips" role="group" aria-label="Filter op categorie">
+                <button class="picker-chip" type="button"
+                        [class.picker-chip--active]="categoryFilter() === null"
+                        [attr.aria-pressed]="categoryFilter() === null"
+                        (click)="setCategoryFilter(null)">
+                  Alle <small>{{ products().length }}</small>
+                </button>
+                @for (category of categoryOptions(); track category.key) {
+                  <button class="picker-chip" type="button"
+                          [class.picker-chip--active]="categoryFilter() === category.key"
+                          [attr.aria-pressed]="categoryFilter() === category.key"
+                          (click)="setCategoryFilter(category.key)">
+                    {{ category.name }} <small>{{ category.count }}</small>
+                  </button>
+                }
+              </div>
+            </div>
+
+            <div class="picker-filter">
+              <span class="picker-filter__label">Kleur</span>
+              <div class="picker-chips" role="group" aria-label="Filter op kleur">
+                <button class="picker-chip" type="button"
+                        [class.picker-chip--active]="colourFilter() === null"
+                        [attr.aria-pressed]="colourFilter() === null"
+                        (click)="colourFilter.set(null)">
+                  Alle kleuren
+                </button>
+                @for (colour of colourOptions(); track colour.key) {
+                  <button class="picker-chip picker-chip--colour" type="button"
+                          [class.picker-chip--active]="colourFilter() === colour.key"
+                          [attr.aria-pressed]="colourFilter() === colour.key"
+                          (click)="colourFilter.set(colour.key)">
+                    <i class="picker-colour-dot" [class.picker-colour-dot--empty]="!colour.hex"
+                       [style.background]="colour.hex || 'var(--surface-2)'" aria-hidden="true"></i>
+                    {{ colour.name }} <small>{{ colour.count }}</small>
+                  </button>
+                }
+              </div>
+            </div>
+          </div>
+        }
         }
 
         @if (createMode()) {
@@ -124,7 +177,7 @@ export interface ProductDraft {
                 <div class="small muted">
                   <span class="row wrap" style="gap:5px">
                     <span>
-                      {{ product.sku }}
+                      {{ categoryName(product) }} · {{ product.sku }}
                       · {{ product.carton.piecesPerCarton }} per doos
                     </span>
                     @if (stockAware()) {
@@ -205,7 +258,7 @@ export interface ProductDraft {
                 <div class="picker-batch__body">
                   <div class="strong">{{ entry.product.name }}</div>
                   <div class="small muted">
-                    {{ entry.product.sku }}@if (entry.product.colour) { · {{ entry.product.colour }}}
+                    {{ categoryName(entry.product) }} · {{ entry.product.sku }}@if (entry.product.colour) { · {{ entry.product.colour }}}
                     · {{ entry.product.carton.piecesPerCarton }}/doos
                     @if (entry.quantity > 0 && (entry.product.carton.piecesPerCarton ?? 0) > 0) {
                       · {{ entry.quantity / (entry.product.carton.piecesPerCarton ?? 1) | num: 1 }} doos(en)
@@ -240,6 +293,7 @@ export interface ProductDraft {
                 }
                 <div class="picker-item__body">
                   <div class="picker-item__title">{{ product.name }}</div>
+                  <div class="picker-item__category">{{ categoryName(product) }}</div>
                   <div class="picker-item__meta">
                     {{ product.sku }}
                     @if (product.colour) { · {{ product.colour }} }
@@ -315,6 +369,21 @@ export interface ProductDraft {
   `,
   styles: `
     .dims-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .picker-filters { display: grid; gap: 10px; margin: 12px 0 14px; }
+    .picker-filter { min-width: 0; }
+    .picker-filter__label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px;
+      font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
+    .picker-chips { display: flex; gap: 6px; margin: 0 -16px; padding: 0 16px 3px; overflow-x: auto;
+      scrollbar-width: none; scroll-snap-type: x proximity; }
+    .picker-chips::-webkit-scrollbar { display: none; }
+    .picker-chip { min-height: 34px; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
+      border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
+      font: inherit; font-size: 11.5px; font-weight: 650; white-space: nowrap; cursor: pointer; scroll-snap-align: start; }
+    .picker-chip small { color: var(--muted); font-size: 9.5px; font-weight: 700; }
+    .picker-chip--active { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+    .picker-chip--active small { color: currentColor; opacity: .72; }
+    .picker-colour-dot { width: 11px; height: 11px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
+    .picker-colour-dot--empty { background: linear-gradient(135deg, transparent 44%, var(--muted) 46% 54%, transparent 56%)!important; }
     .picker-list { display: flex; flex-direction: column; margin: 0 -16px; }
     .picker-item--selected { background: var(--rose-soft); }
     .picker-item__check { flex: 0 0 auto; width: 22px; height: 22px; display: inline-flex; align-items: center;
@@ -347,6 +416,8 @@ export interface ProductDraft {
     .picker-item:active { background: var(--surface-2); }
     .picker-item__body { flex: 1; min-width: 0; }
     .picker-item__title { font-size: 14.5px; font-weight: 620; }
+    .picker-item__category { margin: 1px 0; color: var(--rose-dark); font-size: 9.5px; font-weight: 760;
+      letter-spacing: .04em; text-transform: uppercase; }
     .picker-item__meta { font-size: 12px; color: var(--muted); }
     .picker-item__end { font-weight: 650; font-variant-numeric: tabular-nums; }
     /* Stock dot: red empty, orange tight, green ample. Colour alone is not
@@ -371,6 +442,7 @@ export interface ProductDraft {
 export class ProductPicker implements OnDestroy {
   readonly heading = input('Product toevoegen');
   readonly products = input.required<Product[]>();
+  readonly categories = input<readonly Category[]>([]);
   /** The price to display; the caller decides which one that is. */
   readonly priceOf = input<(product: Product) => number>((product) =>
     product.computedSalesPriceEur);
@@ -488,27 +560,36 @@ export class ProductPicker implements OnDestroy {
   }
 
   readonly query = signal('');
+  readonly categoryFilter = signal<ProductPickerCategoryKey | null>(null);
+  readonly colourFilter = signal<string | null>(null);
   readonly chosen = signal<Product | null>(null);
   readonly carton = new CartonQuantity(
     () => this.chosen()?.carton.piecesPerCarton ?? 1,
     () => this.enforceCartons());
 
-  readonly matches = computed(() => {
-    const needle = this.query().toLowerCase().trim();
-    const all = orderPickerProducts(this.products(), this.preserveSourceOrder());
-    if (!needle) return all.slice(0, 50);
-    return all
-      .filter((product) =>
-        [
-          product.name, product.sku, product.colour, product.variantSize, product.describedAs,
-          product.barcodeInner, product.barcodeOuter,
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(needle),
-      )
-      .slice(0, 50);
-  });
+  readonly categoryOptions = computed(() =>
+    productPickerCategories(this.products(), this.categories()));
+  readonly colourOptions = computed(() =>
+    productPickerColours(
+      this.products(), this.categories(), this.categoryFilter(), STANDARD_COLOURS, COLOUR_SWATCHES));
+  readonly matches = computed(() => filterProductPicker(
+    orderPickerProducts(this.products(), this.preserveSourceOrder()), this.categories(), {
+    query: this.query(),
+    category: this.categoryFilter(),
+    colour: this.colourFilter(),
+  }));
+
+  setCategoryFilter(category: ProductPickerCategoryKey | null): void {
+    this.categoryFilter.set(category);
+    const colour = this.colourFilter();
+    if (colour !== null && !this.colourOptions().some((option) => option.key === colour)) {
+      this.colourFilter.set(null);
+    }
+  }
+
+  categoryName(product: Product): string {
+    return productPickerCategoryName(product, this.categories());
+  }
 
   ngOnDestroy(): void {
     this.carton.destroy();

@@ -7,7 +7,7 @@ import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
-  Carrier, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
+  Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
   MarkupMode, Product, QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -1189,6 +1189,7 @@ import {
         <app-product-picker
           heading="Product toevoegen"
           [products]="available()"
+          [categories]="categories()"
           [priceOf]="priceOf"
           (picked)="addLine($event)"
           (cancelled)="picking.set(false)"
@@ -1934,6 +1935,7 @@ export class SalesEditor {
   });
   readonly countries = signal<Country[]>([]);
   readonly products = signal<Product[]>([]);
+  readonly categories = signal<Category[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly customerPortalLink = signal<CustomerPortalLink | null>(null);
 
@@ -1993,13 +1995,15 @@ export class SalesEditor {
   private async loadReference(): Promise<void> {
     this.referenceError.set('');
     try {
-      const [customers, countries, products, carriers] = await Promise.all([
+      const [customers, countries, products, categories, carriers] = await Promise.all([
         this.sales.customers(), this.sales.countries(), this.catalog.products(),
+        this.catalog.categories().catch(() => [] as Category[]),
         this.sales.carriers().catch(() => []),
       ]);
       this.customers.set(customers);
       this.countries.set(countries);
       this.products.set(products);
+      this.categories.set(categories);
       this.carriers.set(carriers.filter((carrier) => carrier.active));
     } catch (failure: unknown) {
       this.referenceError.set(messageOf(failure, 'Klanten, landen of producten ontbreken'));

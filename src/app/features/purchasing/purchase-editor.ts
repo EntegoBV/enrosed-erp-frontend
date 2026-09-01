@@ -14,7 +14,7 @@ import {
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import {
-  Allocation, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
+  Allocation, Category, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
   PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -1100,6 +1100,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-product-picker
           heading="Product toevoegen aan de container"
           [products]="available()"
+          [categories]="categories()"
           [priceOf]="exwPriceOf"
           [enforceCartons]="false"
           mode="multi"
@@ -2099,6 +2100,7 @@ export class PurchaseEditor {
   readonly view = signal<PurchaseOrderView | null>(null);
   readonly adjustments = signal<PurchaseOrderView['adjustments']>([]);
   readonly products = signal<Product[]>([]);
+  readonly categories = signal<Category[]>([]);
   readonly freightRates = signal<FreightRate[]>([]);
   /** The order's supplier; drives the header and the origin-cost label. */
   readonly supplier = signal<Supplier | null>(null);
@@ -2136,12 +2138,15 @@ export class PurchaseEditor {
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
     this.savedOrder.set(JSON.stringify(view.order));
-    const [products, suppliers, locations, freightRates] = await Promise.all([
-      this.catalog.products(view.order.supplierId), this.sourcing.suppliers(),
+    const [products, categories, suppliers, locations, freightRates] = await Promise.all([
+      this.catalog.products(view.order.supplierId),
+      this.catalog.categories().catch(() => [] as Category[]),
+      this.sourcing.suppliers(),
       this.catalog.stockLocations().catch(() => [] as StockLocation[]),
       /* A market-context hint must never block opening the order. */
       this.sourcing.freightRates().catch(() => [] as FreightRate[])]);
     this.products.set(products);
+    this.categories.set(categories);
     this.freightRates.set(freightRates);
     this.stockLocations.set(locations.filter((location) => location.active));
     this.supplier.set(suppliers.find((s) => s.id === view.order.supplierId) ?? null);
