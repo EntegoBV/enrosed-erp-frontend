@@ -658,7 +658,7 @@ const normalizeCategoryCode = (value: string): string => value
                         <input class="input input--sm num right" type="text" inputmode="decimal"
                                [attr.aria-label]="'Kortingspercentage voor ' + (group.product?.name || group.productId)"
                                [value]="pctText(tier.percent)"
-                               (change)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />
+                               (blur)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />
                         <small>%</small>
                       </label>
                       <button class="discount-tier__remove" type="button" aria-label="Drempel verwijderen"
