@@ -630,7 +630,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     }
   `,
   styles: [`
-    .sales-view-page { max-width:1180px;margin-inline:auto;padding-bottom:96px;background:radial-gradient(circle at 48% 0,var(--rose-soft),transparent 340px) }
+    .sales-view-page { max-width:1180px;margin-inline:auto;padding-bottom:96px;background:transparent }
     .sales-view-page>*+* { margin-top:12px }
     .sales-hero { overflow:hidden;padding:18px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2) }
     .sales-hero__top { display:flex;align-items:flex-start;justify-content:space-between;gap:12px }

@@ -40,11 +40,7 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { latestOwnFreightQuote } from './purchase-price-context';
-import {
-  PurchaseLineCategoryFilter,
-  purchaseLineCategoryOptions,
-  purchaseLineSections,
-} from './purchase-product-line-groups';
+import { purchaseLineSections } from './purchase-product-line-groups';
 
 /**
  * Landed-cost calculation of a container.
@@ -93,10 +89,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
           PDF
         </button>
-        <button class="btn btn--primary btn--sm" type="button"
-                [disabled]="saving() || !dirty()" (click)="save()">
-          {{ saving() ? 'Bezig…' : (dirty() ? 'Opslaan' : 'Opgeslagen') }}
-        </button>
+        @if (dirty()) {
+          <button class="btn btn--primary btn--sm" type="button"
+                  [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Bezig…' : 'Opslaan' }}
+          </button>
+        } @else if (nextStep(); as step) {
+          <button class="btn btn--primary btn--sm" type="button" (click)="advanceStatus()">
+            {{ step.action }}
+          </button>
+        } @else {
+          <button class="btn btn--primary btn--sm" type="button" disabled>Opgeslagen</button>
+        }
       </app-page-header>
 
       <div class="content po-page erp-workspace erp-workspace--purchase erp-workspace--edit">
@@ -417,37 +421,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </button>
               </div>
 
-              <!-- Categories are coarse navigation. Colours stay visibly together
-                   inside their product family instead of disappearing behind a filter. -->
-              @if (data.costing.lines.length) {
-                <div class="line-organizer" aria-label="Productregels per categorie bekijken">
-                  <div class="line-filter">
-                    <span class="line-filter__label">Categorie</span>
-                    <div class="line-filter__chips" role="group" aria-label="Filter op categorie">
-                      <button type="button" [class.active]="lineCategoryFilter() === null"
-                              [attr.aria-pressed]="lineCategoryFilter() === null"
-                              (click)="selectLineCategory(null)">
-                        Alle <small>{{ data.costing.lines.length }}</small>
-                      </button>
-                      @for (option of lineCategoryOptions(); track option.key) {
-                        <button type="button" [class.active]="lineCategoryFilter() === option.key"
-                                [attr.aria-pressed]="lineCategoryFilter() === option.key"
-                                (click)="selectLineCategory(option.key)">
-                          {{ option.label }} <small>{{ option.count }}</small>
-                        </button>
-                      }
-                    </div>
-                  </div>
-
-                  @if (lineFiltersActive()) {
-                    <div class="line-filter__summary" aria-live="polite">
-                      <span>{{ visiblePurchaseLineCount() }} van {{ data.costing.lines.length }} regels zichtbaar</span>
-                      <button type="button" (click)="resetLineFilters()">Filters wissen</button>
-                    </div>
-                  }
-                </div>
-              }
-
               <div class="product-lines">
                 <div class="po-lines">
                 @if (data.costing.lines.length) {
@@ -680,13 +653,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </section>
                   }
                     </section>
-                  } @empty {
-                    <div class="empty product-empty product-empty--filtered">
-                      <div class="empty__icon" aria-hidden="true">⌕</div>
-                      <div class="empty__title">Geen productregels in dit filter</div>
-                      <p class="empty__text">Kies een andere categorie om de productreeksen terug te zien.</p>
-                      <button class="btn" type="button" (click)="resetLineFilters()">Filters wissen</button>
-                    </div>
                   }
                 } @else {
                   <div class="empty product-empty">
@@ -1262,21 +1228,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         </div>
       </div>
 
-      <div class="erp-workspace__mobile-dock" aria-label="Inkooporder acties">
-        <span class="erp-workspace__mobile-state" aria-live="polite">
-          <small>{{ dirty() ? 'Niet opgeslagen' : 'Alles opgeslagen' }}</small>
-          <strong>{{ dirty() ? 'Bewaar je wijzigingen' : (nextStep()?.action || 'Order afgerond') }}</strong>
-        </span>
-        <button class="btn" type="button" (click)="pdfOpen.set(true)" aria-label="PDF openen">PDF</button>
-        @if (dirty()) {
-          <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="save()">
-            {{ saving() ? 'Bezig…' : 'Opslaan' }}
-          </button>
-        } @else if (nextStep(); as step) {
-          <button class="btn btn--primary" type="button" (click)="advanceStatus()">{{ step.action }}</button>
-        }
-      </div>
-
       @if (picking()) {
         <app-product-picker
           heading="Product toevoegen aan de container"
@@ -1791,14 +1742,6 @@ export class PurchaseEditor {
   photoOf(productId: number): string | null {
     const product = this.productById().get(productId);
     return product?.photos?.[0]?.url ?? null;
-  }
-
-  selectLineCategory(filter: PurchaseLineCategoryFilter): void {
-    this.lineCategoryFilter.set(filter);
-  }
-
-  resetLineFilters(): void {
-    this.lineCategoryFilter.set(null);
   }
 
   purchaseLineNumber(productId: number): number {
@@ -2346,20 +2289,13 @@ export class PurchaseEditor {
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
   readonly families = signal<ProductFamily[]>([]);
-  readonly lineCategoryFilter = signal<PurchaseLineCategoryFilter>(null);
   private readonly productById = computed(() => new Map(this.products().flatMap((product) =>
     product.id === null ? [] : [[product.id, product] as const])));
-  readonly lineCategoryOptions = computed(() => purchaseLineCategoryOptions(
-    this.view()?.costing.lines ?? [], this.products(), this.categories()));
   readonly lineSections = computed(() => purchaseLineSections(
     this.view()?.costing.lines ?? [], this.products(), this.categories(),
-    this.families(), this.lineCategoryFilter()));
-  private readonly unfilteredPurchaseLines = computed(() => purchaseLineSections(
-    this.view()?.costing.lines ?? [], this.products(), this.categories(), this.families(), null)
+    this.families(), null));
+  private readonly unfilteredPurchaseLines = computed(() => this.lineSections()
     .flatMap((section) => section.lines));
-  readonly visiblePurchaseLineCount = computed(() => this.lineSections()
-    .reduce((count, section) => count + section.lines.length, 0));
-  readonly lineFiltersActive = computed(() => this.lineCategoryFilter() !== null);
   readonly freightRates = signal<FreightRate[]>([]);
   /** The order's supplier; drives the header and the origin-cost label. */
   readonly supplier = signal<Supplier | null>(null);
@@ -2393,7 +2329,6 @@ export class PurchaseEditor {
   }
 
   private async load(orderId: number): Promise<void> {
-    this.resetLineFilters();
     this.families.set([]);
     /* Family metadata enriches the cards and picker, but an unavailable
        catalogue endpoint must never hold up opening or editing an order. */
@@ -2784,7 +2719,6 @@ export class PurchaseEditor {
   addLine(choice: { product: Product; quantity: number }): void {
     this.picking.set(false);
     if (this.isReceived()) return;
-    this.resetLineFilters();
     this.enqueue((order) => ({
       ...order,
       lines: [...order.lines, {
@@ -2801,7 +2735,6 @@ export class PurchaseEditor {
   addLines(choices: { product: Product; quantity: number }[]): void {
     this.picking.set(false);
     if (this.isReceived() || !choices.length) return;
-    this.resetLineFilters();
     this.enqueue((order) => ({
       ...order,
       lines: [...order.lines, ...choices.map((choice) => ({

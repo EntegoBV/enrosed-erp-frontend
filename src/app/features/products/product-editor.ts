@@ -1242,8 +1242,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
   `,
   styles: `
-    .product-editor-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 260px); }
-    .product-editor-lead { background: linear-gradient(180deg, var(--rose-soft), transparent); }
+    .product-editor-page { background: transparent; }
+    .product-editor-lead { background: transparent; }
     .product-editor-lead__content { padding-bottom: 10px; }
     .product-editor-hero { display: grid; grid-template-columns: 76px minmax(0, 1fr);
       grid-template-areas: 'media identity' 'facts facts'; gap: 10px 12px; align-items: center;

@@ -688,7 +688,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     }
   `,
   styles: `
-    .product-view-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 300px); }
+    .product-view-page { background: transparent; }
     .product-view-canvas { display: block; width: 100%; max-width: 1080px; margin: 0 auto; }
     .product-detail-nav { top: var(--appbar-h); margin-top: 10px; overflow: hidden;
       border: 1px solid rgb(255 255 255 / 72%); border-radius: 15px; box-shadow: var(--sh-1); }

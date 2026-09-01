@@ -2751,25 +2751,8 @@ app-content-translation-workspace .card + * { margin-top: 12px; }
    Keeping these scoped rules global prevents their component CSS budgets
    from growing while the DOM remains isolated by the component hosts. */
 app-purchase-editor {
-  .line-organizer { display: grid; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
-  .line-filter { display: grid; gap: 5px; }
-  .line-filter__label { color: var(--muted); font-size: 9.5px; font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
-  .line-filter__chips { display: flex; gap: 6px; overflow-x: auto; padding: 1px 0 3px; scrollbar-width: none; }
-  .line-filter__chips::-webkit-scrollbar { display: none; }
-  .line-filter__chips button {
-    display: inline-flex; min-height: 38px; flex: none; align-items: center; gap: 6px;
-    padding: 7px 11px; border: 1px solid var(--line); border-radius: 99px;
-    background: var(--surface-2); color: var(--ink-2); font: inherit;
-    font-size: 11.5px; font-weight: 680; white-space: nowrap; cursor: pointer;
-  }
-  .line-filter__chips button:hover { border-color: var(--rose-line); }
-  .line-filter__chips button.active { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
-  .line-filter__chips small { color: var(--muted); font-size: 9.5px; }
-  .line-filter__chips button.active small { color: inherit; }
   .line-colour-dot { display: inline-block; width: 11px; height: 11px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
   .line-colour-dot--empty { border-style: dashed; background: transparent; }
-  .line-filter__summary { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; }
-  .line-filter__summary button { border: 0; background: transparent; color: var(--rose-dark); font: inherit; font-weight: 720; cursor: pointer; }
   .po-line-section + .po-line-section { margin-top: 18px; }
   .po-line-section__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 3px 8px; }
   .po-line-section__head h3 { color: var(--ink-2); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
@@ -2782,7 +2765,7 @@ app-purchase-editor {
   .po-family + .po-family { margin-top: 12px; }
   .po-family__head {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 12px 14px; border-bottom: 1px solid var(--rose-line);
+    padding: 9px 12px; border-bottom: 1px solid var(--rose-line);
     background: linear-gradient(145deg, var(--surface), var(--rose-soft));
   }
   .po-family__identity { display: grid; min-width: 0; gap: 1px; }
@@ -2851,9 +2834,31 @@ app-purchase-view {
 
 @media (max-width: 559px) {
   app-purchase-editor {
-    .po-family__head { align-items: flex-start; flex-direction: column; }
-    .po-family__totals { text-align: left; }
-    .po-family__totals > small { white-space: normal; }
+    .po-family { border-radius: 14px; }
+    .po-family + .po-family { margin-top: 8px; }
+    .po-family__head {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center; gap: 7px; padding: 7px 9px;
+    }
+    .po-family__identity > small,
+    .po-family__totals > strong { display: none; }
+    .po-family__identity > strong { font-size: 12.5px; }
+    .po-family__swatches { min-width: 0; gap: 3px; margin-top: 2px; overflow: hidden; }
+    .po-family__swatches .line-colour-dot { width: 10px; height: 10px; box-shadow: none; }
+    .po-family__totals {
+      grid-template-columns: auto auto; align-content: center; align-items: baseline;
+      column-gap: 4px; text-align: right;
+    }
+    .po-family__totals > small:not(.po-family__cost-label) {
+      grid-column: 1 / -1;
+      max-width: 156px; overflow: hidden; font-size: 9px;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .po-family__totals > .po-family__cost-label {
+      grid-column: 1; margin-top: 0; font-size: 7px; white-space: nowrap;
+    }
+    .po-family__totals > b { grid-column: 2; margin-top: 0; font-size: 11px; }
+    .po-family__variants { padding: 7px; }
   }
   app-purchase-view {
     .purchase-model__head { grid-template-columns: 42px minmax(0, 1fr) 18px; gap: 8px; padding: 10px; }
@@ -3203,12 +3208,10 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
 .erp-workspace__mobile-state strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 679px) {
-  .content.erp-workspace { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 118px); }
+  .content.erp-workspace { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 38px); }
   /* Component sheets used smaller legacy paddings. These host-scoped rules
      keep the last field/action clear of both the workspace dock and the
      existing floating app tab bar. */
-  app-purchase-editor .content.erp-workspace,
-  app-purchase-view .content.erp-workspace,
   app-product-editor .content.erp-workspace,
   app-product-view .content.erp-workspace,
   app-sales-editor .content.erp-workspace,

@@ -691,16 +691,6 @@ import { purchaseColourHex, purchaseLineSections } from './purchase-line-display
           </aside>
         </div>
       </div>
-      <div class="erp-workspace__mobile-dock" aria-label="Inkooporder acties">
-        <span class="erp-workspace__mobile-state">
-          <small>{{ statusLabel(data.order.status) }}</small>
-          <strong>{{ actionTitle(data.order.status, data.costing.lines.length) }}</strong>
-        </span>
-        <button class="btn" type="button" (click)="pdfOpen.set(true)" aria-label="PDF openen">PDF</button>
-        <a class="btn btn--primary" [routerLink]="['/purchasing', data.order.id, 'edit']">
-          {{ data.costing.lines.length ? 'Bewerken' : 'Producten toevoegen' }}
-        </a>
-      </div>
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
                                 (closed)="pdfOpen.set(false)" />
