@@ -27,6 +27,8 @@ export interface ProductPickerFamilyFilter {
   category: ProductPickerCategoryKey | null;
   /** Limit complete product ranges, never individual colours from a range. */
   limit?: number;
+  /** Optional caller-owned search metadata, for example a supplier name. */
+  searchTextOf?: (product: Product) => string | null | undefined;
 }
 
 export interface ProductPickerSelectionEntry {
@@ -90,7 +92,8 @@ export function productPickerFamilySections(
 
   const needle = normalize(filter.query);
   const visibleGroups = [...groups.values()]
-    .filter((group) => !needle || groupSearchText(group, categories).includes(needle))
+    .filter((group) => !needle || groupSearchText(
+      group, categories, filter.searchTextOf).includes(needle))
     .sort((left, right) => compareGroups(left, right, sourceRank))
     .slice(0, filter.limit ?? 50);
 
@@ -222,6 +225,7 @@ function compareGroups(
 function groupSearchText(
   group: ProductPickerFamilyGroup,
   categories: readonly Category[],
+  searchTextOf?: (product: Product) => string | null | undefined,
 ): string {
   const categoryId = group.family?.categoryId ?? group.lead.categoryId;
   const category = categories.find((item) => item.id === categoryId)?.name ?? '';
@@ -237,6 +241,7 @@ function groupSearchText(
       product.describedAs,
       product.barcodeInner,
       product.barcodeOuter,
+      searchTextOf?.(product),
     ]),
   ].join(' '));
 }

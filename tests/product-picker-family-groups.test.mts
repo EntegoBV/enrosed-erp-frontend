@@ -78,6 +78,25 @@ test('a family-name search keeps every colour together and a limit never cuts a 
   assert.deepEqual(limited[0].groups[0].products.map((item) => item.id), [3]);
 });
 
+test('caller metadata makes a supplier searchable without splitting colour families', () => {
+  const products = [
+    { ...product(1, 10, 7, 'Foam blauw', 'Blauw', 0), supplierId: 4 },
+    { ...product(2, 10, 7, 'Foam rood', 'Rood', 1), supplierId: 4 },
+    { ...product(3, 10, 9, 'Foam wit', 'Wit', 0), supplierId: 8 },
+  ] as Product[];
+
+  const sections = productPickerFamilySections(products, [], categories, {
+    query: 'Yunnan Flowers',
+    category: null,
+    searchTextOf: (item) => item.supplierId === 4 ? 'Yunnan Flowers' : 'Other supplier',
+  });
+
+  assert.deepEqual(
+    sections.flatMap((section) => section.groups).flatMap((group) => group.products.map((item) => item.id)),
+    [1, 2],
+  );
+});
+
 test('category filtering keeps legacy products in separate standalone groups', () => {
   const products = [
     product(1, null, null, 'Los product A', null, null),

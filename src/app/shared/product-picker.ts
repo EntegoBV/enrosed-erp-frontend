@@ -72,7 +72,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
             class="input"
             type="search"
             inputmode="search"
-            placeholder="Zoek op naam, kleur, maat, SKU of barcode…"
+            placeholder="Zoek op naam, kleur, maat, leverancier, SKU of barcode…"
             [ngModel]="query()"
             (ngModelChange)="searchAgain($event)"
           />
@@ -201,6 +201,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                     <span>
                       {{ categoryName(product) }} · {{ product.sku }}
                       · {{ product.carton.piecesPerCarton }} per doos
+                      @if (supplierName(product)) { · {{ supplierName(product) }} }
                     </span>
                     @if (stockAware()) {
                       <span>·</span>
@@ -213,6 +214,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
               <button class="btn btn--sm" type="button" (click)="clear()">Wijzig</button>
             </div>
 
+            @if (!selectionOnly()) {
             <div class="field mt-12">
               <label class="req" for="pick-qty">Aantal stuks</label>
               <input
@@ -264,6 +266,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                   levertermijn af met de klant.
                 </div>
               </div>
+            }
             }
           </div>
         } @else if (quantityStep()) {
@@ -384,6 +387,9 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                         }
                         <span class="picker-family__copy">
                           <strong>{{ group.name }}</strong>
+                          @if (groupSupplier(group); as supplier) {
+                            <span class="picker-family__supplier">{{ supplier }}</span>
+                          }
                           <span class="picker-family__summary">
                             {{ groupSummary(group) }}
                             @if (group.colours.length) {
@@ -450,7 +456,9 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                                 </span>
                               }
                             </span>
-                            <span class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</span>
+                            @if (showPrice()) {
+                              <span class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</span>
+                            }
                           </button>
                         }
                       </div>
@@ -465,7 +473,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
             } @empty {
               <div class="empty">
                 <div class="empty__title">Niets gevonden</div>
-                <div class="empty__text">Probeer een deel van de reeksnaam, kleur, maat, SKU of barcode.</div>
+                <div class="empty__text">Probeer een deel van de reeksnaam, leverancier, kleur, maat, SKU of barcode.</div>
                 @if (allowCreate() && query().trim().length >= 2) {
                   <button class="btn btn--primary mt-8" type="button" (click)="startCreate()">
                     + „{{ query().trim() }}” aanmaken en toevoegen
@@ -504,12 +512,14 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                     </div>
                   }
                 </div>
-                <div class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</div>
+                @if (showPrice()) {
+                  <div class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</div>
+                }
               </button>
             } @empty {
               <div class="empty">
                 <div class="empty__title">Niets gevonden</div>
-                <div class="empty__text">Probeer een deel van de naam, kleur, maat, SKU of barcode.</div>
+                <div class="empty__text">Probeer een deel van de naam, leverancier, kleur, maat, SKU of barcode.</div>
                 @if (allowCreate() && query().trim().length >= 2) {
                   <!-- Straight from the gap to a new product: at a fair the
                        article in your hand often is not in the system yet. -->
@@ -569,10 +579,10 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
         <button
           class="btn btn--primary"
           type="button"
-          [disabled]="!chosen() || carton.value() <= 0"
+          [disabled]="!chosen() || (!selectionOnly() && carton.value() <= 0)"
           (click)="confirm()"
         >
-          Toevoegen
+          {{ selectionOnly() ? 'Product kiezen' : 'Toevoegen' }}
         </button>
         }
       </div>
@@ -615,6 +625,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
     .picker-family__copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
     .picker-family__copy>strong { display: -webkit-box; overflow: hidden; font-size: 14px; font-weight: 680;
       line-height: 1.15; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .picker-family__supplier { overflow: hidden; color: var(--rose-dark); font-size: 9.5px;
+      font-weight: 720; letter-spacing: .035em; text-overflow: ellipsis; white-space: nowrap; }
     .picker-family__summary { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
     .picker-family__dots { min-width: 0; display: inline-flex; align-items: center; gap: 3px; }
     .picker-family__dots i { width: 9px; height: 9px; flex: none; border: 1px solid rgb(0 0 0 / 14%); border-radius: 50%; }
@@ -741,6 +753,11 @@ export class ProductPicker implements OnDestroy {
   readonly families = input<readonly ProductFamily[]>([]);
   /** Order editors opt in to the shared category -> range -> variant hierarchy. */
   readonly groupByFamily = input(false);
+  /** Settings can reuse the picker without forcing an unrelated quantity step. */
+  readonly selectionOnly = input(false);
+  readonly showPrice = input(true);
+  /** Optional business context shown and searched alongside the catalogue hierarchy. */
+  readonly supplierNameOf = input<(product: Product) => string | null>(() => null);
   /** The price to display; the caller decides which one that is. */
   readonly priceOf = input<(product: Product) => number>((product) =>
     product.computedSalesPriceEur);
@@ -918,13 +935,18 @@ export class ProductPicker implements OnDestroy {
     orderPickerProducts(this.products(), this.preserveSourceOrder()),
     this.families(),
     this.categories(),
-    { query: this.query(), category: this.categoryFilter() },
+    {
+      query: this.query(),
+      category: this.categoryFilter(),
+      searchTextOf: (product) => this.supplierName(product),
+    },
   ).map((section) => ({ ...section, lanes: productPickerFamilyLanes(section.groups) })));
   readonly matches = computed(() => filterProductPicker(
     orderPickerProducts(this.products(), this.preserveSourceOrder()), this.categories(), {
     query: this.query(),
     category: this.categoryFilter(),
     colour: this.colourFilter(),
+    searchTextOf: (product) => this.supplierName(product),
   }));
 
   setCategoryFilter(category: ProductPickerCategoryKey | null): void {
@@ -941,6 +963,17 @@ export class ProductPicker implements OnDestroy {
 
   groupSummary(group: ProductPickerFamilyGroup): string {
     return productPickerGroupSummary(group);
+  }
+
+  supplierName(product: Product): string | null {
+    return this.supplierNameOf()(product)?.trim() || null;
+  }
+
+  groupSupplier(group: ProductPickerFamilyGroup): string | null {
+    const names = [...new Set(group.products
+      .map((product) => this.supplierName(product))
+      .filter((name): name is string => Boolean(name)))];
+    return names.length ? names.join(' · ') : null;
   }
 
   variantLabel(product: Product): string {
@@ -1008,7 +1041,10 @@ export class ProductPicker implements OnDestroy {
 
   confirm(): void {
     const product = this.chosen();
-    if (!product || this.carton.value() <= 0) return;
-    this.picked.emit({ product, quantity: this.carton.finalValue() });
+    if (!product || (!this.selectionOnly() && this.carton.value() <= 0)) return;
+    this.picked.emit({
+      product,
+      quantity: this.selectionOnly() ? 1 : this.carton.finalValue(),
+    });
   }
 }

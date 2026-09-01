@@ -79,6 +79,15 @@ test('unknown category ids join the visible uncategorised choice', () => {
   }).map((item) => item.id), [4, 9]);
 });
 
+test('optional supplier metadata participates in the shared picker search', () => {
+  assert.deepEqual(filterProductPicker(products, categories, {
+    query: 'Yunnan',
+    category: null,
+    colour: null,
+    searchTextOf: (item) => item.id === 3 ? 'Yunnan Flowers' : 'Different supplier',
+  }).map((item) => item.id), [3]);
+});
+
 function category(id: number, name: string, position: number): Category {
   return { id, name, position } as Category;
 }
