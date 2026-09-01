@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
+  CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSharedFieldsApplyRequest, ProductSharedFieldsApplyResult, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -86,6 +86,17 @@ export class CatalogApi {
     return firstValueFrom(this.http.post<ProductFamily>(
       api(`/api/products/${id}/variants`),
       { variantProductId },
+    ));
+  }
+
+  /** One atomic command; unique colour data can never be part of this request. */
+  applyProductSharedFields(
+    sourceProductId: number,
+    request: ProductSharedFieldsApplyRequest,
+  ): Promise<ProductSharedFieldsApplyResult> {
+    return firstValueFrom(this.http.post<ProductSharedFieldsApplyResult>(
+      api(`/api/products/${sourceProductId}/apply-shared-fields`),
+      request,
     ));
   }
 

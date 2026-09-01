@@ -16,7 +16,6 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
-import { orderLikeTheList } from './catalogue-order';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
@@ -32,7 +31,15 @@ import {
   ProductFamilyImageVariantChange,
 } from './product-family-gallery';
 import { ProductVariantGroup } from './product-variant-group';
+import {
+  ProductFamilySharedFieldsApply,
+  ProductFamilySharedFieldsSheet,
+} from './product-family-shared-fields-sheet';
 import { planProductFamilyIdentityFinalization } from './product-family-identity';
+import {
+  productVariantNavigation,
+  productVariantOptionLabel,
+} from './product-variant-navigation';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -66,7 +73,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, PageHeader, PhotoManager, ProductPublicationEditor, ProductSupplierAgreementEditor,
-    ProductVariantGroup, Sheet, EurPipe, NumPipe, CbmPipe, DateTimeNlPipe, DecimalInput, RouterLink,
+    ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
+    DateTimeNlPipe, DecimalInput, RouterLink,
   ],
   template: `
     <app-page-header
@@ -75,19 +83,21 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       [showBack]="true"
       [showBell]="false"
     >
-      <!-- Desktop: step through the catalogue without going back to the
-           list. The unsaved-changes guard still asks before leaving. -->
-      @if (!isNew() && neighbours(); as around) {
-        <span class="product-nav" role="group" aria-label="Vorig of volgend product">
+      <!-- One product model, one colour at a time. The arrows never leave
+           this family; the unsaved-changes guard still asks before leaving. -->
+      @if (!isNew() && variantNeighbours(); as around) {
+        <span class="product-nav" role="group" aria-label="Kleurvarianten">
           <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
-             [routerLink]="around.previous ? ['/products', around.previous.id, 'edit'] : null"
+             [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null"
              [attr.aria-disabled]="!around.previous"
-             [title]="around.previous ? 'Vorige: ' + around.previous.name : 'Dit is het eerste product'">‹</a>
-          <small class="product-nav__pos">{{ around.index + 1 }}/{{ around.total }}</small>
+             [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'"
+             [title]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Dit is de eerste kleur'">‹</a>
+          <small class="product-nav__pos" [title]="variantOptionLabel(around.current)">Kleur {{ around.index + 1 }}/{{ around.total }}</small>
           <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
-             [routerLink]="around.next ? ['/products', around.next.id, 'edit'] : null"
+             [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null"
              [attr.aria-disabled]="!around.next"
-             [title]="around.next ? 'Volgende: ' + around.next.name : 'Dit is het laatste product'">›</a>
+             [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'"
+             [title]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Dit is de laatste kleur'">›</a>
         </span>
       }
       <button class="btn btn--primary btn--sm" type="button"
@@ -231,8 +241,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             } @else {
               <app-product-variant-group class="variant-editor-group span-2"
                                          [product]="draft()" [family]="family()"
-                                         [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
+                                         [disabled]="saving() || sharedFieldsBusy() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
                                          (linked)="onVariantLinked($event)"
+                                         (syncRequested)="openSharedFields()"
                                          (familyChange)="onFamilyChange($event)" />
             }
             <div class="field span-2">
@@ -898,6 +909,20 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </app-sheet>
       }
 
+      @if (sharedFieldsOpen()) {
+        @if (family(); as group) {
+          <app-product-family-shared-fields-sheet
+            [open]="true"
+            [source]="draft()"
+            [family]="group"
+            [products]="catalogueProducts()"
+            [busy]="sharedFieldsBusy()"
+            [saveFirst]="dirty() || familyDirty() || agreementDirty()"
+            (close)="closeSharedFields()"
+            (apply)="applySharedFields($event)" />
+        }
+      }
+
       @if (leaveQuestion(); as answer) {
         <app-sheet title="Wijzigingen opslaan?" (closed)="answer(null)">
           <div body>
@@ -1241,8 +1266,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @media (min-width: 680px) { .product-nav { display: inline-flex; } }
     .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
     .product-nav__btn--off { opacity: .35; pointer-events: none; }
-    .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
-      font-variant-numeric: tabular-nums; }
+    .product-nav__pos { min-width: 54px; color: var(--muted); font-size: 11px; text-align: center;
+      font-variant-numeric: tabular-nums; white-space: nowrap; }
     .magic-field { position: relative; display: block; }
     .magic-field .input { padding-right: 44px; }
     .magic-field__btn { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px;
@@ -1642,21 +1667,14 @@ export class ProductEditor implements OnDestroy {
 
   /** Colours already in use on other products, with the swatch they carry. */
   private readonly usedColours = signal<Map<string, string | null>>(new Map());
+  /** Fresh catalogue labels for the target colours in the family sheet. */
+  readonly catalogueProducts = signal<Product[]>([]);
 
-  /** Every product in the order the catalogue list shows them by default. */
-  private readonly catalogueOrder = signal<Product[]>([]);
-  readonly neighbours = computed(() => {
-    const id = this.draft().id;
-    const order = this.catalogueOrder();
-    if (id === null || !order.length) return null;
-    const index = order.findIndex((product) => product.id === id);
-    if (index < 0) return null;
-    return {
-      index, total: order.length,
-      previous: index > 0 ? order[index - 1] : null,
-      next: index < order.length - 1 ? order[index + 1] : null,
-    };
-  });
+  readonly variantOptionLabel = productVariantOptionLabel;
+  readonly variantNeighbours = computed(() =>
+    this.familyLoading() || this.familyLoadError()
+      ? null
+      : productVariantNavigation(this.family(), this.draft().id));
 
   /**
    * The pick-list: the standard colours, then every colour typed once on
@@ -1734,6 +1752,8 @@ export class ProductEditor implements OnDestroy {
   readonly family = signal<ProductFamily | null>(null);
   readonly familyLoading = signal(false);
   readonly familyLoadError = signal(false);
+  readonly sharedFieldsOpen = signal(false);
+  readonly sharedFieldsBusy = signal(false);
   private familyLoadVersion = 0;
   private readonly savedFamily = signal<ProductFamily | null>(null);
   private readonly savedProductFamilyId = signal<number | null>(null);
@@ -2182,6 +2202,7 @@ export class ProductEditor implements OnDestroy {
     this.suppliers.set(suppliers);
     this.categories.set(categories);
     this.hsCodes.set(hsCodes);
+    this.catalogueProducts.set(allProducts);
     const used = new Map<string, string | null>();
     for (const product of allProducts) {
       const colour = product.colour?.trim();
@@ -2191,7 +2212,6 @@ export class ProductEditor implements OnDestroy {
       }
     }
     this.usedColours.set(used);
-    this.catalogueOrder.set(orderLikeTheList(allProducts, categories));
 
     if (!this.id() || this.id() === 'new') {
       const supplierId = this.supplier() ? +this.supplier() : (suppliers[0]?.id ?? null);
@@ -2371,6 +2391,69 @@ export class ProductEditor implements OnDestroy {
       this.ui.toast('Variant gekoppeld, maar de bijgewerkte productgegevens konden niet worden geladen.', 'err');
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  openSharedFields(): void {
+    const product = this.draft();
+    const family = this.family();
+    if (product.id === null || family?.id === null || family?.id !== product.familyId
+        || family.members.filter((member) => member.productId !== product.id).length === 0) {
+      this.ui.toast('Koppel eerst minstens één andere kleur aan deze productreeks.', 'err');
+      return;
+    }
+    if (this.translationDirty() || this.translationSaving()) {
+      this.ui.toast('Sla eerst de vertalingen op voordat je gegevens naar andere kleuren kopieert.', 'err');
+      return;
+    }
+    this.sharedFieldsOpen.set(true);
+  }
+
+  closeSharedFields(): void {
+    if (!this.sharedFieldsBusy()) this.sharedFieldsOpen.set(false);
+  }
+
+  /** Saves the source when needed, then runs one all-or-nothing family update on the server. */
+  async applySharedFields(request: ProductFamilySharedFieldsApply): Promise<void> {
+    if (this.sharedFieldsBusy()) return;
+    this.sharedFieldsBusy.set(true);
+    try {
+      if (this.translationDirty() || this.translationSaving()) {
+        this.ui.toast('Sla eerst de vertalingen op.', 'err');
+        return;
+      }
+      if (this.dirty() || this.familyDirty() || this.agreementDirty()) {
+        await this.save();
+        if (this.dirty() || this.familyDirty() || this.agreementDirty()) return;
+      }
+
+      const source = this.draft();
+      if (source.id === null || source.familyId !== request.expectedFamilyId) {
+        this.ui.toast('De productreeks is intussen gewijzigd. Open de reeks opnieuw.', 'err');
+        this.sharedFieldsOpen.set(false);
+        return;
+      }
+
+      const result = await this.catalog.applyProductSharedFields(source.id, request);
+      this.sharedFieldsOpen.set(false);
+      const resultMessage = result.updatedProducts === 0
+        ? 'De gekozen gegevens stonden al gelijk.'
+        : `${result.updatedProducts} kleur${result.updatedProducts === 1 ? '' : 'en'} bijgewerkt`;
+      try {
+        const [freshFamily, freshProducts] = await Promise.all([
+          this.catalog.productFamily(request.expectedFamilyId),
+          this.catalog.products().catch(() => this.catalogueProducts()),
+        ]);
+        this.replaceFamily(freshFamily);
+        this.catalogueProducts.set(freshProducts);
+        this.ui.toast(resultMessage, 'ok');
+      } catch {
+        this.ui.toast(`${resultMessage} · herladen van de reeks lukte niet`, 'err');
+      }
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Productreeks bijwerken mislukt'), 'err');
+    } finally {
+      this.sharedFieldsBusy.set(false);
     }
   }
 

@@ -266,6 +266,32 @@ export interface Product {
   pieceCbm?: number;
 }
 
+/**
+ * Product fields that may deliberately be equalised across colour variants.
+ * Variant identity, barcodes, media, stock and supplier agreements are not
+ * expressible here, so a caller cannot accidentally copy them.
+ */
+export type ProductSharedField =
+  | 'NAME'
+  | 'DESCRIPTION'
+  | 'DIMENSIONS'
+  | 'PACKAGING'
+  | 'CARTON'
+  | 'PURCHASE_PRICE'
+  | 'SALES_PRICE'
+  | 'HS_CODE';
+
+export interface ProductSharedFieldsApplyRequest {
+  expectedFamilyId: number;
+  targetProductIds: number[];
+  fields: ProductSharedField[];
+}
+
+export interface ProductSharedFieldsApplyResult {
+  updatedProducts: number;
+  updatedProductIds: number[];
+}
+
 export interface ProductFamilyText {
   language: LanguageCode;
   name: string | null;

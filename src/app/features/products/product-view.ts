@@ -11,7 +11,10 @@ import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
-import { orderLikeTheList } from './catalogue-order';
+import {
+  productVariantNavigation,
+  productVariantOptionLabel,
+} from './product-variant-navigation';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -39,19 +42,20 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       @if (desktop.active()) {
         <app-page-header [title]="product.name" [subtitle]="product.sku || ''"
                          [showBack]="true" [showBell]="false">
-          <!-- Desktop: step to the next or previous product without going
-               back to the list, the same arrows as while editing. -->
-          @if (neighbours(); as around) {
-            <span class="product-nav" role="group" aria-label="Vorig of volgend product">
+          <!-- Step through colours of this model only, matching the editor. -->
+          @if (variantNeighbours(); as around) {
+            <span class="product-nav" role="group" aria-label="Kleurvarianten">
               <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
-                 [routerLink]="around.previous ? ['/products', around.previous.id] : null"
+                 [routerLink]="around.previous ? ['/products', around.previous.productId] : null"
                  [attr.aria-disabled]="!around.previous"
-                 [title]="around.previous ? 'Vorige: ' + around.previous.name : 'Dit is het eerste product'">‹</a>
-              <small class="product-nav__pos">{{ around.index + 1 }}/{{ around.total }}</small>
+                 [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'"
+                 [title]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Dit is de eerste kleur'">‹</a>
+              <small class="product-nav__pos" [title]="variantOptionLabel(around.current)">Kleur {{ around.index + 1 }}/{{ around.total }}</small>
               <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
-                 [routerLink]="around.next ? ['/products', around.next.id] : null"
+                 [routerLink]="around.next ? ['/products', around.next.productId] : null"
                  [attr.aria-disabled]="!around.next"
-                 [title]="around.next ? 'Volgende: ' + around.next.name : 'Dit is het laatste product'">›</a>
+                 [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'"
+                 [title]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Dit is de laatste kleur'">›</a>
             </span>
           }
           <a class="btn btn--primary btn--sm" [routerLink]="['/products', product.id, 'edit']">
@@ -661,8 +665,8 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     .product-nav { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
     .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
     .product-nav__btn--off { opacity: .35; pointer-events: none; }
-    .product-nav__pos { min-width: 40px; color: var(--muted); font-size: 11px; text-align: center;
-      font-variant-numeric: tabular-nums; }
+    .product-nav__pos { min-width: 54px; color: var(--muted); font-size: 11px; text-align: center;
+      font-variant-numeric: tabular-nums; white-space: nowrap; }
     .phero__bar { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; }
     .phero__back { display: grid; place-items: center; width: 34px; height: 34px; padding: 0 0 2px;
       border: 0; border-radius: 50%; background: rgb(255 255 255 / 12%); color: #fff;
@@ -1169,20 +1173,11 @@ export class ProductView {
   readonly familyLoadError = signal(false);
   private readonly categories = signal<Category[]>([]);
 
-  /** Every product in the catalogue's default order, for the header arrows. */
-  private readonly catalogueOrder = signal<Product[]>([]);
-  readonly neighbours = computed(() => {
-    const id = this.product()?.id ?? null;
-    const order = this.catalogueOrder();
-    if (id === null || !order.length) return null;
-    const index = order.findIndex((item) => item.id === id);
-    if (index < 0) return null;
-    return {
-      index, total: order.length,
-      previous: index > 0 ? order[index - 1] : null,
-      next: index < order.length - 1 ? order[index + 1] : null,
-    };
-  });
+  readonly variantOptionLabel = productVariantOptionLabel;
+  readonly variantNeighbours = computed(() =>
+    this.familyLoading() || this.familyLoadError()
+      ? null
+      : productVariantNavigation(this.family(), this.product()?.id ?? null));
   private readonly suppliers = signal<Supplier[]>([]);
   private loadVersion = 0;
 
@@ -1288,11 +1283,6 @@ export class ProductView {
         this.sourceOrderId.set(
           orders.find((item) => item.order.number === product.landedCostSource)?.order.id ?? null);
       }).catch(() => {});
-    }
-    if (!this.catalogueOrder().length) {
-      void this.catalog.products()
-        .then((all) => this.catalogueOrder.set(orderLikeTheList(all, categories)))
-        .catch(() => this.catalogueOrder.set([]));
     }
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
   }
