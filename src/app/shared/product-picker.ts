@@ -17,7 +17,6 @@ import {
 } from './product-picker-filters';
 import {
   ProductPickerFamilyGroup,
-  ProductPickerFamilySection,
   productPickerGroupOpen,
   productPickerFamilySelectionState,
   productPickerFamilySections,
@@ -351,8 +350,7 @@ export interface ProductDraft {
           @if (groupByFamily()) {
           <div class="picker-grouped">
             @for (section of familySections(); track section.key) {
-              <section class="picker-category" [class.picker-category--open]="sectionHasOpenGroup(section)"
-                       [attr.aria-labelledby]="'picker-category-' + section.key">
+              <section class="picker-category" [attr.aria-labelledby]="'picker-category-' + section.key">
                 <header class="picker-category__head">
                   <strong [id]="'picker-category-' + section.key">{{ section.name }}</strong>
                   <span>{{ section.groups.length }} reeks{{ section.groups.length === 1 ? '' : 'en' }} · {{ section.productCount }} product{{ section.productCount === 1 ? '' : 'en' }}</span>
@@ -697,18 +695,19 @@ export interface ProductDraft {
     }
     @media (min-width: 680px) {
       .picker-grouped { margin-inline: 0; grid-template-columns: minmax(0, 1fr); align-items: start; }
-      .picker-category { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start;
+      .picker-category { min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start;
         gap: 8px; padding: 0 8px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; }
-      .picker-category__head { grid-column: 1 / -1; margin-inline: -8px; border-top: 0; }
-      .picker-family { min-width: 0; margin: 0; }
+      .picker-category__head { flex: 0 0 calc(100% + 16px); margin-inline: -8px; border-top: 0; }
+      .picker-family { min-width: 0; flex: 1 1 100%; margin: 0; }
       .picker-grouped--batch { grid-template-columns: 1fr; }
-      .picker-grouped--batch .picker-category { grid-template-columns: minmax(0, 1fr); }
+      .picker-grouped--batch .picker-family { flex-basis: 100%; }
     }
     @media (min-width: 900px) {
-      .picker-category:not(.picker-category--open) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .picker-category--open .picker-family__variants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .picker-category--open .picker-item--nested:nth-child(odd):not(:last-child) { border-right: 1px solid var(--line); }
-      .picker-category--open .picker-item--nested:last-child:nth-child(odd) { grid-column: 1 / -1; }
+      .picker-grouped:not(.picker-grouped--batch) .picker-family { flex-basis: calc(50% - 4px); }
+      .picker-grouped:not(.picker-grouped--batch) .picker-family--open { flex-basis: 100%; }
+      .picker-family--open .picker-family__variants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .picker-family--open .picker-item--nested:nth-child(odd):not(:last-child) { border-right: 1px solid var(--line); }
+      .picker-family--open .picker-item--nested:last-child:nth-child(odd) { grid-column: 1 / -1; }
     }
     @media (pointer: coarse) {
       .picker-chip, .picker-batch__remove { min-width: 44px; min-height: 44px; }
@@ -815,10 +814,6 @@ export class ProductPicker implements OnDestroy {
 
   isGroupOpen(group: ProductPickerFamilyGroup): boolean {
     return productPickerGroupOpen(this.query(), this.groupOpenOverrides().get(group.key));
-  }
-
-  sectionHasOpenGroup(section: ProductPickerFamilySection): boolean {
-    return section.groups.some((group) => this.isGroupOpen(group));
   }
 
   toggleGroupOpen(group: ProductPickerFamilyGroup): void {
