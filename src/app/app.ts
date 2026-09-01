@@ -28,37 +28,13 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
         <app-website-admin-nav />
       } @else if (!bare()) {
         <aside class="sidebar">
-          <div class="sidebar__brand">
+          <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
             <app-brand-mark subtitle="Sales &amp; Sourcing" />
-          </div>
+          </a>
           <nav class="sidebar__nav">
             <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
             </a>
-            <button class="sidebar__group" type="button" (click)="toggleGroup('analyses')"
-                    [attr.aria-expanded]="groupOpen('analyses')">
-              Analyses
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('analyses')">›</span>
-            </button>
-            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('analyses')">
-              <a class="sidebar__link" routerLink="/analyses/overview" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Overzicht
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/sales" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkoop
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/inventory" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/purchasing" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkoop
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
-              </a>
-            </div>
-
             <button class="sidebar__group" type="button" (click)="toggleGroup('verkoop')"
                     [attr.aria-expanded]="groupOpen('verkoop')">
               Verkoop
@@ -140,6 +116,30 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
               </a>
               <a class="sidebar__link sidebar__link--wide" routerLink="/catalog-export" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="pdf" [size]="18" /> Catalogus PDF
+              </a>
+            </div>
+
+            <button class="sidebar__group" type="button" (click)="toggleGroup('analyses')"
+                    [attr.aria-expanded]="groupOpen('analyses')">
+              Analyses
+              <span class="sidebar__group-chev" aria-hidden="true"
+                    [class.sidebar__group-chev--open]="groupOpen('analyses')">›</span>
+            </button>
+            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('analyses')">
+              <a class="sidebar__link" routerLink="/analyses/overview" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Overzicht
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/sales" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkoop
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/inventory" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/purchasing" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkoop
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
               </a>
             </div>
 
