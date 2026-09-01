@@ -139,10 +139,6 @@ export function purchaseLineSections(
   return [...sections.values()];
 }
 
-export function purchaseProductColourKey(product: Product | null | undefined): string {
-  return colourKey(product);
-}
-
 function productMap(products: readonly Product[]): Map<number, Product> {
   return new Map(products.flatMap((product) =>
     product.id === null ? [] : [[product.id, product] as const]));

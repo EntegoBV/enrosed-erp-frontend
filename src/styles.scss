@@ -2744,3 +2744,65 @@ app-content-translation-workspace .card + * { margin-top: 12px; }
   width: 100%; padding: 11px; border: 0; border-top: 1px solid var(--line); background: none;
   color: var(--rose-dark); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer;
 }
+
+/* Purchase product organisation is shared by two already-large screens.
+   Keeping these scoped rules global prevents their component CSS budgets
+   from growing while the DOM remains isolated by the component hosts. */
+app-purchase-editor {
+  .line-organizer { display: grid; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .line-filter { display: grid; gap: 5px; }
+  .line-filter__label { color: var(--muted); font-size: 9.5px; font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
+  .line-filter__chips { display: flex; gap: 6px; overflow-x: auto; padding: 1px 0 3px; scrollbar-width: none; }
+  .line-filter__chips::-webkit-scrollbar { display: none; }
+  .line-filter__chips button {
+    display: inline-flex; min-height: 38px; flex: none; align-items: center; gap: 6px;
+    padding: 7px 11px; border: 1px solid var(--line); border-radius: 99px;
+    background: var(--surface-2); color: var(--ink-2); font: inherit;
+    font-size: 11.5px; font-weight: 680; white-space: nowrap; cursor: pointer;
+  }
+  .line-filter__chips button:hover { border-color: var(--rose-line); }
+  .line-filter__chips button.active { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+  .line-filter__chips small { color: var(--muted); font-size: 9.5px; }
+  .line-filter__chips button.active small { color: inherit; }
+  .line-colour-dot { display: inline-block; width: 11px; height: 11px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
+  .line-colour-dot--empty { border-style: dashed; background: transparent; }
+  .line-filter__summary { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; }
+  .line-filter__summary button { border: 0; background: transparent; color: var(--rose-dark); font: inherit; font-weight: 720; cursor: pointer; }
+  .po-line-section + .po-line-section { margin-top: 18px; }
+  .po-line-section__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 3px 8px; }
+  .po-line-section__head h3 { color: var(--ink-2); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .po-line-section__head span { color: var(--muted); font-size: 10px; }
+  .po-line__identity .po-line__variant { display: flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 11px; font-weight: 650; }
+}
+
+app-purchase-view {
+  .product-colour-filter { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .product-colour-filter::-webkit-scrollbar { display: none; }
+  .product-colour-chip {
+    display: inline-flex; min-height: 34px; flex: none; align-items: center; gap: 6px;
+    padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--surface); color: var(--ink-2); font: inherit;
+    font-size: 11.5px; font-weight: 680; white-space: nowrap; cursor: pointer;
+  }
+  .product-colour-chip:hover { background: var(--surface-2); }
+  .product-colour-chip--active { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+  .product-colour-chip small { display: inline-grid; min-width: 18px; height: 18px; place-items: center; padding: 0 4px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 9px; }
+  .product-colour-chip--active small { background: var(--surface); color: var(--rose-dark); }
+  .product-colour-dot { display: inline-block; width: 10px; height: 10px; flex: none; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
+  .product-colour-dot--empty { border-style: dashed; background: transparent !important; }
+  .purchase-category + .purchase-category { border-top: 8px solid var(--surface-2); }
+  .purchase-category__head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    margin: 0; padding: 9px 14px; border-bottom: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink-2); font-size: 10.5px;
+    font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  }
+  .purchase-category__head small { color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+  .purchase-category .purchase-line:last-child { border: 0; }
+  .purchase-line__meta { display: flex; min-width: 0; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; }
+  .purchase-line__meta b { color: var(--ink-2); font-weight: 650; }
+}
+
+@media (min-width: 680px) {
+  app-purchase-view :is(.product-colour-filter, .purchase-category__head) { padding-inline: 18px; }
+}
