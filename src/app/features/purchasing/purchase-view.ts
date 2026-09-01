@@ -179,7 +179,7 @@ import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
                 <p>Ontvangen {{ data.order.receivedOn | dateNl }} · {{ receipt.usablePieces | num }} stuks bruikbaar
                   @if (!receiptSnapshotComplete()) { · bestelsnapshot onvolledig }</p>
               </span>
-              <a class="receipt-summary__link" routerLink="/analyses"
+              <a class="receipt-summary__link" routerLink="/analyses/purchasing"
                  [queryParams]="{ orderId: data.order.id }">Open analyse ›</a>
             </header>
             <div class="receipt-summary__metrics">

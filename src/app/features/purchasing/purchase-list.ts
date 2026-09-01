@@ -11,6 +11,8 @@ import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { Auth } from '../../core/api/auth';
+import { Fx } from '../../core/api/fx';
+import { purchaseFxReference } from './purchase-price-context';
 
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Vertrokken', ONTVANGEN: 'Ontvangen',
@@ -169,10 +171,24 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
           <div class="field-row">
             <div class="field"><label for="po-cny">Koers RMB → USD</label>
               <input class="input num right" id="po-cny" type="number" step="0.0001"
-                     [ngModel]="cnyToUsd()" (ngModelChange)="cnyToUsd.set(+$event)" /></div>
+                     [ngModel]="cnyToUsd()" (ngModelChange)="cnyToUsd.set(+$event)" />
+              @if (marketReference(); as reference) {
+                <span class="hint">
+                  ECB-referentie · 1 RMB = {{ reference.cnyToUsd | num: 4 }} USD ·
+                  {{ reference.asOf | dateNl }}
+                </span>
+              }
+            </div>
             <div class="field"><label for="po-usd">Koers USD → EUR</label>
               <input class="input num right" id="po-usd" type="number" step="0.0001"
-                     [ngModel]="usdToEur()" (ngModelChange)="usdToEur.set(+$event)" /></div>
+                     [ngModel]="usdToEur()" (ngModelChange)="usdToEur.set(+$event)" />
+              @if (marketReference(); as reference) {
+                <span class="hint">
+                  ECB-referentie · 1 USD = {{ reference.usdToEur | num: 4 }} EUR ·
+                  {{ reference.asOf | dateNl }}
+                </span>
+              }
+            </div>
           </div>
           <p class="small muted">
             De koersen worden op de order vastgeklikt, zodat een oude calculatie niet verandert
@@ -249,6 +265,7 @@ export class PurchaseList {
   private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
+  private readonly fx = inject(Fx);
   readonly auth = inject(Auth);
 
   readonly orders = signal<PurchaseOrderView[]>([]);
@@ -312,8 +329,13 @@ export class PurchaseList {
   readonly chosen = signal<number | null>(null);
   readonly cnyToUsd = signal(0.1385);
   readonly usdToEur = signal(0.89);
+  readonly marketReference = computed(() => purchaseFxReference(this.fx.series()));
 
-  constructor() { void this.load(); }
+  constructor() {
+    void this.load();
+    /* Reference only: never replace a buyer's manually entered frozen rate. */
+    if (!this.fx.series()) void this.fx.load();
+  }
 
   private async load(): Promise<void> {
     const [orders, suppliers] = await Promise.all([

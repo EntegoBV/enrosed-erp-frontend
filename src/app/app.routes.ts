@@ -24,10 +24,15 @@ export const routes: Routes = [
   {
     path: 'dashboard',
     canActivate: [authGuard],
-    loadComponent: () => import('./features/dashboard/dashboard').then((m) => m.Dashboard),
+    loadComponent: () => import('./features/dashboard/dashboard-home').then((m) => m.DashboardHome),
   },
   {
     path: 'analyses',
+    pathMatch: 'full',
+    redirectTo: 'analyses/overview',
+  },
+  {
+    path: 'analyses/:section',
     canActivate: [authGuard],
     loadComponent: () => import('./features/analyses/analyses-page').then((m) => m.AnalysesPage),
   },

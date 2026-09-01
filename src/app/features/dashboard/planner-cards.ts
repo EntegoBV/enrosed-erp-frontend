@@ -18,6 +18,16 @@ export interface PlannerMilestone {
   orderId: number;
 }
 
+interface CompactAgendaEntry {
+  id: string;
+  date: string;
+  atTime: string | null;
+  title: string;
+  sub: string | null;
+  item: PlannerItem | null;
+  milestone: PlannerMilestone | null;
+}
+
 /**
  * Agenda and task list, side by side on the dashboard: the little month
  * calendar with appointment dots the way a paper desk planner works, and
@@ -28,6 +38,72 @@ export interface PlannerMilestone {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, DateField, Sheet],
   template: `
+    @if (compact() && !expanded()) {
+      <section class="card planner-compact" aria-labelledby="planner-compact-title">
+        <header class="planner-compact__head">
+          <div>
+            <span class="planner-compact__eyebrow">Planning</span>
+            <h2 id="planner-compact-title">Vandaag en daarna</h2>
+          </div>
+          <button class="btn btn--sm" type="button" (click)="openNew('EVENT')">+ Nieuw</button>
+        </header>
+
+        <div class="planner-compact__body">
+          <section class="planner-compact__section" aria-labelledby="planner-compact-agenda-title">
+            <h3 id="planner-compact-agenda-title">Komend</h3>
+            <div class="planner-compact__list">
+              @for (entry of compactAgenda(); track entry.id) {
+                <button class="planner-compact__row" type="button" (click)="openCompactAgenda(entry)">
+                  <span class="planner-compact__date">{{ compactDay(entry.date) }}
+                    @if (entry.atTime) { <small>{{ entry.atTime }}</small> }
+                  </span>
+                  <span class="planner-compact__copy">
+                    <b>{{ entry.title }}</b>
+                    @if (entry.sub) { <small>{{ entry.sub }}</small> }
+                  </span>
+                  <span class="planner-compact__chev" aria-hidden="true">›</span>
+                </button>
+              } @empty {
+                <p class="planner-compact__empty">Geen afspraken of levermomenten gepland.</p>
+              }
+            </div>
+          </section>
+
+          <section class="planner-compact__section" aria-labelledby="planner-compact-tasks-title">
+            <div class="planner-compact__section-head">
+              <h3 id="planner-compact-tasks-title">Open taken</h3>
+              @if (compactTasks().length > 3) { <small>3 van {{ compactTasks().length }}</small> }
+            </div>
+            <ul class="planner-compact__tasks">
+              @for (item of compactTasks().slice(0, 3); track item.id) {
+                <li>
+                  <input class="task__tick" type="checkbox" [checked]="item.done"
+                         [attr.aria-label]="'Afvinken: ' + item.title" (change)="toggleTask(item)" />
+                  <button class="task__body" type="button" (click)="openEdit(item)">
+                    <span class="task__title">{{ item.title }}</span>
+                    @if (item.onDate) {
+                      <small class="task__date" [class.task__date--late]="isOverdue(item)">{{ compactDay(item.onDate) }}</small>
+                    }
+                  </button>
+                </li>
+              } @empty {
+                <li class="planner-compact__empty">Geen open taken.</li>
+              }
+            </ul>
+          </section>
+        </div>
+
+        <button class="planner-compact__expand" type="button" (click)="expanded.set(true)">
+          Volledige agenda en taken <span aria-hidden="true">›</span>
+        </button>
+      </section>
+    } @else {
+      @if (compact()) {
+        <div class="planner-expanded-head">
+          <strong>Volledige planning</strong>
+          <button class="linklike" type="button" (click)="expanded.set(false)">Compact tonen</button>
+        </div>
+      }
     <div class="planner-duo">
       <div class="card planner-card">
         <div class="card__head"><h2>Agenda</h2>
@@ -164,6 +240,7 @@ export interface PlannerMilestone {
         </div>
       </div>
     </div>
+    }
 
     <!-- Looking first, editing on demand: the view is where the work
          happens - notes, attachments and the little to-dos of the day. -->
@@ -352,6 +429,45 @@ export interface PlannerMilestone {
     }
   `,
   styles: `
+    :host { display: block; min-width: 0; }
+    .planner-compact { overflow: hidden; }
+    .planner-compact__head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 15px 16px 12px; border-bottom: 1px solid var(--line); }
+    .planner-compact__eyebrow { display: block; margin-bottom: 2px; color: var(--rose); font-size: 9.5px;
+      font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .planner-compact__head h2 { font-size: 17px; letter-spacing: -.015em; }
+    .planner-compact__body { display: grid; gap: 0; }
+    .planner-compact__section { min-width: 0; padding: 12px 15px; }
+    .planner-compact__section + .planner-compact__section { border-top: 1px solid var(--line); }
+    .planner-compact__section h3 { color: var(--muted); font-size: 10px; font-weight: 780;
+      letter-spacing: .07em; text-transform: uppercase; }
+    .planner-compact__section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .planner-compact__section-head small { color: var(--muted); font-size: 10.5px; }
+    .planner-compact__list { margin-top: 5px; }
+    .planner-compact__row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center;
+      gap: 9px; width: 100%; min-height: 43px; padding: 6px 1px; border: 0; border-bottom: 1px solid var(--line);
+      background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .planner-compact__row:last-child { border-bottom: 0; }
+    .planner-compact__row:hover { background: var(--surface-2); }
+    .planner-compact__date { display: grid; color: var(--rose-dark); font-size: 10.5px; font-weight: 720; }
+    .planner-compact__date small { color: var(--muted); font-size: 10px; font-weight: 600; }
+    .planner-compact__copy { display: grid; min-width: 0; }
+    .planner-compact__copy b { overflow: hidden; font-size: 12.5px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+    .planner-compact__copy small { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .planner-compact__chev { color: var(--muted-2); font-size: 17px; }
+    .planner-compact__tasks { list-style: none; margin: 5px 0 0; padding: 0; }
+    .planner-compact__tasks li { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 5px 1px;
+      border-bottom: 1px solid var(--line); }
+    .planner-compact__tasks li:last-child { border-bottom: 0; }
+    .planner-compact__tasks .task__body { gap: 7px; }
+    .planner-compact__tasks .task__date { margin-left: auto; }
+    .planner-compact__empty { margin: 0; padding: 9px 1px 5px; color: var(--muted); font-size: 11.5px; }
+    .planner-compact__expand { width: 100%; min-height: 43px; padding: 9px 15px; border: 0; border-top: 1px solid var(--line);
+      background: var(--surface-2); color: var(--rose-dark); font: inherit; font-size: 12px; font-weight: 720; cursor: pointer; }
+    .planner-compact__expand span { margin-left: 3px; font-size: 15px; }
+    .planner-expanded-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;
+      padding: 2px 2px 0; }
+    .planner-expanded-head strong { font-size: 13px; }
     .planner-duo { display: grid; gap: 12px; }
     .tasks-card__count { color: var(--muted); font-size: 11.5px; font-weight: 650; }
     @media (min-width: 1280px) {
@@ -485,6 +601,9 @@ export class PlannerCards {
   private readonly api = inject(PlannerApi);
   private readonly store = inject(PlannerStore);
   private readonly ui = inject(Ui);
+
+  readonly compact = input(false);
+  readonly expanded = signal(false);
 
   readonly items = this.store.items;
   readonly month = signal(startOfMonth(new Date()));
@@ -628,6 +747,7 @@ export class PlannerCards {
         || (a.onDate ?? '9999').localeCompare(b.onDate ?? '9999')
         || a.title.localeCompare(b.title, 'nl'));
   });
+  readonly compactTasks = computed(() => this.smartTasks().filter((task) => !task.done));
 
   async addTask(): Promise<void> {
     const title = this.newTask().trim();
@@ -671,7 +791,53 @@ export class PlannerCards {
   });
   readonly selectedMilestones = computed(() =>
     this.milestonesByDate().get(this.selectedDate()) ?? []);
+
+  readonly compactAgenda = computed<CompactAgendaEntry[]>(() => {
+    const today = isoDate(new Date());
+    const events: CompactAgendaEntry[] = this.events()
+      .filter((item) => !!item.onDate && item.onDate >= today)
+      .map((item) => ({
+        id: `event-${item.id ?? item.onDate + item.title}`,
+        date: item.onDate!,
+        atTime: item.atTime,
+        title: item.title,
+        sub: item.note,
+        item,
+        milestone: null,
+      }));
+    const milestones: CompactAgendaEntry[] = this.milestones()
+      .filter((stone) => stone.date >= today)
+      .map((stone) => ({
+        id: `milestone-${stone.orderId}-${stone.date}-${stone.title}`,
+        date: stone.date,
+        atTime: null,
+        title: `${stone.icon} ${stone.title}`,
+        sub: stone.sub,
+        item: null,
+        milestone: stone,
+      }));
+    return [...events, ...milestones]
+      .sort((left, right) => left.date.localeCompare(right.date)
+        || (left.atTime ?? '').localeCompare(right.atTime ?? '')
+        || left.title.localeCompare(right.title, 'nl'))
+      .slice(0, 3);
+  });
   private readonly router = inject(Router);
+
+  openCompactAgenda(entry: CompactAgendaEntry): void {
+    if (entry.item) {
+      this.openView(entry.item);
+      return;
+    }
+    if (entry.milestone) this.openMilestone(entry.milestone);
+  }
+
+  compactDay(iso: string): string {
+    const today = isoDate(new Date());
+    if (iso === today) return 'Vandaag';
+    const tomorrow = isoDate(new Date(new Date(`${today}T12:00:00`).getTime() + DAY_MS));
+    return iso === tomorrow ? 'Morgen' : this.shortDay(iso);
+  }
 
   openMilestone(stone: PlannerMilestone): void {
     void this.router.navigate(['/purchasing', stone.orderId]);

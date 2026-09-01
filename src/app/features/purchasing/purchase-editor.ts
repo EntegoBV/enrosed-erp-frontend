@@ -14,7 +14,7 @@ import {
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import {
-  Allocation, Currency, DocumentKind, PAYMENT_TERMS, Payee, Product, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
+  Allocation, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
   PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -37,6 +37,7 @@ import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
+import { latestOwnFreightQuote } from './purchase-price-context';
 
 /**
  * Landed-cost calculation of a container.
@@ -446,10 +447,16 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                             <option value="DDP">DDP</option>
                           </select>
                         </div>
+                        @if (productCardPrice(line.productId); as currentPrice) {
+                          <span class="hint">
+                            Productkaart nu: {{ currentPrice.amount | cur: currentPrice.currency }} per stuk
+                            @if (orderLine(line.productId)?.exwPrice == null) {
+                              · wordt gebruikt zolang dit veld leeg blijft
+                            }
+                          </span>
+                        }
                         @if ((orderLine(line.productId)?.priceBasis ?? 'EXW') === 'DDP') {
                           <span class="hint">Geleverd incl. rechten, voor de hele container.</span>
-                        } @else {
-                          <span class="hint">Bij leeg gebruikt actuele prijs.</span>
                         }
                       </div>
                     </div>
@@ -615,7 +622,14 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                  (ngModelChange)="patch({ freightUsd: +$event })" />
                           <span class="input-affix__suffix">USD</span>
                         </div>
-                        <span class="hint">{{ costLabels().seaFreightRoute }}</span>
+                        <span class="hint">
+                          {{ costLabels().seaFreightRoute }}
+                          @if (latestFreightReference(); as reference) {
+                            · laatste eigen notering:
+                            <b>{{ reference.usdPerContainer | cur: 'USD' }}</b>
+                            · {{ reference.quotedOn | dateNl }}
+                          }
+                        </span>
                       </div>
                       <div class="field">
                         <label for="c-origin">{{ costLabels().originCostsLabel }}</label>
@@ -2085,8 +2099,15 @@ export class PurchaseEditor {
   readonly view = signal<PurchaseOrderView | null>(null);
   readonly adjustments = signal<PurchaseOrderView['adjustments']>([]);
   readonly products = signal<Product[]>([]);
+  readonly freightRates = signal<FreightRate[]>([]);
   /** The order's supplier; drives the header and the origin-cost label. */
   readonly supplier = signal<Supplier | null>(null);
+  readonly latestFreightReference = computed(() => {
+    const order = this.view()?.order;
+    return order ? latestOwnFreightQuote(
+      this.freightRates(), order.departurePort, order.destinationPort, order.containerType,
+    ) : null;
+  });
 
   readonly picking = signal(false);
   /** Opens only after the server confirms CONCEPT -> BESTELD. */
@@ -2115,10 +2136,13 @@ export class PurchaseEditor {
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
     this.savedOrder.set(JSON.stringify(view.order));
-    const [products, suppliers, locations] = await Promise.all([
+    const [products, suppliers, locations, freightRates] = await Promise.all([
       this.catalog.products(view.order.supplierId), this.sourcing.suppliers(),
-      this.catalog.stockLocations().catch(() => [] as StockLocation[])]);
+      this.catalog.stockLocations().catch(() => [] as StockLocation[]),
+      /* A market-context hint must never block opening the order. */
+      this.sourcing.freightRates().catch(() => [] as FreightRate[])]);
     this.products.set(products);
+    this.freightRates.set(freightRates);
     this.stockLocations.set(locations.filter((location) => location.active));
     this.supplier.set(suppliers.find((s) => s.id === view.order.supplierId) ?? null);
     /* Publish the order only after its header context is ready. Otherwise the
@@ -2338,6 +2362,14 @@ export class PurchaseEditor {
     return this.orderLine(productId)?.exwCurrency
       ?? this.products().find((product) => product.id === productId)?.exwCurrency
       ?? 'USD';
+  }
+
+  /** Current product-card price; this is a master-data reference, not payment history. */
+  productCardPrice(productId: number): { amount: number; currency: Currency } | null {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    return product?.exwPrice == null
+      ? null
+      : { amount: product.exwPrice, currency: product.exwCurrency ?? 'USD' };
   }
 
   /* ---- damage or shortfall on a received order, via one small button ---- */

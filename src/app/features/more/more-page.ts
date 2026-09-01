@@ -13,6 +13,47 @@ import { THEMES, Theme } from '../../core/platform/theme';
     <app-page-header title="Meer" [subtitle]="'Aangemeld als ' + (auth.username() ?? '')" />
 
     <div class="content">
+      <details class="card more-group more-group--analyses" name="meer-groepen" open>
+        <summary>
+          <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
+          <span class="more-group__copy"><strong>Analyses</strong>
+            <small>Overzicht · Verkoop · Voorraad · Inkoop · Markt</small></span>
+          <span class="more-group__chev" aria-hidden="true">›</span>
+        </summary>
+        <div class="list more-group__list">
+          <a class="list-item" routerLink="/analyses/overview">
+            <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
+            <div class="list-item__body"><div class="list-item__title">Overzicht</div>
+              <div class="list-item__meta">Belangrijkste waarde, kwaliteit en aandachtspunten</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
+          <a class="list-item" routerLink="/analyses/sales">
+            <span class="thumb thumb--placeholder"><app-icon name="sales" /></span>
+            <div class="list-item__body"><div class="list-item__title">Verkoop</div>
+              <div class="list-item__meta">Pijplijn, conversie, facturen en klanten</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
+          <a class="list-item" routerLink="/analyses/inventory">
+            <span class="thumb thumb--placeholder"><app-icon name="stock" /></span>
+            <div class="list-item__body"><div class="list-item__title">Voorraad</div>
+              <div class="list-item__meta">Waarde, tekorten, inkomend en datakwaliteit</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
+          <a class="list-item" routerLink="/analyses/purchasing">
+            <span class="thumb thumb--placeholder"><app-icon name="purchase" /></span>
+            <div class="list-item__body"><div class="list-item__title">Inkoop</div>
+              <div class="list-item__meta">Leveranciers, ontvangstkwaliteit, schade en tekort</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
+          <a class="list-item" routerLink="/analyses/market">
+            <span class="thumb thumb--placeholder"><app-icon name="exchange" /></span>
+            <div class="list-item__body"><div class="list-item__title">Markt &amp; container</div>
+              <div class="list-item__meta">Actuele wisselkoersen en containertarieven</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
+        </div>
+      </details>
+
       <!-- One expander per domain: the menu stays one screen tall, and
            every drawer of the old settings page lives where you would
            actually look for it. -->
@@ -49,16 +90,10 @@ import { THEMES, Theme } from '../../core/platform/theme';
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="purchase" /></span>
           <span class="more-group__copy"><strong>Inkoop</strong>
-            <small>Analyses · Leveranciers · Douane</small></span>
+            <small>Leveranciers · Douane</small></span>
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
-          <a class="list-item" routerLink="/analyses">
-            <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
-            <div class="list-item__body"><div class="list-item__title">Analyses</div>
-              <div class="list-item__meta">Ontvangstkwaliteit, tekorten, schade en bedrijfswaarde</div></div>
-            <span class="list-item__chev">›</span>
-          </a>
           <a class="list-item" routerLink="/suppliers">
             <span class="thumb thumb--placeholder"><app-icon name="suppliers" /></span>
             <div class="list-item__body"><div class="list-item__title">Leveranciers</div>

@@ -35,9 +35,29 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
             <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
             </a>
-            <a class="sidebar__link" routerLink="/analyses" routerLinkActive="active">
-              <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Analyses
-            </a>
+            <button class="sidebar__group" type="button" (click)="toggleGroup('analyses')"
+                    [attr.aria-expanded]="groupOpen('analyses')">
+              Analyses
+              <span class="sidebar__group-chev" aria-hidden="true"
+                    [class.sidebar__group-chev--open]="groupOpen('analyses')">›</span>
+            </button>
+            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('analyses')">
+              <a class="sidebar__link" routerLink="/analyses/overview" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Overzicht
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/sales" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkoop
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/inventory" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/purchasing" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkoop
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
+              </a>
+            </div>
 
             <button class="sidebar__group" type="button" (click)="toggleGroup('verkoop')"
                     [attr.aria-expanded]="groupOpen('verkoop')">
@@ -225,7 +245,7 @@ export class App {
 
   /** Open fold-downs. Day-to-day work stays in view; only Bedrijf starts folded. */
   private readonly openGroups = signal<Set<string>>(
-    new Set(['verkoop', 'inkoop', 'producten']),
+    new Set(['analyses', 'verkoop', 'inkoop', 'producten']),
   );
 
   groupOpen(group: string): boolean {
