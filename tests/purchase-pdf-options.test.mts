@@ -5,7 +5,7 @@ import {
   purchasePdfQuery,
 } from '../src/app/core/api/purchase-pdf-options.ts';
 
-test('purchase PDF defaults preserve the existing output', () => {
+test('fixed landscape preset preserves the existing output', () => {
   assert.deepEqual(normalizePurchasePdfOptions(), {
     layout: 'LANDSCAPE',
     audience: undefined,
@@ -16,109 +16,122 @@ test('purchase PDF defaults preserve the existing output', () => {
     showEur: false,
     eurOnly: false,
     includeEnrosedCost: false,
+    includeEnrosedUnitCost: false,
+    showPaymentTerms: false,
     showFreight: false,
     includeFreight: false,
   });
 });
 
-test('unit price is on by default and can be hidden only on the standard portrait copy', () => {
-  const portrait = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', audience: 'STANDARD', includeUnitPrice: false,
-  });
-  const supplier = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', audience: 'SUPPLIER', includeUnitPrice: false,
-  });
-  const landscape = normalizePurchasePdfOptions({
-    layout: 'LANDSCAPE', audience: 'STANDARD', includeUnitPrice: false,
+test('every optional standard portrait field starts hidden', () => {
+  const options = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT',
+    audience: 'STANDARD',
   });
 
-  assert.equal(portrait.includeUnitPrice, false);
-  assert.equal(supplier.includeUnitPrice, true);
-  assert.equal(landscape.includeUnitPrice, true);
+  assert.deepEqual(options, {
+    layout: 'PORTRAIT',
+    audience: 'STANDARD',
+    showRevenue: false,
+    showSupplier: false,
+    showPrices: false,
+    includeUnitPrice: false,
+    showEur: false,
+    eurOnly: false,
+    includeEnrosedCost: false,
+    includeEnrosedUnitCost: false,
+    showPaymentTerms: false,
+    showFreight: false,
+    includeFreight: false,
+  });
 });
 
-test('hiding all prices also hides the portrait unit price', () => {
-  const options = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', audience: 'STANDARD', showPrices: false, includeUnitPrice: true,
-  });
-
-  assert.equal(options.showPrices, false);
-  assert.equal(options.includeUnitPrice, false);
-});
-
-test('hiding supplier prices keeps the independent total landed cost', () => {
-  const options = normalizePurchasePdfOptions({
+test('price details stay hidden until prices are enabled', () => {
+  const hidden = normalizePurchasePdfOptions({
     layout: 'PORTRAIT',
     audience: 'STANDARD',
     showPrices: false,
+    includeUnitPrice: true,
     showEur: true,
+    eurOnly: true,
+  });
+  assert.equal(hidden.includeUnitPrice, false);
+  assert.equal(hidden.showEur, false);
+  assert.equal(hidden.eurOnly, false);
+
+  const eurOnly = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT',
+    audience: 'STANDARD',
+    showPrices: true,
+    includeUnitPrice: true,
+    showEur: true,
+    eurOnly: true,
+  });
+  assert.equal(eurOnly.includeUnitPrice, true);
+  assert.equal(eurOnly.showEur, false);
+  assert.equal(eurOnly.eurOnly, true);
+});
+
+test('line cost, unit cost and payment terms are independent portrait options', () => {
+  const options = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT',
+    audience: 'STANDARD',
     includeEnrosedCost: true,
+    includeEnrosedUnitCost: true,
+    showPaymentTerms: true,
   });
 
   assert.equal(options.showPrices, false);
-  assert.equal(options.showEur, false);
-  assert.equal(options.eurOnly, false);
   assert.equal(options.includeEnrosedCost, true);
+  assert.equal(options.includeEnrosedUnitCost, true);
+  assert.equal(options.showPaymentTerms, true);
 });
 
-test('total landed cost is limited to the standard portrait export', () => {
-  const supplier = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', audience: 'SUPPLIER', includeEnrosedCost: true,
-  });
-  const landscape = normalizePurchasePdfOptions({
-    layout: 'LANDSCAPE', audience: 'STANDARD', includeEnrosedCost: true,
-  });
-  const internal = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', audience: 'INTERNAL', includeEnrosedCost: true,
-  });
-  const unspecified = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', includeEnrosedCost: true,
-  });
-  assert.equal(supplier.includeEnrosedCost, false);
-  assert.equal(landscape.includeEnrosedCost, false);
-  assert.equal(internal.includeEnrosedCost, false);
-  assert.equal(unspecified.includeEnrosedCost, false);
+test('custom portrait switches cannot leak into fixed exports', () => {
+  for (const preset of [
+    { layout: 'LANDSCAPE', audience: 'STANDARD' },
+    { layout: 'PORTRAIT', audience: 'SUPPLIER' },
+    { layout: 'PORTRAIT', audience: 'INTERNAL' },
+  ] as const) {
+    const options = normalizePurchasePdfOptions({
+      ...preset,
+      includeEnrosedCost: true,
+      includeEnrosedUnitCost: true,
+      showPaymentTerms: true,
+      eurOnly: true,
+    });
+    assert.equal(options.includeEnrosedCost, false);
+    assert.equal(options.includeEnrosedUnitCost, false);
+    assert.equal(options.showPaymentTerms, false);
+    assert.equal(options.eurOnly, false);
+  }
 });
 
-test('EUR-only prices are exclusive and limited to the standard portrait export', () => {
-  const portrait = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', audience: 'STANDARD', showPrices: true, showEur: true, eurOnly: true,
-  });
-  const supplier = normalizePurchasePdfOptions({
-    layout: 'PORTRAIT', audience: 'SUPPLIER', eurOnly: true,
-  });
-  const landscape = normalizePurchasePdfOptions({
-    layout: 'LANDSCAPE', audience: 'STANDARD', eurOnly: true,
-  });
-
-  assert.equal(portrait.showEur, false);
-  assert.equal(portrait.eurOnly, true);
-  assert.equal(supplier.eurOnly, false);
-  assert.equal(landscape.eurOnly, false);
-});
-
-test('purchase PDF query uses every explicit backend option name', () => {
+test('purchase PDF query serializes every explicit backend option', () => {
   const query = new URLSearchParams(purchasePdfQuery({
     layout: 'PORTRAIT',
     audience: 'STANDARD',
-    showSupplier: false,
+    showSupplier: true,
     showPrices: true,
-    includeUnitPrice: false,
+    includeUnitPrice: true,
     showEur: true,
-    eurOnly: false,
     includeEnrosedCost: true,
+    includeEnrosedUnitCost: true,
+    showPaymentTerms: true,
   }));
 
   assert.deepEqual(Object.fromEntries(query), {
     showRevenue: 'false',
     layout: 'PORTRAIT',
     audience: 'STANDARD',
-    showSupplier: 'false',
+    showSupplier: 'true',
     showPrices: 'true',
-    includeUnitPrice: 'false',
+    includeUnitPrice: 'true',
     showEur: 'true',
     eurOnly: 'false',
     includeEnrosedCost: 'true',
+    includeEnrosedUnitCost: 'true',
+    showPaymentTerms: 'true',
     showFreight: 'false',
     includeFreight: 'false',
   });
