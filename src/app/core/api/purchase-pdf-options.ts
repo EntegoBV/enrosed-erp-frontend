@@ -13,8 +13,12 @@ export interface PurchasePdfOptions {
   showEur?: boolean;
   /** Replaces original-currency product prices and totals with their EUR values. */
   eurOnly?: boolean;
-  /** Shows one total landed EUR cost per product line; never exposes its components. */
+  /** Shows one total landed EUR cost for the complete product line. */
   includeEnrosedCost?: boolean;
+  /** Shows the total landed EUR cost for one piece. */
+  includeEnrosedUnitCost?: boolean;
+  /** Shows the payment agreement recorded on the purchase order. */
+  showPaymentTerms?: boolean;
   /** @deprecated Kept only for compatibility with older API deployments. */
   showFreight?: boolean;
   /** @deprecated Kept only for compatibility with older API deployments. */
@@ -31,36 +35,48 @@ export interface NormalizedPurchasePdfOptions {
   showEur: boolean;
   eurOnly: boolean;
   includeEnrosedCost: boolean;
+  includeEnrosedUnitCost: boolean;
+  showPaymentTerms: boolean;
   showFreight: boolean;
   includeFreight: boolean;
 }
 
 /**
  * Keeps impossible combinations out of both the UI and the request.
- * The total landed cost is limited to the standard portrait export, but is
- * independent of visible supplier prices. Legacy freight switches stay off:
- * cost components must never appear as a separate block in the document.
+ *
+ * Every optional field starts hidden. The configurable switches belong only
+ * to the standard portrait document; supplier and landscape are fixed presets.
  */
 export function normalizePurchasePdfOptions(
   options: PurchasePdfOptions = {},
 ): NormalizedPurchasePdfOptions {
   const layout = options.layout ?? 'LANDSCAPE';
   const audience = options.audience;
-  const showPrices = options.showPrices ?? true;
   const standardPortrait = layout === 'PORTRAIT' && audience === 'STANDARD';
+  /* Supplier and landscape are fixed legacy presets. Only the configurable
+     standard portrait starts with every optional field hidden. */
+  const showSupplier = standardPortrait
+    ? (options.showSupplier ?? false)
+    : (options.showSupplier ?? true);
+  const showPrices = standardPortrait
+    ? (options.showPrices ?? false)
+    : (options.showPrices ?? true);
   const eurOnly = standardPortrait && showPrices && (options.eurOnly ?? false);
+
   return {
     layout,
     audience,
     showRevenue: options.showRevenue ?? false,
-    showSupplier: options.showSupplier ?? true,
+    showSupplier,
     showPrices,
     includeUnitPrice: standardPortrait
-      ? showPrices && (options.includeUnitPrice ?? true)
+      ? showPrices && (options.includeUnitPrice ?? false)
       : true,
     showEur: showPrices && !eurOnly && (options.showEur ?? false),
     eurOnly,
     includeEnrosedCost: standardPortrait && (options.includeEnrosedCost ?? false),
+    includeEnrosedUnitCost: standardPortrait && (options.includeEnrosedUnitCost ?? false),
+    showPaymentTerms: standardPortrait && (options.showPaymentTerms ?? false),
     showFreight: false,
     includeFreight: false,
   };
@@ -79,6 +95,8 @@ export function purchasePdfQuery(options: PurchasePdfOptions = {}): string {
   query.set('showEur', String(resolved.showEur));
   query.set('eurOnly', String(resolved.eurOnly));
   query.set('includeEnrosedCost', String(resolved.includeEnrosedCost));
+  query.set('includeEnrosedUnitCost', String(resolved.includeEnrosedUnitCost));
+  query.set('showPaymentTerms', String(resolved.showPaymentTerms));
   query.set('showFreight', String(resolved.showFreight));
   query.set('includeFreight', String(resolved.includeFreight));
   return query.toString();
