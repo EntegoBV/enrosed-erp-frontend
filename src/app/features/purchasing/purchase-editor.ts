@@ -41,6 +41,7 @@ import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics'
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { latestOwnFreightQuote } from './purchase-price-context';
 import { purchaseLineSections } from './purchase-product-line-groups';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 
 /**
  * Landed-cost calculation of a container.
@@ -246,7 +247,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </button>
         </nav>
 
-        <div class="purchase-grid erp-workspace__layout">
+        <div class="purchase-grid erp-workspace__layout"
+             [attr.data-phone-step]="phoneStep()">
           <main class="purchase-main erp-workspace__main">
             <section class="card flow-card erp-workspace__section" id="purchase-order-section"
                      tabindex="-1">
@@ -1166,7 +1168,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
             </section>
 
-            <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
+            <app-purchase-activity class="purchase-activity-step"
+                                   [orderId]="data.order.id" [collapsible]="true" />
 
             <section class="card action-card erp-workspace__section erp-workspace__priority-card"
                      id="purchase-actions-section" tabindex="-1"
@@ -1227,6 +1230,41 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </aside>
         </div>
       </div>
+
+      @if (!desktop.active()) {
+        <nav class="purchase-mobile-dock erp-workspace__mobile-dock"
+             aria-label="Inkooporder navigatie en acties">
+          @if (phoneStep() > 0) {
+            <button class="purchase-mobile-dock__back" type="button"
+                    (click)="previousPhoneStep()"
+                    [attr.aria-label]="'Terug naar ' + phoneStepLabels[phoneStep() - 1]">‹</button>
+          }
+          <span class="purchase-mobile-dock__context">
+            <small>Stap {{ phoneStep() + 1 }} van {{ phoneStepLabels.length }}</small>
+            <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
+          </span>
+          <button class="btn purchase-mobile-dock__pdf" type="button"
+                  (click)="pdfOpen.set(true)"
+                  [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
+            PDF
+          </button>
+          <button class="btn purchase-mobile-dock__save" type="button"
+                  [class.btn--primary]="dirty()"
+                  [disabled]="saving() || !dirty()" (click)="save()">
+            {{ saving() ? 'Opslaan…' : 'Opslaan' }}
+          </button>
+          @if (phoneStep() < phoneStepLabels.length - 1) {
+            <button class="purchase-mobile-dock__next" type="button"
+                    (click)="nextPhoneStep()"
+                    [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">›</button>
+          } @else if (!dirty() && nextStep(); as step) {
+            <button class="btn btn--primary purchase-mobile-dock__primary" type="button"
+                    (click)="advanceStatus()">
+              {{ step.action }}
+            </button>
+          }
+        </nav>
+      }
 
       @if (picking()) {
         <app-product-picker
@@ -1548,6 +1586,36 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-fact--total strong{color:var(--rose-dark)}
     .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}.fill-overview strong.fill-pct--over,.po-fact strong.fill-pct--over{color:var(--warn)}.fill-overview strong.fill-pct--danger,.po-fact strong.fill-pct--danger{color:var(--danger)}.meter__fill--danger{background:var(--danger)}.capacity-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.capacity-alert--tight .alert__icon{background:var(--warn);color:#fff}
     .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+    .purchase-mobile-dock{display:flex;align-items:center;gap:7px}
+    .purchase-mobile-dock__back,.purchase-mobile-dock__next{width:42px;height:42px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer}
+    .purchase-mobile-dock__next{background:var(--ink);color:#fff}
+    .purchase-mobile-dock__context{min-width:48px;display:grid;flex:1;line-height:1.15}
+    .purchase-mobile-dock__context small{color:var(--muted);font-size:8.5px;font-weight:650;text-transform:uppercase}
+    .purchase-mobile-dock__context strong{overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
+    .purchase-mobile-dock .btn{min-height:42px;margin:0;padding-inline:10px}
+    .purchase-mobile-dock__pdf{flex:none}
+    .purchase-mobile-dock__save:disabled{opacity:.58}
+    .purchase-mobile-dock__primary{flex:none}
+    @media(max-width:390px){.purchase-mobile-dock__context{display:none}.purchase-mobile-dock__save,.purchase-mobile-dock__pdf{padding-inline:9px!important}.purchase-mobile-dock__primary{flex:1}}
+    @media(max-width:679px){
+      .pdf-header-button{display:none}
+      .po-page{padding-bottom:calc(var(--tabbar-h) + var(--safe-b) + 128px)}
+      .purchase-grid .erp-workspace__section,.purchase-grid .purchase-activity-step{display:none}
+      .purchase-grid[data-phone-step="0"] #purchase-order-section,
+      .purchase-grid[data-phone-step="1"] #purchase-products-section,
+      .purchase-grid[data-phone-step="2"] #purchase-costs-section,
+      .purchase-grid[data-phone-step="2"] #purchase-summary-section,
+      .purchase-grid[data-phone-step="3"] #purchase-payments-section,
+      .purchase-grid[data-phone-step="4"] #purchase-notes-section,
+      .purchase-grid[data-phone-step="4"] #purchase-files-section,
+      .purchase-grid[data-phone-step="4"] .purchase-activity-step,
+      .purchase-grid[data-phone-step="5"] #purchase-actions-section{display:block}
+      .purchase-grid[data-phone-step="0"] .purchase-summary,
+      .purchase-grid[data-phone-step="1"] .purchase-summary{display:none}
+      .purchase-grid[data-phone-step="3"] .purchase-main,
+      .purchase-grid[data-phone-step="4"] .purchase-main,
+      .purchase-grid[data-phone-step="5"] .purchase-main{display:none}
+    }
 
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
     .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.purchase-summary.erp-workspace__sidebar{margin-top:0}
@@ -1607,7 +1675,14 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   `]
 })
 export class PurchaseEditor {
+  readonly desktop = inject(DesktopViewport);
   readonly pdfOpen = signal(false);
+  readonly phoneStep = signal(0);
+  readonly phoneStepLabels = ['Order', 'Producten', 'Kosten', 'Betalingen', 'Dossier', 'Afronden'] as const;
+  private readonly phoneStepIds = [
+    'purchase-order-section', 'purchase-products-section', 'purchase-costs-section',
+    'purchase-payments-section', 'purchase-files-section', 'purchase-actions-section',
+  ] as const;
   /** Cost breakdowns as totals or per piece; one switch for all lines. */
   /* Per piece is what the buying conversation is about; totals are the
      exception you toggle to. */
@@ -1622,9 +1697,9 @@ export class PurchaseEditor {
   }
 
   /** Products and capacity lead; order setup and cost mechanics open on demand. */
-  readonly openSections = signal(new Set<string>());
+  readonly openSections = signal(new Set<string>(['order']));
   /** Mirrors the shared record-workspace navigation without changing order data. */
-  readonly workspaceSection = signal('purchase-products-section');
+  readonly workspaceSection = signal('purchase-order-section');
 
   toggleSection(name: string): void {
     const next = new Set(this.openSections());
@@ -1639,6 +1714,20 @@ export class PurchaseEditor {
     return this.openSections().has(name);
   }
 
+  nextPhoneStep(): void {
+    this.movePhoneStep(1);
+  }
+
+  previousPhoneStep(): void {
+    this.movePhoneStep(-1);
+  }
+
+  private movePhoneStep(direction: -1 | 1): void {
+    const next = Math.max(0, Math.min(this.phoneStepLabels.length - 1, this.phoneStep() + direction));
+    const disclosure = next === 0 ? 'order' : next === 2 ? 'costs' : undefined;
+    this.jumpToSection(this.phoneStepIds[next], disclosure);
+  }
+
   /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
   jumpToSection(sectionId: string, disclosure?: 'order' | 'costs'): void {
     if (disclosure && !this.sectionOpen(disclosure)) {
@@ -1647,6 +1736,12 @@ export class PurchaseEditor {
       this.openSections.set(next);
     }
     this.workspaceSection.set(sectionId);
+    if (!this.desktop.active()) {
+      const phoneStep = this.phoneStepIds.indexOf(sectionId as (typeof this.phoneStepIds)[number]);
+      if (phoneStep >= 0) this.phoneStep.set(phoneStep);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     requestAnimationFrame(() => {
       const target = document.getElementById(sectionId);
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' });

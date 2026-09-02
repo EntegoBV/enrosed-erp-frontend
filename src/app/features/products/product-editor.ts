@@ -1176,15 +1176,30 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     </div>
 
     @if (!desktop.active()) {
-      <nav class="erp-workspace__mobile-actions product-editor-dock" aria-label="Productacties">
-        @if (!isNew()) {
-          <a class="btn erp-workspace__secondary" [routerLink]="['/products', draft().id]">Bekijken</a>
+      <nav class="erp-workspace__mobile-actions product-editor-dock"
+           aria-label="Productstappen en acties">
+        @if (phoneTabIndex() > 0) {
+          <button class="product-editor-dock__back" type="button" (click)="previousTab()"
+                  [attr.aria-label]="'Terug naar ' + phoneTabs()[phoneTabIndex() - 1].label">‹</button>
         }
-        <button class="btn btn--primary erp-workspace__primary" type="button"
+        <span class="product-editor-dock__context">
+          <small>Stap {{ phoneTabIndex() + 1 }} van {{ phoneTabs().length }}</small>
+          <strong>{{ phoneTabs()[phoneTabIndex()].label }}</strong>
+        </span>
+        <button class="btn product-editor-dock__save" type="button"
+                [class.btn--primary]="workspaceDirty()"
                 [class.erp-workspace__primary--dirty]="workspaceDirty()"
-                [disabled]="saveBusy()" (click)="save()">
-          {{ saveActionLabel() }}
+                [disabled]="saveBusy() || !workspaceDirty()" (click)="save()">
+          {{ saveBusy() ? saveActionLabel() : (isNew() ? 'Aanmaken' : 'Opslaan') }}
         </button>
+        @if (!isLastPhoneTab()) {
+          <button class="product-editor-dock__next" type="button" (click)="nextTab()"
+                  [attr.aria-label]="'Volgende: ' + phoneTabs()[phoneTabIndex() + 1].label">›</button>
+        } @else if (!isNew()) {
+          <a class="btn product-editor-dock__view" [routerLink]="['/products', draft().id]">
+            Bekijken
+          </a>
+        }
       </nav>
     }
 
@@ -1300,7 +1315,15 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .product-editor-hero__facts .erp-workspace__fact-note { overflow: hidden; color: var(--muted);
       font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
     .product-editor-hero__actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-    .product-editor-dock .erp-workspace__primary { flex: 1; }
+    .product-editor-dock{display:flex;align-items:center;gap:7px}
+    .product-editor-dock__back,.product-editor-dock__next{width:42px;height:42px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer}
+    .product-editor-dock__next{background:var(--ink);color:#fff}
+    .product-editor-dock__context{min-width:48px;display:grid;flex:1;line-height:1.15}
+    .product-editor-dock__context small{color:var(--muted);font-size:8.5px;font-weight:650;text-transform:uppercase}
+    .product-editor-dock__context strong{overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
+    .product-editor-dock .btn{min-height:42px;margin:0;padding-inline:10px}
+    .product-editor-dock__save,.product-editor-dock__view{flex:none}
+    @media(max-width:390px){.product-editor-dock__context{display:none}.product-editor-dock .btn{padding-inline:9px}}
     .section-head > div { min-width: 0; }
     .product-load-error {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -1614,15 +1637,22 @@ export class ProductEditor implements OnDestroy {
      a dead end, so it is not offered. */
   readonly desktop = inject(DesktopViewport);
   readonly visibleTabs = computed(() => this.desktop.active() ? this.tabs() : this.phoneTabs());
+  readonly phoneTabIndex = computed(() =>
+    Math.max(0, this.phoneTabs().findIndex((tab) => tab.id === this.activeTab())));
   readonly isLastPhoneTab = computed(() => {
     const list = this.phoneTabs();
-    return list.findIndex((t) => t.id === this.activeTab()) >= list.length - 1;
+    return this.phoneTabIndex() >= list.length - 1;
   });
   nextTab(): void {
     const list = this.phoneTabs();
-    const index = list.findIndex((t) => t.id === this.activeTab());
+    const index = this.phoneTabIndex();
     const next = list[Math.min(index + 1, list.length - 1)];
     if (next) this.showTab(next.id);
+  }
+  previousTab(): void {
+    const list = this.phoneTabs();
+    const previous = list[Math.max(0, this.phoneTabIndex() - 1)];
+    if (previous) this.showTab(previous.id);
   }
 
   /* ---- publication blockers, made fixable ------------------------ */
