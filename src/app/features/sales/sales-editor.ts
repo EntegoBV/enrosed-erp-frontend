@@ -33,6 +33,7 @@ import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
 import { salesLineSections } from './sales-product-line-groups';
+import { SalesPdfSheet } from './sales-pdf-sheet';
 
 /**
  * Sales order and quote.
@@ -45,7 +46,7 @@ import { salesLineSections } from './sales-product-line-groups';
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
-            ShippingPlanner,
+            ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
     @if (view(); as data) {
@@ -1204,56 +1205,17 @@ import { salesLineSections } from './sales-product-line-groups';
       }
 
       @if (pdfSheet()) {
-        <app-sheet [title]="isInvoiceDoc() ? 'Factuur als PDF' : 'Offerte als PDF'"
-                   (closed)="pdfSheet.set(false)">
-          <div body>
-            <div class="field">
-              <label for="pdf-name">Bestandsnaam</label>
-              <div class="input-affix">
-                <input class="input" id="pdf-name" [ngModel]="pdfFilename()"
-                       (ngModelChange)="pdfFilename.set($event)" />
-                <span class="input-affix__suffix">.pdf</span>
-              </div>
-              <span class="hint">Het volgnummer {{ view()?.order?.number }} blijft altijd
-                op het document zelf staan, hoe het bestand ook heet.</span>
-            </div>
-            <div class="field">
-              <label for="pdf-lang">Taal</label>
-              <select class="select" id="pdf-lang" [ngModel]="pdfLanguage()"
-                      (ngModelChange)="pdfLanguage.set($event)">
-                @for (language of languages; track language.code) {
-                  <option [value]="language.code">
-                    {{ language.label }}@if (language.code === customerLanguage()) { — taal van de klant }
-                  </option>
-                }
-              </select>
-              <span class="hint">
-                Standaard de taal van de klant. Versturen gebruikt altijd die taal, ongeacht
-                wat je hier kiest.
-              </span>
-            </div>
-
-            <!-- The packing slip travels with the goods: pallets when they
-                 are laid out, plain lines otherwise. Never a requirement. -->
-            <button class="btn btn--block btn--stacked mt-8" type="button"
-                    (click)="downloadPackingSlip()">
-              <span>Pakbon downloaden</span>
-              <span class="btn__sub">
-                {{ view() && isLooseCartons(view()!)
-                    ? 'per product; volume uit omdozen'
-                    : view()?.order?.pallets?.length
-                      ? 'per pallet, met type en hoogte'
-                      : 'per product; automatische palletberekening' }}
-              </span>
-            </button>
-          </div>
-          <div foot style="display:contents">
-            <button class="btn" type="button" (click)="pdfSheet.set(false)">Annuleren</button>
-            <button class="btn btn--primary" type="button" (click)="downloadPdf()">
-              Downloaden
-            </button>
-          </div>
-        </app-sheet>
+        <app-sales-pdf-sheet
+          [orderId]="data.order.id"
+          [orderNumber]="data.order.number"
+          [customerName]="customerName()"
+          [customerLanguage]="customerLanguage()"
+          [invoice]="isInvoiceDoc()"
+          [dirty]="dirty()"
+          [saving]="saving()"
+          (saveRequested)="save()"
+          (closed)="pdfSheet.set(false)"
+        />
       }
 
       @if (palletSheet()) {
