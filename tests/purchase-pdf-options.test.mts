@@ -12,12 +12,38 @@ test('purchase PDF defaults preserve the existing output', () => {
     showRevenue: false,
     showSupplier: true,
     showPrices: true,
+    includeUnitPrice: true,
     showEur: false,
     eurOnly: false,
     includeEnrosedCost: false,
     showFreight: false,
     includeFreight: false,
   });
+});
+
+test('unit price is on by default and can be hidden only on the standard portrait copy', () => {
+  const portrait = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', audience: 'STANDARD', includeUnitPrice: false,
+  });
+  const supplier = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', audience: 'SUPPLIER', includeUnitPrice: false,
+  });
+  const landscape = normalizePurchasePdfOptions({
+    layout: 'LANDSCAPE', audience: 'STANDARD', includeUnitPrice: false,
+  });
+
+  assert.equal(portrait.includeUnitPrice, false);
+  assert.equal(supplier.includeUnitPrice, true);
+  assert.equal(landscape.includeUnitPrice, true);
+});
+
+test('hiding all prices also hides the portrait unit price', () => {
+  const options = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT', audience: 'STANDARD', showPrices: false, includeUnitPrice: true,
+  });
+
+  assert.equal(options.showPrices, false);
+  assert.equal(options.includeUnitPrice, false);
 });
 
 test('hiding supplier prices keeps the independent total landed cost', () => {
@@ -77,6 +103,7 @@ test('purchase PDF query uses every explicit backend option name', () => {
     audience: 'STANDARD',
     showSupplier: false,
     showPrices: true,
+    includeUnitPrice: false,
     showEur: true,
     eurOnly: false,
     includeEnrosedCost: true,
@@ -88,6 +115,7 @@ test('purchase PDF query uses every explicit backend option name', () => {
     audience: 'STANDARD',
     showSupplier: 'false',
     showPrices: 'true',
+    includeUnitPrice: 'false',
     showEur: 'true',
     eurOnly: 'false',
     includeEnrosedCost: 'true',
