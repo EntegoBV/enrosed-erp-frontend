@@ -8,6 +8,8 @@ export interface PurchasePdfOptions {
   showRevenue?: boolean;
   showSupplier?: boolean;
   showPrices?: boolean;
+  /** Shows the agreed purchase price per piece in the standard portrait table. */
+  includeUnitPrice?: boolean;
   showEur?: boolean;
   /** Replaces original-currency product prices and totals with their EUR values. */
   eurOnly?: boolean;
@@ -25,6 +27,7 @@ export interface NormalizedPurchasePdfOptions {
   showRevenue: boolean;
   showSupplier: boolean;
   showPrices: boolean;
+  includeUnitPrice: boolean;
   showEur: boolean;
   eurOnly: boolean;
   includeEnrosedCost: boolean;
@@ -52,6 +55,9 @@ export function normalizePurchasePdfOptions(
     showRevenue: options.showRevenue ?? false,
     showSupplier: options.showSupplier ?? true,
     showPrices,
+    includeUnitPrice: standardPortrait
+      ? showPrices && (options.includeUnitPrice ?? true)
+      : true,
     showEur: showPrices && !eurOnly && (options.showEur ?? false),
     eurOnly,
     includeEnrosedCost: standardPortrait && (options.includeEnrosedCost ?? false),
@@ -69,6 +75,7 @@ export function purchasePdfQuery(options: PurchasePdfOptions = {}): string {
   if (resolved.audience) query.set('audience', resolved.audience);
   query.set('showSupplier', String(resolved.showSupplier));
   query.set('showPrices', String(resolved.showPrices));
+  query.set('includeUnitPrice', String(resolved.includeUnitPrice));
   query.set('showEur', String(resolved.showEur));
   query.set('eurOnly', String(resolved.eurOnly));
   query.set('includeEnrosedCost', String(resolved.includeEnrosedCost));
