@@ -14,11 +14,14 @@ import {
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
+import { SourcingApi } from '../../core/api/sourcing-api';
 import {
   CatalogImportResult, Category, CompanyProfile, DiscountTier, HsCode, LANGUAGES, LanguageCode,
-  Product, ProductFamily,
+  Product, ProductFamily, Supplier,
 } from '../../core/api/models';
+import { AuthImage } from '../../core/api/auth-image';
 import { PageHeader } from '../../shared/page-header';
+import { ProductPicker } from '../../shared/product-picker';
 import { Ui } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
@@ -63,9 +66,11 @@ const normalizeCategoryCode = (value: string): string => value
   selector: 'app-settings-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    AuthImage,
     CategoryTranslationEditor,
     FormsModule,
     PageHeader,
+    ProductPicker,
     WebsiteSyncStatus,
   ],
   template: `
@@ -581,39 +586,144 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       </div>
 
-      <!-- ======================================= staffels -->
-      @for (scope of scopes; track scope.key) {
-        <div class="card settings-section" [class.settings-section--folded]="folded(scope.key === 'LINE' ? 'discounts' : 'order-discounts')"
-             [id]="scope.key === 'LINE' ? 'discounts' : 'order-discounts'">
-          <div (click)="toggleSection(scope.key === 'LINE' ? 'discounts' : 'order-discounts', $event)" class="card__head settings-head"><h2>{{ scope.label }}</h2><span class="spacer"></span>
-            <button class="btn btn--sm" type="button" (click)="addTier(scope.key)">+</button></div>
-          <div class="card__body">
-            <p class="small muted" style="margin:0 0 12px">{{ scope.hint }}</p>
-            @if (!tiers(scope.key).length) {
-              <p class="small muted">Nog geen staffel. Druk op + om een eerste grens toe te voegen.</p>
-            }
-            @for (tier of tiers(scope.key); track $index) {
-              <div class="row" style="margin-bottom:8px">
-                <span class="small muted" style="width:52px">vanaf</span>
-                <input class="input input--sm num right" type="number" step="50"
-                       aria-label="Vanaf aantal" [ngModel]="tier.minQuantity"
-                       (ngModelChange)="tier.minQuantity = +$event" />
-                <span class="small muted">st →</span>
-                <input class="input input--sm num right" type="text" inputmode="decimal"
-                       aria-label="Percentage" [value]="pctText(tier.percent)"
-                       (change)="tier.percent = pctValue($any($event.target).value)" />
-                <span class="small muted">%</span>
-                <button class="btn btn--sm btn--danger" type="button"
-                        (click)="removeTier(scope.key, $index)">✕</button>
+      <!-- ======================================= productspecifieke lijnkorting -->
+      <div class="card settings-section discount-section"
+           [class.settings-section--folded]="folded('discounts')" id="discounts">
+        <div (click)="toggleSection('discounts', $event)" class="card__head settings-head">
+          <div>
+            <h2>Lijnkorting — per product</h2>
+            <span class="discount-section__count">
+              {{ lineDiscountGroups().length }} product{{ lineDiscountGroups().length === 1 ? '' : 'en' }} ingesteld
+            </span>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn btn--sm" type="button"
+                  [disabled]="!discountPickerProducts().length"
+                  (click)="lineDiscountPicker.set(true)">+ Product</button>
+        </div>
+        <div class="card__body">
+          <p class="discount-intro">
+            Iedere productvariant krijgt zijn eigen staffel. Een grens voor bijvoorbeeld rood
+            verandert dus niets aan blauw of aan een ander product.
+          </p>
+
+          @if (legacyLineTiers().length) {
+            <div class="discount-legacy" role="status">
+              <div><b>Oude algemene lijnkorting staat uit</b><span>Deze {{ legacyLineTiers().length }} oude regel{{ legacyLineTiers().length === 1 ? '' : 's' }} wordt niet meer op alle producten toegepast.</span></div>
+              <button class="btn btn--sm" type="button" (click)="removeLegacyLineTiers()">Opruimen</button>
+            </div>
+          }
+
+          <div class="discount-product-list">
+            @for (group of lineDiscountGroups(); track group.productId) {
+              <article class="discount-product" [id]="'line-discount-' + group.productId">
+                <header class="discount-product__head">
+                  @if (group.product?.photos?.length) {
+                    <img class="discount-product__photo"
+                         [appAuthSrc]="group.product!.photos[0].url"
+                         [alt]="group.product!.name" />
+                  } @else {
+                    <span class="discount-product__photo discount-product__photo--empty" aria-hidden="true">◈</span>
+                  }
+                  <div class="discount-product__identity">
+                    <h3>{{ group.product?.name || 'Verwijderd product #' + group.productId }}</h3>
+                    <span>
+                      @if (group.product?.colour) { {{ group.product!.colour }} · }
+                      @if (group.product?.variantSize) { {{ group.product!.variantSize }} · }
+                      {{ group.product?.sku || 'Onbekende SKU' }}
+                    </span>
+                    @if (group.product && supplierName(group.product); as supplier) {
+                      <small>{{ supplier }}</small>
+                    }
+                  </div>
+                  <button class="discount-product__remove" type="button"
+                          [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
+                          (click)="removeLineDiscountProduct(group.productId, group.product?.name)">×</button>
+                </header>
+
+                <div class="discount-tiers" [attr.aria-label]="'Staffel voor ' + (group.product?.name || group.productId)">
+                  @for (tier of group.tiers; track tier.id ?? $index) {
+                    <div class="discount-tier">
+                      <label>
+                        <span>Vanaf</span>
+                        <input class="input input--sm num right" type="number" min="1" step="1"
+                               [attr.aria-label]="'Vanaf aantal voor ' + (group.product?.name || group.productId)"
+                               [ngModel]="tier.minQuantity"
+                               (ngModelChange)="updateLineTier(tier, { minQuantity: +$event })" />
+                        <small>stuks</small>
+                      </label>
+                      <span class="discount-tier__arrow" aria-hidden="true">→</span>
+                      <label>
+                        <span>Korting</span>
+                        <input class="input input--sm num right" type="text" inputmode="decimal"
+                               [attr.aria-label]="'Kortingspercentage voor ' + (group.product?.name || group.productId)"
+                               [value]="pctText(tier.percent)"
+                               (blur)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />
+                        <small>%</small>
+                      </label>
+                      <button class="discount-tier__remove" type="button" aria-label="Drempel verwijderen"
+                              (click)="removeLineTier(tier)">×</button>
+                    </div>
+                  }
+                </div>
+
+                <footer class="discount-product__actions">
+                  <button class="btn btn--sm" type="button" (click)="addLineTier(group.productId)">+ Drempel</button>
+                  <button class="btn btn--sm btn--primary" type="button"
+                          [disabled]="savingLineProductId() !== null || !group.tiers.length"
+                          (click)="saveLineProductTiers(group.productId)">
+                    {{ savingLineProductId() === group.productId ? 'Opslaan…' : 'Staffel opslaan' }}
+                  </button>
+                </footer>
+              </article>
+            } @empty {
+              <div class="discount-empty">
+                <b>Nog geen productspecifieke korting</b>
+                <span>Kies een product en voeg alleen daarvoor de juiste staffel toe.</span>
+                <button class="btn btn--primary" type="button"
+                        [disabled]="!discountPickerProducts().length"
+                        (click)="lineDiscountPicker.set(true)">Product kiezen</button>
               </div>
-            }
-            @if (tiers(scope.key).length) {
-              <button class="btn btn--sm btn--primary mt-8" type="button"
-                      (click)="saveTiers(scope.key)">Staffel opslaan</button>
             }
           </div>
         </div>
-      }
+      </div>
+
+      <!-- ======================================= orderkorting -->
+      <div class="card settings-section" [class.settings-section--folded]="folded('order-discounts')"
+           id="order-discounts">
+        <div (click)="toggleSection('order-discounts', $event)" class="card__head settings-head">
+          <h2>Orderkorting — totaal order</h2><span class="spacer"></span>
+          <button class="btn btn--sm" type="button" (click)="addTier('ORDER')">+</button>
+        </div>
+        <div class="card__body">
+          <p class="small muted" style="margin:0 0 12px">
+            Korting op de hele order zodra het totale aantal stuks van alle producten samen een grens haalt.
+          </p>
+          @if (!orderTiers().length) {
+            <p class="small muted">Nog geen staffel. Druk op + om een eerste grens toe te voegen.</p>
+          }
+          @for (tier of orderTiers(); track tier.id ?? $index; let tierIndex = $index) {
+            <div class="row" style="margin-bottom:8px">
+              <span class="small muted" style="width:52px">vanaf</span>
+              <input class="input input--sm num right" type="number" step="50"
+                     aria-label="Vanaf aantal" [ngModel]="tier.minQuantity"
+                     (ngModelChange)="updateOrderTier(tierIndex, { minQuantity: +$event })" />
+              <span class="small muted">st →</span>
+              <input class="input input--sm num right" type="text" inputmode="decimal"
+                     aria-label="Percentage" [value]="pctText(tier.percent)"
+                     (change)="updateOrderTier(tierIndex, { percent: pctValue($any($event.target).value) })" />
+              <span class="small muted">%</span>
+              <button class="btn btn--sm btn--danger" type="button"
+                      (click)="removeTier('ORDER', tierIndex)">✕</button>
+            </div>
+          }
+          @if (orderTiers().length) {
+            <button class="btn btn--sm btn--primary mt-8" type="button"
+                    (click)="saveTiers('ORDER')">Staffel opslaan</button>
+          }
+        </div>
+      </div>
       <!-- ======================================= catalogus in Excel -->
       <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
         <div (click)="toggleSection('catalog-data', $event)" class="card__head settings-head workbook-card__head">
@@ -780,6 +890,23 @@ const normalizeCategoryCode = (value: string): string => value
       </div>
 
     </div>
+
+    @if (lineDiscountPicker()) {
+      <app-product-picker
+        heading="Product voor lijnkorting kiezen"
+        [products]="discountPickerProducts()"
+        [categories]="categories()"
+        [families]="families()"
+        [groupByFamily]="true"
+        [preserveSourceOrder]="true"
+        [selectionOnly]="true"
+        [showPrice]="false"
+        [stockAware]="false"
+        [supplierNameOf]="discountSupplierNameOf"
+        (picked)="chooseDiscountProduct($event.product)"
+        (cancelled)="lineDiscountPicker.set(false)"
+      />
+    }
   `,
   styles: `
     .website-category-nav { max-width: 1540px; padding-bottom: 0; }
@@ -1137,6 +1264,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
+  private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
   private readonly document = inject(DOCUMENT);
   private readonly route = inject(ActivatedRoute);
@@ -1177,21 +1305,12 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     this.openSection.set(this.openSection() === section ? '' : section);
   }
 
-  readonly scopes = [
-    { key: 'LINE' as const, label: 'Lijnkorting — per product',
-      hint: 'Korting op één orderregel zodra de klant van dat product een bepaald aantal '
-        + 'stuks bestelt. Vanaf 500 stuks → 5% betekent: vanaf 500 stuks van hetzelfde '
-        + 'product krijgt die regel 5% korting.' },
-    { key: 'ORDER' as const, label: 'Orderkorting — totaal order',
-      hint: 'Korting op de hele order zodra het totale aantal stuks (alle producten samen) '
-        + 'een grens haalt. Komt bovenop de lijnkorting en staat apart op de offerte.' },
-  ];
-
   readonly company = signal<CompanyProfile | null>(null);
   readonly savingCompany = signal(false);
   readonly categories = signal<Category[]>([]);
   readonly products = signal<Product[]>([]);
   readonly families = signal<ProductFamily[]>([]);
+  readonly suppliers = signal<Supplier[]>([]);
   readonly categoryDraft = signal<Category | null>(null);
   private readonly savedCategoryDraft = signal<Category | null>(null);
   readonly categoryDirty = computed(() =>
@@ -1202,7 +1321,40 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly deletingCategoryId = signal<number | null>(null);
   readonly hsCodes = signal<HsCode[]>([]);
   private readonly lineTiers = signal<DiscountTier[]>([]);
-  private readonly orderTiers = signal<DiscountTier[]>([]);
+  readonly orderTiers = signal<DiscountTier[]>([]);
+  readonly lineDiscountPicker = signal(false);
+  readonly savingLineProductId = signal<number | null>(null);
+  readonly legacyLineTiers = computed(() =>
+    this.lineTiers().filter((tier) => tier.productId == null));
+  readonly lineDiscountGroups = computed(() => {
+    const products = new Map(this.products().flatMap((product) =>
+      product.id == null ? [] : [[product.id, product] as const]));
+    const groups = new Map<number, DiscountTier[]>();
+    for (const tier of this.lineTiers()) {
+      if (tier.productId == null) continue;
+      const current = groups.get(tier.productId) ?? [];
+      current.push(tier);
+      groups.set(tier.productId, current);
+    }
+    const productRank = new Map(this.products().flatMap((product, index) =>
+      product.id == null ? [] : [[product.id, index] as const]));
+    return [...groups.entries()]
+      .map(([productId, tiers]) => ({
+        productId,
+        product: products.get(productId) ?? null,
+        tiers: [...tiers].sort((left, right) => left.minQuantity - right.minQuantity),
+      }))
+      .sort((left, right) =>
+        (productRank.get(left.productId) ?? Number.MAX_SAFE_INTEGER)
+        - (productRank.get(right.productId) ?? Number.MAX_SAFE_INTEGER));
+  });
+  readonly discountPickerProducts = computed(() => {
+    const configured = new Set(this.lineDiscountGroups().map((group) => group.productId));
+    return this.products().filter((product) =>
+      product.id != null && product.active && !product.demo && !configured.has(product.id));
+  });
+  readonly discountSupplierNameOf = (product: Product): string | null =>
+    this.supplierName(product);
 
   constructor() { void this.load(); }
 
@@ -1309,9 +1461,10 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         this.scrollToDeepLink();
         return;
       }
-      const [categories, products, families, hsCodes, line, order, company] = await Promise.all([
+      const [categories, products, families, suppliers, hsCodes, line, order, company] = await Promise.all([
         this.catalog.categories(), this.catalog.products().catch(() => []),
-        this.catalog.productFamilies().catch(() => []), this.catalog.hsCodes(),
+        this.catalog.productFamilies().catch(() => []),
+        this.sourcing.suppliers().catch(() => []), this.catalog.hsCodes(),
         this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
         this.sales.company(),
       ]);
@@ -1323,6 +1476,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       })));
       this.products.set(products);
       this.families.set(families);
+      this.suppliers.set(suppliers);
       this.hsCodes.set(hsCodes);
       this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
       this.lineTiers.set(line);
@@ -1802,7 +1956,9 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   addTier(scope: 'LINE' | 'ORDER'): void {
     const target = scope === 'LINE' ? this.lineTiers : this.orderTiers;
-    target.update((tiers) => [...tiers, { id: null, scope, minQuantity: 0, percent: 0 }]);
+    target.update((tiers) => [...tiers, {
+      id: null, scope, productId: null, minQuantity: 1, percent: 0,
+    }]);
   }
 
   removeTier(scope: 'LINE' | 'ORDER', index: number): void {
@@ -1811,9 +1967,132 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 
   async saveTiers(scope: 'LINE' | 'ORDER'): Promise<void> {
-    const saved = await this.sales.saveTiers(scope, this.tiers(scope));
-    (scope === 'LINE' ? this.lineTiers : this.orderTiers).set(saved);
-    this.ui.toast('Staffel opgeslagen');
+    try {
+      const saved = await this.sales.saveTiers(scope, this.tiers(scope));
+      (scope === 'LINE' ? this.lineTiers : this.orderTiers).set(saved);
+      this.ui.toast('Staffel opgeslagen');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Staffel opslaan mislukt'), 'err');
+    }
+  }
+
+  supplierName(product: Product): string | null {
+    if (product.supplierId == null) return null;
+    return this.suppliers().find((supplier) => supplier.id === product.supplierId)?.name ?? null;
+  }
+
+  chooseDiscountProduct(product: Product): void {
+    if (product.id == null) return;
+    this.lineDiscountPicker.set(false);
+    if (this.lineTiers().some((tier) => tier.productId === product.id)) {
+      this.scrollToLineDiscount(product.id);
+      return;
+    }
+    this.lineTiers.update((tiers) => [...tiers, {
+      id: null,
+      scope: 'LINE',
+      productId: product.id,
+      minQuantity: Math.max(1, product.carton.piecesPerCarton ?? 1),
+      percent: 0,
+    }]);
+    this.scrollToLineDiscount(product.id);
+  }
+
+  addLineTier(productId: number): void {
+    const existing = this.lineTiers().filter((tier) => tier.productId === productId);
+    const highest = existing.reduce((value, tier) => Math.max(value, tier.minQuantity), 0);
+    this.lineTiers.update((tiers) => [...tiers, {
+      id: null,
+      scope: 'LINE',
+      productId,
+      minQuantity: Math.max(1, highest + 100),
+      percent: 0,
+    }]);
+  }
+
+  updateLineTier(tier: DiscountTier, changes: Partial<Pick<DiscountTier, 'minQuantity' | 'percent'>>): void {
+    this.lineTiers.update((tiers) => tiers.map((candidate) =>
+      candidate === tier ? { ...candidate, ...changes } : candidate));
+  }
+
+  removeLineTier(tier: DiscountTier): void {
+    if (tier.productId != null
+        && this.lineTiers().filter((candidate) => candidate.productId === tier.productId).length === 1) {
+      const productName = this.products().find((product) => product.id === tier.productId)?.name;
+      this.removeLineDiscountProduct(tier.productId, productName);
+      return;
+    }
+    this.lineTiers.update((tiers) => tiers.filter((candidate) => candidate !== tier));
+  }
+
+  updateOrderTier(index: number, changes: Partial<Pick<DiscountTier, 'minQuantity' | 'percent'>>): void {
+    this.orderTiers.update((tiers) => tiers.map((tier, currentIndex) =>
+      currentIndex === index ? { ...tier, ...changes, productId: null } : tier));
+  }
+
+  async saveLineProductTiers(productId: number): Promise<void> {
+    const tiers = this.lineTiers()
+      .filter((tier) => tier.productId === productId)
+      .sort((left, right) => left.minQuantity - right.minQuantity);
+    if (!tiers.length) return;
+    this.savingLineProductId.set(productId);
+    try {
+      const saved = await this.sales.saveProductTiers(productId, tiers);
+      this.lineTiers.update((current) => [
+        ...current.filter((tier) => tier.productId !== productId),
+        ...saved,
+      ]);
+      this.ui.toast('Productstaffel opgeslagen');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Productstaffel opslaan mislukt'), 'err');
+    } finally {
+      this.savingLineProductId.set(null);
+    }
+  }
+
+  removeLineDiscountProduct(productId: number, productName?: string | null): void {
+    this.ui.confirm({
+      title: 'Productkorting verwijderen',
+      message: 'De automatische lijnkorting voor dit product wordt verwijderd. Andere producten blijven ongewijzigd.',
+      confirmLabel: 'Verwijderen',
+      danger: true,
+    }, async () => {
+      this.savingLineProductId.set(productId);
+      try {
+        await this.sales.saveProductTiers(productId, []);
+        this.lineTiers.update((tiers) => tiers.filter((tier) => tier.productId !== productId));
+        this.ui.toast(productName ? `Korting voor ${productName} verwijderd` : 'Productkorting verwijderd');
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Productkorting verwijderen mislukt'), 'err');
+      } finally {
+        this.savingLineProductId.set(null);
+      }
+    });
+  }
+
+  removeLegacyLineTiers(): void {
+    this.ui.confirm({
+      title: 'Oude algemene lijnkorting opruimen',
+      message: 'Alleen de oude niet-productspecifieke regels worden verwijderd. Productspecifieke staffels blijven staan.',
+      confirmLabel: 'Opruimen',
+      danger: false,
+    }, async () => {
+      try {
+        const valid = this.lineTiers().filter((tier) => tier.productId != null);
+        this.lineTiers.set(await this.sales.saveTiers('LINE', valid));
+        this.ui.toast('Oude algemene lijnkorting opgeruimd');
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Oude lijnkorting opruimen mislukt'), 'err');
+      }
+    });
+  }
+
+  private scrollToLineDiscount(productId: number): void {
+    this.document.defaultView?.setTimeout(() => {
+      this.document.getElementById(`line-discount-${productId}`)?.scrollIntoView({
+        behavior: 'smooth', block: 'center',
+      });
+    });
   }
 
   canDeactivate(): boolean {

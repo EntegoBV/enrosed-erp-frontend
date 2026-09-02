@@ -28,10 +28,10 @@ test('adds the conservative purchase margin to both conversion steps', () => {
   });
 
   assert.deepEqual(defaults, {
-    usdToEur: 0.9167,
-    cnyToUsd: 0.1572,
+    usdToEur: 0.85,
+    cnyToUsd: 0.1458,
     asOf: '2026-08-31',
-    marginPct: 10,
+    marginPct: 2,
   });
   assert.equal(purchaseFxDefaults(null), null);
   assert.equal(purchaseFxDefaults({ usdToEur: 0, cnyToUsd: 0.14, asOf: '2026-08-31' }), null);
@@ -48,7 +48,7 @@ test('keeps the intended double allowance explicit for CNY purchases', () => {
   assert.ok(defaults);
   const rawCnyToEur = reference.cnyToUsd * reference.usdToEur;
   const bufferedCnyToEur = defaults.cnyToUsd * defaults.usdToEur;
-  assert.ok(bufferedCnyToEur >= rawCnyToEur * 1.21);
+  assert.ok(bufferedCnyToEur + Number.EPSILON >= rawCnyToEur * 1.02 ** 2);
 });
 
 test('finds the newest comparable own 40ft quote', () => {

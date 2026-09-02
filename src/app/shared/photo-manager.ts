@@ -78,9 +78,9 @@ export interface PendingPhotoUploadResult {
       }
     <div class="photo-toolbar">
       <div class="photo-toolbar__copy">
-        <b>Eigen productfoto’s</b>
+        <b>Foto’s van deze variant</b>
         <span id="photo-order-help">
-          Voeg foto’s toe (of sleep ze hierheen) en bepaal hun volgorde met slepen, vegen of de pijltjes.
+          Voeg foto’s toe of sleep ze hierheen. Deze beelden horen alleen bij dit artikel.
         </span>
       </div>
 
@@ -97,8 +97,8 @@ export interface PendingPhotoUploadResult {
     @if (ownPhotos().length) {
       <section class="photo-series" aria-labelledby="saved-photo-title">
         <div class="photo-series__head">
-          <h3 id="saved-photo-title">Eigen productfoto’s <span>{{ ownPhotos().length }}</span></h3>
-          <small>Eigen foto’s staan vóór de websitegalerij</small>
+          <h3 id="saved-photo-title">Variantfoto’s <span>{{ ownPhotos().length }}</span></h3>
+          <small>Sleep, veeg of gebruik de pijltjes om te sorteren</small>
         </div>
 
         <ol class="photo-strip" aria-describedby="photo-order-help">
@@ -239,16 +239,16 @@ export interface PendingPhotoUploadResult {
       </section>
     }
 
-    @if (inheritedPhotos().length) {
-      <section class="photo-series photo-series--readonly" aria-labelledby="website-photo-title">
+    @if (showInherited() && inheritedPhotos().length) {
+      <section class="photo-series photo-series--readonly" aria-labelledby="shared-photo-title">
         <div class="photo-series__head">
           <div>
-            <h3 id="website-photo-title">Uit websitegalerij <span>{{ inheritedPhotos().length }}</span></h3>
-            <small>Alleen-lezen · beheer deze foto’s bij Website &amp; publicatie</small>
+            <h3 id="shared-photo-title">Gedeelde productgalerij <span>{{ inheritedPhotos().length }}</span></h3>
+            <small>Gekoppeld aan de productreeks · kies het gebruik hieronder</small>
           </div>
         </div>
 
-        <ol class="photo-strip" aria-label="Foto’s uit de websitegalerij">
+        <ol class="photo-strip" aria-label="Foto’s uit de gedeelde productgalerij">
           @for (photo of inheritedPhotos(); track photo.id) {
             <li class="photo-card photo-card--readonly"
                 [class.photo-card--primary]="isEffectivePrimary(photo)">
@@ -259,7 +259,7 @@ export interface PendingPhotoUploadResult {
                 } @else {
                   <span class="photo-card__position" aria-hidden="true">{{ effectivePosition(photo) }}</span>
                 }
-                <span class="photo-card__readonly">Website</span>
+                <span class="photo-card__readonly">Gedeeld</span>
               </div>
 
               <div class="photo-card__footer">
@@ -293,8 +293,13 @@ export interface PendingPhotoUploadResult {
     }
 
     <p class="photo-help">
-      Eigen foto’s staan vooraan. Zonder eigen foto gebruikt het ERP de eerste foto uit de
-      websitegalerij. JPEG, PNG, GIF of WebP · max. 25 MB per foto.
+      @if (showInherited()) {
+        Eigen foto’s staan vooraan. Zonder eigen foto gebruikt het ERP de eerste foto uit de
+        gedeelde productgalerij.
+      } @else {
+        Variantfoto’s staan vóór de gedeelde galerij hieronder.
+      }
+      JPEG, PNG, GIF of WebP · max. 25 MB per foto.
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
     </div>
@@ -478,6 +483,8 @@ export class PhotoManager {
   readonly productId = input<number | null>(null);
   readonly photos = input.required<PhotoDto[]>();
   readonly disabled = input(false);
+  /** The product editor renders canonical family images in its gallery below. */
+  readonly showInherited = input(true);
   readonly changed = output<Product>();
 
   readonly busy = signal(false);

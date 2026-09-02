@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ProductFamilyMember } from '../src/app/core/api/models.ts';
+import type { Category, Product, ProductFamily, ProductFamilyMember } from '../src/app/core/api/models.ts';
 import {
+  productCatalogNavigation,
   productVariantNavigation,
   productVariantOptionLabel,
 } from '../src/app/features/products/product-variant-navigation.ts';
@@ -64,6 +65,37 @@ test('variant labels say colour and size, then fall back safely', () => {
   assert.equal(productVariantOptionLabel(member(30, 3, 'Old pink', false)), 'Old pink (inactief)');
 });
 
+test('last colour continues to the next product model and then through its colours', () => {
+  const categories = [{ id: 1, name: 'Rozen', position: 1 } as Category];
+  const products = [
+    product(11, 10, 'Model A rood', 'Red', 1),
+    product(12, 10, 'Model A wit', 'White', 2),
+    product(21, 20, 'Model B blauw', 'Blue', 1),
+    product(22, 20, 'Model B roze', 'Pink', 2),
+  ];
+  const families = [
+    family(20, 'Model B', 2, [member(21, 1, 'Blue'), member(22, 2, 'Pink')]),
+    family(10, 'Model A', 1, [member(11, 1, 'Red'), member(12, 2, 'White')]),
+  ];
+
+  const lastColour = productCatalogNavigation(products, families, categories, 12);
+  assert.equal(lastColour?.index, 1);
+  assert.equal(lastColour?.total, 2);
+  assert.equal(lastColour?.previous?.productId, 11);
+  assert.equal(lastColour?.previousChangesProduct, false);
+  assert.equal(lastColour?.next?.productId, 21);
+  assert.equal(lastColour?.next?.groupName, 'Model B');
+  assert.equal(lastColour?.nextChangesProduct, true);
+
+  const firstNextProductColour = productCatalogNavigation(products, families, categories, 21);
+  assert.equal(firstNextProductColour?.index, 0);
+  assert.equal(firstNextProductColour?.total, 2);
+  assert.equal(firstNextProductColour?.previous?.productId, 12);
+  assert.equal(firstNextProductColour?.previousChangesProduct, true);
+  assert.equal(firstNextProductColour?.next?.productId, 22);
+  assert.equal(firstNextProductColour?.nextChangesProduct, false);
+});
+
 function member(
   productId: number,
   position: number,
@@ -81,4 +113,45 @@ function member(
     position,
     active,
   };
+}
+
+function product(
+  id: number,
+  familyId: number,
+  name: string,
+  colour: string,
+  variantPosition: number,
+): Product {
+  return {
+    id,
+    familyId,
+    familyKey: `model-${familyId}`,
+    categoryId: 1,
+    name,
+    colour,
+    colourHex: null,
+    variantSize: null,
+    variantPosition,
+    canonicalVariantKey: `model-${familyId}-${colour.toLowerCase()}`,
+    sku: `SKU-${id}`,
+    active: true,
+    photos: [],
+  } as Product;
+}
+
+function family(
+  id: number,
+  name: string,
+  productPosition: number,
+  members: ProductFamilyMember[],
+): ProductFamily {
+  return {
+    id,
+    name,
+    familyKey: `model-${id}`,
+    categoryId: 1,
+    productPosition,
+    members,
+    cardFeaturedProductId: null,
+  } as ProductFamily;
 }

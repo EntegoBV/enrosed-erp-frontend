@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
-import { Location } from '@angular/common';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -7,7 +7,8 @@ import { AuthImage } from '../../core/api/auth-image';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { SalesOrder,
-  Country, Customer, CustomerPortalLink, PricedLine, QuoteEvent, QuoteRevision, QuoteStatus,
+  Category, Country, Customer, CustomerPortalLink, PricedLine, Product, ProductFamily,
+  QuoteEvent, QuoteRevision, QuoteStatus,
   SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -22,6 +23,10 @@ import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status
 import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
+import { salesLineSections } from './sales-product-line-groups';
+import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
+
+type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
 /**
  * Read-first sales order.
@@ -33,7 +38,7 @@ import {
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, Sheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -50,8 +55,8 @@ import {
         </app-page-header>
       }
 
-      <main class="content sales-view-page anim-rise">
-        <section class="sales-hero" aria-labelledby="sales-overview-title">
+      <main class="content sales-view-page anim-rise erp-workspace erp-workspace--detail erp-workspace--sales">
+        <section class="sales-hero erp-workspace__hero" id="sales-overview" aria-labelledby="sales-overview-title">
           <!-- Phone: the app bar folds into the hero - back, PDF and the
                edit action live on the dark surface itself. -->
           @if (!desktop.active()) {
@@ -159,6 +164,42 @@ import {
           </div>
         </section>
 
+        <nav class="sales-section-nav erp-workspace__section-nav" aria-label="Onderdelen van het verkoopdocument">
+          <button class="erp-workspace__section-link" type="button"
+                  [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-products'"
+                  [class.active]="activeDetailSection() === 'sales-products'"
+                  [attr.aria-current]="activeDetailSection() === 'sales-products' ? 'true' : null"
+                  (click)="scrollToSection('sales-products')">
+            <span class="erp-workspace__section-mark" aria-hidden="true">1</span>
+            <span class="erp-workspace__section-copy"><b>Producten</b>
+              <small>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}</small></span>
+          </button>
+          <button class="erp-workspace__section-link" type="button"
+                  [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-delivery'"
+                  [class.active]="activeDetailSection() === 'sales-delivery'"
+                  [attr.aria-current]="activeDetailSection() === 'sales-delivery' ? 'true' : null"
+                  (click)="scrollToSection('sales-delivery')">
+            <span class="erp-workspace__section-mark" aria-hidden="true">2</span>
+            <span class="erp-workspace__section-copy"><b>Levering</b><small>{{ deliveryState(data) }}</small></span>
+          </button>
+          <button class="erp-workspace__section-link" type="button"
+                  [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-control'"
+                  [class.active]="activeDetailSection() === 'sales-control'"
+                  [attr.aria-current]="activeDetailSection() === 'sales-control' ? 'true' : null"
+                  (click)="scrollToSection('sales-control')">
+            <span class="erp-workspace__section-mark" aria-hidden="true">3</span>
+            <span class="erp-workspace__section-copy"><b>Controle</b><small>{{ data.priced.totals.total | eur: 0 }}</small></span>
+          </button>
+          <button class="erp-workspace__section-link" type="button"
+                  [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-status'"
+                  [class.active]="activeDetailSection() === 'sales-status'"
+                  [attr.aria-current]="activeDetailSection() === 'sales-status' ? 'true' : null"
+                  (click)="scrollToSection('sales-status')">
+            <span class="erp-workspace__section-mark" aria-hidden="true">4</span>
+            <span class="erp-workspace__section-copy"><b>Status</b><small>{{ label(data.order.status) }}</small></span>
+          </button>
+        </nav>
+
         @if (pendingRevision(); as revision) {
           <section class="revision-alert" aria-labelledby="revision-alert-title">
             <span class="revision-alert__icon" aria-hidden="true">⇄</span>
@@ -176,9 +217,9 @@ import {
           </section>
         }
 
-        <div class="sales-layout">
-          <div class="sales-main">
-            <section class="section-card products-card" aria-labelledby="sales-lines-title">
+        <div class="sales-layout erp-workspace__layout">
+          <div class="sales-main erp-workspace__content">
+            <section class="section-card products-card erp-workspace__section" id="sales-products" aria-labelledby="sales-lines-title">
               <header class="section-card__head">
                 <div>
                   <span class="section-kicker">Orderinhoud</span>
@@ -198,12 +239,92 @@ import {
                 </div>
               </header>
 
-              <div class="product-lines">
-                <!-- Same rhythm as the inkoop detail: identity walks through
-                     to the product, facts sit in a strip, the price build-up
-                     folds open under its own toggle. -->
-                @for (line of data.priced.lines; track line.productId; let lineIndex = $index) {
-                  <article class="sales-line">
+              <div class="product-lines purchase-model-list">
+                @for (section of lineSections(); track section.key) {
+                  <section class="purchase-category" [attr.aria-labelledby]="salesCategoryHeadingId(section.key)">
+                    <h3 class="purchase-category__head" [id]="salesCategoryHeadingId(section.key)">
+                      <span>{{ section.label }}</span>
+                      <small>{{ section.families.length }} {{ section.families.length === 1 ? 'model' : 'modellen' }} ·
+                        {{ section.lines.length }} {{ section.lines.length === 1 ? 'variant' : 'varianten' }}</small>
+                    </h3>
+                    <div class="purchase-category__models">
+                      @for (group of section.families; track group.key) {
+                        <section class="purchase-model"
+                                 [class.purchase-model--family]="group.familyId !== null"
+                                 [class.purchase-model--standalone]="group.familyId === null"
+                                 [class.purchase-model--open]="productGroupOpen(group.key)">
+                          <button class="purchase-model__head" type="button"
+                                  [id]="productGroupPanelId(group.key) + '-toggle'"
+                                  [attr.aria-expanded]="productGroupOpen(group.key)"
+                                  [attr.aria-controls]="productGroupPanelId(group.key)"
+                                  (click)="toggleProductGroup(group.key)">
+                            @if (group.photoUrl; as photo) {
+                              <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
+                            } @else {
+                              <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
+                            }
+                            <span class="purchase-model__copy">
+                              <small>{{ group.familyId === null ? 'Product' : 'Productmodel' }}</small>
+                              <strong>{{ group.label }}</strong>
+                              <span>
+                                {{ group.lines.length }} {{ group.lines.length === 1 ? 'variant' : 'varianten' }}
+                                @if (group.swatches.length) {
+                                  <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
+                                    @for (swatch of group.swatches.slice(0, 8); track swatch.key) {
+                                      <i class="product-colour-dot"
+                                         [class.product-colour-dot--empty]="!swatch.hex"
+                                         [style.background]="swatch.hex || 'transparent'"
+                                         [title]="swatch.label"></i>
+                                    }
+                                    @if (group.swatches.length > 8) {
+                                      <small>+{{ group.swatches.length - 8 }}</small>
+                                    }
+                                  </span>
+                                }
+                              </span>
+                            </span>
+                            <span class="purchase-model__totals">
+                              <strong>{{ group.pieces | num }} st</strong>
+                              <small>{{ group.cartons | num }} dozen · {{ group.cbm | cbm }}</small>
+                              <small class="purchase-model__cost-label">
+                                {{ profitMode() === 'UNIT' ? 'Gem. netto / stuk' : 'Netto verkoop' }}
+                              </small>
+                              <b>{{ profitMode() === 'UNIT'
+                                ? (averageGroupUnitPrice(group.totalEur, group.pieces) | eur: 2)
+                                : (group.totalEur | eur) }}</b>
+                            </span>
+                            <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                              <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                          </button>
+                          @if (productGroupOpen(group.key)) {
+                            <div class="purchase-model__variants"
+                                 [id]="productGroupPanelId(group.key)"
+                                 role="region"
+                                 [attr.aria-labelledby]="productGroupPanelId(group.key) + '-toggle'">
+                            @for (line of group.lines; track line.productId; let variantIndex = $index) {
+                              <ng-container *ngTemplateOutlet="salesVariant; context: {
+                                $implicit: line, group: group, section: section, variantIndex: variantIndex
+                              }" />
+                            }
+                            </div>
+                          }
+                        </section>
+                      }
+                    </div>
+                  </section>
+                } @empty {
+                  <div class="products-empty">
+                    <span aria-hidden="true">◇</span>
+                    <strong>Nog geen producten</strong>
+                    <p>Open Bewerken om de eerste productregel toe te voegen.</p>
+                  </div>
+                }
+
+                <ng-template #salesVariant let-line let-group="group" let-section="section"
+                             let-variantIndex="variantIndex">
+                  <article class="sales-line" [class.sales-line--variant]="group.familyId !== null">
                     <a class="sales-line__identity" [routerLink]="['/products', line.productId]"
                        [title]="line.description + ' openen'">
                       @if (line.photoUrl) {
@@ -212,9 +333,34 @@ import {
                         <span class="sales-line__photo sales-line__photo--empty" aria-hidden="true">◈</span>
                       }
                       <span class="sales-line__copy">
-                        <small>Regel {{ lineIndex + 1 }}</small>
-                        <strong>{{ line.description }}</strong>
-                        <span>{{ line.quantity | num }} st · {{ line.cartons | num }} dozen</span>
+                        <small>
+                          @if (group.familyId === null) {
+                            Regel {{ salesLineNumber(line.productId) }} · {{ section.label }}
+                          } @else {
+                            Variant {{ variantIndex + 1 }} van {{ group.lines.length }}
+                            @if (line.sku) { · <span class="mono">{{ line.sku }}</span> }
+                          }
+                        </small>
+                        <strong>{{ group.familyId === null
+                          ? line.description
+                          : salesVariantTitle(line.productId, line.description) }}</strong>
+                        <span class="purchase-line__meta">
+                          @if (productFor(line.productId); as product) {
+                            @if (product.colour; as colour) {
+                              <i class="product-colour-dot"
+                                 [class.product-colour-dot--empty]="!product.colourHex"
+                                 [style.background]="product.colourHex || 'transparent'" aria-hidden="true"></i>
+                              <b>{{ colour }}</b>
+                            }
+                            @if (product.variantSize; as size) {
+                              @if (product.colour) { <span aria-hidden="true"> · </span> }
+                              <b>{{ size }}</b>
+                            }
+                          }
+                          @if (group.familyId === null && line.sku) {
+                            <span aria-hidden="true"> · </span><span class="mono">{{ line.sku }}</span>
+                          }
+                        </span>
                       </span>
                     </a>
 
@@ -266,18 +412,12 @@ import {
                       </div>
                     }
                   </article>
-                } @empty {
-                  <div class="products-empty">
-                    <span aria-hidden="true">◇</span>
-                    <strong>Nog geen producten</strong>
-                    <p>Open Bewerken om de eerste productregel toe te voegen.</p>
-                  </div>
-                }
+                </ng-template>
               </div>
             </section>
 
 
-            <section class="section-card" aria-labelledby="delivery-details-title">
+            <section class="section-card erp-workspace__section" id="sales-delivery" aria-labelledby="delivery-details-title">
               <header class="section-card__head">
                 <div><span class="section-kicker">Logistiek</span><h2 id="delivery-details-title">Levering</h2></div>
                 <span class="delivery-state" [class.delivery-state--open]="data.order.deliveryTerms === 'TE_BEPALEN'">
@@ -301,8 +441,8 @@ import {
 
           </div>
 
-          <aside class="sales-side" aria-label="Totalen en acties">
-            <section class="totals-card">
+          <aside class="sales-side erp-workspace__rail" id="sales-control" aria-label="Totalen en acties">
+            <section class="totals-card erp-workspace__decision">
               <header><span class="section-kicker">Controle</span><h2>Totalen</h2></header>
               <dl class="totals-list">
                 <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div>
@@ -316,33 +456,75 @@ import {
                 <div><b>Winst</b><strong [class.negative]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 2 }}</strong></div>
                 <small>Goederenwinst vóór vrachtkosten</small>
               </div>
+
+              <section class="next-step-card" aria-labelledby="sales-next-step-title">
+                <span class="section-kicker">Volgende stap</span>
+                <h3 id="sales-next-step-title">{{ nextStepTitle(data) }}</h3>
+                <p>{{ nextStepHelp(data) }}</p>
+                @if (pendingRevision()) {
+                  <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
+                    Wijziging beoordelen
+                  </a>
+                } @else if (isInvoice()) {
+                  @if (data.order.status === 'CONCEPT') {
+                    <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote()"
+                            (click)="sendSheetOpen.set(true)">Factuur versturen…</button>
+                  } @else if (!data.order.goodsShippedAt) {
+                    <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
+                            (click)="openShipSheet(data)">Bestelling verzonden</button>
+                  } @else if (data.order.status !== 'BETAALD') {
+                    <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
+                            (click)="markPaid(data)">Betaling registreren</button>
+                  } @else {
+                    <button class="btn btn--primary btn--block" type="button" [disabled]="packing()"
+                            (click)="downloadPackingSlip(data)">
+                      {{ packing() ? 'Pakbon maken…' : 'Pakbon downloaden' }}
+                    </button>
+                  }
+                } @else if (data.order.status === 'CONCEPT') {
+                  <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote()"
+                          (click)="sendSheetOpen.set(true)">
+                    {{ data.order.sentAt ? 'Nieuwe versie versturen…' : 'Offerte versturen…' }}
+                  </button>
+                } @else if (data.order.status === 'GEACCEPTEERD') {
+                  <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
+                          (click)="makeInvoice(data)">
+                    {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+                  </button>
+                } @else {
+                  <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
+                    {{ actionLabel() }}
+                  </a>
+                }
+              </section>
+
+              <details class="manage-more">
+                <summary>Meer acties <span aria-hidden="true">⌄</span></summary>
               <div class="manage-actions">
-                <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
+                @if (!nextStepOpensEditor(data)) {
+                <a class="btn btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
                   {{ actionLabel() }}
                 </a>
+                }
                 @if (isInvoice()) {
                   @if (data.order.status === 'CONCEPT') {
-                    <button class="btn btn--block" type="button" [disabled]="sendingQuote()"
-                            (click)="sendSheetOpen.set(true)">Versturen…</button>
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="markSent(data)">Markeer als verstuurd</button>
-                    <p class="link-explainer">Versturen mailt de PDF met de betaalgegevens;
-                      "markeer" is voor wanneer je ze zelf al bezorgde.</p>
-                  } @else if (data.order.status !== 'BETAALD') {
+                    <p class="link-explainer">Gebruik dit alleen wanneer je de factuur buiten het ERP bezorgde.</p>
+                  } @else if (data.order.status !== 'BETAALD' && !data.order.goodsShippedAt) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="markPaid(data)">Markeer als betaald</button>
                   }
-                  @if (data.order.status !== 'CONCEPT' && !data.order.goodsShippedAt) {
-                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
-                            (click)="openShipSheet(data)">Bestelling verzonden — voorraad afpunten</button>
-                  } @else if (data.order.goodsShippedAt) {
+                  @if (data.order.goodsShippedAt) {
                     <p class="link-explainer">Bestelling verzonden op
                       {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
                   }
+                  @if (!(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
                   <button class="btn btn--block" type="button" [disabled]="packing()"
                           (click)="downloadPackingSlip(data)">
                     {{ packing() ? 'Pakbon maken…' : 'Pakbon downloaden' }}
                   </button>
+                  }
                   @if (data.order.sourceQuoteId; as quoteId) {
                     <a class="btn btn--block" [routerLink]="['/sales', quoteId]">
                       Naar de offerte
@@ -350,12 +532,6 @@ import {
                   }
                 } @else {
                   @if (data.order.status === 'CONCEPT') {
-                    <button class="btn btn--block" type="button" [disabled]="sendingQuote()"
-                            (click)="sendSheetOpen.set(true)">
-                      {{ data.order.sentAt ? 'Opnieuw versturen…' : 'Versturen…' }}
-                    </button>
-                  }
-                  @if (data.order.status === 'GEACCEPTEERD' || data.order.status === 'CONCEPT') {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="makeInvoice(data)">
                       {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
@@ -379,10 +555,11 @@ import {
                   </button>
                 }
               </div>
+              </details>
             </section>
           </aside>
 
-            <section class="section-card history-card" aria-labelledby="quote-history-title">
+            <section class="section-card history-card erp-workspace__section" id="sales-status" aria-labelledby="quote-history-title">
               <header class="section-card__head">
                 <div><span class="section-kicker">Status</span><h2 id="quote-history-title">Geschiedenis</h2></div>
                 <span class="badge" [class]="'badge badge--' + cls(data.order.status)">{{ label(data.order.status) }}</span>
@@ -498,6 +675,39 @@ import {
           </app-sheet>
         }
       </main>
+
+      @if (!desktop.active()) {
+        <div class="sales-detail-dock erp-workspace__mobile-dock" role="group"
+             aria-label="Belangrijkste acties voor dit verkoopdocument">
+          <button class="sales-detail-dock__pdf" type="button" [disabled]="downloading()"
+                  (click)="downloadPdf()">{{ downloading() ? '…' : 'PDF' }}</button>
+          @if (pendingRevision()) {
+            <a class="btn btn--primary sales-detail-dock__primary"
+               [routerLink]="['/sales', data.order.id, 'edit']">Beoordelen</a>
+          } @else {
+            <a class="btn sales-detail-dock__edit" [class.btn--primary]="!hasStatusAction(data)"
+               [routerLink]="['/sales', data.order.id, 'edit']">{{ actionLabel() }}</a>
+            @if (isInvoice()) {
+              @if (data.order.status === 'CONCEPT') {
+                <button class="btn btn--primary sales-detail-dock__primary" type="button"
+                        [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Versturen</button>
+              } @else if (!data.order.goodsShippedAt) {
+                <button class="btn btn--primary sales-detail-dock__primary" type="button"
+                        [disabled]="invoiceBusy()" (click)="openShipSheet(data)">Verzonden</button>
+              } @else if (data.order.status !== 'BETAALD') {
+                <button class="btn btn--primary sales-detail-dock__primary" type="button"
+                        [disabled]="invoiceBusy()" (click)="markPaid(data)">Betaald</button>
+              }
+            } @else if (data.order.status === 'CONCEPT') {
+              <button class="btn btn--primary sales-detail-dock__primary" type="button"
+                      [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Versturen</button>
+            } @else if (data.order.status === 'GEACCEPTEERD') {
+              <button class="btn btn--primary sales-detail-dock__primary" type="button"
+                      [disabled]="invoiceBusy()" (click)="makeInvoice(data)">Factuur</button>
+            }
+          }
+        </div>
+      }
     } @else if (loading()) {
       <app-page-header title="Offerte laden" [showBack]="true" [showBell]="false" />
       <main class="content sales-view-page">
@@ -522,7 +732,7 @@ import {
     }
   `,
   styles: [`
-    .sales-view-page { max-width:1180px;margin-inline:auto;background:radial-gradient(circle at 48% 0,var(--rose-soft),transparent 340px) }
+    .sales-view-page { max-width:1180px;margin-inline:auto;padding-bottom:96px;background:transparent }
     .sales-view-page>*+* { margin-top:12px }
     .sales-hero { overflow:hidden;padding:18px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2) }
     .sales-hero__top { display:flex;align-items:flex-start;justify-content:space-between;gap:12px }
@@ -685,12 +895,22 @@ import {
     .totals-list__main { margin-top:4px;padding:12px 0!important;border-top:1px solid var(--line) }.totals-list__main dt { color:var(--ink)!important;font-weight:760 }.totals-list__main dt small { display:block;margin-top:1px;color:var(--muted);font-size:8.5px;font-weight:550 }.totals-list__main dd { font-size:17px!important }
     .totals-list__incl { border-bottom:0!important }.totals-list__incl dt,.totals-list__incl dd { color:var(--ink-2);font-weight:730 }
     .totals-profit { margin:10px 0 12px;padding:10px;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft) }.totals-profit>span { color:var(--rose-dark);font-size:8.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase }.totals-profit>div { display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:3px }.totals-profit b { font-size:11px }.totals-profit strong { color:var(--ok);font-size:14px;font-variant-numeric:tabular-nums }.totals-profit small { display:block;margin-top:3px;color:var(--muted);font-size:9.5px }
+    .next-step-card { margin:12px 0;padding:12px;border:1px solid var(--rose-line);border-radius:13px;background:linear-gradient(145deg,var(--rose-soft),#fff) }
+    .next-step-card h3 { margin:3px 0 0;font-size:14px;letter-spacing:-.01em }
+    .next-step-card p { margin:4px 0 11px;color:var(--muted);font-size:10.5px;line-height:1.45 }
+    .manage-more { border-top:1px solid var(--line) }
+    .manage-more>summary { min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:4px 2px;color:var(--ink-2);font-size:11px;font-weight:720;cursor:pointer;list-style:none }
+    .manage-more>summary::-webkit-details-marker { display:none }.manage-more[open]>summary span { transform:rotate(180deg) }
     .manage-actions { display:grid;gap:7px }.manage-actions .btn { margin:0 }.manage-actions__delete { margin-top:5px!important }.link-explainer { margin:1px 3px 0;color:var(--muted);font-size:9.5px;line-height:1.4;text-align:center }
+    .sales-detail-dock { display:flex;align-items:center;gap:7px }
+    .sales-detail-dock .btn { min-height:42px;margin:0;padding-inline:12px }
+    .sales-detail-dock__pdf { min-width:48px;min-height:42px;border:0;border-radius:12px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:11px;font-weight:760;cursor:pointer }
+    .sales-detail-dock__edit { flex:1 }.sales-detail-dock__primary { flex:1 }
     .sales-side { min-width:0 }.load-error { max-width:520px;margin:28px auto!important;padding:34px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:center;box-shadow:var(--sh-1) }.load-error>span { display:grid;width:46px;height:46px;margin:0 auto 11px;place-items:center;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:20px;font-weight:800 }.load-error h1 { font-size:17px }.load-error p { margin:5px 0 15px;color:var(--muted);font-size:13px;line-height:1.45 }.load-error__actions { display:flex;justify-content:center;flex-wrap:wrap;gap:8px }.load-error__actions .btn { min-height:48px }.loading-grid { display:grid;gap:12px;margin-top:12px }
     .vat-detail__short { display:none }
     @media(max-width:520px) { .products-card .section-card__head { align-items:flex-start;flex-direction:column }.line-head-tools { width:100%;justify-content:space-between }.profit-mode { order:2 }.section-count { order:1 }.hero-facts>div { padding:9px 8px }.hero-facts strong { font-size:15px }.hero-facts__total strong { font-size:16px }.revision-alert { padding:12px }.vat-detail__full { display:none }.vat-detail__short { display:inline;font-size:16px;letter-spacing:.08em }.load-error__actions { display:grid;grid-template-columns:1fr }.load-error__actions .btn { width:100% } }
     @media(min-width: 680px) { .sales-hero { padding:22px }.hero-facts { max-width:700px }.revision-alert { grid-template-columns:auto minmax(0,1fr) auto;align-items:center }.revision-alert .btn { grid-column:auto }.sales-line { padding:15px 18px }.sales-line__identity { grid-template-columns:52px minmax(0,1fr) }.sales-line__photo { width:52px;height:52px }.loading-grid { grid-template-columns:1fr 1fr } }
-    @media(min-width:680px) { .sales-layout { grid-template-columns:minmax(0,1fr) minmax(250px,310px);align-items:start }.sales-main { grid-column:1;grid-row:1 }.sales-side { grid-column:2;grid-row:1/3;position:sticky;top:78px }.history-card { grid-column:1;grid-row:2 }.details-grid { grid-template-columns:repeat(3,1fr) }.details-grid>.detail-item:last-child:nth-child(odd) { grid-column:auto }.sales-hero__top { align-items:center }.sales-hero h1 { max-width:700px }.sales-side .btn { min-height:46px } }
+    @media(min-width:680px) { .sales-view-page { padding-bottom:24px }#sales-products,#sales-delivery,#sales-control,#sales-status { scroll-margin-top:calc(var(--appbar-h) + 28px) }.sales-layout { grid-template-columns:minmax(0,1fr) minmax(250px,310px);align-items:start }.sales-main { grid-column:1;grid-row:1 }.sales-side { grid-column:2;grid-row:1/3;position:sticky;top:78px }.history-card { grid-column:1;grid-row:2 }.details-grid { grid-template-columns:repeat(3,1fr) }.details-grid>.detail-item:last-child:nth-child(odd) { grid-column:auto }.sales-hero__top { align-items:center }.sales-hero h1 { max-width:700px }.sales-side .btn { min-height:46px }.sales-detail-dock { display:none } }
   `],
 })
 export class SalesView {
@@ -707,6 +927,9 @@ export class SalesView {
   readonly view = signal<SalesOrderView | null>(null);
   readonly customers = signal<Customer[]>([]);
   readonly countries = signal<Country[]>([]);
+  readonly products = signal<Product[]>([]);
+  readonly categories = signal<Category[]>([]);
+  readonly families = signal<ProductFamily[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly history = signal<QuoteEvent[]>([]);
   readonly desktop = inject(DesktopViewport);
@@ -741,6 +964,93 @@ export class SalesView {
 
   readonly actionLabel = computed(() =>
     this.view()?.order.status === 'CONCEPT' ? 'Bewerken' : 'Beheren');
+
+  readonly lineSections = computed(() => salesLineSections(
+    this.view()?.priced.lines ?? [], this.products(), this.categories(), this.families()));
+  private readonly productsById = computed(() => new Map(this.products().flatMap((product) =>
+    product.id === null ? [] : [[product.id, product] as const])));
+
+  readonly detailSections: readonly SalesDetailSectionId[] = [
+    'sales-products', 'sales-delivery', 'sales-control', 'sales-status',
+  ];
+  readonly activeDetailSection = signal<SalesDetailSectionId>('sales-products');
+
+  scrollToSection(id: SalesDetailSectionId): void {
+    this.activeDetailSection.set(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  @HostListener('window:scroll')
+  trackDetailSection(): void {
+    if (!this.view()) return;
+    const railBottom = document.querySelector('.sales-section-nav')?.getBoundingClientRect().bottom ?? 0;
+    /* Controle is a parallel sticky rail on desktop, so it must not eclipse
+       Producten merely because both columns start at the same y-position. */
+    const tracked: readonly SalesDetailSectionId[] = this.desktop.active()
+      ? ['sales-products', 'sales-delivery', 'sales-status']
+      : this.detailSections;
+    let current: SalesDetailSectionId = tracked[0];
+    for (const id of tracked) {
+      const section = document.getElementById(id);
+      if (section && section.getBoundingClientRect().top <= railBottom + 18) current = id;
+    }
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 12) {
+      current = tracked[tracked.length - 1];
+    }
+    if (current !== this.activeDetailSection()) this.activeDetailSection.set(current);
+  }
+
+  /** One decision at a time, derived from the same statuses the action methods use. */
+  hasStatusAction(data: SalesOrderView): boolean {
+    if (this.pendingRevision()) return true;
+    if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
+      return data.order.status === 'CONCEPT' || !data.order.goodsShippedAt
+        || data.order.status !== 'BETAALD';
+    }
+    return data.order.status === 'CONCEPT' || data.order.status === 'GEACCEPTEERD';
+  }
+
+  nextStepOpensEditor(data: SalesOrderView): boolean {
+    if (this.pendingRevision()) return true;
+    return (data.order.docType ?? 'OFFERTE') !== 'FACTUUR'
+      && data.order.status !== 'CONCEPT' && data.order.status !== 'GEACCEPTEERD';
+  }
+
+  nextStepTitle(data: SalesOrderView): string {
+    if (this.pendingRevision()) return 'Wijzigingsvoorstel beoordelen';
+    if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
+      if (data.order.status === 'CONCEPT') return 'Factuur naar de klant';
+      if (!data.order.goodsShippedAt) return 'Bestelling verzenden';
+      if (data.order.status !== 'BETAALD') return 'Betaling registreren';
+      return 'Order afgerond';
+    }
+    if (data.order.status === 'CONCEPT') return data.order.sentAt
+      ? 'Nieuwe versie naar de klant' : 'Offerte naar de klant';
+    if (data.order.status === 'GEACCEPTEERD') return 'Factuur maken';
+    if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
+      return 'Reactie van de klant volgen';
+    }
+    if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
+      return 'Nieuwe versie voorbereiden';
+    }
+    return 'Verkoopdocument beheren';
+  }
+
+  nextStepHelp(data: SalesOrderView): string {
+    if (this.pendingRevision()) return 'De klant wacht op jouw keuze. Open het voorstel en neem de wijzigingen gericht over.';
+    if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
+      if (data.order.status === 'CONCEPT') return 'Mail de PDF vanuit het ERP, of markeer ze bij de extra acties als je ze zelf bezorgde.';
+      if (!data.order.goodsShippedAt) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
+      if (data.order.status !== 'BETAALD') return 'Leg de betaling vast zodra het bedrag ontvangen is.';
+      return 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
+    }
+    if (data.order.status === 'CONCEPT') return 'Controleer de PDF en verstuur daarna dezelfde versie naar de klant.';
+    if (data.order.status === 'GEACCEPTEERD') return 'Bevries deze afspraken in een nieuwe verkoopfactuur.';
+    if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
+      return 'De klantlink blijft actief. Open Beheren alleen als je een nieuwe versie wilt voorbereiden.';
+    }
+    return 'Open Beheren om deze status of een nieuwe versie verder af te handelen.';
+  }
 
   readonly isInvoice = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
   readonly canDelete = computed(() => {
@@ -958,14 +1268,18 @@ export class SalesView {
     this.view.set(null);
     this.portalLink.set(null);
     this.openLine.set(null);
+    this.openProductGroups.set(new Set());
     try {
-      const [view, customers, countries, revisions, history, portalLink] = await Promise.all([
+      const [view, customers, countries, revisions, history, portalLink, products, categories, families] = await Promise.all([
         this.sales.order(orderId),
         this.sales.customers(),
         this.sales.countries(),
         this.sales.revisionsFor(orderId).catch(() => [] as QuoteRevision[]),
         this.sales.history(orderId).catch(() => [] as QuoteEvent[]),
         this.sales.portalLink(orderId).catch(() => null),
+        this.catalog.products().catch(() => [] as Product[]),
+        this.catalog.categories().catch(() => [] as Category[]),
+        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
       ]);
       this.view.set(view);
       this.customers.set(customers);
@@ -973,6 +1287,9 @@ export class SalesView {
       this.revisions.set(revisions);
       this.history.set(history);
       this.portalLink.set(portalLink);
+      this.products.set(products);
+      this.categories.set(categories);
+      this.families.set(families);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
     } finally {
@@ -983,6 +1300,31 @@ export class SalesView {
   retry(): void {
     const orderId = Number(this.id());
     if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
+  }
+
+  salesLineNumber(productId: number): number {
+    return (this.view()?.priced.lines.findIndex((line) => line.productId === productId) ?? -1) + 1;
+  }
+
+  salesCategoryHeadingId(key: string): string {
+    return `sales-category-${key.replace(/[^a-z0-9-]/gi, '-')}`;
+  }
+
+  productFor(productId: number): Product | null {
+    return this.productsById().get(productId) ?? null;
+  }
+
+  salesVariantTitle(productId: number, fallback: string): string {
+    const product = this.productFor(productId);
+    if (!product) return fallback;
+    const parts = [product.colour, product.variantSize]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    return parts.length ? parts.join(' · ') : fallback;
+  }
+
+  averageGroupUnitPrice(totalEur: number, pieces: number): number {
+    return pieces > 0 ? totalEur / pieces : 0;
   }
 
   customerName(): string {
@@ -1091,6 +1433,7 @@ export class SalesView {
   }
 
   readonly openLine = signal<number | null>(null);
+  readonly openProductGroups = signal<ReadonlySet<string>>(new Set());
   readonly deliveryInfo = signal<PricedLine | null>(null);
 
   /** The inkoop stepper, retold for a quote: three fixed stops, one outcome. */
@@ -1119,6 +1462,13 @@ export class SalesView {
     }));
   }
   linePanelId(productId: number): string { return `sales-line-breakdown-${productId}`; }
+  productGroupPanelId(key: string): string {
+    return `sales-product-group-${key.replace(/[^a-z0-9_-]/gi, '-')}`;
+  }
+  productGroupOpen(key: string): boolean { return this.openProductGroups().has(key); }
+  toggleProductGroup(key: string): void {
+    this.openProductGroups.update((openGroups) => nextProductGroupDisclosure(openGroups, key));
+  }
   toggleLine(productId: number): void {
     this.openLine.update((current) => (current === productId ? null : productId));
   }

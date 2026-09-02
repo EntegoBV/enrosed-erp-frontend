@@ -16,7 +16,7 @@ import {
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import {
-  Allocation, Category, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
+  Allocation, Category, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
   PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -40,12 +40,7 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { latestOwnFreightQuote } from './purchase-price-context';
-import {
-  PurchaseLineCategoryFilter,
-  purchaseLineCategoryOptions,
-  purchaseLineColourOptions,
-  purchaseLineSections,
-} from './purchase-product-line-groups';
+import { purchaseLineSections } from './purchase-product-line-groups';
 
 /**
  * Landed-cost calculation of a container.
@@ -94,13 +89,21 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
           PDF
         </button>
-        <button class="btn btn--primary btn--sm" type="button"
-                [disabled]="saving() || !dirty()" (click)="save()">
-          {{ saving() ? 'Bezig…' : (dirty() ? 'Opslaan' : 'Opgeslagen') }}
-        </button>
+        @if (dirty()) {
+          <button class="btn btn--primary btn--sm" type="button"
+                  [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Bezig…' : 'Opslaan' }}
+          </button>
+        } @else if (nextStep(); as step) {
+          <button class="btn btn--primary btn--sm" type="button" (click)="advanceStatus()">
+            {{ step.action }}
+          </button>
+        } @else {
+          <button class="btn btn--primary btn--sm" type="button" disabled>Opgeslagen</button>
+        }
       </app-page-header>
 
-      <div class="content po-page">
+      <div class="content po-page erp-workspace erp-workspace--purchase erp-workspace--edit">
 
         @if (isReceived()) {
           <div class="alert alert--info po-notice">
@@ -112,7 +115,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </div>
         }
 
-        <section class="po-overview" aria-labelledby="po-overview-title">
+        <section class="po-overview erp-workspace__hero" id="purchase-overview"
+                 aria-labelledby="po-overview-title" tabindex="-1">
           <div class="po-overview__top">
             <div class="po-overview__copy">
               <span class="po-eyebrow">Inkoopcontainer</span>
@@ -197,9 +201,55 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </div>
         </section>
 
-        <div class="purchase-grid">
-          <main class="purchase-main">
-            <section class="card flow-card">
+        <nav class="erp-workspace__nav purchase-editor__mobile-nav" aria-label="Onderdelen van deze inkooporder">
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-order-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-order-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-order-section', 'order')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">1</span>
+            <span><strong>Order</strong><small>{{ containerLabel(data.order.containerType) }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-products-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-products-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-products-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">2</span>
+            <span><strong>Producten</strong><small>{{ data.costing.lines.length }} regels</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-costs-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-costs-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-costs-section', 'costs')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">3</span>
+            <span><strong>Kosten</strong><small>{{ data.costing.totals.totalEur | eur }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-payments-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-payments-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">4</span>
+            <span><strong>Betalingen</strong><small>{{ openAll() | eur }} open</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-files-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-files-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">5</span>
+            <span><strong>Dossier</strong><small>{{ (documents() ?? []).length }} bestanden</small></span>
+          </button>
+          <button class="erp-workspace__nav-item erp-workspace__nav-item--action" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-actions-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-actions-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-actions-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">6</span>
+            <span><strong>Volgende stap</strong><small>{{ nextStep()?.action || 'Afgerond' }}</small></span>
+          </button>
+        </nav>
+
+        <div class="purchase-grid erp-workspace__layout">
+          <main class="purchase-main erp-workspace__main">
+            <section class="card flow-card erp-workspace__section" id="purchase-order-section"
+                     tabindex="-1">
               <button class="section-toggle" type="button"
                       [attr.aria-expanded]="sectionOpen('order')"
                       aria-controls="purchase-order-fields"
@@ -353,7 +403,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               }
             </section>
 
-            <section class="card flow-card products-card" aria-labelledby="purchase-products-title">
+            <section class="card flow-card products-card erp-workspace__section"
+                     id="purchase-products-section" tabindex="-1"
+                     aria-labelledby="purchase-products-title">
               <div class="section-heading">
                 <span class="section-step" aria-hidden="true">2</span>
                 <span class="section-title-block">
@@ -369,59 +421,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </button>
               </div>
 
-              <!-- Category and colour stay in view while composing a larger order. -->
-              @if (data.costing.lines.length) {
-                <div class="line-organizer" aria-label="Productregels filteren">
-                  <div class="line-filter">
-                    <span class="line-filter__label">Categorie</span>
-                    <div class="line-filter__chips" role="group" aria-label="Filter op categorie">
-                      <button type="button" [class.active]="lineCategoryFilter() === null"
-                              [attr.aria-pressed]="lineCategoryFilter() === null"
-                              (click)="selectLineCategory(null)">
-                        Alle <small>{{ data.costing.lines.length }}</small>
-                      </button>
-                      @for (option of lineCategoryOptions(); track option.key) {
-                        <button type="button" [class.active]="lineCategoryFilter() === option.key"
-                                [attr.aria-pressed]="lineCategoryFilter() === option.key"
-                                (click)="selectLineCategory(option.key)">
-                          {{ option.label }} <small>{{ option.count }}</small>
-                        </button>
-                      }
-                    </div>
-                  </div>
-
-                  @if (lineColourOptions().length > 1) {
-                    <div class="line-filter">
-                      <span class="line-filter__label">Kleur</span>
-                      <div class="line-filter__chips line-filter__chips--colour"
-                           role="group" aria-label="Filter op kleur">
-                        <button type="button" [class.active]="lineColourFilter() === null"
-                                [attr.aria-pressed]="lineColourFilter() === null"
-                                (click)="lineColourFilter.set(null)">Alle kleuren</button>
-                        @for (option of lineColourOptions(); track option.key) {
-                          <button type="button" [class.active]="lineColourFilter() === option.key"
-                                  [attr.aria-pressed]="lineColourFilter() === option.key"
-                                  (click)="lineColourFilter.set(option.key)">
-                            <i class="line-colour-dot"
-                               [class.line-colour-dot--empty]="!colourHex(option.hex, option.label)"
-                               [style.background]="colourHex(option.hex, option.label) || 'transparent'"
-                               aria-hidden="true"></i>
-                            {{ option.label }} <small>{{ option.count }}</small>
-                          </button>
-                        }
-                      </div>
-                    </div>
-                  }
-
-                  @if (lineFiltersActive()) {
-                    <div class="line-filter__summary" aria-live="polite">
-                      <span>{{ visiblePurchaseLineCount() }} van {{ data.costing.lines.length }} regels zichtbaar</span>
-                      <button type="button" (click)="resetLineFilters()">Filters wissen</button>
-                    </div>
-                  }
-                </div>
-              }
-
               <div class="product-lines">
                 <div class="po-lines">
                 @if (data.costing.lines.length) {
@@ -432,7 +431,40 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         <h3 [id]="'purchase-line-category-' + section.key">{{ section.label }}</h3>
                         <span>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</span>
                       </header>
-                  @for (line of section.lines; track line.productId) {
+                  @for (familyGroup of section.families; track familyGroup.key) {
+                  <section class="po-family"
+                           [attr.aria-labelledby]="'purchase-line-family-' + familyGroup.key">
+                    <header class="po-family__head">
+                      <span class="po-family__identity">
+                        <small>{{ familyGroup.familyId === null ? 'Los product' : 'Productreeks' }}</small>
+                        <strong [id]="'purchase-line-family-' + familyGroup.key">{{ familyGroup.label }}</strong>
+                        @if (familyGroup.swatches.length) {
+                          <span class="po-family__swatches"
+                                [attr.aria-label]="'Kleuren in ' + familyGroup.label">
+                            @for (swatch of familyGroup.swatches; track swatch.key) {
+                              <i class="line-colour-dot"
+                                 [class.line-colour-dot--empty]="!colourHex(swatch.hex, swatch.label)"
+                                 [style.background]="colourHex(swatch.hex, swatch.label) || 'transparent'"
+                                 [title]="swatch.label"></i>
+                            }
+                          </span>
+                        }
+                      </span>
+                      <span class="po-family__totals">
+                        <strong>{{ familyGroup.lines.length }}
+                          {{ familyGroup.lines.length === 1 ? 'variant' : 'varianten' }}</strong>
+                        <small>{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen ·
+                          {{ familyGroup.cbm | cbm }}</small>
+                        <small class="po-family__cost-label">
+                          {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
+                        </small>
+                        <b>{{ perPiece()
+                          ? (familyGroup.averageUnitEur | eur: 4)
+                          : (familyGroup.totalEur | eur) }}</b>
+                      </span>
+                    </header>
+                    <div class="po-family__variants">
+                  @for (line of familyGroup.lines; track line.productId) {
                   <article class="po-line">
                     <header class="po-line__head">
                       <!-- The photo says which product faster than a number; the number
@@ -617,14 +649,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     </details>
                   </article>
                   }
-                    </section>
-                  } @empty {
-                    <div class="empty product-empty product-empty--filtered">
-                      <div class="empty__icon" aria-hidden="true">⌕</div>
-                      <div class="empty__title">Geen productregels in dit filter</div>
-                      <p class="empty__text">Kies een andere categorie of kleur om de regels terug te zien.</p>
-                      <button class="btn" type="button" (click)="resetLineFilters()">Filters wissen</button>
                     </div>
+                  </section>
+                  }
+                    </section>
                   }
                 } @else {
                   <div class="empty product-empty">
@@ -644,7 +672,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
             </section>
 
-            <section class="card flow-card">
+            <section class="card flow-card erp-workspace__section" id="purchase-costs-section"
+                     tabindex="-1">
               <button class="section-toggle" type="button"
                       [attr.aria-expanded]="sectionOpen('costs')"
                       aria-controls="purchase-cost-fields"
@@ -817,8 +846,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             </section>
           </main>
 
-          <aside class="purchase-summary" aria-label="Containersamenvatting">
-            <section class="card summary-card">
+          <aside class="purchase-summary erp-workspace__sidebar" aria-label="Containersamenvatting">
+            <section class="card summary-card erp-workspace__section" id="purchase-summary-section"
+                     tabindex="-1">
               <div class="section-heading summary-heading">
                 <span class="section-step" aria-hidden="true">
                   4
@@ -987,7 +1017,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                  sea freight when the price is CIF), in the agreed instalments;
                  to the forwarder and customs for the road, once the box is
                  here. The Enrosed kost is ours and nobody's invoice. -->
-            <section class="card payments-card" aria-labelledby="purchase-payments-title">
+            <section class="card payments-card erp-workspace__section"
+                     id="purchase-payments-section" tabindex="-1"
+                     aria-labelledby="purchase-payments-title">
               <div class="action-card__head">
                 <span class="po-eyebrow">Betalingen</span>
                 <h2 id="purchase-payments-title">
@@ -1063,7 +1095,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <!-- The container's diary: agreements, then the receipt, the
                  booking and every payment write themselves in here. -->
-            <section class="card note-card" aria-labelledby="purchase-note-title">
+            <section class="card note-card erp-workspace__section erp-workspace__support-card"
+                     id="purchase-notes-section" tabindex="-1"
+                     aria-labelledby="purchase-note-title">
               <div class="action-card__head note-card__head">
                 <div>
                   <span class="po-eyebrow">Notitie</span>
@@ -1085,7 +1119,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             </section>
 
             <!-- The paper trail of a container: only what was actually added. -->
-            <section class="card files-card" aria-labelledby="purchase-files-title">
+            <section class="card files-card erp-workspace__section erp-workspace__support-card"
+                     id="purchase-files-section" tabindex="-1"
+                     aria-labelledby="purchase-files-title">
               <div class="action-card__head">
                 <span class="po-eyebrow">Bestanden</span>
                 <h2 id="purchase-files-title">Documenten</h2>
@@ -1132,7 +1168,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
 
-            <section class="card action-card" aria-labelledby="purchase-actions-title">
+            <section class="card action-card erp-workspace__section erp-workspace__priority-card"
+                     id="purchase-actions-section" tabindex="-1"
+                     aria-labelledby="purchase-actions-title">
               <div class="action-card__head">
                 <span class="po-eyebrow">Afronden</span>
                 <h2 id="purchase-actions-title">
@@ -1195,7 +1233,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           heading="Product toevoegen aan de container"
           [products]="available()"
           [categories]="categories()"
+          [families]="families()"
+          [groupByFamily]="true"
           [priceOf]="exwPriceOf"
+          [currencyOf]="exwCurrencyOf"
           [enforceCartons]="false"
           mode="multi"
           [preserveSourceOrder]="true"
@@ -1509,6 +1550,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
+    .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.purchase-summary.erp-workspace__sidebar{margin-top:0}
     :is(.section-toggle,.section-heading){display:flex;width:100%;min-height:72px;align-items:center;gap:10px;padding:12px 14px;border:0;background:var(--surface);text-align:left}
     .section-toggle{cursor:pointer}.section-step{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:750}
     .section-title-block{display:block;min-width:0;flex:1}.section-name{display:block;font-size:15px;font-weight:700}.section-summary{display:block;overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
@@ -1581,15 +1623,35 @@ export class PurchaseEditor {
 
   /** Products and capacity lead; order setup and cost mechanics open on demand. */
   readonly openSections = signal(new Set<string>());
+  /** Mirrors the shared record-workspace navigation without changing order data. */
+  readonly workspaceSection = signal('purchase-products-section');
 
   toggleSection(name: string): void {
     const next = new Set(this.openSections());
     if (next.has(name)) { next.delete(name); } else { next.add(name); }
     this.openSections.set(next);
+    if (next.has(name)) {
+      this.workspaceSection.set(name === 'order' ? 'purchase-order-section' : 'purchase-costs-section');
+    }
   }
 
   sectionOpen(name: string): boolean {
     return this.openSections().has(name);
+  }
+
+  /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
+  jumpToSection(sectionId: string, disclosure?: 'order' | 'costs'): void {
+    if (disclosure && !this.sectionOpen(disclosure)) {
+      const next = new Set(this.openSections());
+      next.add(disclosure);
+      this.openSections.set(next);
+    }
+    this.workspaceSection.set(sectionId);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(sectionId);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.focus({ preventScroll: true });
+    });
   }
 
   orderSummary(): string {
@@ -1680,17 +1742,6 @@ export class PurchaseEditor {
   photoOf(productId: number): string | null {
     const product = this.productById().get(productId);
     return product?.photos?.[0]?.url ?? null;
-  }
-
-  selectLineCategory(filter: PurchaseLineCategoryFilter): void {
-    this.lineCategoryFilter.set(filter);
-    /* A colour from the previous category must never leave a seemingly empty order. */
-    this.lineColourFilter.set(null);
-  }
-
-  resetLineFilters(): void {
-    this.lineCategoryFilter.set(null);
-    this.lineColourFilter.set(null);
   }
 
   purchaseLineNumber(productId: number): number {
@@ -2237,24 +2288,14 @@ export class PurchaseEditor {
   readonly adjustments = signal<PurchaseOrderView['adjustments']>([]);
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
-  readonly lineCategoryFilter = signal<PurchaseLineCategoryFilter>(null);
-  readonly lineColourFilter = signal<string | null>(null);
+  readonly families = signal<ProductFamily[]>([]);
   private readonly productById = computed(() => new Map(this.products().flatMap((product) =>
     product.id === null ? [] : [[product.id, product] as const])));
-  readonly lineCategoryOptions = computed(() => purchaseLineCategoryOptions(
-    this.view()?.costing.lines ?? [], this.products(), this.categories()));
-  readonly lineColourOptions = computed(() => purchaseLineColourOptions(
-    this.view()?.costing.lines ?? [], this.products(), this.categories(), this.lineCategoryFilter()));
   readonly lineSections = computed(() => purchaseLineSections(
     this.view()?.costing.lines ?? [], this.products(), this.categories(),
-    this.lineCategoryFilter(), this.lineColourFilter()));
-  private readonly unfilteredPurchaseLines = computed(() => purchaseLineSections(
-    this.view()?.costing.lines ?? [], this.products(), this.categories(), null, null)
+    this.families(), null));
+  private readonly unfilteredPurchaseLines = computed(() => this.lineSections()
     .flatMap((section) => section.lines));
-  readonly visiblePurchaseLineCount = computed(() => this.lineSections()
-    .reduce((count, section) => count + section.lines.length, 0));
-  readonly lineFiltersActive = computed(() =>
-    this.lineCategoryFilter() !== null || this.lineColourFilter() !== null);
   readonly freightRates = signal<FreightRate[]>([]);
   /** The order's supplier; drives the header and the origin-cost label. */
   readonly supplier = signal<Supplier | null>(null);
@@ -2288,7 +2329,12 @@ export class PurchaseEditor {
   }
 
   private async load(orderId: number): Promise<void> {
-    this.resetLineFilters();
+    this.families.set([]);
+    /* Family metadata enriches the cards and picker, but an unavailable
+       catalogue endpoint must never hold up opening or editing an order. */
+    void this.catalog.productFamilies()
+      .then((families) => this.families.set(families))
+      .catch(() => this.families.set([]));
     const view = await this.sourcing.purchaseOrder(orderId);
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
@@ -2441,6 +2487,14 @@ export class PurchaseEditor {
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
     if (this.dirty()) event.preventDefault();
+  }
+
+  /** Familiar desktop shortcut; the mobile dock keeps the same action within thumb reach. */
+  @HostListener('window:keydown', ['$event'])
+  saveShortcut(event: KeyboardEvent): void {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+    event.preventDefault();
+    if (this.dirty() && !this.saving()) void this.save();
   }
 
   piecesPerCarton(productId: number): number {
@@ -2624,6 +2678,7 @@ export class PurchaseEditor {
 
   /** In the purchase picker the price shows the supplier's EXW price. */
   readonly exwPriceOf = (product: Product): number => product.exwPrice ?? 0;
+  readonly exwCurrencyOf = (product: Product): Currency => product.exwCurrency ?? 'USD';
 
   /**
    * Creates a product from the measurements typed in the picker and puts
@@ -2664,7 +2719,6 @@ export class PurchaseEditor {
   addLine(choice: { product: Product; quantity: number }): void {
     this.picking.set(false);
     if (this.isReceived()) return;
-    this.resetLineFilters();
     this.enqueue((order) => ({
       ...order,
       lines: [...order.lines, {
@@ -2681,7 +2735,6 @@ export class PurchaseEditor {
   addLines(choices: { product: Product; quantity: number }[]): void {
     this.picking.set(false);
     if (this.isReceived() || !choices.length) return;
-    this.resetLineFilters();
     this.enqueue((order) => ({
       ...order,
       lines: [...order.lines, ...choices.map((choice) => ({

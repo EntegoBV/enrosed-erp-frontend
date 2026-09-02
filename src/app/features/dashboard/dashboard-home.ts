@@ -95,7 +95,7 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
                 <a class="work-row work-row--primary" [routerLink]="salesActionLink()">
                   <span class="work-row__icon"><app-icon name="sales" [size]="18" /></span>
                   <span class="work-row__copy">
-                    <b>Verkoop wacht op antwoord</b>
+                    <b>Offertes en aanvragen</b>
                     <small>{{ salesActionLabel() }}</small>
                   </span>
                   <strong class="work-row__number">{{ salesActionCount() }}</strong>
@@ -107,8 +107,8 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
                 <a class="work-row" routerLink="/purchasing">
                   <span class="work-row__icon"><app-icon name="purchase" [size]="18" /></span>
                   <span class="work-row__copy">
-                    <b>Inkoop heeft open punten</b>
-                    <small>{{ purchaseAttentionLabel() }}</small>
+                    <b>Inkoop controleren</b>
+                    <small>Ontbrekende gegevens en afwijkingen nalopen.</small>
                   </span>
                   <strong class="work-row__number">{{ purchaseAttentionOrders().length }}</strong>
                   <span class="work-row__chev" aria-hidden="true">›</span>
@@ -119,8 +119,8 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
                 <a class="work-row" routerLink="/stock">
                   <span class="work-row__icon"><app-icon name="stock" [size]="18" /></span>
                   <span class="work-row__copy">
-                    <b>{{ zeroStockCount() }} {{ zeroStockCount() === 1 ? 'artikel staat' : 'artikelen staan' }} op nul</b>
-                    <small>Actieve artikelen met een bekende voorraadstand.</small>
+                    <b>Voorraad aanvullen</b>
+                    <small>Actieve artikelen met een bekende voorraad staan op nul.</small>
                   </span>
                   <strong class="work-row__number">{{ zeroStockCount() }}</strong>
                   <span class="work-row__chev" aria-hidden="true">›</span>
@@ -131,8 +131,8 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
                 <a class="work-row" routerLink="/website/products">
                   <span class="work-row__icon"><app-icon name="products" [size]="18" /></span>
                   <span class="work-row__copy">
-                    <b>Websiteproducten niet publicatieklaar</b>
-                    <small>{{ catalogAttention() }} {{ catalogAttention() === 1 ? 'familie mist' : 'families missen' }} productdata of inhoud.</small>
+                    <b>Websiteproducten aanvullen</b>
+                    <small>Productdata of inhoud is nog niet publicatieklaar.</small>
                   </span>
                   <strong class="work-row__number">{{ catalogAttention() }}</strong>
                   <span class="work-row__chev" aria-hidden="true">›</span>
@@ -261,7 +261,9 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
     .work-row__copy { display: grid; min-width: 0; }
     .work-row__copy b { overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
     .work-row__copy small { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-    .work-row__number { min-width: 24px; color: var(--ink-2); font-size: 12px; text-align: right; }
+    .work-row__number { display: grid; min-width: 28px; height: 28px; place-items: center; padding-inline: 6px;
+      border-radius: 9px; background: var(--surface-2); color: var(--ink-2); font-size: 11px; font-weight: 800; }
+    .work-row--primary .work-row__number { background: var(--rose-soft); color: var(--rose-dark); }
     .work-row__chev { color: var(--muted-2); font-size: 17px; }
     .work-empty { display: flex; align-items: center; gap: 11px; padding: 17px 15px; }
     .work-empty>span { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border-radius: 50%;
@@ -308,16 +310,14 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
       .home-kpi { min-height: 108px; align-content: center; }
     }
     @media (min-width: 1000px) {
-      .home-primary-grid { grid-template-columns: minmax(0, 1.08fr) minmax(380px, .92fr); gap: 16px; }
+      .home-primary-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
     }
     @media (max-width: 579.98px) {
       .home-pins { display: grid; }
       .home-pins__more { padding-inline: 3px; }
       .home-warning { grid-template-columns: auto minmax(0,1fr); }
       .home-warning .btn { grid-column: 1 / -1; width: 100%; }
-      .work-row { grid-template-columns: auto minmax(0,1fr) auto; }
-      .work-row__number { grid-column: 2; font-size: 10.5px; text-align: left; }
-      .work-row__chev { grid-column: 3; grid-row: 1 / span 2; }
+      .work-row { grid-template-columns: auto minmax(0,1fr) auto auto; gap: 8px; }
     }
     @media (prefers-reduced-motion: reduce) {
       .work-row,.home-kpi,.home-market-link { transition: none; }
@@ -363,22 +363,14 @@ export class DashboardHome {
     const requests = this.newWebsiteRequests().length;
     const revisions = this.revisions().length;
     const resend = this.awaitingResend().length;
-    if (requests) parts.push(`${requests} ${requests === 1 ? 'websiteaanvraag' : 'websiteaanvragen'}`);
-    if (revisions) parts.push(`${revisions} ${revisions === 1 ? 'wijziging' : 'wijzigingen'}`);
-    if (resend) parts.push(`${resend} opnieuw te verzenden`);
+    if (requests) parts.push('Nieuwe websiteaanvragen');
+    if (revisions) parts.push('Wijzigingen gevraagd');
+    if (resend) parts.push('Opnieuw verzenden');
     return parts.join(' · ');
   });
 
   readonly purchaseAttentionOrders = computed(() => this.purchases()
     .filter((row) => (row.attention?.length ?? 0) > 0));
-  readonly purchaseAttentionPoints = computed(() => this.purchaseAttentionOrders()
-    .reduce((sum, row) => sum + (row.attention?.length ?? 0), 0));
-  readonly purchaseAttentionLabel = computed(() => {
-    const orders = this.purchaseAttentionOrders().length;
-    const points = this.purchaseAttentionPoints();
-    return `${orders} ${orders === 1 ? 'order' : 'orders'} · ${points} open ${points === 1 ? 'punt' : 'punten'}`;
-  });
-
   readonly zeroStockCount = computed(() => this.products().filter((product) =>
     product.active && !product.demo && product.inventoryKnown === true && product.stockQuantity <= 0).length);
   readonly workGroupCount = computed(() =>

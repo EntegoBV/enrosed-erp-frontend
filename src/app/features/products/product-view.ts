@@ -6,13 +6,13 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, LandedCostLine, Product, ProductFamily, ProductFamilyMember, ProductSupplierAgreementPhoto, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductSupplierAgreementPhoto, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
 import {
-  productVariantNavigation,
+  productCatalogNavigation,
   productVariantOptionLabel,
 } from './product-variant-navigation';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
@@ -42,20 +42,31 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       @if (desktop.active()) {
         <app-page-header [title]="product.name" [subtitle]="product.sku || ''"
                          [showBack]="true" [showBell]="false">
-          <!-- Step through colours of this model only, matching the editor. -->
+          <!-- Walk through this model's colours, then continue with the next
+               product model in the canonical catalogue order. -->
           @if (variantNeighbours(); as around) {
-            <span class="product-nav" role="group" aria-label="Kleurvarianten">
+            <span class="product-nav" role="group" aria-label="Producten en kleurvarianten">
               <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
                  [routerLink]="around.previous ? ['/products', around.previous.productId] : null"
                  [attr.aria-disabled]="!around.previous"
-                 [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'"
-                 [title]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Dit is de eerste kleur'">‹</a>
-              <small class="product-nav__pos" [title]="variantOptionLabel(around.current)">Kleur {{ around.index + 1 }}/{{ around.total }}</small>
+                 [attr.aria-label]="around.previous
+                   ? (around.previousChangesProduct ? 'Vorig product: ' + around.previous.groupName : 'Vorige kleur: ' + around.previous.optionLabel)
+                   : 'Geen vorig product'"
+                 [title]="around.previous
+                   ? (around.previousChangesProduct ? 'Vorig product: ' + around.previous.groupName : 'Vorige kleur: ' + around.previous.optionLabel)
+                   : 'Dit is het eerste product'">‹</a>
+              <small class="product-nav__pos" [title]="around.current.groupName + ' · ' + around.current.optionLabel">
+                {{ around.total > 1 ? 'Kleur ' + (around.index + 1) + '/' + around.total : 'Product' }}
+              </small>
               <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
                  [routerLink]="around.next ? ['/products', around.next.productId] : null"
                  [attr.aria-disabled]="!around.next"
-                 [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'"
-                 [title]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Dit is de laatste kleur'">›</a>
+                 [attr.aria-label]="around.next
+                   ? (around.nextChangesProduct ? 'Volgend product: ' + around.next.groupName : 'Volgende kleur: ' + around.next.optionLabel)
+                   : 'Geen volgend product'"
+                 [title]="around.next
+                   ? (around.nextChangesProduct ? 'Volgend product: ' + around.next.groupName : 'Volgende kleur: ' + around.next.optionLabel)
+                   : 'Dit is het laatste product'">›</a>
             </span>
           }
           <a class="btn btn--primary btn--sm" [routerLink]="['/products', product.id, 'edit']">
@@ -64,16 +75,16 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
         </app-page-header>
       }
 
-      <div class="content product-view-page">
-        <div class="product-view-canvas">
-          <section class="phero" aria-label="Productoverzicht">
+      <div class="content product-view-page erp-workspace erp-workspace--product erp-workspace--view">
+        <div class="product-view-canvas erp-workspace__main">
+          <section class="phero erp-workspace__hero" id="product-overview" aria-label="Productoverzicht">
             <!-- Phone: the app bar folds into the hero - back and Bewerk on
                  the dark surface, so the page starts as one piece from the top. -->
             @if (!desktop.active()) {
               <div class="phero__bar">
                 <button class="phero__back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
                 <span class="phero__bar-spacer"></span>
-                <a class="phero__edit" [routerLink]="['/products', product.id, 'edit']">Bewerk</a>
+                <a class="phero__edit erp-workspace__primary" [routerLink]="['/products', product.id, 'edit']">Bewerk</a>
               </div>
             }
 
@@ -87,16 +98,20 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                   </button>
                 }
               </div>
+              <a class="phero__photo-manage phero__photo-manage--mobile"
+                 [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
+                Foto’s beheren
+              </a>
             }
 
             <div class="phero__top">
-              <div class="phero__id">
-                <span class="phero__eyebrow">{{ categoryName() || 'Catalogus' }}</span>
-                <h1>{{ product.name }}</h1>
+              <div class="phero__id erp-workspace__identity">
+                <span class="phero__eyebrow erp-workspace__eyebrow">{{ categoryName() || 'Catalogus' }}</span>
+                <h1 class="erp-workspace__title">{{ product.name }}</h1>
                 @if (supplierName(); as name) {
                   <a class="phero__supplier" [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} ›</a>
                 }
-                <p class="phero__meta">
+                <p class="phero__meta erp-workspace__meta">
                   @if (!desktop.active()) {
                     <span class="phero__status" [class.phero__status--warn]="!product.active || product.demo">
                       {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
@@ -126,24 +141,63 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
               <p class="phero__nofoto">Nog geen productfoto — voeg er een toe via Bewerken.</p>
             }
 
-            <div class="phero__facts" [class.phero__facts--photo]="desktop.active() && product.photos.length > 0">
+            <div class="phero__facts erp-workspace__facts" [class.phero__facts--photo]="desktop.active() && product.photos.length > 0">
               @if (desktop.active() && product.photos.length) {
-                <div class="phero__shots phero__shots--row" role="group"
-                     [attr.aria-label]="product.photos.length + ' foto’s'">
-                  @for (photo of product.photos; track photo.id) {
-                    <button class="phero__shot" type="button" (click)="lightbox.set($index)"
-                            [attr.aria-label]="'Foto ' + ($index + 1) + ' van ' + product.photos.length + ' vergroten'">
-                      <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + ($index + 1)"
-                           draggable="false" loading="lazy" />
+                <div class="phero__gallery" role="region" aria-roledescription="carousel"
+                     [attr.aria-label]="'Productfoto’s van ' + product.name">
+                  <a class="phero__photo-manage phero__photo-manage--desktop"
+                     [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
+                    Foto’s beheren
+                  </a>
+                  @if (product.photos[galleryIndex()] || product.photos[0]; as photo) {
+                    <button class="phero__gallery-main" type="button"
+                            (click)="openCurrentGalleryPhoto()"
+                            (pointerdown)="startGallerySwipe($event, product.photos.length)"
+                            (pointerup)="finishGallerySwipe($event, product.photos.length)"
+                            (pointercancel)="cancelGallerySwipe()"
+                            (keydown.arrowleft)="stepGallery(-1, product.photos.length); $event.preventDefault()"
+                            (keydown.arrowright)="stepGallery(1, product.photos.length); $event.preventDefault()"
+                            (keydown.home)="selectGalleryPhoto(0); $event.preventDefault()"
+                            (keydown.end)="selectGalleryPhoto(product.photos.length - 1); $event.preventDefault()"
+                            aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+                            [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
+                      <img [appAuthSrc]="photo.url"
+                           [alt]="product.name + ' — foto ' + (galleryIndex() + 1)"
+                           draggable="false" />
+                      @if (product.photos.length > 1) {
+                        <span class="phero__gallery-count">
+                          {{ galleryIndex() + 1 }} / {{ product.photos.length }}
+                        </span>
+                      }
                     </button>
+                  }
+                  @if (product.photos.length > 1) {
+                    <button class="gallery__step phero__gallery-step phero__gallery-step--previous"
+                            type="button" (click)="stepGallery(-1, product.photos.length)"
+                            aria-label="Vorige productfoto">‹</button>
+                    <button class="gallery__step phero__gallery-step phero__gallery-step--next"
+                            type="button" (click)="stepGallery(1, product.photos.length)"
+                            aria-label="Volgende productfoto">›</button>
+                    <div class="gallery__dots phero__gallery-dots" aria-label="Kies een productfoto">
+                      @for (item of product.photos; track item.id) {
+                        <button class="gallery__dot" type="button"
+                                [class.active]="$index === galleryIndex()"
+                                [attr.aria-current]="$index === galleryIndex() ? 'true' : null"
+                                [attr.aria-label]="'Toon foto ' + ($index + 1)"
+                                (click)="selectGalleryPhoto($index)"></button>
+                      }
+                    </div>
+                    <span class="sr-only" role="status" aria-live="polite">
+                      Foto {{ galleryIndex() + 1 }} van {{ product.photos.length }}
+                    </span>
                   }
                 </div>
               }
               <!-- The stock tile walks down to the stock card: locations
                    and the latest movements live on the page itself. -->
-              <button class="phero__fact" type="button" (click)="scrollToStock()">
+              <button class="phero__fact erp-workspace__fact" type="button" (click)="scrollToStock()">
                 <i class="phero__fact-chev" aria-hidden="true"></i>
-                <small>Voorraad</small>
+                <small class="erp-workspace__fact-label">Voorraad</small>
                 @if (stockLevels()) {
                   <strong class="num" [class.phero__neg]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
                   <span>{{ stockSummary() }}</span>
@@ -159,10 +213,10 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
               </button>
               <!-- The price tile opens the build-up: every euro from the
                    factory price to the catalogue price. -->
-              <button class="phero__fact" type="button" [class.phero__fact--open]="priceOpen()"
+              <button class="phero__fact erp-workspace__fact" type="button" [class.phero__fact--open]="priceOpen()"
                       [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
                 <i class="phero__fact-chev" aria-hidden="true"></i>
-                <small>Catalogusprijs</small>
+                <small class="erp-workspace__fact-label">Catalogusprijs</small>
                 @if (displayPrice(); as price) {
                   <strong class="num">{{ price | eur: 2 }}</strong>
                 } @else {
@@ -176,6 +230,15 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                   <span>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kost + opslag' }}</span>
                 }
               </button>
+              @if (desktop.active()) {
+                <button class="phero__fact erp-workspace__fact" type="button"
+                        (click)="scrollToDetailSection('product-publication')">
+                  <i class="phero__fact-chev" aria-hidden="true"></i>
+                  <small class="erp-workspace__fact-label">Publicatie</small>
+                  <strong>{{ publicationSummary() }}</strong>
+                  <span>{{ publicationIssues().length ? publicationIssues().length + ' aandachtspunt(en)' : 'website & orderapp' }}</span>
+                </button>
+              }
             </div>
 
             @if (expected(); as exp) {
@@ -187,6 +250,51 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
 
             <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
           </section>
+
+          @if (familyLoading()) {
+            <div class="variant-group-state" role="status">Productreeks laden…</div>
+          } @else if (familyLoadError()) {
+            <div class="variant-group-state variant-group-state--error" role="alert">
+              <span>De productreeks is niet geladen.</span>
+              <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
+            </div>
+          } @else if (variantMembers().length > 1) {
+            <section class="variant-links" aria-labelledby="variant-links-title">
+              <b id="variant-links-title">Productreeks</b>
+              <div>
+                @for (member of variantMembers(); track member.productId) {
+                  @if (member.productId === product.id) {
+                    <span class="product-variant-link product-variant-link--current" aria-current="page">
+                      @if (member.colourHex) {
+                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                      }
+                      {{ variantOptionLabel(member) }}
+                    </span>
+                  } @else {
+                    <a class="product-variant-link" [routerLink]="['/products', member.productId]">
+                      @if (member.colourHex) {
+                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                      }
+                      {{ variantOptionLabel(member) }}
+                    </a>
+                  }
+                }
+              </div>
+            </section>
+          }
+
+          <nav class="subnav product-detail-nav erp-workspace__nav" aria-label="Productonderdelen">
+            <div class="subnav__rail erp-workspace__nav-rail">
+              @for (item of visibleDetailSections(); track item.id) {
+                <a class="erp-workspace__nav-item" [class.active]="activeDetailSection() === item.id"
+                   [attr.aria-current]="activeDetailSection() === item.id ? 'location' : null"
+                   [href]="'#' + item.id" (click)="scrollToDetailSection(item.id, $event)">
+                  <span class="erp-workspace__nav-index">{{ $index + 1 }}</span>
+                  <span>{{ item.label }}</span>
+                </a>
+              }
+            </div>
+          </nav>
 
           <!-- Desktop: the build-up or the stock book unfolds in its own
                panel right under the hero; on a phone they come up as sheets. -->
@@ -220,10 +328,11 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
             </div>
           </ng-template>
 
-          <div class="details-grid">
-            <div class="details-col">
-            <section class="info-card info-card--internal" aria-labelledby="dossier-title">
-              <header>
+          <div class="details-grid erp-workspace__layout">
+            <div class="details-col erp-workspace__main">
+            <section class="info-card info-card--internal product-dossier-card erp-workspace__section"
+                     id="product-core" aria-labelledby="dossier-title">
+              <header class="erp-workspace__section-head">
                 <span class="info-card__icon" aria-hidden="true">01</span>
                 <div><h2 id="dossier-title">Product &amp; prijzen</h2><p>Identificatie, inkoop en verkoop</p></div>
               </header>
@@ -309,10 +418,10 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                   <small>catalogusprijs min kostprijs</small></button>
               </div>
             </section>
-            <section class="info-card info-card--internal agreement-card"
-                     aria-labelledby="supplier-agreement-card-title">
-              <header>
-                <span class="info-card__icon" aria-hidden="true">AGR</span>
+            <section class="info-card info-card--internal agreement-card erp-workspace__section"
+                     id="product-agreements" aria-labelledby="supplier-agreement-card-title">
+              <header class="erp-workspace__section-head">
+                <span class="info-card__icon" aria-hidden="true">04</span>
                 <div>
                   <h2 id="supplier-agreement-card-title">Afspraken leverancier</h2>
                   <p>Engelse instructies en PDF-referentiefoto’s</p>
@@ -362,50 +471,13 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                 <p class="agreement-state">Nog geen productspecifieke afspraken voor deze leverancier.</p>
               }
             </section>
-            <app-product-supplier-agreement-photo-viewer
+            <app-product-supplier-agreement-photo-viewer class="agreement-viewer"
               [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
-            @if (familyLoading() || familyLoadError() || variantMembers().length > 1) {
-              <section class="info-card linked-card" aria-labelledby="linked-products-title">
-                <header>
-                  <span class="info-card__icon" aria-hidden="true">03</span>
-                  <div><h2 id="linked-products-title">Gekoppelde producten</h2><p>Varianten in dezelfde reeks</p></div>
-                </header>
-                @if (familyLoading()) {
-                  <p class="linked-state" role="status">Varianten laden…</p>
-                } @else if (familyLoadError()) {
-                  <div class="linked-state linked-state--error" role="alert">
-                    <span>Varianten zijn niet geladen.</span>
-                    <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
-                  </div>
-                } @else {
-                  <div class="linked-list">
-                    @for (member of variantMembers(); track member.productId) {
-                      @if (member.productId === product.id) {
-                        <span class="linked-row linked-row--current" aria-current="page">
-                          @if (member.colourHex) {
-                            <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                          }
-                          <b>{{ variantMemberLabel(member) }}</b>
-                          <small>huidig</small>
-                        </span>
-                      } @else {
-                        <a class="linked-row" [routerLink]="['/products', member.productId]">
-                          @if (member.colourHex) {
-                            <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                          }
-                          <b>{{ variantMemberLabel(member) }}</b>
-                          <span aria-hidden="true">›</span>
-                        </a>
-                      }
-                    }
-                  </div>
-                }
-              </section>
-            }
             </div>
-            <div class="details-col">
-            <section class="info-card omdoos-card" aria-labelledby="carton-details-title">
-              <header>
+            <div class="details-col erp-workspace__aside">
+            <section class="info-card omdoos-card erp-workspace__section"
+                     id="product-packaging" aria-labelledby="carton-details-title">
+              <header class="erp-workspace__section-head">
                 <span class="info-card__icon" aria-hidden="true">02</span>
                 <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
               </header>
@@ -442,9 +514,9 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                 </b></div>
               </div>
             </section>
-            <section class="info-card" id="stock-card" aria-labelledby="stock-card-title">
-              <header>
-                <span class="info-card__icon" aria-hidden="true">04</span>
+            <section class="info-card erp-workspace__section" id="stock-card" aria-labelledby="stock-card-title">
+              <header class="erp-workspace__section-head">
+                <span class="info-card__icon" aria-hidden="true">03</span>
                 <div><h2 id="stock-card-title">Voorraad</h2><p>Locaties en laatste bewegingen</p></div>
                 @if (stockLevels()) {
                   <strong class="stock-card__total num" [class.warn-text]="stockTotal() <= 0">
@@ -491,7 +563,8 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
             </div>
           </div>
 
-          <details class="info-card publication-card">
+          @if (desktop.active()) {
+          <details class="info-card publication-card erp-workspace__section" id="product-publication">
             <summary>
               <span class="info-card__icon" aria-hidden="true">WEB</span>
               <span class="publication-card__heading">
@@ -567,8 +640,17 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
               }
             </div>
           </details>
+          }
         </div>
       </div>
+      @if (!desktop.active()) {
+        <nav class="erp-workspace__mobile-actions product-view-dock" aria-label="Productacties">
+          <button class="btn erp-workspace__secondary" type="button" (click)="scrollToStock()">Voorraad</button>
+          <a class="btn btn--primary erp-workspace__primary" [routerLink]="['/products', product.id, 'edit']">
+            Bewerken
+          </a>
+        </nav>
+      }
       <!-- Phone: the build-up and the stock book come up as sheets, not
            somewhere further down the page. -->
       @if ((priceOpen() && !desktop.active()) || priceInfoOpen()) {
@@ -657,8 +739,12 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     }
   `,
   styles: `
-    .product-view-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 300px); }
-    .product-view-canvas { width: 100%; max-width: 1080px; margin: 0 auto; }
+    .product-view-page { background: transparent; }
+    .product-view-canvas { display: block; width: 100%; max-width: 1080px; margin: 0 auto; }
+    .product-detail-nav { top: var(--appbar-h); margin-top: 10px; overflow: hidden;
+      border: 1px solid rgb(255 255 255 / 72%); border-radius: 15px; box-shadow: var(--sh-1); }
+    .product-view-page .erp-workspace__section, #product-overview { scroll-margin-top: calc(var(--appbar-h) + 66px); }
+    .product-view-dock .erp-workspace__primary { flex: 1; }
 
     .phero { overflow: hidden; padding: 16px; border-radius: 22px;
       background: linear-gradient(145deg, #27211f, #151210); color: #fff; box-shadow: var(--sh-2); }
@@ -701,18 +787,27 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     .phero__shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .phero__shot span { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px;
       background: rgb(20 16 14 / 62%); color: #fff; font-size: 9px; font-weight: 750; }
+    .phero__photo-manage { z-index: 3; display: inline-flex; align-items: center; min-height: 30px;
+      padding: 5px 10px; border: 1px solid rgb(255 255 255 / 34%); border-radius: 999px;
+      background: rgb(20 16 14 / 68%); color: #fff; font-size: 10.5px; font-weight: 750;
+      text-decoration: none; backdrop-filter: blur(8px); }
+    .phero__photo-manage:hover, .phero__photo-manage:active { background: rgb(20 16 14 / 88%); }
+    .phero__photo-manage--desktop { position: absolute; top: 8px; left: 8px; }
+    .phero__photo-manage--mobile { width: max-content; margin: -5px auto 12px; }
     .phero__nofoto { margin: 12px 0 0; color: rgb(255 255 255 / 55%); font-size: 11.5px; }
     .phero__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+    .phero__facts.erp-workspace__facts { border-color: rgb(255 255 255 / 16%);
+      background: rgb(255 255 255 / 14%); }
     .phero__fact-chev { position: absolute; top: 9px; right: 9px; display: grid; place-items: center;
       width: 22px; height: 22px; border-radius: 50%; background: rgb(255 255 255 / 14%); }
     .phero__fact-chev::before { content: ''; width: 7px; height: 7px; margin-left: -2px;
       border-right: 1.8px solid #fff; border-bottom: 1.8px solid #fff; transform: rotate(-45deg); }
     .phero__fact { position: relative; min-width: 0; display: grid; gap: 1px; align-content: start; padding: 10px 34px 10px 11px;
-      border: 0; border-radius: 13px; background: rgb(255 255 255 / 9%); color: inherit; font: inherit; text-align: left; }
+      border: 0; border-radius: 13px; background: rgb(16 13 12 / 58%); color: #fff; font: inherit; text-align: left; }
     button.phero__fact { cursor: pointer; }
-    button.phero__fact:active { background: rgb(255 255 255 / 16%); }
+    button.phero__fact:hover, button.phero__fact:active { background: rgb(255 255 255 / 16%); }
     .phero__fact--open { background: rgb(255 255 255 / 18%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 35%); }
-    .phero__fact small { overflow: hidden; color: rgb(255 255 255 / 55%); font-size: 8.5px; font-weight: 780;
+    .phero__fact small { overflow: hidden; color: rgb(255 255 255 / 74%); font-size: 8.5px; font-weight: 780;
       letter-spacing: .07em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
     .phero__fact strong { overflow: hidden; font-size: clamp(13px, 4vw, 18px); letter-spacing: -.02em;
       text-overflow: ellipsis; white-space: nowrap; }
@@ -724,6 +819,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       .phero { margin: -14px -12px 0; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 16px;
         border-radius: 0 0 22px 22px; }
       .phero__facts { gap: 6px; }
+      .phero__fact:last-child:nth-child(odd) { grid-column: 1 / -1; }
       .phero__fact { padding: 8px 34px 8px 10px; border-radius: 12px; }
       /* A swiper: every photo shows, side by side, snapping under the
          thumb; with one or two they sit centred. */
@@ -733,16 +829,13 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       .phero__top { flex-direction: column; align-items: center; gap: 9px; }
       .phero__id { display: flex; flex-direction: column; align-items: center; text-align: center; }
       .phero__meta { justify-content: center; }
-      /* One column again: the carton follows the dossier, then the linked
-         products and the stock. */
-      .details-grid > .details-col { display: contents; }
-      .info-card--internal { order: 1; }
-      .agreement-card { order: 2; }
-      .omdoos-card { order: 3; }
-      .linked-card { order: 4; }
-      #stock-card { order: 5; }
+      .product-detail-nav { top: env(safe-area-inset-top, 0px); margin-inline: -4px; }
+      .product-view-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
     }
-    .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 50%); font-size: 9.5px;
+    @media (min-width: 680px) {
+      .phero__facts:not(.phero__facts--photo) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 70%); font-size: 9.5px;
       text-overflow: ellipsis; white-space: nowrap; }
     .phero__neg { color: #ff9d92; }
     .phero__gain { color: #7ddfa6 !important; }
@@ -781,20 +874,6 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     .tiles-kicker { padding: 11px 13px 4px; border-top: 1px solid var(--line); background: var(--surface);
       color: var(--warn); font-size: 9px; font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
     .tiles-kicker--first { border-top: 0; }
-    .linked-state { margin: 0; padding: 12px 14px; color: var(--muted); font-size: 12px; }
-    .linked-state--error { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .linked-list { display: grid; }
-    .linked-row { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--line);
-      color: inherit; font-size: 13px; text-decoration: none; }
-    .linked-row:last-child { border-bottom: 0; }
-    .linked-row i { flex: none; width: 14px; height: 14px; border: 1px solid rgb(26 22 20 / 12%); border-radius: 50%; }
-    .linked-row b { flex: 1; min-width: 0; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-    .linked-row > span { color: var(--muted-2); }
-    a.linked-row:hover { background: var(--surface-2); }
-    .linked-row--current { background: var(--rose-soft); }
-    .linked-row--current small { padding: 2px 8px; border-radius: 999px; background: var(--surface);
-      color: var(--rose-dark); font-size: 10px; font-weight: 700; }
-
     .stock-rows--sheet { margin-top: 4px; }
     .stock-rows__head { padding: 10px 2px 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
     .stock-rows--sheet .stock-row__actions { gap: 8px; padding-top: 12px; }
@@ -887,6 +966,12 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     .public-copy-cta { min-height: 48px; margin-top: 12px; }
     .details-grid, .details-col { display: grid; gap: 12px; min-width: 0; }
     .details-grid { margin-top: 14px; }
+    .details-grid > .details-col { display: contents; }
+    .product-dossier-card { order: 1; }
+    .omdoos-card { order: 2; }
+    #stock-card { order: 3; }
+    .agreement-card { order: 4; }
+    .agreement-viewer { order: 5; }
     .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);
       background: var(--surface); box-shadow: var(--sh-1); }
     .info-card > header { display: flex; align-items: center; gap: 10px; min-height: 64px;
@@ -930,20 +1015,36 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
 
     @media (min-width: 680px) {
       .phero { padding: 20px 22px; }
-      .phero__facts--photo { grid-template-columns: minmax(0, 1fr) 220px 220px; }
-      .phero__shots--row { align-self: stretch; margin-bottom: 0; }
-      .phero__shots--row .phero__shot { width: 84px; height: 100%; min-height: 62px; border-radius: 13px; }
+      .phero__facts--photo { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(150px, 190px)); }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
-      /* Two independent stacks: the dossier with its linked products on
-         the left, Omdoos with the stock on the right. */
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
-      .details-col { gap: 14px; }
+      .product-dossier-card, .agreement-card { grid-column: 1 / -1; }
+    }
+    @media (min-width: 680px) and (max-width: 759px) {
+      .phero__facts--photo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .phero__gallery { grid-column: 1 / -1; height: 160px; min-height: 0; }
     }
   `,
 })
 export class ProductView {
   readonly lightbox = signal(-1);
+  readonly galleryIndex = signal(0);
   readonly agreementLightbox = signal(-1);
+  readonly desktop = inject(DesktopViewport);
+  private galleryPointer: { id: number; x: number; y: number } | null = null;
+  private gallerySuppressClickUntil = 0;
+  readonly detailSections = [
+    { id: 'product-overview', label: 'Overzicht' },
+    { id: 'product-core', label: 'Product & prijs' },
+    { id: 'product-packaging', label: 'Omdoos' },
+    { id: 'stock-card', label: 'Voorraad' },
+    { id: 'product-agreements', label: 'Afspraken' },
+    { id: 'product-publication', label: 'Website' },
+  ] as const;
+  readonly visibleDetailSections = computed(() => this.desktop.active()
+    ? this.detailSections
+    : this.detailSections.filter((item) => item.id !== 'product-publication'));
+  readonly activeDetailSection = signal<(typeof this.detailSections)[number]['id']>('product-overview');
 
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
@@ -973,8 +1074,6 @@ export class ProductView {
 
   /* ---- the price, taken apart ---- */
   readonly priceOpen = signal(false);
-  readonly desktop = inject(DesktopViewport);
-
   /** "auto" when the stored figure is exactly what the sizes derive. */
   cartonPiecesAuto(product: Product): boolean {
     return autoPiecesPerCarton(product) === product.carton.piecesPerCarton;
@@ -989,8 +1088,63 @@ export class ProductView {
     this.location.back();
   }
 
+  selectGalleryPhoto(index: number): void {
+    const total = this.product()?.photos.length ?? 0;
+    if (!total) return;
+    this.galleryIndex.set(Math.max(0, Math.min(index, total - 1)));
+  }
+
+  stepGallery(direction: -1 | 1, total: number): void {
+    if (total < 2) return;
+    this.galleryIndex.update((index) => (index + direction + total) % total);
+  }
+
+  openCurrentGalleryPhoto(): void {
+    if (performance.now() < this.gallerySuppressClickUntil) return;
+    this.lightbox.set(this.galleryIndex());
+  }
+
+  startGallerySwipe(event: PointerEvent, total: number): void {
+    if (total < 2 || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    this.galleryPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  }
+
+  finishGallerySwipe(event: PointerEvent, total: number): void {
+    const start = this.galleryPointer;
+    if (!start || start.id !== event.pointerId) return;
+    this.galleryPointer = null;
+    const target = event.currentTarget as HTMLElement;
+    if (target.hasPointerCapture?.(event.pointerId)) target.releasePointerCapture(event.pointerId);
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    if (Math.abs(deltaX) < 42 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.15) return;
+    event.preventDefault();
+    this.gallerySuppressClickUntil = performance.now() + 350;
+    this.stepGallery(deltaX < 0 ? 1 : -1, total);
+  }
+
+  cancelGallerySwipe(): void {
+    this.galleryPointer = null;
+  }
+
   scrollToStock(): void {
-    document.getElementById('stock-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.scrollToDetailSection('stock-card');
+  }
+
+  scrollToDetailSection(
+    id: (typeof this.detailSections)[number]['id'],
+    event?: Event,
+  ): void {
+    event?.preventDefault();
+    const target = document.getElementById(id);
+    if (!target) return;
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    this.activeDetailSection.set(id);
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const url = new URL(window.location.href);
+    url.hash = id;
+    window.history.replaceState(window.history.state, '', url);
   }
   readonly priceBuild = signal<PriceBuild | null>(null);
   /** Id of the purchase calculation the cost price came from, when it still exists. */
@@ -1172,19 +1326,24 @@ export class ProductView {
   readonly familyLoading = signal(false);
   readonly familyLoadError = signal(false);
   private readonly categories = signal<Category[]>([]);
+  private readonly catalogueProducts = signal<Product[]>([]);
+  private readonly catalogueFamilies = signal<ProductFamily[]>([]);
+  private catalogueNavigationLoaded = false;
+  private catalogueNavigationRequest: Promise<void> | null = null;
 
   readonly variantOptionLabel = productVariantOptionLabel;
   readonly variantNeighbours = computed(() =>
-    this.familyLoading() || this.familyLoadError()
-      ? null
-      : productVariantNavigation(this.family(), this.product()?.id ?? null));
+    productCatalogNavigation(
+      this.catalogueProducts(),
+      this.catalogueFamilies(),
+      this.categories(),
+      this.product()?.id ?? null,
+    ));
   private readonly suppliers = signal<Supplier[]>([]);
   private loadVersion = 0;
 
   readonly variantMembers = computed(() => {
-    const productId = this.product()?.id;
     return [...(this.family()?.members ?? [])]
-      .filter((member) => member.active || member.productId === productId)
       .sort((a, b) => a.position - b.position || a.productId - b.productId);
   });
 
@@ -1219,7 +1378,32 @@ export class ProductView {
     return { eur, pct: Math.round((eur / price) * 100) };
   });
 
+  private detailScrollFrame = 0;
+  private readonly syncActiveDetailSection = () => {
+    if (this.detailScrollFrame) return;
+    this.detailScrollFrame = requestAnimationFrame(() => {
+      this.detailScrollFrame = 0;
+      const railBottom = document.querySelector<HTMLElement>('.product-detail-nav')
+        ?.getBoundingClientRect().bottom ?? 0;
+      const sections = this.visibleDetailSections();
+      let current: (typeof this.detailSections)[number]['id'] = sections[0]?.id ?? 'product-overview';
+      for (const item of sections) {
+        const section = document.getElementById(item.id);
+        if (section && section.getBoundingClientRect().top <= railBottom + 18) current = item.id;
+      }
+      if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 3) {
+        current = sections[sections.length - 1]?.id ?? 'product-overview';
+      }
+      if (this.activeDetailSection() !== current) this.activeDetailSection.set(current);
+    });
+  };
+
   constructor() {
+    window.addEventListener('scroll', this.syncActiveDetailSection, { passive: true });
+    this.destroyRef.onDestroy(() => {
+      window.removeEventListener('scroll', this.syncActiveDetailSection);
+      if (this.detailScrollFrame) cancelAnimationFrame(this.detailScrollFrame);
+    });
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const id = Number(params.get('id'));
       if (Number.isInteger(id) && id > 0) void this.loadProduct(id);
@@ -1241,6 +1425,7 @@ export class ProductView {
   }
 
   private async loadProduct(id: number): Promise<void> {
+    void this.loadCatalogueNavigation();
     this.loadStockHistory(id);
     void this.sourcing.expectedStock()
       .then((items) => this.expected.set(items.find((item) => item.productId === id) ?? null))
@@ -1258,9 +1443,11 @@ export class ProductView {
     this.familyLoadError.set(false);
     this.familyLoading.set(false);
     this.lightbox.set(-1);
+    this.galleryIndex.set(0);
     this.agreementLightbox.set(-1);
     this.agreementPhotos.set([]);
     this.agreementLoadError.set(null);
+    this.activeDetailSection.set('product-overview');
     void this.loadSupplierAgreement(id, version);
 
     const [product, categories, suppliers] = await Promise.all([
@@ -1285,6 +1472,28 @@ export class ProductView {
       }).catch(() => {});
     }
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
+    const requestedSection = this.visibleDetailSections()
+      .find((item) => `#${item.id}` === window.location.hash)?.id;
+    if (requestedSection) setTimeout(() => this.scrollToDetailSection(requestedSection), 0);
+  }
+
+  private loadCatalogueNavigation(): Promise<void> {
+    if (this.catalogueNavigationLoaded) return Promise.resolve();
+    if (this.catalogueNavigationRequest) return this.catalogueNavigationRequest;
+    this.catalogueNavigationRequest = Promise.all([
+      this.catalog.products(),
+      this.catalog.productFamilies(),
+    ]).then(([products, families]) => {
+      this.catalogueProducts.set(products);
+      this.catalogueFamilies.set(families);
+      this.catalogueNavigationLoaded = true;
+    }).catch(() => {
+      /* Navigation is an enhancement; a catalogue-index failure may never
+         hold the operational product dossier hostage. */
+    }).finally(() => {
+      this.catalogueNavigationRequest = null;
+    });
+    return this.catalogueNavigationRequest;
   }
 
   private async loadSupplierAgreement(productId: number, version: number): Promise<void> {
@@ -1345,14 +1554,6 @@ export class ProductView {
     if (live.length) return `Live op ${live.join(' en ')}`;
     if (this.publicationIssues().length) return 'Nog niet compleet';
     return 'Concept';
-  }
-
-  variantMemberLabel(member: ProductFamilyMember): string {
-    const variant = [member.colour, member.size]
-      .map((value) => value?.trim())
-      .filter((value): value is string => !!value)
-      .join(' · ');
-    return variant || member.name || member.sku || `Product ${member.productId}`;
   }
 
   size(box: { lengthCm: number | null; widthCm: number | null; heightCm: number | null }): string {

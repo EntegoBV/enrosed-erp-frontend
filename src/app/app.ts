@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -10,6 +10,8 @@ import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
 import { Icon } from './shared/icon';
 import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
+import { sidebarGroupForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
+import type { SidebarGroup } from './core/platform/sidebar-navigation';
 
 /**
  * App shell.
@@ -28,47 +30,28 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
         <app-website-admin-nav />
       } @else if (!bare()) {
         <aside class="sidebar">
-          <div class="sidebar__brand">
+          <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
             <app-brand-mark subtitle="Sales &amp; Sourcing" />
-          </div>
+          </a>
           <nav class="sidebar__nav">
             <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
             </a>
-            <button class="sidebar__group" type="button" (click)="toggleGroup('analyses')"
-                    [attr.aria-expanded]="groupOpen('analyses')">
-              Analyses
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('analyses')">›</span>
-            </button>
-            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('analyses')">
-              <a class="sidebar__link" routerLink="/analyses/overview" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Overzicht
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/sales" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkoop
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/inventory" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/purchasing" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkoop
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
-              </a>
-            </div>
-
             <button class="sidebar__group" type="button" (click)="toggleGroup('verkoop')"
-                    [attr.aria-expanded]="groupOpen('verkoop')">
-              Verkoop
+                    aria-controls="sidebar-verkoop" [attr.aria-expanded]="groupOpen('verkoop')"
+                    [attr.aria-current]="groupCurrent('verkoop') ? 'location' : null"
+                    [class.sidebar__group--open]="groupOpen('verkoop')"
+                    [class.sidebar__group--current]="groupCurrent('verkoop')">
+              <app-icon class="sidebar__group-icon" name="sales" [size]="16" />
+              <span class="sidebar__group-label">Verkoop</span>
               @if (!groupOpen('verkoop') && openWork(); as n) {
                 <span class="sidebar__group-count">{{ n }}</span>
               }
               <span class="sidebar__group-chev" aria-hidden="true"
                     [class.sidebar__group-chev--open]="groupOpen('verkoop')">›</span>
             </button>
-            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('verkoop')">
+            <div class="sidebar__sub" id="sidebar-verkoop"
+                 [class.sidebar__sub--closed]="!groupOpen('verkoop')">
               <a class="sidebar__link" routerLink="/sales" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="sales" [size]="18" />
                 <span class="sidebar__text sidebar__text--full">Verkooporders</span>
@@ -91,12 +74,17 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
             </div>
 
             <button class="sidebar__group" type="button" (click)="toggleGroup('inkoop')"
-                    [attr.aria-expanded]="groupOpen('inkoop')">
-              Inkoop
+                    aria-controls="sidebar-inkoop" [attr.aria-expanded]="groupOpen('inkoop')"
+                    [attr.aria-current]="groupCurrent('inkoop') ? 'location' : null"
+                    [class.sidebar__group--open]="groupOpen('inkoop')"
+                    [class.sidebar__group--current]="groupCurrent('inkoop')">
+              <app-icon class="sidebar__group-icon" name="purchase" [size]="16" />
+              <span class="sidebar__group-label">Inkoop</span>
               <span class="sidebar__group-chev" aria-hidden="true"
                     [class.sidebar__group-chev--open]="groupOpen('inkoop')">›</span>
             </button>
-            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('inkoop')">
+            <div class="sidebar__sub" id="sidebar-inkoop"
+                 [class.sidebar__sub--closed]="!groupOpen('inkoop')">
               <a class="sidebar__link" routerLink="/purchasing" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkooporders
               </a>
@@ -110,12 +98,17 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
             </div>
 
             <button class="sidebar__group" type="button" (click)="toggleGroup('producten')"
-                    [attr.aria-expanded]="groupOpen('producten')">
-              Producten &amp; voorraad
+                    aria-controls="sidebar-producten" [attr.aria-expanded]="groupOpen('producten')"
+                    [attr.aria-current]="groupCurrent('producten') ? 'location' : null"
+                    [class.sidebar__group--open]="groupOpen('producten')"
+                    [class.sidebar__group--current]="groupCurrent('producten')">
+              <app-icon class="sidebar__group-icon" name="products" [size]="16" />
+              <span class="sidebar__group-label">Producten &amp; voorraad</span>
               <span class="sidebar__group-chev" aria-hidden="true"
                     [class.sidebar__group-chev--open]="groupOpen('producten')">›</span>
             </button>
-            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('producten')">
+            <div class="sidebar__sub" id="sidebar-producten"
+                 [class.sidebar__sub--closed]="!groupOpen('producten')">
               <a class="sidebar__link" routerLink="/products" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
               </a>
@@ -143,18 +136,47 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
               </a>
             </div>
 
-            <a class="sidebar__link sidebar__link--workspace" routerLink="/website" routerLinkActive="active">
-              <app-icon class="sidebar__icon" name="settings" [size]="18" />
-              <span>Website beheren</span><i aria-hidden="true">↗</i>
-            </a>
+            <button class="sidebar__group" type="button" (click)="toggleGroup('analyses')"
+                    aria-controls="sidebar-analyses" [attr.aria-expanded]="groupOpen('analyses')"
+                    [attr.aria-current]="groupCurrent('analyses') ? 'location' : null"
+                    [class.sidebar__group--open]="groupOpen('analyses')"
+                    [class.sidebar__group--current]="groupCurrent('analyses')">
+              <app-icon class="sidebar__group-icon" name="analytics" [size]="16" />
+              <span class="sidebar__group-label">Analyses</span>
+              <span class="sidebar__group-chev" aria-hidden="true"
+                    [class.sidebar__group-chev--open]="groupOpen('analyses')">›</span>
+            </button>
+            <div class="sidebar__sub" id="sidebar-analyses"
+                 [class.sidebar__sub--closed]="!groupOpen('analyses')">
+              <a class="sidebar__link" routerLink="/analyses/overview" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Overzicht
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/sales" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkoop
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/inventory" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/purchasing" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkoop
+              </a>
+              <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
+              </a>
+            </div>
 
             <button class="sidebar__group" type="button" (click)="toggleGroup('bedrijf')"
-                    [attr.aria-expanded]="groupOpen('bedrijf')">
-              Bedrijf
+                    aria-controls="sidebar-bedrijf" [attr.aria-expanded]="groupOpen('bedrijf')"
+                    [attr.aria-current]="groupCurrent('bedrijf') ? 'location' : null"
+                    [class.sidebar__group--open]="groupOpen('bedrijf')"
+                    [class.sidebar__group--current]="groupCurrent('bedrijf')">
+              <app-icon class="sidebar__group-icon" name="settings" [size]="16" />
+              <span class="sidebar__group-label">Bedrijf</span>
               <span class="sidebar__group-chev" aria-hidden="true"
                     [class.sidebar__group-chev--open]="groupOpen('bedrijf')">›</span>
             </button>
-            <div class="sidebar__sub" [class.sidebar__sub--closed]="!groupOpen('bedrijf')">
+            <div class="sidebar__sub" id="sidebar-bedrijf"
+                 [class.sidebar__sub--closed]="!groupOpen('bedrijf')">
               <a class="sidebar__link sidebar__link--wide" routerLink="/activity" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="activity" [size]="18" /> Logboek
               </a>
@@ -166,6 +188,13 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
                 <app-icon class="sidebar__icon" name="sales" [size]="18" /> Voorwaarden &amp; privacy
               </a>
             </div>
+
+            <a class="sidebar__link sidebar__link--workspace" routerLink="/website" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="countries" [size]="18" />
+              <span class="sidebar__text sidebar__text--full">Website beheren</span>
+              <span class="sidebar__text sidebar__text--rail">Website</span>
+              <i aria-hidden="true">↗</i>
+            </a>
 
             <!-- The narrow rail has no room for group headers; the Meer page
                  carries the long tail there. -->
@@ -242,37 +271,8 @@ export class App {
   /* Instantiated here so the palette is on <html> before the first screen paints. */
   readonly theme = inject(Theme);
   readonly themes = THEMES;
-
-  /** Open fold-downs. Day-to-day work stays in view; only Bedrijf starts folded. */
-  private readonly openGroups = signal<Set<string>>(
-    new Set(['analyses', 'verkoop', 'inkoop', 'producten']),
-  );
-
-  groupOpen(group: string): boolean {
-    return this.openGroups().has(group);
-  }
-
-  toggleGroup(group: string): void {
-    this.openGroups.update((open) => {
-      const next = new Set(open);
-      if (next.has(group)) next.delete(group); else next.add(group);
-      return next;
-    });
-  }
-
-  settingsActive(section: string): boolean {
-    return this.url().startsWith('/settings') && this.url().includes('sectie=' + section);
-  }
   private readonly router = inject(Router);
   private readonly work = inject(WorkQueue);
-
-  /**
-   * How many quotes wait on us; the dot on the Verkoop tab.
-   *
-   * The same source as the bell top right, so the two numbers cannot drift
-   * apart.
-   */
-  readonly openWork = this.work.actionCount;
 
   readonly url = toSignal(
     this.router.events.pipe(
@@ -282,6 +282,38 @@ export class App {
     ),
     { initialValue: this.router.url },
   );
+
+  /** The route decides which accordion section should be recognisable and open. */
+  readonly currentGroup = computed(() => sidebarGroupForUrl(this.url()));
+
+  /** One open section keeps the long desktop navigation calm and scannable. */
+  private readonly openGroup = signal<SidebarGroup | null>(sidebarGroupForUrl(this.router.url));
+  private readonly syncOpenGroupWithRoute = effect(() => {
+    this.openGroup.set(this.currentGroup());
+  });
+
+  groupOpen(group: SidebarGroup): boolean {
+    return this.openGroup() === group;
+  }
+
+  groupCurrent(group: SidebarGroup): boolean {
+    return this.currentGroup() === group;
+  }
+
+  toggleGroup(group: SidebarGroup): void {
+    this.openGroup.update((open) => toggleSidebarGroup(open, group));
+  }
+
+  settingsActive(section: string): boolean {
+    return this.url().startsWith('/settings') && this.url().includes('sectie=' + section);
+  }
+  /**
+   * How many quotes wait on us; the dot on the Verkoop tab.
+   *
+   * The same source as the bell top right, so the two numbers cannot drift
+   * apart.
+   */
+  readonly openWork = this.work.actionCount;
 
   /** Aanmeldpagina en klantportaal krijgen geen navigatie. */
   readonly bare = computed(() => {
@@ -300,7 +332,8 @@ export class App {
 
   readonly catalogRoute = computed(() => {
     const url = this.url();
-    return url.startsWith('/products') || url.startsWith('/catalog-export')
+    return url.startsWith('/products') || url.startsWith('/stock')
+      || url.startsWith('/barcodes') || url.startsWith('/catalog')
       || url.startsWith('/website');
   });
 

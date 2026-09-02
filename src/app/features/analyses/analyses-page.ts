@@ -87,8 +87,10 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
   ],
   template: `
     <app-page-header title="Analyses" [subtitle]="sectionSubtitle()">
-      <button class="btn btn--sm" type="button" [disabled]="loading() || refreshing()"
-              (click)="refresh()">{{ refreshing() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
+      @if (section() !== 'market') {
+        <button class="btn btn--sm" type="button" [disabled]="loading() || refreshing()"
+                (click)="refresh()">{{ refreshing() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
+      }
     </app-page-header>
 
     <main class="content analyses-page" [attr.aria-busy]="loading() || filtering()">

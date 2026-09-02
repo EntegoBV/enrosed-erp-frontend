@@ -742,6 +742,8 @@ export interface Country {
 export interface DiscountTier {
   id: number | null;
   scope: 'LINE' | 'ORDER';
+  /** Required for LINE tiers; ORDER tiers always keep this empty. */
+  productId: number | null;
   minQuantity: number;
   percent: number;
 }

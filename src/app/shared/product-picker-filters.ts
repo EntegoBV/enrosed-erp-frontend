@@ -24,6 +24,8 @@ export interface ProductPickerFilter {
   category: ProductPickerCategoryKey | null;
   colour: string | null;
   limit?: number;
+  /** Optional caller-owned search metadata, for example a supplier name. */
+  searchTextOf?: (product: Product) => string | null | undefined;
 }
 
 const collator = new Intl.Collator('nl-BE', { numeric: true, sensitivity: 'base' });
@@ -126,6 +128,7 @@ export function filterProductPicker(
         product.barcodeInner,
         product.barcodeOuter,
         productPickerCategoryName(product, categories),
+        filter.searchTextOf?.(product),
       ].join(' ')).includes(needle);
     })
     .slice(0, limit);

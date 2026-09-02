@@ -14,6 +14,7 @@ import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { AuthImage } from '../../core/api/auth-image';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
@@ -27,6 +28,7 @@ import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
 import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
 import {
+  ProductFamilyGallery,
   ProductFamilyImagePublicationChange,
   ProductFamilyImageVariantChange,
 } from './product-family-gallery';
@@ -72,9 +74,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    FormsModule, PageHeader, PhotoManager, ProductPublicationEditor, ProductSupplierAgreementEditor,
+    FormsModule, PageHeader, PhotoManager, ProductFamilyGallery, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
-    DateTimeNlPipe, DecimalInput, RouterLink,
+    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage,
   ],
   template: `
     <app-page-header
@@ -101,8 +103,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </span>
       }
       <button class="btn btn--primary btn--sm" type="button"
-              [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving()"
-              (click)="save()">{{ saving() ? 'Bezig…' : (photoUploading() ? 'Foto’s…' : (agreementBusy() ? 'Afspraken…' : (savedHere() ? 'Opnieuw opslaan' : 'Opslaan'))) }}</button>
+              [disabled]="saveBusy()"
+              (click)="save()">{{ saveActionLabel() }}</button>
     </app-page-header>
 
     @if (productLoadError()) {
@@ -112,25 +114,108 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </div>
     }
 
+    <div class="product-editor-lead erp-workspace erp-workspace--product erp-workspace--edit">
+      <div class="content product-editor-lead__content">
+        <section class="erp-workspace__hero product-editor-hero" aria-label="Product in één oogopslag">
+          <div class="erp-workspace__media product-editor-hero__media">
+            @if (draft().photos[0]; as cover) {
+              <img [appAuthSrc]="cover.url" [alt]="(draft().name || 'Nieuw product') + ' — hoofdfoto'"
+                   loading="lazy" />
+              @if (photoCount() > 1) {
+                <span class="product-editor-hero__photo-count">+{{ photoCount() - 1 }}</span>
+              }
+            } @else {
+              <span class="product-editor-hero__placeholder" aria-hidden="true">✦</span>
+              <small>Nog geen foto</small>
+            }
+          </div>
+
+          <div class="erp-workspace__identity product-editor-hero__identity">
+            <span class="erp-workspace__eyebrow">
+              {{ selectedCategoryName() || (isNew() ? 'Nieuw catalogusproduct' : 'Productdossier') }}
+            </span>
+            <h1 class="erp-workspace__title">{{ draft().name || 'Geef dit product een naam' }}</h1>
+            <p class="erp-workspace__meta">
+              @if (draft().colour) { <span>{{ draft().colour }}</span> }
+              @if (draft().variantSize) { <span>{{ draft().variantSize }}</span> }
+              @if (draft().sku) { <span class="mono">{{ draft().sku }}</span> }
+              @if (selectedSupplierName()) { <span>{{ selectedSupplierName() }}</span> }
+            </p>
+            <div class="erp-workspace__badges" aria-label="Productstatus">
+              <span class="erp-workspace__badge"
+                    [class.erp-workspace__badge--warn]="!draft().active || draft().demo">
+                {{ draft().active ? (draft().demo ? 'Demo' : 'Actief') : 'Inactief' }}
+              </span>
+              @if (desktop.active()) {
+                <span class="erp-workspace__badge"
+                      [class.erp-workspace__badge--ok]="workspacePublicationLive()"
+                      [class.erp-workspace__badge--warn]="workspacePublicationNeedsAttention()">
+                  {{ workspacePublicationLabel() }}
+                </span>
+              }
+              @if (workspaceDirty()) {
+                <span class="erp-workspace__badge erp-workspace__badge--dirty">Niet opgeslagen</span>
+              }
+            </div>
+          </div>
+
+          <div class="erp-workspace__facts product-editor-hero__facts">
+            <button class="erp-workspace__fact" type="button" (click)="showTab('stock')">
+              <span class="erp-workspace__fact-label">Voorraad</span>
+              <strong class="erp-workspace__fact-value num">{{ workspaceStockLabel() }}</strong>
+              <small class="erp-workspace__fact-note">{{ isNew() ? 'na aanmaken' : 'over alle locaties' }}</small>
+            </button>
+            <button class="erp-workspace__fact" type="button" (click)="showTab('sales')">
+              <span class="erp-workspace__fact-label">Verkoopprijs</span>
+              <strong class="erp-workspace__fact-value num">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</strong>
+              <small class="erp-workspace__fact-note">{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : 'kost + opslag' }}</small>
+            </button>
+            @if (desktop.active()) {
+              <button class="erp-workspace__fact product-editor-hero__fact--publication" type="button"
+                      (click)="openPublicationWorkspace()">
+                <span class="erp-workspace__fact-label">Publicatie</span>
+                <strong class="erp-workspace__fact-value">{{ workspacePublicationShortLabel() }}</strong>
+                <small class="erp-workspace__fact-note">Website &amp; orderapp</small>
+              </button>
+            }
+          </div>
+
+          <div class="product-editor-hero__actions">
+            @if (!isNew()) {
+              <a class="btn erp-workspace__secondary" [routerLink]="['/products', draft().id]">Bekijken</a>
+            }
+            <button class="btn btn--primary erp-workspace__primary" type="button"
+                    [disabled]="saveBusy()" (click)="save()">
+              {{ saveActionLabel() }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <!-- Same rail as the settings page. Phone: one section at a time;
          desktop: a jump list whose highlight follows the scroll. -->
-    <nav class="subnav" aria-label="Onderdelen">
-      <div class="subnav__rail">
+    <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
+      <div class="subnav__rail erp-workspace__nav-rail">
         @for (tab of visibleTabs(); track tab.id) {
-          <button type="button" [class.active]="activeTab() === tab.id"
+          <button class="erp-workspace__nav-item" type="button" [class.active]="activeTab() === tab.id"
                   [attr.aria-current]="activeTab() === tab.id ? 'location' : null"
-                  (click)="showTab(tab.id)">{{ tab.label }}</button>
+                  (click)="showTab(tab.id)">
+            <span class="erp-workspace__nav-index">{{ $index + 1 }}</span>
+            <span>{{ tab.label }}</span>
+          </button>
         }
       </div>
     </nav>
 
-    <div class="content product-editor-page">
-      <div class="editor-canvas" [attr.data-tab]="activeTab()"
+    <div class="content product-editor-page erp-workspace erp-workspace--product erp-workspace--edit">
+      <div class="editor-canvas erp-workspace__main" [attr.data-tab]="activeTab()"
            [class.editor-canvas--last]="isLastPhoneTab()">
       <!-- ============================================ product -->
-      <section class="card editor-section" id="identity" aria-labelledby="identity-title">
-        <div class="card__head section-head">
-          <h2 id="identity-title">Basisgegevens</h2>
+      <section class="card editor-section erp-workspace__section" id="identity" aria-labelledby="identity-title">
+        <div class="card__head section-head erp-workspace__section-head">
+          <span class="section-head__number erp-workspace__section-index" aria-hidden="true">01</span>
+          <div><h2 id="identity-title">Basisgegevens</h2><p>Identiteit, variant en artikelafmetingen</p></div>
           <span class="spacer"></span>
           <!-- Active/inactive sits in the section head: it is a status, not
                a field among the fields. -->
@@ -395,26 +480,54 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </section>
 
       <!-- ============================================ foto's -->
-      <section class="card editor-section" id="media" aria-labelledby="media-title">
-        <div class="card__head section-head">
-          <h2 id="media-title">Foto's</h2>
+      <section class="card editor-section erp-workspace__section" id="media" aria-labelledby="media-title">
+        <div class="card__head section-head erp-workspace__section-head">
+          <span class="section-head__number erp-workspace__section-index" aria-hidden="true">02</span>
+          <div><h2 id="media-title">Foto's</h2><p>Beeldvolgorde voor dossier en productkanalen</p></div>
           <span class="spacer"></span>
-          <span class="badge badge--neutral">{{ photoCount() }}</span>
+          <span class="badge badge--neutral">{{ mediaPhotoCount() }}</span>
         </div>
         <div class="card__body photo-workspace">
           <app-photo-manager
             [productId]="draft().id"
             [photos]="draft().photos"
+            [showInherited]="family() === null"
             [disabled]="saving() || translationSaving() || translationDirty()"
             (changed)="onPhotosChanged($event)"
           />
+
+          @if (!isNew()) {
+            @if (familyLoading()) {
+              <p class="media-gallery-state">Gedeelde galerij laden…</p>
+            } @else if (familyLoadError()) {
+              <div class="media-gallery-state media-gallery-state--error" role="alert">
+                <span>Gedeelde galerij kon niet worden geladen.</span>
+                <button type="button" (click)="retryFamily()">Opnieuw</button>
+              </div>
+            } @else if (family(); as mediaFamily) {
+              <app-product-family-gallery
+                class="media-family-gallery"
+                [family]="mediaFamily"
+                language="NL"
+                [translationEditing]="false"
+                [currentProductId]="draft().id"
+                [busy]="saving() || photoUploading() || translationDirty() || translationSaving()"
+                (familyChange)="onFamilyChange($event)"
+                (imageUploadRequested)="uploadFamilyImage($event)"
+                (imageDeleteRequested)="removeFamilyImage($event)"
+                (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
+                (imagePublicationChangeRequested)="setFamilyImagePublication($event)"
+              />
+            }
+          }
         </div>
       </section>
 
       <!-- ============================================ verpakking -->
-      <section class="card editor-section" id="packaging" aria-labelledby="packaging-title">
-        <div class="card__head section-head">
-          <h2 id="packaging-title">Omdoos</h2>
+      <section class="card editor-section erp-workspace__section" id="packaging" aria-labelledby="packaging-title">
+        <div class="card__head section-head erp-workspace__section-head">
+          <span class="section-head__number erp-workspace__section-index" aria-hidden="true">03</span>
+          <div><h2 id="packaging-title">Omdoos</h2><p>Doosinhoud, maten, gewicht en transportcapaciteit</p></div>
         </div>
         <div class="card__body">
           <fieldset class="measure-group">
@@ -508,9 +621,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </section>
 
       <!-- ======================================== purchasing -->
-    <section class="card editor-section" id="purchasing" aria-labelledby="purchasing-title">
-      <div class="card__head section-head">
-        <h2 id="purchasing-title">Inkoop</h2></div>
+    <section class="card editor-section erp-workspace__section" id="purchasing" aria-labelledby="purchasing-title">
+      <div class="card__head section-head erp-workspace__section-head">
+        <span class="section-head__number erp-workspace__section-index" aria-hidden="true">04</span>
+        <div><h2 id="purchasing-title">Inkoop</h2><p>Fabrieksprijs, valuta en kostprijsopbouw</p></div>
+      </div>
       <div class="card__body">
         <div class="form-grid">
           <div class="field">
@@ -572,9 +687,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
 
       <!-- ============================================= sales -->
-      <section class="card editor-section" id="sales" aria-labelledby="sales-title">
-        <div class="card__head section-head">
-          <h2 id="sales-title">Verkoop</h2>
+      <section class="card editor-section erp-workspace__section" id="sales" aria-labelledby="sales-title">
+        <div class="card__head section-head erp-workspace__section-head">
+          <span class="section-head__number erp-workspace__section-index" aria-hidden="true">05</span>
+          <div><h2 id="sales-title">Verkoop</h2><p>Catalogusprijs, marge en prijsstrategie</p></div>
         </div>
         <div class="card__body">
           <fieldset class="price-method">
@@ -663,9 +779,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <!-- Stock lives apart from the product form: purchase receipts feed
            it, a recount corrects it on the spot, and the book below says
            where every figure came from. -->
-      <section class="card editor-section" id="stock" aria-labelledby="stock-title">
-        <div class="card__head section-head">
-          <h2 id="stock-title">Voorraad</h2>
+      <section class="card editor-section erp-workspace__section" id="stock" aria-labelledby="stock-title">
+        <div class="card__head section-head erp-workspace__section-head">
+          <span class="section-head__number erp-workspace__section-index" aria-hidden="true">06</span>
+          <div><h2 id="stock-title">Voorraad</h2><p>Locaties, correcties, schade en bewegingen</p></div>
           <span class="spacer"></span>
           @if (!isNew() && stockLevels(); as levels) {
             <strong class="num stock-now">{{ stockTotal() | num }} stuks</strong>
@@ -788,7 +905,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </section>
 
       <app-product-supplier-agreement-editor
-        class="card editor-section" id="agreements"
+        class="card editor-section erp-workspace__section" id="agreements"
         [productId]="draft().id"
         [supplierId]="draft().supplierId"
         [persistedSupplierId]="savedSupplierId()"
@@ -800,7 +917,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
       <!-- Public content is desktop work: long texts, translations and
            image curation do not belong on a phone at the fair. -->
-      <div class="editor-desktop-only" id="publication">
+      <div class="editor-desktop-only erp-workspace__section" id="publication">
       <app-product-publication-editor
         [product]="draft()"
         [family]="family()"
@@ -812,17 +929,13 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         (familyChange)="onFamilyChange($event)"
         (createFamilyRequested)="startNewFamily()"
         (retryFamilyRequested)="retryFamily()"
-        (imageUploadRequested)="uploadFamilyImage($event)"
-        (imageDeleteRequested)="removeFamilyImage($event)"
-        (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
-        (imagePublicationChangeRequested)="setFamilyImagePublication($event)"
         (translationDirtyChange)="translationDirty.set($event)"
         (translationSavingChange)="translationSaving.set($event)"
         (translationsSaved)="onPublicTranslationsSaved($event)"
       />
       </div>
 
-      <div class="editor-actions">
+      <div class="editor-actions erp-workspace__actions">
         <!-- Phone: walk the sections with Volgende, save at the end (the
              header keeps a save shortcut once something changed). Desktop
              sees everything at once and simply saves. -->
@@ -831,10 +944,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           Volgende
         </button>
         <button class="btn btn--primary btn--block editor-save" type="button"
-                [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving()"
+                [disabled]="saveBusy()"
                 (click)="save()">
-          {{ isNew() && photoCount() ? "Product met foto's aanmaken" :
-             (isNew() ? 'Product aanmaken' : 'Wijzigingen opslaan') }}
+          {{ saveActionLabel() }}
         </button>
         @if (!isNew()) {
           <button class="btn btn--block" type="button"
@@ -1063,6 +1175,19 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </div>
     </div>
 
+    @if (!desktop.active()) {
+      <nav class="erp-workspace__mobile-actions product-editor-dock" aria-label="Productacties">
+        @if (!isNew()) {
+          <a class="btn erp-workspace__secondary" [routerLink]="['/products', draft().id]">Bekijken</a>
+        }
+        <button class="btn btn--primary erp-workspace__primary" type="button"
+                [class.erp-workspace__primary--dirty]="workspaceDirty()"
+                [disabled]="saveBusy()" (click)="save()">
+          {{ saveActionLabel() }}
+        </button>
+      </nav>
+    }
+
     @if (takeOutDraft(); as out) {
       @if (stockLevels(); as levels) {
         <app-sheet [title]="'Stuk of demo · ' + (draft().name || 'product')" (closed)="takeOutDraft.set(null)">
@@ -1145,14 +1270,45 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
   `,
   styles: `
-    .product-editor-page { background: radial-gradient(circle at 50% 0, var(--rose-soft), transparent 260px); }
+    .product-editor-page { background: transparent; }
+    .product-editor-lead { background: transparent; }
+    .product-editor-lead__content { padding-bottom: 10px; }
+    .product-editor-hero { display: grid; grid-template-columns: 76px minmax(0, 1fr);
+      grid-template-areas: 'media identity' 'facts facts'; gap: 10px 12px; align-items: center;
+      padding: 12px; border: 1px solid rgb(255 255 255 / 74%); border-radius: 19px;
+      background: var(--surface); box-shadow: var(--sh-1); }
+    .product-editor-hero__media { grid-area: media; position: relative; display: grid; width: 76px; height: 76px;
+      place-items: center; align-content: center; gap: 3px; overflow: hidden; border: 1px solid var(--line);
+      border-radius: 16px; background: var(--surface-2); }
+    .product-editor-hero__media img { width: 100%; height: 100%; object-fit: cover; }
+    .product-editor-hero__placeholder { color: var(--rose); font-size: 25px; line-height: 1; }
+    .product-editor-hero__media > small { color: var(--muted); font-size: 10px; font-weight: 700; }
+    .product-editor-hero__photo-count { position: absolute; right: 6px; bottom: 6px; padding: 3px 7px;
+      border-radius: 999px; background: rgb(26 22 20 / 74%); color: #fff; font-size: 9px; font-weight: 750; }
+    .product-editor-hero__identity { grid-area: identity; min-width: 0; }
+    .product-editor-hero__identity .erp-workspace__title { font-size: clamp(17px, 2.2vw, 24px); }
+    .product-editor-hero__facts { grid-area: facts; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px; border: 1px solid var(--line); border-radius: 14px; background: var(--line); }
+    .product-editor-hero__facts .erp-workspace__fact { min-width: 0; display: grid; gap: 2px; padding: 9px 10px;
+      border: 0; border-radius: 0; background: var(--surface); color: inherit;
+      font: inherit; text-align: left; cursor: pointer; }
+    .product-editor-hero__facts button.erp-workspace__fact:hover { background: var(--rose-soft); }
+    .product-editor-hero__facts .erp-workspace__fact-value { overflow: hidden; font-size: 14px;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .product-editor-hero__facts .erp-workspace__fact-label { color: var(--muted); font-size: 8.5px;
+      font-weight: 760; letter-spacing: .07em; text-transform: uppercase; }
+    .product-editor-hero__facts .erp-workspace__fact-note { overflow: hidden; color: var(--muted);
+      font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .product-editor-hero__actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .product-editor-dock .erp-workspace__primary { flex: 1; }
+    .section-head > div { min-width: 0; }
     .product-load-error {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       padding-block: 10px; color: var(--danger);
     }
     .product-load-error > span { display: grid; gap: 2px; }
     .product-load-error small { font-size: 10px; }
-    .editor-canvas { width: 100%; max-width: 920px; margin: 0 auto; }
+    .editor-canvas { display: block; width: 100%; max-width: 920px; margin: 0 auto; }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
     .colour-control { display: flex; align-items: center; gap: 8px; }
     .colour-control .select { flex: 1; }
@@ -1428,6 +1584,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       .variant-editor-card { align-items: stretch; flex-direction: column; }
       .variant-editor-card .btn { align-self: flex-start; }
     }
+    @media (max-width: 679px) {
+      .product-editor-lead__content { padding-top: 10px; }
+      .product-editor-hero__actions { display: none; }
+      .product-editor-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
+    }
+    @media (min-width: 680px) {
+      .product-editor-hero { grid-template-columns: 104px minmax(0, 1fr) auto;
+        grid-template-areas: 'media identity actions' 'media facts facts'; padding: 14px 16px; }
+      .product-editor-hero__media { width: 104px; height: 104px; border-radius: 18px; }
+      .product-editor-hero__facts { max-width: 620px; }
+    }
   `,
 })
 export class ProductEditor implements OnDestroy {
@@ -1445,7 +1612,7 @@ export class ProductEditor implements OnDestroy {
   readonly phoneTabs = computed(() => this.tabs().filter((t) => t.id !== 'publication'));
   /* Website only exists on a desktop screen; below that the tab is just
      a dead end, so it is not offered. */
-  private readonly desktop = inject(DesktopViewport);
+  readonly desktop = inject(DesktopViewport);
   readonly visibleTabs = computed(() => this.desktop.active() ? this.tabs() : this.phoneTabs());
   readonly isLastPhoneTab = computed(() => {
     const list = this.phoneTabs();
@@ -1617,6 +1784,19 @@ export class ProductEditor implements OnDestroy {
     } else {
       window.scrollTo({ top: 0 });
     }
+  }
+
+  openPublicationWorkspace(): void {
+    if (this.desktop.active()) {
+      this.showTab('publication');
+      return;
+    }
+    const productId = this.draft().id;
+    if (productId !== null) {
+      void this.router.navigate(['/products', productId, 'translations']);
+      return;
+    }
+    this.ui.toast('Maak het product eerst aan; daarna kun je de publieke teksten invullen.');
   }
 
   /* Scroll spy (desktop): the highlighted tab follows the section under
@@ -2024,11 +2204,71 @@ export class ProductEditor implements OnDestroy {
   readonly photoUploading = computed(() => this.photoManager()?.busy() ?? false);
   readonly photoCount = computed(() =>
     this.draft().photos.length + (this.photoManager()?.pendingCount() ?? 0));
+  readonly mediaPhotoCount = computed(() => {
+    const product = this.draft();
+    const family = this.family();
+    const savedCount = family
+      ? product.photos.filter((photo) => photo.origin === 'PRODUCT').length + family.images.length
+      : product.photos.length;
+    return savedCount + (this.photoManager()?.pendingCount() ?? 0);
+  });
   readonly agreementEditor = viewChild(ProductSupplierAgreementEditor);
   readonly agreementBusy = computed(() => this.agreementEditor()?.busy() ?? false);
   readonly agreementDirty = computed(() => this.agreementEditor()?.dirty() ?? false);
   readonly selectedSupplierName = computed(() =>
     this.suppliers().find((supplier) => supplier.id === this.draft().supplierId)?.name ?? '');
+  readonly selectedCategoryName = computed(() =>
+    this.categories().find((category) => category.id === this.draft().categoryId)?.name ?? '');
+
+  /** One shared action state for the app bar, workspace hero and mobile dock. */
+  readonly saveBusy = computed(() =>
+    this.saving() || this.photoUploading() || this.agreementBusy()
+      || this.translationSaving() || this.translationDirty());
+  readonly workspaceDirty = computed(() =>
+    this.dirty() || this.familyDirty() || this.agreementDirty() || this.translationDirty());
+  readonly saveActionLabel = computed(() => {
+    if (this.saving()) return 'Bezig…';
+    if (this.photoUploading()) return 'Foto’s…';
+    if (this.agreementBusy()) return 'Afspraken…';
+    if (this.translationSaving()) return 'Vertalingen…';
+    if (this.translationDirty()) return 'Vertaling eerst opslaan';
+    if (this.isNew()) return 'Product aanmaken';
+    if (this.workspaceDirty()) return 'Wijzigingen opslaan';
+    return this.savedHere() ? 'Opnieuw opslaan' : 'Opslaan';
+  });
+
+  readonly workspaceStockLabel = computed(() => {
+    if (this.isNew()) return '0';
+    const levels = this.stockLevels();
+    if (levels !== null) return this.stockTotal().toLocaleString('nl-BE');
+    const product = this.draft();
+    return product.inventoryKnown
+      ? product.stockQuantity.toLocaleString('nl-BE')
+      : 'Onbekend';
+  });
+
+  readonly workspacePublicationLive = computed(() => {
+    const family = this.family();
+    if (!family || !family.active || !this.draft().active) return false;
+    return family.websiteStatus === 'PUBLISHED' || family.orderAppStatus === 'PUBLISHED';
+  });
+  readonly workspacePublicationNeedsAttention = computed(() =>
+    this.familyLoadError() || (!!this.family() && this.readinessIssues().length > 0));
+  readonly workspacePublicationShortLabel = computed(() => {
+    if (this.familyLoading()) return 'Laden…';
+    if (this.familyLoadError()) return 'Onbekend';
+    const family = this.family();
+    if (!family) return 'Niet gestart';
+    if (!family.active || !this.draft().active) return 'Inactief';
+    const website = family.websiteStatus === 'PUBLISHED';
+    const orderApp = family.orderAppStatus === 'PUBLISHED';
+    if (website && orderApp) return 'Beide live';
+    if (website) return 'Website live';
+    if (orderApp) return 'Orderapp live';
+    return this.readinessIssues().length ? `${this.readinessIssues().length} aandacht` : 'Concept';
+  });
+  readonly workspacePublicationLabel = computed(() =>
+    `Publicatie · ${this.workspacePublicationShortLabel()}`);
 
   /** The duplicate endpoint copies the saved product, not unsaved form edits. */
   readonly copySource = computed(() =>
@@ -2550,7 +2790,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async uploadFamilyImage(file: File): Promise<void> {
-    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -2574,7 +2814,8 @@ export class ProductEditor implements OnDestroy {
 
   removeFamilyImage(imageId: number): void {
     const family = this.family();
-    if (!family?.id || this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (!family?.id || this.saving() || this.photoUploading()
+        || this.translationDirty() || this.translationSaving()) return;
     this.ui.confirm(
       {
         title: 'Productfoto verwijderen',
@@ -2599,7 +2840,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async linkFamilyImageVariant(change: ProductFamilyImageVariantChange): Promise<void> {
-    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -2632,7 +2873,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async setFamilyImagePublication(change: ProductFamilyImagePublicationChange): Promise<void> {
-    if (this.saving() || this.translationDirty() || this.translationSaving()) return;
+    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -3253,6 +3494,15 @@ export class ProductEditor implements OnDestroy {
         && !this.translationDirty() && !this.translationSaving() && !this.agreementBusy()) return;
     event.preventDefault();
     event.returnValue = '';
+  }
+
+  /** Familiar desktop shortcut; it calls the exact same save path as every visible action. */
+  @HostListener('window:keydown', ['$event'])
+  saveShortcut(event: KeyboardEvent): void {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+    event.preventDefault();
+    const productWorkChanged = this.dirty() || this.familyDirty() || this.agreementDirty();
+    if (productWorkChanged && !this.saveBusy()) void this.save();
   }
 
   private confirmDiscardTranslations(): boolean {

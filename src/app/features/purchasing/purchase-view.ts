@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Location } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
-import { Router, ActivatedRoute, RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
@@ -13,17 +13,18 @@ import { saveBlob } from '../../core/api/download';
 import { Ui } from '../../shared/ui';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
-  Category, Product, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
+  Category, Product, ProductFamily, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
 } from '../../core/api/models';
 import {
-  COLOUR_SWATCHES, STANDARD_COLOURS, containerCountForFill, containerLabel,
+  COLOUR_SWATCHES, containerCountForFill, containerLabel,
 } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
 import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
-import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from './purchase-line-display';
+import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
+import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 
 /**
  * Read-only control room for one incoming container.
@@ -35,7 +36,7 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity],
   template: `
     @if (view(); as data) {
@@ -54,9 +55,10 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
         </app-page-header>
       }
 
-      <div class="content purchase-view-page anim-rise">
+      <div class="content purchase-view-page anim-rise erp-workspace erp-workspace--purchase erp-workspace--view">
 
-        <section class="journey-hero" aria-labelledby="purchase-overview-title">
+        <section class="journey-hero erp-workspace__hero" id="purchase-overview"
+                 aria-labelledby="purchase-overview-title" tabindex="-1">
           <!-- Phone: the app bar folds into the hero - back, PDF and
                Bewerken live on the dark surface itself. -->
           @if (!desktop.active()) {
@@ -166,8 +168,54 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
           </div>
         </section>
 
+        <nav class="erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-overview'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-overview' ? 'location' : null"
+                  (click)="jumpToSection('purchase-overview')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">1</span>
+            <span><strong>Order</strong><small>{{ statusLabel(data.order.status) }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-products-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-products-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-products-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">2</span>
+            <span><strong>Producten</strong><small>{{ data.costing.lines.length }} regels</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-costs-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-costs-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-costs-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">3</span>
+            <span><strong>Kosten</strong><small>{{ data.costing.totals.totalEur | eur }}</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-payments-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-payments-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">4</span>
+            <span><strong>Betalingen</strong><small>{{ openAll() | eur }} open</small></span>
+          </button>
+          <button class="erp-workspace__nav-item" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-files-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-files-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">5</span>
+            <span><strong>Dossier</strong><small>{{ (documents() ?? []).length }} bestanden</small></span>
+          </button>
+          <button class="erp-workspace__nav-item erp-workspace__nav-item--action" type="button"
+                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-actions-section'"
+                  [attr.aria-current]="workspaceSection() === 'purchase-actions-section' ? 'location' : null"
+                  (click)="jumpToSection('purchase-actions-section')">
+            <span class="erp-workspace__nav-index" aria-hidden="true">6</span>
+            <span><strong>Volgende stap</strong><small>{{ actionTitle(data.order.status, data.costing.lines.length) }}</small></span>
+          </button>
+        </nav>
+
         @if (receiptSummary(); as receipt) {
-          <section class="card receipt-summary" aria-labelledby="purchase-receipt-title">
+          <section class="card receipt-summary erp-workspace__section" id="purchase-receipt-section"
+                   tabindex="-1" aria-labelledby="purchase-receipt-title">
             <header class="receipt-summary__head">
               <span class="receipt-summary__mark"
                     [class.receipt-summary__mark--warn]="receipt.affectedLines || !receiptSnapshotComplete()"
@@ -199,7 +247,8 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
 
         @if (isDdp()) {
           <!-- DDP: the supplier's container - its fill is their concern. -->
-          <section class="card capacity-card" aria-label="Lading">
+          <section class="card capacity-card erp-workspace__section" id="purchase-capacity-section"
+                   tabindex="-1" aria-label="Lading">
             <div class="capacity-card__top">
               <div>
                 <span class="section-kicker">Lading</span>
@@ -210,7 +259,8 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
             </div>
           </section>
         } @else if (data.costing.containerFill; as fill) {
-          <section class="card capacity-card" aria-labelledby="container-fill-title">
+          <section class="card capacity-card erp-workspace__section" id="purchase-capacity-section"
+                   tabindex="-1" aria-labelledby="container-fill-title">
             <div class="capacity-card__top">
               <div>
                 <span class="section-kicker">Capaciteit</span>
@@ -253,9 +303,11 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
           </section>
         }
 
-        <div class="view-layout">
-          <main class="view-main">
-            <section class="card products-card" aria-labelledby="purchase-products-title">
+        <div class="view-layout erp-workspace__layout">
+          <main class="view-main erp-workspace__main">
+            <section class="card products-card erp-workspace__section"
+                     id="purchase-products-section" tabindex="-1"
+                     aria-labelledby="purchase-products-title">
               <div class="section-heading">
                 <span class="section-heading__copy">
                   <span class="section-kicker">Lading</span>
@@ -275,38 +327,96 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
                 }
               </div>
 
-              @if (colourOptions().length) {
-                <nav class="product-colour-filter" aria-label="Productregels op kleur filteren">
-                  <button type="button" class="product-colour-chip"
-                          [class.product-colour-chip--active]="colourFilter() === null"
-                          [attr.aria-pressed]="colourFilter() === null"
-                          (click)="colourFilter.set(null)">
-                    Alle kleuren <small>{{ data.costing.lines.length }}</small>
-                  </button>
-                  @for (option of colourOptions(); track option.key) {
-                    <button type="button" class="product-colour-chip"
-                            [class.product-colour-chip--active]="colourFilter() === option.key"
-                            [attr.aria-pressed]="colourFilter() === option.key"
-                            (click)="toggleColour(option.key)">
-                      <i class="product-colour-dot" [class.product-colour-dot--empty]="!option.hex"
-                         [style.background]="option.hex" aria-hidden="true"></i>
-                      {{ option.label }} <small>{{ option.count }}</small>
-                    </button>
-                  }
-                </nav>
-              }
-
-              <div class="product-lines">
+              <div class="product-lines purchase-model-list">
                 @for (section of lineSections(); track section.key) {
                   <section class="purchase-category" [attr.aria-labelledby]="categoryHeadingId(section.key)">
                     <h3 class="purchase-category__head" [id]="categoryHeadingId(section.key)">
                       <span>{{ section.name }}</span>
-                      <small>{{ section.entries.length }} {{ section.entries.length === 1 ? 'regel' : 'regels' }}</small>
+                      <small>{{ section.groups.length }} {{ section.groups.length === 1 ? 'model' : 'modellen' }} ·
+                        {{ section.lineCount }} {{ section.lineCount === 1 ? 'variant' : 'varianten' }}</small>
                     </h3>
-                  @for (entry of section.entries; track entry.line.productId) {
-                  <article class="purchase-line">
-                    <!-- The line walks through to the product itself; the
-                         back button brings you straight back here. -->
+                    <div class="purchase-category__models">
+                    @for (group of section.groups; track group.key) {
+                      <section class="purchase-model"
+                               [class.purchase-model--family]="!group.standalone"
+                               [class.purchase-model--standalone]="group.standalone"
+                               [class.purchase-model--open]="productGroupOpen(group.key)">
+                        <button class="purchase-model__head" type="button"
+                                [id]="productGroupPanelId(group.key) + '-toggle'"
+                                [attr.aria-expanded]="productGroupOpen(group.key)"
+                                [attr.aria-controls]="productGroupPanelId(group.key)"
+                                (click)="toggleProductGroup(group.key)">
+                          @if (group.photoUrl; as photo) {
+                            <img class="purchase-model__photo" [appAuthSrc]="photo" alt="" />
+                          } @else {
+                            <span class="purchase-model__photo purchase-model__photo--empty" aria-hidden="true">◈</span>
+                          }
+                          <span class="purchase-model__copy">
+                            <small>{{ group.standalone ? 'Product' : 'Productmodel' }}</small>
+                            <strong>{{ group.name }}</strong>
+                            <span>
+                              {{ group.entries.length }} {{ group.entries.length === 1 ? 'variant' : 'varianten' }}
+                              @if (group.swatches.length) {
+                                <span class="purchase-model__swatches" aria-label="Kleuren in dit model">
+                                  @for (swatch of group.swatches.slice(0, 8); track swatch.label) {
+                                    <i class="product-colour-dot"
+                                       [class.product-colour-dot--empty]="!swatch.hex"
+                                       [style.background]="swatch.hex || 'transparent'"
+                                       [title]="swatch.label"></i>
+                                  }
+                                  @if (group.swatches.length > 8) {
+                                    <small>+{{ group.swatches.length - 8 }}</small>
+                                  }
+                                </span>
+                              }
+                            </span>
+                          </span>
+                          <span class="purchase-model__totals">
+                            <strong>{{ group.totals.pieces | num }} st</strong>
+                            <small>{{ group.totals.cartons | num }} dozen · {{ group.totals.cbm | cbm }}</small>
+                            <small class="purchase-model__cost-label">
+                              {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
+                            </small>
+                            <b>{{ perPiece()
+                              ? (group.totals.averageUnitEur | eur: 4)
+                              : (group.totals.totalEur | eur) }}</b>
+                          </span>
+                          <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                            <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
+                                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </button>
+                        @if (productGroupOpen(group.key)) {
+                          <div class="purchase-model__variants"
+                               [id]="productGroupPanelId(group.key)"
+                               role="region"
+                               [attr.aria-labelledby]="productGroupPanelId(group.key) + '-toggle'">
+                          @for (entry of group.entries; track entry.line.productId; let variantIndex = $index) {
+                            <ng-container *ngTemplateOutlet="purchaseVariant; context: {
+                              $implicit: entry, group: group, section: section, variantIndex: variantIndex
+                            }" />
+                          }
+                          </div>
+                        }
+                      </section>
+                    }
+                    </div>
+                  </section>
+                } @empty {
+                  <div class="product-empty">
+                    <span class="product-empty__art" aria-hidden="true">◈</span>
+                    <h3>Nog geen producten geladen</h3>
+                    <p>Voeg producten en aantallen toe om de containervulling en kostprijs te berekenen.</p>
+                    <a class="btn btn--primary"
+                       [routerLink]="['/purchasing', data.order.id, 'edit']">
+                      Producten toevoegen
+                    </a>
+                  </div>
+                }
+
+                <ng-template #purchaseVariant let-entry let-group="group" let-section="section"
+                             let-variantIndex="variantIndex">
+                  <article class="purchase-line" [class.purchase-line--variant]="!group.standalone">
                     <a class="purchase-line__identity" [routerLink]="['/products', entry.line.productId]"
                        [title]="entry.line.productName + ' openen'">
                       @if (photoOf(entry.line.productId); as url) {
@@ -315,26 +425,38 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
                         <span class="purchase-line__photo purchase-line__photo--empty" aria-hidden="true">◈</span>
                       }
                       <span class="purchase-line__copy">
-                        <small>Regel {{ entry.displayIndex }} · {{ section.name }}</small>
-                        <strong>{{ entry.line.productName }}</strong>
+                        <small>
+                          @if (group.standalone) {
+                            Regel {{ entry.displayIndex }} · {{ section.name }}
+                          } @else {
+                            Variant {{ variantIndex + 1 }} van {{ group.entries.length }}
+                            @if (entry.product?.sku; as sku) { · <span class="mono">{{ sku }}</span> }
+                          }
+                        </small>
+                        <strong>{{ group.standalone ? entry.line.productName : variantTitle(entry.product, entry.line.productName) }}</strong>
                         <span class="purchase-line__meta">
                           @if (entry.product?.colour; as colour) {
                             <i class="product-colour-dot" [class.product-colour-dot--empty]="!colourHex(entry.product)"
-                               [style.background]="colourHex(entry.product)" aria-hidden="true"></i>
-                            <b>{{ colour }}</b><span aria-hidden="true"> · </span>
+                               [style.background]="colourHex(entry.product) || 'transparent'" aria-hidden="true"></i>
+                            <b>{{ colour }}</b>
                           }
                           @if (entry.product?.variantSize; as size) {
-                            <b>{{ size }}</b><span aria-hidden="true"> · </span>
+                            @if (entry.product?.colour) { <span aria-hidden="true"> · </span> }
+                            <b>{{ size }}</b>
                           }
-                          {{ entry.line.quantity | num }} st · {{ entry.line.cartons | num }} dozen
+                          @if (group.standalone && entry.product?.sku; as sku) {
+                            <span aria-hidden="true"> · </span><span class="mono">{{ sku }}</span>
+                          }
                         </span>
                       </span>
                     </a>
 
-                    <div class="line-facts">
+                    <div class="line-facts line-facts--purchase">
                       <span><small>Aantal</small><strong>{{ entry.line.quantity | num }} st</strong></span>
                       <span><small>Dozen</small><strong>{{ entry.line.cartons | num }}</strong></span>
                       <span><small>Volume</small><strong>{{ entry.line.cbm | cbm }}</strong></span>
+                      <span><small>Geland / stuk</small><strong>{{ entry.line.landedUnitEur | eur: 4 }}</strong></span>
+                      <span class="line-fact--total"><small>Regeltotaal</small><strong>{{ entry.line.totalEur | eur }}</strong></span>
                     </div>
                     @if (data.order.status !== 'ONTVANGEN') {
                       @if (cartonNotice(entry.line.quantity, entry.line.productId); as cartonNote) {
@@ -388,32 +510,16 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
                       </div>
                     }
                   </article>
-                  }
-                  </section>
-                } @empty {
-                  <div class="product-empty">
-                    <span class="product-empty__art" aria-hidden="true">◈</span>
-                    @if (data.costing.lines.length) {
-                      <h3>Geen productregels in deze kleur</h3>
-                      <p>Kies een andere kleur of toon de volledige inkooporder.</p>
-                      <button class="btn btn--primary" type="button" (click)="colourFilter.set(null)">Alle kleuren tonen</button>
-                    } @else {
-                      <h3>Nog geen producten geladen</h3>
-                      <p>Voeg producten en aantallen toe om de containervulling en kostprijs te berekenen.</p>
-                      <a class="btn btn--primary"
-                         [routerLink]="['/purchasing', data.order.id, 'edit']">
-                        Producten toevoegen
-                      </a>
-                    }
-                  </div>
-                }
+                </ng-template>
               </div>
             </section>
 
           </main>
 
-          <aside class="view-sidebar" aria-label="Samenvatting en acties">
-            <section class="card cost-card internal-block" aria-labelledby="purchase-cost-title">
+          <aside class="view-sidebar erp-workspace__sidebar" aria-label="Samenvatting en acties">
+            <section class="card cost-card internal-block erp-workspace__section"
+                     id="purchase-costs-section" tabindex="-1"
+                     aria-labelledby="purchase-cost-title">
               <div class="cost-card__head">
                 <div>
                   <span class="section-kicker">Interne calculatie</span>
@@ -500,7 +606,9 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
 
             <!-- Two streams of money: the factory for the goods, the forwarder
                  and customs for the road. The Enrosed kost is ours. -->
-            <section class="card payments-card" aria-labelledby="purchase-payments-title">
+            <section class="card payments-card erp-workspace__section"
+                     id="purchase-payments-section" tabindex="-1"
+                     aria-labelledby="purchase-payments-title">
               <span class="section-kicker">Betalingen</span>
               <h2 id="purchase-payments-title">
                 @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
@@ -533,9 +641,11 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
               }
             </section>
 
+            <div class="erp-workspace__support-group" id="purchase-files-section" tabindex="-1">
             @if (data.order.notes) {
               <!-- The container's diary, under the money it mostly talks about. -->
-              <section class="card payments-card note-card" aria-labelledby="purchase-note-title">
+              <section class="card payments-card note-card erp-workspace__section erp-workspace__support-card"
+                       aria-labelledby="purchase-note-title">
                 <span class="section-kicker">Notitie</span>
                 <h2 id="purchase-note-title">Dagboek van de container</h2>
                 <app-diary [notes]="data.order.notes" />
@@ -544,7 +654,8 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
 
             @if (documents(); as docs) {
               @if (docs.length) {
-                <section class="card payments-card" aria-label="Documenten">
+                <section class="card payments-card erp-workspace__section erp-workspace__support-card"
+                         aria-label="Documenten">
                   <span class="section-kicker">Bestanden</span>
                   <h2>{{ docs.length }} document{{ docs.length === 1 ? '' : 'en' }}</h2>
                   <ul class="doc-list">
@@ -560,8 +671,11 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
             }
 
             <app-purchase-activity [orderId]="data.order.id" />
+            </div>
 
-            <section class="card action-card" aria-labelledby="purchase-actions-title">
+            <section class="card action-card erp-workspace__section erp-workspace__priority-card"
+                     id="purchase-actions-section" tabindex="-1"
+                     aria-labelledby="purchase-actions-title">
               <span class="section-kicker">Volgende actie</span>
               <h2 id="purchase-actions-title">
                 {{ actionTitle(data.order.status, data.costing.lines.length) }}
@@ -659,6 +773,7 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
     .capacity-meter{height:11px;margin-top:13px}.capacity-card__footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-top:9px;color:var(--muted);font-size:11px}.capacity-state{display:flex;align-items:center;gap:5px;font-weight:680}.capacity-state--ok{color:var(--ok)}.capacity-state--danger{color:var(--danger)}
   `, `
     :is(.view-main,.view-sidebar){min-width:0}:is(.view-main,.view-sidebar)>.card+.card{margin-top:12px}.view-sidebar{margin-top:12px}
+    .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.view-sidebar.erp-workspace__sidebar{margin-top:0}
     :is(.products-card,.details-card,.cost-card,.action-card){overflow:hidden}.section-heading{display:flex;min-height:76px;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
     .section-number{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760}
     .section-heading__copy{display:block;min-width:0;flex:1}.section-heading h2{font-size:15px}.section-heading__copy>span:last-child{display:block;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
@@ -667,7 +782,7 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
     .purchase-line{padding:14px;border-bottom:1px solid var(--line)}.purchase-line__identity{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px}.purchase-line__identity{color:inherit;text-decoration:none}a.purchase-line__identity:hover strong{color:var(--rose-dark);text-decoration:underline}
     .purchase-line__photo{width:48px;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);object-fit:cover}.purchase-line__photo--empty{display:grid;place-items:center;color:var(--muted);font-size:20px}
     .purchase-line__copy{display:flex;min-width:0;flex-direction:column}.purchase-line__copy small{color:var(--rose);font-size:9px;font-weight:720;text-transform:uppercase}.purchase-line__copy strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__copy>span{color:var(--muted);font-size:11px}
-    .line-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden}.line-facts>span{display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2)}.line-facts small{color:var(--muted);font-size:8.5px;text-transform:uppercase}.line-facts strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__carton-note{margin:7px 0 0;color:var(--muted);font-size:10.5px;line-height:1.35}
+    .line-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden}.line-facts>span{display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2)}.line-facts--purchase{grid-template-columns:repeat(2,minmax(0,1fr))}.line-facts--purchase>.line-fact--total{grid-column:1/-1}.line-facts small{color:var(--muted);font-size:8.5px;text-transform:uppercase}.line-facts strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.purchase-line__carton-note{margin:7px 0 0;color:var(--muted);font-size:10.5px;line-height:1.35}
     .line-breakdown-toggle{display:flex;width:100%;min-height:48px;align-items:center;gap:8px;margin-top:9px;padding:7px 9px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}.line-breakdown-toggle>span:first-child{display:flex;min-width:0;flex:1;flex-direction:column}.line-breakdown-toggle small{color:var(--muted);font-size:9px}.line-breakdown-toggle strong{font-size:11px}.line-breakdown-toggle__total{color:var(--rose);font-size:12px;font-weight:760}.line-breakdown-toggle svg{flex:none;color:var(--muted);transition:transform .18s}.line-breakdown-toggle svg.chevron-open{transform:rotate(180deg)}
     .line-breakdown{margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease}.line-breakdown .stat-row{padding:4px 0;font-size:11.5px}.line-breakdown small,.cost-stage small{display:block;color:var(--muted);font-size:9px}.line-breakdown__subtotal{border-top:1px solid var(--line)}
     .product-empty{padding:34px 18px;text-align:center}.product-empty__art{display:grid;width:64px;height:64px;margin:0 auto 12px;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px}.product-empty h3{font-size:16px}.product-empty p{max-width:360px;margin:4px auto 15px;color:var(--muted);font-size:12px}
@@ -678,13 +793,14 @@ import { purchaseColourHex, purchaseColourOptions, purchaseLineSections } from '
     .safe-card{display:flex;align-items:flex-start;gap:10px;padding:14px}.safe-card__icon{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:760}.safe-card h2{font-size:14px}.safe-card p{color:var(--muted);font-size:11px}
     .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
 
-    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.line-facts--purchase{grid-template-columns:repeat(5,minmax(0,1fr))}.line-facts--purchase>.line-fact--total{grid-column:auto}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
     @media(min-width: 680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
     @media(min-width:680px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.72fr);gap:16px;align-items:start}.view-sidebar{margin-top:0}}
   `],
 })
 export class PurchaseView {
   readonly pdfOpen = signal(false);
+  readonly workspaceSection = signal('purchase-overview');
   readonly desktop = inject(DesktopViewport);
   private readonly browserLocation = inject(Location);
   private readonly routerNav = inject(Router);
@@ -694,14 +810,24 @@ export class PurchaseView {
     this.browserLocation.back();
   }
 
+  /** Keeps the read-only page as scannable as the editor: same rail, same destinations. */
+  jumpToSection(sectionId: string): void {
+    this.workspaceSection.set(sectionId);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(sectionId);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.focus({ preventScroll: true });
+    });
+  }
+
   readonly containerLabel = containerLabel;
   readonly containerCountForFill = containerCountForFill;
 
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
-  private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
 
+  readonly id = input<string>('');
   readonly view = signal<PurchaseOrderView | null>(null);
   /** Prefer the server aggregate; derive a compatible fallback during a rolling deployment. */
   readonly receiptSummary = computed<ReceiptVarianceTotals | null>(() => {
@@ -767,24 +893,17 @@ export class PurchaseView {
     return actor;
   }
   private readonly products = signal<Product[]>([]);
+  private readonly families = signal<ProductFamily[]>([]);
   private readonly categories = signal<Category[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);
 
-  /** A null colour shows the complete order; chips expose only colours in this load. */
-  readonly colourFilter = signal<string | null>(null);
-  readonly colourOptions = computed(() =>
-    purchaseColourOptions(
-      this.view()?.costing.lines ?? [],
-      this.products(),
-      STANDARD_COLOURS,
-      COLOUR_SWATCHES,
-    ));
   readonly lineSections = computed(() =>
     purchaseLineSections(
       this.view()?.costing.lines ?? [],
       this.products(),
       this.categories(),
-      this.colourFilter(),
+      this.families(),
+      COLOUR_SWATCHES,
     ));
 
   readonly statusSteps = [
@@ -803,10 +922,13 @@ export class PurchaseView {
 
   /** Which product line shows its cost build-up; null is all folded. */
   readonly openLine = signal<number | null>(null);
+  readonly openProductGroups = signal<ReadonlySet<string>>(new Set());
 
   constructor() {
-    const id = +(this.route.snapshot.paramMap.get('id') ?? 0);
-    void this.load(id);
+    effect(() => {
+      const orderId = Number(this.id());
+      if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
+    });
   }
 
   readonly stockLocations = signal<StockLocation[]>([]);
@@ -818,8 +940,16 @@ export class PurchaseView {
   }
 
   private async load(id: number): Promise<void> {
+    this.view.set(null);
+    this.openLine.set(null);
+    this.openProductGroups.set(new Set());
     void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
     void this.sourcing.documents(id).then((list) => this.documents.set(list)).catch(() => this.documents.set([]));
+    /* Family metadata enriches the product groups, but a slow or older API
+       must never hold the operational order screen hostage. */
+    void this.catalog.productFamilies()
+      .then((families) => this.families.set(families))
+      .catch(() => this.families.set([]));
     const [view, products, categories, suppliers] = await Promise.all([
       this.sourcing.purchaseOrder(id),
       this.catalog.products(),
@@ -852,6 +982,16 @@ export class PurchaseView {
     this.openLine.set(this.openLine() === productId ? null : productId);
   }
 
+  productGroupPanelId(key: string): string {
+    return `purchase-product-group-${key.replace(/[^a-z0-9_-]/gi, '-')}`;
+  }
+
+  productGroupOpen(key: string): boolean { return this.openProductGroups().has(key); }
+
+  toggleProductGroup(key: string): void {
+    this.openProductGroups.update((openGroups) => nextProductGroupDisclosure(openGroups, key));
+  }
+
   linePanelId(productId: number): string {
     return `purchase-cost-line-${productId}`;
   }
@@ -880,8 +1020,12 @@ export class PurchaseView {
     return purchaseColourHex(product, COLOUR_SWATCHES);
   }
 
-  toggleColour(key: string): void {
-    this.colourFilter.set(this.colourFilter() === key ? null : key);
+  variantTitle(product: Product | null, fallback: string): string {
+    if (!product) return fallback;
+    const parts = [product.colour, product.variantSize]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    return parts.length ? parts.join(' · ') : fallback;
   }
 
   categoryHeadingId(key: string): string {
