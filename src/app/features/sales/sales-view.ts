@@ -25,6 +25,7 @@ import {
 } from './sales-list-swipe';
 import { salesLineSections } from './sales-product-line-groups';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
+import { SalesPdfSheet } from './sales-pdf-sheet';
 
 type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
@@ -38,10 +39,21 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
+      @if (pdfSheet()) {
+        <app-sales-pdf-sheet
+          [orderId]="data.order.id"
+          [orderNumber]="data.order.number"
+          [customerName]="customerName()"
+          [customerLanguage]="customer()?.language ?? 'NL'"
+          [invoice]="isInvoice()"
+          (closed)="pdfSheet.set(false)"
+        />
+      }
+
       @if (desktop.active()) {
         <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                          [showBack]="true" [showBell]="false">
@@ -946,6 +958,7 @@ export class SalesView {
   readonly loading = signal(true);
   readonly loadError = signal('');
   readonly downloading = signal(false);
+  readonly pdfSheet = signal(false);
   readonly copyingLink = signal(false);
   readonly deleting = signal(false);
 
@@ -1495,18 +1508,8 @@ export class SalesView {
   cls = statusClass;
   readonly websiteRequest = isWebsiteQuoteRequest;
 
-  async downloadPdf(): Promise<void> {
-    const data = this.view();
-    if (!data || this.downloading()) return;
-    this.downloading.set(true);
-    try {
-      const blob = await this.sales.quotePdf(data.order.id);
-      saveBlob(blob, `${data.order.number} - ${this.customerName() || 'klant'}.pdf`);
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'PDF downloaden mislukt'), 'err');
-    } finally {
-      this.downloading.set(false);
-    }
+  downloadPdf(): void {
+    if (this.view()) this.pdfSheet.set(true);
   }
 
   async copyCustomerLink(): Promise<void> {

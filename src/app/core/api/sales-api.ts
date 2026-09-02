@@ -7,6 +7,7 @@ import {
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
   SalesOrderView, Carrier, CarrierShipQuote, DocumentType,
 } from './models';
+import { SalesPdfOptions, salesPdfQuery } from './sales-pdf-options';
 
 @Injectable({ providedIn: 'root' })
 export class SalesApi {
@@ -193,11 +194,11 @@ export class SalesApi {
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/reopen`), {}));
   }
 
-  /** @param language leave empty for the customer's language. */
-  quotePdf(id: number, language?: string): Promise<Blob> {
-    const query = language ? `?language=${language}` : '';
+  /** A manual export can choose its language and visible customer-facing detail. */
+  quotePdf(id: number, options: SalesPdfOptions | LanguageCode = {}): Promise<Blob> {
+    const query = salesPdfQuery(typeof options === 'string' ? { language: options } : options);
     return firstValueFrom(
-      this.http.get(api(`/api/sales-orders/${id}/pdf${query}`), { responseType: 'blob' }));
+      this.http.get(api(`/api/sales-orders/${id}/pdf?${query}`), { responseType: 'blob' }));
   }
 
   /** The packing slip: pallets when laid out by hand, plain lines otherwise. */
