@@ -897,7 +897,7 @@ export class PurchaseView {
     let current = this.workspaceSections[0];
     for (const id of this.workspaceSections) {
       const section = document.getElementById(id);
-      if (section && section.getBoundingClientRect().top <= navBottom + 18) current = id;
+      if (section && section.getBoundingClientRect().top <= navBottom + 32) current = id;
     }
     if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 12) {
       current = this.workspaceSections[this.workspaceSections.length - 1];
