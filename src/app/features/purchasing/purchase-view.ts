@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Router, RouterLink } from '@angular/router';
@@ -25,6 +25,14 @@ import { receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
+
+type PurchaseWorkspaceSectionId =
+  | 'purchase-overview'
+  | 'purchase-products-section'
+  | 'purchase-costs-section'
+  | 'purchase-payments-section'
+  | 'purchase-files-section'
+  | 'purchase-actions-section';
 
 /**
  * Read-only control room for one incoming container.
@@ -168,7 +176,7 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
           </div>
         </section>
 
-        <nav class="erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
+        <nav class="purchase-section-nav erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
           <button class="erp-workspace__nav-item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-overview'"
                   [attr.aria-current]="workspaceSection() === 'purchase-overview' ? 'location' : null"
@@ -514,9 +522,6 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
               </div>
             </section>
 
-          </main>
-
-          <aside class="view-sidebar erp-workspace__sidebar" aria-label="Samenvatting en acties">
             <section class="card cost-card internal-block erp-workspace__section"
                      id="purchase-costs-section" tabindex="-1"
                      aria-labelledby="purchase-cost-title">
@@ -528,7 +533,7 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
                 <span class="internal-badge">Intern</span>
               </div>
 
-              <div class="cost-card__body">
+              <div class="cost-card__body" [class.cost-card__body--ddp]="isDdp()">
                 <!-- DDP: the sum below already ends on the landed total; this box
                      would only repeat it. -->
                 @if (!isDdp()) {
@@ -606,7 +611,7 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
 
             <!-- Two streams of money: the factory for the goods, the forwarder
                  and customs for the road. The Enrosed kost is ours. -->
-            <section class="card payments-card erp-workspace__section"
+            <section class="card payments-card purchase-payments-card erp-workspace__section"
                      id="purchase-payments-section" tabindex="-1"
                      aria-labelledby="purchase-payments-title">
               <span class="section-kicker">Betalingen</span>
@@ -614,6 +619,7 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
                 @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
               </h2>
               <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
+              <div class="purchase-payment-streams">
               <div class="pay-stream">
                 <div class="pay-stream__head">
                   <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht' : 'de goederen' }}</small></span>
@@ -639,9 +645,10 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
               @if (data.costing.totals.extraRevenueEur) {
                 <p class="pay-ours">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p>
               }
+              </div>
             </section>
 
-            <div class="erp-workspace__support-group" id="purchase-files-section" tabindex="-1">
+            <div class="purchase-dossier erp-workspace__support-group" id="purchase-files-section" tabindex="-1">
             @if (data.order.notes) {
               <!-- The container's diary, under the money it mostly talks about. -->
               <section class="card payments-card note-card erp-workspace__section erp-workspace__support-card"
@@ -670,10 +677,10 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
               }
             }
 
-            <app-purchase-activity [orderId]="data.order.id" />
+            <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
             </div>
 
-            <section class="card action-card erp-workspace__section erp-workspace__priority-card"
+            <section class="card action-card purchase-final-action erp-workspace__section"
                      id="purchase-actions-section" tabindex="-1"
                      aria-labelledby="purchase-actions-title">
               <span class="section-kicker">Volgende actie</span>
@@ -691,7 +698,61 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
                 </button>
               </div>
             </section>
-          </aside>
+          </main>
+
+          @if (desktop.active()) {
+            <aside class="purchase-control-rail erp-workspace__rail" aria-label="Order in één oogopslag">
+              <section class="card purchase-control-card">
+                <header class="purchase-control-card__head">
+                  <span>
+                    <small>Orderoverzicht</small>
+                    <strong>{{ data.order.number }}</strong>
+                  </span>
+                  <span class="status-pill" [class.status-pill--done]="data.order.status === 'ONTVANGEN'">
+                    <span class="status-pill__dot" aria-hidden="true"></span>
+                    {{ statusLabel(data.order.status) }}
+                  </span>
+                </header>
+
+                <div class="purchase-control-card__total">
+                  <small>Totaal geland</small>
+                  <strong>{{ data.costing.totals.totalEur | eur }}</strong>
+                  <span>{{ data.costing.totals.pieces | num }} st · {{ data.costing.totals.cartons | num }} dozen</span>
+                </div>
+
+                <div class="purchase-control-card__facts">
+                  <span>
+                    <small>Betaald</small>
+                    <strong>{{ paidAll() | eur }}</strong>
+                    <em>{{ openAll() | eur }} open</em>
+                  </span>
+                  <span>
+                    <small>{{ isDdp() ? 'Lading' : 'Containervulling' }}</small>
+                    @if (data.costing.containerFill; as fill) {
+                      <strong>{{ fill.fillPercent | pct: 0 }}</strong>
+                    } @else {
+                      <strong>{{ data.costing.totals.cbm | cbm }}</strong>
+                    }
+                    <em>{{ containerLabel(data.order.containerType) }}</em>
+                  </span>
+                </div>
+
+                <div class="purchase-control-card__next">
+                  <small>Volgende stap</small>
+                  <h2>{{ actionTitle(data.order.status, data.costing.lines.length) }}</h2>
+                  <p>{{ actionDescription(data.order.status, data.costing.lines.length) }}</p>
+                </div>
+
+                <div class="purchase-control-card__buttons">
+                  <a class="btn btn--primary btn--block"
+                     [routerLink]="['/purchasing', data.order.id, 'edit']">
+                    {{ data.costing.lines.length ? 'Order bewerken' : 'Producten toevoegen' }}
+                  </a>
+                  <button class="btn btn--block" type="button" (click)="pdfOpen.set(true)">PDF downloaden</button>
+                </div>
+              </section>
+            </aside>
+          }
         </div>
       </div>
       @if (pdfOpen()) {
@@ -772,8 +833,8 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
     .capacity-card{margin-bottom:12px;padding:14px;overflow:hidden}.capacity-card__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.capacity-card h2{font-size:16px}.capacity-card__top p{color:var(--muted);font-size:11px}.capacity-card__percentage{color:var(--rose);font-size:25px;line-height:1}.capacity-card__percentage--over{color:var(--danger)}
     .capacity-meter{height:11px;margin-top:13px}.capacity-card__footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-top:9px;color:var(--muted);font-size:11px}.capacity-state{display:flex;align-items:center;gap:5px;font-weight:680}.capacity-state--ok{color:var(--ok)}.capacity-state--danger{color:var(--danger)}
   `, `
-    :is(.view-main,.view-sidebar){min-width:0}:is(.view-main,.view-sidebar)>.card+.card{margin-top:12px}.view-sidebar{margin-top:12px}
-    .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.view-sidebar.erp-workspace__sidebar{margin-top:0}
+    :is(.view-main,.purchase-control-rail){min-width:0}.view-layout{grid-template-columns:minmax(0,1fr)}
+    .purchase-control-rail{display:none}
     :is(.products-card,.details-card,.cost-card,.action-card){overflow:hidden}.section-heading{display:flex;min-height:76px;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
     .section-number{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760}
     .section-heading__copy{display:block;min-width:0;flex:1}.section-heading h2{font-size:15px}.section-heading__copy>span:last-child{display:block;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
@@ -792,15 +853,24 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
     .cost-card{border-color:var(--rose-line)}.cost-card__head{display:flex;min-height:76px;align-items:center;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid var(--rose-line);background:linear-gradient(145deg,var(--surface),var(--rose-soft))}.cost-card h2{font-size:16px}.internal-badge{padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:10px;font-weight:760;text-transform:uppercase}.cost-card__body{padding:14px}.cost-card .cost-hero{margin-top:0}.cost-stage{padding:8px 0}.cost-stage+.cost-stage{border-top:1px solid var(--line)}.cost-stage__label{display:block;margin-bottom:3px;color:var(--rose);font-size:9px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.cost-stage .stat-row{padding:4px 0;font-size:11.5px}.cost-stage__subtotal{border-top:1px solid var(--line);font-weight:680}
     .safe-card{display:flex;align-items:flex-start;gap:10px;padding:14px}.safe-card__icon{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:760}.safe-card h2{font-size:14px}.safe-card p{color:var(--muted);font-size:11px}
     .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
+    .purchase-control-card{overflow:hidden}.purchase-control-card__head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px;border-bottom:1px solid var(--line)}.purchase-control-card__head>span:first-child{display:grid;min-width:0}.purchase-control-card__head small,.purchase-control-card__total small,.purchase-control-card__facts small,.purchase-control-card__next>small{color:var(--muted);font-size:9px;font-style:normal;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.purchase-control-card__head strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.purchase-control-card__total{display:grid;padding:18px 16px 15px;background:linear-gradient(145deg,var(--rose-soft),var(--surface))}.purchase-control-card__total strong{margin-top:2px;color:var(--rose-dark);font-size:25px;letter-spacing:-.025em}.purchase-control-card__total span{color:var(--muted);font-size:11px}.purchase-control-card__facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line)}.purchase-control-card__facts>span{display:grid;min-width:0;padding:12px;background:var(--surface)}.purchase-control-card__facts strong{margin-top:2px;font-size:14px}.purchase-control-card__facts em{overflow:hidden;color:var(--muted);font-size:10px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.purchase-control-card__next{padding:16px;border-top:1px solid var(--line)}.purchase-control-card__next>small{color:var(--rose)}.purchase-control-card__next h2{margin-top:3px;font-size:15px}.purchase-control-card__next p{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.45}.purchase-control-card__buttons{display:grid;gap:7px;padding:0 16px 16px}
 
     @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.line-facts--purchase{grid-template-columns:repeat(5,minmax(0,1fr))}.line-facts--purchase>.line-fact--total{grid-column:auto}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
-    @media(min-width: 680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}}
-    @media(min-width:680px){.view-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.72fr);gap:16px;align-items:start}.view-sidebar{margin-top:0}}
+    @media(min-width:680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}.purchase-payment-streams{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}.purchase-payment-streams .pay-stream{margin-top:0}.purchase-payment-streams .pay-ours{grid-column:1/-1;margin-top:0}.purchase-dossier{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}.purchase-dossier app-purchase-activity{margin:0}.purchase-final-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:24px}.purchase-final-action .action-card__buttons{grid-column:2;grid-row:1/span 3;min-width:250px;margin-top:0}}
+    @media(min-width:1024px){#purchase-overview,#purchase-products-section,#purchase-costs-section,#purchase-payments-section,#purchase-files-section,#purchase-actions-section{scroll-margin-top:calc(var(--appbar-h) + 90px)}.purchase-section-nav.erp-workspace__nav{display:grid;width:100%;max-width:none;grid-template-columns:repeat(6,minmax(0,1fr));margin:14px 0;overflow:visible}.purchase-section-nav .erp-workspace__nav-item{width:100%;min-width:0;border-radius:13px;justify-content:flex-start}.purchase-section-nav .erp-workspace__nav-item--action:not(.erp-workspace__nav-item--active){background:rgb(255 255 255 / 82%);color:var(--muted)}.purchase-section-nav .erp-workspace__nav-item>span:last-child,.purchase-section-nav .erp-workspace__nav-item small{overflow:hidden;text-overflow:ellipsis}.view-layout{grid-template-columns:minmax(0,1fr) 292px;gap:18px;align-items:start}.purchase-control-rail.erp-workspace__rail{display:grid;position:sticky;top:calc(var(--appbar-h) + 88px);max-height:none;overflow:visible;overscroll-behavior:auto;padding-bottom:0;scrollbar-width:auto}.cost-card__body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:0}.cost-card__body>.cost-hero{grid-column:1/-1;margin:0;padding:18px;border-width:0 0 1px;border-radius:0}.cost-card__body>.cost-stage{padding:18px}.cost-card__body>.cost-stage+.cost-stage{border-top:0;border-left:1px solid var(--line)}}
   `],
 })
 export class PurchaseView {
   readonly pdfOpen = signal(false);
-  readonly workspaceSection = signal('purchase-overview');
+  readonly workspaceSections: readonly PurchaseWorkspaceSectionId[] = [
+    'purchase-overview',
+    'purchase-products-section',
+    'purchase-costs-section',
+    'purchase-payments-section',
+    'purchase-files-section',
+    'purchase-actions-section',
+  ];
+  readonly workspaceSection = signal<PurchaseWorkspaceSectionId>('purchase-overview');
   readonly desktop = inject(DesktopViewport);
   private readonly browserLocation = inject(Location);
   private readonly routerNav = inject(Router);
@@ -810,14 +880,29 @@ export class PurchaseView {
     this.browserLocation.back();
   }
 
-  /** Keeps the read-only page as scannable as the editor: same rail, same destinations. */
-  jumpToSection(sectionId: string): void {
+  /** The desktop rail behaves as document navigation and follows the reader. */
+  jumpToSection(sectionId: PurchaseWorkspaceSectionId): void {
     this.workspaceSection.set(sectionId);
     requestAnimationFrame(() => {
       const target = document.getElementById(sectionId);
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       target?.focus({ preventScroll: true });
     });
+  }
+
+  @HostListener('window:scroll')
+  trackWorkspaceSection(): void {
+    if (!this.view()) return;
+    const navBottom = document.querySelector('.purchase-section-nav')?.getBoundingClientRect().bottom ?? 0;
+    let current = this.workspaceSections[0];
+    for (const id of this.workspaceSections) {
+      const section = document.getElementById(id);
+      if (section && section.getBoundingClientRect().top <= navBottom + 18) current = id;
+    }
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 12) {
+      current = this.workspaceSections[this.workspaceSections.length - 1];
+    }
+    if (current !== this.workspaceSection()) this.workspaceSection.set(current);
   }
 
   readonly containerLabel = containerLabel;
@@ -941,6 +1026,7 @@ export class PurchaseView {
 
   private async load(id: number): Promise<void> {
     this.view.set(null);
+    this.workspaceSection.set('purchase-overview');
     this.openLine.set(null);
     this.openProductGroups.set(new Set());
     void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
