@@ -38,6 +38,22 @@ export function isLocallyDeletableSalesDocument(order: {
     && order.decidedAt === null;
 }
 
+/**
+ * The overview deliberately also offers deletion for sent and handled quotes.
+ * Invoices retain the stricter unused-concept guard above.
+ */
+export function isSwipeDeletableSalesDocument(order: {
+  docType?: string | null;
+  status: string | null;
+  sentAt: string | null;
+  viewedAt: string | null;
+  viewCount: number;
+  decidedAt: string | null;
+}): boolean {
+  return (order.docType ?? 'OFFERTE') !== 'FACTUUR'
+    || isLocallyDeletableSalesDocument(order);
+}
+
 export function salesDocumentLabel(docType: string | null | undefined): 'Offerte' | 'Verkoopfactuur' {
   return docType === 'FACTUUR' ? 'Verkoopfactuur' : 'Offerte';
 }

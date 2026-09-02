@@ -15,7 +15,7 @@ import { messageOf } from '../../core/api/errors';
 import {
   SALES_SWIPE_ACTION_PX,
   clampSalesSwipeOffset,
-  isLocallyDeletableSalesDocument,
+  isSwipeDeletableSalesDocument,
   salesDocumentLabel,
   salesSwipeDecision,
 } from './sales-list-swipe';
@@ -862,7 +862,7 @@ export class SalesList {
   }
 
   canDelete(order: SalesOrder): boolean {
-    return isLocallyDeletableSalesDocument(order);
+    return isSwipeDeletableSalesDocument(order);
   }
 
   documentLabel(order: SalesOrder): 'Offerte' | 'Verkoopfactuur' {
@@ -988,6 +988,10 @@ export class SalesList {
         title: `${label} verwijderen`,
         message: `Weet je zeker dat je ${label.toLowerCase()} <b>${escapeHtml(order.number)}</b> `
           + `van <b>${escapeHtml(customer)}</b> wilt verwijderen?<br><br>`
+          + ((order.docType ?? 'OFFERTE') !== 'FACTUUR'
+              && (order.status !== 'CONCEPT' || order.sentAt !== null)
+            ? 'De gedeelde klantlink werkt daarna niet meer.<br><br>'
+            : '')
           + 'Dit kan niet ongedaan worden gemaakt.',
         confirmLabel: 'Verwijderen',
         danger: true,

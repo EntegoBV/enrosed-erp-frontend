@@ -7,6 +7,7 @@ import {
   SALES_SWIPE_REVEAL_PX,
   clampSalesSwipeOffset,
   isLocallyDeletableSalesDocument,
+  isSwipeDeletableSalesDocument,
   salesDocumentLabel,
   salesSwipeDecision,
 } from '../src/app/features/sales/sales-list-swipe.ts';
@@ -46,6 +47,32 @@ test('only a never-used concept document is offered for deletion', () => {
   ]) {
     assert.equal(isLocallyDeletableSalesDocument(used), false);
   }
+});
+
+test('all quote statuses can be removed from the overview while invoices stay guarded', () => {
+  const unused = unusedConcept();
+  for (const quote of [
+    { ...unused, docType: 'OFFERTE' },
+    { ...unused, docType: null, status: 'VERZONDEN', sentAt: '2026-08-30T09:00:00Z' },
+    { ...unused, docType: 'OFFERTE', status: 'BEKEKEN', viewedAt: '2026-08-30T09:05:00Z', viewCount: 1 },
+    { ...unused, docType: 'OFFERTE', status: 'WIJZIGING_GEVRAAGD' },
+    { ...unused, docType: 'OFFERTE', status: 'GEACCEPTEERD', decidedAt: '2026-08-30T10:00:00Z' },
+    { ...unused, docType: 'OFFERTE', status: 'AFGEWEZEN' },
+    { ...unused, docType: 'OFFERTE', status: 'VERLOPEN' },
+  ]) {
+    assert.equal(isSwipeDeletableSalesDocument(quote), true);
+  }
+
+  assert.equal(isSwipeDeletableSalesDocument({
+    ...unused,
+    docType: 'FACTUUR',
+  }), true);
+  assert.equal(isSwipeDeletableSalesDocument({
+    ...unused,
+    docType: 'FACTUUR',
+    status: 'VERZONDEN',
+    sentAt: '2026-08-30T09:00:00Z',
+  }), false);
 });
 
 test('confirmation copy distinguishes invoices from quotes', () => {
