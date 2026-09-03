@@ -19,6 +19,10 @@ export interface PurchasePdfOptions {
   includeEnrosedUnitCost?: boolean;
   /** Shows the payment agreement recorded on the purchase order. */
   showPaymentTerms?: boolean;
+  /** Shows outer-carton dimensions and packing details on each product row. */
+  showOuterCarton?: boolean;
+  /** Shows the product barcode on each product row. */
+  showBarcode?: boolean;
   /** @deprecated Kept only for compatibility with older API deployments. */
   showFreight?: boolean;
   /** @deprecated Kept only for compatibility with older API deployments. */
@@ -37,6 +41,8 @@ export interface NormalizedPurchasePdfOptions {
   includeEnrosedCost: boolean;
   includeEnrosedUnitCost: boolean;
   showPaymentTerms: boolean;
+  showOuterCarton: boolean;
+  showBarcode: boolean;
   showFreight: boolean;
   includeFreight: boolean;
 }
@@ -77,6 +83,8 @@ export function normalizePurchasePdfOptions(
     includeEnrosedCost: standardPortrait && (options.includeEnrosedCost ?? false),
     includeEnrosedUnitCost: standardPortrait && (options.includeEnrosedUnitCost ?? false),
     showPaymentTerms: standardPortrait && (options.showPaymentTerms ?? false),
+    showOuterCarton: standardPortrait && (options.showOuterCarton ?? false),
+    showBarcode: standardPortrait && (options.showBarcode ?? false),
     showFreight: false,
     includeFreight: false,
   };
@@ -97,6 +105,8 @@ export function purchasePdfQuery(options: PurchasePdfOptions = {}): string {
   query.set('includeEnrosedCost', String(resolved.includeEnrosedCost));
   query.set('includeEnrosedUnitCost', String(resolved.includeEnrosedUnitCost));
   query.set('showPaymentTerms', String(resolved.showPaymentTerms));
+  query.set('showOuterCarton', String(resolved.showOuterCarton));
+  query.set('showBarcode', String(resolved.showBarcode));
   query.set('showFreight', String(resolved.showFreight));
   query.set('includeFreight', String(resolved.includeFreight));
   return query.toString();

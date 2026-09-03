@@ -7,7 +7,9 @@ import {
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
   SalesOrderView, Carrier, CarrierShipQuote, DocumentType,
 } from './models';
-import { SalesPdfOptions, salesPdfQuery } from './sales-pdf-options';
+import {
+  PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
+} from './sales-pdf-options';
 
 @Injectable({ providedIn: 'root' })
 export class SalesApi {
@@ -62,16 +64,6 @@ export class SalesApi {
   saveTiers(scope: 'LINE' | 'ORDER', tiers: DiscountTier[]): Promise<DiscountTier[]> {
     return firstValueFrom(
       this.http.put<DiscountTier[]>(api(`/api/discount-tiers/${scope}`), tiers));
-  }
-
-  productTiers(productId: number): Promise<DiscountTier[]> {
-    return firstValueFrom(this.http.get<DiscountTier[]>(
-      api(`/api/discount-tiers/LINE/products/${productId}`)));
-  }
-
-  saveProductTiers(productId: number, tiers: DiscountTier[]): Promise<DiscountTier[]> {
-    return firstValueFrom(this.http.put<DiscountTier[]>(
-      api(`/api/discount-tiers/LINE/products/${productId}`), tiers));
   }
 
   /* ------------------------------------------------------ verkooporders */
@@ -201,10 +193,11 @@ export class SalesApi {
       this.http.get(api(`/api/sales-orders/${id}/pdf?${query}`), { responseType: 'blob' }));
   }
 
-  /** The packing slip: pallets when laid out by hand, plain lines otherwise. */
-  packingSlip(id: number): Promise<Blob> {
+  /** Price-free packing slip, with optional outer-carton and barcode details. */
+  packingSlip(id: number, options: PackingSlipPdfOptions = {}): Promise<Blob> {
+    const query = packingSlipPdfQuery(options);
     return firstValueFrom(this.http.get(
-      api(`/api/sales-orders/${id}/packing-slip`), { responseType: 'blob' }));
+      api(`/api/sales-orders/${id}/packing-slip?${query}`), { responseType: 'blob' }));
   }
 
   /**
