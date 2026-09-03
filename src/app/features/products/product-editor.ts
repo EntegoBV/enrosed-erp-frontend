@@ -1323,6 +1323,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .product-load-error > span { display: grid; gap: 2px; }
     .product-load-error small { font-size: 10px; }
     .editor-canvas { display: block; width: 100%; max-width: 920px; margin: 0 auto; }
+    /* Desktop: the section rail stands to the left of the form as a jump
+       list, the form itself gets the width a desk has. */
+    @media (min-width: 1100px) {
+      :host { display: grid; grid-template-columns: 200px minmax(0, 1fr); align-items: start; }
+      :host > * { grid-column: 1 / -1; }
+      :host > .subnav.erp-workspace__nav { grid-column: 1; align-self: start; top: calc(var(--appbar-h) + 14px); margin-top: 14px; padding-left: 16px; }
+      :host > .product-editor-page { grid-column: 2; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-rail { flex-direction: column; gap: 4px; padding: 0; overflow: visible; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item { width: 100%; justify-content: flex-start; }
+      .editor-canvas { max-width: 1120px; margin: 0; }
+    }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
     .colour-control { display: flex; align-items: center; gap: 8px; }
     .colour-control .select { flex: 1; }

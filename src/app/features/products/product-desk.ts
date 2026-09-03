@@ -7,10 +7,45 @@ import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { PageHeader } from '../../shared/page-header';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
+import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { ProductView } from './product-view';
 
 type BookingKind = 'RECOUNT' | 'DAMAGED' | 'DEMO';
+interface NoteItem { text: string; children: string[]; }
+type NoteBlock = { kind: 'p'; text: string } | { kind: 'list'; items: NoteItem[] };
+interface IssueGroup { key: string; label: string; action: string; link: unknown[]; params: Record<string, string> | null; issues: string[]; }
+
+/**
+ * The supplier note as the desk shows it: a line that starts with "-",
+ * "*" or "•" is a point, an indented one a sub-point, anything else a
+ * paragraph. The PDF reads the note the same way.
+ */
+export function parseSupplierNote(note: string | null | undefined): NoteBlock[] {
+  const blocks: NoteBlock[] = [];
+  let paragraph: string[] = [];
+  const flush = () => {
+    if (paragraph.length) blocks.push({ kind: 'p', text: paragraph.join('\n') });
+    paragraph = [];
+  };
+  for (const raw of (note ?? '').split(/\r?\n/)) {
+    const bullet = /^(\s*)[-*•]\s+(.*)$/.exec(raw);
+    if (bullet) {
+      flush();
+      const nested = bullet[1].replace(/\t/g, '  ').length >= 2;
+      const last = blocks[blocks.length - 1];
+      const list = last?.kind === 'list' ? last : (blocks.push({ kind: 'list', items: [] }), blocks[blocks.length - 1] as { kind: 'list'; items: NoteItem[] });
+      const text = bullet[2].trim();
+      if (nested && list.items.length) list.items[list.items.length - 1].children.push(text);
+      else list.items.push({ text, children: [] });
+      continue;
+    }
+    if (!raw.trim()) { flush(); continue; }
+    paragraph.push(raw.trim());
+  }
+  flush();
+  return blocks;
+}
 interface Booking { kind: BookingKind; locationId: number | null; quantity: number | null; note: string; }
 
 /**
@@ -29,7 +64,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, PageHeader,
+    RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, PageHeader,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -312,7 +347,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 @if (build.rows.length) {
                   <div class="desk-chain">
                     @for (row of chainRows(); track $index) {
-                      <div class="desk-chain__row" [class.desk-chain__row--sub]="row.sum && !row.last" [class.desk-chain__row--total]="row.last">
+                      <div class="desk-chain__row" [class.desk-chain__row--sub]="row.sum && !row.last" [class.desk-chain__row--total]="row.last" [class.pd-chain__row--margin]="row.margin">
                         <i aria-hidden="true">{{ row.mark }}</i>
                         <span>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</span>
                         <b>{{ row.eur | eur: 2 }}</b>
@@ -333,14 +368,21 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <div>
                 <div class="pd-kicker">Waar de cijfers vandaan komen</div>
                 <dl class="desk-facts pd-facts">
-                  <div><dt>Bron kostprijs</dt><dd>
+                  <div><dt>Kostprijs</dt><dd>
                     @if (sourceOrderId(); as orderId) { <a [routerLink]="['/purchasing', orderId]">{{ product.landedCostSource }} ›</a> }
-                    @else { {{ product.landedCostSource || '—' }} }
-                    <small>{{ product.landedCostSource ? 'de inkoopcalculatie met transport, rechten en Enrosed kost' : 'nog geen ontvangen container' }}</small></dd></div>
-                  <div><dt>Extra kost</dt><dd>@if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }<small>per stuk, bv. display of giftbox</small></dd></div>
-                  <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? (product.fixedSalesPriceEur | eur: 2) : (product.markupPct | num) + ' % opslag' }}<small>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs, los van de kostprijs' : 'op de gelande kostprijs' }}</small></dd></div>
-                  <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}<small>bepaalt de invoerrechten</small></dd></div>
+                    @else { {{ product.landedCostSource || 'Handmatig' }} }
+                    <small>{{ product.landedCostSource ? 'de inkoopcalculatie: transport, rechten en Enrosed kost per stuk' : 'nog geen ontvangen container achter deze kostprijs' }}</small></dd></div>
+                  <div><dt>Extra kost</dt><dd>@if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }<small>per stuk, bv. display of giftbox, telt mee in de kostprijs</small></dd></div>
+                  <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? (product.fixedSalesPriceEur | eur: 2) : (product.markupPct | num) + ' % opslag' }}<small>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs, los van de kostprijs' : 'op de gelande kostprijs; de marge is wat overblijft' }}</small></dd></div>
                 </dl>
+                <div class="desk-actions pd-links">
+                  <a class="desk-action" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'purchasing' }">
+                    <span><b>Inkoop bewerken</b><small>EXW-prijs, extra kost en HS-code</small></span><i aria-hidden="true">›</i>
+                  </a>
+                  <a class="desk-action" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'sales' }">
+                    <span><b>Verkoopprijs bewerken</b><small>opslag of vaste prijs</small></span><i aria-hidden="true">›</i>
+                  </a>
+                </div>
               </div>
             </div>
           }
@@ -472,10 +514,18 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 }
               </dl>
               @if (publicationIssues().length; as open) {
-                <div class="pd-kicker pd-kicker--gap">{{ open }} punt{{ open === 1 ? '' : 'en' }} voor publicatie</div>
-                <ul class="pd-issues">
-                  @for (issue of publicationIssues(); track issue) { <li>{{ issue }}</li> }
-                </ul>
+                <div class="pd-kicker pd-kicker--gap">Nog {{ open }} punt{{ open === 1 ? '' : 'en' }} vóór publicatie</div>
+                <div class="pd-fix">
+                  @for (group of issueGroups(); track group.key) {
+                    <div class="pd-fix__group">
+                      <div class="pd-fix__head">
+                        <b>{{ group.label }}<small>{{ group.issues.length }}</small></b>
+                        <a class="linklike" [routerLink]="group.link" [queryParams]="group.params">{{ group.action }} ›</a>
+                      </div>
+                      <ul>@for (issue of group.issues; track issue) { <li>{{ issue }}</li> }</ul>
+                    </div>
+                  }
+                </div>
               }
               @if (!family()) {
                 <p class="pd-empty">Voor dit product zijn nog geen gedeelde websitegegevens gestart.</p>
@@ -492,33 +542,65 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
           </section>
         </div>
 
-        <!-- ============================ supplier agreements -->
-        <section class="pd-card" id="pd-agreements" aria-labelledby="pd-agreements-title">
-          <div class="pd-card__head">
-            <div><h2 id="pd-agreements-title">Afspraken leverancier</h2><p>Engelse instructies en referentiefoto’s op de inkoop-PDF</p></div>
-            <a class="linklike" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'agreements' }">Bewerken ›</a>
+        <!-- ============================ supplier agreements: read as points, edit in place -->
+        @if (agreementEditing()) {
+          <div class="pd-card pd-card--editor" id="pd-agreements">
+            <app-product-supplier-agreement-editor
+              [productId]="product.id" [supplierId]="product.supplierId" [persistedSupplierId]="product.supplierId"
+              [supplierName]="supplierName()" [note]="noteDraft()" [disabled]="noteSaving()"
+              (noteChange)="noteDraft.set($event)" />
+            <div class="pd-actions pd-actions--end">
+              <span class="pd-hint pd-hint--inline">Begin een regel met "- " voor een punt, spring twee spaties in voor een subpunt.</span>
+              <button class="btn btn--sm" type="button" [disabled]="noteSaving()" (click)="cancelAgreement()">Annuleren</button>
+              <button class="btn btn--sm btn--primary" type="button" [disabled]="noteSaving() || !agreementDirty()" (click)="saveAgreement(product)">{{ noteSaving() ? 'Bezig…' : 'Bewaren' }}</button>
+            </div>
           </div>
-          @if (product.supplierNote) {
-            <p class="pd-note">{{ product.supplierNote }}</p>
-          }
-          @if (agreementLoading()) {
-            <p class="pd-empty">Referentiefoto’s laden…</p>
-          } @else if (agreementLoadError(); as error) {
-            <p class="pd-empty">{{ error }} <button class="linklike" type="button" (click)="retrySupplierAgreement()">Opnieuw proberen</button></p>
-          } @else if (agreementPhotos().length) {
-            <div class="pd-refs" role="list">
-              @for (photo of agreementPhotos(); track photo.id) {
-                <button class="pd-ref" type="button" role="listitem" (click)="agreementLightbox.set($index)"
-                        [attr.aria-label]="'Referentiefoto ' + ($index + 1) + ' vergroten'">
-                  <img [appAuthSrc]="photo.viewUrl" alt="" loading="lazy" />
-                  <span>{{ photo.caption || 'Foto ' + ($index + 1) }}</span>
-                </button>
+        } @else {
+          <section class="pd-card" id="pd-agreements" aria-labelledby="pd-agreements-title">
+            <div class="pd-card__head">
+              <div><h2 id="pd-agreements-title">Afspraken leverancier</h2><p>Engelse instructies en referentiefoto’s, alleen op de inkoop-PDF voor {{ supplierName() || 'de leverancier' }}</p></div>
+              <button class="linklike" type="button" (click)="startAgreement(product)">{{ product.supplierNote || agreementPhotos().length ? 'Bewerken ›' : 'Afspraken vastleggen ›' }}</button>
+            </div>
+            <div class="pd-agreement">
+              @if (noteBlocks().length) {
+                <div class="pd-note" lang="en">
+                  @for (block of noteBlocks(); track $index) {
+                    @if (block.kind === 'p') {
+                      <p>{{ block.text }}</p>
+                    } @else {
+                      <ul>
+                        @for (item of block.items; track $index) {
+                          <li>{{ item.text }}
+                            @if (item.children.length) {
+                              <ul>@for (sub of item.children; track $index) { <li>{{ sub }}</li> }</ul>
+                            }
+                          </li>
+                        }
+                      </ul>
+                    }
+                  }
+                </div>
+              } @else {
+                <p class="pd-empty">Nog geen instructies voor de leverancier. <button class="linklike" type="button" (click)="startAgreement(product)">Schrijf ze hier ›</button></p>
+              }
+              @if (agreementLoading()) {
+                <p class="pd-empty">Referentiefoto’s laden…</p>
+              } @else if (agreementLoadError(); as error) {
+                <p class="pd-empty">{{ error }} <button class="linklike" type="button" (click)="retrySupplierAgreement()">Opnieuw proberen</button></p>
+              } @else if (agreementPhotos().length) {
+                <div class="pd-refs" role="list">
+                  @for (photo of agreementPhotos(); track photo.id) {
+                    <button class="pd-ref" type="button" role="listitem" (click)="agreementLightbox.set($index)"
+                            [attr.aria-label]="'Referentiefoto ' + ($index + 1) + ' vergroten'">
+                      <img [appAuthSrc]="photo.viewUrl" alt="" loading="lazy" />
+                      <span>{{ photo.caption || 'Foto ' + ($index + 1) }}</span>
+                    </button>
+                  }
+                </div>
               }
             </div>
-          } @else if (!product.supplierNote) {
-            <p class="pd-empty">Nog geen productspecifieke afspraken voor deze leverancier.</p>
-          }
-        </section>
+          </section>
+        }
       </div>
 
       <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
@@ -603,8 +685,21 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-issues{margin:0;padding:0 0 0 18px;color:var(--ink-2);font-size:12px;line-height:1.5}
     .pd-links{margin-top:14px}.desk-action{text-decoration:none}
 
+    /* ---- publication: the points, grouped by where they are fixed */
+    .pd-fix{display:grid;gap:8px}
+    .pd-fix__group{padding:8px 12px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+    .pd-fix__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.pd-fix__head b{font-size:12.5px}.pd-fix__head b small{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:750}
+    .pd-fix__group ul{margin:0;padding:0 0 0 16px;color:var(--ink-2);font-size:12px;line-height:1.5}
+    .pd-chain__row--margin{background:color-mix(in srgb,var(--ok) 9%,var(--surface))}.pd-chain__row--margin i{background:var(--ok);color:#fff}.pd-chain__row--margin b{color:var(--ok);font-weight:750}
+
     /* ---- supplier agreements */
-    .pd-note{margin:0 0 12px;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px;line-height:1.45;white-space:pre-wrap}
+    .pd-card--editor{padding:0;overflow:hidden}.pd-card--editor app-product-supplier-agreement-editor{display:block}
+    .pd-actions--end{justify-content:flex-end;align-items:center;margin:0;padding:10px 18px 14px;border-top:1px solid var(--line)}
+    .pd-hint--inline{flex:1;margin:0;min-width:0}
+    .pd-agreement{display:grid;gap:12px}
+    .pd-note{margin:0;padding:10px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px;line-height:1.5}
+    .pd-note p{margin:0;white-space:pre-line}.pd-note p+p,.pd-note ul+p,.pd-note p+ul{margin-top:6px}
+    .pd-note ul{margin:0;padding-left:18px}.pd-note ul ul{margin-top:2px;padding-left:16px;color:var(--muted)}.pd-note li{margin:2px 0}
     .pd-refs{display:flex;flex-wrap:wrap;gap:10px}
     .pd-ref{display:grid;gap:4px;width:118px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left;cursor:zoom-in}
     .pd-ref img{width:118px;height:118px;border:1px solid var(--line);border-radius:12px;object-fit:cover;background:var(--surface-2)}.pd-ref span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -635,14 +730,16 @@ export class ProductDesk extends ProductView {
 
   /** Per-piece rows of the build-up: a mark, the label without its "+", and the last one as the total. */
   readonly chainRows = computed(() => {
-    const rows = (this.priceBuild()?.rows ?? []).filter((row) => !row.aside && !row.note);
+    const rows = (this.priceBuild()?.rows ?? []).filter((row) => !row.aside);
+    const lastSum = rows.map((row) => !!row.sum).lastIndexOf(true);
     return rows.map((row, index) => ({
-      mark: row.sum ? '=' : row.label.startsWith('+') ? '+' : '·',
+      mark: row.note ? '◆' : row.sum ? '=' : row.label.startsWith('+') ? '+' : '·',
       label: row.label.replace(/^\+\s*/, ''),
-      hint: row.hint,
+      hint: row.note ? 'catalogusprijs min kostprijs, wat er per stuk overblijft' : row.hint,
       eur: row.eur,
       sum: !!row.sum,
-      last: index === rows.length - 1 && !!row.sum,
+      last: index === lastSum,
+      margin: !!row.note,
     }));
   });
 
@@ -659,6 +756,62 @@ export class ProductDesk extends ProductView {
     }
     return 'Geschenkverpakking';
   }
+
+  /* ---- the supplier note as points, and editing it right here */
+  readonly noteBlocks = computed(() => parseSupplierNote(this.product()?.supplierNote));
+  readonly agreementEditing = signal(false);
+  readonly noteDraft = signal<string | null>(null);
+  readonly noteSaving = signal(false);
+  readonly agreementDirty = computed(() =>
+    (this.noteDraft() ?? '').trim() !== (this.product()?.supplierNote ?? '').trim());
+
+  startAgreement(product: Product): void {
+    this.noteDraft.set(product.supplierNote);
+    this.agreementEditing.set(true);
+  }
+
+  /** Photos save as they go inside the editor; only the note waits for Bewaren. */
+  cancelAgreement(): void {
+    this.agreementEditing.set(false);
+    this.retrySupplierAgreement();
+  }
+
+  async saveAgreement(product: Product): Promise<void> {
+    if (product.id === null) return;
+    this.noteSaving.set(true);
+    try {
+      const note = (this.noteDraft() ?? '').trim();
+      const saved = await this.catalog.updateProduct(product.id, { ...product, supplierNote: note || null });
+      this.product.set(saved);
+      this.agreementEditing.set(false);
+      this.retrySupplierAgreement();
+      this.ui.toast('Afspraken bewaard');
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Bewaren mislukt'), 'err');
+    } finally {
+      this.noteSaving.set(false);
+    }
+  }
+
+  /* ---- publication points, grouped by where they are fixed */
+  readonly issueGroups = computed<IssueGroup[]>(() => {
+    const id = this.product()?.id;
+    const edit = ['/products', id, 'edit'];
+    const groups: IssueGroup[] = [
+      { key: 'copy', label: 'Websitetekst', action: 'Tekst schrijven', link: ['/products', id, 'translations'], params: null, issues: [] },
+      { key: 'photos', label: 'Foto’s', action: 'Foto’s beheren', link: edit, params: { tab: 'media' }, issues: [] },
+      { key: 'collection', label: 'Collectie op de website', action: 'Categorieën openen', link: ['/website/categories'], params: null, issues: [] },
+      { key: 'settings', label: 'Publicatie-instellingen', action: 'Openen', link: edit, params: { tab: 'publication' }, issues: [] },
+    ];
+    for (const issue of this.publicationIssues()) {
+      const key = /foto/i.test(issue) ? 'photos'
+        : /collectie/i.test(issue) ? 'collection'
+        : /samenvatting|beschrijving|seo|vertaald|highlights|formaat|alt-tekst|kleurnaam|\bnaam\b|\bmaat\b/i.test(issue) ? 'copy'
+        : 'settings';
+      groups.find((group) => group.key === key)!.issues.push(issue);
+    }
+    return groups.filter((group) => group.issues.length);
+  });
 
   /** A money tile in the hero unfolds the build-up and walks down to it. */
   openPriceDetail(): void {

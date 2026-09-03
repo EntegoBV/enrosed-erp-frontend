@@ -86,7 +86,7 @@ export interface SupplierAgreementFlushResult {
           (ngModelChange)="changeNote($event)"
           placeholder="Example: Match the approved colour sample. Centre the logo and use cardboard corner protection."
         ></textarea>
-        <small>Printed verbatim below this product in the supplier order agreement.</small>
+        <small>Printed below this product in the supplier order agreement. Start a line with "- " for a point, indent it two spaces for a sub-point.</small>
       </label>
 
       <section
