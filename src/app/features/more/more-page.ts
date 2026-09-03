@@ -51,6 +51,12 @@ import { THEMES, Theme } from '../../core/platform/theme';
               <div class="list-item__meta">Actuele wisselkoersen en containertarieven</div></div>
             <span class="list-item__chev">›</span>
           </a>
+          <a class="list-item" routerLink="/analyses/website">
+            <span class="thumb thumb--placeholder"><app-icon name="exchange" /></span>
+            <div class="list-item__body"><div class="list-item__title">Websitebezoekers</div>
+              <div class="list-item__meta">Bezoekers, landen, bronnen en drukste uren</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
         </div>
       </details>
 

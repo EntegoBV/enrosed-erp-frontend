@@ -297,12 +297,9 @@ type DeskRow =
                                 <option value="EXW">EXW</option><option value="DDP">DDP</option>
                               </select>
                             </div>
-                            @if (orderLine(line.productId)?.exwPrice == null && productCardPrice(line.productId); as currentPrice) {
-                              <small class="desk-price__hint">productkaart: {{ currentPrice.amount | cur: currentPrice.currency }}</small>
-                            }
                           } @else {
                             <b class="num">{{ unitPriceOf(line) | cur: effectiveExwCurrency(line.productId) }}</b>
-                            <small>{{ orderLine(line.productId)?.priceBasis ?? 'EXW' }}@if (orderLine(line.productId)?.exwPrice == null) { · productkaart }</small>
+                            <small>{{ orderLine(line.productId)?.priceBasis ?? 'EXW' }}</small>
                           }
                         </td>
                         <td class="c-money num">{{ amt(line.goodsEur, line) | eur: decimals() }}</td>

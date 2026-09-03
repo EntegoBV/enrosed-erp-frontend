@@ -23,9 +23,10 @@ import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { inventoryAnalysis, salesAnalysis } from './analysis-metrics';
 import { MarketAnalysis } from './market-analysis';
+import { WebsiteAnalytics } from './website-analytics';
 import { inDateRange, supplierReceiptPerformance } from './receipt-metrics';
 
-type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'market';
+type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'market' | 'website';
 
 const ANALYSIS_TABS: ReadonlyArray<{ id: AnalysisSection; label: string }> = [
   { id: 'overview', label: 'Overzicht' },
@@ -33,6 +34,7 @@ const ANALYSIS_TABS: ReadonlyArray<{ id: AnalysisSection; label: string }> = [
   { id: 'inventory', label: 'Voorraad' },
   { id: 'purchasing', label: 'Inkoop' },
   { id: 'market', label: 'Markt & container' },
+  { id: 'website', label: 'Website' },
 ];
 
 interface VarianceGroup {
@@ -83,7 +85,7 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
     EurPipe,
     NumPipe,
     PctPipe,
-    MarketAnalysis,
+    MarketAnalysis, WebsiteAnalytics,
   ],
   template: `
     <app-page-header title="Analyses" [subtitle]="sectionSubtitle()">
@@ -369,6 +371,10 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
         <app-market-analysis />
       }
 
+      @if (section() === 'website') {
+        <app-website-analytics />
+      }
+
       @if (section() === 'purchasing') {
       <section class="analysis-section purchase-summary" aria-labelledby="purchase-summary-title">
         <header class="section-copy">
@@ -565,6 +571,7 @@ export class AnalysesPage {
     inventory: 'Kapitaal, dekking en aankomende voorraad',
     purchasing: 'Ontvangstkwaliteit en inkoopimpact',
     market: 'Wisselkoers en compacte containerprijzen',
+    website: 'Wie de website bezoekt, vanwaar, wanneer en waar ze naartoe gaan',
   })[this.section()]);
 
   readonly loading = signal(true);

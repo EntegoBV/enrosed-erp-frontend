@@ -37,6 +37,7 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
 
   if (
     path.startsWith('/activity')
+    || path.startsWith('/files')
     || path.startsWith('/settings/documents-media')
     || section === 'company'
   ) return 'bedrijf';

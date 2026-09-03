@@ -163,6 +163,9 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
               </a>
+              <a class="sidebar__link" routerLink="/analyses/website" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="countries" [size]="18" /> Bezoekers
+              </a>
             </div>
 
             <button class="sidebar__group" type="button" (click)="toggleGroup('bedrijf')"
@@ -187,18 +190,15 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               <a class="sidebar__link sidebar__link--wide" routerLink="/voorwaarden">
                 <app-icon class="sidebar__icon" name="sales" [size]="18" /> Voorwaarden &amp; privacy
               </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/files" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="media" [size]="18" /> Documenten &amp; media
+              </a>
             </div>
 
             <a class="sidebar__link sidebar__link--workspace" routerLink="/website" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="countries" [size]="18" />
               <span class="sidebar__text sidebar__text--full">Website beheren</span>
               <span class="sidebar__text sidebar__text--rail">Website</span>
-              <i aria-hidden="true">↗</i>
-            </a>
-            <a class="sidebar__link sidebar__link--workspace" routerLink="/files" routerLinkActive="active">
-              <app-icon class="sidebar__icon" name="media" [size]="18" />
-              <span class="sidebar__text sidebar__text--full">Bestanden beheren</span>
-              <span class="sidebar__text sidebar__text--rail">Bestanden</span>
               <i aria-hidden="true">↗</i>
             </a>
 
