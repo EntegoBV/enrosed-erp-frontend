@@ -184,6 +184,10 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
                  [queryParams]="{ sectie: 'company' }" [class.active]="settingsActive('company')">
                 <app-icon class="sidebar__icon" name="settings" [size]="18" /> Bedrijfsgegevens
               </a>
+              <a class="sidebar__link sidebar__link--wide" routerLink="/settings/documents-media"
+                 routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="media" [size]="18" /> Documenten &amp; media
+              </a>
               <a class="sidebar__link sidebar__link--wide" routerLink="/voorwaarden">
                 <app-icon class="sidebar__icon" name="sales" [size]="18" /> Voorwaarden &amp; privacy
               </a>

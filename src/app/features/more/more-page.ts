@@ -182,6 +182,12 @@ import { THEMES, Theme } from '../../core/platform/theme';
               <div class="list-item__meta">Adres, BTW, IBAN en juridische teksten</div></div>
             <span class="list-item__chev">›</span>
           </a>
+          <a class="list-item" routerLink="/settings/documents-media">
+            <span class="thumb thumb--placeholder"><app-icon name="media" /></span>
+            <div class="list-item__body"><div class="list-item__title">Documenten &amp; media</div>
+              <div class="list-item__meta">Bestanden uploaden, koppelen en veilig hergebruiken</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
           <a class="list-item" routerLink="/voorwaarden">
             <span class="thumb thumb--placeholder"><app-icon name="sales" /></span>
             <div class="list-item__body"><div class="list-item__title">Voorwaarden &amp; privacy</div>

@@ -221,6 +221,12 @@ export const routes: Routes = [
       import('./features/settings/stock-location-list').then((m) => m.StockLocationList),
   },
   {
+    path: 'settings/documents-media',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/settings/document-media-page').then((m) => m.DocumentMediaPage),
+  },
+  {
     path: 'settings',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
