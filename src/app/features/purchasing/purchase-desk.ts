@@ -53,36 +53,28 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
         }
       </app-page-header>
 
-      <div class="desk">
-        <!-- ============================ command bar: who, where, how far, how much -->
-        <header class="desk-bar">
-          <div class="desk-bar__who">
-            <span class="desk-bar__mark" aria-hidden="true">{{ supplierName().charAt(0) }}</span>
-            <div class="desk-bar__copy">
-              <strong>{{ supplierName() }}</strong>
-              <small>{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}
-                · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</small>
-              <small>{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }</small>
+      <div class="content desk">
+        <!-- ============================ hero: who, how far, and the figures that matter -->
+        <header class="desk-hero">
+          <div class="desk-hero__top">
+            <div class="desk-hero__who">
+              <span class="desk-hero__eyebrow">Inkoopcontainer</span>
+              <h1>{{ supplierName() }}</h1>
+              <p>{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}
+                · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</p>
+              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }</p>
             </div>
-          </div>
-
-          <div class="desk-status" role="group" aria-label="Voortgang van de inkooporder">
-            @for (step of statusSteps; track step.value; let last = $last) {
-              <span class="desk-status__step"
-                    [class.desk-status__step--done]="stepIndex(data.order.status) > $index"
-                    [class.desk-status__step--now]="stepIndex(data.order.status) === $index"
-                    [class.desk-status__step--arrived]="step.value === 'ONTVANGEN' && isReceived()">
-                <i aria-hidden="true">@if (stepIndex(data.order.status) > $index) { ✓ } @else { {{ $index + 1 }} }</i>{{ step.label }}
-              </span>
-              @if (!last) { <span class="desk-status__line" [class.desk-status__line--done]="stepIndex(data.order.status) > $index" aria-hidden="true"></span> }
-            }
-            @if (nextStep(); as step) {
-              <button class="btn btn--primary btn--sm desk-status__go" type="button" (click)="advanceStatus()">{{ step.action }} ›</button>
-            } @else if (isReceived() && !(data.order.stockBooked ?? true)) {
-              <button class="btn btn--primary btn--sm desk-status__go" type="button" [disabled]="booking()" (click)="bookStock()">
-                {{ booking() ? 'Bezig…' : 'Voorraad bijboeken' }}
-              </button>
-            }
+            <div class="desk-status" role="group" aria-label="Voortgang van de inkooporder">
+              @for (step of statusSteps; track step.value; let last = $last) {
+                <span class="desk-status__step"
+                      [class.desk-status__step--done]="stepIndex(data.order.status) > $index"
+                      [class.desk-status__step--now]="stepIndex(data.order.status) === $index"
+                      [class.desk-status__step--arrived]="step.value === 'ONTVANGEN' && isReceived()">
+                  <i aria-hidden="true">@if (stepIndex(data.order.status) > $index) { ✓ } @else { {{ $index + 1 }} }</i>{{ step.label }}
+                </span>
+                @if (!last) { <span class="desk-status__line" [class.desk-status__line--done]="stepIndex(data.order.status) > $index" aria-hidden="true"></span> }
+              }
+            </div>
           </div>
 
           <div class="desk-kpis" aria-label="Kerncijfers">
@@ -113,14 +105,32 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
             <div class="desk-kpi desk-kpi--total">
               <small>Totaal geland</small>
               <strong>{{ data.costing.totals.totalEur | eur: 0 }}</strong>
-              <span>{{ data.costing.totals.averageUnitEur | eur: 4 }} / stuk</span>
+              <span>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</span>
             </div>
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('pay')"
-                    [class.is-warn]="openAll() > 0">
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('pay')" [class.is-warn]="openAll() > 0">
               <small>Te betalen</small>
               <strong>{{ openAll() | eur: 0 }}</strong>
               <span>{{ paidAll() | eur: 0 }} betaald</span>
             </button>
+            @if (nextStep(); as step) {
+              <button class="desk-kpi desk-kpi--go" type="button" (click)="advanceStatus()">
+                <small>Volgende stap</small>
+                <strong>{{ step.action }} ›</strong>
+                <span>{{ dirty() ? 'slaat eerst op' : 'klaar wanneer jij het bent' }}</span>
+              </button>
+            } @else if (isReceived() && !(data.order.stockBooked ?? true)) {
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="booking()" (click)="bookStock()">
+                <small>Volgende stap</small>
+                <strong>{{ booking() ? 'Bezig…' : 'Voorraad bijboeken ›' }}</strong>
+                <span>de stuks staan nog niet in de voorraad</span>
+              </button>
+            } @else {
+              <div class="desk-kpi desk-kpi--total">
+                <small>Status</small>
+                <strong>Afgerond ✓</strong>
+                <span>ontvangen en bijgeboekt</span>
+              </div>
+            }
           </div>
         </header>
 
@@ -159,18 +169,17 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                     <th class="c-cartons">Dozen</th>
                     <th class="c-price">Prijs / stuk</th>
                     <th class="c-money">Goederen</th>
-                    <th class="c-money">Geland / stuk</th>
                     <th class="c-money">{{ perPiece() ? 'Geland / stuk' : 'Totaal geland' }}</th>
                     <th class="c-act"><span class="sr-only">Acties</span></th>
                   </tr>
                 </thead>
                 @for (section of lineSections(); track section.key) {
                   <tbody class="desk-section">
-                    <tr class="desk-section__row"><th colspan="8">{{ section.label }} <small>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</small></th></tr>
+                    <tr class="desk-section__row"><th colspan="7">{{ section.label }} <small>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</small></th></tr>
                     @for (familyGroup of section.families; track familyGroup.key) {
                       @if (familyGroup.familyId !== null || familyGroup.lines.length > 1) {
                         <tr class="desk-family" [class.desk-family--folded]="familyFolded(familyGroup.key)">
-                          <td colspan="8">
+                          <td colspan="7">
                             <button type="button" class="desk-family__toggle" (click)="toggleFamily(familyGroup.key)"
                                     [attr.aria-expanded]="!familyFolded(familyGroup.key)">
                               <i class="desk-family__chev" aria-hidden="true">›</i>
@@ -245,18 +254,19 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                                         (ngModelChange)="setExwCurrency(line.productId, $event)">
                                   <option value="USD">USD</option><option value="CNY">CNY</option><option value="EUR">EUR</option>
                                 </select>
-                                <select class="desk-mini" aria-label="Wat de prijs dekt"
+                              </div>
+                              <div class="desk-price__under">
+                                <select class="desk-basis" aria-label="Wat de prijs dekt"
                                         [ngModel]="orderLine(line.productId)?.priceBasis ?? 'EXW'"
                                         (ngModelChange)="setPriceBasis(line.productId, $event)">
                                   <option value="EXW">EXW</option><option value="DDP">DDP</option>
                                 </select>
+                                @if (orderLine(line.productId)?.exwPrice == null && productCardPrice(line.productId); as currentPrice) {
+                                  <small>kaart {{ currentPrice.amount | cur: currentPrice.currency }}</small>
+                                }
                               </div>
-                              @if (orderLine(line.productId)?.exwPrice == null && productCardPrice(line.productId); as currentPrice) {
-                                <small class="desk-price__hint">kaart: {{ currentPrice.amount | cur: currentPrice.currency }}</small>
-                              }
                             </td>
                             <td class="c-money num">{{ amt(line.goodsEur, line) | eur: decimals() }}</td>
-                            <td class="c-money num">{{ line.landedUnitEur | eur: 4 }}</td>
                             <td class="c-money num c-money--total">{{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}</td>
                             <td class="c-act">
                               <button class="desk-remove" type="button" [disabled]="isReceived()"
@@ -275,8 +285,7 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                     <th class="c-cartons num">{{ data.costing.totals.cartons | num }}</th>
                     <th class="c-price"></th>
                     <th class="c-money num">{{ data.costing.totals.goodsEur | eur }}</th>
-                    <th class="c-money num">{{ data.costing.totals.averageUnitEur | eur: 4 }}</th>
-                    <th class="c-money num c-money--total">{{ data.costing.totals.totalEur | eur }}</th>
+                    <th class="c-money num c-money--total">{{ perPiece() ? (data.costing.totals.averageUnitEur | eur: 4) : (data.costing.totals.totalEur | eur) }}</th>
                     <th class="c-act"></th>
                   </tr>
                 </tfoot>
@@ -853,55 +862,54 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
   `,
   styles: [`
     :host{display:block;min-width:0}
-    .desk{padding:14px 22px 60px;max-width:1500px}
+    .desk{width:100%;max-width:1560px;box-sizing:border-box;padding:14px 24px 60px}
     .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
-    .desk-loading{display:flex;min-height:160px;align-items:center;justify-content:center;color:var(--muted)}
 
-    /* ---- command bar */
-    .desk-bar{position:sticky;top:var(--appbar-h,62px);z-index:5;display:grid;grid-template-columns:minmax(220px,1.1fr) auto minmax(420px,1.6fr);gap:14px 22px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(10px);box-shadow:var(--sh-1)}
-    .desk-bar__who{display:flex;min-width:0;align-items:center;gap:11px}
-    .desk-bar__mark{display:grid;width:40px;height:40px;flex:none;place-items:center;border-radius:12px;background:var(--rose);color:#fff;font-weight:800}
-    .desk-bar__copy{display:grid;min-width:0;line-height:1.25}
-    .desk-bar__copy strong{overflow:hidden;font-size:15px;text-overflow:ellipsis;white-space:nowrap}
-    .desk-bar__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    /* ---- hero: the dark card the sales editor wears too */
+    .desk-hero{overflow:hidden;border-radius:22px;color:#fff;background:radial-gradient(circle at 92% 0%,color-mix(in srgb,var(--rose-mid) 42%,transparent),transparent 42%),linear-gradient(145deg,#211a17,#33251f 62%,color-mix(in srgb,var(--rose-dark) 58%,#211a17));box-shadow:0 12px 32px rgb(26 22 20/.15)}
+    .desk-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px 20px 14px}
+    .desk-hero__who{min-width:0;flex:1}
+    .desk-hero__eyebrow{display:block;color:rgb(255 255 255/.58);font-size:10px;font-weight:750;letter-spacing:.14em;text-transform:uppercase}
+    .desk-hero__who h1{margin:2px 0 4px;overflow:hidden;font-size:22px;font-weight:750;letter-spacing:-.01em;text-overflow:ellipsis;white-space:nowrap}
+    .desk-hero__who p{margin:0;color:rgb(255 255 255/.78);font-size:12.5px}
+    .desk-hero__who p.desk-hero__meta{margin-top:2px;color:rgb(255 255 255/.55);font-size:11.5px}
+    .desk-status{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px;max-width:520px}
+    .desk-status__step{display:inline-flex;align-items:center;gap:6px;padding:5px 11px 5px 5px;border:1px solid rgb(255 255 255/.16);border-radius:999px;background:rgb(255 255 255/.06);color:rgb(255 255 255/.62);font-size:11.5px;font-weight:650;white-space:nowrap}
+    .desk-status__step i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:rgb(255 255 255/.12);color:#fff;font-size:10px;font-style:normal;font-weight:800}
+    .desk-status__step--done,.desk-status__step--arrived{color:#9fe0b4;border-color:rgb(159 224 180/.35);background:rgb(159 224 180/.1)}.desk-status__step--done i,.desk-status__step--arrived i{background:#2e7d4f;color:#fff}
+    .desk-status__step--now{color:#fff;border-color:rgb(255 255 255/.5);background:rgb(255 255 255/.16)}.desk-status__step--now i{background:#fff;color:var(--rose-dark)}
+    .desk-status__line{width:12px;height:2px;background:rgb(255 255 255/.18)}.desk-status__line--done{background:#2e7d4f}
 
-    .desk-status{display:flex;align-items:center;gap:4px;white-space:nowrap}
-    .desk-status__step{display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 5px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11.5px;font-weight:650;background:var(--surface)}
-    .desk-status__step i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--surface-2);color:var(--muted);font-size:10px;font-style:normal;font-weight:800}
-    .desk-status__step--done{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}.desk-status__step--done i{background:var(--ok);color:#fff}
-    .desk-status__step--now{color:var(--rose-dark);border-color:var(--rose-line);background:var(--rose-soft)}.desk-status__step--now i{background:var(--rose);color:#fff}
-    .desk-status__step--arrived{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}.desk-status__step--arrived i{background:var(--ok);color:#fff}
-    .desk-status__line{width:14px;height:2px;background:var(--line)}.desk-status__line--done{background:var(--ok)}
-    .desk-status__go{margin-left:8px}
+    .desk-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;border-top:1px solid rgb(255 255 255/.12);background:rgb(255 255 255/.12)}
+    .desk-kpi{display:grid;min-width:0;align-content:start;gap:2px;padding:12px 16px 13px;border:0;background:rgb(33 26 23/.55);color:#fff;font:inherit;text-align:left}
+    .desk-kpi small{color:rgb(255 255 255/.55);font-size:9.5px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+    .desk-kpi strong{font-size:19px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.15}
+    .desk-kpi span{overflow:hidden;color:rgb(255 255 255/.6);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .desk-kpi--total strong{color:#f4cf9a}
+    .desk-kpi--button{cursor:pointer}.desk-kpi--button:hover{background:rgb(255 255 255/.08)}.desk-kpi--button.is-warn strong{color:#f4cf9a}
+    .desk-kpi strong.is-ok{color:#9fe0b4}.desk-kpi strong.is-warn{color:#f4cf9a}.desk-kpi strong.is-bad{color:#f6a3a3}
+    .desk-kpi__meter{display:block;height:5px;margin:3px 0 2px;border-radius:99px;background:rgb(255 255 255/.15);overflow:hidden}
+    .desk-kpi__meter i{display:block;height:100%;background:#9fe0b4;border-radius:99px}.desk-kpi__meter i.is-warn{background:#f4cf9a}.desk-kpi__meter i.is-bad{background:#f6a3a3}
+    .desk-kpi--go{background:var(--rose);cursor:pointer}.desk-kpi--go:hover:not(:disabled){background:var(--rose-mid)}.desk-kpi--go:disabled{cursor:default}
+    .desk-kpi--go small{color:rgb(255 255 255/.7)}.desk-kpi--go strong{font-size:15px}.desk-kpi--go span{color:rgb(255 255 255/.7)}
 
-    .desk-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
-    .desk-kpi{display:grid;min-width:0;align-content:start;gap:1px;padding:8px 11px;background:var(--surface);font:inherit;text-align:left;border:0;color:inherit}
-    .desk-kpi small{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
-    .desk-kpi strong{font-size:16px;font-variant-numeric:tabular-nums;line-height:1.15}
-    .desk-kpi span{overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}
-    .desk-kpi--total strong{color:var(--rose-dark)}
-    .desk-kpi--button{cursor:pointer}.desk-kpi--button:hover{background:var(--surface-2)}.desk-kpi--button.is-warn strong{color:var(--warn)}
-    .desk-kpi strong.is-ok{color:var(--ok)}.desk-kpi strong.is-warn{color:var(--warn)}.desk-kpi strong.is-bad{color:var(--danger)}
-    .desk-kpi__meter{display:block;height:5px;margin:3px 0 2px;border-radius:99px;background:var(--line);overflow:hidden}
-    .desk-kpi__meter i{display:block;height:100%;background:var(--ok);border-radius:99px}.desk-kpi__meter i.is-warn{background:var(--warn)}.desk-kpi__meter i.is-bad{background:var(--danger)}
-
-    .desk-attention{display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px}
+    .desk-attention{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px}
     .desk-attention b{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px}
     .desk-attention span{flex:1;min-width:0}
-    .desk-alert{margin-top:12px}.desk-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.desk-alert--tight .alert__icon{background:var(--warn);color:#fff}
+    .desk-alert{margin:12px 16px 16px}.desk-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.desk-alert--tight .alert__icon{background:var(--warn);color:#fff}
 
     /* ---- body: table + rail */
-    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start;margin-top:14px}
+    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
     .desk-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
-    .desk-table thead th{position:sticky;top:calc(var(--appbar-h,62px) + 96px);z-index:2;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-align:right;text-transform:uppercase;white-space:nowrap}
+    .desk-table thead th{padding:9px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-align:right;text-transform:uppercase;white-space:nowrap}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
     .desk-table td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:auto}.c-qty{width:96px}.c-cartons{width:104px}.c-price{width:250px}.c-money{width:118px;text-align:right}.c-act{width:36px}
+    .c-product{width:auto;min-width:220px}.c-qty{width:84px}.c-cartons{width:92px}.c-price{width:170px}.c-money{width:112px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
@@ -919,24 +927,25 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .desk-product:hover strong{color:var(--rose-dark);text-decoration:underline}
     .desk-product__photo{width:40px;height:40px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
-    .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-product__copy small{color:var(--muted);font-size:11px}
+    .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{font-size:13px}.desk-product__copy small{color:var(--muted);font-size:11px}
     .desk-note{display:block;margin:3px 0 0 50px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left}
     .desk-note--warn{color:var(--warn);font-weight:650}
     button.desk-note{cursor:pointer}button.desk-note:hover{color:var(--rose-dark)}
     .desk-cell{min-height:34px;padding:5px 8px;font-size:13px}
     .c-cartons b{display:block;font-variant-numeric:tabular-nums}.c-cartons small{display:block;color:var(--muted);font-size:10px;white-space:nowrap}
     .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}
-    .desk-mini{min-height:34px;padding:0 4px;border:1px solid var(--line-strong);border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
-    .desk-mini:last-child{border-radius:0 var(--r-sm) var(--r-sm) 0}
-    .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;text-align:right}
+    .desk-mini{min-height:34px;padding:0 3px;border:1px solid var(--line-strong);border-left:0;border-radius:0 var(--r-sm) var(--r-sm) 0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
+    .desk-price__under{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:2px;padding:0 2px}
+    .desk-basis{padding:0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:10.5px;font-weight:700;cursor:pointer}
+    .desk-price__under small{color:var(--muted);font-size:10px;white-space:nowrap}
     .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
-    .desk-remove:hover:not(:disabled){background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35;cursor:default}
-    .desk-table tfoot th{padding:10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:12.5px;text-align:right;white-space:nowrap}
+    .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
+    .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .desk-table tfoot th.c-product{text-align:left;padding-left:16px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
     .desk-empty{padding:40px 20px}
 
     /* ---- rail */
-    .desk-rail{position:sticky;top:calc(var(--appbar-h,62px) + 96px);display:flex;flex-direction:column;max-height:calc(100dvh - var(--appbar-h,62px) - 110px);border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1);overflow:hidden}
+    .desk-rail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);display:flex;flex-direction:column;max-height:calc(100dvh - var(--appbar-h,62px) - 28px);border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1);overflow:hidden}
     .desk-tabs{display:flex;flex:none;gap:2px;padding:6px;border-bottom:1px solid var(--line);background:var(--surface-2)}
     .desk-tabs button{position:relative;flex:1;min-height:34px;padding:0 6px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap}
     .desk-tabs button:hover{color:var(--ink)}.desk-tabs button.on{background:var(--surface);color:var(--rose-dark);box-shadow:var(--sh-1)}
@@ -959,7 +968,7 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .desk-sum .stat-row{padding:4px 0;font-size:12px}.desk-sum .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}
     .desk-sum__sub{border-top:1px solid var(--line);font-weight:650}.desk-sum__total{border-top:2px solid var(--line-strong);font-size:13px}.desk-sum__total strong{color:var(--rose-dark)}
     .desk-pay-head{display:grid;gap:2px;margin-bottom:10px}.desk-pay-head strong{font-size:15px}.desk-pay-head small{color:var(--muted);font-size:11.5px}
-    .desk-files-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-files-head strong{font-size:13px}.desk-files-head strong small{margin-left:4px;color:var(--muted);font-weight:600}
+    .desk-files-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-files-head strong{font-size:13px}
     .desk-done{display:grid;gap:10px}.desk-done strong{font-size:15px}
     .desk-done__attention{margin:0;padding:8px 12px 8px 26px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
     .desk-done__buttons{display:grid;gap:7px}
@@ -976,8 +985,9 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
     .hint--warn{color:var(--danger);font-weight:650}
 
-    @media(max-width:1180px){.desk-bar{grid-template-columns:1fr auto}.desk-kpis{grid-column:1/-1}.desk-body{grid-template-columns:minmax(0,1fr) 340px}.desk-table thead th{top:calc(var(--appbar-h,62px) + 150px)}.desk-rail{top:calc(var(--appbar-h,62px) + 150px)}}
-    @media(max-width:980px){.desk{padding-inline:14px}.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}.c-price{width:210px}}
+    @media(max-width:1380px){.desk-body{grid-template-columns:minmax(0,1fr) 320px}.c-money:not(.c-money--total){display:none}.c-product{min-width:180px}.c-price{width:156px}.c-qty{width:76px}.c-cartons{width:80px}}
+    @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{justify-content:flex-start;max-width:none}.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}.c-money:not(.c-money--total){display:table-cell}}
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {
