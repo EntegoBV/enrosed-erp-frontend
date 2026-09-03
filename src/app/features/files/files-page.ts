@@ -151,6 +151,11 @@ const COLLECTIONS: readonly Collection[] = [
               + {{ currentFolderId() === null ? 'Map' : 'Submap' }}
             </button>
           }
+          @if (assets().length) {
+            <button class="btn btn--sm" type="button" [disabled]="zipping()" (click)="downloadAll()" [title]="'Alle ' + assets().length + ' getoonde bestanden als zip'">
+              {{ zipping() ? 'Bezig…' : '⤓ Alles (' + assets().length + ')' }}
+            </button>
+          }
           <span class="per-toggle" role="group" aria-label="Weergave">
             <button type="button" [class.on]="view() === 'list'" (click)="setView('list')" title="Lijst">☰</button>
             <button type="button" [class.on]="view() === 'grid'" (click)="setView('grid')" title="Tegels">▦</button>
@@ -159,14 +164,18 @@ const COLLECTIONS: readonly Collection[] = [
 
         @if (selectedIds().size) {
           <div class="fx__selection" role="status">
-            <b>{{ selectedIds().size }} geselecteerd</b>
-            <span>sleep ze samen naar een map, of</span>
-            <select class="select" [ngModel]="''" (ngModelChange)="moveSelection($event === '' ? null : $event === 'root' ? null : +$event)" aria-label="Verplaats de selectie naar">
+            <label class="fx__check fx__check--all"><input type="checkbox" [checked]="allSelected()" (change)="toggleAll()" /> <b>{{ selectedIds().size }} geselecteerd</b></label>
+            <button class="btn btn--sm btn--primary" type="button" [disabled]="zipping()" (click)="downloadSelection('original')">{{ zipping() ? 'Bezig…' : '⤓ Downloaden' }}</button>
+            @if (selectionHasWeb()) {
+              <button class="btn btn--sm" type="button" [disabled]="zipping()" (click)="downloadSelection('web')" title="De lichtere webversies van de foto’s">Web-formaat</button>
+            }
+            <select class="select fx__move" [ngModel]="''" (ngModelChange)="moveSelection($event === 'root' ? null : +$event)" aria-label="Verplaats de selectie naar">
               <option value="" disabled>Verplaats naar…</option>
               <option value="root">Zonder map</option>
               @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
             </select>
-            <button class="linklike" type="button" (click)="clearSelection()">Selectie wissen</button>
+            <span class="fx__selection-hint">of sleep ze samen naar een map</span>
+            <button class="linklike" type="button" (click)="clearSelection()">Wis</button>
           </div>
         }
         @if (dropActive()) {
@@ -199,7 +208,7 @@ const COLLECTIONS: readonly Collection[] = [
           }
         } @else if (view() === 'grid') {
           <div class="fx__grid">
-            @for (asset of assets(); track asset.id) {
+            @for (asset of sorted(); track asset.id) {
               <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
                       draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
                       (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" [title]="asset.originalFilename">
@@ -220,9 +229,15 @@ const COLLECTIONS: readonly Collection[] = [
           </div>
         } @else {
           <table class="fx__table">
-            <thead><tr><th>Naam</th><th>Soort</th><th class="r">Grootte</th><th>Gewijzigd</th><th>Gebruik</th></tr></thead>
+            <thead><tr>
+              <th><button type="button" (click)="sortBy('name')" [class.on]="sort().key === 'name'">Naam <i>{{ arrow('name') }}</i></button></th>
+              <th><button type="button" (click)="sortBy('kind')" [class.on]="sort().key === 'kind'">Soort <i>{{ arrow('kind') }}</i></button></th>
+              <th class="r"><button type="button" (click)="sortBy('size')" [class.on]="sort().key === 'size'">Grootte <i>{{ arrow('size') }}</i></button></th>
+              <th><button type="button" (click)="sortBy('updated')" [class.on]="sort().key === 'updated'">Gewijzigd <i>{{ arrow('updated') }}</i></button></th>
+              <th><button type="button" (click)="sortBy('links')" [class.on]="sort().key === 'links'">Gebruik <i>{{ arrow('links') }}</i></button></th>
+            </tr></thead>
             <tbody>
-              @for (group of groups() ?? [{ label: '', assets: assets() }]; track group.label) {
+              @for (group of groups() ?? [{ label: '', assets: sorted() }]; track group.label) {
                 @if (group.label) { <tr class="fx__group-row"><td colspan="5">{{ group.label }} <small>{{ group.assets.length }}</small></td></tr> }
                 @for (asset of group.assets; track asset.id) {
                   <tr [class.on]="selected()?.id === asset.id" [class.fx__row--picked]="selectedIds().has(asset.id)" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()" (click)="clickAsset(asset, $event)">
@@ -253,9 +268,10 @@ const COLLECTIONS: readonly Collection[] = [
             <b>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</b>
             <button class="fx__close" type="button" aria-label="Sluiten" (click)="close()">×</button>
           </div>
-          <div class="fx__preview">
+          <div class="fx__preview" (click)="download(asset)" title="Downloaden">
             @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.fileUrl(asset.id)" [alt]="asset.name" /> }
             @else { <i class="fx__ext fx__ext--big" aria-hidden="true">{{ extension(asset) }}</i> }
+            <span class="fx__preview-open">{{ asset.kind === 'IMAGE' && asset.widthPx ? asset.widthPx + ' × ' + asset.heightPx + ' · ' : '' }}{{ size(asset.sizeBytes) }}</span>
           </div>
           <label class="fx__field">
             <span>Naam</span>
@@ -357,8 +373,10 @@ const COLLECTIONS: readonly Collection[] = [
   styles: [`
     :host{display:block}
     .fx__uploadbtn{cursor:pointer}
-    .fx{display:grid;grid-template-columns:232px minmax(0,1fr);gap:16px;align-items:start}.fx--resizing{cursor:col-resize}
-    .fx--detail{grid-template-columns:232px minmax(0,1fr) 340px}
+    .fx{display:grid;grid-template-columns:232px minmax(0,1fr);gap:12px;align-items:start;padding-inline:12px}.fx--resizing{cursor:col-resize}
+    .fx{--fx-detail:420px}
+    .fx--detail{grid-template-columns:232px minmax(0,1fr) var(--fx-detail)}
+    @media(max-width:1440px){.fx{--fx-detail:380px}}
     .fx__rail,.fx__main,.fx__detail{border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .fx__rail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);padding:12px 10px}
     .fx__resizer{position:absolute;top:8px;right:-9px;bottom:8px;width:14px;cursor:col-resize;touch-action:none;z-index:2}
@@ -410,8 +428,12 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__detail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);display:grid;gap:12px;max-height:calc(100dvh - var(--appbar-h,62px) - 28px);padding:12px 14px 16px;overflow-y:auto}
     .fx__detail-head{display:flex;align-items:center;justify-content:space-between}.fx__detail-head b{font-size:13px}
     .fx__close{width:28px;height:28px;border:0;border-radius:8px;background:var(--surface-2);color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
-    .fx__preview{display:grid;place-items:center;min-height:120px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden}
-    .fx__preview img{display:block;max-width:100%;max-height:260px;object-fit:contain}.fx__ext--big{width:100%;height:120px;aspect-ratio:auto;font-size:20px}
+    .fx__preview{position:relative;display:grid;place-items:center;min-height:160px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);overflow:hidden;cursor:zoom-in}
+    .fx__preview img{display:block;width:100%;max-height:min(48vh,460px);object-fit:contain}.fx__ext--big{width:100%;height:160px;aspect-ratio:auto;font-size:22px}
+    .fx__preview-open{position:absolute;right:8px;bottom:8px;padding:4px 9px;border:0;border-radius:999px;background:rgb(16 13 12/.62);color:#fff;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
+    .fx__table th button{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:none;color:inherit;font:inherit;font-weight:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
+    .fx__table th button i{font-style:normal;color:var(--rose);min-width:8px}.fx__table th button.on{color:var(--ink)}
+    .fx__check--all{gap:8px}.fx__check--all b{color:var(--rose-dark)}.fx__move{max-width:200px}.fx__selection-hint{color:var(--muted);font-size:11.5px}
     .fx__field{display:grid;gap:4px}.fx__field>span:first-child{color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
     .fx__inline{display:flex;gap:6px}.fx__inline .input{flex:1;min-width:0}
     .fx__facts{display:grid;margin:0;padding:0}.fx__facts>div{display:grid;grid-template-columns:86px minmax(0,1fr);gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12px}.fx__facts dt{color:var(--muted)}.fx__facts dd{margin:0;overflow-wrap:anywhere}.fx__facts small{color:var(--muted)}
@@ -446,7 +468,7 @@ export class FilesPage implements OnDestroy {
     const targetType = collection?.filters.targetType;
     if (!targetType) return null;
     const groups = new Map<string, { label: string; assets: MediaAssetSummary[] }>();
-    for (const asset of this.assets()) {
+    for (const asset of this.sorted()) {
       const links = asset.links.filter((link) => link.targetType === targetType);
       const labels = links.length ? links.map((link) => link.targetLabel || `${this.targetLabel(targetType)} #${link.targetId}`) : ['Zonder koppeling'];
       for (const label of new Set(labels)) {
@@ -468,7 +490,7 @@ export class FilesPage implements OnDestroy {
   private readonly wide = signal(typeof window === 'undefined' ? true : window.innerWidth > 1180);
   readonly gridColumns = computed(() => {
     if (!this.wide()) return null;
-    return `${this.railWidth()}px minmax(0, 1fr)${this.selected() ? ' 340px' : ''}`;
+    return `${this.railWidth()}px minmax(0, 1fr)${this.selected() ? ' var(--fx-detail, 420px)' : ''}`;
   });
   private readonly onResize = () => this.wide.set(window.innerWidth > 1180);
   private resizeStart: { x: number; width: number } | null = null;
@@ -585,6 +607,69 @@ export class FilesPage implements OnDestroy {
   readonly dragging = signal<MediaAssetSummary[] | null>(null);
   readonly draggingFolder = signal<FolderNode | null>(null);
   readonly selectedIds = signal<ReadonlySet<number>>(new Set());
+  readonly zipping = signal(false);
+
+  /* ---- sorting: a click on a column, a second click turns it around */
+  readonly sort = signal<{ key: 'name' | 'kind' | 'size' | 'updated' | 'links'; dir: 1 | -1 }>({ key: 'updated', dir: -1 });
+  readonly sorted = computed(() => {
+    const { key, dir } = this.sort();
+    const value = (asset: MediaAssetSummary): string | number => {
+      switch (key) {
+        case 'name': return asset.name.toLocaleLowerCase('nl-BE');
+        case 'kind': return asset.kind + asset.name.toLocaleLowerCase('nl-BE');
+        case 'size': return asset.sizeBytes;
+        case 'links': return asset.links.length;
+        default: return asset.updatedAt;
+      }
+    };
+    return [...this.assets()].sort((a, b) => {
+      const left = value(a); const right = value(b);
+      const order = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right), 'nl');
+      return order * dir;
+    });
+  });
+
+  sortBy(key: 'name' | 'kind' | 'size' | 'updated' | 'links'): void {
+    this.sort.update((current) => current.key === key ? { key, dir: current.dir === 1 ? -1 : 1 } : { key, dir: key === 'name' || key === 'kind' ? 1 : -1 });
+  }
+
+  arrow(key: string): string {
+    const sort = this.sort();
+    return sort.key === key ? (sort.dir === 1 ? '↑' : '↓') : '';
+  }
+
+  readonly allSelected = computed(() => this.assets().length > 0 && this.assets().every((asset) => this.selectedIds().has(asset.id)));
+  readonly selectionHasWeb = computed(() => this.assets().some((asset) => this.selectedIds().has(asset.id) && !!asset.web && asset.web.sizeBytes !== asset.sizeBytes));
+
+  toggleAll(): void {
+    this.selectedIds.set(this.allSelected() ? new Set() : new Set(this.assets().map((asset) => asset.id)));
+  }
+
+  /* ---- downloads: one file as itself, several as a zip */
+  async downloadSelection(variant: MediaVariant = 'original'): Promise<void> {
+    await this.downloadMany(this.selectedAssets(), variant);
+  }
+
+  async downloadAll(): Promise<void> {
+    await this.downloadMany(this.assets(), 'original');
+  }
+
+  private async downloadMany(assets: MediaAssetSummary[], variant: MediaVariant): Promise<void> {
+    if (!assets.length || this.zipping()) return;
+    if (assets.length === 1) { await this.download(assets[0], variant); return; }
+    this.zipping.set(true);
+    try {
+      const where = this.collection()?.label ?? this.folderName() ?? 'bestanden';
+      const name = `enrosed-${where}-${new Date().toISOString().slice(0, 10)}${variant === 'web' ? '-web' : ''}.zip`
+        .toLowerCase().replace(/[^a-z0-9.-]+/g, '-');
+      saveBlob(await this.media.downloadZip(assets.map((asset) => asset.id), variant), name);
+      this.ui.toast(`${assets.length} bestanden als zip gedownload`);
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'De download is mislukt.'), 'err');
+    } finally {
+      this.zipping.set(false);
+    }
+  }
 
   /* ---- the chosen file */
   readonly selected = signal<MediaAssetDetail | null>(null);

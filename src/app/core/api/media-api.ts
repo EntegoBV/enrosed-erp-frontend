@@ -129,6 +129,11 @@ export class MediaApi {
   }
 
   /** The address anyone can open, on the API host so it works without the ERP. */
+  /** Several files as one zip; 'web' packs the lighter image copies. */
+  downloadZip(ids: number[], variant: MediaVariant = 'original'): Promise<Blob> {
+    return firstValueFrom(this.http.post(api('/api/media-assets/zip'), { ids, variant }, { responseType: 'blob' }));
+  }
+
   publicUrl(token: string, variant: MediaVariant = 'original'): string {
     return api(`/api/public/media/${token}${variant === 'web' ? '/web' : ''}`);
   }
