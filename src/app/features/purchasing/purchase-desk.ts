@@ -230,22 +230,31 @@ type DeskRow =
                                        [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i>
                                   }{{ productVariantLabel(line.productId) || line.productName }}
                                 </strong>
-                                <small>{{ line.productName }}</small>
+                                <small>{{ baseName(line.productName, line.productId) }}</small>
                               } @else {
-                                <strong>{{ line.productName }}</strong>
-                                @if (productVariantLabel(line.productId); as variant) { <small>{{ variant }}</small> }
+                                <strong>{{ baseName(line.productName, line.productId) }}</strong>
                               }
                             </span>
                           </a>
-                          @if (editing() && !isReceived() && cartonNotice(line.quantity, line.productId); as note) {
-                            <span class="desk-note" role="status">{{ note }}</span>
-                          }
-                          @if (shortShipped(line.productId); as ordered) {
-                            <span class="desk-note desk-note--warn">Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}</span>
-                          }
-                          @if (isReceived()) {
-                            <button class="linklike desk-note" type="button" (click)="openIssue(line.productId)">Schade of tekort melden ›</button>
-                          }
+                          <div class="desk-product__meta">
+                            @if (!row.variant && productVariantLabel(line.productId); as variant) {
+                              <span>
+                                @if (productColour(line.productId)) {
+                                  <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
+                                     [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i>
+                                }{{ variant }}
+                              </span>
+                            }
+                            @if (editing() && !isReceived() && cartonNotice(line.quantity, line.productId); as note) {
+                              <span role="status">{{ note }}</span>
+                            }
+                            @if (shortShipped(line.productId); as ordered) {
+                              <span class="is-warn">Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}</span>
+                            }
+                            @if (isReceived()) {
+                              <button class="desk-product__link" type="button" (click)="openIssue(line.productId)">Schade of tekort melden ›</button>
+                            }
+                          </div>
                         </td>
                         <td class="c-qty num">
                           @if (editing() && !isReceived()) {
@@ -782,7 +791,7 @@ type DeskRow =
               @for (family of group.families; track family.key) {
                 <div class="desk-pick__family">
                   @if (family.products.length > 1) {
-                    <div class="desk-pick__head"><strong>{{ family.label }}</strong><small>{{ family.products.length }} varianten</small></div>
+                    <div class="desk-pick__head"><strong>{{ stripColour(family.label, family.products[0].colour) }}</strong><small>{{ family.products.length }} varianten</small></div>
                   }
                   @for (product of family.products; track product.id) {
                     <div class="desk-pick__row">
@@ -795,7 +804,7 @@ type DeskRow =
                                  [style.background]="colourHex(product.colourHex, product.colour) || 'transparent'" aria-hidden="true"></i>
                             }{{ variantOf(product) || product.name }}
                           } @else {
-                            {{ product.name }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }
+                            {{ stripColour(product.name, product.colour) }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }
                           }
                         </strong>
                         <small>{{ product.sku }} · {{ stockOf(product.id!) | num }} op voorraad · {{ piecesPerCarton(product.id!) | num }}/doos</small>
@@ -1106,9 +1115,9 @@ type DeskRow =
     .desk-product__photo{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
     .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{font-size:13.5px}.desk-product__copy small{color:var(--muted);font-size:11px}
-    .desk-note{display:block;margin:3px 0 0 55px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left}
-    .desk-note--warn{color:var(--warn);font-weight:650}
-    button.desk-note{cursor:pointer}button.desk-note:hover{color:var(--rose-dark)}
+    .desk-product__meta{display:flex;flex-wrap:wrap;align-items:center;margin:2px 0 0 55px;color:var(--muted);font-size:11px}
+    .desk-product__meta>*{white-space:nowrap}.desk-product__meta>*+*::before{content:'·';margin:0 5px;color:var(--line-strong)}.desk-product__meta .is-warn{color:var(--warn);font-weight:650}
+    .desk-product__link{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:650;cursor:pointer}.desk-product__link:hover{text-decoration:underline}
     .desk-cell{min-height:34px;padding:5px 12px 5px 8px;font-size:13px}.desk-table--editing td.c-qty,.desk-table--editing td.c-price{padding-right:0}.desk-table--editing td.c-price .desk-cell{padding-right:8px}
     .desk-table--editing td.c-money{padding-top:16px!important}.desk-table--editing .c-cartons b{padding-top:8px}
     .c-qty b,.c-cartons b,.c-price>b{display:block;padding-top:2px;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
@@ -1291,6 +1300,19 @@ export class PurchaseDesk extends PurchaseEditor {
 
   setAddQuantity(product: Product, quantity: number): void {
     this.addDraft.update((draft) => new Map(draft).set(product.id!, Math.max(1, Math.floor(quantity || 1))));
+  }
+
+  /** "Preserved rose with stem - Rood" says Rood once the variant line does. */
+  stripColour(name: string, colour: string | null | undefined): string {
+    const tint = colour?.trim();
+    if (!tint) return name;
+    const escaped = tint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const stripped = name.replace(new RegExp(`\\s*[-–·]\\s*${escaped}\\s*$`, 'i'), '').trim();
+    return stripped || name;
+  }
+
+  baseName(name: string, productId: number): string {
+    return this.stripColour(name, this.productColour(productId));
   }
 
   variantOf(product: Product): string | null {
