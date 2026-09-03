@@ -602,7 +602,11 @@ type DeskRow =
                       <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal geland <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
                     </div>
                     @if (!isDdp() && data.costing.totals.goodsEur > 0) {
-                      <p class="hint">Bovenop de goederen: + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }} ({{ overheadPct(data.costing.totals) | num }} %).</p>
+                      <div class="desk-overhead">
+                        <span>Bovenop de goederen</span>
+                        <b>+ {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}</b>
+                        <em>{{ overheadPct(data.costing.totals) | num: 0 }} % van de inkoop</em>
+                      </div>
                     }
                   </div>
                 }
@@ -1116,7 +1120,7 @@ type DeskRow =
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
     .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{font-size:13.5px}.desk-product__copy small{color:var(--muted);font-size:11px}
     .desk-product__meta{display:flex;flex-wrap:wrap;align-items:center;margin:2px 0 0 55px;color:var(--muted);font-size:11px}
-    .desk-product__meta>*{white-space:nowrap}.desk-product__meta>*+*::before{content:'·';margin:0 5px;color:var(--line-strong)}.desk-product__meta .is-warn{color:var(--warn);font-weight:650}
+    .desk-product__meta>*{white-space:nowrap}.desk-product__meta>*:not(:last-child)::after{content:'·';margin:0 6px;color:var(--line-strong)}.desk-product__meta .is-warn{color:var(--warn);font-weight:650}
     .desk-product__link{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:650;cursor:pointer}.desk-product__link:hover{text-decoration:underline}
     .desk-cell{min-height:34px;padding:5px 12px 5px 8px;font-size:13px}.desk-table--editing td.c-qty,.desk-table--editing td.c-price{padding-right:0}.desk-table--editing td.c-price .desk-cell{padding-right:8px}
     .desk-table--editing td.c-money{padding-top:16px!important}.desk-table--editing .c-cartons b{padding-top:8px}
@@ -1180,6 +1184,7 @@ type DeskRow =
     .desk-chain__row i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--surface);color:var(--muted);font-size:12px;font-style:normal;font-weight:800}
     .desk-chain__row small{display:block;color:var(--muted);font-size:10.5px}.desk-chain__row b{font-variant-numeric:tabular-nums}
     .desk-chain__row--sub{background:var(--surface)}.desk-chain__row--sub b{font-weight:750}
+    .desk-overhead{display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;border-radius:12px;background:var(--rose-soft);color:var(--rose-dark);font-size:12px}.desk-overhead span{flex:1}.desk-overhead b{font-size:13px;font-variant-numeric:tabular-nums}.desk-overhead em{padding:2px 8px;border-radius:999px;background:var(--surface);font-size:11px;font-style:normal;font-weight:700}
     .desk-chain__row--total{background:var(--surface);font-size:13.5px}.desk-chain__row--total i{background:var(--rose);color:#fff}.desk-chain__row--total b{color:var(--rose-dark);font-weight:800}
     .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
     .desk-dossier__diary{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.desk-dossier__empty{margin:0;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);font-size:12px}
