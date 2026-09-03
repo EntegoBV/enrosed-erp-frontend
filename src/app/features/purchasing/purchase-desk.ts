@@ -305,7 +305,7 @@ type DeskRow =
                         <td class="c-money num c-money--total">
                           <button class="desk-total" type="button" (click)="toggleLine(line.productId)"
                                   [attr.aria-expanded]="lineOpen(line.productId)" [title]="'Kostopbouw van ' + line.productName">
-                            {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}<i aria-hidden="true">›</i>
+                            {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}<small>detail</small><i aria-hidden="true">›</i>
                           </button>
                         </td>
                         @if (editing()) {
@@ -319,23 +319,23 @@ type DeskRow =
                         <tr class="desk-detail">
                           <td [attr.colspan]="editing() ? 7 : 6">
                             <div class="desk-detail__grid">
-                              <div class="desk-detail__head"><span>Kostopbouw</span><span>per stuk</span><span>regel</span></div>
-                              <div class="desk-detail__line"><span>Goederen <small>{{ line.goodsUsd | cur: 'USD' }}</small></span><span>{{ each(line.goodsEur, line) | eur: 4 }}</span><span>{{ line.goodsEur | eur }}</span></div>
+                              <div class="desk-detail__head"><span>Kostopbouw</span><span>{{ perPiece() ? 'per stuk' : 'hele regel · ' + (line.quantity | num) + ' st' }}</span></div>
+                              <div class="desk-detail__line"><span>Goederen <small>{{ line.goodsUsd | cur: 'USD' }}</small></span><span>{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
                               @if (line.originEur) {
-                                <div class="desk-detail__line"><span>{{ costLabels().originCostsLabel }} <small>{{ costLabels().originRoute }}</small></span><span>{{ each(line.originEur, line) | eur: 4 }}</span><span>{{ line.originEur | eur }}</span></div>
+                                <div class="desk-detail__line"><span>{{ costLabels().originCostsLabel }} <small>{{ costLabels().originRoute }}</small></span><span>{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
                               }
                               @if (line.freightEur) {
-                                <div class="desk-detail__line"><span>{{ costLabels().seaFreightLabel }} <small>{{ costLabels().seaFreightRoute }}</small></span><span>{{ each(line.freightEur, line) | eur: 4 }}</span><span>{{ line.freightEur | eur }}</span></div>
+                                <div class="desk-detail__line"><span>{{ costLabels().seaFreightLabel }} <small>{{ costLabels().seaFreightRoute }}</small></span><span>{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
                               }
-                              <div class="desk-detail__line desk-detail__line--sub"><span>Douanewaarde</span><span>{{ each(line.customsValueEur, line) | eur: 4 }}</span><span>{{ line.customsValueEur | eur }}</span></div>
-                              <div class="desk-detail__line"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }} <small>{{ line.dutySource }}</small></span><span>{{ each(line.dutyEur, line) | eur: 4 }}</span><span>{{ line.dutyEur | eur }}</span></div>
+                              <div class="desk-detail__line desk-detail__line--sub"><span>Douanewaarde</span><span>{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
+                              <div class="desk-detail__line"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }} <small>{{ line.dutySource }}</small></span><span>{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
                               @if (line.destinationEur) {
-                                <div class="desk-detail__line"><span>{{ costLabels().destinationCostsLabel }}</span><span>{{ each(line.destinationEur, line) | eur: 4 }}</span><span>{{ line.destinationEur | eur }}</span></div>
+                                <div class="desk-detail__line"><span>{{ costLabels().destinationCostsLabel }}</span><span>{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
                               }
                               @if (line.extraRevenueEur) {
-                                <div class="desk-detail__line"><span>Enrosed kost</span><span>{{ each(line.extraRevenueEur, line) | eur: 4 }}</span><span>{{ line.extraRevenueEur | eur }}</span></div>
+                                <div class="desk-detail__line"><span>Enrosed kost</span><span>{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
                               }
-                              <div class="desk-detail__line desk-detail__line--total"><span>Geland</span><span>{{ line.landedUnitEur | eur: 4 }}</span><span>{{ line.totalEur | eur }}</span></div>
+                              <div class="desk-detail__line desk-detail__line--total"><span>Geland</span><span>{{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}</span></div>
                             </div>
                           </td>
                         </tr>
@@ -1171,12 +1171,13 @@ type DeskRow =
     .desk-mini--last{border-radius:0 var(--r-sm) var(--r-sm) 0}
     .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
     .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
-    .desk-total{display:inline-flex;align-items:center;gap:4px;margin:-4px -8px -4px 0;padding:4px 2px 4px 8px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;cursor:pointer}
+    .desk-total{display:inline-flex;align-items:center;gap:3px;margin:-4px 0;padding:4px 0 4px 6px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;cursor:pointer}
+    .desk-total small{margin-left:3px;color:var(--muted);font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
     .desk-total i{display:inline-block;color:var(--muted);font-style:normal;font-size:15px;font-weight:600;transition:transform .15s ease}.desk-row--open .desk-total i{transform:rotate(90deg)}.desk-total:hover{background:var(--rose-soft)}
     .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
     .desk-detail td{padding:0 12px 12px;background:var(--surface-2)}
     .desk-detail__grid{display:grid;gap:0;max-width:560px;margin-left:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
-    .desk-detail__head,.desk-detail__line{display:grid;grid-template-columns:minmax(0,1fr) 110px 120px;gap:10px;padding:6px 12px;font-size:12px}
+    .desk-detail__head,.desk-detail__line{display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:10px;padding:6px 12px;font-size:12px}
     .desk-detail__head{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;background:var(--surface-2)}
     .desk-detail__line span:not(:first-child),.desk-detail__head span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
     .desk-detail__line small{display:block;color:var(--muted);font-size:9.5px}
@@ -1432,11 +1433,6 @@ export class PurchaseDesk extends PurchaseEditor {
       if (next.has(productId)) next.delete(productId); else next.add(productId);
       return next;
     });
-  }
-
-  /** One amount of a line spread over its pieces. */
-  each(value: number, line: { quantity: number }): number {
-    return line.quantity > 0 ? value / line.quantity : value;
   }
 
   /** The agreed price on the line, or the product card's while none is set. */
