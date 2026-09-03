@@ -9,6 +9,7 @@ import {
   MediaFolder,
   MediaLinkWrite,
   MediaUploadResult,
+  MediaVariant,
 } from './media-models';
 
 /** Typed access to the central document and media library. */
@@ -28,6 +29,7 @@ export class MediaApi {
     if (filters.offset !== undefined) params = params.set('offset', filters.offset);
     if (filters.limit !== undefined) params = params.set('limit', filters.limit);
     if (filters.folder !== undefined) params = params.set('folder', String(filters.folder));
+    if (filters.linked !== undefined) params = params.set('linked', filters.linked);
     return firstValueFrom(
       this.http.get<MediaAssetSummary[]>(api('/api/media-assets'), { params }),
     );
@@ -92,8 +94,8 @@ export class MediaApi {
     return firstValueFrom(this.http.delete<void>(api(`/api/media-assets/${id}`)));
   }
 
-  fileUrl(id: number): string {
-    return `/api/media-assets/${id}/file`;
+  fileUrl(id: number, variant: MediaVariant = 'original'): string {
+    return `/api/media-assets/${id}/file${variant === 'web' ? '?variant=web' : ''}`;
   }
 
   /* ---- folders */
@@ -127,8 +129,8 @@ export class MediaApi {
   }
 
   /** The address anyone can open, on the API host so it works without the ERP. */
-  publicUrl(token: string): string {
-    return api(`/api/public/media/${token}`);
+  publicUrl(token: string, variant: MediaVariant = 'original'): string {
+    return api(`/api/public/media/${token}${variant === 'web' ? '/web' : ''}`);
   }
 
   /** Small authenticated rendition for library cards; never download full print assets here. */
@@ -136,9 +138,9 @@ export class MediaApi {
     return `/api/media-assets/${id}/thumbnail`;
   }
 
-  download(id: number): Promise<Blob> {
+  download(id: number, variant: MediaVariant = 'original'): Promise<Blob> {
     return firstValueFrom(this.http.get(
-      api(`/api/media-assets/${id}/download`),
+      api(`/api/media-assets/${id}/download${variant === 'web' ? '?variant=web' : ''}`),
       { responseType: 'blob' },
     ));
   }

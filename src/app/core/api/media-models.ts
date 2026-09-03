@@ -26,6 +26,13 @@ export interface MediaAssetLink {
   createdBy: string | null;
 }
 
+/** A smaller derived file of an image version: the web size, next to the original. */
+export interface MediaRendition {
+  sizeBytes: number;
+  widthPx: number | null;
+  heightPx: number | null;
+}
+
 export interface MediaAssetVersion {
   id: number;
   versionNumber: number;
@@ -37,6 +44,7 @@ export interface MediaAssetVersion {
   heightPx: number | null;
   createdAt: string;
   createdBy: string | null;
+  web: MediaRendition | null;
 }
 
 /** Compact list result. Large version history is only returned by the detail endpoint. */
@@ -61,6 +69,8 @@ export interface MediaAssetSummary {
   folderId: number | null;
   /** The live public link, when one exists. */
   share: MediaShare | null;
+  /** The web-size rendition of the current version; null for documents. */
+  web: MediaRendition | null;
 }
 
 export interface MediaShare {
@@ -93,7 +103,11 @@ export interface MediaAssetFilters {
   limit?: number;
   /** A folder id narrows to that folder, 'root' to files outside every folder. */
   folder?: number | 'root';
+  /** false lists files nothing uses yet; true only files with a link. */
+  linked?: boolean;
 }
+
+export type MediaVariant = 'original' | 'web';
 
 export interface MediaUploadResult {
   asset: MediaAssetDetail;

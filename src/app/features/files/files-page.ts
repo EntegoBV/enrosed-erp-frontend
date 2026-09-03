@@ -6,7 +6,7 @@ import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { MediaApi } from '../../core/api/media-api';
 import {
-  MediaAssetDetail, MediaAssetSummary, MediaFolder, MediaKind, MediaRole, MediaTargetType,
+  MediaAssetDetail, MediaAssetSummary, MediaFolder, MediaKind, MediaRole, MediaTargetType, MediaVariant,
 } from '../../core/api/media-models';
 import { PlannerApi } from '../../core/api/planner-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -31,6 +31,21 @@ const TARGET_OPTIONS: ReadonlyArray<{ value: MediaTargetType; label: string }> =
   { value: 'PLANNER_ITEM', label: 'Planneritem' },
 ];
 const PAGE = 80;
+
+/** The library seen by use: where the ERP puts files, not where people filed them. */
+interface Collection {
+  key: string; label: string; hint: string; icon: string;
+  filters: { targetType?: MediaTargetType; role?: MediaRole; kind?: MediaKind; linked?: boolean };
+}
+const COLLECTIONS: readonly Collection[] = [
+  { key: 'product', label: 'Productfoto’s', hint: 'per product', icon: '❀', filters: { targetType: 'PRODUCT', kind: 'IMAGE' } },
+  { key: 'family', label: 'Reeks- & websitefoto’s', hint: 'per productreeks', icon: '◫', filters: { targetType: 'PRODUCT_FAMILY' } },
+  { key: 'purchase', label: 'Inkoopdocumenten', hint: 'per inkooporder', icon: '▤', filters: { targetType: 'PURCHASE_ORDER' } },
+  { key: 'planner', label: 'Planner', hint: 'per planneritem', icon: '▥', filters: { targetType: 'PLANNER_ITEM' } },
+  { key: 'quote', label: 'Offertes', hint: 'bijlagen bij offertes', icon: '▧', filters: { role: 'QUOTE' } },
+  { key: 'invoice', label: 'Facturen', hint: 'bijlagen bij facturen', icon: '▨', filters: { role: 'INVOICE' } },
+  { key: 'unused', label: 'Nergens gebruikt', hint: 'los in de bibliotheek', icon: '○', filters: { linked: false } },
+];
 
 /**
  * Bestanden: the library as a drive. Folders on the left (drag a file onto
@@ -89,6 +104,15 @@ const PAGE = 80;
           </form>
         }
         <p class="fx__rail-hint">Sleep een bestand op een map om het te verplaatsen. Uploads komen in de open map.</p>
+
+        <div class="fx__rail-head fx__rail-head--gap"><b>Op gebruik</b></div>
+        <nav class="fx__tree" aria-label="Bestanden op gebruik">
+          @for (item of collections; track item.key) {
+            <button class="fx__node" type="button" [class.on]="collection()?.key === item.key" (click)="openCollection(item)" [title]="item.hint">
+              <i aria-hidden="true">{{ item.icon }}</i><span>{{ item.label }}</span>
+            </button>
+          }
+        </nav>
       </aside>
 
       <!-- ============================ files -->
@@ -124,6 +148,22 @@ const PAGE = 80;
           <p class="fx__state">
             @if (query().trim()) { Niets gevonden voor “{{ query() }}”. } @else { Nog geen bestanden hier. Sleep ze hierheen of klik op Uploaden. }
           </p>
+        } @else if (view() === 'grid' && groups(); as groups) {
+          @for (group of groups; track group.label) {
+            <div class="fx__group">
+              <h3 class="fx__group-title">{{ group.label }} <small>{{ group.assets.length }}</small></h3>
+              <div class="fx__grid">
+                @for (asset of group.assets; track asset.id) {
+                  <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--archived]="asset.archived"
+                          draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="dragging.set(null)"
+                          (click)="open(asset)" (dblclick)="download(asset)" [title]="asset.originalFilename">
+                    @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
+                    <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }}</small></span>
+                  </button>
+                }
+              </div>
+            </div>
+          }
         } @else if (view() === 'grid') {
           <div class="fx__grid">
             @for (asset of assets(); track asset.id) {
@@ -135,7 +175,7 @@ const PAGE = 80;
                 } @else {
                   <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i>
                 }
-                <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}</small></span>
+                <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }} · {{ asset.updatedAt | dateTimeNl }}</small></span>
                 <span class="fx__badges">
                   @if (asset.share) { <em title="Publieke link">🔗</em> }
                   @if (asset.links.length) { <em [title]="asset.links.length + ' koppelingen'">{{ asset.links.length }}×</em> }
@@ -188,10 +228,25 @@ const PAGE = 80;
           </label>
           <dl class="fx__facts">
             <div><dt>Bestand</dt><dd class="mono">{{ asset.originalFilename }}</dd></div>
-            <div><dt>Grootte</dt><dd>{{ size(asset.sizeBytes) }}@if (asset.widthPx) { · {{ asset.widthPx }} × {{ asset.heightPx }} px }</dd></div>
             <div><dt>Versie</dt><dd>{{ asset.versionCount }}@if (asset.versionCount > 1) { <small> (laatste vervangt de vorige overal)</small> }</dd></div>
             <div><dt>Toegevoegd</dt><dd>{{ asset.createdAt | dateTimeNl }}</dd></div>
           </dl>
+
+          <section class="fx__formats">
+            <div class="fx__share-head"><b>Formaten</b><small>{{ asset.web ? 'hoge kwaliteit en web' : 'één bestand' }}</small></div>
+            <div class="fx__format">
+              <span><b>Origineel</b><small>{{ size(asset.sizeBytes) }}@if (asset.widthPx) { · {{ asset.widthPx }} × {{ asset.heightPx }} px }@if (asset.kind === 'IMAGE') { · hoge kwaliteit, voor druk en catalogus }</small></span>
+              <button class="linklike" type="button" [disabled]="downloading()" (click)="download(asset, 'original')">Download</button>
+            </div>
+            @if (asset.web; as web) {
+              <div class="fx__format">
+                <span><b>Web</b><small>{{ size(web.sizeBytes) }}@if (web.widthPx) { · {{ web.widthPx }} × {{ web.heightPx }} px } · lichter, voor website, mail en offertes</small></span>
+                <button class="linklike" type="button" [disabled]="downloading()" (click)="download(asset, 'web')">Download</button>
+              </div>
+            } @else if (asset.kind === 'IMAGE') {
+              <p class="fx__hint">De webversie wordt gemaakt bij de eerste opvraging.</p>
+            }
+          </section>
 
           <label class="fx__field">
             <span>Map</span>
@@ -210,7 +265,13 @@ const PAGE = 80;
                 <input class="input mono" type="text" readonly [value]="media.publicUrl(share.token)" (focus)="$any($event.target).select()" />
                 <button class="btn btn--sm btn--primary" type="button" (click)="copyLink(share.token)">Kopieer</button>
               </div>
-              <p class="fx__hint">Iedereen met deze link kan het bestand openen, ook zonder Enrosed-login. Een nieuwe versie gaat automatisch mee.</p>
+              @if (asset.web) {
+                <div class="fx__inline fx__inline--sub">
+                  <input class="input mono" type="text" readonly [value]="media.publicUrl(share.token, 'web')" (focus)="$any($event.target).select()" aria-label="Publieke link webformaat" />
+                  <button class="btn btn--sm" type="button" (click)="copyLink(share.token, 'Weblink gekopieerd', 'web')">Web</button>
+                </div>
+              }
+              <p class="fx__hint">Iedereen met deze link kan het bestand openen, ook zonder Enrosed-login. Een nieuwe versie gaat automatisch mee{{ asset.web ? '; de tweede link geeft het lichtere webformaat' : '' }}.</p>
               <button class="linklike fx__danger" type="button" [disabled]="busy()" (click)="unshare()">Link intrekken</button>
             } @else {
               <p class="fx__hint">Nog geen link. Maak er een om het bestand te delen met een klant of leverancier, zonder login.</p>
@@ -289,6 +350,11 @@ const PAGE = 80;
     .fx__table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}.fx__table tr{cursor:pointer}.fx__table tbody tr:hover td{background:var(--surface-2)}.fx__table tr.on td{background:var(--rose-soft)}.fx__table .r{text-align:right}
     .fx__name{display:flex;align-items:center;gap:10px}.fx__name img,.fx__name .fx__ext{width:36px;height:36px;aspect-ratio:auto;font-size:9px;border-radius:8px;object-fit:cover}.fx__name span{display:grid;min-width:0}.fx__name small{color:var(--muted);font-size:10.5px}
     .fx__more{display:block;margin:14px auto 0}
+    .fx__rail-head--gap{margin-top:16px}
+    .fx__group+.fx__group{margin-top:16px}.fx__group-title{margin:0 0 8px;color:var(--rose);font-size:10.5px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}.fx__group-title small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
+    .fx__formats{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+    .fx__format{display:flex;align-items:center;justify-content:space-between;gap:8px}.fx__format>span{display:grid;min-width:0}.fx__format b{font-size:12.5px}.fx__format small{color:var(--muted);font-size:10.5px;line-height:1.35}
+    .fx__inline--sub{margin-top:6px}
     .fx__detail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);display:grid;gap:12px;max-height:calc(100dvh - var(--appbar-h,62px) - 28px);padding:12px 14px 16px;overflow-y:auto}
     .fx__detail-head{display:flex;align-items:center;justify-content:space-between}.fx__detail-head b{font-size:13px}
     .fx__close{width:28px;height:28px;border:0;border-radius:8px;background:var(--surface-2);color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
@@ -319,6 +385,26 @@ export class FilesPage implements OnDestroy {
 
   readonly roleOptions = ROLE_OPTIONS;
   readonly targetOptions = TARGET_OPTIONS;
+  readonly collections = COLLECTIONS;
+  /** The open view by use; null while a folder is open. */
+  readonly collection = signal<Collection | null>(null);
+  /** In a view per product, reeks or order the cards sit under the record they belong to. */
+  readonly groups = computed(() => {
+    const collection = this.collection();
+    const targetType = collection?.filters.targetType;
+    if (!targetType) return null;
+    const groups = new Map<string, { label: string; assets: MediaAssetSummary[] }>();
+    for (const asset of this.assets()) {
+      const links = asset.links.filter((link) => link.targetType === targetType);
+      const labels = links.length ? links.map((link) => link.targetLabel || `${this.targetLabel(targetType)} #${link.targetId}`) : ['Zonder koppeling'];
+      for (const label of new Set(labels)) {
+        const group = groups.get(label) ?? { label, assets: [] };
+        group.assets.push(asset);
+        groups.set(label, group);
+      }
+    }
+    return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, 'nl'));
+  });
 
   /* ---- folders */
   readonly folders = signal<MediaFolder[]>([]);
@@ -350,6 +436,8 @@ export class FilesPage implements OnDestroy {
   readonly crumbs = computed(() => {
     const folder = this.folder();
     const crumbs: { id: number | 'root' | null; name: string }[] = [{ id: null, name: 'Alle bestanden' }];
+    const collection = this.collection();
+    if (collection) return [...crumbs, { id: null, name: collection.label }];
     if (folder === 'root') return [...crumbs, { id: 'root' as const, name: 'Zonder map' }];
     if (typeof folder !== 'number') return crumbs;
     const byId = new Map(this.folders().map((item) => [item.id, item]));
@@ -412,7 +500,15 @@ export class FilesPage implements OnDestroy {
   }
 
   openFolder(folder: number | 'root' | null): void {
+    this.collection.set(null);
     this.folder.set(folder);
+    void this.reload();
+  }
+
+  openCollection(collection: Collection): void {
+    this.folder.set(null);
+    this.collection.set(collection);
+    if (collection.filters.kind) this.kind.set(collection.filters.kind);
     void this.reload();
   }
 
@@ -488,10 +584,12 @@ export class FilesPage implements OnDestroy {
   /* ================================================================ files */
   private filters(offset: number) {
     const folder = this.folder();
+    const use = this.collection()?.filters ?? {};
     return {
       q: this.query(), kind: this.kind() ?? undefined,
       archived: this.archived() ? true : undefined, includeArchived: false,
       folder: folder === null ? undefined : folder, offset, limit: PAGE + 1,
+      targetType: use.targetType, role: use.role, linked: use.linked,
     };
   }
 
@@ -668,8 +766,8 @@ export class FilesPage implements OnDestroy {
     if (await this.act('Intrekken mislukt', (id) => this.media.unshare(id))) this.ui.toast('Publieke link ingetrokken');
   }
 
-  async copyLink(token: string, message = 'Link gekopieerd'): Promise<void> {
-    const url = this.media.publicUrl(token);
+  async copyLink(token: string, message = 'Link gekopieerd', variant: MediaVariant = 'original'): Promise<void> {
+    const url = this.media.publicUrl(token, variant);
     try {
       await navigator.clipboard.writeText(url);
       this.ui.toast(message);
@@ -678,11 +776,13 @@ export class FilesPage implements OnDestroy {
     }
   }
 
-  async download(asset: MediaAssetSummary): Promise<void> {
+  async download(asset: MediaAssetSummary, variant: MediaVariant = 'original'): Promise<void> {
     if (this.downloading()) return;
     this.downloading.set(true);
     try {
-      saveBlob(await this.media.download(asset.id), asset.originalFilename || asset.name);
+      const name = asset.originalFilename || asset.name;
+      const webName = name.replace(/\.[a-z0-9]+$/i, '') + '-web.jpg';
+      saveBlob(await this.media.download(asset.id, variant), variant === 'web' ? webName : name);
     } catch (failure) {
       this.ui.toast(messageOf(failure, 'Downloaden mislukt'), 'err');
     } finally {
