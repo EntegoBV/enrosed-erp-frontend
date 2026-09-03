@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, input, linkedSignal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, linkedSignal, signal } from '@angular/core';
+import { LandedCostLine } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { PageHeader } from '../../shared/page-header';
@@ -16,6 +17,12 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { PurchaseEditor } from './purchase-editor';
 
 type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
+
+type DeskRow =
+  | { kind: 'section'; key: string; label: string; count: number }
+  | { kind: 'group'; key: string; groupKey: string; label: string; lines: LandedCostLine[]; pieces: number;
+      cartons: number; cbm: number; goodsEur: number; averageUnitEur: number; totalEur: number; leadProductId: number }
+  | { kind: 'line'; key: string; line: LandedCostLine; variant: boolean };
 
 /**
  * The container on a desk: one screen, no scrolling to find things.
@@ -171,13 +178,41 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                     <th class="c-act"><span class="sr-only">Details</span></th>
                   </tr>
                 </thead>
-                @for (section of lineSections(); track section.key) {
-                  <tbody>
-                    @if (lineSections().length > 1) {
-                      <tr class="desk-section__row"><th colspan="8">{{ section.label }} <small>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</small></th></tr>
+                <tbody>
+                @for (row of tableRows(); track row.key) {
+                  @switch (row.kind) {
+                    @case ('section') {
+                      <tr class="desk-section__row"><th colspan="8">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
                     }
-                    @for (line of section.lines; track line.productId) {
-                      <tr class="desk-row" [class.desk-row--open]="lineOpen(line.productId)">
+                    @case ('group') {
+                      <tr class="desk-group" [class.desk-group--folded]="familyFolded(row.groupKey)">
+                        <td class="c-product">
+                          <button class="desk-group__toggle" type="button" (click)="toggleFamily(row.groupKey)"
+                                  [attr.aria-expanded]="!familyFolded(row.groupKey)">
+                            <i class="desk-group__chev" aria-hidden="true">›</i>
+                            @if (photoOf(row.leadProductId); as photo) {
+                              <img class="desk-product__photo" [appAuthSrc]="photo" alt="" draggable="false" />
+                            } @else {
+                              <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">◈</span>
+                            }
+                            <span class="desk-product__copy">
+                              <strong>{{ row.label }}</strong>
+                              <small>Reeks · {{ row.lines.length }} varianten · {{ row.cbm | cbm }}</small>
+                            </span>
+                          </button>
+                        </td>
+                        <td class="c-qty num"><b>{{ row.pieces | num }}</b></td>
+                        <td class="c-cartons num"><b>{{ row.cartons | num }}</b></td>
+                        <td class="c-price"></td>
+                        <td class="c-money num">{{ row.goodsEur | eur }}</td>
+                        <td class="c-money c-unit num">{{ row.averageUnitEur | eur: 4 }}</td>
+                        <td class="c-money num c-money--total">{{ row.totalEur | eur }}</td>
+                        <td class="c-act"></td>
+                      </tr>
+                    }
+                    @case ('line') {
+                      @let line = row.line;
+                      <tr class="desk-row" [class.desk-row--open]="lineOpen(line.productId)" [class.desk-row--variant]="row.variant">
                         <td class="c-product">
                           <a class="desk-product" [routerLink]="['/products', line.productId]" [title]="line.productName + ' openen'">
                             @if (photoOf(line.productId); as photo) {
@@ -186,8 +221,18 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                               <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span>
                             }
                             <span class="desk-product__copy">
-                              <strong>{{ line.productName }}</strong>
-                              @if (productVariantLabel(line.productId); as variant) { <small>{{ variant }}</small> }
+                              @if (row.variant) {
+                                <strong>
+                                  @if (productColour(line.productId)) {
+                                    <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
+                                       [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i>
+                                  }{{ productVariantLabel(line.productId) || line.productName }}
+                                </strong>
+                                <small>{{ line.productName }}</small>
+                              } @else {
+                                <strong>{{ line.productName }}</strong>
+                                @if (productVariantLabel(line.productId); as variant) { <small>{{ variant }}</small> }
+                              }
                             </span>
                           </a>
                           @if (editing() && !isReceived() && cartonNotice(line.quantity, line.productId); as note) {
@@ -279,8 +324,9 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                         </tr>
                       }
                     }
-                  </tbody>
+                  }
                 }
+                </tbody>
                 <tfoot>
                   <tr>
                     <th class="c-product">Totaal</th>
@@ -956,6 +1002,13 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
+    .desk-group td{background:var(--surface-2);border-bottom:1px solid var(--line)}
+    .desk-group__toggle{display:flex;width:100%;align-items:center;gap:11px;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .desk-group__chev{display:inline-block;width:14px;color:var(--muted);font-style:normal;font-size:16px;transform:rotate(90deg);transition:transform .15s ease}
+    .desk-group--folded .desk-group__chev{transform:none}
+    .desk-group .c-money,.desk-group .c-qty b,.desk-group .c-cartons b{font-weight:750}
+    .desk-row--variant td.c-product{padding-left:46px}.desk-row--variant .desk-product__photo{width:36px;height:36px}
+    .line-colour-dot{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px}.line-colour-dot--empty{background:var(--surface)!important}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
     .desk-row--open td{border-bottom:0;background:var(--surface-2)}
     .desk-product{display:flex;align-items:center;gap:11px;color:inherit;text-decoration:none}
@@ -1044,6 +1097,52 @@ export class PurchaseDesk extends PurchaseEditor {
 
   /** Which drawer of the rail is open; the order facts first, as on paper. */
   readonly railTab = signal<RailTab>('order');
+
+  /** Series folded shut; a long container reads by series first. */
+  private readonly foldedFamilies = signal<Set<string>>(new Set());
+
+  familyFolded(key: string): boolean {
+    return this.foldedFamilies().has(key);
+  }
+
+  toggleFamily(key: string): void {
+    this.foldedFamilies.update((folded) => {
+      const next = new Set(folded);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  /**
+   * The table, row by row: a category caption only when there are several,
+   * a series header with its totals whenever a series has more than one
+   * variant, and the lines - indented under their series, or on their own.
+   */
+  readonly tableRows = computed<DeskRow[]>(() => {
+    const sections = this.lineSections();
+    const folded = this.foldedFamilies();
+    const rows: DeskRow[] = [];
+    for (const section of sections) {
+      if (sections.length > 1) {
+        rows.push({ kind: 'section', key: 's:' + section.key, label: section.label, count: section.lines.length });
+      }
+      for (const family of section.families) {
+        const grouped = family.familyId !== null && family.lines.length > 1;
+        if (grouped) {
+          rows.push({
+            kind: 'group', key: 'g:' + family.key, groupKey: family.key, label: family.label,
+            lines: family.lines, pieces: family.pieces, cartons: family.cartons, cbm: family.cbm,
+            goodsEur: family.lines.reduce((sum, line) => sum + line.goodsEur, 0),
+            averageUnitEur: family.averageUnitEur, totalEur: family.totalEur,
+            leadProductId: family.lines[0].productId,
+          });
+          if (folded.has(family.key)) continue;
+        }
+        for (const line of family.lines) rows.push({ kind: 'line', key: 'l:' + line.productId, line, variant: grouped });
+      }
+    }
+    return rows;
+  });
 
   /** Lines whose cost build-up is unfolded under the row. */
   private readonly openLines = signal<Set<number>>(new Set());
