@@ -193,23 +193,22 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </div>
     </div>
 
-    <!-- Same rail as the settings page. Phone: one section at a time;
-         desktop: a jump list whose highlight follows the scroll. -->
-    <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
-      <div class="subnav__rail erp-workspace__nav-rail">
-        @for (tab of visibleTabs(); track tab.id) {
-          <button class="erp-workspace__nav-item" type="button" [class.active]="activeTab() === tab.id"
-                  [class.is-done]="tabState(tab.id) === 'done'" [class.is-warn]="tabState(tab.id) === 'warn'"
-                  [attr.aria-current]="activeTab() === tab.id ? 'location' : null"
-                  (click)="showTab(tab.id)">
-            <span class="erp-workspace__nav-index">{{ tabState(tab.id) === 'done' ? '✓' : $index + 1 }}</span>
-            <span>{{ tab.label }}@if (desktop.active() && tabHint(tab.id); as hint) { <small>{{ hint }}</small> }</span>
-          </button>
-        }
-      </div>
-    </nav>
-
     <div class="content product-editor-page erp-workspace erp-workspace--product erp-workspace--edit">
+      <!-- Same rail as the settings page. Phone: one section at a time;
+           desktop: a jump list whose highlight follows the scroll. -->
+      <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
+        <div class="subnav__rail erp-workspace__nav-rail">
+          @for (tab of visibleTabs(); track tab.id) {
+            <button class="erp-workspace__nav-item" type="button" [class.active]="activeTab() === tab.id"
+                    [class.is-done]="tabState(tab.id) === 'done'" [class.is-warn]="tabState(tab.id) === 'warn'"
+                    [attr.aria-current]="activeTab() === tab.id ? 'location' : null"
+                    (click)="showTab(tab.id)">
+              <span class="erp-workspace__nav-index">{{ tabState(tab.id) === 'done' ? '✓' : $index + 1 }}</span>
+              <span>{{ tab.label }}@if (desktop.active() && tabHint(tab.id); as hint) { <small>{{ hint }}</small> }</span>
+            </button>
+          }
+        </div>
+      </nav>
       <div class="editor-canvas erp-workspace__main" [attr.data-tab]="activeTab()"
            [class.editor-canvas--last]="isLastPhoneTab()">
       <!-- ============================================ product -->
@@ -1326,15 +1325,27 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .editor-canvas { display: block; width: 100%; max-width: 920px; margin: 0 auto; }
     /* Desktop: the section rail stands to the left of the form as a jump
        list, the form itself gets the width a desk has. */
-    /* Desktop: the sections as a stepper to the right of the form - a
-       tick where a section is complete, a count where something is
-       missing - and the form gets the width a desk has. */
+    /* The rail lives inside the page container now, so on a phone it is
+       pulled back to the edges it always had. */
+    @media (max-width: 1099px) {
+      .product-editor-page > .subnav.erp-workspace__nav { width: auto; margin: -14px -12px 0; }
+    }
+    @media (min-width: 680px) and (max-width: 1023px) {
+      .product-editor-page > .subnav.erp-workspace__nav { margin: -18px -20px 0; }
+    }
+    @media (min-width: 1024px) and (max-width: 1099px) {
+      .product-editor-page > .subnav.erp-workspace__nav { margin: -22px -26px 0; }
+    }
+    /* Desktop: hero, form and stepper share one centred container. The
+       stepper stands to the right of the form as a card - a tick where a
+       section is complete, a count where fields are missing. */
     @media (min-width: 1100px) {
-      :host { display: grid; grid-template-columns: minmax(0, 1fr) 232px; grid-auto-flow: row dense; align-items: start; }
-      :host > * { grid-column: 1 / -1; }
-      :host > .product-editor-page { grid-column: 1; }
-      :host > .subnav.erp-workspace__nav { grid-column: 2; align-self: start; top: calc(var(--appbar-h) + 14px);
-        margin: 14px 24px 0 0; padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
+      .product-editor-lead__content { padding-bottom: 0; }
+      .product-editor-page { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 16px; align-items: start; }
+      .product-editor-page > .subnav.erp-workspace__nav { position: sticky; top: calc(var(--appbar-h) + 14px); z-index: 5; grid-area: 1 / 2; width: 100%; max-width: none; margin: 0;
+        padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
+      .product-editor-page > .editor-canvas { grid-area: 1 / 1; max-width: none; margin: 0; }
+      .product-editor-page > :not(.subnav):not(.editor-canvas) { grid-column: 1 / -1; }
       .subnav.erp-workspace__nav .erp-workspace__nav-rail { flex-direction: column; gap: 0; padding: 0; overflow: visible; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item { position: relative; width: 100%; justify-content: flex-start; gap: 10px;
         min-height: 44px; padding: 6px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); box-shadow: none; }
@@ -1350,7 +1361,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child { display: grid; gap: 1px; min-width: 0; font-size: 12.5px; font-weight: 650; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child small { color: var(--muted); font-size: 10.5px; font-weight: 500; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item.is-warn > span:last-child small { color: var(--warn); font-weight: 650; }
-      .editor-canvas { max-width: 1120px; margin: 0; }
     }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
     .colour-control { display: flex; align-items: center; gap: 8px; }
