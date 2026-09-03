@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, linkedSignal, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { PageHeader } from '../../shared/page-header';
@@ -40,16 +40,15 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="true"
                        (titleChange)="patch({ number: $event })">
-        <button class="btn btn--sm" type="button" (click)="pdfOpen.set(true)"
-                [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">PDF</button>
-        @if (dirty()) {
-          <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="save()">
+        @if (editing()) {
+          <button class="btn btn--sm" type="button" [disabled]="saving()" (click)="cancelEdit()">Annuleren</button>
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || !dirty()" (click)="saveAndClose()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
-        } @else if (nextStep(); as step) {
-          <button class="btn btn--primary btn--sm" type="button" (click)="advanceStatus()">{{ step.action }}</button>
         } @else {
-          <button class="btn btn--primary btn--sm" type="button" disabled>Opgeslagen</button>
+          <button class="btn btn--sm" type="button" (click)="pdfOpen.set(true)"
+                  [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">PDF</button>
+          <button class="btn btn--primary btn--sm" type="button" (click)="startEdit()">Bewerken</button>
         }
       </app-page-header>
 
@@ -148,20 +147,18 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
             <div class="desk-table-bar">
               <div>
                 <h2>Producten</h2>
-                <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen</p>
+                <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen · {{ data.costing.totals.cbm | cbm }}</p>
               </div>
-              <span class="per-toggle" role="group" aria-label="Bedragen tonen als">
-                <button type="button" [class.on]="perPiece()" [attr.aria-pressed]="perPiece()" (click)="perPiece.set(true)">Per stuk</button>
-                <button type="button" [class.on]="!perPiece()" [attr.aria-pressed]="!perPiece()" (click)="perPiece.set(false)">Totaal</button>
-              </span>
-              <button class="btn btn--primary btn--sm" type="button" [disabled]="isReceived()" (click)="openPicker()">
-                <span aria-hidden="true">＋</span> Product
-              </button>
+              @if (editing()) {
+                <button class="btn btn--primary btn--sm" type="button" [disabled]="isReceived()" (click)="openPicker()">
+                  <span aria-hidden="true">＋</span> Product
+                </button>
+              }
             </div>
 
             @if (data.costing.lines.length) {
               <div class="desk-table-wrap">
-              <table class="desk-table">
+              <table class="desk-table" [class.desk-table--editing]="editing()">
                 <thead>
                   <tr>
                     <th class="c-product">Product</th>
@@ -169,111 +166,117 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                     <th class="c-cartons">Dozen</th>
                     <th class="c-price">Prijs / stuk</th>
                     <th class="c-money">Goederen</th>
-                    <th class="c-money">{{ perPiece() ? 'Geland / stuk' : 'Totaal geland' }}</th>
-                    <th class="c-act"><span class="sr-only">Acties</span></th>
+                    <th class="c-money c-unit">Geland / stuk</th>
+                    <th class="c-money">Totaal geland</th>
+                    <th class="c-act"><span class="sr-only">Details</span></th>
                   </tr>
                 </thead>
                 @for (section of lineSections(); track section.key) {
-                  <tbody class="desk-section">
-                    <tr class="desk-section__row"><th colspan="7">{{ section.label }} <small>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</small></th></tr>
-                    @for (familyGroup of section.families; track familyGroup.key) {
-                      @if (familyGroup.familyId !== null || familyGroup.lines.length > 1) {
-                        <tr class="desk-family" [class.desk-family--folded]="familyFolded(familyGroup.key)">
-                          <td colspan="7">
-                            <button type="button" class="desk-family__toggle" (click)="toggleFamily(familyGroup.key)"
-                                    [attr.aria-expanded]="!familyFolded(familyGroup.key)">
-                              <i class="desk-family__chev" aria-hidden="true">›</i>
-                              <strong>{{ familyGroup.label }}</strong>
-                              @if (familyGroup.swatches.length) {
-                                <span class="desk-family__swatches" [attr.aria-label]="'Kleuren in ' + familyGroup.label">
-                                  @for (swatch of familyGroup.swatches; track swatch.key) {
-                                    <i class="line-colour-dot" [class.line-colour-dot--empty]="!colourHex(swatch.hex, swatch.label)"
-                                       [style.background]="colourHex(swatch.hex, swatch.label) || 'transparent'" [title]="swatch.label"></i>
-                                  }
-                                </span>
+                  <tbody>
+                    @if (lineSections().length > 1) {
+                      <tr class="desk-section__row"><th colspan="8">{{ section.label }} <small>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</small></th></tr>
+                    }
+                    @for (line of section.lines; track line.productId) {
+                      <tr class="desk-row" [class.desk-row--open]="lineOpen(line.productId)">
+                        <td class="c-product">
+                          <a class="desk-product" [routerLink]="['/products', line.productId]" [title]="line.productName + ' openen'">
+                            @if (photoOf(line.productId); as photo) {
+                              <img class="desk-product__photo" [appAuthSrc]="photo" alt="" draggable="false" />
+                            } @else {
+                              <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span>
+                            }
+                            <span class="desk-product__copy">
+                              <strong>{{ line.productName }}</strong>
+                              @if (productVariantLabel(line.productId); as variant) { <small>{{ variant }}</small> }
+                            </span>
+                          </a>
+                          @if (editing() && !isReceived() && cartonNotice(line.quantity, line.productId); as note) {
+                            <span class="desk-note" role="status">{{ note }}</span>
+                          }
+                          @if (shortShipped(line.productId); as ordered) {
+                            <span class="desk-note desk-note--warn">Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}</span>
+                          }
+                          @if (isReceived()) {
+                            <button class="linklike desk-note" type="button" (click)="openIssue(line.productId)">Schade of tekort melden ›</button>
+                          }
+                        </td>
+                        <td class="c-qty num">
+                          @if (editing() && !isReceived()) {
+                            <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
+                                   [attr.aria-label]="'Aantal ' + line.productName" [ngModel]="line.quantity"
+                                   (ngModelChange)="setQuantity(line.productId, +$event)" />
+                          } @else {
+                            <b>{{ line.quantity | num }}</b>
+                          }
+                        </td>
+                        <td class="c-cartons num">
+                          <b>{{ line.cartons | num }}</b>
+                          <small>{{ piecesPerCarton(line.productId) | num }}/doos · {{ line.cbm | cbm }}</small>
+                        </td>
+                        <td class="c-price">
+                          @if (editing()) {
+                            <div class="desk-price">
+                              <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
+                                     [attr.aria-label]="'Prijs per stuk ' + line.productName"
+                                     [ngModel]="orderLine(line.productId)?.exwPrice"
+                                     [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | num: 4) : ''"
+                                     (ngModelChange)="setExwPrice(line.productId, $event)" />
+                              <select class="desk-mini" aria-label="Munt van de prijs"
+                                      [disabled]="isReceived() || orderLine(line.productId)?.exwPrice == null"
+                                      [ngModel]="effectiveExwCurrency(line.productId)"
+                                      (ngModelChange)="setExwCurrency(line.productId, $event)">
+                                <option value="USD">USD</option><option value="CNY">CNY</option><option value="EUR">EUR</option>
+                              </select>
+                              <select class="desk-mini desk-mini--last" aria-label="Wat de prijs dekt"
+                                      [ngModel]="orderLine(line.productId)?.priceBasis ?? 'EXW'"
+                                      (ngModelChange)="setPriceBasis(line.productId, $event)">
+                                <option value="EXW">EXW</option><option value="DDP">DDP</option>
+                              </select>
+                            </div>
+                            @if (orderLine(line.productId)?.exwPrice == null && productCardPrice(line.productId); as currentPrice) {
+                              <small class="desk-price__hint">productkaart: {{ currentPrice.amount | cur: currentPrice.currency }}</small>
+                            }
+                          } @else {
+                            <b class="num">{{ unitPriceOf(line) | cur: effectiveExwCurrency(line.productId) }}</b>
+                            <small>{{ orderLine(line.productId)?.priceBasis ?? 'EXW' }}@if (orderLine(line.productId)?.exwPrice == null) { · productkaart }</small>
+                          }
+                        </td>
+                        <td class="c-money num">{{ line.goodsEur | eur }}</td>
+                        <td class="c-money c-unit num">{{ line.landedUnitEur | eur: 4 }}</td>
+                        <td class="c-money num c-money--total">{{ line.totalEur | eur }}</td>
+                        <td class="c-act">
+                          <button class="desk-expand" type="button" (click)="toggleLine(line.productId)"
+                                  [attr.aria-expanded]="lineOpen(line.productId)" [attr.aria-label]="'Kostopbouw van ' + line.productName">›</button>
+                          @if (editing()) {
+                            <button class="desk-remove" type="button" [disabled]="isReceived()"
+                                    [attr.aria-label]="'Verwijder ' + line.productName" (click)="removeLine(line.productId)">×</button>
+                          }
+                        </td>
+                      </tr>
+                      @if (lineOpen(line.productId)) {
+                        <tr class="desk-detail">
+                          <td colspan="8">
+                            <div class="desk-detail__grid">
+                              <div class="desk-detail__head"><span>Kostopbouw</span><span>per stuk</span><span>regel</span></div>
+                              <div class="desk-detail__line"><span>Goederen <small>{{ line.goodsUsd | cur: 'USD' }}</small></span><span>{{ each(line.goodsEur, line) | eur: 4 }}</span><span>{{ line.goodsEur | eur }}</span></div>
+                              @if (line.originEur) {
+                                <div class="desk-detail__line"><span>{{ costLabels().originCostsLabel }} <small>{{ costLabels().originRoute }}</small></span><span>{{ each(line.originEur, line) | eur: 4 }}</span><span>{{ line.originEur | eur }}</span></div>
                               }
-                              <small>{{ familyGroup.lines.length }} {{ familyGroup.lines.length === 1 ? 'variant' : 'varianten' }} ·
-                                {{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen · {{ familyGroup.cbm | cbm }}</small>
-                              <b>{{ perPiece() ? (familyGroup.averageUnitEur | eur: 4) : (familyGroup.totalEur | eur) }}</b>
-                            </button>
+                              @if (line.freightEur) {
+                                <div class="desk-detail__line"><span>{{ costLabels().seaFreightLabel }} <small>{{ costLabels().seaFreightRoute }}</small></span><span>{{ each(line.freightEur, line) | eur: 4 }}</span><span>{{ line.freightEur | eur }}</span></div>
+                              }
+                              <div class="desk-detail__line desk-detail__line--sub"><span>Douanewaarde</span><span>{{ each(line.customsValueEur, line) | eur: 4 }}</span><span>{{ line.customsValueEur | eur }}</span></div>
+                              <div class="desk-detail__line"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }} <small>{{ line.dutySource }}</small></span><span>{{ each(line.dutyEur, line) | eur: 4 }}</span><span>{{ line.dutyEur | eur }}</span></div>
+                              @if (line.destinationEur) {
+                                <div class="desk-detail__line"><span>{{ costLabels().destinationCostsLabel }}</span><span>{{ each(line.destinationEur, line) | eur: 4 }}</span><span>{{ line.destinationEur | eur }}</span></div>
+                              }
+                              @if (line.extraRevenueEur) {
+                                <div class="desk-detail__line"><span>Enrosed kost</span><span>{{ each(line.extraRevenueEur, line) | eur: 4 }}</span><span>{{ line.extraRevenueEur | eur }}</span></div>
+                              }
+                              <div class="desk-detail__line desk-detail__line--total"><span>Geland</span><span>{{ line.landedUnitEur | eur: 4 }}</span><span>{{ line.totalEur | eur }}</span></div>
+                            </div>
                           </td>
                         </tr>
-                      }
-                      @if (!familyFolded(familyGroup.key)) {
-                        @for (line of familyGroup.lines; track line.productId) {
-                          <tr class="desk-row" [class.desk-row--variant]="familyGroup.familyId !== null">
-                            <td class="c-product">
-                              <a class="desk-product" [routerLink]="['/products', line.productId]" [title]="line.productName + ' openen'">
-                                @if (photoOf(line.productId); as photo) {
-                                  <img class="desk-product__photo" [appAuthSrc]="photo" alt="" draggable="false" />
-                                } @else {
-                                  <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span>
-                                }
-                                <span class="desk-product__copy">
-                                  <strong>{{ line.productName }}</strong>
-                                  @if (productVariantLabel(line.productId); as variant) {
-                                    <small>
-                                      @if (productColour(line.productId)) {
-                                        <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
-                                           [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i>
-                                      }{{ variant }}
-                                    </small>
-                                  }
-                                </span>
-                              </a>
-                              @if (!isReceived() && cartonNotice(line.quantity, line.productId); as note) {
-                                <span class="desk-note" role="status">{{ note }}</span>
-                              }
-                              @if (shortShipped(line.productId); as ordered) {
-                                <span class="desk-note desk-note--warn">Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}</span>
-                              }
-                              @if (isReceived()) {
-                                <button class="linklike desk-note" type="button" (click)="openIssue(line.productId)">Schade of tekort melden ›</button>
-                              }
-                            </td>
-                            <td class="c-qty">
-                              <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
-                                     [attr.aria-label]="'Aantal ' + line.productName"
-                                     [disabled]="isReceived()" [ngModel]="line.quantity"
-                                     (ngModelChange)="setQuantity(line.productId, +$event)" />
-                            </td>
-                            <td class="c-cartons num">
-                              <b>{{ line.cartons | num }}</b>
-                              <small>{{ piecesPerCarton(line.productId) | num }}/doos · {{ line.cbm | cbm }}</small>
-                            </td>
-                            <td class="c-price">
-                              <div class="desk-price">
-                                <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
-                                       [attr.aria-label]="'Prijs per stuk ' + line.productName"
-                                       [ngModel]="orderLine(line.productId)?.exwPrice"
-                                       [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | num: 4) : ''"
-                                       (ngModelChange)="setExwPrice(line.productId, $event)" />
-                                <select class="desk-mini" aria-label="Munt van de prijs"
-                                        [disabled]="isReceived() || orderLine(line.productId)?.exwPrice == null"
-                                        [ngModel]="effectiveExwCurrency(line.productId)"
-                                        (ngModelChange)="setExwCurrency(line.productId, $event)">
-                                  <option value="USD">USD</option><option value="CNY">CNY</option><option value="EUR">EUR</option>
-                                </select>
-                              </div>
-                              <div class="desk-price__under">
-                                <select class="desk-basis" aria-label="Wat de prijs dekt"
-                                        [ngModel]="orderLine(line.productId)?.priceBasis ?? 'EXW'"
-                                        (ngModelChange)="setPriceBasis(line.productId, $event)">
-                                  <option value="EXW">EXW</option><option value="DDP">DDP</option>
-                                </select>
-                                @if (orderLine(line.productId)?.exwPrice == null && productCardPrice(line.productId); as currentPrice) {
-                                  <small>kaart {{ currentPrice.amount | cur: currentPrice.currency }}</small>
-                                }
-                              </div>
-                            </td>
-                            <td class="c-money num">{{ amt(line.goodsEur, line) | eur: decimals() }}</td>
-                            <td class="c-money num c-money--total">{{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}</td>
-                            <td class="c-act">
-                              <button class="desk-remove" type="button" [disabled]="isReceived()"
-                                      [attr.aria-label]="'Verwijder ' + line.productName" (click)="removeLine(line.productId)">×</button>
-                            </td>
-                          </tr>
-                        }
                       }
                     }
                   </tbody>
@@ -285,7 +288,8 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                     <th class="c-cartons num">{{ data.costing.totals.cartons | num }}</th>
                     <th class="c-price"></th>
                     <th class="c-money num">{{ data.costing.totals.goodsEur | eur }}</th>
-                    <th class="c-money num c-money--total">{{ perPiece() ? (data.costing.totals.averageUnitEur | eur: 4) : (data.costing.totals.totalEur | eur) }}</th>
+                    <th class="c-money c-unit num">{{ data.costing.totals.averageUnitEur | eur: 4 }}</th>
+                    <th class="c-money num c-money--total">{{ data.costing.totals.totalEur | eur }}</th>
                     <th class="c-act"></th>
                   </tr>
                 </tfoot>
@@ -296,7 +300,11 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                 <div class="empty__icon" aria-hidden="true">◈</div>
                 <div class="empty__title">Bouw je container op</div>
                 <p class="empty__text">Voeg producten toe. Aantallen, dozen en containervulling worden direct doorgerekend.</p>
-                <button class="btn btn--primary" type="button" [disabled]="isReceived()" (click)="openPicker()">Eerste product toevoegen</button>
+                @if (editing()) {
+                  <button class="btn btn--primary" type="button" [disabled]="isReceived()" (click)="openPicker()">Eerste product toevoegen</button>
+                } @else {
+                  <button class="btn btn--primary" type="button" (click)="startEdit()">Bewerken</button>
+                }
               </div>
             }
 
@@ -336,6 +344,20 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                     <app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" />
                     <small>{{ supplier()?.currency }}</small>
                   </div>
+                  @if (!editing()) {
+                    <dl class="desk-facts">
+                      <div><dt>Herkenbare naam</dt><dd>{{ data.order.alias || '—' }}</dd></div>
+                      <div><dt>Orderdatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
+                      @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
+                      @else { <div><dt>Verwacht op</dt><dd>{{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : '—' }}</dd></div> }
+                      <div><dt>Betaalafspraak</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
+                      @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>{{ data.order.trackingReference || '—' }}@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
+                      <div><dt>Container</dt><dd>{{ containerLabel(data.order.containerType) }}</dd></div>
+                      <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
+                      <div><dt>Lossen op</dt><dd>{{ receivingLocationName(data.order.receivingLocationId) }}</dd></div>
+                    </dl>
+                    <button class="btn btn--block" type="button" (click)="startEdit()">Ordergegevens bewerken</button>
+                  } @else {
                   <div class="desk-form">
                     <div class="field">
                       <label for="dk-alias">Herkenbare naam <span class="opt"></span></label>
@@ -406,10 +428,29 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                       </select>
                     </div>
                   </div>
+                  }
                 }
 
                 @case ('costs') {
+                  @if (!editing()) {
+                    <dl class="desk-facts">
+                      <div><dt>RMB → USD</dt><dd>{{ data.order.cnyToUsd }}</dd></div>
+                      <div><dt>USD → EUR</dt><dd>{{ usdToEurRate() }}</dd></div>
+                      @if (isDdp()) {
+                        <div><dt>Prijsbasis</dt><dd>DDP · transport en rechten inbegrepen</dd></div>
+                      } @else {
+                        <div><dt>{{ costLabels().seaFreightLabel }}</dt><dd>{{ data.order.freightUsd | cur: 'USD' }}<small>{{ costLabels().seaFreightRoute }}</small></dd></div>
+                        <div><dt>{{ costLabels().originCostsLabel }}</dt><dd>{{ data.order.originCosts | cur: data.order.originCurrency }}<small>{{ costLabels().originRoute }}</small></dd></div>
+                        <div><dt>{{ costLabels().destinationCostsLabel }}</dt><dd>{{ data.order.destinationCostsEur | eur }}</dd></div>
+                        <div><dt>Invoerrecht zonder HS</dt><dd>{{ data.order.defaultDutyRatePct | pct: 1 }}</dd></div>
+                      }
+                      <div><dt>Enrosed kost</dt><dd>{{ data.order.extraRevenueEur | eur }}</dd></div>
+                      <div><dt>Varianten</dt><dd>{{ (data.order.groupVariants ?? true) ? 'samen één kostprijs per reeks' : 'elke variant apart' }}</dd></div>
+                    </dl>
+                    <button class="btn btn--block" type="button" (click)="startEdit()">Kosten bewerken</button>
+                  }
                   <div class="desk-form">
+                    @if (editing()) {
                     <p class="desk-form__group">Wisselkoersen</p>
                     <div class="desk-form__duo">
                       <div class="field"><label for="dk-cny">RMB → USD</label>
@@ -479,6 +520,7 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
                         </div>
                       }
                     </details>
+                    }
 
                     <p class="desk-form__group">Opbouw</p>
                     <div class="desk-sum">
@@ -870,7 +912,7 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .desk-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px 20px 14px}
     .desk-hero__who{min-width:0;flex:1}
     .desk-hero__eyebrow{display:block;color:rgb(255 255 255/.58);font-size:10px;font-weight:750;letter-spacing:.14em;text-transform:uppercase}
-    .desk-hero__who h1{margin:2px 0 4px;overflow:hidden;font-size:22px;font-weight:750;letter-spacing:-.01em;text-overflow:ellipsis;white-space:nowrap}
+    .desk-hero__who h1{margin:2px 0 4px;overflow:hidden;font-size:22px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
     .desk-hero__who p{margin:0;color:rgb(255 255 255/.78);font-size:12.5px}
     .desk-hero__who p.desk-hero__meta{margin-top:2px;color:rgb(255 255 255/.55);font-size:11.5px}
     .desk-status{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px;max-width:520px}
@@ -886,11 +928,11 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .desk-kpi strong{font-size:19px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.15}
     .desk-kpi span{overflow:hidden;color:rgb(255 255 255/.6);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
     .desk-kpi--total strong{color:#f4cf9a}
-    .desk-kpi--button{cursor:pointer}.desk-kpi--button:hover{background:rgb(255 255 255/.08)}.desk-kpi--button.is-warn strong{color:#f4cf9a}
+    .desk-kpi--button{cursor:pointer}.desk-kpi--button.is-warn strong{color:#f4cf9a}
     .desk-kpi strong.is-ok{color:#9fe0b4}.desk-kpi strong.is-warn{color:#f4cf9a}.desk-kpi strong.is-bad{color:#f6a3a3}
     .desk-kpi__meter{display:block;height:5px;margin:3px 0 2px;border-radius:99px;background:rgb(255 255 255/.15);overflow:hidden}
     .desk-kpi__meter i{display:block;height:100%;background:#9fe0b4;border-radius:99px}.desk-kpi__meter i.is-warn{background:#f4cf9a}.desk-kpi__meter i.is-bad{background:#f6a3a3}
-    .desk-kpi--go{background:var(--rose);cursor:pointer}.desk-kpi--go:hover:not(:disabled){background:var(--rose-mid)}.desk-kpi--go:disabled{cursor:default}
+    .desk-kpi--go{background:var(--rose);cursor:pointer}.desk-kpi--go:hover:not(:disabled){background:var(--rose-mid)}
     .desk-kpi--go small{color:rgb(255 255 255/.7)}.desk-kpi--go strong{font-size:15px}.desk-kpi--go span{color:rgb(255 255 255/.7)}
 
     .desk-attention{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px}
@@ -899,7 +941,7 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .desk-alert{margin:12px 16px 16px}.desk-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.desk-alert--tight .alert__icon{background:var(--warn);color:#fff}
 
     /* ---- body: table + rail */
-    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start;margin-top:14px}
+    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
@@ -909,48 +951,52 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
     .desk-table td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:auto;min-width:220px}.c-qty{width:84px}.c-cartons{width:92px}.c-price{width:170px}.c-money{width:112px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
+    .c-product{width:auto;min-width:200px}.c-qty{width:70px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:100px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
+    .desk-table--editing .c-price{width:200px}.desk-table--editing .c-act{width:60px}.desk-table--editing .c-unit{display:none}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
-    .desk-family td{padding:0;background:var(--surface-2)}
-    .desk-family__toggle{display:flex;width:100%;align-items:center;gap:8px;padding:8px 16px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
-    .desk-family__toggle strong{font-size:12.5px}.desk-family__toggle small{flex:1;min-width:0;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
-    .desk-family__toggle b{color:var(--rose-dark);font-variant-numeric:tabular-nums}
-    .desk-family__chev{display:inline-block;color:var(--muted);font-style:normal;font-size:16px;transform:rotate(90deg);transition:transform .15s ease}
-    .desk-family--folded .desk-family__chev{transform:none}
-    .desk-family__swatches{display:inline-flex;gap:3px}
-    .line-colour-dot{display:inline-block;width:10px;height:10px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px;margin-right:4px}.line-colour-dot--empty{background:var(--surface)!important}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
-    .desk-row--variant td.c-product{padding-left:30px}
-    .desk-product{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
-    .desk-product:hover strong{color:var(--rose-dark);text-decoration:underline}
-    .desk-product__photo{width:40px;height:40px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}
+    .desk-row--open td{border-bottom:0;background:var(--surface-2)}
+    .desk-product{display:flex;align-items:center;gap:11px;color:inherit;text-decoration:none}
+    .desk-product__photo{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
-    .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{font-size:13px}.desk-product__copy small{color:var(--muted);font-size:11px}
-    .desk-note{display:block;margin:3px 0 0 50px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left}
+    .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{font-size:13.5px}.desk-product__copy small{color:var(--muted);font-size:11px}
+    .desk-note{display:block;margin:3px 0 0 55px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left}
     .desk-note--warn{color:var(--warn);font-weight:650}
     button.desk-note{cursor:pointer}button.desk-note:hover{color:var(--rose-dark)}
     .desk-cell{min-height:34px;padding:5px 8px;font-size:13px}
-    .c-cartons b{display:block;font-variant-numeric:tabular-nums}.c-cartons small{display:block;color:var(--muted);font-size:10px;white-space:nowrap}
+    .c-qty b,.c-cartons b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small{display:block;color:var(--muted);font-size:10px;white-space:nowrap}
+    .c-price{text-align:right}.c-price>b{display:block;font-size:13.5px}.c-price>small{display:block;color:var(--muted);font-size:10.5px;white-space:nowrap}
     .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}
-    .desk-mini{min-height:34px;padding:0 3px;border:1px solid var(--line-strong);border-left:0;border-radius:0 var(--r-sm) var(--r-sm) 0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
-    .desk-price__under{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:2px;padding:0 2px}
-    .desk-basis{padding:0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:10.5px;font-weight:700;cursor:pointer}
-    .desk-price__under small{color:var(--muted);font-size:10px;white-space:nowrap}
-    .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
+    .desk-mini{min-height:34px;padding:0 3px;border:1px solid var(--line-strong);border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
+    .desk-mini--last{border-radius:0 var(--r-sm) var(--r-sm) 0}
+    .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
+    .c-act{white-space:nowrap}
+    .desk-expand,.desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
+    .desk-expand{transition:transform .15s ease}.desk-row--open .desk-expand{transform:rotate(90deg);color:var(--rose-dark)}
     .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
+    .desk-detail td{padding:0 16px 12px 71px;background:var(--surface-2)}
+    .desk-detail__grid{display:grid;gap:0;max-width:640px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+    .desk-detail__head,.desk-detail__line{display:grid;grid-template-columns:minmax(0,1fr) 110px 120px;gap:10px;padding:6px 12px;font-size:12px}
+    .desk-detail__head{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;background:var(--surface-2)}
+    .desk-detail__line span:not(:first-child),.desk-detail__head span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+    .desk-detail__line small{display:block;color:var(--muted);font-size:9.5px}
+    .desk-detail__line--sub{border-top:1px solid var(--line);font-weight:650}
+    .desk-detail__line--total{border-top:2px solid var(--line-strong);font-weight:750}.desk-detail__line--total span:last-child{color:var(--rose-dark)}
     .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .desk-table tfoot th.c-product{text-align:left;padding-left:16px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
-    .desk-empty{padding:40px 20px}
 
     /* ---- rail */
     .desk-rail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);display:flex;flex-direction:column;max-height:calc(100dvh - var(--appbar-h,62px) - 28px);border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1);overflow:hidden}
     .desk-tabs{display:flex;flex:none;gap:2px;padding:6px;border-bottom:1px solid var(--line);background:var(--surface-2)}
     .desk-tabs button{position:relative;flex:1;min-height:34px;padding:0 6px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap}
-    .desk-tabs button:hover{color:var(--ink)}.desk-tabs button.on{background:var(--surface);color:var(--rose-dark);box-shadow:var(--sh-1)}
+    .desk-tabs button.on{background:var(--surface);color:var(--rose-dark);box-shadow:var(--sh-1)}
     .desk-tabs__dot{position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
     .desk-panel{flex:1;min-height:0;padding:14px;overflow-y:auto}
+    .desk-facts{display:grid;margin:0 0 12px;padding:0}
+    .desk-facts>div{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+    .desk-facts dt{color:var(--muted)}.desk-facts dd{margin:0;font-weight:650}.desk-facts dd small{display:block;color:var(--muted);font-size:11px;font-weight:500}
     .desk-supplier{display:grid;gap:2px;margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .desk-supplier strong{font-size:13px}.desk-supplier small{color:var(--muted);font-size:11px}
     .desk-form{display:grid;gap:10px}.desk-form .field{min-width:0}
@@ -978,38 +1024,81 @@ type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
     .payments-meter{height:6px;margin:8px 0 4px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok);border-radius:999px;transition:width .2s ease}
     .instalments{list-style:none;margin:0;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
     .pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-stream__done{margin:8px 0 2px;color:var(--ok);font-size:12.5px;font-weight:650}
-    .files-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-list__rename{flex:1;min-width:0}.files-list__actions{display:flex;align-items:center;gap:6px}.files-list__pencil{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}.files-list__pencil:hover{background:var(--surface-2);color:var(--ink)}
-    .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
+    .files-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-list__rename{flex:1;min-width:0}.files-list__actions{display:flex;align-items:center;gap:6px}.files-list__pencil{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+    .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}
     .receive-balance{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-balance b{font-size:13px}.receive-balance small{display:block;color:var(--muted);font-size:11.5px}.receive-balance__final{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.receive-balance__final input{width:18px;height:18px;accent-color:var(--rose)}
     .receive-preview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}.receive-preview>span{display:grid;padding:9px 10px;background:var(--surface)}.receive-preview small{color:var(--muted);font-size:9px;text-transform:uppercase}.receive-preview b{font-size:12.5px}.receive-preview>p{grid-column:1/-1;padding:8px 10px;background:var(--warn-soft);color:var(--ink-2);font-size:10.5px}
     .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
     .hint--warn{color:var(--danger);font-weight:650}
 
-    @media(max-width:1380px){.desk-body{grid-template-columns:minmax(0,1fr) 320px}.c-money:not(.c-money--total){display:none}.c-product{min-width:180px}.c-price{width:156px}.c-qty{width:76px}.c-cartons{width:80px}}
+    @media(max-width:1439px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
     @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{justify-content:flex-start;max-width:none}.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}.c-money:not(.c-money--total){display:table-cell}}
+    @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{justify-content:flex-start;max-width:none}}
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {
+  /** How the route opened us; the desk itself decides when editing ends. */
+  readonly mode = input<'view' | 'edit'>('view');
+  /** Reading is the default; Bewerken switches the inputs on. */
+  readonly editing = linkedSignal(() => this.mode() === 'edit');
+
   /** Which drawer of the rail is open; the order facts first, as on paper. */
   readonly railTab = signal<RailTab>('order');
 
-  /** Families folded shut in the table - a long container reads better by series. */
-  private readonly foldedFamilies = signal<Set<string>>(new Set());
+  /** Lines whose cost build-up is unfolded under the row. */
+  private readonly openLines = signal<Set<number>>(new Set());
 
-  /** True when at least one product series can be folded. */
-  readonly hasFamilies = computed(() => this.lineSections()
-    .some((section) => section.families.some((family) => family.familyId !== null)));
-
-  familyFolded(key: string): boolean {
-    return this.foldedFamilies().has(key);
+  lineOpen(productId: number): boolean {
+    return this.openLines().has(productId);
   }
 
-  toggleFamily(key: string): void {
-    this.foldedFamilies.update((folded) => {
-      const next = new Set(folded);
-      if (next.has(key)) next.delete(key); else next.add(key);
+  toggleLine(productId: number): void {
+    this.openLines.update((open) => {
+      const next = new Set(open);
+      if (next.has(productId)) next.delete(productId); else next.add(productId);
       return next;
     });
+  }
+
+  /** One amount of a line spread over its pieces. */
+  each(value: number, line: { quantity: number }): number {
+    return line.quantity > 0 ? value / line.quantity : value;
+  }
+
+  /** The agreed price on the line, or the product card's while none is set. */
+  unitPriceOf(line: { productId: number; quantity: number; goodsUsd: number }): number {
+    const agreed = this.orderLine(line.productId)?.exwPrice;
+    if (agreed != null) return agreed;
+    return this.productCardPrice(line.productId)?.amount ?? 0;
+  }
+
+  paymentTermsLabel(value: string | null | undefined): string {
+    return this.paymentTermOptions.find((option) => option.value === (value ?? 'THIRDS'))?.label ?? '—';
+  }
+
+  startEdit(): void {
+    this.editing.set(true);
+  }
+
+  /** Back to reading; an unsaved draft is dropped after a word of warning. */
+  cancelEdit(): void {
+    const data = this.view();
+    if (data && this.dirty()) {
+      this.ui.confirm({
+        title: 'Wijzigingen weggooien?',
+        message: 'De aanpassingen van dit moment zijn nog niet opgeslagen.',
+        confirmLabel: 'Weggooien',
+      }, () => {
+        void this.load(data.order.id);
+        this.editing.set(false);
+      });
+      return;
+    }
+    this.editing.set(false);
+  }
+
+  async saveAndClose(): Promise<void> {
+    const saved = await this.save();
+    if (saved) this.editing.set(false);
   }
 }

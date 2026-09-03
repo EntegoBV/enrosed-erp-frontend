@@ -2359,7 +2359,7 @@ export class PurchaseEditor {
     return locations.find((location) => location.id === (id ?? this.mainLocationId()))?.name ?? 'Magazijn';
   }
   private readonly router = inject(Router);
-  private readonly ui = inject(Ui);
+  protected readonly ui = inject(Ui);
 
   readonly id = input<string>('');
 
@@ -2423,7 +2423,7 @@ export class PurchaseEditor {
     });
   }
 
-  private async load(orderId: number): Promise<void> {
+  protected async load(orderId: number): Promise<void> {
     this.families.set([]);
     /* Family metadata enriches the cards and picker, but an unavailable
        catalogue endpoint must never hold up opening or editing an order. */

@@ -15,7 +15,7 @@ import { PurchaseView } from './purchase-view';
   imports: [PurchaseDesk, PurchaseEditor, PurchaseView],
   template: `
     @if (desktop.active()) {
-      <app-purchase-desk [id]="id()" />
+      <app-purchase-desk [id]="id()" [mode]="mode()" />
     } @else if (mode() === 'edit') {
       <app-purchase-editor [id]="id()" />
     } @else {
