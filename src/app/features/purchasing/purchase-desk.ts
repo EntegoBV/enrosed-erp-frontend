@@ -1118,7 +1118,7 @@ type DeskRow =
     .desk-alert{margin:12px 16px 16px}.desk-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.desk-alert--tight .alert__icon{background:var(--warn);color:#fff}
 
     /* ---- body: table + rail */
-    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:16px;align-items:start;margin-top:14px}
+    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) clamp(440px,30vw,520px);gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-pick__search{width:100%;margin-bottom:12px}
