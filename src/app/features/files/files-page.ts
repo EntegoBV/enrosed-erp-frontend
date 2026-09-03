@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnDestroy, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -12,7 +13,7 @@ import { PlannerApi } from '../../core/api/planner-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PageHeader } from '../../shared/page-header';
 import { DateTimeNlPipe } from '../../shared/pipes';
-import { Ui } from '../../shared/ui';
+import { Ui, Sheet } from '../../shared/ui';
 
 interface FolderNode extends MediaFolder { depth: number; }
 interface TargetOption { id: number; label: string; meta: string | null; }
@@ -57,8 +58,134 @@ const COLLECTIONS: readonly Collection[] = [
 @Component({
   selector: 'app-files-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, AuthImage, PageHeader, DateTimeNlPipe],
+  imports: [FormsModule, NgTemplateOutlet, AuthImage, PageHeader, Sheet, DateTimeNlPipe],
   template: `
+    @if (phone()) {
+      <!-- ============================ phone: a file browser, one screen at a time -->
+      <div class="content fm">
+        <header class="fm__bar">
+          @if (folder() !== 'root' || collection()) {
+            <button class="fm__back" type="button" (click)="goUp()">‹ {{ parentTitle() }}</button>
+          } @else { <span></span> }
+          <button class="fm__more" type="button" aria-label="Meer acties" (click)="menuOpen.set(true)">⋯</button>
+        </header>
+        <h1 class="fm__title">{{ phoneTitle() }}</h1>
+        <input class="input fm__search" type="search" autocomplete="off" placeholder="Zoeken" aria-label="Zoeken"
+               [ngModel]="query()" (ngModelChange)="changeQuery($event)" />
+        <span class="per-toggle fm__seg" role="group" aria-label="Soort">
+          <button type="button" [class.on]="kind() === null" (click)="setKind(null)">Alles</button>
+          <button type="button" [class.on]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button>
+          <button type="button" [class.on]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Documenten</button>
+        </span>
+
+        @if (selectedIds().size) {
+          <div class="fm__selection" role="status">
+            <b>{{ selectedIds().size }}</b>
+            <button class="btn btn--sm btn--primary" type="button" [disabled]="zipping()" (click)="downloadSelection('original')">{{ zipping() ? 'Bezig…' : '⤓ Downloaden' }}</button>
+            <select class="select fm__move" [ngModel]="''" (ngModelChange)="moveSelection($event === 'root' ? null : +$event)" aria-label="Verplaats naar">
+              <option value="" disabled>Verplaats…</option>
+              <option value="root">Zonder map</option>
+              @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
+            </select>
+            <button class="linklike" type="button" (click)="clearSelection(); picking.set(false)">Klaar</button>
+          </div>
+        } @else if (picking()) {
+          <div class="fm__selection" role="status"><span>Tik bestanden aan om ze te selecteren</span><button class="linklike" type="button" (click)="picking.set(false)">Klaar</button></div>
+        }
+
+        @if (loading()) {
+          <p class="fm__state">Laden…</p>
+        } @else {
+          @if (folder() === 'root' && !collection() && !query().trim()) {
+            <div class="fm__chips" aria-label="Op gebruik">
+              <button class="fm__chip" type="button" (click)="openFolder(null)"><i aria-hidden="true">▦</i>Alle bestanden</button>
+              @for (item of collections; track item.key) {
+                <button class="fm__chip" type="button" (click)="openCollection(item)"><i aria-hidden="true">{{ item.icon }}</i>{{ item.label }}</button>
+              }
+            </div>
+          }
+          @if (showFolders()) {
+            <h2 class="fm__h">Mappen</h2>
+            <ul class="fm__list">
+              @for (node of childFolders(); track node.id) {
+                <li><button class="fm__row" type="button" (click)="openFolder(node.id)">
+                  <i class="fm__icon fm__icon--folder" aria-hidden="true">▰</i>
+                  <span class="fm__copy"><b>{{ node.name }}</b><small>{{ node.assetCount }} bestand{{ node.assetCount === 1 ? '' : 'en' }}</small></span>
+                  <i class="fm__chev" aria-hidden="true">›</i>
+                </button></li>
+              }
+            </ul>
+          }
+          <h2 class="fm__h">{{ collection() ? collection()!.label : query().trim() ? 'Gevonden' : folder() === null ? 'Alle bestanden' : 'Bestanden' }} <small>{{ assets().length }}</small></h2>
+          @if (!assets().length) {
+            <p class="fm__state">Nog geen bestanden hier. Tik op + om er toe te voegen.</p>
+          } @else {
+            <ul class="fm__list">
+              @for (asset of sorted(); track asset.id) {
+                <li><button class="fm__row" type="button" [class.fm__row--picked]="selectedIds().has(asset.id)"
+                            (click)="picking() ? togglePick(asset, $event) : open(asset)">
+                  @if (picking()) { <i class="fm__tick" [class.on]="selectedIds().has(asset.id)" aria-hidden="true">{{ selectedIds().has(asset.id) ? '✓' : '' }}</i> }
+                  @if (asset.kind === 'IMAGE') { <img class="fm__thumb" [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fm__icon" aria-hidden="true">{{ extension(asset) }}</i> }
+                  <span class="fm__copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</small></span>
+                  <i class="fm__chev" aria-hidden="true">›</i>
+                </button></li>
+              }
+            </ul>
+            @if (hasMore()) { <button class="btn fm__more-btn" type="button" [disabled]="loadingMore()" (click)="loadMore()">{{ loadingMore() ? 'Laden…' : 'Meer laden' }}</button> }
+          }
+        }
+
+        <label class="fm__fab" [class.fm__fab--busy]="uploading()" [attr.aria-label]="uploading() ? uploadProgress() : 'Bestanden toevoegen'">
+          {{ uploading() ? '…' : '+' }}
+          <input type="file" multiple hidden accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" [disabled]="uploading()" (change)="chooseFiles($event)" />
+        </label>
+      </div>
+
+      @if (selected(); as asset) {
+        <app-sheet [title]="asset.name" (closed)="close()">
+          <div body class="fm-sheet"><ng-container *ngTemplateOutlet="detailBody; context: { $implicit: asset }" /></div>
+        </app-sheet>
+      }
+      @if (menuOpen()) {
+        <app-sheet [title]="phoneTitle()" (closed)="menuOpen.set(false)">
+          <div body class="fm__menu">
+            <button class="fm__menu-item" type="button" (click)="menuOpen.set(false); startFolder(currentFolderId())"><i aria-hidden="true">▰</i>Nieuwe map{{ folderName() ? ' in ' + folderName() : '' }}</button>
+            @if (currentFolderId() !== null) {
+              <button class="fm__menu-item" type="button" (click)="menuOpen.set(false); editCurrentFolder()"><i aria-hidden="true">✎</i>Map hernoemen of verplaatsen</button>
+            }
+            <button class="fm__menu-item" type="button" (click)="menuOpen.set(false); picking.set(true)"><i aria-hidden="true">☑</i>Selecteren</button>
+            <button class="fm__menu-item" type="button" [disabled]="!assets().length || zipping()" (click)="menuOpen.set(false); downloadAll()"><i aria-hidden="true">⤓</i>Alles downloaden ({{ assets().length }})</button>
+            <button class="fm__menu-item" type="button" (click)="menuOpen.set(false); setArchived(!archived())"><i aria-hidden="true">▤</i>{{ archived() ? 'Archief verbergen' : 'Archief tonen' }}</button>
+            <div class="fm__menu-sort">
+              <span>Sorteren op</span>
+              <span class="per-toggle" role="group" aria-label="Sorteren op">
+                <button type="button" [class.on]="sort().key === 'name'" (click)="sortBy('name')">Naam {{ arrow('name') }}</button>
+                <button type="button" [class.on]="sort().key === 'size'" (click)="sortBy('size')">Grootte {{ arrow('size') }}</button>
+                <button type="button" [class.on]="sort().key === 'updated'" (click)="sortBy('updated')">Datum {{ arrow('updated') }}</button>
+              </span>
+            </div>
+          </div>
+        </app-sheet>
+      }
+      @if (folderDraft(); as draft) {
+        <app-sheet [title]="draft.id === null ? 'Nieuwe map' : 'Map bewerken'" (closed)="folderDraft.set(null)">
+          <div body class="fm__folder">
+            <label class="field"><span>Naam</span>
+              <input class="input" type="text" placeholder="Mapnaam" maxlength="120" [ngModel]="draft.name" (ngModelChange)="folderDraft.set({ ...draft, name: $event })" (keydown.enter)="saveFolder()" /></label>
+            <label class="field"><span>In map</span>
+              <select class="select" [ngModel]="draft.parentId ?? ''" (ngModelChange)="folderDraft.set({ ...draft, parentId: $event === '' ? null : +$event })">
+                <option value="">— bovenaan —</option>
+                @for (node of parentChoices(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
+              </select></label>
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="folderDraft.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="!draft.name.trim()" (click)="saveFolder()">{{ draft.id === null ? 'Maken' : 'Bewaren' }}</button>
+          </div>
+        </app-sheet>
+      }
+    } @else {
     <app-page-header title="Bestanden" subtitle="Documenten en media, in mappen en met publieke links" [showBack]="false" [showBell]="false">
       <label class="btn btn--primary btn--sm fx__uploadbtn">
         {{ uploading() ? uploadProgress() : '+ Uploaden' }}
@@ -76,12 +203,10 @@ const COLLECTIONS: readonly Collection[] = [
              (keydown.arrowleft)="setRailWidth(railWidth() - 16)" (keydown.arrowright)="setRailWidth(railWidth() + 16)"></div>
         <div class="fx__rail-head"><b>Mappen</b><button class="linklike" type="button" (click)="startFolder(null)">+ Nieuwe map</button></div>
         <nav class="fx__tree">
-          <button class="fx__node" type="button" [class.on]="folder() === null" (click)="openFolder(null)">
-            <i aria-hidden="true">▦</i><span>Alle bestanden</span>
-          </button>
           <button class="fx__node" type="button" [class.on]="folder() === 'root'" [class.fx__node--target]="dragOverFolder() === 'root'"
-                  (click)="openFolder('root')" (dragover)="allowAssetDrop($event, 'root')" (dragleave)="dragOverFolder.set(undefined)" (drop)="dropOnFolder($event, null)">
-            <i aria-hidden="true">◌</i><span>Zonder map</span>
+                  (click)="openFolder('root')" (dragover)="allowAssetDrop($event, 'root')" (dragleave)="dragOverFolder.set(undefined)" (drop)="dropOnFolder($event, null)"
+                  title="De mappen en de bestanden die in geen map zitten; sleep hierheen om een bestand uit zijn map te halen">
+            <i aria-hidden="true">⌂</i><span>Bestanden</span>
           </button>
           @for (node of tree(); track node.id) {
             <div class="fx__row" [class.fx__row--on]="folder() === node.id" [style.paddingLeft.px]="node.depth * 14">
@@ -120,6 +245,9 @@ const COLLECTIONS: readonly Collection[] = [
 
         <div class="fx__rail-head fx__rail-head--gap"><b>Op gebruik</b></div>
         <nav class="fx__tree" aria-label="Bestanden op gebruik">
+          <button class="fx__node" type="button" [class.on]="folder() === null && !collection()" (click)="openFolder(null)" title="Alles plat, ongeacht de map">
+            <i aria-hidden="true">▦</i><span>Alle bestanden</span>
+          </button>
           @for (item of collections; track item.key) {
             <button class="fx__node" type="button" [class.on]="collection()?.key === item.key" (click)="openCollection(item)" [title]="item.hint">
               <i aria-hidden="true">{{ item.icon }}</i><span>{{ item.label }}</span>
@@ -181,13 +309,26 @@ const COLLECTIONS: readonly Collection[] = [
         @if (dropActive()) {
           <div class="fx__drop">Laat los om te uploaden{{ folderName() ? ' in ' + folderName() : '' }}</div>
         }
+        @if (showFolders()) {
+          <div class="fx__folders" aria-label="Mappen">
+            @for (node of childFolders(); track node.id) {
+              <button class="fx__foldercard" type="button" [class.fx__node--target]="dragOverFolder() === node.id" [class.fx__node--dragging]="draggingFolder()?.id === node.id"
+                      draggable="true" (dragstart)="dragFolder($event, node)" (dragend)="endDrag()"
+                      (click)="openFolder(node.id)" (dragover)="allowAssetDrop($event, node.id)" (dragleave)="dragOverFolder.set(undefined)" (drop)="dropOnFolder($event, node.id)"
+                      [title]="'Open ' + node.name + '; sleep bestanden of een map hierheen'">
+                <i aria-hidden="true">▰</i>
+                <span><b>{{ node.name }}</b><small>{{ node.assetCount }} bestand{{ node.assetCount === 1 ? '' : 'en' }}</small></span>
+              </button>
+            }
+          </div>
+        }
         @if (loading()) {
           <p class="fx__state">Bestanden laden…</p>
         } @else if (loadError()) {
           <p class="fx__state">{{ loadError() }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
         } @else if (!assets().length) {
-          <p class="fx__state">
-            @if (query().trim()) { Niets gevonden voor “{{ query() }}”. } @else { Nog geen bestanden hier. Sleep ze hierheen of klik op Uploaden. }
+          <p class="fx__state" [class.fx__state--quiet]="showFolders()">
+            @if (query().trim()) { Niets gevonden voor “{{ query() }}”. } @else if (showFolders()) { Geen losse bestanden hier; ze zitten in de mappen hierboven. } @else { Nog geen bestanden hier. Sleep ze hierheen of klik op Uploaden. }
           </p>
         } @else if (view() === 'grid' && groups(); as groups) {
           @for (group of groups; track group.label) {
@@ -264,10 +405,19 @@ const COLLECTIONS: readonly Collection[] = [
       <!-- ============================ the chosen file -->
       @if (selected(); as asset) {
         <aside class="fx__detail" aria-label="Bestand">
-          <div class="fx__detail-head">
-            <b>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</b>
-            <button class="fx__close" type="button" aria-label="Sluiten" (click)="close()">×</button>
-          </div>
+          <ng-container *ngTemplateOutlet="detailBody; context: { $implicit: asset }" />
+        </aside>
+      }
+    </div>
+    }
+
+    <ng-template #detailBody let-asset>
+          @if (!phone()) {
+            <div class="fx__detail-head">
+              <b>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</b>
+              <button class="fx__close" type="button" aria-label="Sluiten" (click)="close()">×</button>
+            </div>
+          }
           <div class="fx__preview" (click)="download(asset)" title="Downloaden">
             @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.fileUrl(asset.id)" [alt]="asset.name" /> }
             @else { <i class="fx__ext fx__ext--big" aria-hidden="true">{{ extension(asset) }}</i> }
@@ -366,9 +516,7 @@ const COLLECTIONS: readonly Collection[] = [
               <button class="btn btn--sm" type="submit" [disabled]="busy() || linkTarget() === ''">Koppelen</button>
             </form>
           </section>
-        </aside>
-      }
-    </div>
+    </ng-template>
   `,
   styles: [`
     :host{display:block}
@@ -399,7 +547,12 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__search{flex:1 1 220px;min-width:160px}
     .fx__check{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);font-size:12.5px;cursor:pointer}.fx__check input{accent-color:var(--rose)}
     .fx__drop{margin-bottom:12px;padding:22px;border:2px dashed var(--rose);border-radius:14px;background:var(--rose-soft);color:var(--rose-dark);font-weight:650;text-align:center}
-    .fx__state{padding:40px 12px;color:var(--muted);font-size:13px;text-align:center}
+    .fx__state{padding:40px 12px;color:var(--muted);font-size:13px;text-align:center}.fx__state--quiet{padding:18px 12px}
+    .fx__folders{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px}
+    .fx__foldercard{display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .fx__foldercard:hover{border-color:var(--rose);background:var(--rose-soft)}.fx__foldercard.fx__node--target{outline:2px dashed var(--rose);outline-offset:-2px;background:var(--rose-soft)}
+    .fx__foldercard>i{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose);font-style:normal;font-size:16px}
+    .fx__foldercard>span{display:grid;min-width:0}.fx__foldercard b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.fx__foldercard small{color:var(--muted);font-size:11px}
     .fx__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
     .fx__card{position:relative;display:grid;gap:6px;padding:6px 6px 8px;border:2px solid var(--line);border-radius:14px;background:var(--surface);font:inherit;text-align:left;cursor:pointer}
     .fx__card:hover{border-color:var(--line-strong)}.fx__card.on{border-color:var(--rose);background:var(--rose-soft)}.fx__card--archived{opacity:.6}
@@ -448,6 +601,37 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__addlink{display:grid;gap:6px;margin-top:4px}
     @media(max-width:1180px){.fx--detail{grid-template-columns:232px minmax(0,1fr)}.fx__detail{grid-column:1/-1;position:static;max-height:none}}
     @media(max-width:820px){.fx,.fx--detail{grid-template-columns:1fr!important}.fx__rail{position:static}.fx__resizer{display:none}}
+
+    /* ---- phone: an iOS-style file browser */
+    .fm{display:block;padding:6px 14px calc(var(--tabbar-h,58px) + var(--safe-b,0px) + 96px)}
+    .fm__bar{display:flex;align-items:center;justify-content:space-between;min-height:36px}
+    .fm__back{padding:6px 6px 6px 0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:15px;font-weight:600}
+    .fm__more{width:34px;height:34px;border:0;border-radius:50%;background:var(--surface-2);color:var(--ink);font-size:18px;line-height:1}
+    .fm__title{margin:2px 0 10px;overflow:hidden;font-size:30px;font-weight:800;letter-spacing:-.02em;text-overflow:ellipsis;white-space:nowrap}
+    .fm__search{width:100%;min-height:42px;margin-bottom:8px;border-radius:12px}
+    .fm__seg{display:flex;width:100%;margin-bottom:10px}.fm__seg button{flex:1;min-height:34px}
+    .fm__selection{position:sticky;top:calc(var(--appbar-h,56px) + 6px);z-index:5;display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 10px;border-radius:14px;background:var(--rose-soft);color:var(--rose-dark);font-size:13px;box-shadow:var(--sh-1)}
+    .fm__selection>b{font-size:15px}.fm__selection .fm__move{flex:1;min-width:0;min-height:34px;padding-block:0;font-size:12.5px}.fm__selection>span{flex:1}
+    .fm__chips{display:flex;gap:6px;margin:0 -14px 6px;padding:2px 14px 8px;overflow-x:auto;scrollbar-width:none}.fm__chips::-webkit-scrollbar{display:none}
+    .fm__chip{flex:none;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:12.5px;font-weight:600}.fm__chip i{color:var(--rose);font-style:normal}
+    .fm__h{margin:14px 4px 6px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.fm__h small{margin-left:4px;font-weight:600;letter-spacing:0}
+    .fm__list{margin:0;padding:0;list-style:none;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden;box-shadow:var(--sh-1)}.fm__list li+li{border-top:1px solid var(--line)}
+    .fm__row{display:flex;width:100%;align-items:center;gap:12px;min-height:58px;padding:8px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .fm__row:active{background:var(--surface-2)}.fm__row--picked{background:var(--rose-soft)}
+    .fm__thumb,.fm__icon{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:var(--surface-2)}
+    .fm__icon{display:grid;place-items:center;color:var(--muted);font-size:10px;font-style:normal;font-weight:800;letter-spacing:.04em}.fm__icon--folder{color:var(--rose);font-size:18px;background:var(--rose-soft);border-color:var(--rose-line)}
+    .fm__copy{display:grid;flex:1;min-width:0;gap:1px}.fm__copy b{overflow:hidden;font-size:15px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.fm__copy small{overflow:hidden;color:var(--muted);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+    .fm__chev{color:var(--line-strong);font-style:normal;font-size:22px;line-height:1}
+    .fm__tick{display:grid;width:24px;height:24px;flex:none;place-items:center;border:2px solid var(--line-strong);border-radius:50%;color:#fff;font-size:12px;font-style:normal;font-weight:800}.fm__tick.on{border-color:var(--rose);background:var(--rose)}
+    .fm__state{margin:8px 4px;color:var(--muted);font-size:13.5px}
+    .fm__more-btn{width:100%;margin-top:10px}
+    .fm__fab{position:fixed;right:18px;bottom:calc(var(--tabbar-h,58px) + var(--safe-b,0px) + 18px);z-index:30;display:grid;width:58px;height:58px;place-items:center;border-radius:50%;background:var(--rose);color:#fff;font-size:32px;font-weight:600;line-height:1;box-shadow:0 10px 24px rgb(0 0 0/.24);cursor:pointer}
+    .fm__fab--busy{opacity:.7}
+    .fm__menu{display:grid;gap:6px}
+    .fm__menu-item{display:flex;align-items:center;gap:12px;min-height:50px;padding:0 14px;border:0;border-radius:14px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:15px;text-align:left}.fm__menu-item i{width:22px;color:var(--rose);font-style:normal;font-size:16px;text-align:center}.fm__menu-item:disabled{opacity:.5}
+    .fm__menu-sort{display:grid;gap:6px;padding:10px 4px 0}.fm__menu-sort>span:first-child{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.fm__menu-sort .per-toggle{display:flex}.fm__menu-sort .per-toggle button{flex:1;min-height:38px}
+    .fm__folder{display:grid;gap:12px}.fm__folder .field>span{display:block;margin-bottom:4px;color:var(--muted);font-size:12px;font-weight:700}
+    .fm-sheet{display:grid;gap:12px}.fm-sheet .fx__preview img{max-height:38vh}.fm-sheet .fx__actions .btn{min-height:44px}
   `],
 })
 export class FilesPage implements OnDestroy {
@@ -488,11 +672,42 @@ export class FilesPage implements OnDestroy {
   readonly resizing = signal(false);
   /** Below 1180px the detail drops under the grid; the stylesheet's own columns apply there. */
   private readonly wide = signal(typeof window === 'undefined' ? true : window.innerWidth > 1180);
+  /** Under 820px the page is a phone file browser: one folder per screen, the file in a sheet. */
+  readonly phone = signal(typeof window === 'undefined' ? false : window.innerWidth < 820);
+  readonly picking = signal(false);
+  readonly menuOpen = signal(false);
+  readonly childFolders = computed(() => {
+    const parent = this.currentFolderId();
+    return this.tree().filter((node) => node.parentId === parent);
+  });
+  readonly phoneTitle = computed(() =>
+    this.collection()?.label ?? (this.folder() === null ? 'Alle bestanden' : this.folderName() || 'Bestanden'));
+  readonly parentTitle = computed(() => {
+    if (this.collection() || this.folder() === null) return 'Bestanden';
+    const id = this.currentFolderId();
+    const parent = id === null ? null : this.folders().find((item) => item.id === id)?.parentId ?? null;
+    return parent === null ? 'Bestanden' : this.folders().find((item) => item.id === parent)?.name ?? 'Bestanden';
+  });
+  /** Folders show in the main view while browsing folders - not in a view by use or a search. */
+  readonly showFolders = computed(() => !this.collection() && !this.query().trim() && this.folder() !== null && this.childFolders().length > 0);
+
+  goUp(): void {
+    if (this.collection() || this.folder() === null) { this.openFolder('root'); return; }
+    const id = this.currentFolderId();
+    const parent = id === null ? null : this.folders().find((item) => item.id === id)?.parentId ?? null;
+    this.openFolder(parent ?? 'root');
+  }
+
+  editCurrentFolder(): void {
+    const id = this.currentFolderId();
+    const folder = id === null ? null : this.folders().find((item) => item.id === id);
+    if (folder) this.folderDraft.set({ id: folder.id, name: folder.name, parentId: folder.parentId });
+  }
   readonly gridColumns = computed(() => {
     if (!this.wide()) return null;
     return `${this.railWidth()}px minmax(0, 1fr)${this.selected() ? ' var(--fx-detail, 420px)' : ''}`;
   });
-  private readonly onResize = () => this.wide.set(window.innerWidth > 1180);
+  private readonly onResize = () => { this.wide.set(window.innerWidth > 1180); this.phone.set(window.innerWidth < 820); };
   private resizeStart: { x: number; width: number } | null = null;
 
   private static clampRail(width: number): number {
@@ -530,7 +745,8 @@ export class FilesPage implements OnDestroy {
 
   /* ---- folders */
   readonly folders = signal<MediaFolder[]>([]);
-  readonly folder = signal<number | 'root' | null>(null);
+  /** 'root' is home: the top-level folders and the files outside every folder; null lists everything flat. */
+  readonly folder = signal<number | 'root' | null>('root');
   readonly folderDraft = signal<FolderDraft | null>(null);
   readonly dragOverFolder = signal<number | 'root' | undefined>(undefined);
   readonly tree = computed<FolderNode[]>(() => {
@@ -569,10 +785,11 @@ export class FilesPage implements OnDestroy {
   });
   readonly crumbs = computed(() => {
     const folder = this.folder();
-    const crumbs: { id: number | 'root' | null; name: string }[] = [{ id: null, name: 'Alle bestanden' }];
+    const crumbs: { id: number | 'root' | null; name: string }[] = [{ id: 'root', name: 'Bestanden' }];
     const collection = this.collection();
     if (collection) return [...crumbs, { id: null, name: collection.label }];
-    if (folder === 'root') return [...crumbs, { id: 'root' as const, name: 'Zonder map' }];
+    if (this.query().trim()) return [...crumbs, { id: null, name: 'Zoeken: ' + this.query().trim() }];
+    if (folder === null) return [...crumbs, { id: null, name: 'Alle bestanden' }];
     if (typeof folder !== 'number') return crumbs;
     const byId = new Map(this.folders().map((item) => [item.id, item]));
     const path: { id: number; name: string }[] = [];
@@ -884,7 +1101,7 @@ export class FilesPage implements OnDestroy {
     return {
       q: this.query(), kind: this.kind() ?? undefined,
       archived: this.archived() ? true : undefined, includeArchived: false,
-      folder: folder === null ? undefined : folder, offset, limit: PAGE + 1,
+      folder: folder === null || this.query().trim() ? undefined : folder, offset, limit: PAGE + 1,
       targetType: use.targetType, role: use.role, linked: use.linked,
     };
   }
