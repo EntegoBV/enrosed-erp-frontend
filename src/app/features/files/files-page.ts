@@ -67,16 +67,30 @@ const COLLECTIONS: readonly Collection[] = [
           @if (folder() !== 'root' || collection()) {
             <button class="fm__back" type="button" (click)="goUp()">‹ {{ parentTitle() }}</button>
           } @else { <span></span> }
-          <button class="fm__more" type="button" aria-label="Meer acties" (click)="menuOpen.set(true)">⋯</button>
+          <span class="fm__tools">
+            <button class="fm__iconbtn" type="button" [class.on]="searchOpen() || query()" aria-label="Zoeken" (click)="toggleSearch()">⌕</button>
+            <button class="fm__iconbtn" type="button" aria-label="Meer acties" (click)="menuOpen.set(true)">⋯</button>
+          </span>
         </header>
         <h1 class="fm__title">{{ phoneTitle() }}</h1>
-        <input class="input fm__search" type="search" autocomplete="off" placeholder="Zoeken" aria-label="Zoeken"
-               [ngModel]="query()" (ngModelChange)="changeQuery($event)" />
-        <span class="per-toggle fm__seg" role="group" aria-label="Soort">
-          <button type="button" [class.on]="kind() === null" (click)="setKind(null)">Alles</button>
-          <button type="button" [class.on]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button>
-          <button type="button" [class.on]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Documenten</button>
-        </span>
+        @if (searchOpen() || query()) {
+          <input class="input fm__search" id="fm-search" type="search" autocomplete="off" placeholder="Zoeken in alle mappen" aria-label="Zoeken"
+                 [ngModel]="query()" (ngModelChange)="changeQuery($event)" />
+        }
+        <div class="fm__chips" aria-label="Filter">
+          <span class="fm__kinds" role="group" aria-label="Soort">
+            <button type="button" [class.on]="kind() === null" (click)="setKind(null)">Alles</button>
+            <button type="button" [class.on]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button>
+            <button type="button" [class.on]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Docs</button>
+          </span>
+          @if (folder() === 'root' && !collection() && !query().trim()) {
+            <i class="fm__sep" aria-hidden="true"></i>
+            <button class="fm__chip" type="button" (click)="openFolder(null)"><i aria-hidden="true">▦</i>Alle bestanden</button>
+            @for (item of collections; track item.key) {
+              <button class="fm__chip" type="button" (click)="openCollection(item)"><i aria-hidden="true">{{ item.icon }}</i>{{ item.label }}</button>
+            }
+          }
+        </div>
 
         @if (selectedIds().size) {
           <div class="fm__selection" role="status">
@@ -96,14 +110,6 @@ const COLLECTIONS: readonly Collection[] = [
         @if (loading()) {
           <p class="fm__state">Laden…</p>
         } @else {
-          @if (folder() === 'root' && !collection() && !query().trim()) {
-            <div class="fm__chips" aria-label="Op gebruik">
-              <button class="fm__chip" type="button" (click)="openFolder(null)"><i aria-hidden="true">▦</i>Alle bestanden</button>
-              @for (item of collections; track item.key) {
-                <button class="fm__chip" type="button" (click)="openCollection(item)"><i aria-hidden="true">{{ item.icon }}</i>{{ item.label }}</button>
-              }
-            </div>
-          }
           @if (showFolders()) {
             <h2 class="fm__h">Mappen</h2>
             <ul class="fm__list">
@@ -122,13 +128,18 @@ const COLLECTIONS: readonly Collection[] = [
           } @else {
             <ul class="fm__list">
               @for (asset of sorted(); track asset.id) {
-                <li><button class="fm__row" type="button" [class.fm__row--picked]="selectedIds().has(asset.id)"
-                            (click)="picking() ? togglePick(asset, $event) : open(asset)">
-                  @if (picking()) { <i class="fm__tick" [class.on]="selectedIds().has(asset.id)" aria-hidden="true">{{ selectedIds().has(asset.id) ? '✓' : '' }}</i> }
-                  @if (asset.kind === 'IMAGE') { <img class="fm__thumb" [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fm__icon" aria-hidden="true">{{ extension(asset) }}</i> }
-                  <span class="fm__copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</small></span>
-                  <i class="fm__chev" aria-hidden="true">›</i>
-                </button></li>
+                <li class="fm__swipe" [class.fm__swipe--open]="swipe()?.id === asset.id && swipe()?.open">
+                  <button class="fm__swipe-del" type="button" tabindex="-1" [disabled]="asset.links.length > 0" (click)="removeAsset(asset)">{{ asset.links.length ? 'In gebruik' : 'Verwijderen' }}</button>
+                  <button class="fm__row" type="button" [class.fm__row--picked]="selectedIds().has(asset.id)" [class.fm__row--sliding]="swipe()?.id === asset.id && !swipe()?.settled"
+                          [style.transform]="swipe()?.id === asset.id ? 'translateX(' + swipe()!.dx + 'px)' : null"
+                          (pointerdown)="touchStart($event, asset)" (pointermove)="touchMove($event)" (pointerup)="touchEnd($event, asset)" (pointercancel)="touchEnd($event, asset)"
+                          (contextmenu)="$event.preventDefault()" (click)="rowClick(asset, $event)">
+                    @if (picking()) { <i class="fm__tick" [class.on]="selectedIds().has(asset.id)" aria-hidden="true">{{ selectedIds().has(asset.id) ? '✓' : '' }}</i> }
+                    @if (asset.kind === 'IMAGE') { <img class="fm__thumb" [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" draggable="false" /> } @else { <i class="fm__icon" aria-hidden="true">{{ extension(asset) }}</i> }
+                    <span class="fm__copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</small></span>
+                    <i class="fm__chev" aria-hidden="true">›</i>
+                  </button>
+                </li>
               }
             </ul>
             @if (hasMore()) { <button class="btn fm__more-btn" type="button" [disabled]="loadingMore()" (click)="loadMore()">{{ loadingMore() ? 'Laden…' : 'Meer laden' }}</button> }
@@ -144,6 +155,25 @@ const COLLECTIONS: readonly Collection[] = [
       @if (selected(); as asset) {
         <app-sheet [title]="asset.name" (closed)="close()">
           <div body class="fm-sheet"><ng-container *ngTemplateOutlet="detailBody; context: { $implicit: asset }" /></div>
+        </app-sheet>
+      }
+      @if (actionsFor(); as target) {
+        <app-sheet [title]="target.asset.name" (closed)="actionsFor.set(null)">
+          <div body class="fm__menu">
+            @for (item of actionItems(target.asset); track item.key) {
+              <button class="fm__menu-item" type="button" [class.fm__menu-item--danger]="item.danger" [disabled]="item.disabled" (click)="runAction(item.key, target.asset)">
+                <i aria-hidden="true">{{ item.icon }}</i>{{ item.label }}@if (item.hint) { <small>{{ item.hint }}</small> }
+              </button>
+            }
+            <div class="fm__menu-sort">
+              <span>Verplaats naar</span>
+              <select class="select" [ngModel]="''" (ngModelChange)="runMove(target.asset, $event)" aria-label="Verplaats naar">
+                <option value="" disabled>Kies een map…</option>
+                <option value="root">Zonder map</option>
+                @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
+              </select>
+            </div>
+          </div>
         </app-sheet>
       }
       @if (menuOpen()) {
@@ -338,7 +368,7 @@ const COLLECTIONS: readonly Collection[] = [
                 @for (asset of group.assets; track asset.id) {
                   <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
                           draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
-                          (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" [title]="asset.originalFilename">
+                          (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" (contextmenu)="openContext($event, asset)" [title]="asset.originalFilename">
                     <span class="fx__pick" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
                     @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
                     <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }}</small></span>
@@ -352,7 +382,7 @@ const COLLECTIONS: readonly Collection[] = [
             @for (asset of sorted(); track asset.id) {
               <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
                       draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
-                      (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" [title]="asset.originalFilename">
+                      (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" (contextmenu)="openContext($event, asset)" [title]="asset.originalFilename">
                 <span class="fx__pick" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
                 @if (asset.kind === 'IMAGE') {
                   <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" />
@@ -381,7 +411,7 @@ const COLLECTIONS: readonly Collection[] = [
               @for (group of groups() ?? [{ label: '', assets: sorted() }]; track group.label) {
                 @if (group.label) { <tr class="fx__group-row"><td colspan="5">{{ group.label }} <small>{{ group.assets.length }}</small></td></tr> }
                 @for (asset of group.assets; track asset.id) {
-                  <tr [class.on]="selected()?.id === asset.id" [class.fx__row--picked]="selectedIds().has(asset.id)" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()" (click)="clickAsset(asset, $event)">
+                  <tr [class.on]="selected()?.id === asset.id" [class.fx__row--picked]="selectedIds().has(asset.id)" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()" (click)="clickAsset(asset, $event)" (contextmenu)="openContext($event, asset)">
                     <td class="fx__name">
                       <span class="fx__pick fx__pick--row" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
                       @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
@@ -402,6 +432,25 @@ const COLLECTIONS: readonly Collection[] = [
         }
       </main>
 
+      @if (context(); as ctx) {
+        <div class="fx__ctx-backdrop" (click)="context.set(null)" (contextmenu)="$event.preventDefault(); context.set(null)"></div>
+        <div class="fx__ctx" role="menu" [style.left.px]="ctx.x" [style.top.px]="ctx.y">
+          <div class="fx__ctx-title">{{ ctx.asset.name }}</div>
+          @for (item of actionItems(ctx.asset); track item.key) {
+            <button type="button" role="menuitem" [class.is-danger]="item.danger" [disabled]="item.disabled" (click)="runAction(item.key, ctx.asset)">
+              <i aria-hidden="true">{{ item.icon }}</i>{{ item.label }}@if (item.hint) { <small>{{ item.hint }}</small> }
+            </button>
+          }
+          <label class="fx__ctx-move"><span>Verplaats naar</span>
+            <select class="select" [ngModel]="''" (ngModelChange)="runMove(ctx.asset, $event)">
+              <option value="" disabled>Kies een map…</option>
+              <option value="root">Zonder map</option>
+              @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
+            </select>
+          </label>
+        </div>
+      }
+
       <!-- ============================ the chosen file -->
       @if (selected(); as asset) {
         <aside class="fx__detail" aria-label="Bestand">
@@ -418,6 +467,14 @@ const COLLECTIONS: readonly Collection[] = [
               <button class="fx__close" type="button" aria-label="Sluiten" (click)="close()">×</button>
             </div>
           }
+          @if (phone()) {
+            <div class="fm__quick" role="group" aria-label="Acties">
+              <button type="button" [disabled]="downloading()" (click)="download(asset)"><i aria-hidden="true">⤓</i>Download</button>
+              <button type="button" [disabled]="busy()" (click)="asset.share ? copyLink(asset.share.token) : share()"><i aria-hidden="true">⛓</i>{{ asset.share ? 'Link kopiëren' : 'Publieke link' }}</button>
+              <button type="button" (click)="focusName()"><i aria-hidden="true">✎</i>Hernoemen</button>
+              <button type="button" (click)="actionsFor.set({ asset })"><i aria-hidden="true">⋯</i>Meer</button>
+            </div>
+          }
           <div class="fx__preview" (click)="download(asset)" title="Downloaden">
             @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.fileUrl(asset.id)" [alt]="asset.name" /> }
             @else { <i class="fx__ext fx__ext--big" aria-hidden="true">{{ extension(asset) }}</i> }
@@ -426,7 +483,7 @@ const COLLECTIONS: readonly Collection[] = [
           <label class="fx__field">
             <span>Naam</span>
             <span class="fx__inline">
-              <input class="input" type="text" [ngModel]="nameDraft()" (ngModelChange)="nameDraft.set($event)" (keydown.enter)="saveName()" />
+              <input class="input" id="fx-name" type="text" [ngModel]="nameDraft()" (ngModelChange)="nameDraft.set($event)" (keydown.enter)="saveName()" />
               @if (nameDraft().trim() && nameDraft().trim() !== asset.name) { <button class="btn btn--sm btn--primary" type="button" [disabled]="busy()" (click)="saveName()">Bewaren</button> }
             </span>
           </label>
@@ -483,6 +540,7 @@ const COLLECTIONS: readonly Collection[] = [
             }
           </section>
 
+          @if (!phone()) {
           <div class="fx__actions">
             <button class="btn btn--sm" type="button" [disabled]="downloading()" (click)="download(asset)">{{ downloading() ? 'Bezig…' : 'Downloaden' }}</button>
             <label class="btn btn--sm">{{ busy() ? 'Bezig…' : 'Nieuwe versie' }}<input type="file" hidden [disabled]="busy()" (change)="replaceVersion($event)" /></label>
@@ -493,15 +551,22 @@ const COLLECTIONS: readonly Collection[] = [
             }
             <button class="btn btn--sm fx__danger" type="button" [disabled]="busy() || asset.links.length > 0" [title]="asset.links.length ? 'Eerst de koppelingen weghalen' : ''" (click)="remove()">Verwijderen</button>
           </div>
+          }
 
           <section class="fx__links">
-            <div class="fx__share-head"><b>Gebruikt bij</b><small>{{ asset.links.length || 'nergens' }}</small></div>
+            <div class="fx__share-head"><b>Gebruikt bij</b><small>{{ asset.links.length ? asset.links.length + ' plaats' + (asset.links.length === 1 ? '' : 'en') : 'nergens' }}</small>
+              <button class="linklike" type="button" (click)="linkFormOpen.set(!linkFormOpen())">{{ linkFormOpen() ? 'Sluiten' : '+ Koppelen' }}</button></div>
+            @if (!asset.links.length && !linkFormOpen()) {
+              <p class="fx__hint">Dit bestand hangt nog nergens aan. Koppel het aan een product, reeks, inkooporder of planneritem, dan verschijnt het daar.</p>
+            }
             @for (link of asset.links; track link.id) {
               <div class="fx__link">
+                <i class="fx__link-icon" aria-hidden="true">{{ targetIcon(link.targetType) }}</i>
                 <span><b>{{ link.targetLabel || (targetLabel(link.targetType) + ' #' + link.targetId) }}</b><small>{{ targetLabel(link.targetType) }} · {{ roleLabel(link.role) }}{{ link.primary ? ' · hoofd' : '' }}</small></span>
-                <button type="button" aria-label="Koppeling weghalen" [disabled]="busy()" (click)="unlink(link.id)">×</button>
+                <button type="button" aria-label="Koppeling weghalen" title="Koppeling weghalen" [disabled]="busy()" (click)="unlink(link.id)">×</button>
               </div>
             }
+            @if (linkFormOpen()) {
             <form class="fx__addlink" (submit)="$event.preventDefault(); addLink()">
               <select class="select" [ngModel]="linkType()" name="linkType" (ngModelChange)="setLinkType($event)">
                 @for (option of targetOptions; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
@@ -515,6 +580,7 @@ const COLLECTIONS: readonly Collection[] = [
               </select>
               <button class="btn btn--sm" type="submit" [disabled]="busy() || linkTarget() === ''">Koppelen</button>
             </form>
+            }
           </section>
     </ng-template>
   `,
@@ -631,7 +697,25 @@ const COLLECTIONS: readonly Collection[] = [
     .fm__menu-item{display:flex;align-items:center;gap:12px;min-height:50px;padding:0 14px;border:0;border-radius:14px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:15px;text-align:left}.fm__menu-item i{width:22px;color:var(--rose);font-style:normal;font-size:16px;text-align:center}.fm__menu-item:disabled{opacity:.5}
     .fm__menu-sort{display:grid;gap:6px;padding:10px 4px 0}.fm__menu-sort>span:first-child{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.fm__menu-sort .per-toggle{display:flex}.fm__menu-sort .per-toggle button{flex:1;min-height:38px}
     .fm__folder{display:grid;gap:12px}.fm__folder .field>span{display:block;margin-bottom:4px;color:var(--muted);font-size:12px;font-weight:700}
-    .fm-sheet{display:grid;gap:12px}.fm-sheet .fx__preview img{max-height:38vh}.fm-sheet .fx__actions .btn{min-height:44px}
+    .fm-sheet{display:grid;gap:12px}.fm-sheet .fx__preview img{max-height:34vh}
+    .fm__tools{display:flex;gap:6px}.fm__iconbtn{display:grid;width:36px;height:36px;place-items:center;border:0;border-radius:50%;background:var(--surface-2);color:var(--ink);font-size:18px;line-height:1}.fm__iconbtn.on{background:var(--rose-soft);color:var(--rose-dark)}
+    .fm__title{font-size:26px;margin:0 0 8px}
+    .fm__kinds{display:inline-flex;flex:none;padding:3px;border-radius:999px;background:var(--surface-2)}.fm__kinds button{min-height:30px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:650}.fm__kinds button.on{background:var(--surface);color:var(--ink);box-shadow:var(--sh-1)}
+    .fm__sep{flex:none;width:1px;height:22px;margin:0 2px;background:var(--line)}
+    .fm__chips{align-items:center}
+    .fm__swipe{position:relative;overflow:hidden}.fm__swipe-del{position:absolute;top:0;right:0;bottom:0;width:104px;border:0;background:var(--danger);color:#fff;font:inherit;font-size:13px;font-weight:700}.fm__swipe-del:disabled{background:var(--line-strong);color:#fff}
+    .fm__row{position:relative;z-index:1;background:var(--surface);touch-action:pan-y;transition:transform .16s ease}.fm__row--sliding{transition:none}
+    .fm__quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.fm__quick button{display:grid;justify-items:center;gap:5px;padding:8px 2px;border:0;border-radius:14px;background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:11px;font-weight:600}
+    .fm__quick i{display:grid;width:40px;height:40px;place-items:center;border-radius:50%;background:var(--rose-soft);color:var(--rose-dark);font-style:normal;font-size:18px}
+    .fm__menu-item small{margin-left:auto;color:var(--muted);font-size:12px}.fm__menu-item--danger{color:var(--danger)}.fm__menu-item--danger i{color:var(--danger)}
+    .fx__ctx-backdrop{position:fixed;inset:0;z-index:59}
+    .fx__ctx{position:fixed;z-index:60;min-width:230px;max-width:300px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 14px 36px rgb(0 0 0/.18)}
+    .fx__ctx-title{padding:6px 10px 8px;overflow:hidden;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+    .fx__ctx button[role=menuitem]{display:flex;width:100%;align-items:center;gap:10px;padding:8px 10px;border:0;border-radius:8px;background:none;color:var(--ink);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+    .fx__ctx button[role=menuitem]:hover:enabled{background:var(--surface-2)}.fx__ctx button[role=menuitem]:disabled{opacity:.45;cursor:default}.fx__ctx button.is-danger{color:var(--danger)}
+    .fx__ctx button i{width:18px;color:var(--rose);font-style:normal;text-align:center}.fx__ctx button small{margin-left:auto;color:var(--muted);font-size:11px}
+    .fx__ctx-move{display:grid;gap:4px;padding:8px 10px 6px;border-top:1px solid var(--line)}.fx__ctx-move>span{color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}.fx__ctx-move .select{min-height:32px;padding-block:0;font-size:12px}
+    .fx__link-icon{display:grid;width:28px;height:28px;flex:none;place-items:center;border-radius:8px;background:var(--rose-soft);color:var(--rose);font-style:normal;font-size:13px}
   `],
 })
 export class FilesPage implements OnDestroy {
@@ -676,6 +760,160 @@ export class FilesPage implements OnDestroy {
   readonly phone = signal(typeof window === 'undefined' ? false : window.innerWidth < 820);
   readonly picking = signal(false);
   readonly menuOpen = signal(false);
+  readonly searchOpen = signal(false);
+  readonly linkFormOpen = signal(false);
+  /** The file whose actions are open: a sheet on the phone, a menu at the cursor on desktop. */
+  readonly actionsFor = signal<{ asset: MediaAssetSummary } | null>(null);
+  readonly context = signal<{ asset: MediaAssetSummary; x: number; y: number } | null>(null);
+  /** A row being swiped: how far, whether it settled open on the delete button. */
+  readonly swipe = signal<{ id: number; dx: number; open: boolean; settled: boolean } | null>(null);
+  private touch: { id: number; x: number; y: number; dx: number; moved: boolean; timer: ReturnType<typeof setTimeout> | null } | null = null;
+  private suppressClick = false;
+
+  toggleSearch(): void {
+    const open = !this.searchOpen();
+    this.searchOpen.set(open);
+    if (open) setTimeout(() => document.getElementById('fm-search')?.focus(), 50);
+    else if (this.query()) this.changeQuery('');
+  }
+
+  /* ---- phone rows: swipe left to delete, hold for the actions */
+  touchStart(event: PointerEvent, asset: MediaAssetSummary): void {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const current = this.swipe();
+    if (current && current.id !== asset.id) this.swipe.set(null);
+    this.touch = {
+      id: asset.id, x: event.clientX, y: event.clientY, dx: current?.id === asset.id && current.open ? -104 : 0, moved: false,
+      timer: setTimeout(() => {
+        if (this.touch && !this.touch.moved) {
+          this.suppressClick = true;
+          this.touch.timer = null;
+          this.actionsFor.set({ asset });
+        }
+      }, 520),
+    };
+  }
+
+  touchMove(event: PointerEvent): void {
+    const touch = this.touch;
+    if (!touch) return;
+    const dx = event.clientX - touch.x;
+    const dy = event.clientY - touch.y;
+    if (!touch.moved && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    if (!touch.moved && Math.abs(dy) > Math.abs(dx)) { this.cancelTouch(); return; }
+    touch.moved = true;
+    if (touch.timer) { clearTimeout(touch.timer); touch.timer = null; }
+    const offset = Math.max(-140, Math.min(0, touch.dx + dx));
+    this.swipe.set({ id: touch.id, dx: offset, open: false, settled: false });
+  }
+
+  touchEnd(event: PointerEvent, asset: MediaAssetSummary): void {
+    const touch = this.touch;
+    if (!touch) return;
+    if (touch.timer) { clearTimeout(touch.timer); touch.timer = null; }
+    this.touch = null;
+    if (!touch.moved) return;
+    this.suppressClick = true;
+    const dx = touch.dx + (event.clientX - touch.x);
+    const open = dx < -60;
+    this.swipe.set(open ? { id: asset.id, dx: -104, open: true, settled: true } : null);
+  }
+
+  private cancelTouch(): void {
+    if (this.touch?.timer) clearTimeout(this.touch.timer);
+    this.touch = null;
+  }
+
+  rowClick(asset: MediaAssetSummary, event: MouseEvent): void {
+    if (this.suppressClick) { this.suppressClick = false; return; }
+    if (this.swipe()) { this.swipe.set(null); return; }
+    if (this.picking()) this.togglePick(asset, event); else void this.open(asset);
+  }
+
+  /* ---- the actions of one file, the same list behind a long press and a right click */
+  actionItems(asset: MediaAssetSummary): { key: string; icon: string; label: string; hint?: string; danger?: boolean; disabled?: boolean }[] {
+    const web = !!asset.web && asset.web.sizeBytes !== asset.sizeBytes;
+    return [
+      { key: 'open', icon: '↗', label: 'Openen' },
+      { key: 'download', icon: '⤓', label: 'Downloaden', hint: this.size(asset.sizeBytes) },
+      ...(web ? [{ key: 'download-web', icon: '⤓', label: 'Downloaden als web', hint: this.size(asset.web!.sizeBytes) }] : []),
+      { key: 'rename', icon: '✎', label: 'Hernoemen' },
+      { key: 'share', icon: '⛓', label: asset.share ? 'Publieke link kopiëren' : 'Publieke link maken' },
+      { key: 'version', icon: '⟳', label: 'Nieuwe versie uploaden' },
+      { key: asset.archived ? 'restore' : 'archive', icon: '▤', label: asset.archived ? 'Terughalen uit archief' : 'Archiveren' },
+      { key: 'delete', icon: '×', label: 'Verwijderen', danger: true, disabled: asset.links.length > 0, hint: asset.links.length ? 'in gebruik' : undefined },
+    ];
+  }
+
+  openContext(event: MouseEvent, asset: MediaAssetSummary): void {
+    event.preventDefault();
+    const x = Math.min(event.clientX, window.innerWidth - 260);
+    const y = Math.min(event.clientY, window.innerHeight - 420);
+    this.context.set({ asset, x: Math.max(8, x), y: Math.max(8, y) });
+  }
+
+  private closeActions(): void {
+    this.context.set(null);
+    this.actionsFor.set(null);
+    this.swipe.set(null);
+  }
+
+  async runAction(key: string, asset: MediaAssetSummary): Promise<void> {
+    this.closeActions();
+    switch (key) {
+      case 'open': await this.open(asset); return;
+      case 'download': await this.download(asset); return;
+      case 'download-web': await this.download(asset, 'web'); return;
+      case 'rename': await this.open(asset); this.focusName(); return;
+      case 'share':
+        if (asset.share) { await this.copyLink(asset.share.token); return; }
+        await this.open(asset); await this.share();
+        if (this.selected()?.share) await this.copyLink(this.selected()!.share!.token, 'Publieke link gemaakt en gekopieerd');
+        return;
+      case 'version': await this.open(asset); setTimeout(() => (document.querySelector('.fx__detail input[type=file], .fm-sheet input[type=file]') as HTMLInputElement | null)?.click(), 250); return;
+      case 'archive': await this.open(asset); await this.archive(); return;
+      case 'restore': await this.open(asset); await this.restore(); return;
+      case 'delete': await this.removeAsset(asset); return;
+    }
+  }
+
+  async runMove(asset: MediaAssetSummary, value: string): Promise<void> {
+    if (value === '') return;
+    this.closeActions();
+    await this.moveAssets([asset], value === 'root' ? null : +value);
+  }
+
+  focusName(): void {
+    setTimeout(() => { const input = document.getElementById('fx-name') as HTMLInputElement | null; input?.focus(); input?.select(); }, 250);
+  }
+
+  /** Deleting from a row: the same question as in the detail, without opening it first. */
+  async removeAsset(asset: MediaAssetSummary): Promise<void> {
+    this.swipe.set(null);
+    if (asset.links.length) { this.ui.toast('Dit bestand is nog in gebruik; haal eerst de koppelingen weg.', 'err'); return; }
+    const ok = await this.ask('Bestand verwijderen', `“${asset.name}” definitief verwijderen? Ook de eerdere versies gaan weg.`, true);
+    if (!ok) return;
+    this.busy.set(true);
+    try {
+      await this.media.deleteAsset(asset.id);
+      if (this.selected()?.id === asset.id) this.selected.set(null);
+      this.ui.toast('Bestand verwijderd');
+      await Promise.all([this.reload(), this.loadFolders()]);
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  targetIcon(type: MediaTargetType): string {
+    switch (type) {
+      case 'PRODUCT': return '❀';
+      case 'PRODUCT_FAMILY': return '◫';
+      case 'PURCHASE_ORDER': return '▤';
+      default: return '▥';
+    }
+  }
   readonly childFolders = computed(() => {
     const parent = this.currentFolderId();
     return this.tree().filter((node) => node.parentId === parent);
