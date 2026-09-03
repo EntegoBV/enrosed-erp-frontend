@@ -259,8 +259,10 @@ export class ActivityPage {
     return activityRoute(event);
   }
 
+  /** Older entries could carry a value that "changed" into itself; those pairs say nothing. */
   changesOf(event: ActivityEvent): ActivityChange[] {
-    return event.changes ?? [];
+    return (event.changes ?? []).filter((change) => change.beforeValue !== change.afterValue
+      || (change.beforeValue === null && change.afterValue === null));
   }
 
   visibleChanges(event: ActivityEvent): ActivityChange[] {

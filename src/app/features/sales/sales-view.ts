@@ -688,38 +688,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         }
       </main>
 
-      @if (!desktop.active()) {
-        <div class="sales-detail-dock erp-workspace__mobile-dock" role="group"
-             aria-label="Belangrijkste acties voor dit verkoopdocument">
-          <button class="sales-detail-dock__pdf" type="button" [disabled]="downloading()"
-                  (click)="downloadPdf()">{{ downloading() ? '…' : 'PDF' }}</button>
-          @if (pendingRevision()) {
-            <a class="btn btn--primary sales-detail-dock__primary"
-               [routerLink]="['/sales', data.order.id, 'edit']">Beoordelen</a>
-          } @else {
-            <a class="btn sales-detail-dock__edit" [class.btn--primary]="!hasStatusAction(data)"
-               [routerLink]="['/sales', data.order.id, 'edit']">{{ actionLabel() }}</a>
-            @if (isInvoice()) {
-              @if (data.order.status === 'CONCEPT') {
-                <button class="btn btn--primary sales-detail-dock__primary" type="button"
-                        [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Versturen</button>
-              } @else if (!data.order.goodsShippedAt) {
-                <button class="btn btn--primary sales-detail-dock__primary" type="button"
-                        [disabled]="invoiceBusy()" (click)="openShipSheet(data)">Verzonden</button>
-              } @else if (data.order.status !== 'BETAALD') {
-                <button class="btn btn--primary sales-detail-dock__primary" type="button"
-                        [disabled]="invoiceBusy()" (click)="markPaid(data)">Betaald</button>
-              }
-            } @else if (data.order.status === 'CONCEPT') {
-              <button class="btn btn--primary sales-detail-dock__primary" type="button"
-                      [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Versturen</button>
-            } @else if (data.order.status === 'GEACCEPTEERD') {
-              <button class="btn btn--primary sales-detail-dock__primary" type="button"
-                      [disabled]="invoiceBusy()" (click)="makeInvoice(data)">Factuur</button>
-            }
-          }
-        </div>
-      }
+      <!-- Looking is looking: the phone shows no sticky action bar here; editing and sending live in the editor. -->
     } @else if (loading()) {
       <app-page-header title="Offerte laden" [showBack]="true" [showBell]="false" />
       <main class="content sales-view-page">
