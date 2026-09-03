@@ -1,7 +1,7 @@
 import { Injectable, effect, signal } from '@angular/core';
 
 const STORAGE_KEY = 'enrosed.theme';
-const DEFAULT_THEME = 'brown';
+const DEFAULT_THEME = 'green';
 
 /** One accent palette; the rest of the app's colours stay the same. */
 export interface ThemeOption {
@@ -12,9 +12,9 @@ export interface ThemeOption {
 }
 
 export const THEMES: readonly ThemeOption[] = [
+  { key: 'green', label: 'Groen', swatch: '#1f7a4d' },
   { key: 'brown', label: 'Bruin', swatch: '#5d4037' },
   { key: 'blue', label: 'Blauw', swatch: '#1f5e9e' },
-  { key: 'green', label: 'Groen', swatch: '#1f7a4d' },
   { key: 'plum', label: 'Paars', swatch: '#6f3c8f' },
   { key: 'terracotta', label: 'Terracotta', swatch: '#b8552e' },
   { key: 'rose', label: 'Rozerood', swatch: '#b01f3f' },
@@ -24,7 +24,7 @@ export const THEMES: readonly ThemeOption[] = [
  * The accent colour of the whole app, chosen under Instellingen.
  *
  * A class on <html> carries the palette (see styles.scss), so sheets and
- * toasts outside the component tree colour along. Blue is the default;
+ * toasts outside the component tree colour along. Green is the default;
  * the choice survives reloads through localStorage.
  */
 @Injectable({ providedIn: 'root' })

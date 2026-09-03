@@ -35,12 +35,12 @@ app-product-editor :is(.product-editor-dock__save, .product-editor-dock__view) {
   --surface: #ffffff;
   --surface-2: #fcfaf8;
 
-  /* The accent colour, blue unless another palette is chosen under Instellingen. */
-  --rose: #5d4037;
-  --rose-dark: #3e2b25;
-  --rose-mid: #8d6e63;
-  --rose-soft: #f3edea;
-  --rose-line: #e0d3ce;
+  /* The accent colour: green unless another palette is chosen under Instellingen. */
+  --rose: #1f7a4d;
+  --rose-dark: #145c39;
+  --rose-mid: #3f9e6d;
+  --rose-soft: #e9f5ee;
+  --rose-line: #cbe6d7;
   /* Backwards-compatible semantic alias used by newer shared components. */
   --accent: var(--rose);
 
@@ -3574,7 +3574,7 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
 .desk{width:100%;max-width:1560px;box-sizing:border-box;padding:14px 24px 60px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
 /* ---- hero: the dark card the sales editor wears too */
-.desk-hero{overflow:hidden;border-radius:22px;color:#fff;background:radial-gradient(circle at 92% 0%,color-mix(in srgb,var(--rose-mid) 42%,transparent),transparent 42%),linear-gradient(145deg,#211a17,#33251f 62%,color-mix(in srgb,var(--rose-dark) 58%,#211a17));box-shadow:0 12px 32px rgb(26 22 20/.15)}
+.desk-hero{overflow:hidden;border-radius:22px;color:#fff;background:radial-gradient(circle at 92% 0%,color-mix(in srgb,var(--rose-mid) 42%,transparent),transparent 42%),linear-gradient(145deg,#1c1f1d,color-mix(in srgb,var(--rose-dark) 30%,#1c1f1d) 62%,color-mix(in srgb,var(--rose-dark) 62%,#1c1f1d));box-shadow:0 12px 32px rgb(20 24 22/.15)}
 .desk-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px 20px 14px}
 .desk-hero__who{min-width:0;flex:1}
 .desk-hero__eyebrow{display:block;color:rgb(255 255 255/.58);font-size:10px;font-weight:750;letter-spacing:.14em;text-transform:uppercase}

@@ -173,90 +173,6 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
           </p>
         }
 
-        <!-- ============================ price: one line from factory to margin; the build-up on request -->
-        <section class="pd-card" id="pd-price" aria-labelledby="pd-price-title">
-          <div class="pd-card__head">
-            <div><h2 id="pd-price-title">Prijs &amp; marge</h2><p>Per stuk, van fabrieksprijs tot wat er overblijft</p></div>
-            <button class="linklike" type="button" [attr.aria-expanded]="priceOpen()" (click)="priceOpen.set(!priceOpen())">
-              {{ priceOpen() ? 'Opbouw verbergen' : 'Opbouw tonen ›' }}
-            </button>
-          </div>
-          <div class="pd-flow">
-            <div class="pd-flow__step">
-              <small>EXW-prijs</small>
-              <b>@if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }</b>
-              <span>{{ product.extraUnitCost ? '+ ' + (product.extraUnitCost | cur: product.exwCurrency) + ' extra kost' : 'fabrieksprijs, excl. transport' }}</span>
-            </div>
-            <i aria-hidden="true">→</i>
-            <div class="pd-flow__step">
-              <small>Kostprijs</small>
-              <b>@if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }</b>
-              <span>{{ product.landedCostSource ? 'geland · ' + product.landedCostSource : 'incl. transport en rechten' }}</span>
-            </div>
-            <i aria-hidden="true">→</i>
-            <div class="pd-flow__step">
-              <small>Prijsregel</small>
-              <b>{{ hasFixedSalesPrice(product) ? 'Vaste prijs' : '+ ' + (product.markupPct | num) + ' %' }}</b>
-              <span>{{ hasFixedSalesPrice(product) ? 'los van de kostprijs' : 'opslag op de kostprijs' }}</span>
-            </div>
-            <i aria-hidden="true">→</i>
-            <div class="pd-flow__step pd-flow__step--price">
-              <small>Catalogusprijs</small>
-              <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
-              <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
-            </div>
-            <i aria-hidden="true">=</i>
-            <div class="pd-flow__step pd-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">
-              <small>Marge per stuk</small>
-              @if (margin(); as value) {
-                <b>{{ value.eur | eur: 2 }}</b>
-                <span>{{ value.pct }} % van de prijs</span>
-              } @else {
-                <b>—</b>
-                <span>kostprijs of prijs ontbreekt</span>
-              }
-            </div>
-          </div>
-          @if (priceOpen()) {
-            <div class="pd-price__detail">
-              @if (priceBuild(); as build) {
-                @if (build.rows.length) {
-                  <div class="desk-chain">
-                    @for (row of chainRows(); track $index) {
-                      <div class="desk-chain__row" [class.desk-chain__row--sub]="row.sum && !row.last" [class.desk-chain__row--total]="row.last">
-                        <i aria-hidden="true">{{ row.mark }}</i>
-                        <span>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</span>
-                        <b>{{ row.eur | eur: 2 }}</b>
-                      </div>
-                    }
-                  </div>
-                  @if (asideRows().length) {
-                    <p class="pd-aside">
-                      @for (row of asideRows(); track $index; let last = $last) {{{ row.label }} <b>{{ row.eur | eur: 2 }}</b>@if (!last) { · }}
-                    </p>
-                  }
-                } @else {
-                  <p class="pd-empty">Nog geen kostprijs of catalogusprijs. <a [routerLink]="['/products', product.id, 'edit']">Vul ze in via Bewerken ›</a></p>
-                }
-              } @else {
-                <p class="pd-empty">Prijsopbouw laden…</p>
-              }
-              <div>
-                <div class="pd-kicker">Waar de cijfers vandaan komen</div>
-                <dl class="desk-facts pd-facts">
-                  <div><dt>Bron kostprijs</dt><dd>
-                    @if (sourceOrderId(); as orderId) { <a [routerLink]="['/purchasing', orderId]">{{ product.landedCostSource }} ›</a> }
-                    @else { {{ product.landedCostSource || '—' }} }
-                    <small>{{ product.landedCostSource ? 'de inkoopcalculatie met transport, rechten en Enrosed kost' : 'nog geen ontvangen container' }}</small></dd></div>
-                  <div><dt>Extra kost</dt><dd>@if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }<small>per stuk, bv. display of giftbox</small></dd></div>
-                  <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? (product.fixedSalesPriceEur | eur: 2) : (product.markupPct | num) + ' % opslag' }}<small>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs, los van de kostprijs' : 'op de gelande kostprijs' }}</small></dd></div>
-                  <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}<small>bepaalt de invoerrechten</small></dd></div>
-                </dl>
-              </div>
-            </div>
-          }
-        </section>
-
         <!-- ============================ the product: photo, identity and carton side by side -->
         <section class="pd-card" id="pd-product" aria-labelledby="pd-product-title">
           <div class="pd-card__head">
@@ -344,6 +260,90 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               </dl>
             </div>
           </div>
+        </section>
+
+        <!-- ============================ price: one line from factory to margin; the build-up on request -->
+        <section class="pd-card" id="pd-price" aria-labelledby="pd-price-title">
+          <div class="pd-card__head">
+            <div><h2 id="pd-price-title">Prijs &amp; marge</h2><p>Per stuk, van fabrieksprijs tot wat er overblijft</p></div>
+            <button class="linklike" type="button" [attr.aria-expanded]="priceOpen()" (click)="priceOpen.set(!priceOpen())">
+              {{ priceOpen() ? 'Opbouw verbergen' : 'Opbouw tonen ›' }}
+            </button>
+          </div>
+          <div class="pd-flow">
+            <div class="pd-flow__step">
+              <small>EXW-prijs</small>
+              <b>@if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }</b>
+              <span>{{ product.extraUnitCost ? '+ ' + (product.extraUnitCost | cur: product.exwCurrency) + ' extra kost' : 'fabrieksprijs, excl. transport' }}</span>
+            </div>
+            <i aria-hidden="true">→</i>
+            <div class="pd-flow__step">
+              <small>Kostprijs</small>
+              <b>@if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }</b>
+              <span>{{ product.landedCostSource ? 'geland · ' + product.landedCostSource : 'incl. transport en rechten' }}</span>
+            </div>
+            <i aria-hidden="true">→</i>
+            <div class="pd-flow__step">
+              <small>Prijsregel</small>
+              <b>{{ hasFixedSalesPrice(product) ? 'Vaste prijs' : '+ ' + (product.markupPct | num) + ' %' }}</b>
+              <span>{{ hasFixedSalesPrice(product) ? 'los van de kostprijs' : 'opslag op de kostprijs' }}</span>
+            </div>
+            <i aria-hidden="true">→</i>
+            <div class="pd-flow__step pd-flow__step--price">
+              <small>Catalogusprijs</small>
+              <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
+              <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
+            </div>
+            <i aria-hidden="true">=</i>
+            <div class="pd-flow__step pd-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">
+              <small>Marge per stuk</small>
+              @if (margin(); as value) {
+                <b>{{ value.eur | eur: 2 }}</b>
+                <span>{{ value.pct }} % van de prijs</span>
+              } @else {
+                <b>—</b>
+                <span>kostprijs of prijs ontbreekt</span>
+              }
+            </div>
+          </div>
+          @if (priceOpen()) {
+            <div class="pd-price__detail">
+              @if (priceBuild(); as build) {
+                @if (build.rows.length) {
+                  <div class="desk-chain">
+                    @for (row of chainRows(); track $index) {
+                      <div class="desk-chain__row" [class.desk-chain__row--sub]="row.sum && !row.last" [class.desk-chain__row--total]="row.last">
+                        <i aria-hidden="true">{{ row.mark }}</i>
+                        <span>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</span>
+                        <b>{{ row.eur | eur: 2 }}</b>
+                      </div>
+                    }
+                  </div>
+                  @if (asideRows().length) {
+                    <p class="pd-aside">
+                      @for (row of asideRows(); track $index; let last = $last) {{{ row.label }} <b>{{ row.eur | eur: 2 }}</b>@if (!last) { · }}
+                    </p>
+                  }
+                } @else {
+                  <p class="pd-empty">Nog geen kostprijs of catalogusprijs. <a [routerLink]="['/products', product.id, 'edit']">Vul ze in via Bewerken ›</a></p>
+                }
+              } @else {
+                <p class="pd-empty">Prijsopbouw laden…</p>
+              }
+              <div>
+                <div class="pd-kicker">Waar de cijfers vandaan komen</div>
+                <dl class="desk-facts pd-facts">
+                  <div><dt>Bron kostprijs</dt><dd>
+                    @if (sourceOrderId(); as orderId) { <a [routerLink]="['/purchasing', orderId]">{{ product.landedCostSource }} ›</a> }
+                    @else { {{ product.landedCostSource || '—' }} }
+                    <small>{{ product.landedCostSource ? 'de inkoopcalculatie met transport, rechten en Enrosed kost' : 'nog geen ontvangen container' }}</small></dd></div>
+                  <div><dt>Extra kost</dt><dd>@if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }<small>per stuk, bv. display of giftbox</small></dd></div>
+                  <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? (product.fixedSalesPriceEur | eur: 2) : (product.markupPct | num) + ' % opslag' }}<small>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs, los van de kostprijs' : 'op de gelande kostprijs' }}</small></dd></div>
+                  <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}<small>bepaalt de invoerrechten</small></dd></div>
+                </dl>
+              </div>
+            </div>
+          }
         </section>
 
         <!-- ============================ stock and website, side by side -->
