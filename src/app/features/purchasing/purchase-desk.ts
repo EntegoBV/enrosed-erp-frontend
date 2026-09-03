@@ -908,45 +908,7 @@ type DeskRow =
   `,
   styles: [`
     :host{display:block;min-width:0}
-    .desk{width:100%;max-width:1560px;box-sizing:border-box;padding:14px 24px 60px}
-    .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
 
-    /* ---- hero: the dark card the sales editor wears too */
-    .desk-hero{overflow:hidden;border-radius:22px;color:#fff;background:radial-gradient(circle at 92% 0%,color-mix(in srgb,var(--rose-mid) 42%,transparent),transparent 42%),linear-gradient(145deg,#211a17,#33251f 62%,color-mix(in srgb,var(--rose-dark) 58%,#211a17));box-shadow:0 12px 32px rgb(26 22 20/.15)}
-    .desk-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px 20px 14px}
-    .desk-hero__who{min-width:0;flex:1}
-    .desk-hero__eyebrow{display:block;color:rgb(255 255 255/.58);font-size:10px;font-weight:750;letter-spacing:.14em;text-transform:uppercase}
-    .desk-hero__who h1{margin:2px 0 4px;overflow:hidden;font-size:22px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
-    .desk-hero__who p{margin:0;color:rgb(255 255 255/.78);font-size:12.5px}
-    .desk-hero__who p.desk-hero__meta{margin-top:2px;color:rgb(255 255 255/.55);font-size:11.5px}
-    .desk-status{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px;max-width:520px}
-    .desk-status__step{display:inline-flex;align-items:center;gap:6px;padding:5px 11px 5px 5px;border:1px solid rgb(255 255 255/.16);border-radius:999px;background:rgb(255 255 255/.06);color:rgb(255 255 255/.62);font-size:11.5px;font-weight:650;white-space:nowrap}
-    .desk-status__step i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:rgb(255 255 255/.12);color:#fff;font-size:10px;font-style:normal;font-weight:800}
-    .desk-status__step--done,.desk-status__step--arrived{color:#9fe0b4;border-color:rgb(159 224 180/.35);background:rgb(159 224 180/.1)}.desk-status__step--done i,.desk-status__step--arrived i{background:#2e7d4f;color:#fff}
-    .desk-status__step--now{color:#fff;border-color:rgb(255 255 255/.5);background:rgb(255 255 255/.16)}.desk-status__step--now i{background:#fff;color:var(--rose-dark)}
-    .desk-status__line{width:12px;height:2px;background:rgb(255 255 255/.18)}.desk-status__line--done{background:#2e7d4f}
-
-    .desk-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;border-top:1px solid rgb(255 255 255/.12);background:rgb(255 255 255/.12)}
-    .desk-kpi{display:grid;min-width:0;align-content:start;gap:2px;padding:12px 16px 13px;border:0;background:rgb(33 26 23/.55);color:#fff;font:inherit;text-align:left}
-    .desk-kpi small{color:rgb(255 255 255/.55);font-size:9.5px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
-    .desk-kpi strong{font-size:19px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.15}
-    .desk-kpi span{overflow:hidden;color:rgb(255 255 255/.6);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
-    .desk-kpi--total strong{color:#f4cf9a}
-    .desk-kpi--button{cursor:pointer}.desk-kpi--button.is-warn strong{color:#f4cf9a}
-    .desk-kpi strong.is-ok{color:#9fe0b4}.desk-kpi strong.is-warn{color:#f4cf9a}.desk-kpi strong.is-bad{color:#f6a3a3}
-    .desk-kpi__meter{display:block;height:5px;margin:3px 0 2px;border-radius:99px;background:rgb(255 255 255/.15);overflow:hidden}
-    .desk-kpi__meter i{display:block;height:100%;background:#9fe0b4;border-radius:99px}.desk-kpi__meter i.is-warn{background:#f4cf9a}.desk-kpi__meter i.is-bad{background:#f6a3a3}
-    .desk-kpi--go{background:var(--rose);cursor:pointer}.desk-kpi--go:hover:not(:disabled){background:var(--rose-mid)}
-    .desk-kpi--go small{color:rgb(255 255 255/.7)}.desk-kpi--go strong{font-size:15px}.desk-kpi--go span{color:rgb(255 255 255/.7)}
-
-    .desk-attention{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px}
-    .desk-attention b{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px}
-    .desk-attention span{flex:1;min-width:0}
-    .desk-alert{margin:12px 16px 16px}.desk-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.desk-alert--tight .alert__icon{background:var(--warn);color:#fff}
-
-    /* ---- body: table + rail */
-    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) clamp(440px,30vw,520px);gap:16px;align-items:start;margin-top:14px}
-    .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .pay-note{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted)}
     .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
@@ -1003,30 +965,9 @@ type DeskRow =
     .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .desk-table tfoot th.c-product{text-align:left;padding-left:16px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
 
-    /* ---- rail */
-    .desk-rail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);display:flex;flex-direction:column;max-height:calc(100dvh - var(--appbar-h,62px) - 28px);border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1);overflow:hidden}
-    .desk-tabs{display:flex;flex:none;gap:2px;padding:6px;border-bottom:1px solid var(--line);background:var(--surface-2)}
-    .desk-tabs button{position:relative;flex:1;min-height:34px;padding:0 6px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap}
-    .desk-tabs button.on{background:var(--surface);color:var(--rose-dark);box-shadow:var(--sh-1)}
-    .desk-tabs__dot{position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
-    .desk-panel{flex:1;min-height:0;padding:14px;overflow-y:auto}
-    .desk-panel__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.desk-panel__head strong{font-size:13px}
-    .desk-facts{display:grid;margin:0 0 4px;padding:0}
-    .desk-facts>div{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
-    .desk-facts dt{color:var(--muted)}.desk-facts dd{margin:0;font-weight:650}.desk-facts dd small{display:block;color:var(--muted);font-size:11px;font-weight:500}
     .desk-supplier{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .desk-supplier__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose);color:#fff;font-weight:800}.desk-supplier__copy{display:grid;min-width:0;flex:1;line-height:1.25}.desk-supplier strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-supplier__cur{align-self:flex-start;padding:2px 7px;border-radius:999px;background:var(--surface);color:var(--muted);font-size:10.5px;font-weight:700}
-    .desk-form{display:grid;gap:10px}.desk-form .field{min-width:0}
-    .desk-form__duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .desk-form__group{margin:14px 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
-    .desk-form__group:first-child{margin-top:0}
-    .desk-readonly{background:var(--surface-2)}
     .desk-affix-select{min-width:64px;border-radius:0 var(--r-sm) var(--r-sm) 0}
-    .desk-details{border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
-    .desk-details summary{padding:9px 12px;font-size:12.5px;font-weight:650;cursor:pointer}
-    .desk-details>*:not(summary){margin:0 12px 10px}
-    .desk-switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;cursor:pointer}
-    .desk-switch>span{display:grid;gap:2px;min-width:0}.desk-switch b{font-size:12.5px}.desk-switch small{color:var(--muted);font-size:11px;line-height:1.35}.desk-switch input{width:20px;height:20px;flex:none;accent-color:var(--rose)}
     .desk-sum{padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .desk-sum .stat-row{padding:4px 0;font-size:12px}.desk-sum .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}
     .desk-sum__sub{border-top:1px solid var(--line);font-weight:650}.desk-sum__total{border-top:2px solid var(--line-strong);font-size:13px}.desk-sum__total strong{color:var(--rose-dark)}
@@ -1038,13 +979,6 @@ type DeskRow =
     .desk-mix{display:flex;height:12px;border-radius:99px;background:var(--line);overflow:hidden}.desk-mix i{display:block;height:100%}
     .desk-mix__legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0 12px;padding:0;list-style:none;color:var(--muted);font-size:11px}.desk-mix__legend li{display:inline-flex;align-items:center;gap:5px}.desk-mix__legend i{width:9px;height:9px;border-radius:2px}.desk-mix__legend b{color:var(--ink-2)}
     .desk-mix__goods{background:var(--rose-dark)}.desk-mix__transport{background:var(--gold)}.desk-mix__duty{background:var(--warn)}.desk-mix__destination{background:var(--blue)}.desk-mix__extra{background:var(--muted)}
-    .desk-chain{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden}
-    .desk-chain__row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 12px 7px 8px;font-size:12.5px}.desk-chain__row+.desk-chain__row{border-top:1px solid var(--line)}
-    .desk-chain__row i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--surface);color:var(--muted);font-size:12px;font-style:normal;font-weight:800}
-    .desk-chain__row small{display:block;color:var(--muted);font-size:10.5px}.desk-chain__row b{font-variant-numeric:tabular-nums}
-    .desk-chain__row--sub{background:var(--surface)}.desk-chain__row--sub b{font-weight:750}
-    .desk-overhead{display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;border-radius:12px;background:var(--rose-soft);color:var(--rose-dark);font-size:12px}.desk-overhead span{flex:1}.desk-overhead b{font-size:13px;font-variant-numeric:tabular-nums}.desk-overhead em{padding:2px 8px;border-radius:999px;background:var(--surface);font-size:11px;font-style:normal;font-weight:700}
-    .desk-chain__row--total{background:var(--surface);font-size:13.5px}.desk-chain__row--total i{background:var(--rose);color:#fff}.desk-chain__row--total b{color:var(--rose-dark);font-weight:800}
     .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
     .desk-dossier__diary{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.desk-dossier__empty{margin:0;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);font-size:12px}
     .desk-drop{display:grid;width:100%;gap:2px;margin-bottom:8px;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font:inherit;text-align:center;cursor:pointer}.desk-drop b{font-size:12.5px}.desk-drop small{color:var(--muted);font-size:11px}.desk-drop:hover{border-color:var(--rose);background:var(--rose-soft)}
@@ -1057,15 +991,6 @@ type DeskRow =
     .desk-milestones li.is-done i{border-color:var(--ok);background:var(--ok)}.desk-milestones li.is-now i{border-color:var(--rose)}
     .desk-milestones span{display:grid}.desk-milestones b{font-size:13px}.desk-milestones li:not(.is-done):not(.is-now) b{color:var(--muted);font-weight:600}.desk-milestones small{color:var(--muted);font-size:11px}
     .desk-done__cta{min-height:46px;font-size:14px}
-    .desk-actions{display:grid;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
-    .desk-action{display:flex;align-items:center;gap:10px;padding:10px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.desk-action+.desk-action{border-top:1px solid var(--line)}.desk-action:hover{background:var(--surface-2)}
-    .desk-action span{display:grid;flex:1;min-width:0}.desk-action b{font-size:13px}.desk-action small{color:var(--muted);font-size:11px}.desk-action i{color:var(--muted);font-style:normal;font-size:18px}
-    .desk-danger summary{padding:8px 0;color:var(--muted);font-size:12px;text-align:center;cursor:pointer}.desk-danger p{margin:0 0 8px;color:var(--muted);font-size:11px;text-align:center}
-
-    @media(max-width:1599px){.desk-body{grid-template-columns:minmax(0,1fr) 330px}}
-    @media(max-width:1439px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
-    @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{justify-content:flex-start;max-width:none}}
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {

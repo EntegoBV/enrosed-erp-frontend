@@ -114,7 +114,7 @@ export const routes: Routes = [
     path: 'products/:id',
     canActivate: [authGuard],
     loadComponent: () =>
-      import('./features/products/product-view').then((m) => m.ProductView),
+      import('./features/products/product-screen').then((m) => m.ProductScreen),
   },
   {
     path: 'products/:id/edit',
