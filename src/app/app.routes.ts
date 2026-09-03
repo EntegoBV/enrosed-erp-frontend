@@ -73,14 +73,17 @@ export const routes: Routes = [
     path: 'purchasing/:id/edit',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
+    data: { mode: 'edit' },
     loadComponent: () =>
-      import('./features/purchasing/purchase-editor').then((m) => m.PurchaseEditor),
+      import('./features/purchasing/purchase-screen').then((m) => m.PurchaseScreen),
   },
   {
     path: 'purchasing/:id',
     canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    data: { mode: 'view' },
     loadComponent: () =>
-      import('./features/purchasing/purchase-view').then((m) => m.PurchaseView),
+      import('./features/purchasing/purchase-screen').then((m) => m.PurchaseScreen),
   },
   {
     path: 'suppliers',
