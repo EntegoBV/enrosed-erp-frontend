@@ -354,15 +354,6 @@ type DeskRow =
                     <th class="c-money num c-money--total">{{ data.costing.totals.totalEur | eur }}</th>
                     @if (editing()) { <th class="c-act"></th> }
                   </tr>
-                  <tr class="desk-foot--avg">
-                    <th class="c-product">Gemiddeld per stuk</th>
-                    <th class="c-qty"></th>
-                    <th class="c-cartons"></th>
-                    <th class="c-price"></th>
-                    <th class="c-money num">{{ (data.costing.totals.pieces > 0 ? data.costing.totals.goodsEur / data.costing.totals.pieces : 0) | eur: 4 }}</th>
-                    <th class="c-money num c-money--total">{{ data.costing.totals.averageUnitEur | eur: 4 }}</th>
-                    @if (editing()) { <th class="c-act"></th> }
-                  </tr>
                 </tfoot>
               </table>
               </div>
@@ -1125,7 +1116,6 @@ type DeskRow =
     .desk-group--folded .desk-group__chev{transform:none}
     .desk-group .c-money,.desk-group .c-qty b,.desk-group .c-cartons b{font-weight:750}
     .desk-row--variant td.c-product{padding-left:46px}.desk-row--variant .desk-product__photo{width:36px;height:36px}
-    .desk-foot--avg th{padding-top:0;padding-bottom:11px;border-top:0;color:var(--muted);font-size:11.5px;font-weight:600}.desk-foot--avg th.c-product{font-size:9.5px}.desk-foot--avg th.c-money--total{color:var(--muted)}
     .line-colour-dot{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px}.line-colour-dot--empty{background:var(--surface)!important}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
     .desk-row--open td{border-bottom:0;background:var(--surface-2)}
