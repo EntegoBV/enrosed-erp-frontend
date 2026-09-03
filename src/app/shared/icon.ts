@@ -93,6 +93,12 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         @case ('pdf') {
           <path d="M7 3.5h7l4 4V20.5H7z" /><path d="M14 3.5v4h4" />
         }
+        @case ('media') {
+          <path d="M4 4.5h11v11H4z" />
+          <path d="m5.5 13 3.1-3.1 2.1 2.1 1.5-1.5 2.8 2.8" />
+          <circle cx="11.8" cy="7.6" r="1.2" />
+          <path d="M9 18.5h11v-11h-2.5" />
+        }
       }
     </svg>
   `,
