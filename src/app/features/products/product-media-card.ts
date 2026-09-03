@@ -60,7 +60,8 @@ import { Ui } from '../../shared/ui';
   `,
   styles: `
     :host{display:block;min-width:0}
-    .mc__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .mc__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 12px;margin-bottom:12px}
+    .mc__head>div:first-child{flex:1 1 180px;min-width:0}
     .mc__head h2{margin:0;font-size:16px;font-weight:700}
     .mc__head p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
     .mc__actions{display:flex;flex:none;flex-wrap:wrap;gap:8px;justify-content:flex-end}
