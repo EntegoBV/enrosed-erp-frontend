@@ -66,10 +66,14 @@ const COLLECTIONS: readonly Collection[] = [
       </label>
     </app-page-header>
 
-    <div class="content fx" [class.fx--detail]="!!selected()"
+    <div class="content fx" [class.fx--detail]="!!selected()" [class.fx--resizing]="resizing()" [style.gridTemplateColumns]="gridColumns()"
          (dragenter)="dragEnter($event)" (dragover)="dragOver($event)" (dragleave)="dragLeave($event)" (drop)="dropFiles($event)">
       <!-- ============================ folders -->
       <aside class="fx__rail" aria-label="Mappen">
+        <div class="fx__resizer" role="separator" aria-orientation="vertical" aria-label="Breedte van de mappenkolom" title="Sleep om de mappenkolom breder of smaller te maken; dubbelklik zet ze terug"
+             [attr.aria-valuenow]="railWidth()" [attr.aria-valuemin]="200" [attr.aria-valuemax]="560" tabindex="0"
+             (pointerdown)="startResize($event)" (dblclick)="setRailWidth(232)"
+             (keydown.arrowleft)="setRailWidth(railWidth() - 16)" (keydown.arrowright)="setRailWidth(railWidth() + 16)"></div>
         <div class="fx__rail-head"><b>Mappen</b><button class="linklike" type="button" (click)="startFolder(null)">+ Nieuwe map</button></div>
         <nav class="fx__tree">
           <button class="fx__node" type="button" [class.on]="folder() === null" (click)="openFolder(null)">
@@ -353,10 +357,14 @@ const COLLECTIONS: readonly Collection[] = [
   styles: [`
     :host{display:block}
     .fx__uploadbtn{cursor:pointer}
-    .fx{display:grid;grid-template-columns:232px minmax(0,1fr);gap:16px;align-items:start}
+    .fx{display:grid;grid-template-columns:232px minmax(0,1fr);gap:16px;align-items:start}.fx--resizing{cursor:col-resize}
     .fx--detail{grid-template-columns:232px minmax(0,1fr) 340px}
     .fx__rail,.fx__main,.fx__detail{border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .fx__rail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);padding:12px 10px}
+    .fx__resizer{position:absolute;top:8px;right:-9px;bottom:8px;width:14px;cursor:col-resize;touch-action:none;z-index:2}
+    .fx__resizer::before{content:'';position:absolute;top:0;bottom:0;left:6px;width:2px;border-radius:2px;background:transparent;transition:background .12s}
+    .fx__resizer:hover::before,.fx__resizer:focus-visible::before,.fx--resizing .fx__resizer::before{background:var(--rose)}
+    .fx--resizing{cursor:col-resize;user-select:none}
     .fx__rail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 6px 8px}.fx__rail-head b{font-size:13px}
     .fx__tree{display:grid;gap:1px}.fx__row{display:flex;align-items:center;gap:2px}.fx__row:hover .fx__tools,.fx__row:focus-within .fx__tools,.fx__row--on .fx__tools{opacity:1}
     .fx__node{display:flex;flex:1;align-items:center;gap:8px;min-width:0;min-height:32px;padding:0 8px;border:0;border-radius:9px;background:transparent;color:var(--ink-2);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
@@ -417,7 +425,7 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__link button{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;cursor:pointer}.fx__link button:hover{background:var(--surface-2);color:var(--danger)}
     .fx__addlink{display:grid;gap:6px;margin-top:4px}
     @media(max-width:1180px){.fx--detail{grid-template-columns:232px minmax(0,1fr)}.fx__detail{grid-column:1/-1;position:static;max-height:none}}
-    @media(max-width:820px){.fx,.fx--detail{grid-template-columns:1fr}.fx__rail{position:static}}
+    @media(max-width:820px){.fx,.fx--detail{grid-template-columns:1fr!important}.fx__rail{position:static}.fx__resizer{display:none}}
   `],
 })
 export class FilesPage implements OnDestroy {
@@ -449,6 +457,54 @@ export class FilesPage implements OnDestroy {
     }
     return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, 'nl'));
   });
+
+  /* ---- the folder column: as wide as you drag it, remembered */
+  private static readonly RAIL_KEY = 'enrosed.files.rail';
+  readonly railWidth = signal<number>((() => {
+    try { return FilesPage.clampRail(Number(localStorage.getItem(FilesPage.RAIL_KEY)) || 232); } catch { return 232; }
+  })());
+  readonly resizing = signal(false);
+  /** Below 1180px the detail drops under the grid; the stylesheet's own columns apply there. */
+  private readonly wide = signal(typeof window === 'undefined' ? true : window.innerWidth > 1180);
+  readonly gridColumns = computed(() => {
+    if (!this.wide()) return null;
+    return `${this.railWidth()}px minmax(0, 1fr)${this.selected() ? ' 340px' : ''}`;
+  });
+  private readonly onResize = () => this.wide.set(window.innerWidth > 1180);
+  private resizeStart: { x: number; width: number } | null = null;
+
+  private static clampRail(width: number): number {
+    return Math.min(560, Math.max(200, Math.round(width)));
+  }
+
+  setRailWidth(width: number): void {
+    this.railWidth.set(FilesPage.clampRail(width));
+    try { localStorage.setItem(FilesPage.RAIL_KEY, String(this.railWidth())); } catch { /* remembered for this visit only */ }
+  }
+
+  startResize(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture?.(event.pointerId);
+    this.resizeStart = { x: event.clientX, width: this.railWidth() };
+    this.resizing.set(true);
+    const move = (moveEvent: PointerEvent) => {
+      if (!this.resizeStart) return;
+      this.railWidth.set(FilesPage.clampRail(this.resizeStart.width + (moveEvent.clientX - this.resizeStart.x)));
+    };
+    const stop = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      this.resizeStart = null;
+      this.resizing.set(false);
+      this.setRailWidth(this.railWidth());
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  }
 
   /* ---- folders */
   readonly folders = signal<MediaFolder[]>([]);
@@ -547,11 +603,13 @@ export class FilesPage implements OnDestroy {
   private dragDepth = 0;
 
   constructor() {
+    window.addEventListener('resize', this.onResize, { passive: true });
     void this.loadFolders();
     void this.reload();
   }
 
   ngOnDestroy(): void {
+    window.removeEventListener('resize', this.onResize);
     if (this.searchTimer) clearTimeout(this.searchTimer);
   }
 
