@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, linkedSignal, signal } from '@angular/core';
-import { LandedCostLine } from '../../core/api/models';
+import { LandedCostLine, Product } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { PageHeader } from '../../shared/page-header';
@@ -160,10 +160,35 @@ type DeskRow =
                 <button type="button" [class.on]="perPiece()" [attr.aria-pressed]="perPiece()" (click)="perPiece.set(true)">Per stuk</button>
                 <button type="button" [class.on]="!perPiece()" [attr.aria-pressed]="!perPiece()" (click)="perPiece.set(false)">Totaal</button>
               </span>
-              @if (editing()) {
-                <button class="btn btn--primary btn--sm" type="button" [disabled]="isReceived()" (click)="openPicker()">
-                  <span aria-hidden="true">＋</span> Product
-                </button>
+              @if (editing() && !isReceived()) {
+                <div class="desk-add">
+                  <input class="input desk-add__input" type="search" autocomplete="off" enterkeyhint="done"
+                         placeholder="Product toevoegen: naam, SKU, kleur…" aria-label="Product toevoegen"
+                         [ngModel]="addQuery()" (ngModelChange)="searchAdd($event)"
+                         (focus)="addOpen.set(true)" (blur)="addOpen.set(false)"
+                         (keydown.arrowdown)="moveAdd(1, $event)" (keydown.arrowup)="moveAdd(-1, $event)"
+                         (keydown.enter)="pickAdd($event)" (keydown.escape)="closeAdd()" />
+                  @if (addOpen() && addQuery().trim()) {
+                    <ul class="desk-add__list" role="listbox">
+                      @for (product of addMatches(); track product.id; let i = $index) {
+                        <li role="option" [attr.aria-selected]="i === addIndex()" [class.on]="i === addIndex()"
+                            (mousedown)="$event.preventDefault(); addProduct(product)" (mouseenter)="addIndex.set(i)">
+                          @if (photoOf(product.id!); as photo) {
+                            <img [appAuthSrc]="photo" alt="" />
+                          } @else { <i aria-hidden="true">◈</i> }
+                          <span class="desk-add__copy">
+                            <strong>{{ product.name }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }</strong>
+                            <small>{{ product.sku }} · {{ stockOf(product.id!) | num }} op voorraad · {{ exwPriceOf(product) | cur: exwCurrencyOf(product) }} {{ (product.exwPrice ?? null) === null ? '' : 'EXW' }}</small>
+                          </span>
+                          <b>+ {{ piecesPerCarton(product.id!) | num }} st</b>
+                        </li>
+                      } @empty {
+                        <li class="desk-add__empty">Niets gevonden bij deze leverancier — <button type="button" (mousedown)="$event.preventDefault(); openPicker()">nieuw product aanmaken</button></li>
+                      }
+                    </ul>
+                  }
+                </div>
+                <button class="btn btn--sm" type="button" (click)="openPicker()">Catalogus…</button>
               }
             </div>
 
@@ -645,7 +670,12 @@ type DeskRow =
                       <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
                     </div>
                   }
-                  @if (data.costing.totals.extraRevenueEur) { <p class="hint">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p> }
+                  @if (data.costing.totals.extraRevenueEur) {
+                    <div class="pay-note">
+                      <span><b>Enrosed kost</b><small>eigen opslag · geen betaling</small></span>
+                      <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span>
+                    </div>
+                  }
                 }
 
                 @case ('files') {
@@ -993,6 +1023,18 @@ type DeskRow =
     .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+    .desk-add{position:relative;flex:0 1 420px;min-width:240px}.desk-add__input{width:100%;min-height:38px}
+    .desk-add__list{position:absolute;top:calc(100% + 6px);right:0;width:min(560px,calc(100vw - 120px));z-index:20;max-height:360px;margin:0;padding:6px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 14px 34px rgb(26 22 20/.16);list-style:none;overflow-y:auto}
+    .desk-add__list li{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:10px;cursor:pointer}
+    .desk-add__list li.on{background:var(--rose-soft)}
+    .desk-add__list img,.desk-add__list li>i{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:9px;object-fit:cover;background:var(--surface-2)}
+    .desk-add__list li>i{display:grid;place-items:center;color:var(--muted);font-style:normal}
+    .desk-add__copy{display:grid;min-width:0;flex:1;line-height:1.25}.desk-add__copy strong{font-size:13px}.desk-add__copy em{margin-left:6px;color:var(--muted);font-style:normal;font-weight:600}
+    .desk-add__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .desk-add__list li>b{flex:none;color:var(--rose-dark);font-size:12px}
+    .desk-add__empty{color:var(--muted);font-size:12.5px;cursor:default}.desk-add__empty button{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;cursor:pointer}
+    .pay-note{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted)}
+    .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
     .desk-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
@@ -1075,18 +1117,6 @@ type DeskRow =
     .desk-done__attention{margin:0;padding:8px 12px 8px 26px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
     .desk-done__buttons{display:grid;gap:7px}
 
-    /* ---- shared pieces the sheets and payments were born with */
-    .pay-stream{margin-bottom:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}
-    .payments-meter{height:6px;margin:8px 0 4px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok);border-radius:999px;transition:width .2s ease}
-    .instalments{list-style:none;margin:0;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
-    .pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-stream__done{margin:8px 0 2px;color:var(--ok);font-size:12.5px;font-weight:650}
-    .files-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-list__rename{flex:1;min-width:0}.files-list__actions{display:flex;align-items:center;gap:6px}.files-list__pencil{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
-    .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}
-    .receive-balance{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-balance b{font-size:13px}.receive-balance small{display:block;color:var(--muted);font-size:11.5px}.receive-balance__final{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.receive-balance__final input{width:18px;height:18px;accent-color:var(--rose)}
-    .receive-preview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}.receive-preview>span{display:grid;padding:9px 10px;background:var(--surface)}.receive-preview small{color:var(--muted);font-size:9px;text-transform:uppercase}.receive-preview b{font-size:12.5px}.receive-preview>p{grid-column:1/-1;padding:8px 10px;background:var(--warn-soft);color:var(--ink-2);font-size:10.5px}
-    .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
-    .hint--warn{color:var(--danger);font-weight:650}
-
     @media(max-width:1439px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
     @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{justify-content:flex-start;max-width:none}}
@@ -1146,6 +1176,59 @@ export class PurchaseDesk extends PurchaseEditor {
     }
     return rows;
   });
+
+  /* ---- adding a product from the table itself ------------------------ */
+  readonly addQuery = signal('');
+  readonly addOpen = signal(false);
+  readonly addIndex = signal(0);
+
+  /** Products of this supplier not yet on the order, filtered by what was typed. */
+  readonly addMatches = computed(() => {
+    const words = this.addQuery().trim().toLocaleLowerCase('nl-BE').split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    return this.available().filter((product) => {
+      const haystack = [product.name, product.sku, product.colour, product.variantSize]
+        .filter(Boolean).join(' ').toLocaleLowerCase('nl-BE');
+      return words.every((word) => haystack.includes(word));
+    }).slice(0, 8);
+  });
+
+  searchAdd(value: string): void {
+    this.addQuery.set(value);
+    this.addIndex.set(0);
+    this.addOpen.set(true);
+  }
+
+  moveAdd(step: number, event: Event): void {
+    const count = this.addMatches().length;
+    if (!count) return;
+    event.preventDefault();
+    this.addIndex.set((this.addIndex() + step + count) % count);
+  }
+
+  pickAdd(event: Event): void {
+    const product = this.addMatches()[this.addIndex()];
+    if (!product) return;
+    event.preventDefault();
+    this.addProduct(product);
+  }
+
+  closeAdd(): void {
+    this.addQuery.set('');
+    this.addOpen.set(false);
+  }
+
+  variantOf(product: Product): string | null {
+    const parts = [product.colour, product.variantSize].map((value) => value?.trim()).filter(Boolean);
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  /** One carton is the natural first quantity; the cell is right there to change it. */
+  addProduct(product: Product): void {
+    this.addLine({ product, quantity: this.piecesPerCarton(product.id!) || 1 });
+    this.addQuery.set('');
+    this.addIndex.set(0);
+  }
 
   /** Lines whose cost build-up is unfolded under the row. */
   private readonly openLines = signal<Set<number>>(new Set());
