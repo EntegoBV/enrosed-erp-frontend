@@ -57,7 +57,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
 
           <div class="base-includes">
             <b>Altijd zichtbaar</b>
-            <span>Ordernummer · productfoto en productinfo · aantallen · kartons · route</span>
+            <span>Ordernummer · productfoto, naam, kleur en SKU · aantallen · kartons · route</span>
           </div>
 
           <div class="options-heading">
@@ -86,6 +86,30 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                 <span>
                   <b>Betalingsafspraak tonen</b>
                   <small>De betaaltermijn en afgesproken betalingsmomenten van deze order.</small>
+                </span>
+              </label>
+            </fieldset>
+
+            <fieldset class="pdf-option-group">
+              <legend>Productinformatie</legend>
+              <label class="pdf-option">
+                <input type="checkbox"
+                       [ngModel]="portraitOptions().showOuterCarton"
+                       [disabled]="busyChoice() !== null"
+                       (ngModelChange)="patchPortraitOptions({ showOuterCarton: $event })" />
+                <span>
+                  <b>Omdoos tonen</b>
+                  <small>Afmetingen, inhoud en CBM van de omdoos per productregel.</small>
+                </span>
+              </label>
+              <label class="pdf-option">
+                <input type="checkbox"
+                       [ngModel]="portraitOptions().showBarcode"
+                       [disabled]="busyChoice() !== null"
+                       (ngModelChange)="patchPortraitOptions({ showBarcode: $event })" />
+                <span>
+                  <b>Barcode tonen</b>
+                  <small>Voegt de gekoppelde EAN toe aan iedere productregel.</small>
                 </span>
               </label>
             </fieldset>
@@ -278,6 +302,8 @@ export class PurchasePdfSheet {
     return [
       options.showSupplier,
       options.showPaymentTerms,
+      options.showOuterCarton,
+      options.showBarcode,
       options.showPrices,
       options.includeUnitPrice,
       options.showEur,

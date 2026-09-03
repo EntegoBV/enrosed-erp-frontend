@@ -18,6 +18,8 @@ test('fixed landscape preset preserves the existing output', () => {
     includeEnrosedCost: false,
     includeEnrosedUnitCost: false,
     showPaymentTerms: false,
+    showOuterCarton: false,
+    showBarcode: false,
     showFreight: false,
     includeFreight: false,
   });
@@ -41,6 +43,8 @@ test('every optional standard portrait field starts hidden', () => {
     includeEnrosedCost: false,
     includeEnrosedUnitCost: false,
     showPaymentTerms: false,
+    showOuterCarton: false,
+    showBarcode: false,
     showFreight: false,
     includeFreight: false,
   });
@@ -87,6 +91,18 @@ test('line cost, unit cost and payment terms are independent portrait options', 
   assert.equal(options.showPaymentTerms, true);
 });
 
+test('outer carton and barcode are independent standard portrait options', () => {
+  const options = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT',
+    audience: 'STANDARD',
+    showOuterCarton: true,
+    showBarcode: true,
+  });
+
+  assert.equal(options.showOuterCarton, true);
+  assert.equal(options.showBarcode, true);
+});
+
 test('custom portrait switches cannot leak into fixed exports', () => {
   for (const preset of [
     { layout: 'LANDSCAPE', audience: 'STANDARD' },
@@ -98,11 +114,15 @@ test('custom portrait switches cannot leak into fixed exports', () => {
       includeEnrosedCost: true,
       includeEnrosedUnitCost: true,
       showPaymentTerms: true,
+      showOuterCarton: true,
+      showBarcode: true,
       eurOnly: true,
     });
     assert.equal(options.includeEnrosedCost, false);
     assert.equal(options.includeEnrosedUnitCost, false);
     assert.equal(options.showPaymentTerms, false);
+    assert.equal(options.showOuterCarton, false);
+    assert.equal(options.showBarcode, false);
     assert.equal(options.eurOnly, false);
   }
 });
@@ -118,6 +138,8 @@ test('purchase PDF query serializes every explicit backend option', () => {
     includeEnrosedCost: true,
     includeEnrosedUnitCost: true,
     showPaymentTerms: true,
+    showOuterCarton: true,
+    showBarcode: true,
   }));
 
   assert.deepEqual(Object.fromEntries(query), {
@@ -132,6 +154,8 @@ test('purchase PDF query serializes every explicit backend option', () => {
     includeEnrosedCost: 'true',
     includeEnrosedUnitCost: 'true',
     showPaymentTerms: 'true',
+    showOuterCarton: 'true',
+    showBarcode: 'true',
     showFreight: 'false',
     includeFreight: 'false',
   });
