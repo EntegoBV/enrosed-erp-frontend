@@ -406,9 +406,12 @@ type DeskRow =
                     <div class="desk-panel__head"><strong>Ordergegevens</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
                   }
                   <div class="desk-supplier">
-                    <strong>{{ supplierName() }}</strong>
-                    <app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" />
-                    <small>{{ supplier()?.currency }}</small>
+                    <span class="desk-supplier__mark" aria-hidden="true">{{ supplierName().charAt(0) }}</span>
+                    <span class="desk-supplier__copy">
+                      <strong>{{ supplierName() }}</strong>
+                      <app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" />
+                    </span>
+                    <small class="desk-supplier__cur">{{ supplier()?.currency }}</small>
                   </div>
                   @if (!editing()) {
                     <dl class="desk-facts">
@@ -1092,8 +1095,8 @@ type DeskRow =
     .desk-facts{display:grid;margin:0 0 4px;padding:0}
     .desk-facts>div{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
     .desk-facts dt{color:var(--muted)}.desk-facts dd{margin:0;font-weight:650}.desk-facts dd small{display:block;color:var(--muted);font-size:11px;font-weight:500}
-    .desk-supplier{display:grid;gap:2px;margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
-    .desk-supplier strong{font-size:13px}.desk-supplier small{color:var(--muted);font-size:11px}
+    .desk-supplier{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+    .desk-supplier__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose);color:#fff;font-weight:800}.desk-supplier__copy{display:grid;min-width:0;flex:1;line-height:1.25}.desk-supplier strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-supplier__cur{align-self:flex-start;padding:2px 7px;border-radius:999px;background:var(--surface);color:var(--muted);font-size:10.5px;font-weight:700}
     .desk-form{display:grid;gap:10px}.desk-form .field{min-width:0}
     .desk-form__duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .desk-form__group{margin:14px 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
