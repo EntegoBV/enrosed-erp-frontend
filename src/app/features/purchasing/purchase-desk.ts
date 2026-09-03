@@ -18,6 +18,7 @@ import { FilePicker } from '../../shared/file-picker';
 import { PurchaseEditor } from './purchase-editor';
 import { PurchaseDeskPicker } from './purchase-desk-picker';
 import { stripColour } from './purchase-desk-format';
+import { messageOf } from '../../core/api/errors';
 
 type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
 
@@ -811,9 +812,22 @@ type DeskRow =
                 verwacht {{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : 'op een nog onbekende datum' }}.</p>
               <div class="field mt-12">
                 <label for="step-tracking">Track &amp; trace <span class="opt"></span></label>
-                <input class="input" id="step-tracking" placeholder="Containernummer, B/L of link van de rederij"
+                <input class="input" id="step-tracking" placeholder="Containernummer of link van de rederij"
                        [ngModel]="prompt.tracking" (ngModelChange)="stepPrompt.set({ ...prompt, tracking: $event })" />
                 <span class="hint">De vertrekdatum wordt vandaag; volgens de betaalafspraak valt nu de volgende termijn.</span>
+              </div>
+              <div class="form-grid mt-12">
+                <div class="field">
+                  <label for="step-bl">Bill of lading <span class="opt"></span></label>
+                  <input class="input" id="step-bl" placeholder="B/L-nummer van de rederij"
+                         [ngModel]="prompt.billOfLading" (ngModelChange)="stepPrompt.set({ ...prompt, billOfLading: $event })" />
+                </div>
+                <div class="field">
+                  <label for="step-bl-file">B/L-document <span class="opt"></span></label>
+                  <input class="input" id="step-bl-file" type="file" accept=".pdf,.jpg,.jpeg,.png"
+                         (change)="stepPrompt.set({ ...prompt, billFile: $any($event.target).files?.[0] ?? null })" />
+                </div>
+                <span class="hint span-2">Het document komt als "Bill of lading" bij de documenten van dit dossier, met het nummer als omschrijving. Zonder document bewaren we het nummer als track &amp; trace.</span>
               </div>
             } @else {
               <p>Hiermee leg je de bestelling bij <b>{{ supplierName() }}</b> vast: de aantallen en prijzen van dit moment gelden als besteld.</p>
@@ -884,6 +898,135 @@ type DeskRow =
           </div>
         </app-sheet>
       }
+      @if (issue(); as report) {
+        <app-sheet [title]="'Schade of tekort · ' + (issueLine()?.productName ?? '')" (closed)="issue.set(null)">
+          <div body>
+            <div class="per-toggle issue-kind" role="group" aria-label="Wat is er aan de hand?">
+              <button type="button" [class.on]="report.kind === 'DAMAGED'"
+                      (click)="issue.set({ ...report, kind: 'DAMAGED' })">Beschadigd</button>
+              <button type="button" [class.on]="report.kind === 'SHORT'"
+                      (click)="issue.set({ ...report, kind: 'SHORT' })">Minder aangekomen</button>
+            </div>
+            <div class="field mt-12">
+              <label class="req" for="issue-qty">Aantal stuks</label>
+              <input class="input num right" id="issue-qty" type="number" min="1" step="1" inputmode="numeric"
+                     [ngModel]="report.quantity || null" (ngModelChange)="issue.set({ ...report, quantity: +$event })" />
+            </div>
+            @if (issueLine(); as line) {
+              @if (report.kind === 'DAMAGED') {
+                <p class="hint mt-8">Nu {{ orderLine(line.productId)?.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen.
+                  {{ report.quantity > 0 ? 'Er komen ' + report.quantity + ' bij; die gaan als beschadigd uit de voorraad.' : '' }}</p>
+              } @else {
+                <p class="hint mt-8">Ontvangen telt nu {{ line.quantity | num }} stuks.
+                  {{ report.quantity > 0 ? 'Wordt ' + (line.quantity - report.quantity) + '; het verschil gaat uit de voorraad.' : '' }}</p>
+              }
+            }
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="issue.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button"
+                    [disabled]="saving() || !(report.quantity > 0)" (click)="confirmIssue()">
+              {{ saving() ? 'Bezig…' : 'Melden' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
+      @if (paying(); as pay) {
+        <app-sheet [title]="pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier'" (closed)="paying.set(null)">
+          <div body>
+            <!-- Deposits are fractions of the goods: one tap fills them in. -->
+            <div class="pay-chips" role="group" aria-label="Snel invullen">
+              @for (chip of (pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
+                <button class="pay-chip" type="button" (click)="paying.set({ ...pay, amount: chip.amount, currency: 'EUR', label: chip.label })">
+                  {{ chip.label }}<small>{{ chip.amount | eur }}</small>
+                </button>
+              }
+            </div>
+            <div class="form-grid mt-12">
+              <div class="field">
+                <label for="pay-amount">Bedrag</label>
+                <div class="input-affix">
+                  <input class="input num right" id="pay-amount" type="number" min="0" step="0.01" inputmode="decimal"
+                         [ngModel]="pay.amount" (ngModelChange)="paying.set({ ...pay, amount: +$event })" />
+                  <select class="input-affix__suffix line-currency" aria-label="Munt"
+                          [ngModel]="pay.currency" (ngModelChange)="paying.set({ ...pay, currency: $event })">
+                    <option value="EUR">EUR</option>
+                    <option value="USD">USD</option>
+                    <option value="CNY">CNY</option>
+                  </select>
+                </div>
+                @if (pay.currency !== 'EUR' && pay.amount > 0) {
+                  <span class="hint">≈ {{ eurOf(pay.amount, pay.currency) | eur }} aan de koers van deze order.</span>
+                }
+                @if (payingOverage() > 0) {
+                  <span class="hint hint--warn">Let op: dit gaat {{ payingOverage() | eur }} over het afgesproken bedrag heen (bijv. bankkosten of koersverschil). Bewaren kan gewoon.</span>
+                } @else if (pay.amount > 0 && openFor(pay.payee) > 0) {
+                  <span class="hint">Nog open: {{ openFor(pay.payee) | eur }}.</span>
+                }
+              </div>
+              <div class="field">
+                <label for="pay-date">Betaald op</label>
+                <app-date-field fieldId="pay-date" [value]="pay.paidOn" (valueChange)="paying.set({ ...pay, paidOn: $event })" />
+              </div>
+              <div class="field span-2">
+                <label for="pay-label">Omschrijving <span class="opt"></span></label>
+                <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
+                       [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
+              </div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
+              {{ payingBusy() ? 'Bezig…' : 'Betaling bewaren' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
+      @if (firstInstalmentPrompt(); as first) {
+        <!-- Just ordered: the first instalment falls due now. Ask once, with
+             room for the bank statement. -->
+        <app-sheet title="Eerste betaling" (closed)="firstInstalmentPrompt.set(null)">
+          <div body>
+            <p>De bestelling staat vast. Volgens de betaalafspraak is nu <b>{{ first.label }}</b> aan de beurt:
+              <b>{{ first.amount | eur }}</b> aan {{ supplierName() }}.</p>
+            <p class="hint mt-8">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 5 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
+            <div class="form-grid mt-12">
+              <div class="field">
+                <label for="first-amount">Betaald bedrag</label>
+                <div class="input-affix">
+                  <input class="input num right" id="first-amount" type="number" min="0" step="0.01" inputmode="decimal"
+                         [ngModel]="first.amount" (ngModelChange)="firstInstalmentPrompt.set({ ...first, amount: +$event })" />
+                  <select class="input-affix__suffix line-currency" aria-label="Munt" [ngModel]="first.currency"
+                          (ngModelChange)="firstInstalmentPrompt.set({ ...first, currency: $event })">
+                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="first-date">Betaald op</label>
+                <app-date-field fieldId="first-date" [value]="first.paidOn" (valueChange)="firstInstalmentPrompt.set({ ...first, paidOn: $event })" />
+              </div>
+              <div class="field span-2">
+                <label for="first-proof">Betalingsbewijs <span class="opt"></span></label>
+                <input class="input" id="first-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+                       (change)="firstInstalmentPrompt.set({ ...first, files: fileList($any($event.target).files) })" />
+                <span class="hint">Bijv. het KBC-afschrift; hoogstens vijf bestanden.</span>
+              </div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="firstInstalmentPrompt.set(null)">Nog niet betaald</button>
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(first.amount > 0)" (click)="confirmFirstInstalment()">
+              {{ payingBusy() ? 'Bezig…' : 'Betaald - noteren' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
       @if (receiving(); as draft) {
         <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
           <div body>
@@ -956,6 +1099,9 @@ type DeskRow =
     }
   `,
   styles: [`
+    /* Sheets shared with the editor: note a payment, report damage, first instalment. */
+    .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
+    .issue-kind{margin-top:2px}.line-currency{min-width:74px;border-radius:0}.field .hint--warn{color:var(--danger);font-weight:650}
     :host{display:block;min-width:0}
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
 
@@ -1187,7 +1333,7 @@ export class PurchaseDesk extends PurchaseEditor {
   }
 
   /** The next step waits for a word: nothing changes status from one click. */
-  readonly stepPrompt = signal<{ to: 'BESTELD' | 'ONDERWEG'; tracking: string } | null>(null);
+  readonly stepPrompt = signal<{ to: 'BESTELD' | 'ONDERWEG'; tracking: string; billOfLading: string; billFile: File | null } | null>(null);
 
   override advanceStatus(): void {
     const step = this.nextStep();
@@ -1197,17 +1343,31 @@ export class PurchaseDesk extends PurchaseEditor {
       super.advanceStatus();
       return;
     }
-    this.stepPrompt.set({ to: step.to as 'BESTELD' | 'ONDERWEG', tracking: data.order.trackingReference ?? '' });
+    this.stepPrompt.set({ to: step.to as 'BESTELD' | 'ONDERWEG', tracking: data.order.trackingReference ?? '', billOfLading: '', billFile: null });
   }
 
   confirmAdvance(): void {
     const prompt = this.stepPrompt();
-    if (!prompt) return;
+    const data = this.view();
+    if (!prompt || !data) return;
     if (prompt.to === 'ONDERWEG') {
-      this.patch({ trackingReference: prompt.tracking.trim() || null });
+      const bill = prompt.billOfLading.trim();
+      this.patch({ trackingReference: prompt.tracking.trim() || bill || null });
+      if (prompt.billFile) void this.attachBillOfLading(data.order.id, prompt.billFile, bill);
     }
     this.stepPrompt.set(null);
     super.advanceStatus();
+  }
+
+  /** The B/L handed over at departure lands in the dossier's documents, numbered. */
+  private async attachBillOfLading(orderId: number, file: File, number: string): Promise<void> {
+    try {
+      await this.sourcing.addDocument(orderId, file, 'BILL_OF_LADING', number ? `B/L ${number}` : null, null);
+      await this.loadDocuments(orderId);
+      this.ui.toast('Bill of lading bij de documenten gezet');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Bill of lading opslaan mislukt'), 'err');
+    }
   }
 
   /** The celebration's follow-up, landing where the desk keeps it. */

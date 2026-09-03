@@ -24,6 +24,7 @@ import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '
 import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-state';
+import { parseSupplierNote } from './supplier-note';
 
 /**
  * Read-first product master. The page deliberately separates the customer
@@ -438,10 +439,26 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                 <span><b>Alleen leverancier</b><small>Nooit online of in de websitegalerij</small></span>
               </div>
 
-              @if (product.supplierNote; as supplierNote) {
+              @if (supplierNoteBlocks().length) {
                 <div class="agreement-instruction">
                   <span>Product instruction (English)</span>
-                  <p lang="en">{{ supplierNote }}</p>
+                  <div class="agreement-note" lang="en">
+                    @for (block of supplierNoteBlocks(); track $index) {
+                      @if (block.kind === 'p') {
+                        <p>{{ block.text }}</p>
+                      } @else {
+                        <ul>
+                          @for (item of block.items; track $index) {
+                            <li>{{ item.text }}
+                              @if (item.children.length) {
+                                <ul>@for (sub of item.children; track $index) { <li>{{ sub }}</li> }</ul>
+                              }
+                            </li>
+                          }
+                        </ul>
+                      }
+                    }
+                  </div>
                 </div>
               }
 
@@ -462,7 +479,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                               [attr.aria-label]="'Afspraakfoto ' + (i + 1) + ' vergroten'">
                         <img [appAuthSrc]="photo.viewUrl"
                              [alt]="photo.caption || photo.originalFilename" loading="lazy" />
-                        <span>PDF {{ i + 1 }}</span>
+                        <span>Reference {{ i + 1 }}</span>
                       </button>
                       @if (photo.caption) { <p lang="en">{{ photo.caption }}</p> }
                     </li>
@@ -999,8 +1016,13 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     .agreement-instruction { margin:10px 14px 0;padding:11px 12px;border-left:3px solid var(--warn);
       border-radius:0 var(--r-sm) var(--r-sm) 0;background:var(--surface-2) }
     .agreement-instruction>span { color:var(--muted);font-size:9.5px;font-weight:760;letter-spacing:.05em;text-transform:uppercase }
-    .agreement-instruction p { margin-top:5px;color:var(--ink);font-size:12.5px;line-height:1.5;
-      white-space:pre-wrap;overflow-wrap:anywhere }
+    .agreement-note { margin-top:6px;color:var(--ink);font-size:13px;line-height:1.5 }
+    .agreement-note p { margin:0;white-space:pre-wrap;overflow-wrap:anywhere }
+    .agreement-note p + p, .agreement-note p + ul, .agreement-note ul + p { margin-top:6px }
+    .agreement-note ul { margin:0;padding-left:18px }
+    .agreement-note li { overflow-wrap:anywhere }
+    .agreement-note li + li { margin-top:3px }
+    .agreement-note ul ul { margin-top:3px;padding-left:16px;color:var(--ink-2);font-size:12.5px;list-style:circle }
     .agreement-gallery { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:11px 14px 14px;padding:0;list-style:none }
     .agreement-gallery li { min-width:0 }
     .agreement-gallery button { position:relative;width:100%;aspect-ratio:1;padding:0;overflow:hidden;border:1px solid var(--line);
@@ -1063,6 +1085,8 @@ export class ProductView {
 
   readonly product = signal<Product | null>(null);
   readonly agreementPhotos = signal<ProductSupplierAgreementPhoto[]>([]);
+  /** The supplier note as points and sub-points, the way the PDF prints it. */
+  readonly supplierNoteBlocks = computed(() => parseSupplierNote(this.product()?.supplierNote));
   readonly agreementLoading = signal(false);
   readonly agreementLoadError = signal<string | null>(null);
 

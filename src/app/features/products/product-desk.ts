@@ -12,42 +12,11 @@ import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { ProductView } from './product-view';
+import { NoteBlock, parseSupplierNote } from './supplier-note';
 
 type BookingKind = 'RECOUNT' | 'DAMAGED' | 'DEMO';
-interface NoteItem { text: string; children: string[]; }
-type NoteBlock = { kind: 'p'; text: string } | { kind: 'list'; items: NoteItem[] };
 interface IssueGroup { key: string; label: string; action: string; link: unknown[]; params: Record<string, string> | null; issues: string[]; }
 
-/**
- * The supplier note as the desk shows it: a line that starts with "-",
- * "*" or "•" is a point, an indented one a sub-point, anything else a
- * paragraph. The PDF reads the note the same way.
- */
-export function parseSupplierNote(note: string | null | undefined): NoteBlock[] {
-  const blocks: NoteBlock[] = [];
-  let paragraph: string[] = [];
-  const flush = () => {
-    if (paragraph.length) blocks.push({ kind: 'p', text: paragraph.join('\n') });
-    paragraph = [];
-  };
-  for (const raw of (note ?? '').split(/\r?\n/)) {
-    const bullet = /^(\s*)[-*•]\s+(.*)$/.exec(raw);
-    if (bullet) {
-      flush();
-      const nested = bullet[1].replace(/\t/g, '  ').length >= 2;
-      const last = blocks[blocks.length - 1];
-      const list = last?.kind === 'list' ? last : (blocks.push({ kind: 'list', items: [] }), blocks[blocks.length - 1] as { kind: 'list'; items: NoteItem[] });
-      const text = bullet[2].trim();
-      if (nested && list.items.length) list.items[list.items.length - 1].children.push(text);
-      else list.items.push({ text, children: [] });
-      continue;
-    }
-    if (!raw.trim()) { flush(); continue; }
-    paragraph.push(raw.trim());
-  }
-  flush();
-  return blocks;
-}
 interface Booking { kind: BookingKind; locationId: number | null; quantity: number | null; note: string; }
 
 /**

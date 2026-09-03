@@ -10,10 +10,11 @@ import { PageHeader } from '../../shared/page-header';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
-import { Ui } from '../../shared/ui';
+import { Sheet, Ui } from '../../shared/ui';
+import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
-  Category, Product, ProductFamily, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
+  Category, Product, ProductFamily, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -45,7 +46,7 @@ type PurchaseWorkspaceSectionId =
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity],
+            EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
       @if (desktop.active()) {
@@ -466,6 +467,10 @@ type PurchaseWorkspaceSectionId =
                       <span><small>Geland / stuk</small><strong>{{ entry.line.landedUnitEur | eur: 4 }}</strong></span>
                       <span class="line-fact--total"><small>Regeltotaal</small><strong>{{ entry.line.totalEur | eur }}</strong></span>
                     </div>
+                    @if (data.order.status === 'ONTVANGEN') {
+                      <button class="purchase-line__issue" type="button"
+                              (click)="openIssue(entry.line.productId, entry.line.productName)">Schade of tekort melden ›</button>
+                    }
                     @if (data.order.status !== 'ONTVANGEN') {
                       @if (cartonNotice(entry.line.quantity, entry.line.productId); as cartonNote) {
                         <p class="purchase-line__carton-note">{{ cartonNote }}</p>
@@ -759,6 +764,39 @@ type PurchaseWorkspaceSectionId =
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
                                 (closed)="pdfOpen.set(false)" />
       }
+      @if (issue(); as report) {
+        <app-sheet [title]="'Schade of tekort · ' + report.productName" (closed)="issue.set(null)">
+          <div body>
+            <div class="per-toggle" role="group" aria-label="Wat is er aan de hand?">
+              <button type="button" [class.on]="report.kind === 'DAMAGED'"
+                      (click)="issue.set({ ...report, kind: 'DAMAGED' })">Beschadigd</button>
+              <button type="button" [class.on]="report.kind === 'SHORT'"
+                      (click)="issue.set({ ...report, kind: 'SHORT' })">Minder aangekomen</button>
+            </div>
+            <div class="field mt-12">
+              <label class="req" for="pv-issue-qty">Aantal stuks</label>
+              <input class="input num right" id="pv-issue-qty" type="number" min="1" step="1" inputmode="numeric"
+                     [value]="report.quantity || ''" (input)="issue.set({ ...report, quantity: +$any($event.target).value })" />
+            </div>
+            @if (issueLine(); as line) {
+              <p class="hint mt-8">
+                @if (report.kind === 'DAMAGED') {
+                  Nu {{ line.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen; wat erbij komt gaat als beschadigd uit de voorraad.
+                } @else {
+                  Ontvangen telt nu {{ line.quantity | num }} stuks; het verschil gaat uit de voorraad.
+                }
+              </p>
+            }
+          </div>
+          <div foot style="display:contents">
+            <span class="spacer"></span>
+            <button class="btn" type="button" (click)="issue.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="issueBusy() || !(report.quantity > 0)" (click)="confirmIssue()">
+              {{ issueBusy() ? 'Bezig…' : 'Melden' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
     } @else {
       <app-page-header title="Inkoop" [showBack]="true" [showBell]="false" />
       <div class="content purchase-view-page">
@@ -768,6 +806,7 @@ type PurchaseWorkspaceSectionId =
     }
   `,
   styles: [`
+    .purchase-line__issue{display:inline-block;margin-top:6px;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}.purchase-line__issue:active{color:var(--rose-dark)}
     :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}.privacy-notice{margin-bottom:12px}
 
     .journey-hero{position:relative;margin-bottom:12px;padding:16px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2);overflow:hidden}
@@ -914,6 +953,52 @@ export class PurchaseView {
 
   readonly id = input<string>('');
   readonly view = signal<PurchaseOrderView | null>(null);
+
+  /* Damage or a shortage, reported from the phone at the shelf: the same
+     line rewrite the desk does, saved as one order update. */
+  readonly issue = signal<{ productId: number; productName: string; kind: 'DAMAGED' | 'SHORT'; quantity: number } | null>(null);
+  readonly issueBusy = signal(false);
+  readonly issueLine = computed<PurchaseOrderLine | null>(() => {
+    const report = this.issue();
+    if (!report) return null;
+    return this.view()?.order.lines.find((line) => line.productId === report.productId) ?? null;
+  });
+
+  openIssue(productId: number, productName: string): void {
+    this.issue.set({ productId, productName, kind: 'DAMAGED', quantity: 0 });
+  }
+
+  async confirmIssue(): Promise<void> {
+    const data = this.view();
+    const report = this.issue();
+    const line = this.issueLine();
+    if (!data || !report || !line || !(report.quantity > 0) || this.issueBusy()) return;
+    let patch: Partial<PurchaseOrderLine>;
+    if (report.kind === 'DAMAGED') {
+      const damaged = (line.damagedQuantity ?? 0) + report.quantity;
+      if (damaged > line.quantity) { this.ui.toast('Meer beschadigd dan ontvangen kan niet', 'err'); return; }
+      patch = { damagedQuantity: damaged };
+    } else {
+      const quantity = line.quantity - report.quantity;
+      if (quantity < 0) { this.ui.toast('Zoveel stuks staan er niet op de regel', 'err'); return; }
+      if (quantity < (line.damagedQuantity ?? 0)) { this.ui.toast('Minder dan het aantal beschadigde stuks kan niet', 'err'); return; }
+      patch = { quantity };
+    }
+    this.issueBusy.set(true);
+    try {
+      const order = {
+        ...data.order,
+        lines: data.order.lines.map((item) => item.productId === report.productId ? { ...item, ...patch } : item),
+      };
+      this.view.set(await this.sourcing.updatePurchaseOrder(data.order.id, order));
+      this.issue.set(null);
+      this.ui.toast(report.kind === 'DAMAGED' ? 'Schade gemeld en uit de voorraad geboekt' : 'Tekort gemeld en uit de voorraad geboekt');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Melden mislukt'), 'err');
+    } finally {
+      this.issueBusy.set(false);
+    }
+  }
   /** Prefer the server aggregate; derive a compatible fallback during a rolling deployment. */
   readonly receiptSummary = computed<ReceiptVarianceTotals | null>(() => {
     const data = this.view();

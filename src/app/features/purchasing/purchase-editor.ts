@@ -2041,7 +2041,7 @@ export class PurchaseEditor {
     { value: 'CUSTOMS', label: 'Douanedocument' }, { value: 'OTHER', label: 'Andere' },
   ];
 
-  private async loadDocuments(orderId: number): Promise<void> {
+  protected async loadDocuments(orderId: number): Promise<void> {
     try { this.documents.set(await this.sourcing.documents(orderId)); } catch { this.documents.set([]); }
   }
 
@@ -2375,7 +2375,7 @@ export class PurchaseEditor {
    */
   readonly costLabels = computed(() => purchaseCostLabels(this.view(), this.supplier()));
 
-  private readonly sourcing = inject(SourcingApi);
+  protected readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
 
   /** Active stock locations; the container is unloaded at one of them. */
