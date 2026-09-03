@@ -973,6 +973,39 @@ type DeskRow =
         </app-sheet>
       }
 
+      @if (stepPrompt(); as prompt) {
+        <app-sheet [title]="prompt.to === 'ONDERWEG' ? 'Container vertrokken' : 'Bestelling vastleggen'" (closed)="stepPrompt.set(null)">
+          <div body>
+            @if (prompt.to === 'ONDERWEG') {
+              <p>De container van <b>{{ supplierName() }}</b> gaat op <b>onderweg</b>: {{ data.costing.totals.pieces | num }} stuks in {{ data.costing.totals.cartons | num }} dozen,
+                verwacht {{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : 'op een nog onbekende datum' }}.</p>
+              <div class="field mt-12">
+                <label for="step-tracking">Track &amp; trace <span class="opt"></span></label>
+                <input class="input" id="step-tracking" placeholder="Containernummer, B/L of link van de rederij"
+                       [ngModel]="prompt.tracking" (ngModelChange)="stepPrompt.set({ ...prompt, tracking: $event })" />
+                <span class="hint">De vertrekdatum wordt vandaag; volgens de betaalafspraak valt nu de volgende termijn.</span>
+              </div>
+            } @else {
+              <p>Hiermee leg je de bestelling bij <b>{{ supplierName() }}</b> vast: de aantallen en prijzen van dit moment gelden als besteld.</p>
+              <dl class="desk-facts mt-12">
+                <div><dt>Producten</dt><dd>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen</dd></div>
+                <div><dt>Goederen</dt><dd>{{ data.costing.totals.goodsEur | eur }} <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small></dd></div>
+                <div><dt>Totaal geland</dt><dd>{{ data.costing.totals.totalEur | eur }} <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></dd></div>
+                <div><dt>Betaalafspraak</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
+              </dl>
+              @if (dirty()) { <p class="hint mt-8">Je openstaande wijzigingen worden hierbij mee opgeslagen.</p> }
+            }
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="stepPrompt.set(null)">Annuleren</button>
+            <span class="spacer"></span>
+            <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="confirmAdvance()">
+              {{ saving() ? 'Bezig…' : (prompt.to === 'ONDERWEG' ? 'Bewaren' : 'Bestelling vastleggen') }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
       @if (receiving(); as draft) {
         <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
           <div body>
@@ -1412,6 +1445,30 @@ export class PurchaseDesk extends PurchaseEditor {
 
   paymentTermsLabel(value: string | null | undefined): string {
     return this.paymentTermOptions.find((option) => option.value === (value ?? 'THIRDS'))?.label ?? '—';
+  }
+
+  /** The next step waits for a word: nothing changes status from one click. */
+  readonly stepPrompt = signal<{ to: 'BESTELD' | 'ONDERWEG'; tracking: string } | null>(null);
+
+  override advanceStatus(): void {
+    const step = this.nextStep();
+    const data = this.view();
+    if (!data || !step) return;
+    if (step.to === 'ONTVANGEN') {
+      super.advanceStatus();
+      return;
+    }
+    this.stepPrompt.set({ to: step.to as 'BESTELD' | 'ONDERWEG', tracking: data.order.trackingReference ?? '' });
+  }
+
+  confirmAdvance(): void {
+    const prompt = this.stepPrompt();
+    if (!prompt) return;
+    if (prompt.to === 'ONDERWEG') {
+      this.patch({ trackingReference: prompt.tracking.trim() || null });
+    }
+    this.stepPrompt.set(null);
+    super.advanceStatus();
   }
 
   startEdit(): void {
