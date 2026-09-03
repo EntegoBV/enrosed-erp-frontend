@@ -21,6 +21,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-state';
 
@@ -33,7 +34,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer,
+    RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -563,6 +564,11 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
             </div>
           </div>
 
+          @if (product.id !== null) {
+            <app-product-media-card class="info-card erp-workspace__section" id="product-media"
+                                    [productId]="product.id" [compact]="!desktop.active()" />
+          }
+
           @if (desktop.active()) {
           <details class="info-card publication-card erp-workspace__section" id="product-publication">
             <summary>
@@ -1038,6 +1044,7 @@ export class ProductView {
     { id: 'product-core', label: 'Product & prijs' },
     { id: 'product-packaging', label: 'Omdoos' },
     { id: 'stock-card', label: 'Voorraad' },
+    { id: 'product-media', label: 'Bestanden' },
     { id: 'product-agreements', label: 'Afspraken' },
     { id: 'product-publication', label: 'Website' },
   ] as const;

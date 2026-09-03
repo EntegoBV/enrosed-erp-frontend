@@ -8,6 +8,7 @@ import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { PageHeader } from '../../shared/page-header';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
+import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { ProductView } from './product-view';
@@ -65,7 +66,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, PageHeader,
+    NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, ProductMediaCard, PageHeader,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -542,6 +543,11 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             }
           </section>
         </div>
+
+        <!-- ============================ files: every library asset linked to this product -->
+        @if (product.id !== null) {
+          <app-product-media-card class="pd-card" id="pd-media" [productId]="product.id" />
+        }
 
         <!-- ============================ supplier agreements: read as points, edit in place -->
         @if (agreementEditing()) {

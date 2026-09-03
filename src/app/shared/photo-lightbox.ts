@@ -3,6 +3,7 @@ import { CatalogApi } from '../core/api/catalog-api';
 import { AuthImage } from '../core/api/auth-image';
 import { saveBlob } from '../core/api/download';
 import { PhotoDto } from '../core/api/models';
+import { fileTypeLabel, formatBytes } from './format-bytes';
 
 /**
  * Full-screen photo viewer with download.
@@ -21,6 +22,7 @@ import { PhotoDto } from '../core/api/models';
       <div class="lightbox" (click)="close()">
         <header class="lightbox__bar" (click)="$event.stopPropagation()">
           <span class="lightbox__count">{{ index() + 1 }} / {{ photos().length }}</span>
+          @if (meta(photo); as meta) { <span class="lightbox__meta" [title]="photo.originalFilename">{{ meta }}</span> }
           <span class="spacer"></span>
           <button class="lightbox__btn" type="button" [disabled]="downloading()"
                   (click)="download(photo)">
@@ -66,7 +68,12 @@ import { PhotoDto } from '../core/api/models';
       display: flex; align-items: center; gap: 8px;
       padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
     }
-    .lightbox__count { color: #cfc4bf; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .lightbox__count { color: #cfc4bf; font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
+    .lightbox__meta {
+      min-width: 0; color: #a99d97; font-size: 12.5px; font-variant-numeric: tabular-nums;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .lightbox__meta::before { content: '·'; margin: 0 8px 0 2px; }
     .lightbox__btn {
       border: 1px solid rgb(255 255 255 / 25%); border-radius: 999px;
       background: transparent; color: #fff;
@@ -116,6 +123,15 @@ export class PhotoLightbox {
 
   close(): void {
     this.index.set(-1);
+  }
+
+  /** "4000 × 3000 px · 2,4 MB · JPG": what you are looking at, and what the download weighs. */
+  meta(photo: PhotoDto): string {
+    return [
+      photo.widthPx && photo.heightPx ? `${photo.widthPx} × ${photo.heightPx} px` : '',
+      formatBytes(photo.sizeBytes),
+      fileTypeLabel(photo.originalFilename, photo.contentType),
+    ].filter(Boolean).join(' · ');
   }
 
   step(direction: number): void {
