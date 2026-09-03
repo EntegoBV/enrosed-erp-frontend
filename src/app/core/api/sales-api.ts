@@ -190,7 +190,13 @@ export class SalesApi {
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/send`), { message }));
   }
 
-  /** Puts a rejected or expired quote back on concept. */
+  /** Withdraws an open quote; with notify the customer gets a mail with the portal link. */
+  cancelQuote(id: number, message: string, notifyCustomer: boolean): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/cancel`), { message, notifyCustomer }));
+  }
+
+  /** Puts a rejected, expired or cancelled quote back on concept. */
   reopenQuote(id: number): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/reopen`), {}));

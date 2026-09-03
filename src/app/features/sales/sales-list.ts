@@ -646,6 +646,7 @@ export class SalesList {
     { value: 'GEACCEPTEERD', label: 'Geaccepteerd' },
     { value: 'AFGEWEZEN', label: 'Afgewezen' },
     { value: 'VERLOPEN', label: 'Verlopen' },
+    { value: 'GEANNULEERD', label: 'Geannuleerd' },
     { value: 'BETAALD', label: 'Betaald' },
   ];
 

@@ -98,6 +98,7 @@ export const STATUS_LABEL: Record<QuoteStatus, string> = {
   GEACCEPTEERD: 'Geaccepteerd',
   AFGEWEZEN: 'Afgewezen',
   VERLOPEN: 'Verlopen',
+  GEANNULEERD: 'Geannuleerd',
   BETAALD: 'Betaald',
 };
 

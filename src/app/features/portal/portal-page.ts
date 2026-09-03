@@ -149,6 +149,16 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
             </div>
           </div>
 
+          @if (data.status === 'GEANNULEERD') {
+            <div class="alert alert--info mt-12" role="status">
+              <span class="alert__icon">!</span>
+              <div>
+                <b>{{ t('portalCancelledTitle') }}.</b> {{ t('portalCancelledText') }}
+                @if (data.cancellationMessage) { <p class="mt-8" style="white-space:pre-line">{{ data.cancellationMessage }}</p> }
+              </div>
+            </div>
+          }
+
           @if (deliveryTermsPending()) {
             <div class="alert alert--warn mt-12">
               <span class="alert__icon">!</span>
@@ -735,6 +745,7 @@ export class PortalPage implements OnDestroy {
     switch (quote.status) {
       case 'GEACCEPTEERD': return this.t('portalStatusAccepted');
       case 'AFGEWEZEN': return this.t('portalStatusRejected');
+      case 'GEANNULEERD': return this.t('portalStatusCancelled');
       case 'WIJZIGING_GEVRAAGD': return this.t('portalStatusRevision');
       default: return this.t('portalStatusOpen');
     }
@@ -774,6 +785,7 @@ export class PortalPage implements OnDestroy {
     switch (quote.status) {
       case 'GEACCEPTEERD': return 'ok';
       case 'AFGEWEZEN': return 'danger';
+      case 'GEANNULEERD': return 'neutral';
       case 'WIJZIGING_GEVRAAGD': return 'gold';
       default: return 'rose';
     }

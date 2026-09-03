@@ -69,7 +69,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
           <button class="btn btn--sm quote-header-button quote-header-button--desktop" type="button"
                   (click)="openPdfSheet()">PDF</button>
-          @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
+          @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD') {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
                     [disabled]="busy()" (click)="reopen()">Heropen</button>
           } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
@@ -85,6 +85,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               </svg>
               <span>{{ data.order.sentAt ? 'Opnieuw' : 'Verstuur' }}</span>
             </button>
+          }
+          @if (canCancel()) {
+            <button class="btn btn--sm quote-header-button quote-header-button--desktop" type="button"
+                    [disabled]="busy()" (click)="openCancel()">Annuleren</button>
           }
         </div>
       </app-page-header>
@@ -1160,7 +1164,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <a class="btn btn--primary sales-mobile-dock__primary"
                [routerLink]="['/sales', data.order.id]">Factuur maken</a>
           } @else if (!dirty() && !isInvoiceDoc()
-                     && (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN')) {
+                     && (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD')) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     [disabled]="busy()" (click)="reopen()">Heropenen</button>
           } @else if (!dirty() && !isInvoiceDoc() && !sendIssues().length) {
@@ -1252,6 +1256,41 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           (picked)="addLine($event)"
           (cancelled)="picking.set(false)"
         />
+      }
+
+      @if (cancelSheet()) {
+        <app-sheet title="Offerte annuleren" (closed)="cancelSheet.set(false)">
+          <div body>
+            <p class="small muted" style="margin-bottom:14px">
+              De offerte gaat op “Geannuleerd” en kan niet meer aanvaard worden. Heropenen kan later nog;
+              dan staat ze weer op concept.
+            </p>
+            <div class="field">
+              <label for="cancel-message">Bericht aan de klant <span class="opt"></span></label>
+              <textarea class="textarea" id="cancel-message" rows="3" [ngModel]="cancelMessage()"
+                        (ngModelChange)="cancelMessage.set($event)" placeholder="bijv. de gevraagde kleur is niet meer leverbaar; u krijgt een nieuwe offerte"></textarea>
+            </div>
+            @if (data.order.sentAt) {
+              <label class="switch-row" [class.switch-row--on]="cancelNotify()">
+                <span class="switch-row__copy">
+                  <b>Klant verwittigen per e-mail</b>
+                  <small>{{ customerEmail() ? 'Naar ' + customerEmail() + ', met de link naar de offertepagina, waar ze als geannuleerd staat.' : 'De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is.' }}</small>
+                </span>
+                <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="cancelNotify()"
+                       [disabled]="!customerEmail()" [ngModel]="cancelNotify()" (ngModelChange)="cancelNotify.set($event)" />
+                <span class="switch-row__track" aria-hidden="true"><i></i></span>
+              </label>
+            } @else {
+              <p class="small muted">De offerte is nog niet verstuurd; de klant hoeft niets te horen.</p>
+            }
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="cancelSheet.set(false)">Terug</button>
+            <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="cancel()">
+              {{ busy() ? 'Bezig…' : 'Offerte annuleren' }}
+            </button>
+          </div>
+        </app-sheet>
       }
 
       @if (sendSheet()) {
@@ -2092,6 +2131,19 @@ export class SalesEditor {
 
   readonly picking = signal(false);
   readonly sendSheet = signal(false);
+  readonly cancelSheet = signal(false);
+  readonly cancelMessage = signal('');
+  readonly cancelNotify = signal(true);
+  /** An open quote can be withdrawn; invoices and closed quotes cannot. */
+  readonly canCancel = computed(() => {
+    const data = this.view();
+    if (!data || this.isInvoiceDoc()) return false;
+    return ['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAAGD'].includes(data.order.status);
+  });
+  readonly customerEmail = computed(() => {
+    const id = this.view()?.order.customerId;
+    return this.customers().find((customer) => customer.id === id)?.email?.trim() || '';
+  });
   readonly sendMessage = signal('');
   readonly sending = signal(false);
   /** The freight tweak panel, folded away until asked for. */
@@ -2692,6 +2744,28 @@ export class SalesEditor {
    * date did not suit. Then you want to adjust that same quote and resend
    * instead of retyping everything.
    */
+  openCancel(): void {
+    this.cancelMessage.set('');
+    this.cancelNotify.set(!!this.customerEmail() && !!this.view()?.order.sentAt);
+    this.cancelSheet.set(true);
+  }
+
+  async cancel(): Promise<void> {
+    const data = this.view();
+    if (!data || this.busy()) return;
+    this.busy.set(true);
+    try {
+      const notify = this.cancelNotify() && !!data.order.sentAt && !!this.customerEmail();
+      this.adopt(await this.sales.cancelQuote(data.order.id, this.cancelMessage(), notify));
+      this.cancelSheet.set(false);
+      this.ui.toast(notify ? 'Offerte geannuleerd; de klant is verwittigd' : 'Offerte geannuleerd');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Annuleren mislukt'), 'err');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   async reopen(): Promise<void> {
     const data = this.view();
     if (!data || this.busy()) return;

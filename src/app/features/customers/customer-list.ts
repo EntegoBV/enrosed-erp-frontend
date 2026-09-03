@@ -79,9 +79,14 @@ function blank(countryCode: string): Customer {
             <div class="field"><label for="c-phone">Telefoon</label>
               <input class="input" id="c-phone" type="tel" [ngModel]="draft().phone"
                      (ngModelChange)="patch({ phone: $event })" /></div>
-            <div class="field"><label for="c-vat">BTW-nummer <span class="opt"></span></label>
-              <input class="input" id="c-vat" [ngModel]="draft().vatNumber"
-                     (ngModelChange)="patch({ vatNumber: $event })" /></div>
+            <div class="field"><label class="req" for="c-vat">BTW-nummer</label>
+              <input class="input" id="c-vat" [ngModel]="draft().vatNumber" placeholder="bijv. BE0123456789"
+                     (ngModelChange)="patch({ vatNumber: $event })" />
+              @if (vatCountryMismatch(); as mismatch) {
+                <span class="hint hint--warn">Landcode {{ mismatch.prefix }} in het BTW-nummer verschilt van het land ({{ mismatch.country }}). Opslaan mag; wij controleren het handmatig.</span>
+              } @else {
+                <span class="hint">Verplicht. Klopt het niet met het land, dan controleren we het zelf na.</span>
+              }</div>
             <div class="field span-2"><label for="c-address">Adres</label>
               <input class="input" id="c-address" [ngModel]="draft().address"
                      (ngModelChange)="patch({ address: $event })" /></div>
@@ -256,12 +261,27 @@ export class CustomerList {
 
   readonly saving = signal(false);
 
+  /** The two letters of the VAT number next to the customer's country, when they differ. */
+  readonly vatCountryMismatch = computed(() => {
+    const vat = (this.draft().vatNumber ?? '').replace(/[\s.\-]/g, '').toUpperCase();
+    const country = (this.draft().countryCode ?? '').trim().toUpperCase();
+    const prefix = /^[A-Z]{2}/.exec(vat)?.[0];
+    if (!prefix || !country) return null;
+    const same = prefix === country || (prefix === 'EL' && country === 'GR') || (prefix === 'XI' && country === 'GB');
+    return same ? null : { prefix, country };
+  });
+
   async save(): Promise<void> {
     /* A second tap while the first is under way made a second customer. */
     if (this.saving()) return;
     const customer = this.draft();
     if (!(customer.countryCode ?? '').trim()) {
       this.ui.toast('Kies een land voor de klant', 'err');
+      return;
+    }
+    if (!(customer.vatNumber ?? '').trim()) {
+      this.ui.toast('Vul het BTW-nummer in; het mag niet leeg zijn', 'err');
+      setTimeout(() => document.getElementById('c-vat')?.focus(), 100);
       return;
     }
     this.saving.set(true);

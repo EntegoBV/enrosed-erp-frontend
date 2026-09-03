@@ -1047,6 +1047,7 @@ export class SalesView {
     if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN') {
       return 'Nieuwe versie voorbereiden';
     }
+    if (data.order.status === 'GEANNULEERD') return 'Geannuleerd; heropenen kan';
     return 'Verkoopdocument beheren';
   }
 
@@ -1441,11 +1442,12 @@ export class SalesView {
   }[] {
     const reached: Record<QuoteStatus, number> = {
       CONCEPT: 0, VERZONDEN: 1, BEKEKEN: 2,
-      WIJZIGING_GEVRAAGD: 3, GEACCEPTEERD: 3, AFGEWEZEN: 3, VERLOPEN: 3, BETAALD: 3,
+      WIJZIGING_GEVRAAGD: 3, GEACCEPTEERD: 3, AFGEWEZEN: 3, VERLOPEN: 3, GEANNULEERD: 3, BETAALD: 3,
     };
     const outcome = status === 'AFGEWEZEN' ? { label: 'Afgewezen', mark: '✕', kind: 'danger' as const }
       : status === 'WIJZIGING_GEVRAAGD' ? { label: 'Wijziging', mark: '!', kind: 'gold' as const }
       : status === 'VERLOPEN' ? { label: 'Verlopen', mark: '–', kind: 'muted' as const }
+      : status === 'GEANNULEERD' ? { label: 'Geannuleerd', mark: '–', kind: 'muted' as const }
       : { label: 'Geaccepteerd', mark: '✓', kind: undefined };
     const steps: { label: string; mark: string; kind?: 'danger' | 'gold' | 'muted' }[] = [
       { label: 'Concept', mark: '✓' }, { label: 'Verzonden', mark: '✓' },

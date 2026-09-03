@@ -66,7 +66,7 @@ export interface ActivityPage {
 
 export type QuoteStatus =
   | 'CONCEPT' | 'VERZONDEN' | 'BEKEKEN' | 'WIJZIGING_GEVRAAGD'
-  | 'GEACCEPTEERD' | 'AFGEWEZEN' | 'VERLOPEN' | 'BETAALD';
+  | 'GEACCEPTEERD' | 'AFGEWEZEN' | 'VERLOPEN' | 'GEANNULEERD' | 'BETAALD';
 
 export type RevisionStatus = 'IN_AFWACHTING' | 'GOEDGEKEURD' | 'AFGEWEZEN' | 'INGETROKKEN';
 
@@ -1395,6 +1395,8 @@ export interface PortalQuote {
   language: LanguageCode;
   /** The translated texts for this portal, from the server. */
   text: Record<string, string>;
+  /** What we told the customer when we cancelled; null otherwise. */
+  cancellationMessage?: string | null;
 }
 
 /* ------------------------------------------------------------------ */
