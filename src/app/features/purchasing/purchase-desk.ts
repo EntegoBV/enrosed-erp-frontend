@@ -305,7 +305,8 @@ type DeskRow =
                         <td class="c-money num c-money--total">
                           <button class="desk-total" type="button" (click)="toggleLine(line.productId)"
                                   [attr.aria-expanded]="lineOpen(line.productId)" [title]="'Kostopbouw van ' + line.productName">
-                            {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}<small>detail</small><i aria-hidden="true">›</i>
+                            <b>{{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}</b>
+                            <small>detail <i aria-hidden="true">›</i></small>
                           </button>
                         </td>
                         @if (editing()) {
@@ -1140,7 +1141,7 @@ type DeskRow =
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
     .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:auto;min-width:200px}.c-qty{width:68px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:124px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
+    .c-product{width:34%;min-width:200px}.c-qty{width:68px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:124px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
     .desk-table--editing .c-price{width:168px}.desk-table--editing .c-act{width:40px}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
@@ -1171,9 +1172,9 @@ type DeskRow =
     .desk-mini--last{border-radius:0 var(--r-sm) var(--r-sm) 0}
     .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
     .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
-    .desk-total{display:inline-flex;align-items:center;gap:3px;margin:-4px 0;padding:4px 0 4px 6px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;cursor:pointer}
-    .desk-total small{margin-left:3px;color:var(--muted);font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
-    .desk-total i{display:inline-block;color:var(--muted);font-style:normal;font-size:15px;font-weight:600;transition:transform .15s ease}.desk-row--open .desk-total i{transform:rotate(90deg)}.desk-total:hover{background:var(--rose-soft)}
+    .desk-total{display:inline-grid;justify-items:end;gap:1px;margin:-4px 0;padding:4px 0 4px 6px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.2;cursor:pointer}
+    .desk-total small{display:inline-flex;align-items:center;gap:2px;color:var(--muted);font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+    .desk-total i{display:inline-block;font-style:normal;font-size:12px;font-weight:700;transition:transform .15s ease}.desk-row--open .desk-total i{transform:rotate(90deg)}.desk-total:hover{background:var(--rose-soft)}
     .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
     .desk-detail td{padding:0 12px 12px;background:var(--surface-2)}
     .desk-detail__grid{display:grid;gap:0;max-width:560px;margin-left:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
