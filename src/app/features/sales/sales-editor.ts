@@ -88,7 +88,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
           @if (canCancel()) {
             <button class="btn btn--sm quote-header-button quote-header-button--desktop" type="button"
-                    [disabled]="busy()" (click)="openCancel()">Annuleren</button>
+                    [disabled]="busy()" (click)="openCancel()">{{ websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : 'Annuleren' }}</button>
           }
         </div>
       </app-page-header>
@@ -1259,11 +1259,14 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       }
 
       @if (cancelSheet()) {
-        <app-sheet title="Offerte annuleren" (closed)="cancelSheet.set(false)">
+        <app-sheet [title]="websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : 'Offerte annuleren'" (closed)="cancelSheet.set(false)">
           <div body>
             <p class="small muted" style="margin-bottom:14px">
-              De offerte gaat op “Geannuleerd” en kan niet meer aanvaard worden. Heropenen kan later nog;
-              dan staat ze weer op concept.
+              @if (websiteRequest(data.order) && !data.order.sentAt) {
+                De klant stuurde deze aanvraag via de website en kreeg nog geen offerte. Ze gaat op “Geannuleerd”; er volgt geen offerte. Heropenen kan later nog.
+              } @else {
+                De offerte gaat op “Geannuleerd” en kan niet meer aanvaard worden. Heropenen kan later nog; dan staat ze weer op concept.
+              }
             </p>
             <div class="field">
               <label for="cancel-message">Bericht aan de klant <span class="opt"></span></label>
@@ -1276,7 +1279,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <small>
                   @if (!customerEmail()) { De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is. }
                   @else if (data.order.sentAt) { Naar {{ customerEmail() }}, met de link naar de offertepagina, waar ze als geannuleerd staat. }
-                  @else { De aanvraag is nog nooit verstuurd. De klant krijgt een mail dat zijn aanvraag geannuleerd is en er geen offerte volgt, met een link naar de pagina. }
+                  @else { De aanvraag is nog nooit verstuurd. De klant krijgt in zijn eigen taal een mail dat de aanvraag geannuleerd is en er geen offerte volgt, met een knop om een nieuwe aanvraag te starten. }
                 </small>
               </span>
               <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="cancelNotify()"
@@ -1287,7 +1290,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="cancelSheet.set(false)">Terug</button>
             <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="cancel()">
-              {{ busy() ? 'Bezig…' : 'Offerte annuleren' }}
+              {{ busy() ? 'Bezig…' : (websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : 'Offerte annuleren') }}
             </button>
           </div>
         </app-sheet>

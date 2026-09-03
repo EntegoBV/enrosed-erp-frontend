@@ -42,6 +42,45 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
+      @if (cancelSheet()) {
+        <app-sheet [title]="isRequest() ? 'Aanvraag annuleren' : 'Offerte annuleren'" (closed)="cancelSheet.set(false)">
+          <div body>
+            <p class="small muted" style="margin-bottom:14px">
+              @if (isRequest()) {
+                De klant stuurde deze aanvraag via de website en kreeg nog geen offerte. Ze gaat op “Geannuleerd”; er volgt geen offerte. Heropenen kan later nog.
+              } @else {
+                De offerte gaat op “Geannuleerd” en kan niet meer aanvaard worden. Heropenen kan later nog; dan staat ze weer op concept.
+              }
+            </p>
+            <div class="field">
+              <label for="sv-cancel-message">Bericht aan de klant <span class="opt"></span></label>
+              <textarea class="textarea" id="sv-cancel-message" rows="3" [value]="cancelMessage()"
+                        (input)="cancelMessage.set($any($event.target).value)"
+                        [placeholder]="isRequest() ? 'bijv. zoals afgesproken aan de telefoon; een nieuwe aanvraag is altijd welkom' : 'bijv. de gevraagde kleur is niet meer leverbaar; u krijgt een nieuwe offerte'"></textarea>
+            </div>
+            <label class="switch-row" [class.switch-row--on]="cancelNotify()">
+              <span class="switch-row__copy">
+                <b>Klant verwittigen per e-mail</b>
+                <small>
+                  @if (!customerEmail()) { De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is. }
+                  @else if (isRequest()) { Naar {{ customerEmail() }}, in de taal van de klant: de aanvraag is geannuleerd, er volgt geen offerte, met een knop om een nieuwe aanvraag te starten. }
+                  @else { Naar {{ customerEmail() }}, in de taal van de klant, met de link naar de offertepagina waar ze als geannuleerd staat. }
+                </small>
+              </span>
+              <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="cancelNotify()"
+                     [disabled]="!customerEmail()" [checked]="cancelNotify()" (change)="cancelNotify.set($any($event.target).checked)" />
+              <span class="switch-row__track" aria-hidden="true"><i></i></span>
+            </label>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="cancelSheet.set(false)">Terug</button>
+            <button class="btn btn--primary" type="button" [disabled]="cancelling()" (click)="cancel()">
+              {{ cancelling() ? 'Bezig…' : (isRequest() ? 'Aanvraag annuleren' : 'Offerte annuleren') }}
+            </button>
+          </div>
+        </app-sheet>
+      }
+
       @if (pdfSheet()) {
         <app-sales-pdf-sheet
           [orderId]="data.order.id"
@@ -57,6 +96,11 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
       @if (desktop.active()) {
         <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                          [showBack]="true" [showBell]="false">
+          @if (canCancel()) {
+            <button class="btn btn--sm" type="button" [disabled]="cancelling()" (click)="openCancel()">
+              {{ isRequest() ? 'Aanvraag annuleren' : 'Annuleren' }}
+            </button>
+          }
           <button class="btn btn--sm" type="button" [disabled]="downloading()"
                   (click)="downloadPdf()">
             {{ downloading() ? 'Even wachten…' : 'PDF' }}
@@ -75,6 +119,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <div class="shero-bar">
               <button class="shero-back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
               <span class="shero-spacer"></span>
+              @if (canCancel()) {
+                <button class="shero-pdf" type="button" [disabled]="cancelling()" (click)="openCancel()">Annuleren</button>
+              }
               <button class="shero-pdf" type="button" [disabled]="downloading()" (click)="downloadPdf()">
                 {{ downloading() ? '…' : 'PDF' }}
               </button>
@@ -149,7 +196,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <span><small>BTW</small><b>{{ data.priced.totals.vatLegalMention ? 'verlegd · 0%' : (data.priced.totals.vatRatePct | pct: 0) }}</b></span>
           </div>
 
-          <!-- The inkoop journey, retold for a quote or an invoice. -->
+          <!-- The inkoop journey, retold for a quote or an invoice; on the
+               desktop the badges and the rail already say where it stands. -->
+          @if (!desktop.active()) {
           <div class="stepper hero-stepper"
                [attr.aria-label]="isInvoice() ? 'Status van de factuur' : 'Status van de offerte'">
             @for (step of journey(data.order); track step.label; let last = $last) {
@@ -167,6 +216,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               }
             }
           </div>
+          }
 
           <div class="profit-strip">
             <span>Winst</span>
@@ -1037,6 +1087,49 @@ export class SalesView {
   }
 
   readonly isInvoice = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
+
+  /* Cancelling from the read view: the place a website request is first
+     seen, so a request sent by mistake is closed and the customer told
+     without opening the editor. */
+  readonly cancelSheet = signal(false);
+  readonly cancelMessage = signal('');
+  readonly cancelNotify = signal(false);
+  readonly cancelling = signal(false);
+  readonly canCancel = computed(() => {
+    const data = this.view();
+    if (!data || this.isInvoice()) return false;
+    return ['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAAGD'].includes(data.order.status);
+  });
+  /** A website request that never became a sent quotation. */
+  readonly isRequest = computed(() => {
+    const order = this.view()?.order;
+    return !!order && isWebsiteQuoteRequest(order) && !order.sentAt;
+  });
+  readonly customerEmail = computed(() => this.customer()?.email?.trim() || '');
+
+  openCancel(): void {
+    this.cancelMessage.set('');
+    this.cancelNotify.set(!!this.customerEmail());
+    this.cancelSheet.set(true);
+  }
+
+  async cancel(): Promise<void> {
+    const data = this.view();
+    if (!data || this.cancelling()) return;
+    this.cancelling.set(true);
+    try {
+      const notify = this.cancelNotify() && !!this.customerEmail();
+      this.view.set(await this.sales.cancelQuote(data.order.id, this.cancelMessage(), notify));
+      this.cancelSheet.set(false);
+      this.ui.toast(notify
+        ? (this.isRequest() ? 'Aanvraag geannuleerd; de klant is verwittigd' : 'Offerte geannuleerd; de klant is verwittigd')
+        : (this.isRequest() ? 'Aanvraag geannuleerd' : 'Offerte geannuleerd'));
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Annuleren mislukt'), 'err');
+    } finally {
+      this.cancelling.set(false);
+    }
+  }
   readonly canDelete = computed(() => {
     const data = this.view();
     return !!data && this.revisions().length === 0
