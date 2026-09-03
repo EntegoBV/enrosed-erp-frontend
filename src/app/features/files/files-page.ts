@@ -80,7 +80,7 @@ const COLLECTIONS: readonly Collection[] = [
             <i aria-hidden="true">◌</i><span>Zonder map</span>
           </button>
           @for (node of tree(); track node.id) {
-            <div class="fx__row" [style.paddingLeft.px]="node.depth * 14">
+            <div class="fx__row" [class.fx__row--on]="folder() === node.id" [style.paddingLeft.px]="node.depth * 14">
               <button class="fx__node" type="button" [class.on]="folder() === node.id" [class.fx__node--target]="dragOverFolder() === node.id"
                       (click)="openFolder(node.id)" (dragover)="allowAssetDrop($event, node.id)" (dragleave)="dragOverFolder.set(undefined)" (drop)="dropOnFolder($event, node.id)">
                 <i aria-hidden="true">▰</i><span>{{ node.name }}</span><small>{{ node.assetCount || '' }}</small>
@@ -95,8 +95,16 @@ const COLLECTIONS: readonly Collection[] = [
         </nav>
         @if (folderDraft(); as draft) {
           <form class="fx__folder-form" (submit)="$event.preventDefault(); saveFolder()">
+            <b>{{ draft.id === null ? 'Nieuwe map' : 'Map bewerken' }}</b>
             <input class="input" type="text" placeholder="Mapnaam" autofocus maxlength="120" [ngModel]="draft.name" name="folderName"
                    (ngModelChange)="folderDraft.set({ ...draft, name: $event })" />
+            <label class="fx__folder-parent">
+              <span>In map</span>
+              <select class="select" [ngModel]="draft.parentId ?? ''" name="folderParent" (ngModelChange)="folderDraft.set({ ...draft, parentId: $event === '' ? null : +$event })">
+                <option value="">— bovenaan —</option>
+                @for (node of parentChoices(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
+              </select>
+            </label>
             <span>
               <button class="btn btn--sm btn--primary" type="submit" [disabled]="!draft.name.trim()">{{ draft.id === null ? 'Maken' : 'Bewaren' }}</button>
               <button class="btn btn--sm" type="button" (click)="folderDraft.set(null)">Annuleren</button>
@@ -131,9 +139,14 @@ const COLLECTIONS: readonly Collection[] = [
             <button type="button" [class.on]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Documenten</button>
           </span>
           <label class="fx__check"><input type="checkbox" [ngModel]="archived()" (ngModelChange)="setArchived($event)" /> Archief</label>
+          @if (!collection()) {
+            <button class="btn btn--sm" type="button" (click)="startFolder(currentFolderId())" [title]="currentFolderId() === null ? 'Nieuwe map bovenaan' : 'Nieuwe submap in ' + folderName()">
+              + {{ currentFolderId() === null ? 'Map' : 'Submap' }}
+            </button>
+          }
           <span class="per-toggle" role="group" aria-label="Weergave">
-            <button type="button" [class.on]="view() === 'grid'" (click)="view.set('grid')" title="Tegels">▦</button>
-            <button type="button" [class.on]="view() === 'list'" (click)="view.set('list')" title="Lijst">☰</button>
+            <button type="button" [class.on]="view() === 'list'" (click)="setView('list')" title="Lijst">☰</button>
+            <button type="button" [class.on]="view() === 'grid'" (click)="setView('grid')" title="Tegels">▦</button>
           </span>
         </div>
 
@@ -188,17 +201,20 @@ const COLLECTIONS: readonly Collection[] = [
           <table class="fx__table">
             <thead><tr><th>Naam</th><th>Soort</th><th class="r">Grootte</th><th>Gewijzigd</th><th>Gebruik</th></tr></thead>
             <tbody>
-              @for (asset of assets(); track asset.id) {
-                <tr [class.on]="selected()?.id === asset.id" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="dragging.set(null)" (click)="open(asset)">
-                  <td class="fx__name">
-                    @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
-                    <span><b>{{ asset.name }}</b><small>{{ asset.originalFilename }}</small></span>
-                  </td>
-                  <td>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</td>
-                  <td class="r">{{ size(asset.sizeBytes) }}</td>
-                  <td>{{ asset.updatedAt | dateTimeNl }}</td>
-                  <td>{{ asset.links.length ? asset.links.length + '× gekoppeld' : '—' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</td>
-                </tr>
+              @for (group of groups() ?? [{ label: '', assets: assets() }]; track group.label) {
+                @if (group.label) { <tr class="fx__group-row"><td colspan="5">{{ group.label }} <small>{{ group.assets.length }}</small></td></tr> }
+                @for (asset of group.assets; track asset.id) {
+                  <tr [class.on]="selected()?.id === asset.id" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="dragging.set(null)" (click)="open(asset)">
+                    <td class="fx__name">
+                      @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
+                      <span><b>{{ asset.name }}</b><small>{{ asset.originalFilename }}{{ folderLabel(asset) ? ' · ' + folderLabel(asset) : '' }}</small></span>
+                    </td>
+                    <td>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</td>
+                    <td class="r">{{ size(asset.sizeBytes) }}{{ asset.web && asset.web.sizeBytes !== asset.sizeBytes ? ' · web ' + size(asset.web.sizeBytes) : '' }}</td>
+                    <td>{{ asset.updatedAt | dateTimeNl }}</td>
+                    <td>{{ asset.links.length ? asset.links.length + '× gekoppeld' : '—' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</td>
+                  </tr>
+                }
               }
             </tbody>
           </table>
@@ -324,13 +340,14 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__rail,.fx__main,.fx__detail{border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .fx__rail{position:sticky;top:calc(var(--appbar-h,62px) + 14px);padding:12px 10px}
     .fx__rail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 6px 8px}.fx__rail-head b{font-size:13px}
-    .fx__tree{display:grid;gap:1px}.fx__row{display:flex;align-items:center;gap:2px}.fx__row:hover .fx__tools{opacity:1}
+    .fx__tree{display:grid;gap:1px}.fx__row{display:flex;align-items:center;gap:2px}.fx__row:hover .fx__tools,.fx__row:focus-within .fx__tools,.fx__row--on .fx__tools{opacity:1}
     .fx__node{display:flex;flex:1;align-items:center;gap:8px;min-width:0;min-height:32px;padding:0 8px;border:0;border-radius:9px;background:transparent;color:var(--ink-2);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
     .fx__node i{color:var(--muted);font-style:normal;font-size:12px}.fx__node span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fx__node small{color:var(--muted);font-size:10.5px}
     .fx__node:hover{background:var(--surface-2)}.fx__node.on{background:var(--rose-soft);color:var(--rose-dark);font-weight:650}.fx__node.on i{color:var(--rose)}
     .fx__node--target{outline:2px dashed var(--rose);outline-offset:-2px;background:var(--rose-soft)}
     .fx__tools{display:flex;flex:none;gap:1px;opacity:0;transition:opacity .12s}.fx__tools button{width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer}.fx__tools button:hover{background:var(--surface-2);color:var(--ink)}
-    .fx__folder-form{display:grid;gap:6px;margin:8px 4px 0}.fx__folder-form span{display:flex;gap:6px}
+    .fx__folder-form{display:grid;gap:6px;margin:8px 0 0;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.fx__folder-form>b{font-size:12.5px}.fx__folder-form>span{display:flex;gap:6px}
+    .fx__folder-parent{display:grid;gap:3px}.fx__folder-parent>span{color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
     .fx__rail-hint{margin:12px 6px 0;color:var(--muted);font-size:11px;line-height:1.4}
     .fx__main{min-height:60vh;padding:12px 14px 16px}
     .fx__bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
@@ -347,7 +364,8 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__card-copy{display:grid;min-width:0;padding:0 2px}.fx__card-copy b{overflow:hidden;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}.fx__card-copy small{overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}
     .fx__badges{position:absolute;top:10px;left:10px;display:flex;gap:4px}.fx__badges em{padding:2px 7px;border-radius:999px;background:rgb(16 13 12/.66);color:#fff;font-size:10px;font-style:normal;font-weight:700}
     .fx__table{width:100%;border-collapse:collapse;font-size:12.5px}.fx__table th{padding:6px 8px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-align:left;text-transform:uppercase}
-    .fx__table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}.fx__table tr{cursor:pointer}.fx__table tbody tr:hover td{background:var(--surface-2)}.fx__table tr.on td{background:var(--rose-soft)}.fx__table .r{text-align:right}
+    .fx__table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+    .fx__group-row td{padding:12px 8px 4px;color:var(--rose);font-size:10.5px;font-weight:760;letter-spacing:.1em;text-transform:uppercase;background:transparent!important}.fx__group-row td small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}.fx__table tr{cursor:pointer}.fx__table tbody tr:hover td{background:var(--surface-2)}.fx__table tr.on td{background:var(--rose-soft)}.fx__table .r{text-align:right}
     .fx__name{display:flex;align-items:center;gap:10px}.fx__name img,.fx__name .fx__ext{width:36px;height:36px;aspect-ratio:auto;font-size:9px;border-radius:8px;object-fit:cover}.fx__name span{display:grid;min-width:0}.fx__name small{color:var(--muted);font-size:10.5px}
     .fx__more{display:block;margin:14px auto 0}
     .fx__rail-head--gap{margin-top:16px}
@@ -429,6 +447,18 @@ export class FilesPage implements OnDestroy {
     walk(null, 0);
     return out;
   });
+  readonly currentFolderId = computed(() => {
+    const folder = this.folder();
+    return typeof folder === 'number' ? folder : null;
+  });
+  /** Where a folder may go: anywhere but inside itself or its own subfolders. */
+  readonly parentChoices = computed(() => {
+    const draft = this.folderDraft();
+    if (!draft || draft.id === null) return this.tree();
+    const blocked = new Set<number>([draft.id]);
+    for (const node of this.tree()) if (node.parentId !== null && blocked.has(node.parentId)) blocked.add(node.id);
+    return this.tree().filter((node) => !blocked.has(node.id));
+  });
   readonly folderName = computed(() => {
     const folder = this.folder();
     return typeof folder === 'number' ? this.folders().find((item) => item.id === folder)?.name ?? '' : '';
@@ -457,9 +487,15 @@ export class FilesPage implements OnDestroy {
   readonly query = signal('');
   readonly kind = signal<MediaKind | null>(null);
   readonly archived = signal(false);
+  /** The list is the default; tiles are a choice that is remembered. */
   readonly view = signal<'grid' | 'list'>((() => {
-    try { return localStorage.getItem('enrosed.files.view') === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
+    try { return localStorage.getItem('enrosed.files.view') === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
   })());
+
+  setView(view: 'grid' | 'list'): void {
+    this.view.set(view);
+    try { localStorage.setItem('enrosed.files.view', view); } catch { /* remembered for this visit only */ }
+  }
   readonly uploading = signal(false);
   readonly uploadProgress = signal('Uploaden…');
   readonly dropActive = signal(false);
@@ -890,6 +926,11 @@ export class FilesPage implements OnDestroy {
   }
 
   /* ================================================================ helpers */
+  folderLabel(asset: MediaAssetSummary): string {
+    if (asset.folderId === null || typeof this.folder() === 'number') return '';
+    return this.folders().find((item) => item.id === asset.folderId)?.name ?? '';
+  }
+
   private ask(title: string, message: string, danger = false): Promise<boolean> {
     return new Promise((resolve) => this.ui.confirm(
       { title, message, confirmLabel: danger ? 'Verwijderen' : 'Bevestigen', danger, secondaryLabel: 'Annuleren' },
