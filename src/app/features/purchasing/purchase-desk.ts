@@ -794,184 +794,69 @@ type DeskRow =
 
       @if (adding()) {
         <app-sheet title="Product toevoegen aan de container" [wide]="true" (closed)="adding.set(false)">
-          <div body>
-            <input class="input desk-pick__search" type="search" autocomplete="off" placeholder="Zoek op naam, kleur, maat of SKU…"
-                   aria-label="Zoeken in de catalogus" [ngModel]="addQuery()" (ngModelChange)="addQuery.set($event)" />
-            @for (group of pickerGroups(); track group.key) {
-              <div class="desk-pick__cat">{{ group.label }} <small>{{ group.count }} product{{ group.count === 1 ? '' : 'en' }}</small></div>
-              @for (family of group.families; track family.key) {
-                <div class="desk-pick__family">
-                  @if (family.products.length > 1) {
-                    <div class="desk-pick__head"><strong>{{ stripColour(family.label, family.products[0].colour) }}</strong><small>{{ family.products.length }} varianten</small></div>
-                  }
-                  @for (product of family.products; track product.id) {
-                    <div class="desk-pick__row">
-                      @if (photoOf(product.id!); as photo) { <img [appAuthSrc]="photo" alt="" /> } @else { <i aria-hidden="true">◈</i> }
-                      <span class="desk-pick__copy">
-                        <strong>
-                          @if (family.products.length > 1) {
-                            @if (product.colour) {
-                              <i class="line-colour-dot" [class.line-colour-dot--empty]="!colourHex(product.colourHex, product.colour)"
-                                 [style.background]="colourHex(product.colourHex, product.colour) || 'transparent'" aria-hidden="true"></i>
-                            }{{ variantOf(product) || product.name }}
-                          } @else {
-                            {{ stripColour(product.name, product.colour) }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }
-                          }
-                        </strong>
-                        <small>{{ product.sku }} · {{ stockOf(product.id!) | num }} op voorraad · {{ piecesPerCarton(product.id!) | num }}/doos</small>
-                      </span>
-                      <span class="desk-pick__price">{{ exwPriceOf(product) | cur: exwCurrencyOf(product) }}<small>{{ product.exwPrice == null ? 'productkaart' : 'EXW' }}</small></span>
-                      <input class="input num right desk-pick__qty" type="number" min="1" step="1" inputmode="numeric"
-                             [attr.aria-label]="'Aantal ' + product.name"
-                             [ngModel]="addQuantity(product)" (ngModelChange)="setAddQuantity(product, +$event)" />
-                      <button class="btn btn--sm btn--primary" type="button" (click)="addProduct(product)">Toevoegen</button>
-                    </div>
-                  }
-                </div>
+          <div body class="desk-pick">
+            <aside class="desk-pick__side">
+              <input class="input desk-pick__search" type="search" autocomplete="off" placeholder="Zoek naam, kleur, maat of SKU…"
+                     aria-label="Zoeken in de catalogus" [ngModel]="addQuery()" (ngModelChange)="addQuery.set($event)" />
+              <nav class="desk-pick__cats" aria-label="Categorieën">
+                <button type="button" [class.on]="addCategory() === null" (click)="addCategory.set(null)">
+                  <span>Alle producten</span><b>{{ pickerTotal() }}</b>
+                </button>
+                @for (category of pickerCategories(); track category.key) {
+                  <button type="button" [class.on]="addCategory() === category.key" (click)="addCategory.set(category.key)">
+                    <span>{{ category.label }}</span><b>{{ category.count }}</b>
+                  </button>
+                }
+              </nav>
+              <p class="desk-pick__hint">{{ supplierName() }} · alleen wat nog niet op de container staat</p>
+            </aside>
+            <div class="desk-pick__list">
+              @for (group of pickerGroups(); track group.key) {
+                <div class="desk-pick__cat">{{ group.label }} <small>{{ group.count }} product{{ group.count === 1 ? '' : 'en' }}</small></div>
+                @for (family of group.families; track family.key) {
+                  <div class="desk-pick__family">
+                    @if (family.products.length > 1) {
+                      <div class="desk-pick__head">
+                        @if (photoOf(family.products[0].id!); as photo) { <img [appAuthSrc]="photo" alt="" /> }
+                        <span><strong>{{ stripColour(family.label, family.products[0].colour) }}</strong>
+                          <small>Reeks · {{ family.products.length }} varianten</small></span>
+                      </div>
+                    }
+                    @for (product of family.products; track product.id) {
+                      <div class="desk-pick__row" [class.desk-pick__row--variant]="family.products.length > 1">
+                        @if (photoOf(product.id!); as photo) { <img [appAuthSrc]="photo" alt="" /> } @else { <i aria-hidden="true">◈</i> }
+                        <span class="desk-pick__copy">
+                          <strong>
+                            @if (family.products.length > 1) {
+                              @if (product.colour) {
+                                <i class="line-colour-dot" [class.line-colour-dot--empty]="!colourHex(product.colourHex, product.colour)"
+                                   [style.background]="colourHex(product.colourHex, product.colour) || 'transparent'" aria-hidden="true"></i>
+                              }{{ variantOf(product) || product.name }}
+                            } @else {
+                              {{ stripColour(product.name, product.colour) }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }
+                            }
+                          </strong>
+                          <small>{{ product.sku }} · {{ stockOf(product.id!) | num }} op voorraad · {{ piecesPerCarton(product.id!) | num }}/doos</small>
+                        </span>
+                        <span class="desk-pick__price">{{ exwPriceOf(product) | cur: exwCurrencyOf(product) }}<small>{{ product.exwPrice == null ? 'productkaart' : 'EXW' }}</small></span>
+                        <input class="input num right desk-pick__qty" type="number" min="1" step="1" inputmode="numeric"
+                               [attr.aria-label]="'Aantal ' + product.name"
+                               [ngModel]="addQuantity(product)" (ngModelChange)="setAddQuantity(product, +$event)"
+                               (keydown.enter)="addProduct(product)" />
+                        <button class="btn btn--sm btn--primary" type="button" (click)="addProduct(product)">Toevoegen</button>
+                      </div>
+                    }
+                  </div>
+                }
+              } @empty {
+                <p class="hint desk-pick__empty">{{ addQuery().trim() ? 'Niets gevonden bij deze leverancier.' : 'Alle producten van deze leverancier staan al op de container.' }}</p>
               }
-            } @empty {
-              <p class="hint desk-pick__empty">{{ addQuery().trim() ? 'Niets gevonden bij deze leverancier.' : 'Alle producten van deze leverancier staan al op de container.' }}</p>
-            }
+            </div>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="newProduct()">Nieuw product aanmaken</button>
-            <span class="spacer"></span>
+            <span class="spacer desk-pick__count">@if (addedCount()) { {{ addedCount() }} toegevoegd }</span>
             <button class="btn btn--primary" type="button" (click)="adding.set(false)">Klaar</button>
-          </div>
-        </app-sheet>
-      }
-
-      @if (issue(); as report) {
-        <app-sheet [title]="'Schade of tekort · ' + (issueLine()?.productName ?? '')" (closed)="issue.set(null)">
-          <div body>
-            <div class="per-toggle" role="group" aria-label="Wat is er aan de hand?">
-              <button type="button" [class.on]="report.kind === 'DAMAGED'" (click)="issue.set({ ...report, kind: 'DAMAGED' })">Beschadigd</button>
-              <button type="button" [class.on]="report.kind === 'SHORT'" (click)="issue.set({ ...report, kind: 'SHORT' })">Minder aangekomen</button>
-            </div>
-            <div class="field mt-12">
-              <label class="req" for="issue-qty">Aantal stuks</label>
-              <input class="input num right" id="issue-qty" type="number" min="1" step="1" inputmode="numeric" [ngModel]="report.quantity || null" (ngModelChange)="issue.set({ ...report, quantity: +$event })" />
-            </div>
-            @if (issueLine(); as line) {
-              @if (report.kind === 'DAMAGED') {
-                <p class="hint mt-8">Nu {{ orderLine(line.productId)?.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen. {{ report.quantity > 0 ? 'Er komen ' + report.quantity + ' bij; die gaan als beschadigd uit de voorraad.' : '' }}</p>
-              } @else {
-                <p class="hint mt-8">Ontvangen telt nu {{ line.quantity | num }} stuks. {{ report.quantity > 0 ? 'Wordt ' + (line.quantity - report.quantity) + '; het verschil gaat uit de voorraad.' : '' }}</p>
-              }
-            }
-          </div>
-          <div foot style="display:contents">
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="issue.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="saving() || !(report.quantity > 0)" (click)="confirmIssue()">{{ saving() ? 'Bezig…' : 'Melden' }}</button>
-          </div>
-        </app-sheet>
-      }
-
-      @if (paying(); as pay) {
-        <app-sheet [title]="pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier'" (closed)="paying.set(null)">
-          <div body>
-            <div class="pay-chips" role="group" aria-label="Snel invullen">
-              @for (chip of (pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
-                <button class="pay-chip" type="button" (click)="paying.set({ ...pay, amount: chip.amount, currency: 'EUR', label: chip.label })">{{ chip.label }}<small>{{ chip.amount | eur }}</small></button>
-              }
-            </div>
-            <div class="form-grid mt-12">
-              <div class="field">
-                <label for="pay-amount">Bedrag</label>
-                <div class="input-affix">
-                  <input class="input num right" id="pay-amount" type="number" min="0" step="0.01" inputmode="decimal" [ngModel]="pay.amount" (ngModelChange)="paying.set({ ...pay, amount: +$event })" />
-                  <select class="input-affix__suffix desk-affix-select" aria-label="Munt" [ngModel]="pay.currency" (ngModelChange)="paying.set({ ...pay, currency: $event })">
-                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
-                  </select>
-                </div>
-                @if (pay.currency !== 'EUR' && pay.amount > 0) { <span class="hint">≈ {{ eurOf(pay.amount, pay.currency) | eur }} aan de koers van deze order.</span> }
-                @if (payingOverage() > 0) { <span class="hint hint--warn">Let op: dit gaat {{ payingOverage() | eur }} over het afgesproken bedrag heen. Bewaren kan gewoon.</span> }
-                @else if (pay.amount > 0 && openFor(pay.payee) > 0) { <span class="hint">Nog open: {{ openFor(pay.payee) | eur }}.</span> }
-              </div>
-              <div class="field">
-                <label for="pay-date">Betaald op</label>
-                <app-date-field fieldId="pay-date" [value]="pay.paidOn" (valueChange)="paying.set({ ...pay, paidOn: $event })" />
-              </div>
-              <div class="field span-2">
-                <label for="pay-label">Omschrijving <span class="opt"></span></label>
-                <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling" [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">{{ payingBusy() ? 'Bezig…' : 'Betaling bewaren' }}</button>
-          </div>
-        </app-sheet>
-      }
-
-      @if (addingDocument(); as doc) {
-        <app-sheet title="Document toevoegen" (closed)="addingDocument.set(null)">
-          <div body>
-            <div class="form-grid">
-              <div class="field">
-                <label for="doc-kind">Soort</label>
-                <select class="select" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
-                  @for (kind of documentKinds; track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
-                </select>
-              </div>
-              <div class="field">
-                <label for="doc-label">Omschrijving <span class="opt"></span></label>
-                <input class="input" id="doc-label" placeholder="bijv. KBC 23/08, factuur 2e helft" [ngModel]="doc.label" (ngModelChange)="addingDocument.set({ ...doc, label: $event })" />
-              </div>
-              @if (doc.kind === 'PAYMENT_PROOF' && paymentsTo('SUPPLIER').length + paymentsTo('LOGISTICS').length) {
-                <div class="field span-2">
-                  <label for="doc-payment">Hoort bij betaling <span class="opt"></span></label>
-                  <select class="select" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
-                    <option value="">— geen —</option>
-                    @for (payment of payments() ?? []; track payment.id) { <option [value]="payment.id">{{ payment.paidOn | dateNl }} · {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option> }
-                  </select>
-                </div>
-              }
-              <div class="field span-2">
-                <label for="doc-file">Bestand</label>
-                <input class="input" id="doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv" (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
-                <span class="hint">PDF, foto of Office-bestand, tot 25 MB.</span>
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <button class="btn" type="button" (click)="addingDocument.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="uploadingDocument() || !doc.file" (click)="confirmDocument()">{{ uploadingDocument() ? 'Bezig…' : 'Bewaren' }}</button>
-          </div>
-        </app-sheet>
-      }
-
-      @if (firstInstalmentPrompt(); as first) {
-        <app-sheet title="Eerste betaling" (closed)="firstInstalmentPrompt.set(null)">
-          <div body>
-            <p>De bestelling staat vast. Volgens de betaalafspraak is nu <b>{{ first.label }}</b> aan de beurt: <b>{{ first.amount | eur }}</b> aan {{ supplierName() }}.</p>
-            <p class="hint mt-8">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 5 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
-            <div class="form-grid mt-12">
-              <div class="field">
-                <label for="first-amount">Betaald bedrag</label>
-                <div class="input-affix">
-                  <input class="input num right" id="first-amount" type="number" min="0" step="0.01" inputmode="decimal" [ngModel]="first.amount" (ngModelChange)="firstInstalmentPrompt.set({ ...first, amount: +$event })" />
-                  <select class="input-affix__suffix desk-affix-select" aria-label="Munt" [ngModel]="first.currency" (ngModelChange)="firstInstalmentPrompt.set({ ...first, currency: $event })">
-                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field">
-                <label for="first-date">Betaald op</label>
-                <app-date-field fieldId="first-date" [value]="first.paidOn" (valueChange)="firstInstalmentPrompt.set({ ...first, paidOn: $event })" />
-              </div>
-              <div class="field span-2">
-                <label for="first-proof">Betalingsbewijs <span class="opt"></span></label>
-                <input class="input" id="first-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" (change)="firstInstalmentPrompt.set({ ...first, files: fileList($any($event.target).files) })" />
-                <span class="hint">Bijv. het KBC-afschrift; hoogstens vijf bestanden.</span>
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <button class="btn" type="button" (click)="firstInstalmentPrompt.set(null)">Nog niet betaald</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(first.amount > 0)" (click)="confirmFirstInstalment()">{{ payingBusy() ? 'Bezig…' : 'Betaald - noteren' }}</button>
           </div>
         </app-sheet>
       }
@@ -1122,16 +1007,25 @@ type DeskRow =
     .desk-body{display:grid;grid-template-columns:minmax(0,1fr) clamp(440px,30vw,520px);gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
-    .desk-pick__search{width:100%;margin-bottom:12px}
-    .desk-pick__cat{margin:14px 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}.desk-pick__cat small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
+    .desk-pick{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}
+    .desk-pick__side{position:sticky;top:0;display:grid;gap:10px}
+    .desk-pick__search{width:100%}
+    .desk-pick__cats{display:grid;gap:2px}.desk-pick__cats button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:7px 10px;border:0;border-radius:9px;background:transparent;color:var(--ink-2);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+    .desk-pick__cats button b{color:var(--muted);font-size:11px}.desk-pick__cats button.on{background:var(--rose-soft);color:var(--rose-dark);font-weight:650}.desk-pick__cats button.on b{color:var(--rose-dark)}
+    .desk-pick__hint{margin:0;padding:0 10px;color:var(--muted);font-size:11px}
+    .desk-pick__list{min-width:0}
+    .desk-pick__cat{margin:0 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}.desk-pick__cat small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}.desk-pick__family+.desk-pick__cat{margin-top:16px}
     .desk-pick__family{margin-bottom:8px;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
-    .desk-pick__head{display:flex;align-items:baseline;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}.desk-pick__head strong{font-size:13px}.desk-pick__head small{color:var(--muted);font-size:11px}
-    .desk-pick__row{display:grid;grid-template-columns:44px minmax(0,1fr) 110px 88px auto;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid var(--line)}.desk-pick__family>.desk-pick__row:first-child,.desk-pick__head+.desk-pick__row{border-top:0}
+    .desk-pick__head{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}.desk-pick__head img{width:32px;height:32px;border:1px solid var(--line);border-radius:9px;object-fit:cover}.desk-pick__head span{display:grid}.desk-pick__head strong{font-size:13px}.desk-pick__head small{color:var(--muted);font-size:11px}
+    .desk-pick__row{display:grid;grid-template-columns:44px minmax(0,1fr) 110px 84px auto;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid var(--line)}.desk-pick__family>.desk-pick__row:first-child{border-top:0}
+    .desk-pick__row--variant{padding-left:22px}.desk-pick__row--variant img,.desk-pick__row--variant>i{width:36px;height:36px}
     .desk-pick__row img,.desk-pick__row>i{width:44px;height:44px;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:var(--surface-2)}.desk-pick__row>i{display:grid;place-items:center;color:var(--muted);font-style:normal}
     .desk-pick__copy{display:grid;min-width:0;line-height:1.25}.desk-pick__copy strong{font-size:13px}.desk-pick__copy em{margin-left:6px;color:var(--muted);font-style:normal;font-weight:600}.desk-pick__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
     .desk-pick__price{display:grid;text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}.desk-pick__price small{color:var(--muted);font-size:10px;font-weight:600}
     .desk-pick__qty{min-height:36px}
-    .desk-pick__empty{padding:24px 0;text-align:center}
+    .desk-pick__empty{padding:24px 0}
+    .desk-pick__count{color:var(--ok);font-size:12.5px;font-weight:650}
+    @media(max-width:759px){.desk-pick{grid-template-columns:1fr}.desk-pick__side{position:static}.desk-pick__cats{display:flex;flex-wrap:wrap}.desk-pick__cats button{width:auto}}
     .pay-note{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted)}
     .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
@@ -1310,16 +1204,32 @@ export class PurchaseDesk extends PurchaseEditor {
   /* ---- adding products: every product of the supplier, grouped, in one sheet ---- */
   readonly adding = signal(false);
   readonly addQuery = signal('');
+  readonly addCategory = signal<string | null>(null);
+  readonly addedCount = signal(0);
   /** Quantities typed in the sheet, per product; a carton until changed. */
   private readonly addDraft = signal<Map<number, number>>(new Map());
 
   openAdd(): void {
     this.addQuery.set('');
+    this.addCategory.set(null);
+    this.addedCount.set(0);
     this.adding.set(true);
   }
 
-  /** Category → series → variants, of what is not on the container yet. */
+  /** The categories the search still leaves, with their product counts. */
+  readonly pickerCategories = computed(() => this.pickerAll()
+    .map((group) => ({ key: group.key, label: group.label, count: group.count })));
+
+  readonly pickerTotal = computed(() => this.pickerAll().reduce((sum, group) => sum + group.count, 0));
+
+  /** The chosen category, or everything. */
   readonly pickerGroups = computed(() => {
+    const category = this.addCategory();
+    return this.pickerAll().filter((group) => category === null || group.key === category);
+  });
+
+  /** Category → series → variants, of what is not on the container yet. */
+  private readonly pickerAll = computed(() => {
     const words = this.addQuery().trim().toLocaleLowerCase('nl-BE').split(/\s+/).filter(Boolean);
     const matches = (product: Product): boolean => !words.length || words.every((word) =>
       [product.name, product.sku, product.colour, product.variantSize].filter(Boolean).join(' ')
@@ -1371,8 +1281,11 @@ export class PurchaseDesk extends PurchaseEditor {
 
   /** The line lands at once; the row leaves the sheet because it is on the container now. */
   addProduct(product: Product): void {
-    this.addLine({ product, quantity: this.addQuantity(product) });
+    const quantity = this.addQuantity(product);
+    this.addLine({ product, quantity });
     this.addDraft.update((draft) => { const next = new Map(draft); next.delete(product.id!); return next; });
+    this.addedCount.update((count) => count + 1);
+    this.ui.toast(`${product.name} · ${quantity} st toegevoegd`);
   }
 
   /** Where the landed euro goes, as shares of the total. */
