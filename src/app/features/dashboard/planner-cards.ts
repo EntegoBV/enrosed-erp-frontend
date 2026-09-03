@@ -481,7 +481,8 @@ interface CompactAgendaEntry {
     .cal-nav { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
       color: var(--ink-2); font-size: 15px; cursor: pointer; }
     .cal-nav:hover { background: var(--surface-2); }
-    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    /* Day cells stay hand-sized: never wider than a thumb, however wide the card. */
+    .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 46px)); gap: 2px; justify-content: space-between; }
     .cal-dow { padding: 2px 0 4px; color: var(--muted); font-size: 9.5px; font-weight: 750;
       letter-spacing: .05em; text-align: center; text-transform: uppercase; }
     .cal-day { position: relative; display: grid; place-items: center; aspect-ratio: 1; min-height: 34px; border: 0; border-radius: 9px;
@@ -500,8 +501,8 @@ interface CompactAgendaEntry {
     .cal-agenda { margin-top: 8px; border-top: 1px solid var(--line); }
     /* Desktop: the little calendar sits left like a paper desk planner,
        the day's list gets the rest of the width. */
-    @container (min-width: 700px) {
-      .planner-card .card__body { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 4px 26px; align-items: start; }
+    @container (min-width: 560px) {
+      .planner-card .card__body { display: grid; grid-template-columns: 328px minmax(0, 1fr); gap: 4px 22px; align-items: start; }
       .planner-card .overdue { grid-column: 1 / -1; }
       .cal-pane { min-width: 0; }
       .cal-agenda { margin-top: 0; padding-left: 26px; border-top: 0; border-left: 1px solid var(--line); min-height: 100%; }

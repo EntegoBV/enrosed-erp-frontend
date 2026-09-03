@@ -29,7 +29,7 @@ const LANGUAGE_LABEL: Record<string, string> = {
           <button type="button" [class.on]="days() === range" (click)="days.set(range)">{{ range }} dagen</button>
         }
       </div>
-      <span class="wa__hint">Cookieloos gemeten: geen adressen, bezoekers tellen per dag uniek. Robots tellen niet mee.</span>
+      <span class="wa__hint">Cookieloos gemeten: geen adressen, bezoekers tellen per dag uniek. Robots tellen niet mee@if (report()?.excludedCities?.length) {, en eigen bezoeken uit {{ report()!.excludedCities.join(', ') }} ook niet}.</span>
     </div>
 
     @if (loading()) {

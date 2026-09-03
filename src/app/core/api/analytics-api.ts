@@ -19,6 +19,8 @@ export interface WebsiteAnalyticsReport {
   hours: number[][];
   devices: { device: 'MOBILE' | 'TABLET' | 'DESKTOP'; visits: number }[];
   locales: { locale: string; visits: number }[];
+  /** Our own Belgian towns, left out of every number. */
+  excludedCities: string[];
 }
 
 export type WebsitePageKind =
