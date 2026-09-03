@@ -156,6 +156,10 @@ type DeskRow =
                 <h2>Producten</h2>
                 <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen · {{ data.costing.totals.cbm | cbm }}</p>
               </div>
+              <span class="per-toggle" role="group" aria-label="Bedragen tonen als">
+                <button type="button" [class.on]="perPiece()" [attr.aria-pressed]="perPiece()" (click)="perPiece.set(true)">Per stuk</button>
+                <button type="button" [class.on]="!perPiece()" [attr.aria-pressed]="!perPiece()" (click)="perPiece.set(false)">Totaal</button>
+              </span>
               @if (editing()) {
                 <button class="btn btn--primary btn--sm" type="button" [disabled]="isReceived()" (click)="openPicker()">
                   <span aria-hidden="true">＋</span> Product
@@ -172,17 +176,16 @@ type DeskRow =
                     <th class="c-qty">Aantal</th>
                     <th class="c-cartons">Dozen</th>
                     <th class="c-price">Prijs / stuk</th>
-                    <th class="c-money">Goederen</th>
-                    <th class="c-money c-unit">Geland / stuk</th>
-                    <th class="c-money">Totaal geland</th>
-                    <th class="c-act"><span class="sr-only">Details</span></th>
+                    <th class="c-money">Goederen{{ perPiece() ? ' / stuk' : '' }}</th>
+                    <th class="c-money">{{ perPiece() ? 'Geland / stuk' : 'Totaal geland' }}</th>
+                    @if (editing()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
                   </tr>
                 </thead>
                 <tbody>
                 @for (row of tableRows(); track row.key) {
                   @switch (row.kind) {
                     @case ('section') {
-                      <tr class="desk-section__row"><th colspan="8">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
+                      <tr class="desk-section__row"><th [attr.colspan]="editing() ? 7 : 6">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
                     }
                     @case ('group') {
                       <tr class="desk-group" [class.desk-group--folded]="familyFolded(row.groupKey)">
@@ -204,10 +207,9 @@ type DeskRow =
                         <td class="c-qty num"><b>{{ row.pieces | num }}</b></td>
                         <td class="c-cartons num"><b>{{ row.cartons | num }}</b></td>
                         <td class="c-price"></td>
-                        <td class="c-money num">{{ row.goodsEur | eur }}</td>
-                        <td class="c-money c-unit num">{{ row.averageUnitEur | eur: 4 }}</td>
-                        <td class="c-money num c-money--total">{{ row.totalEur | eur }}</td>
-                        <td class="c-act"></td>
+                        <td class="c-money num">{{ (perPiece() && row.pieces > 0 ? row.goodsEur / row.pieces : row.goodsEur) | eur: decimals() }}</td>
+                        <td class="c-money num c-money--total">{{ perPiece() ? (row.averageUnitEur | eur: 4) : (row.totalEur | eur) }}</td>
+                        @if (editing()) { <td class="c-act"></td> }
                       </tr>
                     }
                     @case ('line') {
@@ -286,21 +288,23 @@ type DeskRow =
                             <small>{{ orderLine(line.productId)?.priceBasis ?? 'EXW' }}@if (orderLine(line.productId)?.exwPrice == null) { · productkaart }</small>
                           }
                         </td>
-                        <td class="c-money num">{{ line.goodsEur | eur }}</td>
-                        <td class="c-money c-unit num">{{ line.landedUnitEur | eur: 4 }}</td>
-                        <td class="c-money num c-money--total">{{ line.totalEur | eur }}</td>
-                        <td class="c-act">
-                          <button class="desk-expand" type="button" (click)="toggleLine(line.productId)"
-                                  [attr.aria-expanded]="lineOpen(line.productId)" [attr.aria-label]="'Kostopbouw van ' + line.productName">›</button>
-                          @if (editing()) {
+                        <td class="c-money num">{{ amt(line.goodsEur, line) | eur: decimals() }}</td>
+                        <td class="c-money num c-money--total">
+                          <button class="desk-total" type="button" (click)="toggleLine(line.productId)"
+                                  [attr.aria-expanded]="lineOpen(line.productId)" [title]="'Kostopbouw van ' + line.productName">
+                            {{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}<i aria-hidden="true">›</i>
+                          </button>
+                        </td>
+                        @if (editing()) {
+                          <td class="c-act">
                             <button class="desk-remove" type="button" [disabled]="isReceived()"
                                     [attr.aria-label]="'Verwijder ' + line.productName" (click)="removeLine(line.productId)">×</button>
-                          }
-                        </td>
+                          </td>
+                        }
                       </tr>
                       @if (lineOpen(line.productId)) {
                         <tr class="desk-detail">
-                          <td colspan="8">
+                          <td [attr.colspan]="editing() ? 7 : 6">
                             <div class="desk-detail__grid">
                               <div class="desk-detail__head"><span>Kostopbouw</span><span>per stuk</span><span>regel</span></div>
                               <div class="desk-detail__line"><span>Goederen <small>{{ line.goodsUsd | cur: 'USD' }}</small></span><span>{{ each(line.goodsEur, line) | eur: 4 }}</span><span>{{ line.goodsEur | eur }}</span></div>
@@ -333,10 +337,9 @@ type DeskRow =
                     <th class="c-qty num">{{ data.costing.totals.pieces | num }}</th>
                     <th class="c-cartons num">{{ data.costing.totals.cartons | num }}</th>
                     <th class="c-price"></th>
-                    <th class="c-money num">{{ data.costing.totals.goodsEur | eur }}</th>
-                    <th class="c-money c-unit num">{{ data.costing.totals.averageUnitEur | eur: 4 }}</th>
-                    <th class="c-money num c-money--total">{{ data.costing.totals.totalEur | eur }}</th>
-                    <th class="c-act"></th>
+                    <th class="c-money num">{{ (perPiece() && data.costing.totals.pieces > 0 ? data.costing.totals.goodsEur / data.costing.totals.pieces : data.costing.totals.goodsEur) | eur: decimals() }}</th>
+                    <th class="c-money num c-money--total">{{ perPiece() ? (data.costing.totals.averageUnitEur | eur: 4) : (data.costing.totals.totalEur | eur) }}</th>
+                    @if (editing()) { <th class="c-act"></th> }
                   </tr>
                 </tfoot>
               </table>
@@ -997,8 +1000,8 @@ type DeskRow =
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
     .desk-table td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:auto;min-width:200px}.c-qty{width:70px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:100px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
-    .desk-table--editing .c-price{width:200px}.desk-table--editing .c-act{width:60px}.desk-table--editing .c-unit{display:none}
+    .c-product{width:auto;min-width:200px}.c-qty{width:70px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:112px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
+    .desk-table--editing .c-price{width:200px}.desk-table--editing .c-act{width:40px}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
@@ -1025,9 +1028,9 @@ type DeskRow =
     .desk-mini{min-height:34px;padding:0 3px;border:1px solid var(--line-strong);border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
     .desk-mini--last{border-radius:0 var(--r-sm) var(--r-sm) 0}
     .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
-    .c-act{white-space:nowrap}
-    .desk-expand,.desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
-    .desk-expand{transition:transform .15s ease}.desk-row--open .desk-expand{transform:rotate(90deg);color:var(--rose-dark)}
+    .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
+    .desk-total{display:inline-flex;align-items:center;gap:4px;padding:4px 2px 4px 8px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;cursor:pointer}
+    .desk-total i{display:inline-block;color:var(--muted);font-style:normal;font-size:15px;font-weight:600;transition:transform .15s ease}.desk-row--open .desk-total i{transform:rotate(90deg)}.desk-total:hover{background:var(--rose-soft)}
     .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
     .desk-detail td{padding:0 16px 12px 71px;background:var(--surface-2)}
     .desk-detail__grid{display:grid;gap:0;max-width:640px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
