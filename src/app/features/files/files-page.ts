@@ -1,10 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, OnDestroy, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, inject, OnDestroy, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
+import { ActivityApi } from '../../core/api/activity-api';
+import { ActivityEvent } from '../../core/api/models';
 import { MediaApi } from '../../core/api/media-api';
 import {
   MediaAssetDetail, MediaAssetSummary, MediaFolder, MediaKind, MediaRole, MediaTargetType, MediaVariant,
@@ -32,6 +34,9 @@ const TARGET_OPTIONS: ReadonlyArray<{ value: MediaTargetType; label: string }> =
   { value: 'PLANNER_ITEM', label: 'Planneritem' },
 ];
 const PAGE = 80;
+
+interface UploadItem { id: number; file: File; status: 'queued' | 'busy' | 'done' | 'error'; reused: boolean; error: string | null; extension: string; preview: string | null; }
+interface UploadTray { items: UploadItem[]; folderId: number | null; running: boolean; done: boolean; }
 
 /** The library seen by use: where the ERP puts files, not where people filed them. */
 interface Collection {
@@ -136,7 +141,7 @@ const COLLECTIONS: readonly Collection[] = [
                           (contextmenu)="$event.preventDefault()" (click)="rowClick(asset, $event)">
                     @if (picking()) { <i class="fm__tick" [class.on]="selectedIds().has(asset.id)" aria-hidden="true">{{ selectedIds().has(asset.id) ? '✓' : '' }}</i> }
                     @if (asset.kind === 'IMAGE') { <img class="fm__thumb" [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" draggable="false" /> } @else { <i class="fm__icon" aria-hidden="true">{{ extension(asset) }}</i> }
-                    <span class="fm__copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</small></span>
+                    <span class="fm__copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}{{ asset.createdByName ? ' · ' + asset.createdByName : '' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</small></span>
                     <i class="fm__chev" aria-hidden="true">›</i>
                   </button>
                 </li>
@@ -146,10 +151,7 @@ const COLLECTIONS: readonly Collection[] = [
           }
         }
 
-        <label class="fm__fab" [class.fm__fab--busy]="uploading()" [attr.aria-label]="uploading() ? uploadProgress() : 'Bestanden toevoegen'">
-          {{ uploading() ? '…' : '+' }}
-          <input type="file" multiple hidden accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" [disabled]="uploading()" (change)="chooseFiles($event)" />
-        </label>
+        <button class="fm__fab" type="button" [class.fm__fab--busy]="uploading()" [attr.aria-label]="uploading() ? uploadProgress() : 'Bestanden toevoegen'" (click)="addMenu.set(true)">{{ uploading() ? '…' : '+' }}</button>
       </div>
 
       @if (selected(); as asset) {
@@ -217,7 +219,7 @@ const COLLECTIONS: readonly Collection[] = [
       }
     } @else {
     <app-page-header title="Bestanden" subtitle="Documenten en media, in mappen en met publieke links" [showBack]="false" [showBell]="false">
-      <label class="btn btn--primary btn--sm fx__uploadbtn">
+      <label class="btn btn--primary btn--sm fx__uploadbtn" title="Kies meerdere bestanden tegelijk; slepen of plakken kan ook">
         {{ uploading() ? uploadProgress() : '+ Uploaden' }}
         <input type="file" multiple hidden [disabled]="uploading()" (change)="chooseFiles($event)" />
       </label>
@@ -405,11 +407,12 @@ const COLLECTIONS: readonly Collection[] = [
               <th><button type="button" (click)="sortBy('kind')" [class.on]="sort().key === 'kind'">Soort <i>{{ arrow('kind') }}</i></button></th>
               <th class="r"><button type="button" (click)="sortBy('size')" [class.on]="sort().key === 'size'">Grootte <i>{{ arrow('size') }}</i></button></th>
               <th><button type="button" (click)="sortBy('updated')" [class.on]="sort().key === 'updated'">Gewijzigd <i>{{ arrow('updated') }}</i></button></th>
+              <th><button type="button" (click)="sortBy('by')" [class.on]="sort().key === 'by'">Door <i>{{ arrow('by') }}</i></button></th>
               <th><button type="button" (click)="sortBy('links')" [class.on]="sort().key === 'links'">Gebruik <i>{{ arrow('links') }}</i></button></th>
             </tr></thead>
             <tbody>
               @for (group of groups() ?? [{ label: '', assets: sorted() }]; track group.label) {
-                @if (group.label) { <tr class="fx__group-row"><td colspan="5">{{ group.label }} <small>{{ group.assets.length }}</small></td></tr> }
+                @if (group.label) { <tr class="fx__group-row"><td colspan="6">{{ group.label }} <small>{{ group.assets.length }}</small></td></tr> }
                 @for (asset of group.assets; track asset.id) {
                   <tr [class.on]="selected()?.id === asset.id" [class.fx__row--picked]="selectedIds().has(asset.id)" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()" (click)="clickAsset(asset, $event)" (contextmenu)="openContext($event, asset)">
                     <td class="fx__name">
@@ -420,6 +423,7 @@ const COLLECTIONS: readonly Collection[] = [
                     <td>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</td>
                     <td class="r">{{ size(asset.sizeBytes) }}{{ asset.web && asset.web.sizeBytes !== asset.sizeBytes ? ' · web ' + size(asset.web.sizeBytes) : '' }}</td>
                     <td>{{ asset.updatedAt | dateTimeNl }}</td>
+                    <td>{{ asset.createdByName || '—' }}</td>
                     <td>{{ asset.links.length ? asset.links.length + '× gekoppeld' : '—' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</td>
                   </tr>
                 }
@@ -460,6 +464,63 @@ const COLLECTIONS: readonly Collection[] = [
     </div>
     }
 
+    @if (tray(); as tray) {
+      <app-sheet [title]="tray.done ? 'Toegevoegd' : (tray.items.length + ' bestand' + (tray.items.length === 1 ? '' : 'en') + ' toevoegen')" [wide]="!phone()" (closed)="closeTray()">
+        <div body class="fx__tray">
+          @if (!tray.done) {
+            <div class="fx__tray-bar">
+              <label class="fx__tray-folder"><span>In map</span>
+                <select class="select" [ngModel]="tray.folderId ?? ''" [disabled]="tray.running" (ngModelChange)="setTrayFolder($event === '' ? null : +$event)">
+                  <option value="">Zonder map</option>
+                  @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
+                </select></label>
+              <label class="btn btn--sm" [class.is-disabled]="tray.running">+ Meer kiezen<input type="file" multiple hidden [disabled]="tray.running" (change)="chooseFiles($event)" /></label>
+              <span class="fx__tray-total">{{ traySize() }}</span>
+            </div>
+          }
+          <ul class="fx__tray-list">
+            @for (item of tray.items; track item.id) {
+              <li class="fx__tray-item" [class.is-done]="item.status === 'done'" [class.is-error]="item.status === 'error'">
+                @if (item.preview) { <img [src]="item.preview" alt="" /> } @else { <i class="fx__ext" aria-hidden="true">{{ item.extension }}</i> }
+                <span class="fx__tray-copy">
+                  <b>{{ item.file.name }}</b>
+                  <small>{{ size(item.file.size) }}@if (item.status === 'error') { · {{ item.error }} }@if (item.status === 'done' && item.reused) { · bestond al, hergebruikt }@if (item.status === 'done' && !item.reused) { · toegevoegd }</small>
+                  @if (item.status === 'busy') { <i class="fx__tray-progress" aria-hidden="true"></i> }
+                </span>
+                @if (item.status === 'queued' && !tray.running) {
+                  <button class="fx__tray-x" type="button" aria-label="Uit de lijst halen" (click)="dropFromTray(item.id)">×</button>
+                } @else if (item.status === 'done') { <i class="fx__tray-ok" aria-hidden="true">✓</i> }
+                @else if (item.status === 'error') { <i class="fx__tray-bad" aria-hidden="true">!</i> }
+                @else if (item.status === 'busy') { <i class="fx__tray-spin" aria-hidden="true"></i> }
+              </li>
+            }
+          </ul>
+        </div>
+        <div foot style="display:contents">
+          <span class="spacer fx__tray-status">
+            @if (tray.running) { {{ trayDone() }} van {{ tray.items.length }}… }
+            @else if (tray.done) { {{ trayDone() }} toegevoegd{{ trayFailed() ? ', ' + trayFailed() + ' mislukt' : '' }} }
+          </span>
+          @if (tray.done) {
+            @if (trayFailed()) { <button class="btn" type="button" (click)="retryTray()">Mislukte opnieuw</button> }
+            <button class="btn btn--primary" type="button" (click)="closeTray()">Klaar</button>
+          } @else {
+            <button class="btn" type="button" [disabled]="tray.running" (click)="closeTray()">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="tray.running || !tray.items.length" (click)="startTray()">{{ tray.running ? 'Bezig…' : 'Uploaden (' + tray.items.length + ')' }}</button>
+          }
+        </div>
+      </app-sheet>
+    }
+    @if (phone() && addMenu()) {
+      <app-sheet title="Toevoegen" (closed)="addMenu.set(false)">
+        <div body class="fm__menu">
+          <label class="fm__menu-item"><i aria-hidden="true">❀</i>Foto’s uit de bibliotheek<small>meerdere tegelijk</small><input type="file" multiple hidden accept="image/*" (change)="chooseFiles($event); addMenu.set(false)" /></label>
+          <label class="fm__menu-item"><i aria-hidden="true">◉</i>Foto maken<input type="file" hidden accept="image/*" capture="environment" (change)="chooseFiles($event); addMenu.set(false)" /></label>
+          <label class="fm__menu-item"><i aria-hidden="true">▤</i>Bestanden kiezen<small>pdf, office, zip…</small><input type="file" multiple hidden (change)="chooseFiles($event); addMenu.set(false)" /></label>
+        </div>
+      </app-sheet>
+    }
+
     <ng-template #detailBody let-asset>
           @if (!phone()) {
             <div class="fx__detail-head">
@@ -490,8 +551,28 @@ const COLLECTIONS: readonly Collection[] = [
           <dl class="fx__facts">
             <div><dt>Bestand</dt><dd class="mono">{{ asset.originalFilename }}</dd></div>
             <div><dt>Versie</dt><dd>{{ asset.versionCount }}@if (asset.versionCount > 1) { <small> (laatste vervangt de vorige overal)</small> }</dd></div>
-            <div><dt>Toegevoegd</dt><dd>{{ asset.createdAt | dateTimeNl }}</dd></div>
+            <div><dt>Toegevoegd</dt><dd>{{ asset.createdAt | dateTimeNl }}@if (asset.createdByName) { <small> door <b>{{ asset.createdByName }}</b></small> }</dd></div>
+            @if (asset.versions?.length > 1) {
+              <div><dt>Versies</dt><dd>
+                @for (version of asset.versions; track version.id) {
+                  <small class="fx__version">v{{ version.versionNumber }} · {{ version.createdAt | dateTimeNl }}{{ version.createdByName ? ' · ' + version.createdByName : '' }} · {{ size(version.sizeBytes) }}</small>
+                }
+              </dd></div>
+            }
           </dl>
+
+          <details class="fx__history" (toggle)="$any($event.target).open ? loadHistory(asset.id) : null">
+            <summary>Geschiedenis <small>{{ history()?.length ?? '' }}</small></summary>
+            @if (historyLoading()) { <p class="fx__hint">Laden…</p> }
+            @else if (history(); as events) {
+              @if (!events.length) { <p class="fx__hint">Nog niets gelogd voor dit bestand.</p> }
+              <ul class="fx__events">
+                @for (event of events; track event.id) {
+                  <li><b>{{ event.actor?.displayName || 'Systeem' }}</b> {{ event.summary }}<small>{{ event.at | dateTimeNl }}</small></li>
+                }
+              </ul>
+            }
+          </details>
 
           <section class="fx__formats">
             <div class="fx__share-head"><b>Formaten</b><small>{{ asset.web ? 'hoge kwaliteit en web' : 'één bestand' }}</small></div>
@@ -559,10 +640,20 @@ const COLLECTIONS: readonly Collection[] = [
             @if (!asset.links.length && !linkFormOpen()) {
               <p class="fx__hint">Dit bestand hangt nog nergens aan. Koppel het aan een product, reeks, inkooporder of planneritem, dan verschijnt het daar.</p>
             }
+            @if (asset.links.length) {
+              <p class="fx__hint">Waar dit bestand verschijnt. Haal een koppeling weg en het verdwijnt daar; het bestand zelf blijft.</p>
+            }
             @for (link of asset.links; track link.id) {
               <div class="fx__link">
                 <i class="fx__link-icon" aria-hidden="true">{{ targetIcon(link.targetType) }}</i>
-                <span><b>{{ link.targetLabel || (targetLabel(link.targetType) + ' #' + link.targetId) }}</b><small>{{ targetLabel(link.targetType) }} · {{ roleLabel(link.role) }}{{ link.primary ? ' · hoofd' : '' }}</small></span>
+                <span>
+                  <b>{{ link.targetLabel || (targetLabel(link.targetType) + ' #' + link.targetId) }}</b>
+                  <small>{{ targetLabel(link.targetType) }}
+                    <em class="fx__role" [class]="'fx__role fx__role--' + link.role.toLowerCase()" [title]="roleHint(link.role)">{{ roleLabel(link.role) }}</em>
+                    @if (link.primary) { <em class="fx__role fx__role--main" title="De eerste foto of het hoofddocument van dit record">hoofd</em> }
+                    <span class="fx__role-why">{{ roleHint(link.role) }}</span>
+                  </small>
+                </span>
                 <button type="button" aria-label="Koppeling weghalen" title="Koppeling weghalen" [disabled]="busy()" (click)="unlink(link.id)">×</button>
               </div>
             }
@@ -715,6 +806,24 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__ctx button[role=menuitem]:hover:enabled{background:var(--surface-2)}.fx__ctx button[role=menuitem]:disabled{opacity:.45;cursor:default}.fx__ctx button.is-danger{color:var(--danger)}
     .fx__ctx button i{width:18px;color:var(--rose);font-style:normal;text-align:center}.fx__ctx button small{margin-left:auto;color:var(--muted);font-size:11px}
     .fx__ctx-move{display:grid;gap:4px;padding:8px 10px 6px;border-top:1px solid var(--line)}.fx__ctx-move>span{color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}.fx__ctx-move .select{min-height:32px;padding-block:0;font-size:12px}
+    .fx__tray{display:grid;gap:10px}.fx__tray-bar{display:flex;flex-wrap:wrap;align-items:end;gap:10px}.fx__tray-folder{display:grid;gap:3px;flex:1;min-width:180px}.fx__tray-folder>span{color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+    .fx__tray-total{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.fx__tray-status{color:var(--muted);font-size:12.5px}
+    .fx__tray-list{display:grid;gap:4px;max-height:52vh;margin:0;padding:0;list-style:none;overflow-y:auto}
+    .fx__tray-item{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.fx__tray-item.is-done{border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}.fx__tray-item.is-error{border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
+    .fx__tray-item img,.fx__tray-item>.fx__ext{width:40px;height:40px;flex:none;border-radius:9px;object-fit:cover;background:var(--surface)}
+    .fx__tray-copy{display:grid;flex:1;min-width:0;gap:2px}.fx__tray-copy b{overflow:hidden;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}.fx__tray-copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .fx__tray-progress{display:block;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--rose) 0 40%,var(--rose-soft) 40%);background-size:200% 100%;animation:fx-slide .9s linear infinite}@keyframes fx-slide{to{background-position:-200% 0}}
+    .fx__tray-x{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;cursor:pointer}.fx__tray-x:hover{background:var(--surface);color:var(--ink)}
+    .fx__tray-ok{color:var(--ok);font-style:normal;font-weight:800}.fx__tray-bad{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--danger);color:#fff;font-size:12px;font-style:normal;font-weight:800}
+    .fx__tray-spin{width:16px;height:16px;border:2px solid var(--line-strong);border-top-color:var(--rose);border-radius:50%;animation:fx-spin .8s linear infinite}@keyframes fx-spin{to{transform:rotate(360deg)}}
+    .btn.is-disabled{opacity:.5;pointer-events:none}
+    .fm__menu-item input{display:none}
+    .fx__version{display:block;color:var(--muted);font-size:11px}
+    .fx__history{border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.fx__history summary{padding:8px 12px;font-size:12.5px;font-weight:650;cursor:pointer}.fx__history summary small{margin-left:6px;color:var(--muted);font-weight:600}.fx__history>*:not(summary){margin:0 12px 10px}
+    .fx__events{margin:0;padding:0;list-style:none}.fx__events li{padding:5px 0;border-top:1px solid var(--line);font-size:12px}.fx__events li b{margin-right:4px}.fx__events li small{display:block;color:var(--muted);font-size:10.5px}
+    .fx__role{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:10px;font-style:normal;font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+    .fx__role--catalogue{background:color-mix(in srgb,var(--ok) 14%,var(--surface));color:var(--ok)}.fx__role--quote{background:var(--rose-soft);color:var(--rose-dark)}.fx__role--invoice{background:var(--warn-soft);color:var(--warn)}.fx__role--main{background:var(--ink);color:#fff}
+    .fx__role-why{display:block;margin-top:2px;color:var(--muted);font-size:10.5px}
     .fx__link-icon{display:grid;width:28px;height:28px;flex:none;place-items:center;border-radius:8px;background:var(--rose-soft);color:var(--rose);font-style:normal;font-size:13px}
   `],
 })
@@ -1065,7 +1174,7 @@ export class FilesPage implements OnDestroy {
   readonly zipping = signal(false);
 
   /* ---- sorting: a click on a column, a second click turns it around */
-  readonly sort = signal<{ key: 'name' | 'kind' | 'size' | 'updated' | 'links'; dir: 1 | -1 }>({ key: 'updated', dir: -1 });
+  readonly sort = signal<{ key: 'name' | 'kind' | 'size' | 'updated' | 'links' | 'by'; dir: 1 | -1 }>({ key: 'updated', dir: -1 });
   readonly sorted = computed(() => {
     const { key, dir } = this.sort();
     const value = (asset: MediaAssetSummary): string | number => {
@@ -1074,6 +1183,7 @@ export class FilesPage implements OnDestroy {
         case 'kind': return asset.kind + asset.name.toLocaleLowerCase('nl-BE');
         case 'size': return asset.sizeBytes;
         case 'links': return asset.links.length;
+        case 'by': return (asset.createdByName || '').toLocaleLowerCase('nl-BE');
         default: return asset.updatedAt;
       }
     };
@@ -1084,8 +1194,8 @@ export class FilesPage implements OnDestroy {
     });
   });
 
-  sortBy(key: 'name' | 'kind' | 'size' | 'updated' | 'links'): void {
-    this.sort.update((current) => current.key === key ? { key, dir: current.dir === 1 ? -1 : 1 } : { key, dir: key === 'name' || key === 'kind' ? 1 : -1 });
+  sortBy(key: 'name' | 'kind' | 'size' | 'updated' | 'links' | 'by'): void {
+    this.sort.update((current) => current.key === key ? { key, dir: current.dir === 1 ? -1 : 1 } : { key, dir: key === 'name' || key === 'kind' || key === 'by' ? 1 : -1 });
   }
 
   arrow(key: string): string {
@@ -1392,11 +1502,132 @@ export class FilesPage implements OnDestroy {
   setArchived(on: boolean): void { this.archived.set(on); void this.reload(); }
 
   /* ---- uploads land in the open folder */
+  /* ---- the upload tray: everything you pick lands in one list first */
+  private readonly activityApi = inject(ActivityApi);
+  readonly history = signal<ActivityEvent[] | null>(null);
+  readonly historyLoading = signal(false);
+  private historyFor: number | null = null;
+
+  /** The file's own trail from the activity log: added, renamed, moved, linked, by whom. */
+  async loadHistory(assetId: number): Promise<void> {
+    if (this.historyFor === assetId && this.history()) return;
+    this.historyFor = assetId;
+    this.historyLoading.set(true);
+    try {
+      const page = await this.activityApi.list({ entityType: 'MEDIA_ASSET', entityId: assetId, limit: 50 });
+      if (this.historyFor === assetId) this.history.set(page.items);
+    } catch {
+      if (this.historyFor === assetId) this.history.set([]);
+    } finally {
+      if (this.historyFor === assetId) this.historyLoading.set(false);
+    }
+  }
+
+  readonly addMenu = signal(false);
+  readonly tray = signal<UploadTray | null>(null);
+  private trayId = 0;
+  readonly traySize = computed(() => this.size((this.tray()?.items ?? []).reduce((sum, item) => sum + item.file.size, 0)));
+  readonly trayDone = computed(() => (this.tray()?.items ?? []).filter((item) => item.status === 'done').length);
+  readonly trayFailed = computed(() => (this.tray()?.items ?? []).filter((item) => item.status === 'error').length);
+
   chooseFiles(event: Event): void {
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
     input.value = '';
-    void this.uploadFiles(files);
+    this.queueFiles(files, false);
+  }
+
+  /** Dropped or pasted files start at once; picked ones wait for Uploaden so the folder can still change. */
+  queueFiles(files: File[], start: boolean): void {
+    if (!files.length) return;
+    const folder = this.folder();
+    const items: UploadItem[] = files.map((file) => ({
+      id: ++this.trayId, file, status: 'queued', reused: false, error: null,
+      extension: (file.name.split('.').pop() || 'file').slice(0, 4).toUpperCase(),
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+    }));
+    this.tray.update((tray) => tray && !tray.done
+      ? { ...tray, items: [...tray.items, ...items] }
+      : { items, folderId: typeof folder === 'number' ? folder : null, running: false, done: false });
+    if (start) void this.startTray();
+  }
+
+  setTrayFolder(folderId: number | null): void {
+    this.tray.update((tray) => tray && ({ ...tray, folderId }));
+  }
+
+  dropFromTray(id: number): void {
+    this.tray.update((tray) => {
+      if (!tray) return tray;
+      const item = tray.items.find((entry) => entry.id === id);
+      if (item?.preview) URL.revokeObjectURL(item.preview);
+      const items = tray.items.filter((entry) => entry.id !== id);
+      return items.length ? { ...tray, items } : null;
+    });
+  }
+
+  closeTray(): void {
+    for (const item of this.tray()?.items ?? []) if (item.preview) URL.revokeObjectURL(item.preview);
+    this.tray.set(null);
+  }
+
+  retryTray(): void {
+    this.tray.update((tray) => tray && ({ ...tray, done: false, items: tray.items.map((item) => item.status === 'error' ? { ...item, status: 'queued' as const, error: null } : item) }));
+    void this.startTray();
+  }
+
+  /** Three at a time, each row telling where it stands; the list refreshes once at the end. */
+  async startTray(): Promise<void> {
+    const tray = this.tray();
+    if (!tray || tray.running) return;
+    const queued = tray.items.filter((item) => item.status === 'queued');
+    if (!queued.length) return;
+    this.tray.update((current) => current && ({ ...current, running: true, done: false }));
+    this.uploading.set(true);
+    const setItem = (id: number, patch: Partial<UploadItem>) =>
+      this.tray.update((current) => current && ({ ...current, items: current.items.map((item) => item.id === id ? { ...item, ...patch } : item) }));
+    let finished = 0;
+    let lastAsset: MediaAssetDetail | null = null;
+    const worker = async () => {
+      for (;;) {
+        const next = (this.tray()?.items ?? []).find((item) => item.status === 'queued');
+        if (!next) return;
+        setItem(next.id, { status: 'busy' });
+        try {
+          const result = await this.media.upload(next.file, undefined, this.tray()?.folderId ?? null);
+          lastAsset = result.asset;
+          setItem(next.id, { status: 'done', reused: result.reused });
+        } catch (failure) {
+          setItem(next.id, { status: 'error', error: messageOf(failure, 'mislukt') });
+        }
+        finished++;
+        this.uploadProgress.set(`${finished} van ${queued.length}…`);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    this.uploading.set(false);
+    this.uploadProgress.set('Uploaden…');
+    this.tray.update((current) => current && ({ ...current, running: false, done: true }));
+    const done = this.trayDone();
+    if (done) {
+      const folderName = this.tray()?.folderId === null ? '' : ' in ' + (this.folders().find((item) => item.id === this.tray()?.folderId)?.name ?? 'de map');
+      this.ui.toast(`${done} bestand${done === 1 ? '' : 'en'} toegevoegd${folderName}`);
+      await Promise.all([this.reload(), this.loadFolders()]);
+      if (lastAsset && done === 1 && !this.phone()) this.applyDetail(lastAsset);
+    }
+    if (!this.trayFailed()) setTimeout(() => { if (this.tray()?.done) this.closeTray(); }, 1200);
+  }
+
+  /** Ctrl/Cmd+V with files on the clipboard adds them to the tray. */
+  @HostListener('window:paste', ['$event'])
+  onPaste(event: ClipboardEvent): void {
+    if (this.phone() || !event.clipboardData) return;
+    const files = Array.from(event.clipboardData.files ?? []);
+    if (!files.length) return;
+    const target = event.target as HTMLElement | null;
+    if (target && /^(input|textarea)$/i.test(target.tagName)) return;
+    event.preventDefault();
+    this.queueFiles(files, false);
   }
 
   dragEnter(event: DragEvent): void {
@@ -1424,41 +1655,13 @@ export class FilesPage implements OnDestroy {
     event.preventDefault();
     this.dragDepth = 0;
     this.dropActive.set(false);
-    void this.uploadFiles(Array.from(event.dataTransfer?.files ?? []));
+    this.queueFiles(Array.from(event.dataTransfer?.files ?? []), true);
   }
 
-  private async uploadFiles(files: File[]): Promise<void> {
-    if (!files.length || this.uploading()) return;
-    const folder = this.folder();
-    const folderId = typeof folder === 'number' ? folder : null;
-    this.uploading.set(true);
-    let added = 0;
-    let reused = 0;
-    let lastAsset: MediaAssetDetail | null = null;
-    const failures: string[] = [];
-    for (const [index, file] of files.entries()) {
-      this.uploadProgress.set(`${index + 1} van ${files.length}…`);
-      try {
-        const result = await this.media.upload(file, undefined, folderId);
-        added++;
-        if (result.reused) reused++;
-        lastAsset = result.asset;
-      } catch (failure) {
-        failures.push(messageOf(failure, `${file.name} kon niet worden geüpload.`));
-      }
-    }
-    this.uploading.set(false);
-    this.uploadProgress.set('Uploaden…');
-    if (added) {
-      this.ui.toast(`${added} bestand${added === 1 ? '' : 'en'} toegevoegd${reused ? `, ${reused} bestond al en is hergebruikt` : ''}${folderId !== null ? ' in ' + this.folderName() : ''}`);
-      await Promise.all([this.reload(), this.loadFolders()]);
-      if (lastAsset && files.length === 1) this.applyDetail(lastAsset);
-    }
-    if (failures.length) this.ui.toast(failures[0], 'err');
-  }
 
   /* ================================================================ the chosen file */
   async open(asset: MediaAssetSummary): Promise<void> {
+    if (this.historyFor !== asset.id) { this.history.set(null); this.historyFor = null; }
     this.nameDraft.set(asset.name);
     this.selected.set({ ...asset, versions: [] });
     try {
@@ -1469,7 +1672,7 @@ export class FilesPage implements OnDestroy {
     void this.loadTargets(this.linkType());
   }
 
-  close(): void { this.selected.set(null); }
+  close(): void { this.selected.set(null); this.history.set(null); this.historyFor = null; }
 
   private applyDetail(detail: MediaAssetDetail): void {
     this.selected.set(detail);
@@ -1651,6 +1854,16 @@ export class FilesPage implements OnDestroy {
     return new Promise((resolve) => this.ui.confirm(
       { title, message, confirmLabel: danger ? 'Verwijderen' : 'Bevestigen', danger, secondaryLabel: 'Annuleren' },
       () => resolve(true), () => resolve(false)));
+  }
+
+  /** What a use means for the person reading the list. */
+  roleHint(role: MediaRole): string {
+    switch (role) {
+      case 'CATALOGUE': return 'Verschijnt op de website en in de catalogus';
+      case 'QUOTE': return 'Gaat mee met offertes van dit record';
+      case 'INVOICE': return 'Gaat mee met facturen van dit record';
+      default: return 'Alleen intern zichtbaar, nooit naar buiten';
+    }
   }
 
   targetLabel(type: MediaTargetType): string {

@@ -45,6 +45,8 @@ export interface MediaAssetVersion {
   createdAt: string;
   createdBy: string | null;
   web: MediaRendition | null;
+  /** The staff member behind createdBy, as shown: "Emre", "Berat". */
+  createdByName: string | null;
 }
 
 /** Compact list result. Large version history is only returned by the detail endpoint. */
@@ -71,6 +73,9 @@ export interface MediaAssetSummary {
   share: MediaShare | null;
   /** The web-size rendition of the current version; null for documents. */
   web: MediaRendition | null;
+  /** Who added the file: the username, and the name as shown. */
+  createdBy: string | null;
+  createdByName: string | null;
 }
 
 export interface MediaShare {
