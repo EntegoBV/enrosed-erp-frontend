@@ -79,8 +79,8 @@ import { Sheet } from '../../shared/ui';
           }
         </p>
       </div>
-      <div foot class="production-success__actions">
-        <button class="btn" type="button" data-initial-focus (click)="closed.emit()">Verder werken</button>
+      <div foot class="production-success__actions" [class.production-success__actions--single]="!showAction()">
+        <button class="btn" type="button" data-initial-focus [class.btn--primary]="!showAction()" (click)="closed.emit()">Verder werken</button>
         @if (showAction()) {
           <button class="btn btn--primary" type="button" (click)="action.emit()">
             {{ kind() === 'SHIPPED' ? 'Track & trace invullen' : 'Voorraad bijboeken' }}
@@ -103,7 +103,7 @@ import { Sheet } from '../../shared/ui';
     @keyframes box-drop{0%{opacity:0;transform:translateY(-46px)}70%{opacity:1;transform:translateY(4px)}100%{opacity:1;transform:translateY(0)}}
     @keyframes check-pop{0%{opacity:0;transform:scale(.4)}100%{opacity:1;transform:scale(1)}}
     @media(prefers-reduced-motion:reduce){.ship,.ship-smoke,.ship-cloud,.wave,.box,.arrival-check{animation:none;opacity:1}}
-    @media(min-width:560px){.production-success__actions{grid-template-columns:1fr 1fr}}
+    @media(min-width:560px){.production-success__actions{grid-template-columns:1fr 1fr}.production-success__actions--single{grid-template-columns:1fr}}
   `],
 })
 export class PurchaseStatusSuccess {

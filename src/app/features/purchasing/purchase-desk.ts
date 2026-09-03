@@ -1063,7 +1063,7 @@ type DeskRow =
       }
 
       @if (orderPlaced()) {
-        <app-purchase-ordered-success [orderNumber]="data.order.number" (closed)="closeOrderPlaced()" (overview)="openOrderView()" />
+        <app-purchase-ordered-success [orderNumber]="data.order.number" [overviewAvailable]="false" (closed)="closeOrderPlaced()" (overview)="closeOrderPlaced()" />
       }
       @if (statusCelebration(); as celebration) {
         <app-purchase-status-success [kind]="celebration" [orderNumber]="data.order.number"
@@ -1472,6 +1472,18 @@ export class PurchaseDesk extends PurchaseEditor {
     }
     this.stepPrompt.set(null);
     super.advanceStatus();
+  }
+
+  /** The celebration's follow-up, landing where the desk keeps it. */
+  override celebrationAction(kind: 'SHIPPED' | 'RECEIVED'): void {
+    this.statusCelebration.set(null);
+    if (kind === 'RECEIVED') {
+      void this.bookStock();
+      return;
+    }
+    this.startEdit();
+    this.railTab.set('order');
+    setTimeout(() => document.getElementById('dk-tracking')?.focus(), 150);
   }
 
   startEdit(): void {

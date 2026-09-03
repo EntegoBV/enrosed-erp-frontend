@@ -54,15 +54,17 @@ import { Sheet } from '../../shared/ui';
         <span class="production-success__eyebrow">Status · Besteld</span>
         <h3>{{ orderNumber() }} is klaar voor productie</h3>
         <p>
-          De afgesproken aantallen zijn vastgelegd. Je kunt nu verderwerken
-          of teruggaan naar het controlescherm van deze inkooporder.
+          De afgesproken aantallen zijn vastgelegd.
+          {{ overviewAvailable() ? 'Je kunt nu verderwerken of teruggaan naar het controlescherm van deze inkooporder.' : 'Volgens de betaalafspraak valt nu de eerste termijn; je vindt ze onder Betalingen.' }}
         </p>
       </div>
-      <div foot class="production-success__actions">
-        <button class="btn" type="button" data-initial-focus
-                (click)="closed.emit()">Verder werken</button>
-        <button class="btn btn--primary" type="button"
-                (click)="overview.emit()">Naar orderoverzicht</button>
+      <div foot class="production-success__actions" [class.production-success__actions--single]="!overviewAvailable()">
+        @if (overviewAvailable()) {
+          <button class="btn" type="button" data-initial-focus (click)="closed.emit()">Verder werken</button>
+          <button class="btn btn--primary" type="button" (click)="overview.emit()">Naar orderoverzicht</button>
+        } @else {
+          <button class="btn btn--primary" type="button" data-initial-focus (click)="closed.emit()">Verder werken</button>
+        }
       </div>
     </app-sheet>
   `,
@@ -74,11 +76,13 @@ import { Sheet } from '../../shared/ui';
     @keyframes factory-light{0%,100%{opacity:.4}50%{opacity:1}}@keyframes conveyor-run{to{stroke-dashoffset:-17}}
     @keyframes flower-production{0%{opacity:0;transform:translate(153px,94px) scale(.72)}12%{opacity:1}82%{opacity:1}100%{opacity:0;transform:translate(302px,94px) scale(1)}}
     @media(prefers-reduced-motion:reduce){.factory-smoke,.factory-windows,.conveyor,.production-flower{animation:none}.factory-smoke{opacity:.55}.production-flower{opacity:1;transform:translate(var(--flower-rest),94px)}}
-    @media(min-width:560px){.production-success__actions{grid-template-columns:1fr 1fr}}
+    @media(min-width:560px){.production-success__actions{grid-template-columns:1fr 1fr}.production-success__actions--single{grid-template-columns:1fr}}
   `],
 })
 export class PurchaseOrderedSuccess {
   readonly orderNumber = input.required<string>();
+  /** The desk already is the overview; then one button says it all. */
+  readonly overviewAvailable = input(true);
   readonly closed = output<void>();
   readonly overview = output<void>();
 }
