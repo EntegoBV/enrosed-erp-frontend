@@ -224,11 +224,11 @@ export const routes: Routes = [
       import('./features/settings/stock-location-list').then((m) => m.StockLocationList),
   },
   {
-    path: 'settings/documents-media',
+    path: 'files',
     canActivate: [authGuard],
-    loadComponent: () =>
-      import('./features/settings/document-media-page').then((m) => m.DocumentMediaPage),
+    loadComponent: () => import('./features/files/files-page').then((m) => m.FilesPage),
   },
+  { path: 'settings/documents-media', pathMatch: 'full', redirectTo: 'files' },
   {
     path: 'settings',
     canActivate: [authGuard],

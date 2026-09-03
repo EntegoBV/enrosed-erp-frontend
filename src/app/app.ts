@@ -184,10 +184,6 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
                  [queryParams]="{ sectie: 'company' }" [class.active]="settingsActive('company')">
                 <app-icon class="sidebar__icon" name="settings" [size]="18" /> Bedrijfsgegevens
               </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/settings/documents-media"
-                 routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="media" [size]="18" /> Documenten &amp; media
-              </a>
               <a class="sidebar__link sidebar__link--wide" routerLink="/voorwaarden">
                 <app-icon class="sidebar__icon" name="sales" [size]="18" /> Voorwaarden &amp; privacy
               </a>
@@ -197,6 +193,12 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               <app-icon class="sidebar__icon" name="countries" [size]="18" />
               <span class="sidebar__text sidebar__text--full">Website beheren</span>
               <span class="sidebar__text sidebar__text--rail">Website</span>
+              <i aria-hidden="true">↗</i>
+            </a>
+            <a class="sidebar__link sidebar__link--workspace" routerLink="/files" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="media" [size]="18" />
+              <span class="sidebar__text sidebar__text--full">Bestanden beheren</span>
+              <span class="sidebar__text sidebar__text--rail">Bestanden</span>
               <i aria-hidden="true">↗</i>
             </a>
 

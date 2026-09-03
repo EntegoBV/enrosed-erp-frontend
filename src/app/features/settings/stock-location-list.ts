@@ -142,10 +142,14 @@ import { Sheet, Ui } from '../../shared/ui';
           </section>
           @if (!isMain()) {
             <div class="field span-2">
-              <label class="row" style="gap:8px;cursor:pointer">
-                <input type="checkbox" [ngModel]="draft().active"
-                       (ngModelChange)="patch({ active: $event })" />
-                <span>Actief</span>
+              <label class="switch-row" [class.switch-row--on]="draft().active">
+                <span class="switch-row__copy">
+                  <b>{{ draft().active ? 'Actief' : 'Inactief' }}</b>
+                  <small>{{ draft().active ? 'Telt mee in de voorraad en kan gekozen worden bij boekingen.' : 'Blijft bestaan, maar telt niet mee en is niet te kiezen bij boekingen.' }}</small>
+                </span>
+                <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="draft().active"
+                       [ngModel]="draft().active" (ngModelChange)="patch({ active: $event })" />
+                <span class="switch-row__track" aria-hidden="true"><i></i></span>
               </label>
             </div>
           }

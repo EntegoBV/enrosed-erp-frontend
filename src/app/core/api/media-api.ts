@@ -6,6 +6,7 @@ import {
   MediaAssetDetail,
   MediaAssetFilters,
   MediaAssetSummary,
+  MediaFolder,
   MediaLinkWrite,
   MediaUploadResult,
 } from './media-models';
@@ -26,6 +27,7 @@ export class MediaApi {
     if (filters.targetId !== undefined) params = params.set('targetId', filters.targetId);
     if (filters.offset !== undefined) params = params.set('offset', filters.offset);
     if (filters.limit !== undefined) params = params.set('limit', filters.limit);
+    if (filters.folder !== undefined) params = params.set('folder', String(filters.folder));
     return firstValueFrom(
       this.http.get<MediaAssetSummary[]>(api('/api/media-assets'), { params }),
     );
@@ -37,10 +39,11 @@ export class MediaApi {
     );
   }
 
-  upload(file: File, name?: string): Promise<MediaUploadResult> {
+  upload(file: File, name?: string, folderId: number | null = null): Promise<MediaUploadResult> {
     const form = new FormData();
     form.append('file', file, file.name);
     if (name?.trim()) form.append('name', name.trim());
+    if (folderId !== null) form.append('folderId', String(folderId));
     return firstValueFrom(
       this.http.post<MediaUploadResult>(api('/api/media-assets'), form),
     );
@@ -91,6 +94,41 @@ export class MediaApi {
 
   fileUrl(id: number): string {
     return `/api/media-assets/${id}/file`;
+  }
+
+  /* ---- folders */
+  folders(): Promise<MediaFolder[]> {
+    return firstValueFrom(this.http.get<MediaFolder[]>(api('/api/media-folders')));
+  }
+
+  createFolder(name: string, parentId: number | null): Promise<MediaFolder> {
+    return firstValueFrom(this.http.post<MediaFolder>(api('/api/media-folders'), { name: name.trim(), parentId }));
+  }
+
+  updateFolder(id: number, name: string, parentId: number | null): Promise<MediaFolder> {
+    return firstValueFrom(this.http.put<MediaFolder>(api(`/api/media-folders/${id}`), { name: name.trim(), parentId }));
+  }
+
+  deleteFolder(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/media-folders/${id}`)));
+  }
+
+  move(id: number, folderId: number | null): Promise<MediaAssetDetail> {
+    return firstValueFrom(this.http.put<MediaAssetDetail>(api(`/api/media-assets/${id}/folder`), { folderId }));
+  }
+
+  /* ---- public links */
+  share(id: number): Promise<MediaAssetDetail> {
+    return firstValueFrom(this.http.post<MediaAssetDetail>(api(`/api/media-assets/${id}/share`), {}));
+  }
+
+  unshare(id: number): Promise<MediaAssetDetail> {
+    return firstValueFrom(this.http.delete<MediaAssetDetail>(api(`/api/media-assets/${id}/share`)));
+  }
+
+  /** The address anyone can open, on the API host so it works without the ERP. */
+  publicUrl(token: string): string {
+    return api(`/api/public/media/${token}`);
   }
 
   /** Small authenticated rendition for library cards; never download full print assets here. */

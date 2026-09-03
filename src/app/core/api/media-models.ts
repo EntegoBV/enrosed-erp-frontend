@@ -57,6 +57,24 @@ export interface MediaAssetSummary {
   roles: MediaRole[];
   links: MediaAssetLink[];
   versionCount: number;
+  /** The folder the library shows the file in; null is the root. */
+  folderId: number | null;
+  /** The live public link, when one exists. */
+  share: MediaShare | null;
+}
+
+export interface MediaShare {
+  token: string;
+  createdAt: string;
+  createdBy: string | null;
+  downloads: number;
+}
+
+export interface MediaFolder {
+  id: number;
+  name: string;
+  parentId: number | null;
+  assetCount: number;
 }
 
 export interface MediaAssetDetail extends MediaAssetSummary {
@@ -73,6 +91,8 @@ export interface MediaAssetFilters {
   targetId?: number;
   offset?: number;
   limit?: number;
+  /** A folder id narrows to that folder, 'root' to files outside every folder. */
+  folder?: number | 'root';
 }
 
 export interface MediaUploadResult {

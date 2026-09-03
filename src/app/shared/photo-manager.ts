@@ -13,6 +13,9 @@ import { AuthImage } from '../core/api/auth-image';
 import { saveBlob } from '../core/api/download';
 import { messageOf } from '../core/api/errors';
 import { PhotoDto, Product } from '../core/api/models';
+import { MediaApi } from '../core/api/media-api';
+import { MediaAssetSummary } from '../core/api/media-models';
+import { FilePicker } from './file-picker';
 import { Ui } from './ui';
 
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
@@ -58,7 +61,7 @@ export interface PendingPhotoUploadResult {
 @Component({
   selector: 'app-photo-manager',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage],
+  imports: [AuthImage, FilePicker],
   template: `
     <!-- Files dragged in from the desktop land anywhere on the manager;
          several at once queue in the order they were dropped. -->
@@ -84,15 +87,21 @@ export interface PendingPhotoUploadResult {
         </span>
       </div>
 
-      <label class="photo-add" [class.photo-add--busy]="interactionDisabled()">
-        <span class="photo-add__icon" aria-hidden="true">{{ interactionDisabled() ? '…' : '+' }}</span>
-        <span>{{ busy() ? 'Uploaden…' : (disabled() ? 'Opslaan…' : "Foto's toevoegen") }}</span>
-        <input class="photo-add__input" type="file"
-               accept="image/jpeg,image/png,image/gif,image/webp" multiple
-               [disabled]="interactionDisabled()"
-               (change)="upload($event)" />
-      </label>
+      <div class="photo-add-group">
+        <label class="photo-add" [class.photo-add--busy]="interactionDisabled()">
+          <span class="photo-add__icon" aria-hidden="true">{{ interactionDisabled() ? '…' : '+' }}</span>
+          <span>{{ busy() ? 'Uploaden…' : (disabled() ? 'Opslaan…' : "Foto's toevoegen") }}</span>
+          <input class="photo-add__input" type="file"
+                 accept="image/jpeg,image/png,image/gif,image/webp" multiple
+                 [disabled]="interactionDisabled()"
+                 (change)="upload($event)" />
+        </label>
+        <button class="btn btn--sm" type="button" [disabled]="interactionDisabled()" (click)="libraryOpen.set(true)">Uit bibliotheek</button>
+      </div>
     </div>
+    @if (libraryOpen()) {
+      <app-file-picker kind="IMAGE" [multiple]="true" title="Foto’s uit de bibliotheek" (picked)="addFromLibrary($event)" (closed)="libraryOpen.set(false)" />
+    }
 
     @if (ownPhotos().length) {
       <section class="photo-series" aria-labelledby="saved-photo-title">
@@ -322,6 +331,7 @@ export interface PendingPhotoUploadResult {
       background: var(--surface-2);
     }
     .photo-toolbar__copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .photo-add-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .photo-toolbar__copy b { color: var(--ink-2); font-size: 12.5px; }
     .photo-toolbar__copy span { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
     .photo-add {
@@ -476,6 +486,8 @@ export interface PendingPhotoUploadResult {
 export class PhotoManager {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
+  private readonly media = inject(MediaApi);
+  readonly libraryOpen = signal(false);
   private readonly destroyRef = inject(DestroyRef);
   private nextPendingId = 0;
   private pointerReorder: PointerReorder | null = null;
@@ -549,6 +561,23 @@ export class PhotoManager {
     this.fileDropActive.set(false);
     if (this.interactionDisabled()) return;
     await this.addFiles(Array.from(event.dataTransfer?.files ?? []));
+  }
+
+  /** Library photos take the same road as a picked file: fetched once, then queued. */
+  async addFromLibrary(assets: MediaAssetSummary[]): Promise<void> {
+    this.libraryOpen.set(false);
+    if (!assets.length || this.interactionDisabled()) return;
+    const files: File[] = [];
+    try {
+      for (const asset of assets) {
+        const blob = await this.media.download(asset.id);
+        files.push(new File([blob], asset.originalFilename || asset.name, { type: asset.contentType || blob.type }));
+      }
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'De foto kon niet uit de bibliotheek worden gehaald.'), 'err');
+      return;
+    }
+    await this.addFiles(files);
   }
 
   /** Picker and drop share one road: check, queue, upload when the product exists. */

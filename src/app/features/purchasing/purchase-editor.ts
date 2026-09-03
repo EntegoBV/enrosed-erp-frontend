@@ -20,6 +20,9 @@ import {
   PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { FilePicker } from '../../shared/file-picker';
+import { MediaApi } from '../../core/api/media-api';
+import { MediaAssetSummary } from '../../core/api/media-models';
 import { Diary } from './diary';
 import { ProductDraft } from '../../shared/product-picker';
 import { ProductPicker } from '../../shared/product-picker';
@@ -78,7 +81,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
-            PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
+            PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -1376,6 +1379,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         </app-sheet>
       }
 
+      @if (libraryOpen()) {
+        <app-file-picker title="Document uit de bibliotheek" (picked)="pickLibraryDocument($event)" (closed)="libraryOpen.set(false)" />
+      }
       @if (addingDocument(); as doc) {
         <app-sheet title="Document toevoegen" (closed)="addingDocument.set(null)">
           <div body>
@@ -1404,9 +1410,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               }
               <div class="field span-2">
                 <label for="doc-file">Bestand</label>
-                <input class="input" id="doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv"
-                       (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
-                <span class="hint">PDF, foto of Office-bestand, tot 25 MB.</span>
+                <div class="doc-source">
+                  <input class="input" id="doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv"
+                         (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
+                  <button class="btn" type="button" (click)="libraryOpen.set(true)">Uit bibliotheek</button>
+                </div>
+                <span class="hint">{{ doc.file ? doc.file.name + ' · ' : '' }}PDF, foto of Office-bestand, tot 25 MB.</span>
               </div>
             </div>
           </div>
@@ -1574,6 +1583,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     }
   `,
   styles: [`
+    .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
     :host{display:block;min-width:0}.po-page{max-width:1180px}.po-notice{margin-bottom:12px}
     .po-overview{position:relative;margin-bottom:14px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
     .po-overview:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--rose)}
@@ -2045,6 +2055,24 @@ export class PurchaseEditor {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
+  /* ---- a document from the library becomes a purchase document */
+  readonly libraryOpen = signal(false);
+
+  async pickLibraryDocument(assets: MediaAssetSummary[]): Promise<void> {
+    const asset = assets[0];
+    this.libraryOpen.set(false);
+    if (!asset) return;
+    try {
+      const blob = await this.media.download(asset.id);
+      const file = new File([blob], asset.originalFilename || asset.name, { type: asset.contentType });
+      this.addingDocument.update((draft) => draft
+        ? { ...draft, file, label: draft.label || asset.name }
+        : { kind: 'OTHER' as DocumentKind, label: asset.name, paymentId: null, file });
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Het bestand kon niet uit de bibliotheek worden gehaald.'), 'err');
+    }
+  }
+
   openDocument(): void {
     this.addingDocument.set({ kind: 'PAYMENT_PROOF', label: '', paymentId: null, file: null });
   }
@@ -2360,6 +2388,7 @@ export class PurchaseEditor {
   }
   private readonly router = inject(Router);
   protected readonly ui = inject(Ui);
+  protected readonly media = inject(MediaApi);
 
   readonly id = input<string>('');
 

@@ -14,6 +14,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
+import { FilePicker } from '../../shared/file-picker';
 import { PurchaseEditor } from './purchase-editor';
 import { PurchaseDeskPicker } from './purchase-desk-picker';
 import { stripColour } from './purchase-desk-format';
@@ -41,7 +42,7 @@ type DeskRow =
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
-            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
+            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -835,6 +836,54 @@ type DeskRow =
         </app-sheet>
       }
 
+      @if (libraryOpen()) {
+        <app-file-picker title="Document uit de bibliotheek" (picked)="pickLibraryDocument($event)" (closed)="libraryOpen.set(false)" />
+      }
+      @if (addingDocument(); as doc) {
+        <app-sheet title="Document toevoegen" (closed)="addingDocument.set(null)">
+          <div body>
+            <div class="form-grid">
+              <div class="field">
+                <label for="dk-doc-kind">Soort</label>
+                <select class="select" id="dk-doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
+                  @for (kind of documentKinds; track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
+                </select>
+              </div>
+              <div class="field">
+                <label for="dk-doc-label">Omschrijving <span class="opt"></span></label>
+                <input class="input" id="dk-doc-label" placeholder="bijv. KBC 23/08, factuur 2e helft"
+                       [ngModel]="doc.label" (ngModelChange)="addingDocument.set({ ...doc, label: $event })" />
+              </div>
+              @if (doc.kind === 'PAYMENT_PROOF' && paymentsTo('SUPPLIER').length + paymentsTo('LOGISTICS').length) {
+                <div class="field span-2">
+                  <label for="dk-doc-payment">Hoort bij betaling <span class="opt"></span></label>
+                  <select class="select" id="dk-doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
+                    <option value="">— geen —</option>
+                    @for (payment of payments() ?? []; track payment.id) {
+                      <option [value]="payment.id">{{ payment.paidOn | dateNl }} · {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option>
+                    }
+                  </select>
+                </div>
+              }
+              <div class="field span-2">
+                <label for="dk-doc-file">Bestand</label>
+                <div class="doc-source">
+                  <input class="input" id="dk-doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv"
+                         (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
+                  <button class="btn" type="button" (click)="libraryOpen.set(true)">Uit bibliotheek</button>
+                </div>
+                <span class="hint">{{ doc.file ? doc.file.name + ' · ' : '' }}PDF, foto of Office-bestand, tot 25 MB.</span>
+              </div>
+            </div>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="addingDocument.set(null)">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="uploadingDocument() || !doc.file" (click)="confirmDocument()">
+              {{ uploadingDocument() ? 'Bezig…' : 'Bewaren' }}
+            </button>
+          </div>
+        </app-sheet>
+      }
       @if (receiving(); as draft) {
         <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
           <div body>
@@ -908,6 +957,7 @@ type DeskRow =
   `,
   styles: [`
     :host{display:block;min-width:0}
+    .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
 
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .pay-note{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted)}
