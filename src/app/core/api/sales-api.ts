@@ -66,6 +66,16 @@ export class SalesApi {
       this.http.put<DiscountTier[]>(api(`/api/discount-tiers/${scope}`), tiers));
   }
 
+  productTiers(productId: number): Promise<DiscountTier[]> {
+    return firstValueFrom(this.http.get<DiscountTier[]>(
+      api(`/api/discount-tiers/LINE/products/${productId}`)));
+  }
+
+  saveProductTiers(productId: number, tiers: DiscountTier[]): Promise<DiscountTier[]> {
+    return firstValueFrom(this.http.put<DiscountTier[]>(
+      api(`/api/discount-tiers/LINE/products/${productId}`), tiers));
+  }
+
   /* ------------------------------------------------------ verkooporders */
 
   orders(): Promise<SalesOrderView[]> {
