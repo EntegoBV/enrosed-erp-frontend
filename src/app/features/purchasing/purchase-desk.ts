@@ -216,27 +216,29 @@ type DeskRow =
                       @let line = row.line;
                       <tr class="desk-row" [class.desk-row--open]="lineOpen(line.productId)" [class.desk-row--variant]="row.variant">
                         <td class="c-product">
-                          <a class="desk-product" [routerLink]="['/products', line.productId]" [title]="line.productName + ' openen'">
-                            @if (photoOf(line.productId); as photo) {
-                              <img class="desk-product__photo" [appAuthSrc]="photo" alt="" draggable="false" />
-                            } @else {
-                              <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span>
-                            }
-                            <span class="desk-product__copy">
-                              @if (row.variant) {
-                                <strong>
-                                  @if (productColour(line.productId)) {
-                                    <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
-                                       [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i>
-                                  }{{ productVariantLabel(line.productId) || line.productName }}
-                                </strong>
-                                <small>{{ baseName(line.productName, line.productId) }}</small>
+                          <div class="desk-product">
+                            <a class="desk-product__photo-link" [routerLink]="['/products', line.productId]" [title]="line.productName + ' openen'" tabindex="-1">
+                              @if (photoOf(line.productId); as photo) {
+                                <img class="desk-product__photo" [appAuthSrc]="photo" alt="" draggable="false" />
                               } @else {
-                                <strong>{{ baseName(line.productName, line.productId) }}</strong>
+                                <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span>
                               }
-                            </span>
-                          </a>
-                          <div class="desk-product__meta">
+                            </a>
+                            <div class="desk-product__copy">
+                              <a class="desk-product__name" [routerLink]="['/products', line.productId]" [title]="line.productName + ' openen'">
+                                @if (row.variant) {
+                                  <strong>
+                                    @if (productColour(line.productId)) {
+                                      <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
+                                         [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i>
+                                    }{{ productVariantLabel(line.productId) || line.productName }}
+                                  </strong>
+                                  <small>{{ baseName(line.productName, line.productId) }}</small>
+                                } @else {
+                                  <strong>{{ baseName(line.productName, line.productId) }}</strong>
+                                }
+                              </a>
+                              <div class="desk-product__meta">
                             @if (!row.variant && productVariantLabel(line.productId); as variant) {
                               <span>
                                 @if (productColour(line.productId)) {
@@ -254,6 +256,8 @@ type DeskRow =
                             @if (isReceived()) {
                               <button class="desk-product__link" type="button" (click)="openIssue(line.productId)">Schade of tekort melden ›</button>
                             }
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td class="c-qty num">
@@ -346,8 +350,17 @@ type DeskRow =
                     <th class="c-qty num">{{ data.costing.totals.pieces | num }}</th>
                     <th class="c-cartons num">{{ data.costing.totals.cartons | num }}</th>
                     <th class="c-price"></th>
-                    <th class="c-money num">{{ (perPiece() && data.costing.totals.pieces > 0 ? data.costing.totals.goodsEur / data.costing.totals.pieces : data.costing.totals.goodsEur) | eur: decimals() }}</th>
-                    <th class="c-money num c-money--total">{{ perPiece() ? (data.costing.totals.averageUnitEur | eur: 4) : (data.costing.totals.totalEur | eur) }}</th>
+                    <th class="c-money num">{{ data.costing.totals.goodsEur | eur }}</th>
+                    <th class="c-money num c-money--total">{{ data.costing.totals.totalEur | eur }}</th>
+                    @if (editing()) { <th class="c-act"></th> }
+                  </tr>
+                  <tr class="desk-foot--avg">
+                    <th class="c-product">Gemiddeld per stuk</th>
+                    <th class="c-qty"></th>
+                    <th class="c-cartons"></th>
+                    <th class="c-price"></th>
+                    <th class="c-money num">{{ (data.costing.totals.pieces > 0 ? data.costing.totals.goodsEur / data.costing.totals.pieces : 0) | eur: 4 }}</th>
+                    <th class="c-money num c-money--total">{{ data.costing.totals.averageUnitEur | eur: 4 }}</th>
                     @if (editing()) { <th class="c-act"></th> }
                   </tr>
                 </tfoot>
@@ -1112,19 +1125,21 @@ type DeskRow =
     .desk-group--folded .desk-group__chev{transform:none}
     .desk-group .c-money,.desk-group .c-qty b,.desk-group .c-cartons b{font-weight:750}
     .desk-row--variant td.c-product{padding-left:46px}.desk-row--variant .desk-product__photo{width:36px;height:36px}
+    .desk-foot--avg th{padding-top:0;padding-bottom:11px;border-top:0;color:var(--muted);font-size:11.5px;font-weight:600}.desk-foot--avg th.c-product{font-size:9.5px}.desk-foot--avg th.c-money--total{color:var(--muted)}
     .line-colour-dot{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px}.line-colour-dot--empty{background:var(--surface)!important}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
     .desk-row--open td{border-bottom:0;background:var(--surface-2)}
-    .desk-product{display:flex;align-items:flex-start;gap:11px;color:inherit;text-decoration:none}.desk-product__copy{padding-top:2px}
+    .desk-product{display:flex;align-items:flex-start;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__copy{display:grid;min-width:0;padding-top:2px}
+    .desk-product__name{color:inherit;text-decoration:none}.desk-product__name:hover strong{text-decoration:underline}
     .desk-product__photo{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
-    .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{font-size:13.5px}.desk-product__copy small{color:var(--muted);font-size:11px}
-    .desk-product__meta{display:flex;flex-wrap:wrap;align-items:center;margin:2px 0 0 55px;color:var(--muted);font-size:11px}
+    .desk-product__copy{line-height:1.25}.desk-product__copy strong{display:block;font-size:13.5px}.desk-product__copy small{display:block;color:var(--muted);font-size:11px}
+    .desk-product__meta{display:flex;flex-wrap:wrap;align-items:center;margin-top:2px;color:var(--muted);font-size:11px}
     .desk-product__meta>*{white-space:nowrap}.desk-product__meta>*:not(:last-child)::after{content:'·';margin:0 6px;color:var(--line-strong)}.desk-product__meta .is-warn{color:var(--warn);font-weight:650}
     .desk-product__link{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:650;cursor:pointer}.desk-product__link:hover{text-decoration:underline}
     .desk-cell{min-height:34px;padding:5px 12px 5px 8px;font-size:13px}.desk-table--editing td.c-qty,.desk-table--editing td.c-price{padding-right:0}.desk-table--editing td.c-price .desk-cell{padding-right:8px}
     .desk-table--editing td.c-money{padding-top:16px!important}.desk-table--editing .c-cartons b{padding-top:8px}
-    .c-qty b,.c-cartons b,.c-price>b{display:block;padding-top:2px;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
+    .c-qty b,.c-cartons b,.c-price>b{display:block;padding-top:2px;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}.c-cartons small{white-space:normal;line-height:1.2}
     .c-price{text-align:right}
     .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}
     .desk-mini{width:44px;min-width:0;min-height:34px;padding:0;border:1px solid var(--line-strong);text-align:center;border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
