@@ -473,6 +473,84 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
             </section>
             <app-product-supplier-agreement-photo-viewer class="agreement-viewer"
               [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
+            @if (desktop.active()) {
+            <details class="info-card publication-card erp-workspace__section" id="product-publication">
+              <summary>
+                <span class="info-card__icon" aria-hidden="true">WEB</span>
+                <span class="publication-card__heading">
+                  <b>Website &amp; publicatie</b>
+                  <small>{{ publicationSummary() }}</small>
+                </span>
+                @if (!familyLoading() && !familyLoadError() && publicationIssues().length) {
+                  <span class="badge badge--warn">{{ publicationIssues().length }} aandacht</span>
+                }
+                @if (familyLoadError()) {
+                  <span class="badge badge--warn">niet geladen</span>
+                }
+                <span class="publication-card__chev" aria-hidden="true">⌄</span>
+              </summary>
+              <div class="publication-card__body" aria-live="polite">
+                @if (familyLoading()) {
+                  <p class="publication-loading">Publicatiestatus en varianten laden…</p>
+                } @else if (familyLoadError()) {
+                  <div class="family-load-error" role="alert">
+                    <div>
+                      <b>Publicatiestatus niet geladen</b>
+                      <p>De dagelijkse productgegevens hierboven zijn wel beschikbaar.</p>
+                    </div>
+                    <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
+                  </div>
+                } @else {
+                  <div class="publication-strip">
+                    <div class="publication-strip__main">
+                      <span>Publieke productpagina</span>
+                      @if (publicHandle()) {
+                        <strong class="mono">/products/{{ publicHandle() }}</strong>
+                      } @else {
+                        <strong>Nog geen publieke URL</strong>
+                      }
+                    </div>
+                    <div class="publication-strip__states" aria-label="Verkoopkanalen">
+                      <span [class.live]="publicationActive() && websiteStatus() === 'PUBLISHED'">Website</span>
+                      <span [class.live]="publicationActive() && orderAppStatus() === 'PUBLISHED'">Orderapp</span>
+                    </div>
+                  </div>
+
+                  @if (publicationIssues().length) {
+                    <div class="publication-alert">
+                      <span aria-hidden="true">!</span>
+                      <div>
+                        <b>{{ publicationIssues().length }} punt(en) voor publicatie</b>
+                        <p>Open Bewerken en daarna Website &amp; publicatie om ze op te lossen.</p>
+                      </div>
+                    </div>
+                  }
+
+                  @if (family(); as family) {
+                    <div class="website-copy">
+                      <span>Websitecopy</span>
+                      <b>{{ family.name }}</b>
+                      @if (family.summary) { <p>{{ family.summary }}</p> }
+                      @if (family.description) { <p>{{ family.description }}</p> }
+                      <small>
+                        {{ family.collectionKey || family.categoryName || 'Geen collectie' }}
+                        · geldt voor alle gekoppelde producten
+                      </small>
+                    </div>
+                  } @else {
+                    <p class="publication-loading">Voor dit product zijn nog geen gedeelde websitegegevens gestart.</p>
+                  }
+
+                  @if (product.id !== null) {
+                    <a class="btn btn--primary public-copy-cta"
+                       [routerLink]="['/products', product.id, 'translations']">
+                      Publieke naam &amp; vertalingen aanpassen
+                    </a>
+                  }
+                }
+              </div>
+            </details>
+            }
             </div>
             <div class="details-col erp-workspace__aside">
             <section class="info-card omdoos-card erp-workspace__section"
@@ -563,84 +641,6 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
             </div>
           </div>
 
-          @if (desktop.active()) {
-          <details class="info-card publication-card erp-workspace__section" id="product-publication">
-            <summary>
-              <span class="info-card__icon" aria-hidden="true">WEB</span>
-              <span class="publication-card__heading">
-                <b>Website &amp; publicatie</b>
-                <small>{{ publicationSummary() }}</small>
-              </span>
-              @if (!familyLoading() && !familyLoadError() && publicationIssues().length) {
-                <span class="badge badge--warn">{{ publicationIssues().length }} aandacht</span>
-              }
-              @if (familyLoadError()) {
-                <span class="badge badge--warn">niet geladen</span>
-              }
-              <span class="publication-card__chev" aria-hidden="true">⌄</span>
-            </summary>
-            <div class="publication-card__body" aria-live="polite">
-              @if (familyLoading()) {
-                <p class="publication-loading">Publicatiestatus en varianten laden…</p>
-              } @else if (familyLoadError()) {
-                <div class="family-load-error" role="alert">
-                  <div>
-                    <b>Publicatiestatus niet geladen</b>
-                    <p>De dagelijkse productgegevens hierboven zijn wel beschikbaar.</p>
-                  </div>
-                  <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
-                </div>
-              } @else {
-                <div class="publication-strip">
-                  <div class="publication-strip__main">
-                    <span>Publieke productpagina</span>
-                    @if (publicHandle()) {
-                      <strong class="mono">/products/{{ publicHandle() }}</strong>
-                    } @else {
-                      <strong>Nog geen publieke URL</strong>
-                    }
-                  </div>
-                  <div class="publication-strip__states" aria-label="Verkoopkanalen">
-                    <span [class.live]="publicationActive() && websiteStatus() === 'PUBLISHED'">Website</span>
-                    <span [class.live]="publicationActive() && orderAppStatus() === 'PUBLISHED'">Orderapp</span>
-                  </div>
-                </div>
-
-                @if (publicationIssues().length) {
-                  <div class="publication-alert">
-                    <span aria-hidden="true">!</span>
-                    <div>
-                      <b>{{ publicationIssues().length }} punt(en) voor publicatie</b>
-                      <p>Open Bewerken en daarna Website &amp; publicatie om ze op te lossen.</p>
-                    </div>
-                  </div>
-                }
-
-                @if (family(); as family) {
-                  <div class="website-copy">
-                    <span>Websitecopy</span>
-                    <b>{{ family.name }}</b>
-                    @if (family.summary) { <p>{{ family.summary }}</p> }
-                    @if (family.description) { <p>{{ family.description }}</p> }
-                    <small>
-                      {{ family.collectionKey || family.categoryName || 'Geen collectie' }}
-                      · geldt voor alle gekoppelde producten
-                    </small>
-                  </div>
-                } @else {
-                  <p class="publication-loading">Voor dit product zijn nog geen gedeelde websitegegevens gestart.</p>
-                }
-
-                @if (product.id !== null) {
-                  <a class="btn btn--primary public-copy-cta"
-                     [routerLink]="['/products', product.id, 'translations']">
-                    Publieke naam &amp; vertalingen aanpassen
-                  </a>
-                }
-              }
-            </div>
-          </details>
-          }
         </div>
       </div>
       @if (!desktop.active()) {
@@ -972,6 +972,7 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
     #stock-card { order: 3; }
     .agreement-card { order: 4; }
     .agreement-viewer { order: 5; }
+    .publication-card { order: 6; }
     .info-card { overflow: hidden; border: 1px solid rgb(255 255 255 / 70%); border-radius: var(--r);
       background: var(--surface); box-shadow: var(--sh-1); }
     .info-card > header { display: flex; align-items: center; gap: 10px; min-height: 64px;
@@ -1017,7 +1018,18 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
       .phero { padding: 20px 22px; }
       .phero__facts--photo { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(150px, 190px)); }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
-      .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+      /* Desktop: one wide column for the dossier, a sticky side for stock and
+       carton - no step rail, no numbered cards: everything is in view. */
+    .details-grid { grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 380px); gap: 16px; align-items: start; }
+    .details-grid > .details-col { display: grid; gap: 14px; }
+    .details-grid > .erp-workspace__aside { position: sticky; top: calc(var(--appbar-h, 62px) + 14px); }
+    #stock-card { order: 2; }
+    .omdoos-card { order: 3; }
+    @media (min-width: 1200px) {
+      .details-grid > .erp-workspace__main .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .product-detail-nav { display: none; }
+    .info-card__icon { display: none; }
       .product-dossier-card, .agreement-card { grid-column: 1 / -1; }
     }
     @media (min-width: 680px) and (max-width: 759px) {
