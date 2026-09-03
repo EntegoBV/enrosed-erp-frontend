@@ -401,6 +401,9 @@ type DeskRow =
             <div class="desk-panel">
               @switch (railTab()) {
                 @case ('order') {
+                  @if (!editing()) {
+                    <div class="desk-panel__head"><strong>Ordergegevens</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
+                  }
                   <div class="desk-supplier">
                     <strong>{{ supplierName() }}</strong>
                     <app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" />
@@ -418,7 +421,6 @@ type DeskRow =
                       <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
                       <div><dt>Lossen op</dt><dd>{{ receivingLocationName(data.order.receivingLocationId) }}</dd></div>
                     </dl>
-                    <button class="btn btn--block" type="button" (click)="startEdit()">Ordergegevens bewerken</button>
                   } @else {
                   <div class="desk-form">
                     <div class="field">
@@ -495,6 +497,7 @@ type DeskRow =
 
                 @case ('costs') {
                   @if (!editing()) {
+                    <div class="desk-panel__head"><strong>Kosten &amp; koersen</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
                     <div class="desk-rates">
                       <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd }}</b></div>
                       <div><small>USD → EUR</small><b>{{ usdToEurRate() }}</b></div>
@@ -509,7 +512,6 @@ type DeskRow =
                         <div><dt>Varianten</dt><dd>{{ (data.order.groupVariants ?? true) ? 'één kostprijs per reeks' : 'elke variant apart' }}</dd></div>
                       </dl>
                     }
-                    <button class="btn btn--block" type="button" (click)="startEdit()">Kosten bewerken</button>
                   }
                   <div class="desk-form">
                     @if (editing()) {
@@ -1136,9 +1138,9 @@ type DeskRow =
     .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
-    .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.25}
+    .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:auto;min-width:200px}.c-qty{width:68px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:124px;padding-top:12px!important;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
+    .c-product{width:auto;min-width:200px}.c-qty{width:68px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:124px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
     .desk-table--editing .c-price{width:168px}.desk-table--editing .c-act{width:40px}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
@@ -1152,7 +1154,7 @@ type DeskRow =
     .line-colour-dot{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px}.line-colour-dot--empty{background:var(--surface)!important}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
     .desk-row--open td{border-bottom:0;background:var(--surface-2)}
-    .desk-product{display:flex;align-items:flex-start;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__copy{display:grid;min-width:0;padding-top:2px}
+    .desk-product{display:flex;align-items:center;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__copy{display:grid;min-width:0}
     .desk-product__name{color:inherit;text-decoration:none}.desk-product__name:hover strong{text-decoration:underline}
     .desk-product__photo{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
@@ -1161,8 +1163,8 @@ type DeskRow =
     .desk-product__meta>*{white-space:nowrap}.desk-product__meta>*:not(:last-child)::after{content:'·';margin:0 6px;color:var(--line-strong)}.desk-product__meta .is-warn{color:var(--warn);font-weight:650}
     .desk-product__link{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:650;cursor:pointer}.desk-product__link:hover{text-decoration:underline}
     .desk-cell{min-height:34px;padding:5px 12px 5px 8px;font-size:13px}.desk-table--editing td.c-qty,.desk-table--editing td.c-price{padding-right:0}.desk-table--editing td.c-price .desk-cell{padding-right:8px}
-    .desk-table--editing td.c-money{padding-top:16px!important}.desk-table--editing .c-cartons b{padding-top:8px}
-    .c-qty b,.c-cartons b,.c-price>b{display:block;padding-top:2px;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}.c-cartons small{white-space:normal;line-height:1.2}
+
+    .c-qty b,.c-cartons b,.c-price>b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}.c-cartons small{white-space:normal;line-height:1.2}
     .c-price{text-align:right}
     .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}
     .desk-mini{width:44px;min-width:0;min-height:34px;padding:0;border:1px solid var(--line-strong);text-align:center;border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
@@ -1190,14 +1192,15 @@ type DeskRow =
     .desk-tabs button.on{background:var(--surface);color:var(--rose-dark);box-shadow:var(--sh-1)}
     .desk-tabs__dot{position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
     .desk-panel{flex:1;min-height:0;padding:14px;overflow-y:auto}
-    .desk-facts{display:grid;margin:0 0 12px;padding:0}
+    .desk-panel__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.desk-panel__head strong{font-size:13px}
+    .desk-facts{display:grid;margin:0 0 4px;padding:0}
     .desk-facts>div{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
     .desk-facts dt{color:var(--muted)}.desk-facts dd{margin:0;font-weight:650}.desk-facts dd small{display:block;color:var(--muted);font-size:11px;font-weight:500}
     .desk-supplier{display:grid;gap:2px;margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .desk-supplier strong{font-size:13px}.desk-supplier small{color:var(--muted);font-size:11px}
     .desk-form{display:grid;gap:10px}.desk-form .field{min-width:0}
     .desk-form__duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .desk-form__group{margin:6px 0 -2px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
+    .desk-form__group{margin:14px 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
     .desk-form__group:first-child{margin-top:0}
     .desk-readonly{background:var(--surface-2)}
     .desk-affix-select{min-width:64px;border-radius:0 var(--r-sm) var(--r-sm) 0}
