@@ -15,6 +15,8 @@ import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { PurchaseEditor } from './purchase-editor';
+import { PurchaseDeskPicker } from './purchase-desk-picker';
+import { stripColour } from './purchase-desk-format';
 
 type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
 
@@ -39,7 +41,7 @@ type DeskRow =
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
-            PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
+            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -796,72 +798,8 @@ type DeskRow =
       }
 
       @if (adding()) {
-        <app-sheet title="Product toevoegen aan de container" [wide]="true" (closed)="adding.set(false)">
-          <div body class="desk-pick">
-            <aside class="desk-pick__side">
-              <input class="input desk-pick__search" type="search" autocomplete="off" placeholder="Zoek naam, kleur, maat of SKU…"
-                     aria-label="Zoeken in de catalogus" [ngModel]="addQuery()" (ngModelChange)="addQuery.set($event)" />
-              <nav class="desk-pick__cats" aria-label="Categorieën">
-                <button type="button" [class.on]="addCategory() === null" (click)="addCategory.set(null)">
-                  <span>Alle producten</span><b>{{ pickerTotal() }}</b>
-                </button>
-                @for (category of pickerCategories(); track category.key) {
-                  <button type="button" [class.on]="addCategory() === category.key" (click)="addCategory.set(category.key)">
-                    <span>{{ category.label }}</span><b>{{ category.count }}</b>
-                  </button>
-                }
-              </nav>
-              <p class="desk-pick__hint">{{ supplierName() }} · alleen wat nog niet op de container staat</p>
-            </aside>
-            <div class="desk-pick__list">
-              @for (group of pickerGroups(); track group.key) {
-                <div class="desk-pick__cat">{{ group.label }} <small>{{ group.count }} product{{ group.count === 1 ? '' : 'en' }}</small></div>
-                @for (family of group.families; track family.key) {
-                  <div class="desk-pick__family">
-                    @if (family.products.length > 1) {
-                      <div class="desk-pick__head">
-                        @if (photoOf(family.products[0].id!); as photo) { <img [appAuthSrc]="photo" alt="" /> }
-                        <span><strong>{{ stripColour(family.label, family.products[0].colour) }}</strong>
-                          <small>Reeks · {{ family.products.length }} varianten</small></span>
-                      </div>
-                    }
-                    @for (product of family.products; track product.id) {
-                      <div class="desk-pick__row" [class.desk-pick__row--variant]="family.products.length > 1">
-                        @if (photoOf(product.id!); as photo) { <img [appAuthSrc]="photo" alt="" /> } @else { <i aria-hidden="true">◈</i> }
-                        <span class="desk-pick__copy">
-                          <strong>
-                            @if (family.products.length > 1) {
-                              @if (product.colour) {
-                                <i class="line-colour-dot" [class.line-colour-dot--empty]="!colourHex(product.colourHex, product.colour)"
-                                   [style.background]="colourHex(product.colourHex, product.colour) || 'transparent'" aria-hidden="true"></i>
-                              }{{ variantOf(product) || product.name }}
-                            } @else {
-                              {{ stripColour(product.name, product.colour) }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }
-                            }
-                          </strong>
-                          <small>{{ product.sku }} · {{ stockOf(product.id!) | num }} op voorraad · {{ piecesPerCarton(product.id!) | num }}/doos</small>
-                        </span>
-                        <span class="desk-pick__price">{{ exwPriceOf(product) | cur: exwCurrencyOf(product) }}<small>{{ product.exwPrice == null ? 'productkaart' : 'EXW' }}</small></span>
-                        <input class="input num right desk-pick__qty" type="number" min="1" step="1" inputmode="numeric"
-                               [attr.aria-label]="'Aantal ' + product.name"
-                               [ngModel]="addQuantity(product)" (ngModelChange)="setAddQuantity(product, +$event)"
-                               (keydown.enter)="addProduct(product)" />
-                        <button class="btn btn--sm btn--primary" type="button" (click)="addProduct(product)">Toevoegen</button>
-                      </div>
-                    }
-                  </div>
-                }
-              } @empty {
-                <p class="hint desk-pick__empty">{{ addQuery().trim() ? 'Niets gevonden bij deze leverancier.' : 'Alle producten van deze leverancier staan al op de container.' }}</p>
-              }
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <button class="btn" type="button" (click)="newProduct()">Nieuw product aanmaken</button>
-            <span class="spacer desk-pick__count">@if (addedCount()) { {{ addedCount() }} toegevoegd }</span>
-            <button class="btn btn--primary" type="button" (click)="adding.set(false)">Klaar</button>
-          </div>
-        </app-sheet>
+        <app-purchase-desk-picker [products]="available()" [categoryList]="categories()" [supplierName]="supplierName()"
+                                  (picked)="addPicked($event)" (create)="newProduct()" (closed)="adding.set(false)" />
       }
 
       @if (stepPrompt(); as prompt) {
@@ -1010,25 +948,6 @@ type DeskRow =
     .desk-body{display:grid;grid-template-columns:minmax(0,1fr) clamp(440px,30vw,520px);gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
-    .desk-pick{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}
-    .desk-pick__side{position:sticky;top:0;display:grid;gap:10px}
-    .desk-pick__search{width:100%}
-    .desk-pick__cats{display:grid;gap:2px}.desk-pick__cats button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:7px 10px;border:0;border-radius:9px;background:transparent;color:var(--ink-2);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
-    .desk-pick__cats button b{color:var(--muted);font-size:11px}.desk-pick__cats button.on{background:var(--rose-soft);color:var(--rose-dark);font-weight:650}.desk-pick__cats button.on b{color:var(--rose-dark)}
-    .desk-pick__hint{margin:0;padding:0 10px;color:var(--muted);font-size:11px}
-    .desk-pick__list{min-width:0}
-    .desk-pick__cat{margin:0 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}.desk-pick__cat small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}.desk-pick__family+.desk-pick__cat{margin-top:16px}
-    .desk-pick__family{margin-bottom:8px;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
-    .desk-pick__head{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}.desk-pick__head img{width:32px;height:32px;border:1px solid var(--line);border-radius:9px;object-fit:cover}.desk-pick__head span{display:grid}.desk-pick__head strong{font-size:13px}.desk-pick__head small{color:var(--muted);font-size:11px}
-    .desk-pick__row{display:grid;grid-template-columns:44px minmax(0,1fr) 110px 84px auto;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid var(--line)}.desk-pick__family>.desk-pick__row:first-child{border-top:0}
-    .desk-pick__row--variant{padding-left:22px}.desk-pick__row--variant img,.desk-pick__row--variant>i{width:36px;height:36px}
-    .desk-pick__row img,.desk-pick__row>i{width:44px;height:44px;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:var(--surface-2)}.desk-pick__row>i{display:grid;place-items:center;color:var(--muted);font-style:normal}
-    .desk-pick__copy{display:grid;min-width:0;line-height:1.25}.desk-pick__copy strong{font-size:13px}.desk-pick__copy em{margin-left:6px;color:var(--muted);font-style:normal;font-weight:600}.desk-pick__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
-    .desk-pick__price{display:grid;text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}.desk-pick__price small{color:var(--muted);font-size:10px;font-weight:600}
-    .desk-pick__qty{min-height:36px}
-    .desk-pick__empty{padding:24px 0}
-    .desk-pick__count{color:var(--ok);font-size:12.5px;font-weight:650}
-    @media(max-width:759px){.desk-pick{grid-template-columns:1fr}.desk-pick__side{position:static}.desk-pick__cats{display:flex;flex-wrap:wrap}.desk-pick__cats button{width:auto}}
     .pay-note{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted)}
     .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
@@ -1204,91 +1123,20 @@ export class PurchaseDesk extends PurchaseEditor {
     return rows;
   });
 
-  /* ---- adding products: every product of the supplier, grouped, in one sheet ---- */
+  /* ---- adding products: the sheet reports a pick, the desk lands the line ---- */
   readonly adding = signal(false);
-  readonly addQuery = signal('');
-  readonly addCategory = signal<string | null>(null);
-  readonly addedCount = signal(0);
-  /** Quantities typed in the sheet, per product; a carton until changed. */
-  private readonly addDraft = signal<Map<number, number>>(new Map());
 
   openAdd(): void {
-    this.addQuery.set('');
-    this.addCategory.set(null);
-    this.addedCount.set(0);
     this.adding.set(true);
   }
 
-  /** The categories the search still leaves, with their product counts. */
-  readonly pickerCategories = computed(() => this.pickerAll()
-    .map((group) => ({ key: group.key, label: group.label, count: group.count })));
-
-  readonly pickerTotal = computed(() => this.pickerAll().reduce((sum, group) => sum + group.count, 0));
-
-  /** The chosen category, or everything. */
-  readonly pickerGroups = computed(() => {
-    const category = this.addCategory();
-    return this.pickerAll().filter((group) => category === null || group.key === category);
-  });
-
-  /** Category → series → variants, of what is not on the container yet. */
-  private readonly pickerAll = computed(() => {
-    const words = this.addQuery().trim().toLocaleLowerCase('nl-BE').split(/\s+/).filter(Boolean);
-    const matches = (product: Product): boolean => !words.length || words.every((word) =>
-      [product.name, product.sku, product.colour, product.variantSize].filter(Boolean).join(' ')
-        .toLocaleLowerCase('nl-BE').includes(word));
-    const categories = new Map<string, { key: string; label: string; count: number;
-      families: Map<string, { key: string; label: string; products: Product[] }> }>();
-    for (const product of this.available()) {
-      if (!matches(product)) continue;
-      const categoryName = this.categories().find((category) => category.id === product.categoryId)?.name ?? 'Overig';
-      const category = categories.get(categoryName)
-        ?? { key: categoryName, label: categoryName, count: 0, families: new Map() };
-      categories.set(categoryName, category);
-      const familyKey = product.familyId === null ? 'p:' + product.id : 'f:' + product.familyId;
-      const family = category.families.get(familyKey) ?? { key: familyKey, label: product.name, products: [] };
-      family.products.push(product);
-      category.families.set(familyKey, family);
-      category.count++;
-    }
-    return [...categories.values()].map((category) => ({
-      ...category, families: [...category.families.values()],
-    }));
-  });
-
-  addQuantity(product: Product): number {
-    return this.addDraft().get(product.id!) ?? (this.piecesPerCarton(product.id!) || 1);
-  }
-
-  setAddQuantity(product: Product, quantity: number): void {
-    this.addDraft.update((draft) => new Map(draft).set(product.id!, Math.max(1, Math.floor(quantity || 1))));
-  }
-
-  /** "Preserved rose with stem - Rood" says Rood once the variant line does. */
-  stripColour(name: string, colour: string | null | undefined): string {
-    const tint = colour?.trim();
-    if (!tint) return name;
-    const escaped = tint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const stripped = name.replace(new RegExp(`\\s*[-–·]\\s*${escaped}\\s*$`, 'i'), '').trim();
-    return stripped || name;
+  addPicked(choice: { product: Product; quantity: number }): void {
+    this.addLine(choice);
+    this.ui.toast(`${choice.product.name} · ${choice.quantity} st toegevoegd`);
   }
 
   baseName(name: string, productId: number): string {
-    return this.stripColour(name, this.productColour(productId));
-  }
-
-  variantOf(product: Product): string | null {
-    const parts = [product.colour, product.variantSize].map((value) => value?.trim()).filter(Boolean);
-    return parts.length ? parts.join(' · ') : null;
-  }
-
-  /** The line lands at once; the row leaves the sheet because it is on the container now. */
-  addProduct(product: Product): void {
-    const quantity = this.addQuantity(product);
-    this.addLine({ product, quantity });
-    this.addDraft.update((draft) => { const next = new Map(draft); next.delete(product.id!); return next; });
-    this.addedCount.update((count) => count + 1);
-    this.ui.toast(`${product.name} · ${quantity} st toegevoegd`);
+    return stripColour(name, this.productColour(productId));
   }
 
   /** Where the landed euro goes, as shares of the total. */
