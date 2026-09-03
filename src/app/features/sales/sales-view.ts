@@ -1464,11 +1464,16 @@ export class SalesView {
   cls = statusClass;
   readonly websiteRequest = isWebsiteQuoteRequest;
 
+  /**
+   * A quotation goes straight to its settings. An invoice first shows the
+   * export menu: once goods leave, the packing slip is as likely a pick as
+   * the invoice itself, and nobody should land in document settings by default.
+   */
   downloadPdf(): void {
-    this.openPdfSheet('DOCUMENT');
+    this.openPdfSheet(this.isInvoice() ? null : 'DOCUMENT');
   }
 
-  openPdfSheet(choice: SalesPdfChoice): void {
+  openPdfSheet(choice: SalesPdfChoice | null): void {
     if (!this.view()) return;
     this.pdfInitialChoice.set(choice);
     this.pdfSheet.set(true);
