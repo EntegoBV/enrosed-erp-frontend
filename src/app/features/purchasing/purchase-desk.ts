@@ -161,34 +161,9 @@ type DeskRow =
                 <button type="button" [class.on]="!perPiece()" [attr.aria-pressed]="!perPiece()" (click)="perPiece.set(false)">Totaal</button>
               </span>
               @if (editing() && !isReceived()) {
-                <div class="desk-add">
-                  <input class="input desk-add__input" type="search" autocomplete="off" enterkeyhint="done"
-                         placeholder="Product toevoegen: naam, SKU, kleur…" aria-label="Product toevoegen"
-                         [ngModel]="addQuery()" (ngModelChange)="searchAdd($event)"
-                         (focus)="addOpen.set(true)" (blur)="addOpen.set(false)"
-                         (keydown.arrowdown)="moveAdd(1, $event)" (keydown.arrowup)="moveAdd(-1, $event)"
-                         (keydown.enter)="pickAdd($event)" (keydown.escape)="closeAdd()" />
-                  @if (addOpen() && addQuery().trim()) {
-                    <ul class="desk-add__list" role="listbox">
-                      @for (product of addMatches(); track product.id; let i = $index) {
-                        <li role="option" [attr.aria-selected]="i === addIndex()" [class.on]="i === addIndex()"
-                            (mousedown)="$event.preventDefault(); addProduct(product)" (mouseenter)="addIndex.set(i)">
-                          @if (photoOf(product.id!); as photo) {
-                            <img [appAuthSrc]="photo" alt="" />
-                          } @else { <i aria-hidden="true">◈</i> }
-                          <span class="desk-add__copy">
-                            <strong>{{ product.name }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }</strong>
-                            <small>{{ product.sku }} · {{ stockOf(product.id!) | num }} op voorraad · {{ exwPriceOf(product) | cur: exwCurrencyOf(product) }} {{ (product.exwPrice ?? null) === null ? '' : 'EXW' }}</small>
-                          </span>
-                          <b>+ {{ piecesPerCarton(product.id!) | num }} st</b>
-                        </li>
-                      } @empty {
-                        <li class="desk-add__empty">Niets gevonden bij deze leverancier — <button type="button" (mousedown)="$event.preventDefault(); openPicker()">nieuw product aanmaken</button></li>
-                      }
-                    </ul>
-                  }
-                </div>
-                <button class="btn btn--sm" type="button" (click)="openPicker()">Catalogus…</button>
+                <button class="btn btn--primary btn--sm" type="button" (click)="openAdd()">
+                  <span aria-hidden="true">＋</span> Product
+                </button>
               }
             </div>
 
@@ -775,6 +750,55 @@ type DeskRow =
                             [allowCreate]="true" [createCurrency]="supplier()?.currency ?? 'USD'" (create)="quickCreate($event)" />
       }
 
+      @if (adding()) {
+        <app-sheet title="Product toevoegen aan de container" [wide]="true" (closed)="adding.set(false)">
+          <div body>
+            <input class="input desk-pick__search" type="search" autocomplete="off" placeholder="Zoek op naam, kleur, maat of SKU…"
+                   aria-label="Zoeken in de catalogus" [ngModel]="addQuery()" (ngModelChange)="addQuery.set($event)" />
+            @for (group of pickerGroups(); track group.key) {
+              <div class="desk-pick__cat">{{ group.label }} <small>{{ group.count }} product{{ group.count === 1 ? '' : 'en' }}</small></div>
+              @for (family of group.families; track family.key) {
+                <div class="desk-pick__family">
+                  @if (family.products.length > 1) {
+                    <div class="desk-pick__head"><strong>{{ family.label }}</strong><small>{{ family.products.length }} varianten</small></div>
+                  }
+                  @for (product of family.products; track product.id) {
+                    <div class="desk-pick__row">
+                      @if (photoOf(product.id!); as photo) { <img [appAuthSrc]="photo" alt="" /> } @else { <i aria-hidden="true">◈</i> }
+                      <span class="desk-pick__copy">
+                        <strong>
+                          @if (family.products.length > 1) {
+                            @if (product.colour) {
+                              <i class="line-colour-dot" [class.line-colour-dot--empty]="!colourHex(product.colourHex, product.colour)"
+                                 [style.background]="colourHex(product.colourHex, product.colour) || 'transparent'" aria-hidden="true"></i>
+                            }{{ variantOf(product) || product.name }}
+                          } @else {
+                            {{ product.name }}@if (variantOf(product); as variant) { <em>{{ variant }}</em> }
+                          }
+                        </strong>
+                        <small>{{ product.sku }} · {{ stockOf(product.id!) | num }} op voorraad · {{ piecesPerCarton(product.id!) | num }}/doos</small>
+                      </span>
+                      <span class="desk-pick__price">{{ exwPriceOf(product) | cur: exwCurrencyOf(product) }}<small>{{ product.exwPrice == null ? 'productkaart' : 'EXW' }}</small></span>
+                      <input class="input num right desk-pick__qty" type="number" min="1" step="1" inputmode="numeric"
+                             [attr.aria-label]="'Aantal ' + product.name"
+                             [ngModel]="addQuantity(product)" (ngModelChange)="setAddQuantity(product, +$event)" />
+                      <button class="btn btn--sm btn--primary" type="button" (click)="addProduct(product)">Toevoegen</button>
+                    </div>
+                  }
+                </div>
+              }
+            } @empty {
+              <p class="hint desk-pick__empty">{{ addQuery().trim() ? 'Niets gevonden bij deze leverancier.' : 'Alle producten van deze leverancier staan al op de container.' }}</p>
+            }
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="newProduct()">Nieuw product aanmaken</button>
+            <span class="spacer"></span>
+            <button class="btn btn--primary" type="button" (click)="adding.set(false)">Klaar</button>
+          </div>
+        </app-sheet>
+      }
+
       @if (issue(); as report) {
         <app-sheet [title]="'Schade of tekort · ' + (issueLine()?.productName ?? '')" (closed)="issue.set(null)">
           <div body>
@@ -1023,26 +1047,26 @@ type DeskRow =
     .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
-    .desk-add{position:relative;flex:0 1 420px;min-width:240px}.desk-add__input{width:100%;min-height:38px}
-    .desk-add__list{position:absolute;top:calc(100% + 6px);right:0;width:min(560px,calc(100vw - 120px));z-index:20;max-height:360px;margin:0;padding:6px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 14px 34px rgb(26 22 20/.16);list-style:none;overflow-y:auto}
-    .desk-add__list li{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:10px;cursor:pointer}
-    .desk-add__list li.on{background:var(--rose-soft)}
-    .desk-add__list img,.desk-add__list li>i{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:9px;object-fit:cover;background:var(--surface-2)}
-    .desk-add__list li>i{display:grid;place-items:center;color:var(--muted);font-style:normal}
-    .desk-add__copy{display:grid;min-width:0;flex:1;line-height:1.25}.desk-add__copy strong{font-size:13px}.desk-add__copy em{margin-left:6px;color:var(--muted);font-style:normal;font-weight:600}
-    .desk-add__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
-    .desk-add__list li>b{flex:none;color:var(--rose-dark);font-size:12px}
-    .desk-add__empty{color:var(--muted);font-size:12.5px;cursor:default}.desk-add__empty button{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;cursor:pointer}
+    .desk-pick__search{width:100%;margin-bottom:12px}
+    .desk-pick__cat{margin:14px 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}.desk-pick__cat small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
+    .desk-pick__family{margin-bottom:8px;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+    .desk-pick__head{display:flex;align-items:baseline;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}.desk-pick__head strong{font-size:13px}.desk-pick__head small{color:var(--muted);font-size:11px}
+    .desk-pick__row{display:grid;grid-template-columns:44px minmax(0,1fr) 110px 88px auto;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid var(--line)}.desk-pick__family>.desk-pick__row:first-child,.desk-pick__head+.desk-pick__row{border-top:0}
+    .desk-pick__row img,.desk-pick__row>i{width:44px;height:44px;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:var(--surface-2)}.desk-pick__row>i{display:grid;place-items:center;color:var(--muted);font-style:normal}
+    .desk-pick__copy{display:grid;min-width:0;line-height:1.25}.desk-pick__copy strong{font-size:13px}.desk-pick__copy em{margin-left:6px;color:var(--muted);font-style:normal;font-weight:600}.desk-pick__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .desk-pick__price{display:grid;text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}.desk-pick__price small{color:var(--muted);font-size:10px;font-weight:600}
+    .desk-pick__qty{min-height:36px}
+    .desk-pick__empty{padding:24px 0;text-align:center}
     .pay-note{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted)}
     .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
     .desk-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
-    .desk-table thead th{padding:9px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-align:right;text-transform:uppercase;white-space:nowrap}
+    .desk-table thead th{padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-align:right;text-transform:uppercase;white-space:nowrap}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
-    .desk-table td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+    .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:auto;min-width:200px}.c-qty{width:70px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:112px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
+    .c-product{width:auto;min-width:200px}.c-qty{width:70px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:112px;padding-top:12px!important;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
     .desk-table--editing .c-price{width:200px}.desk-table--editing .c-act{width:40px}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
@@ -1056,22 +1080,23 @@ type DeskRow =
     .line-colour-dot{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px}.line-colour-dot--empty{background:var(--surface)!important}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
     .desk-row--open td{border-bottom:0;background:var(--surface-2)}
-    .desk-product{display:flex;align-items:center;gap:11px;color:inherit;text-decoration:none}
+    .desk-product{display:flex;align-items:flex-start;gap:11px;color:inherit;text-decoration:none}.desk-product__copy{padding-top:2px}
     .desk-product__photo{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
     .desk-product__copy{display:grid;min-width:0;line-height:1.25}.desk-product__copy strong{font-size:13.5px}.desk-product__copy small{color:var(--muted);font-size:11px}
     .desk-note{display:block;margin:3px 0 0 55px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left}
     .desk-note--warn{color:var(--warn);font-weight:650}
     button.desk-note{cursor:pointer}button.desk-note:hover{color:var(--rose-dark)}
-    .desk-cell{min-height:34px;padding:5px 8px;font-size:13px}
-    .c-qty b,.c-cartons b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small{display:block;color:var(--muted);font-size:10px;white-space:nowrap}
-    .c-price{text-align:right}.c-price>b{display:block;font-size:13.5px}.c-price>small{display:block;color:var(--muted);font-size:10.5px;white-space:nowrap}
+    .desk-cell{min-height:34px;padding:5px 12px 5px 8px;font-size:13px}.desk-table--editing td.c-qty,.desk-table--editing td.c-price{padding-right:0}.desk-table--editing td.c-price .desk-cell{padding-right:8px}
+    .desk-table--editing td.c-money{padding-top:16px!important}.desk-table--editing .c-cartons b{padding-top:8px}
+    .c-qty b,.c-cartons b,.c-price>b{display:block;padding-top:2px;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
+    .c-price{text-align:right}
     .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}
     .desk-mini{min-height:34px;padding:0 3px;border:1px solid var(--line-strong);border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
     .desk-mini--last{border-radius:0 var(--r-sm) var(--r-sm) 0}
     .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
     .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
-    .desk-total{display:inline-flex;align-items:center;gap:4px;padding:4px 2px 4px 8px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;cursor:pointer}
+    .desk-total{display:inline-flex;align-items:center;gap:4px;margin:-4px -8px -4px 0;padding:4px 2px 4px 8px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;cursor:pointer}
     .desk-total i{display:inline-block;color:var(--muted);font-style:normal;font-size:15px;font-weight:600;transition:transform .15s ease}.desk-row--open .desk-total i{transform:rotate(90deg)}.desk-total:hover{background:var(--rose-soft)}
     .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
     .desk-detail td{padding:0 16px 12px 71px;background:var(--surface-2)}
@@ -1177,45 +1202,48 @@ export class PurchaseDesk extends PurchaseEditor {
     return rows;
   });
 
-  /* ---- adding a product from the table itself ------------------------ */
+  /* ---- adding products: every product of the supplier, grouped, in one sheet ---- */
+  readonly adding = signal(false);
   readonly addQuery = signal('');
-  readonly addOpen = signal(false);
-  readonly addIndex = signal(0);
+  /** Quantities typed in the sheet, per product; a carton until changed. */
+  private readonly addDraft = signal<Map<number, number>>(new Map());
 
-  /** Products of this supplier not yet on the order, filtered by what was typed. */
-  readonly addMatches = computed(() => {
+  openAdd(): void {
+    this.addQuery.set('');
+    this.adding.set(true);
+  }
+
+  /** Category → series → variants, of what is not on the container yet. */
+  readonly pickerGroups = computed(() => {
     const words = this.addQuery().trim().toLocaleLowerCase('nl-BE').split(/\s+/).filter(Boolean);
-    if (!words.length) return [];
-    return this.available().filter((product) => {
-      const haystack = [product.name, product.sku, product.colour, product.variantSize]
-        .filter(Boolean).join(' ').toLocaleLowerCase('nl-BE');
-      return words.every((word) => haystack.includes(word));
-    }).slice(0, 8);
+    const matches = (product: Product): boolean => !words.length || words.every((word) =>
+      [product.name, product.sku, product.colour, product.variantSize].filter(Boolean).join(' ')
+        .toLocaleLowerCase('nl-BE').includes(word));
+    const categories = new Map<string, { key: string; label: string; count: number;
+      families: Map<string, { key: string; label: string; products: Product[] }> }>();
+    for (const product of this.available()) {
+      if (!matches(product)) continue;
+      const categoryName = this.categories().find((category) => category.id === product.categoryId)?.name ?? 'Overig';
+      const category = categories.get(categoryName)
+        ?? { key: categoryName, label: categoryName, count: 0, families: new Map() };
+      categories.set(categoryName, category);
+      const familyKey = product.familyId === null ? 'p:' + product.id : 'f:' + product.familyId;
+      const family = category.families.get(familyKey) ?? { key: familyKey, label: product.name, products: [] };
+      family.products.push(product);
+      category.families.set(familyKey, family);
+      category.count++;
+    }
+    return [...categories.values()].map((category) => ({
+      ...category, families: [...category.families.values()],
+    }));
   });
 
-  searchAdd(value: string): void {
-    this.addQuery.set(value);
-    this.addIndex.set(0);
-    this.addOpen.set(true);
+  addQuantity(product: Product): number {
+    return this.addDraft().get(product.id!) ?? (this.piecesPerCarton(product.id!) || 1);
   }
 
-  moveAdd(step: number, event: Event): void {
-    const count = this.addMatches().length;
-    if (!count) return;
-    event.preventDefault();
-    this.addIndex.set((this.addIndex() + step + count) % count);
-  }
-
-  pickAdd(event: Event): void {
-    const product = this.addMatches()[this.addIndex()];
-    if (!product) return;
-    event.preventDefault();
-    this.addProduct(product);
-  }
-
-  closeAdd(): void {
-    this.addQuery.set('');
-    this.addOpen.set(false);
+  setAddQuantity(product: Product, quantity: number): void {
+    this.addDraft.update((draft) => new Map(draft).set(product.id!, Math.max(1, Math.floor(quantity || 1))));
   }
 
   variantOf(product: Product): string | null {
@@ -1223,11 +1251,10 @@ export class PurchaseDesk extends PurchaseEditor {
     return parts.length ? parts.join(' · ') : null;
   }
 
-  /** One carton is the natural first quantity; the cell is right there to change it. */
+  /** The line lands at once; the row leaves the sheet because it is on the container now. */
   addProduct(product: Product): void {
-    this.addLine({ product, quantity: this.piecesPerCarton(product.id!) || 1 });
-    this.addQuery.set('');
-    this.addIndex.set(0);
+    this.addLine({ product, quantity: this.addQuantity(product) });
+    this.addDraft.update((draft) => { const next = new Map(draft); next.delete(product.id!); return next; });
   }
 
   /** Lines whose cost build-up is unfolded under the row. */
