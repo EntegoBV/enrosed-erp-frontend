@@ -482,20 +482,20 @@ type DeskRow =
 
                 @case ('costs') {
                   @if (!editing()) {
-                    <dl class="desk-facts">
-                      <div><dt>RMB → USD</dt><dd>{{ data.order.cnyToUsd }}</dd></div>
-                      <div><dt>USD → EUR</dt><dd>{{ usdToEurRate() }}</dd></div>
-                      @if (isDdp()) {
-                        <div><dt>Prijsbasis</dt><dd>DDP · transport en rechten inbegrepen</dd></div>
-                      } @else {
+                    <div class="desk-rates">
+                      <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd }}</b></div>
+                      <div><small>USD → EUR</small><b>{{ usdToEurRate() }}</b></div>
+                      <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : 'EXW' }}</b></div>
+                    </div>
+                    @if (!isDdp()) {
+                      <dl class="desk-facts">
                         <div><dt>{{ costLabels().seaFreightLabel }}</dt><dd>{{ data.order.freightUsd | cur: 'USD' }}<small>{{ costLabels().seaFreightRoute }}</small></dd></div>
                         <div><dt>{{ costLabels().originCostsLabel }}</dt><dd>{{ data.order.originCosts | cur: data.order.originCurrency }}<small>{{ costLabels().originRoute }}</small></dd></div>
                         <div><dt>{{ costLabels().destinationCostsLabel }}</dt><dd>{{ data.order.destinationCostsEur | eur }}</dd></div>
                         <div><dt>Invoerrecht zonder HS</dt><dd>{{ data.order.defaultDutyRatePct | pct: 1 }}</dd></div>
-                      }
-                      <div><dt>Enrosed kost</dt><dd>{{ data.order.extraRevenueEur | eur }}</dd></div>
-                      <div><dt>Varianten</dt><dd>{{ (data.order.groupVariants ?? true) ? 'samen één kostprijs per reeks' : 'elke variant apart' }}</dd></div>
-                    </dl>
+                        <div><dt>Varianten</dt><dd>{{ (data.order.groupVariants ?? true) ? 'één kostprijs per reeks' : 'elke variant apart' }}</dd></div>
+                      </dl>
+                    }
                     <button class="btn btn--block" type="button" (click)="startEdit()">Kosten bewerken</button>
                   }
                   <div class="desk-form">
@@ -571,22 +571,30 @@ type DeskRow =
                     </details>
                     }
 
-                    <p class="desk-form__group">Opbouw</p>
-                    <div class="desk-sum">
-                      <div class="stat-row"><span>{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }} <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small></span><span class="num">{{ data.costing.totals.goodsEur | eur }}</span></div>
+                    <p class="desk-form__group">Opbouw van de gelande kost</p>
+                    @if (data.costing.totals.totalEur > 0) {
+                      <div class="desk-mix" aria-hidden="true">
+                        @for (part of costMix(); track part.key) { <i [class]="'desk-mix__' + part.key" [style.width.%]="part.pct" [title]="part.label"></i> }
+                      </div>
+                      <ul class="desk-mix__legend">
+                        @for (part of costMix(); track part.key) { <li><i [class]="'desk-mix__' + part.key"></i>{{ part.label }} <b>{{ part.pct | num: 0 }}%</b></li> }
+                      </ul>
+                    }
+                    <div class="desk-chain">
+                      <div class="desk-chain__row"><i></i><span>{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }} <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small></span><b>{{ data.costing.totals.goodsEur | eur }}</b></div>
                       @if (!isDdp()) {
-                        @if (data.costing.totals.originEur) { <div class="stat-row"><span>{{ costLabels().originCostsLabel }}</span><span class="num">{{ data.costing.totals.originEur | eur }}</span></div> }
-                        <div class="stat-row"><span>{{ costLabels().seaFreightLabel }}</span><span class="num">{{ data.costing.totals.freightEur | eur }}</span></div>
-                        <div class="stat-row desk-sum__sub"><span>Douanewaarde</span><span class="num">{{ data.costing.totals.customsValueEur | eur }}</span></div>
-                        <div class="stat-row"><span>Invoerrechten <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small></span><span class="num">{{ data.costing.totals.dutyEur | eur }}</span></div>
-                        <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span><span class="num">{{ data.costing.totals.destinationEur | eur }}</span></div>
+                        @if (data.costing.totals.originEur) { <div class="desk-chain__row"><i>+</i><span>{{ costLabels().originCostsLabel }} <small>{{ costLabels().originRoute }}</small></span><b>{{ data.costing.totals.originEur | eur }}</b></div> }
+                        <div class="desk-chain__row"><i>+</i><span>{{ costLabels().seaFreightLabel }} <small>{{ costLabels().seaFreightRoute }}</small></span><b>{{ data.costing.totals.freightEur | eur }}</b></div>
+                        <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Douanewaarde</span><b>{{ data.costing.totals.customsValueEur | eur }}</b></div>
+                        <div class="desk-chain__row"><i>+</i><span>Invoerrechten <small>gemiddeld {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small></span><b>{{ data.costing.totals.dutyEur | eur }}</b></div>
+                        <div class="desk-chain__row"><i>+</i><span>{{ costLabels().destinationCostsLabel }}</span><b>{{ data.costing.totals.destinationEur | eur }}</b></div>
                       }
-                      @if (data.costing.totals.extraRevenueEur) { <div class="stat-row"><span>Enrosed kost</span><span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div> }
-                      <div class="stat-row desk-sum__total"><span>Totaal geland</span><strong class="num">{{ data.costing.totals.totalEur | eur }}</strong></div>
-                      @if (!isDdp() && data.costing.totals.goodsEur > 0) {
-                        <p class="hint">Bovenop de goederen: + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }} ({{ overheadPct(data.costing.totals) | num }} %)</p>
-                      }
+                      @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>eigen opslag</small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
+                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal geland <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
                     </div>
+                    @if (!isDdp() && data.costing.totals.goodsEur > 0) {
+                      <p class="hint">Bovenop de goederen: + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }} ({{ overheadPct(data.costing.totals) | num }} %).</p>
+                    }
                   </div>
                 }
 
@@ -654,62 +662,69 @@ type DeskRow =
                 }
 
                 @case ('files') {
-                  <div class="desk-files-head">
-                    <strong>Dagboek van de container</strong>
-                    <button class="linklike" type="button" (click)="noteEditing.set(!noteEditing())">{{ noteEditing() ? 'Klaar' : 'Bewerken' }}</button>
-                  </div>
-                  @if (noteEditing()) {
-                    <textarea class="textarea" rows="7" [ngModel]="data.order.notes" (ngModelChange)="patch({ notes: $event })"
-                              placeholder="Afspraken, laadinstructies of aandachtspunten - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij"></textarea>
-                  } @else if (data.order.notes) {
-                    <app-diary [notes]="data.order.notes" />
-                  } @else {
-                    <p class="hint">Nog leeg - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij.</p>
-                  }
-
-                  <div class="desk-files-head mt-12">
-                    <strong>Documenten <small>{{ (documents() ?? []).length }}</small></strong>
-                    <button class="btn btn--sm" type="button" (click)="openDocument()">+ Document</button>
-                  </div>
-                  @if (documents(); as docs) {
-                    @if (docs.length) {
-                      <ul class="files-list">
-                        @for (doc of docs; track doc.id) {
-                          <li>
-                            @if (renamingDoc()?.id === doc.id) {
-                              <input class="input input--sm files-list__rename" type="text" enterkeyhint="done" placeholder="Titel, bijv. KBC mei"
-                                     [ngModel]="renamingDoc()!.label" (ngModelChange)="renamingDoc.set({ id: doc.id, label: $event })"
-                                     (keydown.enter)="commitDocRename(doc)" (keydown.escape)="renamingDoc.set(null)" (blur)="commitDocRename(doc)" />
-                            } @else {
-                              <span class="files-list__name">
-                                <b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b>
-                                <small>{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}@if (doc.actor) { · {{ actorLabel(doc.actor) }} }</small>
-                              </span>
+                  <div class="desk-dossier">
+                    <section>
+                      <header class="desk-dossier__head"><strong>Dagboek</strong>
+                        <button class="linklike" type="button" (click)="noteEditing.set(!noteEditing())">{{ noteEditing() ? 'Klaar' : 'Bewerken' }}</button></header>
+                      @if (noteEditing()) {
+                        <textarea class="textarea" rows="7" [ngModel]="data.order.notes" (ngModelChange)="patch({ notes: $event })"
+                                  placeholder="Afspraken, laadinstructies of aandachtspunten - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij"></textarea>
+                      } @else if (data.order.notes) {
+                        <div class="desk-dossier__diary"><app-diary [notes]="data.order.notes" /></div>
+                      } @else {
+                        <p class="desk-dossier__empty">Nog leeg — ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij.</p>
+                      }
+                    </section>
+                    <section>
+                      <header class="desk-dossier__head"><strong>Documenten <small>{{ (documents() ?? []).length }}</small></strong>
+                        <button class="btn btn--sm" type="button" (click)="openDocument()">+ Document</button></header>
+                      <button class="desk-drop" type="button" (click)="openDocument()" (dragover)="$event.preventDefault()" (drop)="dropDocument($event)">
+                        <b>Sleep een bestand hierheen</b><small>of klik om te kiezen · PDF, foto of Office, tot 25 MB</small>
+                      </button>
+                      @if (documents(); as docs) {
+                        @if (docs.length) {
+                          <ul class="desk-docs">
+                            @for (doc of docs; track doc.id) {
+                              <li>
+                                <span class="desk-docs__kind">{{ doc.kindLabel }}</span>
+                                @if (renamingDoc()?.id === doc.id) {
+                                  <input class="input input--sm" type="text" enterkeyhint="done" placeholder="Titel, bijv. KBC mei"
+                                         [ngModel]="renamingDoc()!.label" (ngModelChange)="renamingDoc.set({ id: doc.id, label: $event })"
+                                         (keydown.enter)="commitDocRename(doc)" (keydown.escape)="renamingDoc.set(null)" (blur)="commitDocRename(doc)" />
+                                } @else {
+                                  <span class="desk-docs__copy">
+                                    <b>{{ doc.label || doc.originalFilename }}</b>
+                                    <small>{{ doc.label ? doc.originalFilename + ' · ' : '' }}{{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}@if (doc.actor) { · {{ actorLabel(doc.actor) }} }</small>
+                                  </span>
+                                }
+                                <span class="desk-docs__actions">
+                                  <button class="desk-docs__icon" type="button" title="Titel aanpassen" (click)="renamingDoc.set({ id: doc.id, label: doc.label ?? '' })">✎</button>
+                                  <button class="btn btn--sm" type="button" (click)="downloadDocument(doc)">Openen</button>
+                                  <button class="desk-docs__icon" type="button" title="Verwijderen" aria-label="Document verwijderen" (click)="removeDocument(doc)">×</button>
+                                </span>
+                              </li>
                             }
-                            <span class="files-list__actions">
-                              <button class="files-list__pencil" type="button" title="Titel aanpassen" (click)="renamingDoc.set({ id: doc.id, label: doc.label ?? '' })">✎</button>
-                              <button class="btn btn--sm" type="button" (click)="downloadDocument(doc)">Openen</button>
-                              <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Document verwijderen" (click)="removeDocument(doc)">×</button>
-                            </span>
-                          </li>
+                          </ul>
                         }
-                      </ul>
-                    } @else {
-                      <p class="hint">Nog geen bestanden bij deze container.</p>
-                    }
-                  }
-                  <div class="mt-12"><app-purchase-activity [orderId]="data.order.id" [collapsible]="true" /></div>
+                      }
+                    </section>
+                    <section>
+                      <header class="desk-dossier__head"><strong>Logboek</strong></header>
+                      <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
+                    </section>
+                  </div>
                 }
 
                 @case ('done') {
                   <div class="desk-done">
-                    <strong>{{ nextStep() ? 'Klaar voor de volgende stap?' : 'Container afgerond' }}</strong>
-                    <p class="hint">
-                      @if (data.order.status === 'CONCEPT') { Controleer de producten en kosten voordat je de bestelling vastlegt. }
-                      @else if (!isReceived()) { Bij ontvangst tel je wat er echt in de container zat; bijboeken kan meteen of later. }
-                      @else if (!(data.order.stockBooked ?? true)) { Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad. }
-                      @else { De voorraad is bijgeboekt. Je kunt nog een variant maken of kostprijzen toepassen. }
-                    </p>
+                    <ol class="desk-milestones">
+                      @for (step of milestones(); track step.key) {
+                        <li [class.is-done]="step.done" [class.is-now]="step.now">
+                          <i aria-hidden="true">{{ step.done ? '✓' : '' }}</i>
+                          <span><b>{{ step.label }}</b><small>{{ step.date ? (step.date | dateNl) + (step.text ? ' · ' + step.text : '') : step.text }}</small></span>
+                        </li>
+                      }
+                    </ol>
                     @if (data.attention?.length) {
                       <ul class="desk-done__attention">
                         @for (item of data.attention; track item) { <li>{{ item }}</li> }
@@ -724,16 +739,23 @@ type DeskRow =
                         </div>
                       }
                     }
-                    <div class="desk-done__buttons">
-                      @if (nextStep(); as step) { <button class="btn btn--primary btn--block" type="button" (click)="advanceStatus()">{{ step.action }}</button> }
-                      @if (isReceived() && !(data.order.stockBooked ?? true)) {
-                        <button class="btn btn--primary btn--block" type="button" [disabled]="booking()" (click)="bookStock()">{{ booking() ? 'Bezig…' : 'Voorraad bijboeken' }}</button>
-                      }
-                      <button class="btn btn--block" type="button" (click)="apply()">{{ costsApplied() ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen' }}</button>
-                      <button class="btn btn--block" type="button" (click)="duplicate()">Deze container kopiëren</button>
-                      <button class="btn btn--block" type="button" (click)="pdfOpen.set(true)">PDF maken</button>
-                      @if (!isReceived()) { <button class="btn btn--danger btn--block" type="button" (click)="remove()">Calculatie verwijderen</button> }
+                    @if (nextStep(); as step) {
+                      <button class="btn btn--primary btn--block desk-done__cta" type="button" (click)="advanceStatus()">{{ step.action }} ›</button>
+                    } @else if (isReceived() && !(data.order.stockBooked ?? true)) {
+                      <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="booking()" (click)="bookStock()">{{ booking() ? 'Bezig…' : 'Voorraad bijboeken ›' }}</button>
+                    }
+                    <div class="desk-actions">
+                      <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}</b><small>Zet de gelande kost per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
+                      <button class="desk-action" type="button" (click)="duplicate()"><span><b>Container kopiëren</b><small>Nieuwe calculatie met dezelfde producten en kosten.</small></span><i aria-hidden="true">›</i></button>
+                      <button class="desk-action" type="button" (click)="pdfOpen.set(true)"><span><b>PDF maken</b><small>Voor de leverancier, of als intern dossier.</small></span><i aria-hidden="true">›</i></button>
                     </div>
+                    @if (!isReceived()) {
+                      <details class="desk-danger">
+                        <summary>Meer acties</summary>
+                        <p>Verwijderen kan niet ongedaan worden gemaakt.</p>
+                        <button class="btn btn--danger btn--block" type="button" (click)="remove()">Calculatie verwijderen</button>
+                      </details>
+                    }
                   </div>
                 }
               }
@@ -1099,8 +1121,8 @@ type DeskRow =
     .desk-total{display:inline-flex;align-items:center;gap:4px;margin:-4px -8px -4px 0;padding:4px 2px 4px 8px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;cursor:pointer}
     .desk-total i{display:inline-block;color:var(--muted);font-style:normal;font-size:15px;font-weight:600;transition:transform .15s ease}.desk-row--open .desk-total i{transform:rotate(90deg)}.desk-total:hover{background:var(--rose-soft)}
     .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
-    .desk-detail td{padding:0 16px 12px 71px;background:var(--surface-2)}
-    .desk-detail__grid{display:grid;gap:0;max-width:640px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+    .desk-detail td{padding:0 12px 12px;background:var(--surface-2)}
+    .desk-detail__grid{display:grid;gap:0;max-width:560px;margin-left:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
     .desk-detail__head,.desk-detail__line{display:grid;grid-template-columns:minmax(0,1fr) 110px 120px;gap:10px;padding:6px 12px;font-size:12px}
     .desk-detail__head{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;background:var(--surface-2)}
     .desk-detail__line span:not(:first-child),.desk-detail__head span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
@@ -1137,10 +1159,35 @@ type DeskRow =
     .desk-sum .stat-row{padding:4px 0;font-size:12px}.desk-sum .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}
     .desk-sum__sub{border-top:1px solid var(--line);font-weight:650}.desk-sum__total{border-top:2px solid var(--line-strong);font-size:13px}.desk-sum__total strong{color:var(--rose-dark)}
     .desk-pay-head{display:grid;gap:2px;margin-bottom:10px}.desk-pay-head strong{font-size:15px}.desk-pay-head small{color:var(--muted);font-size:11.5px}
-    .desk-files-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-files-head strong{font-size:13px}
-    .desk-done{display:grid;gap:10px}.desk-done strong{font-size:15px}
+    .desk-done{display:grid;gap:12px}
     .desk-done__attention{margin:0;padding:8px 12px 8px 26px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
-    .desk-done__buttons{display:grid;gap:7px}
+    .desk-rates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}
+    .desk-rates>div{display:grid;gap:1px;padding:9px 12px;background:var(--surface-2)}.desk-rates small{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.desk-rates b{font-size:14px;font-variant-numeric:tabular-nums}
+    .desk-mix{display:flex;height:12px;border-radius:99px;background:var(--line);overflow:hidden}.desk-mix i{display:block;height:100%}
+    .desk-mix__legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0 12px;padding:0;list-style:none;color:var(--muted);font-size:11px}.desk-mix__legend li{display:inline-flex;align-items:center;gap:5px}.desk-mix__legend i{width:9px;height:9px;border-radius:2px}.desk-mix__legend b{color:var(--ink-2)}
+    .desk-mix__goods{background:var(--rose-dark)}.desk-mix__transport{background:var(--gold)}.desk-mix__duty{background:var(--warn)}.desk-mix__destination{background:var(--blue)}.desk-mix__extra{background:var(--muted)}
+    .desk-chain{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden}
+    .desk-chain__row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 12px 7px 8px;font-size:12.5px}.desk-chain__row+.desk-chain__row{border-top:1px solid var(--line)}
+    .desk-chain__row i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--surface);color:var(--muted);font-size:12px;font-style:normal;font-weight:800}
+    .desk-chain__row small{display:block;color:var(--muted);font-size:10.5px}.desk-chain__row b{font-variant-numeric:tabular-nums}
+    .desk-chain__row--sub{background:var(--surface)}.desk-chain__row--sub b{font-weight:750}
+    .desk-chain__row--total{background:var(--surface);font-size:13.5px}.desk-chain__row--total i{background:var(--rose);color:#fff}.desk-chain__row--total b{color:var(--rose-dark);font-weight:800}
+    .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
+    .desk-dossier__diary{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.desk-dossier__empty{margin:0;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);font-size:12px}
+    .desk-drop{display:grid;width:100%;gap:2px;margin-bottom:8px;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font:inherit;text-align:center;cursor:pointer}.desk-drop b{font-size:12.5px}.desk-drop small{color:var(--muted);font-size:11px}.desk-drop:hover{border-color:var(--rose);background:var(--rose-soft)}
+    .desk-docs{margin:0;padding:0;list-style:none}.desk-docs li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+    .desk-docs__kind{padding:3px 7px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+    .desk-docs__copy{display:grid;min-width:0}.desk-docs__copy b{overflow:hidden;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}.desk-docs__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .desk-docs__actions{display:flex;align-items:center;gap:4px}.desk-docs__icon{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:15px;cursor:pointer}.desk-docs__icon:hover{background:var(--surface-2);color:var(--ink)}
+    .desk-milestones{margin:0;padding:0;list-style:none}.desk-milestones li{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:6px 0}
+    .desk-milestones i{display:grid;width:22px;height:22px;place-items:center;border:2px solid var(--line-strong);border-radius:50%;color:#fff;font-size:11px;font-style:normal;font-weight:800;background:var(--surface)}
+    .desk-milestones li.is-done i{border-color:var(--ok);background:var(--ok)}.desk-milestones li.is-now i{border-color:var(--rose)}
+    .desk-milestones span{display:grid}.desk-milestones b{font-size:13px}.desk-milestones li:not(.is-done):not(.is-now) b{color:var(--muted);font-weight:600}.desk-milestones small{color:var(--muted);font-size:11px}
+    .desk-done__cta{min-height:46px;font-size:14px}
+    .desk-actions{display:grid;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+    .desk-action{display:flex;align-items:center;gap:10px;padding:10px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.desk-action+.desk-action{border-top:1px solid var(--line)}.desk-action:hover{background:var(--surface-2)}
+    .desk-action span{display:grid;flex:1;min-width:0}.desk-action b{font-size:13px}.desk-action small{color:var(--muted);font-size:11px}.desk-action i{color:var(--muted);font-style:normal;font-size:18px}
+    .desk-danger summary{padding:8px 0;color:var(--muted);font-size:12px;text-align:center;cursor:pointer}.desk-danger p{margin:0 0 8px;color:var(--muted);font-size:11px;text-align:center}
 
     @media(max-width:1439px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
     @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -1255,6 +1302,52 @@ export class PurchaseDesk extends PurchaseEditor {
   addProduct(product: Product): void {
     this.addLine({ product, quantity: this.addQuantity(product) });
     this.addDraft.update((draft) => { const next = new Map(draft); next.delete(product.id!); return next; });
+  }
+
+  /** Where the landed euro goes, as shares of the total. */
+  readonly costMix = computed(() => {
+    const totals = this.view()?.costing.totals;
+    if (!totals || totals.totalEur <= 0) return [];
+    const parts = [
+      { key: 'goods', label: 'Goederen', value: totals.goodsEur },
+      { key: 'transport', label: 'Transport & oorsprong', value: totals.originEur + totals.freightEur },
+      { key: 'duty', label: 'Invoerrechten', value: totals.dutyEur },
+      { key: 'destination', label: 'Aankomst', value: totals.destinationEur },
+      { key: 'extra', label: 'Enrosed kost', value: totals.extraRevenueEur },
+    ];
+    return parts.filter((part) => part.value > 0)
+      .map((part) => ({ ...part, pct: (part.value / totals.totalEur) * 100 }));
+  });
+
+  /** The container's road, as far as it got. */
+  readonly milestones = computed(() => {
+    const data = this.view();
+    if (!data) return [];
+    const order = data.order;
+    const index = this.stepIndex(order.status);
+    const booked = order.stockBooked === true;
+    const steps = [
+      { key: 'made', label: 'Calculatie gemaakt', done: true, date: order.orderDate, text: this.creatorName(data) },
+      { key: 'ordered', label: 'Besteld', done: index >= 1, date: null as string | null, text: index >= 1 ? 'aantallen en prijzen liggen vast' : 'nog een concept' },
+      { key: 'shipped', label: 'Vertrokken', done: index >= 2, date: order.shippedOn ?? null,
+        text: index >= 2 ? (order.trackingReference ?? '') : 'nog bij de leverancier' },
+      { key: 'received', label: 'Ontvangen', done: index >= 3, date: order.receivedOn ?? null,
+        text: index >= 3 ? this.receivingLocationName(order.receivingLocationId)
+          : (order.expectedArrival ? 'verwacht ' + order.expectedArrival.split('-').reverse().join('/') : 'nog onderweg') },
+      { key: 'booked', label: 'Voorraad bijgeboekt', done: booked, date: null as string | null,
+        text: booked ? 'de stuks staan in de voorraad' : (index >= 3 ? 'nog bij te boeken' : 'na ontvangst') },
+    ];
+    const firstOpen = steps.find((step) => !step.done);
+    return steps.map((step) => ({ ...step, now: step === firstOpen }));
+  });
+
+  /** A file dropped on the dossier goes straight into the document sheet. */
+  dropDocument(event: DragEvent): void {
+    event.preventDefault();
+    const file = event.dataTransfer?.files?.[0] ?? null;
+    if (!file) return;
+    this.openDocument();
+    this.addingDocument.update((draft) => draft ? { ...draft, file } : draft);
   }
 
   /** Lines whose cost build-up is unfolded under the row. */
