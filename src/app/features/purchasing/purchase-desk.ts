@@ -1079,7 +1079,7 @@ type DeskRow =
     .desk-alert{margin:12px 16px 16px}.desk-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.desk-alert--tight .alert__icon{background:var(--warn);color:#fff}
 
     /* ---- body: table + rail */
-    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start;margin-top:14px}
+    .desk-body{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:16px;align-items:start;margin-top:14px}
     .desk-main{min-width:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--sh-1)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-pick__search{width:100%;margin-bottom:12px}
@@ -1096,13 +1096,13 @@ type DeskRow =
     .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
-    .desk-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
-    .desk-table thead th{padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-align:right;text-transform:uppercase;white-space:nowrap}
+    .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}
+    .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
     .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:auto;min-width:200px}.c-qty{width:70px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:112px;padding-top:12px!important;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
-    .desk-table--editing .c-price{width:200px}.desk-table--editing .c-act{width:40px}
+    .c-product{width:auto;min-width:200px}.c-qty{width:68px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:124px;padding-top:12px!important;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
+    .desk-table--editing .c-price{width:168px}.desk-table--editing .c-act{width:40px}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
@@ -1127,7 +1127,7 @@ type DeskRow =
     .c-qty b,.c-cartons b,.c-price>b{display:block;padding-top:2px;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
     .c-price{text-align:right}
     .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}
-    .desk-mini{min-height:34px;padding:0 3px;border:1px solid var(--line-strong);border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
+    .desk-mini{width:44px;min-width:0;min-height:34px;padding:0;border:1px solid var(--line-strong);text-align:center;border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
     .desk-mini--last{border-radius:0 var(--r-sm) var(--r-sm) 0}
     .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
     .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
@@ -1203,6 +1203,7 @@ type DeskRow =
     .desk-action span{display:grid;flex:1;min-width:0}.desk-action b{font-size:13px}.desk-action small{color:var(--muted);font-size:11px}.desk-action i{color:var(--muted);font-style:normal;font-size:18px}
     .desk-danger summary{padding:8px 0;color:var(--muted);font-size:12px;text-align:center;cursor:pointer}.desk-danger p{margin:0 0 8px;color:var(--muted);font-size:11px;text-align:center}
 
+    @media(max-width:1599px){.desk-body{grid-template-columns:minmax(0,1fr) 330px}}
     @media(max-width:1439px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
     @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{justify-content:flex-start;max-width:none}}
