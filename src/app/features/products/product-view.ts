@@ -39,6 +39,28 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
   template: `
     @if (product(); as product) {
 
+      <ng-template #seriesChips>
+                <div>
+                  @for (member of variantMembers(); track member.productId) {
+                    @if (member.productId === product.id) {
+                      <span class="product-variant-link product-variant-link--current" aria-current="page">
+                        @if (member.colourHex) {
+                          <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                        }
+                        {{ variantOptionLabel(member) }}
+                      </span>
+                    } @else {
+                      <a class="product-variant-link" [routerLink]="['/products', member.productId]">
+                        @if (member.colourHex) {
+                          <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
+                        }
+                        {{ variantOptionLabel(member) }}
+                      </a>
+                    }
+                  }
+                </div>
+      </ng-template>
+
       @if (desktop.active()) {
         <app-page-header [title]="product.name" [subtitle]="product.sku || ''"
                          [showBack]="true" [showBell]="false">
@@ -128,6 +150,12 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                   @if (product.variantSize) { <span>Maat {{ product.variantSize }}</span> }
                   @if (product.sku) { <span class="mono">{{ product.sku }}</span> }
                 </p>
+                @if (desktop.active() && variantMembers().length > 1) {
+                  <div class="variant-links variant-links--hero" role="group" aria-label="Productreeks">
+                    <b>Reeks</b>
+                    <ng-container *ngTemplateOutlet="seriesChips" />
+                  </div>
+                }
               </div>
               @if (desktop.active()) {
                 <span class="phero__status phero__status--top"
@@ -211,6 +239,37 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                   <span>nog niet bevestigd</span>
                 }
               </button>
+              @if (desktop.active()) {
+                <!-- Desktop: what is on the water, and the whole money line -
+                     landed cost, catalogue price and margin - as tiles, so the
+                     hero answers the questions the dossier used to hide. -->
+                @if (expected(); as exp) {
+                  <a class="phero__fact erp-workspace__fact" [routerLink]="['/purchasing', exp.orderIds[0]]"
+                     [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
+                    <i class="phero__fact-chev" aria-hidden="true"></i>
+                    <small class="erp-workspace__fact-label">Onderweg</small>
+                    <strong class="num">+{{ exp.quantity | num }}</strong>
+                    <span>{{ exp.expectedArrival ? 'verwacht ' + (exp.expectedArrival | dateNl) : exp.orderNumbers.join(', ') }}</span>
+                  </a>
+                } @else {
+                  <div class="phero__fact erp-workspace__fact phero__fact--still">
+                    <small class="erp-workspace__fact-label">Onderweg</small>
+                    <strong>—</strong>
+                    <span>niets besteld</span>
+                  </div>
+                }
+                <button class="phero__fact erp-workspace__fact" type="button" [class.phero__fact--open]="priceOpen()"
+                        [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
+                  <i class="phero__fact-chev" aria-hidden="true"></i>
+                  <small class="erp-workspace__fact-label">Kostprijs</small>
+                  @if (product.landedCostEur; as landed) {
+                    <strong class="num">{{ landed | eur: 2 }}</strong>
+                  } @else {
+                    <strong>—</strong>
+                  }
+                  <span>{{ product.landedCostEur ? 'geland, incl. transport en rechten' : 'nog geen kostprijs' }}</span>
+                </button>
+              }
               <!-- The price tile opens the build-up: every euro from the
                    factory price to the catalogue price. -->
               <button class="phero__fact erp-workspace__fact" type="button" [class.phero__fact--open]="priceOpen()"
@@ -222,7 +281,9 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                 } @else {
                   <strong>—</strong>
                 }
-                @if (margin(); as value) {
+                @if (desktop.active()) {
+                  <span>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs' : 'kostprijs + ' + (product.markupPct | num) + ' % opslag' }}</span>
+                } @else if (margin(); as value) {
                   <span class="phero__gain" [class.phero__gain--neg]="value.eur < 0">
                     marge {{ value.eur | eur: 2 }} · {{ value.pct }} %
                   </span>
@@ -231,7 +292,21 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
                 }
               </button>
               @if (desktop.active()) {
-                <button class="phero__fact erp-workspace__fact" type="button"
+                <button class="phero__fact erp-workspace__fact" type="button" [class.phero__fact--open]="priceOpen()"
+                        [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
+                  <i class="phero__fact-chev" aria-hidden="true"></i>
+                  <small class="erp-workspace__fact-label">Marge per stuk</small>
+                  @if (margin(); as value) {
+                    <strong class="num phero__gain" [class.phero__gain--neg]="value.eur < 0">{{ value.eur | eur: 2 }}</strong>
+                    <span>{{ value.pct }} % van de catalogusprijs</span>
+                  } @else {
+                    <strong>—</strong>
+                    <span>kostprijs of prijs ontbreekt</span>
+                  }
+                </button>
+              }
+              @if (desktop.active()) {
+                <button class="phero__fact phero__fact--text erp-workspace__fact" type="button"
                         (click)="scrollToDetailSection('product-publication')">
                   <i class="phero__fact-chev" aria-hidden="true"></i>
                   <small class="erp-workspace__fact-label">Publicatie</small>
@@ -241,45 +316,31 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
               }
             </div>
 
+            @if (!desktop.active()) {
             @if (expected(); as exp) {
               <a class="phero__expected" [routerLink]="['/purchasing', exp.orderIds[0]]"
                  [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
                 +{{ exp.quantity | num }} stuks onderweg{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›
               </a>
             }
+            }
 
             <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
           </section>
 
           @if (familyLoading()) {
-            <div class="variant-group-state" role="status">Productreeks laden…</div>
+            @if (!desktop.active()) {
+              <div class="variant-group-state" role="status">Productreeks laden…</div>
+            }
           } @else if (familyLoadError()) {
             <div class="variant-group-state variant-group-state--error" role="alert">
               <span>De productreeks is niet geladen.</span>
               <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
             </div>
-          } @else if (variantMembers().length > 1) {
+          } @else if (!desktop.active() && variantMembers().length > 1) {
             <section class="variant-links" aria-labelledby="variant-links-title">
               <b id="variant-links-title">Productreeks</b>
-              <div>
-                @for (member of variantMembers(); track member.productId) {
-                  @if (member.productId === product.id) {
-                    <span class="product-variant-link product-variant-link--current" aria-current="page">
-                      @if (member.colourHex) {
-                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                      }
-                      {{ variantOptionLabel(member) }}
-                    </span>
-                  } @else {
-                    <a class="product-variant-link" [routerLink]="['/products', member.productId]">
-                      @if (member.colourHex) {
-                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                      }
-                      {{ variantOptionLabel(member) }}
-                    </a>
-                  }
-                }
-              </div>
+              <ng-container *ngTemplateOutlet="seriesChips" />
             </section>
           }
 
@@ -1016,21 +1077,31 @@ import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-sta
 
     @media (min-width: 680px) {
       .phero { padding: 20px 22px; }
-      .phero__facts--photo { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(150px, 190px)); }
+      /* The desktop facts grid itself lives in styles.scss (six tiles beside the photo). */
+      .phero__fact { text-decoration: none; }
+      .phero__fact--still { padding-right: 12px; }
+      /* A worded value ("Nog niet compleet") wraps instead of being cut. */
+      .phero__fact--text strong { overflow: visible; white-space: normal; text-overflow: clip; line-height: 1.15; }
+      @media (max-width: 1199px) { .phero__facts--photo .phero__fact strong { font-size: 15px; } }
+      .variant-links--hero { margin-top: 10px; padding: 0; border: 0; background: transparent; }
+      .variant-links--hero > b { color: rgb(255 255 255 / 62%); }
+      .variant-links--hero .product-variant-link { border-color: rgb(255 255 255 / 28%);
+        background: rgb(255 255 255 / 8%); color: #fff; }
+      .variant-links--hero .product-variant-link:hover { background: rgb(255 255 255 / 16%); }
+      .variant-links--hero .product-variant-link--current { border-color: #fff; background: #fff; color: var(--ink); }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
       /* Desktop: one wide column for the dossier, a sticky side for stock and
-       carton - no step rail, no numbered cards: everything is in view. */
-    .details-grid { grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 380px); gap: 16px; align-items: start; }
-    .details-grid > .details-col { display: grid; gap: 14px; }
-    .details-grid > .erp-workspace__aside { position: sticky; top: calc(var(--appbar-h, 62px) + 14px); }
-    #stock-card { order: 2; }
-    .omdoos-card { order: 3; }
-    @media (min-width: 1200px) {
-      .details-grid > .erp-workspace__main .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    }
-    .product-detail-nav { display: none; }
-    .info-card__icon { display: none; }
-      .product-dossier-card, .agreement-card { grid-column: 1 / -1; }
+         carton - no step rail, no numbered cards: everything is in view. */
+      .details-grid { grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 380px); gap: 16px; align-items: start; }
+      .details-grid > .details-col { display: grid; gap: 14px; }
+      .details-grid > .erp-workspace__aside { position: sticky; top: calc(var(--appbar-h, 62px) + 14px); }
+      #stock-card { order: 2; }
+      .omdoos-card { order: 3; }
+      @media (min-width: 1200px) {
+        .details-grid > .erp-workspace__main .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+      .product-detail-nav { display: none; }
+      .info-card__icon { display: none; }
     }
     @media (min-width: 680px) and (max-width: 759px) {
       .phero__facts--photo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
