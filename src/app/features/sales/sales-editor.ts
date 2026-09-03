@@ -1270,19 +1270,19 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <textarea class="textarea" id="cancel-message" rows="3" [ngModel]="cancelMessage()"
                         (ngModelChange)="cancelMessage.set($event)" placeholder="bijv. de gevraagde kleur is niet meer leverbaar; u krijgt een nieuwe offerte"></textarea>
             </div>
-            @if (data.order.sentAt) {
-              <label class="switch-row" [class.switch-row--on]="cancelNotify()">
-                <span class="switch-row__copy">
-                  <b>Klant verwittigen per e-mail</b>
-                  <small>{{ customerEmail() ? 'Naar ' + customerEmail() + ', met de link naar de offertepagina, waar ze als geannuleerd staat.' : 'De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is.' }}</small>
-                </span>
-                <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="cancelNotify()"
-                       [disabled]="!customerEmail()" [ngModel]="cancelNotify()" (ngModelChange)="cancelNotify.set($event)" />
-                <span class="switch-row__track" aria-hidden="true"><i></i></span>
-              </label>
-            } @else {
-              <p class="small muted">De offerte is nog niet verstuurd; de klant hoeft niets te horen.</p>
-            }
+            <label class="switch-row" [class.switch-row--on]="cancelNotify()">
+              <span class="switch-row__copy">
+                <b>Klant verwittigen per e-mail</b>
+                <small>
+                  @if (!customerEmail()) { De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is. }
+                  @else if (data.order.sentAt) { Naar {{ customerEmail() }}, met de link naar de offertepagina, waar ze als geannuleerd staat. }
+                  @else { De aanvraag is nog nooit verstuurd. De klant krijgt een mail dat zijn aanvraag geannuleerd is en er geen offerte volgt, met een link naar de pagina. }
+                </small>
+              </span>
+              <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="cancelNotify()"
+                     [disabled]="!customerEmail()" [ngModel]="cancelNotify()" (ngModelChange)="cancelNotify.set($event)" />
+              <span class="switch-row__track" aria-hidden="true"><i></i></span>
+            </label>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="cancelSheet.set(false)">Terug</button>
@@ -2746,7 +2746,7 @@ export class SalesEditor {
    */
   openCancel(): void {
     this.cancelMessage.set('');
-    this.cancelNotify.set(!!this.customerEmail() && !!this.view()?.order.sentAt);
+    this.cancelNotify.set(!!this.customerEmail());
     this.cancelSheet.set(true);
   }
 
@@ -2755,7 +2755,7 @@ export class SalesEditor {
     if (!data || this.busy()) return;
     this.busy.set(true);
     try {
-      const notify = this.cancelNotify() && !!data.order.sentAt && !!this.customerEmail();
+      const notify = this.cancelNotify() && !!this.customerEmail();
       this.adopt(await this.sales.cancelQuote(data.order.id, this.cancelMessage(), notify));
       this.cancelSheet.set(false);
       this.ui.toast(notify ? 'Offerte geannuleerd; de klant is verwittigd' : 'Offerte geannuleerd');

@@ -180,15 +180,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             }
           </div>
 
-          <div class="product-editor-hero__actions">
-            @if (!isNew()) {
+          <!-- Saving lives in the page header alone; the hero only offers the way back to the view. -->
+          @if (!isNew()) {
+            <div class="product-editor-hero__actions">
               <a class="btn erp-workspace__secondary" [routerLink]="['/products', draft().id]">Bekijken</a>
-            }
-            <button class="btn btn--primary erp-workspace__primary" type="button"
-                    [disabled]="saveBusy()" (click)="save()">
-              {{ saveActionLabel() }}
-            </button>
-          </div>
+            </div>
+          }
         </section>
       </div>
     </div>
