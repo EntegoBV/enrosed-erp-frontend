@@ -199,10 +199,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <div class="subnav__rail erp-workspace__nav-rail">
         @for (tab of visibleTabs(); track tab.id) {
           <button class="erp-workspace__nav-item" type="button" [class.active]="activeTab() === tab.id"
+                  [class.is-done]="tabState(tab.id) === 'done'" [class.is-warn]="tabState(tab.id) === 'warn'"
                   [attr.aria-current]="activeTab() === tab.id ? 'location' : null"
                   (click)="showTab(tab.id)">
-            <span class="erp-workspace__nav-index">{{ $index + 1 }}</span>
-            <span>{{ tab.label }}</span>
+            <span class="erp-workspace__nav-index">{{ tabState(tab.id) === 'done' ? '✓' : $index + 1 }}</span>
+            <span>{{ tab.label }}@if (desktop.active() && tabHint(tab.id); as hint) { <small>{{ hint }}</small> }</span>
           </button>
         }
       </div>
@@ -1325,13 +1326,30 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .editor-canvas { display: block; width: 100%; max-width: 920px; margin: 0 auto; }
     /* Desktop: the section rail stands to the left of the form as a jump
        list, the form itself gets the width a desk has. */
+    /* Desktop: the sections as a stepper to the right of the form - a
+       tick where a section is complete, a count where something is
+       missing - and the form gets the width a desk has. */
     @media (min-width: 1100px) {
-      :host { display: grid; grid-template-columns: 200px minmax(0, 1fr); align-items: start; }
+      :host { display: grid; grid-template-columns: minmax(0, 1fr) 232px; grid-auto-flow: row dense; align-items: start; }
       :host > * { grid-column: 1 / -1; }
-      :host > .subnav.erp-workspace__nav { grid-column: 1; align-self: start; top: calc(var(--appbar-h) + 14px); margin-top: 14px; padding-left: 16px; }
-      :host > .product-editor-page { grid-column: 2; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-rail { flex-direction: column; gap: 4px; padding: 0; overflow: visible; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item { width: 100%; justify-content: flex-start; }
+      :host > .product-editor-page { grid-column: 1; }
+      :host > .subnav.erp-workspace__nav { grid-column: 2; align-self: start; top: calc(var(--appbar-h) + 14px);
+        margin: 14px 24px 0 0; padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
+      .subnav.erp-workspace__nav .erp-workspace__nav-rail { flex-direction: column; gap: 0; padding: 0; overflow: visible; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item { position: relative; width: 100%; justify-content: flex-start; gap: 10px;
+        min-height: 44px; padding: 6px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); box-shadow: none; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item::before { content: ''; position: absolute; left: 21px; top: 36px; bottom: -8px; width: 2px; background: var(--line); }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item:last-child::before { display: none; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-done::before { background: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item:hover { background: var(--surface-2); }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item.active { background: var(--rose-soft); color: var(--rose-dark); }
+      .subnav.erp-workspace__nav .erp-workspace__nav-index { position: relative; z-index: 1; width: 24px; height: 24px; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 800; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-done .erp-workspace__nav-index { border-color: var(--ok); background: var(--ok); color: #fff; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-warn .erp-workspace__nav-index { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item.active .erp-workspace__nav-index { border-color: var(--rose); background: var(--rose); color: #fff; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child { display: grid; gap: 1px; min-width: 0; font-size: 12.5px; font-weight: 650; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child small { color: var(--muted); font-size: 10.5px; font-weight: 500; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-warn > span:last-child small { color: var(--warn); font-weight: 650; }
       .editor-canvas { max-width: 1120px; margin: 0; }
     }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
@@ -3211,32 +3229,51 @@ export class ProductEditor implements OnDestroy {
     return (event.target as HTMLInputElement).value.toUpperCase();
   }
 
+  /** What still has to be filled in before the product can be saved, per section. */
+  readonly missingFields = computed(() => {
+    const draft = this.draft();
+    const missing: { tab: string; field: string; label: string }[] = [];
+    if (!draft.supplierId) missing.push({ tab: 'identity', field: 'p-supplier', label: 'leverancier' });
+    if (!draft.name.trim()) missing.push({ tab: 'identity', field: 'p-name', label: 'productnaam' });
+    if (!(draft.colour ?? '').trim()) missing.push({ tab: 'identity', field: 'p-colour', label: 'kleur' });
+    if ((draft.carton.piecesPerCarton ?? 0) <= 0 && this.autoCartonPieces() === null) {
+      missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton (of vul de afmetingen in)' });
+    }
+    if (draft.packaging.kind === 'DISPLAY' && !((draft.packaging.piecesPerUnit ?? 0) >= 1)) {
+      missing.push({ tab: 'identity', field: 'p-packaging-pieces', label: 'stuks in de display' });
+    }
+    if (this.priceStrategy() === 'FIXED' && (draft.fixedSalesPriceEur ?? 0) <= 0) {
+      missing.push({ tab: 'sales', field: 'p-price', label: 'vaste verkoopprijs (hoger dan € 0)' });
+    }
+    return missing;
+  });
+
+  private static readonly CHECKED_TABS = new Set(['identity', 'packaging', 'sales']);
+
+  /** The stepper's verdict per section: done, something missing, or nothing to check. */
+  tabState(tab: string): 'done' | 'warn' | 'plain' {
+    if (this.missingFields().some((item) => item.tab === tab)) return 'warn';
+    return ProductEditor.CHECKED_TABS.has(tab) ? 'done' : 'plain';
+  }
+
+  tabHint(tab: string): string {
+    const count = this.missingFields().filter((item) => item.tab === tab).length;
+    if (count) return `${count} veld${count === 1 ? '' : 'en'} ontbreek${count === 1 ? 't' : 'en'}`;
+    return ProductEditor.CHECKED_TABS.has(tab) ? 'compleet' : '';
+  }
+
   async save(): Promise<void> {
     if (this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving()) return;
     /* Every reason not to save is said out loud and the screen jumps to
        the field - a greyed-out button explained nothing. */
-    const missing: { tab: string; field: string; label: string }[] = [];
-    if (!this.draft().supplierId) missing.push({ tab: 'identity', field: 'p-supplier', label: 'leverancier' });
-    if (!this.draft().name.trim()) missing.push({ tab: 'identity', field: 'p-name', label: 'productnaam' });
-    if (!(this.draft().colour ?? '').trim()) missing.push({ tab: 'identity', field: 'p-colour', label: 'kleur' });
-    if ((this.draft().carton.piecesPerCarton ?? 0) <= 0) {
-      const derivedPieces = this.autoCartonPieces();
-      if (derivedPieces !== null) {
-        /* Left empty on purpose: the sizes already say what fits. */
-        this.patchCarton({ piecesPerCarton: derivedPieces });
-      } else {
-        missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton (of vul de afmetingen in)' });
-      }
+    if ((this.draft().carton.piecesPerCarton ?? 0) <= 0 && this.autoCartonPieces() !== null) {
+      /* Left empty on purpose: the sizes already say what fits. */
+      this.patchCarton({ piecesPerCarton: this.autoCartonPieces() });
     }
     if (!this.draft().carton.weightKg && this.autoCartonWeight() !== null) {
       this.patchCarton({ weightKg: this.autoCartonWeight() });
     }
-    if (this.draft().packaging.kind === 'DISPLAY' && !((this.draft().packaging.piecesPerUnit ?? 0) >= 1)) {
-      missing.push({ tab: 'identity', field: 'p-packaging-pieces', label: 'stuks in de display' });
-    }
-    if (this.priceStrategy() === 'FIXED' && (this.draft().fixedSalesPriceEur ?? 0) <= 0) {
-      missing.push({ tab: 'sales', field: 'p-price', label: 'vaste verkoopprijs (hoger dan € 0)' });
-    }
+    const missing = this.missingFields();
     if (missing.length) {
       const first = missing[0];
       this.ui.toast(`Nog invullen: ${missing.map((m) => m.label).join(', ')}.`, 'err');

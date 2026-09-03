@@ -84,9 +84,10 @@ export interface SupplierAgreementFlushResult {
           [disabled]="disabled() || !supplierId()"
           [ngModel]="note()"
           (ngModelChange)="changeNote($event)"
+          (keydown)="noteKeydown($event)"
           placeholder="Example: Match the approved colour sample. Centre the logo and use cardboard corner protection."
         ></textarea>
-        <small>Printed below this product in the supplier order agreement. Start a line with "- " for a point, indent it two spaces for a sub-point.</small>
+        <small>Printed below this product in the supplier order agreement. "- " starts a point, Enter continues the list, Tab makes a sub-point (Shift+Tab back). Refer to a photo as "Reference 2".</small>
       </label>
 
       <section
@@ -155,10 +156,13 @@ export interface SupplierAgreementFlushResult {
                     [alt]="photo.caption || photo.originalFilename"
                     loading="lazy"
                   />
-                  <span>PDF {{ i + 1 }}</span>
+                  <span>Reference {{ i + 1 }}</span>
                 </button>
                 <div class="photo-copy">
                   <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
+                  <button class="refer-link" type="button" [disabled]="disabled()"
+                          [title]="'Zet \u201cReference ' + (i + 1) + '\u201d in de tekst op de plek van de cursor'"
+                          (click)="insertReference(i + 1)">↪ Verwijs in de tekst als Reference {{ i + 1 }}</button>
                   <label>
                     <span
                       >English caption
@@ -471,6 +475,9 @@ export interface SupplierAgreementFlushResult {
     }
     .photo-error button,
     .retry-upload,
+    .refer-link { align-self: flex-start; margin: 2px 0 4px; padding: 0; border: 0; background: none; color: var(--rose-dark); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+    .refer-link:hover:enabled { text-decoration: underline; }
+    .refer-link:disabled { opacity: .5; cursor: default; }
     .save-caption {
       border: 0;
       border-radius: 8px;
@@ -771,6 +778,59 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
 
   changeNote(value: string): void {
     this.noteChange.emit(value.trim() ? value : null);
+  }
+
+  /**
+   * The note behaves like a list editor: Enter after a point starts the
+   * next point at the same depth (an empty point ends the list), Tab
+   * indents the line or selection into a sub-point, Shift+Tab backs out.
+   */
+  noteKeydown(event: KeyboardEvent): void {
+    const area = event.target as HTMLTextAreaElement;
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      this.indentLines(area, event.shiftKey ? -1 : 1);
+      return;
+    }
+    if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+    const { value, selectionStart, selectionEnd } = area;
+    const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1;
+    const point = /^(\s*)([-*\u2022]\s+)(.*)$/.exec(value.slice(lineStart, selectionStart));
+    if (!point) return;
+    event.preventDefault();
+    if (!point[3].trim() && selectionStart === selectionEnd) {
+      area.setRangeText('', lineStart, selectionStart, 'end');
+    } else {
+      area.setRangeText('\n' + point[1] + point[2], selectionStart, selectionEnd, 'end');
+    }
+    this.changeNote(area.value);
+  }
+
+  private indentLines(area: HTMLTextAreaElement, direction: -1 | 1): void {
+    const { value, selectionStart, selectionEnd } = area;
+    const start = value.lastIndexOf('\n', selectionStart - 1) + 1;
+    const lineEnd = value.indexOf('\n', selectionEnd);
+    const end = lineEnd === -1 ? value.length : lineEnd;
+    const before = value.slice(start, end).split('\n');
+    const after = before.map((line) => direction > 0 ? '  ' + line : line.replace(/^(\t| {1,2})/, ''));
+    const firstDelta = after[0].length - before[0].length;
+    const totalDelta = after.join('\n').length - before.join('\n').length;
+    area.setRangeText(after.join('\n'), start, end, 'preserve');
+    area.setSelectionRange(Math.max(start, selectionStart + firstDelta), Math.max(start, selectionEnd + totalDelta));
+    this.changeNote(area.value);
+  }
+
+  /** Puts "Reference n" in the note where the cursor is, or at the end. */
+  insertReference(number: number): void {
+    const area = document.getElementById('supplier-agreement-note') as HTMLTextAreaElement | null;
+    if (!area) return;
+    const label = `Reference ${number}`;
+    const at = area.selectionStart ?? area.value.length;
+    const before = area.value.slice(0, at);
+    const glue = !before || /\s$/.test(before) ? '' : ' ';
+    area.setRangeText(glue + label, at, area.selectionEnd ?? at, 'end');
+    area.focus();
+    this.changeNote(area.value);
   }
 
   captionDraft(photo: ProductSupplierAgreementPhoto): string {

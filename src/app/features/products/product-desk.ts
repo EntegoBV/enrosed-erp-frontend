@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
 import { messageOf } from '../../core/api/errors';
@@ -64,7 +65,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, PageHeader,
+    NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, PageHeader,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -550,7 +551,15 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               [supplierName]="supplierName()" [note]="noteDraft()" [disabled]="noteSaving()"
               (noteChange)="noteDraft.set($event)" />
             <div class="pd-actions pd-actions--end">
-              <span class="pd-hint pd-hint--inline">Begin een regel met "- " voor een punt, spring twee spaties in voor een subpunt.</span>
+              @if (agreementSiblings().length; as others) {
+                <label class="pd-share">
+                  <input type="checkbox" [checked]="shareAcrossColours()" (change)="setShareAcrossColours($any($event.target).checked)" />
+                  <span><b>Ook voor de andere kleur{{ others === 1 ? '' : 'en' }} van deze reeks</b>
+                    <small>{{ siblingNames() }} krijg{{ others === 1 ? 't' : 'en' }} dezelfde tekst en foto’s</small></span>
+                </label>
+              } @else {
+                <span class="pd-hint pd-hint--inline">"- " begint een punt, Enter gaat verder, Tab maakt een subpunt.</span>
+              }
               <button class="btn btn--sm" type="button" [disabled]="noteSaving()" (click)="cancelAgreement()">Annuleren</button>
               <button class="btn btn--sm btn--primary" type="button" [disabled]="noteSaving() || !agreementDirty()" (click)="saveAgreement(product)">{{ noteSaving() ? 'Bezig…' : 'Bewaren' }}</button>
             </div>
@@ -566,13 +575,13 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 <div class="pd-note" lang="en">
                   @for (block of noteBlocks(); track $index) {
                     @if (block.kind === 'p') {
-                      <p>{{ block.text }}</p>
+                      <p><ng-container *ngTemplateOutlet="noteText; context: { $implicit: block.text }" /></p>
                     } @else {
                       <ul>
                         @for (item of block.items; track $index) {
-                          <li>{{ item.text }}
+                          <li><ng-container *ngTemplateOutlet="noteText; context: { $implicit: item.text }" />
                             @if (item.children.length) {
-                              <ul>@for (sub of item.children; track $index) { <li>{{ sub }}</li> }</ul>
+                              <ul>@for (sub of item.children; track $index) { <li><ng-container *ngTemplateOutlet="noteText; context: { $implicit: sub }" /></li> }</ul>
                             }
                           </li>
                         }
@@ -593,7 +602,8 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                     <button class="pd-ref" type="button" role="listitem" (click)="agreementLightbox.set($index)"
                             [attr.aria-label]="'Referentiefoto ' + ($index + 1) + ' vergroten'">
                       <img [appAuthSrc]="photo.viewUrl" alt="" loading="lazy" />
-                      <span>{{ photo.caption || 'Foto ' + ($index + 1) }}</span>
+                      <i>Reference {{ $index + 1 }}</i>
+                      <span>{{ photo.caption || photo.originalFilename }}</span>
                     </button>
                   }
                 </div>
@@ -602,6 +612,16 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
           </section>
         }
       </div>
+
+      <ng-template #noteText let-text>
+        @for (part of noteParts(text); track $index) {
+          @if (part.ref !== null && part.ref <= agreementPhotos().length) {
+            <button class="pd-note__ref" type="button" [title]="'Reference ' + part.ref + ' bekijken'" (click)="agreementLightbox.set(part.ref - 1)">{{ part.text }}</button>
+          } @else {
+            {{ part.text }}
+          }
+        }
+      </ng-template>
 
       <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
       <app-product-supplier-agreement-photo-viewer [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
@@ -701,8 +721,12 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-note p{margin:0;white-space:pre-line}.pd-note p+p,.pd-note ul+p,.pd-note p+ul{margin-top:6px}
     .pd-note ul{margin:0;padding-left:18px}.pd-note ul ul{margin-top:2px;padding-left:16px;color:var(--muted)}.pd-note li{margin:2px 0}
     .pd-refs{display:flex;flex-wrap:wrap;gap:10px}
-    .pd-ref{display:grid;gap:4px;width:118px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left;cursor:zoom-in}
+    .pd-ref{position:relative;display:grid;gap:3px;width:118px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;text-align:left;cursor:zoom-in}
     .pd-ref img{width:118px;height:118px;border:1px solid var(--line);border-radius:12px;object-fit:cover;background:var(--surface-2)}.pd-ref span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pd-ref i{position:absolute;top:6px;left:6px;padding:2px 7px;border-radius:999px;background:rgb(16 13 12/.72);color:#fff;font-size:10px;font-style:normal;font-weight:750}
+    .pd-note__ref{display:inline;padding:0 5px;border:1px solid color-mix(in srgb,var(--rose) 35%,transparent);border-radius:999px;background:var(--surface);color:var(--rose-dark);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}.pd-note__ref:hover{background:var(--rose-soft)}
+    .pd-share{display:flex;flex:1;align-items:center;gap:10px;min-width:0;cursor:pointer}.pd-share input{width:18px;height:18px;flex:none;accent-color:var(--rose)}
+    .pd-share span{display:grid;min-width:0;line-height:1.25}.pd-share b{font-size:12.5px}.pd-share small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
 
     @media(max-width:1180px){
       .pd-product{grid-template-columns:minmax(180px,220px) minmax(0,1fr)}.pd-product>div:last-child{grid-column:1/-1}
@@ -776,6 +800,45 @@ export class ProductDesk extends ProductView {
     this.retrySupplierAgreement();
   }
 
+  /** "Reference 2" in the note is a link to that photo. */
+  noteParts(text: string): { text: string; ref: number | null }[] {
+    const parts: { text: string; ref: number | null }[] = [];
+    const pattern = /\b(?:reference|ref\.?|photo|foto)\s*#?\s*(\d{1,2})\b/gi;
+    let last = 0;
+    for (const match of text.matchAll(pattern)) {
+      const at = match.index ?? 0;
+      if (at > last) parts.push({ text: text.slice(last, at), ref: null });
+      parts.push({ text: match[0], ref: Number(match[1]) });
+      last = at + match[0].length;
+    }
+    if (last < text.length) parts.push({ text: text.slice(last), ref: null });
+    return parts;
+  }
+
+  /* ---- the same agreement for every colour of the series, when asked */
+  private static readonly SHARE_KEY = 'enrosed.agreements.share-colours';
+  readonly shareAcrossColours = signal<boolean>((() => {
+    try { return localStorage.getItem(ProductDesk.SHARE_KEY) === '1'; } catch { return false; }
+  })());
+
+  setShareAcrossColours(on: boolean): void {
+    this.shareAcrossColours.set(on);
+    try { localStorage.setItem(ProductDesk.SHARE_KEY, on ? '1' : '0'); } catch { /* remembered for this visit only */ }
+  }
+
+  /** The other colours of the series at the same supplier: agreements are per supplier. */
+  readonly agreementSiblings = computed(() => {
+    const product = this.product();
+    if (!product) return [];
+    return this.variantMembers()
+      .filter((member) => member.productId !== product.id)
+      .map((member) => this.catalogueProduct(member.productId))
+      .filter((sibling): sibling is Product => !!sibling && sibling.id !== null && sibling.supplierId === product.supplierId);
+  });
+
+  readonly siblingNames = computed(() => this.agreementSiblings()
+    .map((sibling) => sibling.colour || sibling.variantSize || sibling.sku || String(sibling.id)).join(', '));
+
   async saveAgreement(product: Product): Promise<void> {
     if (product.id === null) return;
     this.noteSaving.set(true);
@@ -783,14 +846,39 @@ export class ProductDesk extends ProductView {
       const note = (this.noteDraft() ?? '').trim();
       const saved = await this.catalog.updateProduct(product.id, { ...product, supplierNote: note || null });
       this.product.set(saved);
+      const shared = this.shareAcrossColours() ? await this.shareAgreement(product.id, note || null) : 0;
       this.agreementEditing.set(false);
       this.retrySupplierAgreement();
-      this.ui.toast('Afspraken bewaard');
+      this.ui.toast(shared ? `Afspraken bewaard, ook voor ${shared} andere kleur${shared === 1 ? '' : 'en'}` : 'Afspraken bewaard');
     } catch (failure) {
       this.ui.toast(messageOf(failure, 'Bewaren mislukt'), 'err');
     } finally {
       this.noteSaving.set(false);
     }
+  }
+
+  /**
+   * Copies the note and the reference photos to the other colours: the
+   * note replaces theirs, photos they do not have yet (same file name and
+   * size) are added with their caption. Their own extra photos stay.
+   */
+  private async shareAgreement(productId: number, note: string | null): Promise<number> {
+    const photos = await this.catalog.supplierAgreementPhotos(productId);
+    let shared = 0;
+    for (const sibling of this.agreementSiblings()) {
+      const id = sibling.id!;
+      const fresh = await this.catalog.product(id);
+      await this.catalog.updateProduct(id, { ...fresh, supplierNote: note });
+      const theirs = await this.catalog.supplierAgreementPhotos(id);
+      for (const photo of photos) {
+        if (theirs.some((own) => own.originalFilename === photo.originalFilename && own.sizeBytes === photo.sizeBytes)) continue;
+        const blob = await this.catalog.photoBlob(photo.viewUrl);
+        await this.catalog.uploadSupplierAgreementPhoto(id,
+          new File([blob], photo.originalFilename, { type: photo.contentType }), photo.caption);
+      }
+      shared++;
+    }
+    return shared;
   }
 
   /* ---- publication points, grouped by where they are fixed */
