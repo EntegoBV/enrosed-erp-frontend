@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { AnalyticsApi, WebsiteAnalyticsReport } from '../../core/api/analytics-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import {
@@ -20,9 +21,10 @@ import { isWebsiteQuoteRequest } from '../sales/quote-status';
 import { PlannerCards, PlannerMilestone } from './planner-cards';
 
 /**
- * The operational front door: what needs an answer, what is planned next and
- * three honest business totals. Detailed analysis deliberately lives under
- * /analyses so the start screen stays calm on a phone as well as a desktop.
+ * The operational front door: what needs an answer, the key figures - sales
+ * pipeline, purchases on the water, stock cost and the week on the website -
+ * and what is planned next. On a wide screen the figures sit beside the work
+ * so everything is on one screen; detailed analysis lives under /analyses.
  */
 @Component({
   selector: 'app-dashboard-home',
@@ -73,7 +75,7 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
           </section>
         }
 
-        <div class="home-primary-grid">
+        <div class="home-layout">
           <section class="card work-card" aria-labelledby="home-work-title">
             <header class="work-card__head">
               <div>
@@ -153,10 +155,7 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
             </div>
           </section>
 
-          <app-planner-cards [compact]="true" [milestones]="purchaseMilestones()" />
-        </div>
-
-        <section class="home-section" aria-labelledby="home-kpi-title">
+          <aside class="home-side" aria-labelledby="home-kpi-title">
           <header class="home-section__head">
             <div>
               <span class="home-eyebrow">Kerncijfers</span>
@@ -166,6 +165,38 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
           </header>
 
           <div class="home-kpis">
+            <a class="home-web" routerLink="/analyses/website" aria-label="Websitebezoekers van de laatste zeven dagen; open de analyse">
+              <span class="home-web__head">
+                <span class="home-kpi__icon"><app-icon name="countries" [size]="17" /></span>
+                <span class="home-kpi__label">Website · 7 dagen</span>
+                <span class="home-web__chev" aria-hidden="true">›</span>
+              </span>
+              @if (website(); as web) {
+                <span class="home-web__body">
+                  <span class="home-web__figure">
+                    <strong>{{ web.totals.visitors | num }}</strong>
+                    <small>{{ web.totals.visitors === 1 ? 'unieke bezoeker' : 'unieke bezoekers' }} · {{ web.totals.visits | num }} {{ web.totals.visits === 1 ? 'bezoek' : 'bezoeken' }}</small>
+                  </span>
+                  <span class="home-web__spark" aria-hidden="true">
+                    @for (bar of websiteBars(); track bar.date) {
+                      <i [style.height.%]="bar.height" [class.home-web__bar--today]="bar.today" [title]="bar.label"></i>
+                    }
+                  </span>
+                </span>
+                @if (web.totals.visits) {
+                  <span class="home-web__facts">
+                    <span><small>Vandaag</small><b>{{ websiteToday() | num }}</b></span>
+                    <span><small>Voorop</small><b>{{ websiteTopCountry() || '—' }}</b></span>
+                    <span><small>Bron</small><b>{{ web.sources[0]?.source || '—' }}</b></span>
+                  </span>
+                } @else {
+                  <span class="home-web__empty">Nog geen bezoeken gemeten deze week.</span>
+                }
+              } @else {
+                <span class="home-web__body"><span class="home-web__figure"><strong>—</strong><small>Nog niet beschikbaar</small></span></span>
+              }
+            </a>
+
             <a class="home-kpi home-kpi--dark" routerLink="/analyses/sales">
               <span class="home-kpi__icon"><app-icon name="sales" [size]="17" /></span>
               <span class="home-kpi__label">Verkooppijplijn</span>
@@ -205,13 +236,16 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
               <span class="home-kpi__chev" aria-hidden="true">›</span>
             </a>
           </div>
-        </section>
 
-        <a class="home-market-link" routerLink="/analyses/market">
-          <span class="home-market-link__icon"><app-icon name="analytics" [size]="17" /></span>
-          <span><b>Valuta en containermarkt</b><small>Koersen, containertarieven en historie staan rustig bij Analyses.</small></span>
-          <i aria-hidden="true">›</i>
-        </a>
+          <a class="home-market-link" routerLink="/analyses/market">
+            <span class="home-market-link__icon"><app-icon name="analytics" [size]="17" /></span>
+            <span><b>Valuta en containermarkt</b><small>Koersen, containertarieven en historie bij Analyses.</small></span>
+            <i aria-hidden="true">›</i>
+          </a>
+          </aside>
+
+          <app-planner-cards class="home-planner" [compact]="true" [milestones]="purchaseMilestones()" />
+        </div>
       }
     </main>
   `,
@@ -240,7 +274,29 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
     .home-warning strong { display: block; font-size: 12.5px; }
     .home-warning p { margin-top: 1px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
 
-    .home-primary-grid { display: grid; gap: 12px; align-items: start; }
+    .home-layout { display: grid; gap: 14px; align-items: start; }
+    .home-side { display: grid; gap: 8px; min-width: 0; }
+    .home-side .home-section__head { margin-bottom: 1px; }
+    .home-planner { display: block; min-width: 0; }
+
+    /* The website tile: the week in one glance, the whole tile a link to the analysis. */
+    .home-web { display: grid; gap: 10px; padding: 12px 13px 13px; border: 1px solid var(--line); border-radius: var(--r);
+      background: var(--surface); color: inherit; text-decoration: none; box-shadow: var(--sh-1); }
+    .home-web:hover { border-color: var(--rose-line); }
+    .home-web__head { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 9px; }
+    .home-web__chev { color: var(--muted-2); font-size: 17px; }
+    .home-web__body { display: grid; grid-template-columns: minmax(0,1fr) 92px; align-items: end; gap: 12px; }
+    .home-web__figure { display: grid; min-width: 0; }
+    .home-web__figure strong { font-size: 24px; line-height: 1.05; letter-spacing: -.02em; }
+    .home-web__figure small { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .home-web__spark { display: flex; align-items: flex-end; gap: 3px; height: 40px; }
+    .home-web__spark i { flex: 1 1 0; min-height: 3px; border-radius: 3px 3px 0 0; background: rgb(143 41 66 / 28%); }
+    .home-web__spark i.home-web__bar--today { background: var(--rose); }
+    .home-web__facts { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; padding-top: 9px; border-top: 1px solid var(--line); }
+    .home-web__facts>span { display: grid; min-width: 0; }
+    .home-web__facts small { color: var(--muted); font-size: 9px; font-weight: 780; letter-spacing: .06em; text-transform: uppercase; }
+    .home-web__facts b { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .home-web__empty { color: var(--muted); font-size: 11px; }
     .work-card { overflow: hidden; }
     .work-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
       padding: 15px 16px 12px; border-bottom: 1px solid var(--line); }
@@ -272,7 +328,6 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
     .work-empty p { margin-top: 2px; color: var(--muted); font-size: 11px; }
     .work-empty--unknown>span { background: var(--warn-soft); color: var(--warn); }
 
-    .home-section { margin-top: 24px; }
     .home-section__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 9px;
       padding-inline: 2px; }
     .home-section__head>a { color: var(--rose-dark); font-size: 11.5px; font-weight: 700; text-decoration: none; }
@@ -294,7 +349,7 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
     .home-kpi--dark :is(.home-kpi__label,small) { color: #cfc7c2; }
 
     .home-market-link { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px;
-      margin-top: 14px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
+      margin-top: 4px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
       color: inherit; text-decoration: none; }
     .home-market-link:hover { border-color: var(--rose-line); }
     .home-market-link__icon { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 9px;
@@ -304,13 +359,18 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
     .home-market-link small { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
     .home-market-link i { color: var(--muted-2); font-size: 17px; font-style: normal; }
 
-    @media (min-width: 760px) {
+    @media (min-width: 760px) and (max-width: 999.98px) {
       .home-page { padding-bottom: 38px; }
-      .home-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .home-kpi { min-height: 108px; align-content: center; }
+      .home-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .home-web { grid-column: 1 / -1; }
     }
     @media (min-width: 1000px) {
-      .home-primary-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+      .home-page { padding-bottom: 38px; }
+      /* The figures take a fixed column so the agenda and its task list keep their width. */
+      .home-layout { grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
+      .work-card { grid-column: 1; grid-row: 1; }
+      .home-planner { grid-column: 1; grid-row: 2; }
+      .home-side { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: calc(var(--appbar-h) + 14px); }
     }
     @media (max-width: 579.98px) {
       .home-pins { display: grid; }
@@ -318,6 +378,9 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
       .home-warning { grid-template-columns: auto minmax(0,1fr); }
       .home-warning .btn { grid-column: 1 / -1; width: 100%; }
       .work-row { grid-template-columns: auto minmax(0,1fr) auto auto; gap: 8px; }
+    }
+    @media (min-width: 1240px) {
+      .home-layout { grid-template-columns: minmax(0, 1fr) 380px; }
     }
     @media (prefers-reduced-motion: reduce) {
       .work-row,.home-kpi,.home-market-link { transition: none; }
@@ -329,7 +392,9 @@ export class DashboardHome {
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
   private readonly planner = inject(PlannerStore);
+  private readonly analytics = inject(AnalyticsApi);
 
+  readonly website = signal<WebsiteAnalyticsReport | null>(null);
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly purchases = signal<PurchaseOrderView[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
@@ -406,6 +471,29 @@ export class DashboardHome {
   readonly inventoryUnknownSkuCount = computed(() => this.products()
     .filter((product) => product.inventoryKnown !== true).length);
 
+  /* The week on the website: seven bars, today darkest. */
+  readonly websiteBars = computed(() => {
+    const days = this.website()?.perDay ?? [];
+    const max = Math.max(1, ...days.map((day) => day.visitors));
+    return days.map((day, index) => ({
+      date: day.date,
+      height: Math.max(6, Math.round((day.visitors / max) * 100)),
+      today: index === days.length - 1,
+      label: `${day.date.split('-').reverse().join('/')}: ${day.visitors} bezoekers, ${day.visits} bezoeken`,
+    }));
+  });
+  readonly websiteToday = computed(() => this.website()?.perDay.at(-1)?.visitors ?? 0);
+  readonly websiteTopCountry = computed(() => {
+    const first = this.website()?.countries.find((row) => row.country);
+    if (!first?.country) return null;
+    const flag = [...first.country].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('');
+    try {
+      return `${flag} ${new Intl.DisplayNames(['nl'], { type: 'region' }).of(first.country) ?? first.country}`;
+    } catch {
+      return `${flag} ${first.country}`;
+    }
+  });
+
   private readonly supplierNameById = computed(() =>
     new Map(this.suppliers().map((supplier) => [supplier.id, supplier.name])));
   readonly purchaseMilestones = computed(() => {
@@ -467,13 +555,14 @@ export class DashboardHome {
     else this.loading.set(true);
 
     try {
-      const [sales, purchases, revisions, products, families, suppliers] = await Promise.allSettled([
+      const [sales, purchases, revisions, products, families, suppliers, website] = await Promise.allSettled([
         this.sales.orders(),
         this.sourcing.purchaseOrders(),
         this.sales.pendingRevisions(),
         this.catalog.products(),
         this.catalog.productFamilies(),
         this.sourcing.suppliers(),
+        this.analytics.websiteReport(7),
       ] as const);
 
       const warnings: string[] = [];
@@ -489,6 +578,7 @@ export class DashboardHome {
       noteFailure(products, 'voorraad');
       noteFailure(families, 'websiteproducten');
       noteFailure(suppliers, 'leveranciers');
+      noteFailure(website, 'websitebezoek');
 
       if (sales.status === 'fulfilled') {
         this.salesOrders.set(sales.value);
@@ -507,6 +597,7 @@ export class DashboardHome {
         this.productsReady.set(true);
       }
       if (suppliers.status === 'fulfilled') this.suppliers.set(suppliers.value);
+      if (website.status === 'fulfilled') this.website.set(website.value);
 
       const currentProducts = products.status === 'fulfilled' ? products.value : this.products();
       if (families.status === 'fulfilled') {
