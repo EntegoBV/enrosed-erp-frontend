@@ -64,6 +64,8 @@ interface ReceiveDraft {
     damaged: number;
     /** Frozen supplier/purchase value, not the full landed operational cost. */
     unitValueEur: number | null;
+    /** What was wrong, noted at the shelf. */
+    note: string;
   }[];
   bookStock: boolean;
   /** Note the open balance as a final payment while receiving. */
@@ -1305,6 +1307,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <input class="input num right" id="issue-qty" type="number" min="1" step="1" inputmode="numeric"
                      [ngModel]="report.quantity || null" (ngModelChange)="issue.set({ ...report, quantity: +$event })" />
             </div>
+            <div class="field mt-8">
+              <label for="issue-note">Wat was er mis? <span class="opt"></span></label>
+              <textarea class="textarea" id="issue-note" rows="2" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
+                        [ngModel]="report.note" (ngModelChange)="issue.set({ ...report, note: $event })"></textarea>
+              <span class="hint">Blijft bij het product staan en komt als waarschuwing op de volgende leveranciersorder.</span>
+            </div>
             @if (issueLine(); as line) {
               @if (report.kind === 'DAMAGED') {
                 <p class="hint mt-8">Nu {{ orderLine(line.productId)?.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen.
@@ -1505,6 +1513,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
                            [ngModel]="line.damaged" (ngModelChange)="setDamaged(line.productId, +$event)" />
                   </label>
+                  @if (line.received !== line.ordered || line.damaged > 0) {
+                    <label class="receive-line__field receive-line__field--note">
+                      <span>Wat was er mis?</span>
+                      <input class="input" type="text" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
+                             [ngModel]="line.note" (ngModelChange)="setIssueNote(line.productId, $event)" />
+                    </label>
+                  }
                   @if (line.received !== line.ordered || line.damaged > 0) {
                     <span class="receive-line__note">
                       @if (line.received < line.ordered) { {{ line.ordered - line.received | num }} te weinig }
@@ -2173,6 +2188,7 @@ export class PurchaseEditor {
       receivedPieces: line.received,
       damagedPieces: line.damaged,
       unitValueEur: line.unitValueEur,
+      note: '',
     }))) : null;
   });
 
@@ -2203,6 +2219,7 @@ export class PurchaseEditor {
           received: line.quantity,
           damaged: 0,
           unitValueEur: line.receiptUnitValueEur ?? calculatedUnitValue,
+          note: line.issueNote ?? '',
         };
       }),
       bookStock: true,
@@ -2218,6 +2235,13 @@ export class PurchaseEditor {
         ? { ...line, received: Math.max(0, received || 0), damaged: Math.min(line.damaged, Math.max(0, received || 0)) }
         : line),
     });
+  }
+
+  setIssueNote(productId: number, note: string): void {
+    this.receiving.update((draft) => draft && ({
+      ...draft,
+      lines: draft.lines.map((line) => line.productId === productId ? { ...line, note } : line),
+    }));
   }
 
   setDamaged(productId: number, damaged: number): void {
@@ -2246,7 +2270,8 @@ export class PurchaseEditor {
     try {
       const lines: ReceivedLine[] = draft.lines.map((line) => ({
         productId: line.productId, received: line.received, damaged: line.damaged,
-        unitValueEur: line.unitValueEur }));
+        unitValueEur: line.unitValueEur,
+        issueNote: line.received !== line.ordered || line.damaged > 0 ? (line.note.trim() || null) : null }));
       if (draft.finalPayment && this.remainingEur() > 0.005) {
         await this.sourcing.addPayment(data.order.id, {
           paidOn: new Date().toISOString().slice(0, 10), amount: Math.round(this.remainingEur() * 100) / 100,
@@ -2732,7 +2757,7 @@ export class PurchaseEditor {
     }
   }
 
-  readonly issue = signal<{ productId: number; kind: 'DAMAGED' | 'SHORT'; quantity: number } | null>(null);
+  readonly issue = signal<{ productId: number; kind: 'DAMAGED' | 'SHORT'; quantity: number; note: string } | null>(null);
 
   readonly issueLine = computed(() => {
     const report = this.issue();
@@ -2741,7 +2766,8 @@ export class PurchaseEditor {
   });
 
   openIssue(productId: number): void {
-    this.issue.set({ productId, kind: 'DAMAGED', quantity: 0 });
+    const line = this.orderLine(productId);
+    this.issue.set({ productId, kind: 'DAMAGED', quantity: 0, note: line?.issueNote ?? '' });
   }
 
   /** Writes the report into the lines and saves: the backend books the stock difference. */
@@ -2749,15 +2775,16 @@ export class PurchaseEditor {
     const report = this.issue();
     const line = this.orderLine(report?.productId ?? -1);
     if (!report || !line || !(report.quantity > 0)) return;
+    const issueNote = report.note.trim() || line.issueNote || null;
     if (report.kind === 'DAMAGED') {
       const damaged = (line.damagedQuantity ?? 0) + report.quantity;
       if (damaged > line.quantity) { this.ui.toast('Meer beschadigd dan ontvangen kan niet', 'err'); return; }
-      this.setLine(report.productId, { damagedQuantity: damaged });
+      this.setLine(report.productId, { damagedQuantity: damaged, issueNote });
     } else {
       const quantity = line.quantity - report.quantity;
       if (quantity < 0) { this.ui.toast('Zoveel stuks staan er niet op de regel', 'err'); return; }
       if (quantity < (line.damagedQuantity ?? 0)) { this.ui.toast('Minder dan het aantal beschadigde stuks kan niet', 'err'); return; }
-      this.setLine(report.productId, { quantity });
+      this.setLine(report.productId, { quantity, issueNote });
     }
     await this.save();
     this.issue.set(null);

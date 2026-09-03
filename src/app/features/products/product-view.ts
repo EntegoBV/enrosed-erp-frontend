@@ -6,7 +6,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, LandedCostLine, Product, ProductFamily, ProductSupplierAgreementPhoto, PurchaseOrderView, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
@@ -581,6 +581,23 @@ import { parseSupplierNote } from './supplier-note';
             </div>
           </div>
 
+          @if (receiptIssues().length) {
+            <section class="info-card info-card--internal erp-workspace__section" id="product-issues" aria-labelledby="product-issues-title">
+              <header class="erp-workspace__section-head">
+                <span class="info-card__icon" aria-hidden="true">!</span>
+                <div><h2 id="product-issues-title">Eerder schade of tekort</h2><p>Staat als waarschuwing op de volgende leveranciersorder</p></div>
+              </header>
+              <ul class="issue-list">
+                @for (issue of receiptIssues(); track issue.orderId) {
+                  <li>
+                    <a [routerLink]="['/purchasing', issue.orderId]">{{ issue.orderNumber }}</a>
+                    <small>{{ issue.receivedOn ? (issue.receivedOn | dateNl) : '—' }} · {{ issue.ordered | num }} besteld · {{ issue.received | num }} ontvangen@if (issue.damaged) { · {{ issue.damaged | num }} beschadigd }@if (issue.missing) { · {{ issue.missing | num }} te weinig }</small>
+                    @if (issue.note) { <em>{{ issue.note }}</em> }
+                  </li>
+                }
+              </ul>
+            </section>
+          }
           @if (product.id !== null) {
             <app-product-media-card class="info-card erp-workspace__section" id="product-media"
                                     [productId]="product.id" [compact]="!desktop.active()" />
@@ -1033,6 +1050,11 @@ import { parseSupplierNote } from './supplier-note';
     .agreement-gallery p { margin:4px 2px 0;color:var(--ink-2);font-size:10px;line-height:1.35;
       overflow-wrap:anywhere }
     .agreement-state { margin:0;padding:14px;color:var(--muted);font-size:11.5px;line-height:1.45 }
+    .issue-list { display:grid;gap:8px;margin:0;padding:12px 14px 14px;list-style:none }
+    .issue-list li { display:grid;gap:2px;padding:9px 11px;border:1px solid #f0d2d9;border-left:3px solid var(--rose);border-radius:11px;background:#fff6f8 }
+    .issue-list a { color:var(--rose-dark);font-size:13px;font-weight:750;text-decoration:none }
+    .issue-list small { color:var(--ink-2);font-size:11.5px }
+    .issue-list em { color:var(--ink-2);font-size:12px }
     .agreement-state--error { display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--danger) }
 
     .barcode-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
@@ -1085,6 +1107,8 @@ export class ProductView {
 
   readonly product = signal<Product | null>(null);
   readonly agreementPhotos = signal<ProductSupplierAgreementPhoto[]>([]);
+  /** Earlier containers on which this product arrived short or damaged. */
+  readonly receiptIssues = signal<ReceiptIssue[]>([]);
   /** The supplier note as points and sub-points, the way the PDF prints it. */
   readonly supplierNoteBlocks = computed(() => parseSupplierNote(this.product()?.supplierNote));
   readonly agreementLoading = signal(false);
@@ -1477,7 +1501,11 @@ export class ProductView {
     this.galleryIndex.set(0);
     this.agreementLightbox.set(-1);
     this.agreementPhotos.set([]);
+    this.receiptIssues.set([]);
     this.agreementLoadError.set(null);
+    void this.sourcing.receiptIssues(id)
+      .then((issues) => { if (version === this.loadVersion) this.receiptIssues.set(issues); })
+      .catch(() => { /* the history is a bonus on the page */ });
     this.activeDetailSection.set('product-overview');
     void this.loadSupplierAgreement(id, version);
 

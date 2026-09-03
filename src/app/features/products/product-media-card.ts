@@ -60,6 +60,7 @@ import { Ui } from '../../shared/ui';
   `,
   styles: `
     :host{display:block;min-width:0}
+    :host(.info-card){padding:14px 14px 16px}
     .mc__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 12px;margin-bottom:12px}
     .mc__head>div:first-child{flex:1 1 180px;min-width:0}
     .mc__head h2{margin:0;font-size:16px;font-weight:700}

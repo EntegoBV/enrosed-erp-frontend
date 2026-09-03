@@ -909,6 +909,12 @@ type DeskRow =
               <input class="input num right" id="issue-qty" type="number" min="1" step="1" inputmode="numeric"
                      [ngModel]="report.quantity || null" (ngModelChange)="issue.set({ ...report, quantity: +$event })" />
             </div>
+            <div class="field mt-8">
+              <label for="issue-note">Wat was er mis? <span class="opt"></span></label>
+              <textarea class="textarea" id="issue-note" rows="2" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
+                        [ngModel]="report.note" (ngModelChange)="issue.set({ ...report, note: $event })"></textarea>
+              <span class="hint">Blijft bij het product staan en komt als waarschuwing op de volgende leveranciersorder.</span>
+            </div>
             @if (issueLine(); as line) {
               @if (report.kind === 'DAMAGED') {
                 <p class="hint mt-8">Nu {{ orderLine(line.productId)?.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen.

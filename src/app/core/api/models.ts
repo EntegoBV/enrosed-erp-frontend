@@ -794,6 +794,20 @@ export interface PurchaseOrderLine {
   damagedQuantity?: number | null;
   /** Frozen supplier/purchase value per piece at receipt; null when a legacy receipt still needs valuation. */
   receiptUnitValueEur?: number | null;
+  /** What was wrong on arrival, in our own words; printed on the next supplier order. */
+  issueNote?: string | null;
+}
+
+/** An earlier container on which a product arrived short or damaged. */
+export interface ReceiptIssue {
+  orderId: number;
+  orderNumber: string;
+  receivedOn: string | null;
+  ordered: number;
+  received: number;
+  damaged: number;
+  missing: number;
+  note: string | null;
 }
 
 /** What arrived of one line, and how much of that was broken. */
@@ -803,6 +817,8 @@ export interface ReceivedLine {
   damaged: number;
   /** Value snapshot used for durable receipt-loss reporting. */
   unitValueEur?: number | null;
+  /** What was wrong, when something was. */
+  issueNote?: string | null;
 }
 
 export interface Receipt {

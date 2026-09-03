@@ -778,6 +778,12 @@ type PurchaseWorkspaceSectionId =
               <input class="input num right" id="pv-issue-qty" type="number" min="1" step="1" inputmode="numeric"
                      [value]="report.quantity || ''" (input)="issue.set({ ...report, quantity: +$any($event.target).value })" />
             </div>
+            <div class="field mt-8">
+              <label for="pv-issue-note">Wat was er mis? <span class="opt"></span></label>
+              <textarea class="textarea" id="pv-issue-note" rows="2" placeholder="bijv. glazen stolpen gebarsten"
+                        [value]="report.note" (input)="issue.set({ ...report, note: $any($event.target).value })"></textarea>
+              <span class="hint">Blijft bij het product staan en komt op de volgende leveranciersorder.</span>
+            </div>
             @if (issueLine(); as line) {
               <p class="hint mt-8">
                 @if (report.kind === 'DAMAGED') {
@@ -956,7 +962,7 @@ export class PurchaseView {
 
   /* Damage or a shortage, reported from the phone at the shelf: the same
      line rewrite the desk does, saved as one order update. */
-  readonly issue = signal<{ productId: number; productName: string; kind: 'DAMAGED' | 'SHORT'; quantity: number } | null>(null);
+  readonly issue = signal<{ productId: number; productName: string; kind: 'DAMAGED' | 'SHORT'; quantity: number; note: string } | null>(null);
   readonly issueBusy = signal(false);
   readonly issueLine = computed<PurchaseOrderLine | null>(() => {
     const report = this.issue();
@@ -965,7 +971,8 @@ export class PurchaseView {
   });
 
   openIssue(productId: number, productName: string): void {
-    this.issue.set({ productId, productName, kind: 'DAMAGED', quantity: 0 });
+    const line = this.view()?.order.lines.find((item) => item.productId === productId);
+    this.issue.set({ productId, productName, kind: 'DAMAGED', quantity: 0, note: line?.issueNote ?? '' });
   }
 
   async confirmIssue(): Promise<void> {
@@ -974,15 +981,16 @@ export class PurchaseView {
     const line = this.issueLine();
     if (!data || !report || !line || !(report.quantity > 0) || this.issueBusy()) return;
     let patch: Partial<PurchaseOrderLine>;
+    const issueNote = report.note.trim() || line.issueNote || null;
     if (report.kind === 'DAMAGED') {
       const damaged = (line.damagedQuantity ?? 0) + report.quantity;
       if (damaged > line.quantity) { this.ui.toast('Meer beschadigd dan ontvangen kan niet', 'err'); return; }
-      patch = { damagedQuantity: damaged };
+      patch = { damagedQuantity: damaged, issueNote };
     } else {
       const quantity = line.quantity - report.quantity;
       if (quantity < 0) { this.ui.toast('Zoveel stuks staan er niet op de regel', 'err'); return; }
       if (quantity < (line.damagedQuantity ?? 0)) { this.ui.toast('Minder dan het aantal beschadigde stuks kan niet', 'err'); return; }
-      patch = { quantity };
+      patch = { quantity, issueNote };
     }
     this.issueBusy.set(true);
     try {

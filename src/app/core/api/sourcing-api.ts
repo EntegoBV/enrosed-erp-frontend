@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
   FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
-  ReceiptVarianceFilters, ReceiptVarianceReport, ExpectedStock, PurchasePayment, Currency, Payee,
+  ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
   PurchaseDocument, DocumentKind,
 } from './models';
 import {
@@ -82,6 +82,13 @@ export class SourcingApi {
   /** The container is in: counts, damage, payment, and optionally the booking. */
   receivePurchaseOrder(id: number, receipt: Receipt): Promise<PurchaseOrderView> {
     return firstValueFrom(this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${id}/receive`), receipt));
+  }
+
+  /** Earlier containers on which one product arrived short or damaged, newest first. */
+  receiptIssues(productId: number, excludeOrderId?: number): Promise<ReceiptIssue[]> {
+    const query = new URLSearchParams({ productId: String(productId) });
+    if (excludeOrderId !== undefined) query.set('excludeOrderId', String(excludeOrderId));
+    return firstValueFrom(this.http.get<ReceiptIssue[]>(api(`/api/purchase-orders/receipt-issues?${query}`)));
   }
 
   /** Historical shortages and damage, optionally narrowed to a reporting period or entity. */

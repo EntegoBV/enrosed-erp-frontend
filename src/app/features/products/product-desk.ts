@@ -586,6 +586,25 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             </div>
           </section>
         }
+        @if (receiptIssues().length) {
+          <section class="pd-card pd-issues" id="pd-issues" aria-labelledby="pd-issues-title">
+            <div class="pd-card__head">
+              <div><h2 id="pd-issues-title">Eerdere leveringen met schade of tekort</h2><p>Staat als waarschuwing op de volgende leveranciersorder van dit product, met wat we noteerden</p></div>
+              <a class="linklike" [routerLink]="['/analyses', 'purchasing']">Ontvangstanalyse ›</a>
+            </div>
+            <ul class="pd-issues__list">
+              @for (issue of receiptIssues(); track issue.orderId) {
+                <li>
+                  <a class="pd-issues__order" [routerLink]="['/purchasing', issue.orderId]">{{ issue.orderNumber }}</a>
+                  <span class="pd-issues__when">{{ issue.receivedOn ? (issue.receivedOn | dateNl) : '—' }}</span>
+                  <span class="pd-issues__facts">{{ issue.ordered | num }} besteld · {{ issue.received | num }} ontvangen@if (issue.damaged) { · <b>{{ issue.damaged | num }} beschadigd</b> }@if (issue.missing) { · <b>{{ issue.missing | num }} te weinig</b> }</span>
+                  @if (issue.note) { <span class="pd-issues__note">{{ issue.note }}</span> }
+                  @else { <span class="pd-issues__note pd-issues__note--empty">Geen reden genoteerd. Zet ze bij de regel op de inkooporder.</span> }
+                </li>
+              }
+            </ul>
+          </section>
+        }
       </div>
 
       <ng-template #noteText let-text>
@@ -688,6 +707,11 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-chain__row--margin{background:color-mix(in srgb,var(--ok) 9%,var(--surface))}.pd-chain__row--margin i{background:var(--ok);color:#fff}.pd-chain__row--margin b{color:var(--ok);font-weight:750}
 
     /* ---- supplier agreements */
+    .pd-issues__list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+    .pd-issues__list li{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:3px 12px;align-items:baseline;padding:10px 12px;border:1px solid #f0d2d9;border-left:3px solid var(--rose);border-radius:12px;background:#fff6f8}
+    .pd-issues__order{color:var(--rose-dark);font-size:13px;font-weight:750;text-decoration:none}.pd-issues__order:hover{text-decoration:underline}
+    .pd-issues__when{color:var(--muted);font-size:12px}.pd-issues__facts{font-size:12.5px}.pd-issues__facts b{color:var(--rose-dark)}
+    .pd-issues__note{grid-column:1/-1;color:var(--ink-2);font-size:12.5px;font-style:italic}.pd-issues__note--empty{color:var(--muted)}
     .pd-card--editor{padding:0;overflow:hidden}.pd-card--editor app-product-supplier-agreement-editor{display:block}
     .pd-actions--end{justify-content:flex-end;align-items:center;margin:0;padding:10px 18px 14px;border-top:1px solid var(--line)}
     .pd-hint--inline{flex:1;margin:0;min-width:0}
