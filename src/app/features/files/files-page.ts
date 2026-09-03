@@ -81,7 +81,8 @@ const COLLECTIONS: readonly Collection[] = [
           </button>
           @for (node of tree(); track node.id) {
             <div class="fx__row" [class.fx__row--on]="folder() === node.id" [style.paddingLeft.px]="node.depth * 14">
-              <button class="fx__node" type="button" [class.on]="folder() === node.id" [class.fx__node--target]="dragOverFolder() === node.id"
+              <button class="fx__node" type="button" [class.on]="folder() === node.id" [class.fx__node--target]="dragOverFolder() === node.id" [class.fx__node--dragging]="draggingFolder()?.id === node.id"
+                      draggable="true" (dragstart)="dragFolder($event, node)" (dragend)="endDrag()"
                       (click)="openFolder(node.id)" (dragover)="allowAssetDrop($event, node.id)" (dragleave)="dragOverFolder.set(undefined)" (drop)="dropOnFolder($event, node.id)">
                 <i aria-hidden="true">▰</i><span>{{ node.name }}</span><small>{{ node.assetCount || '' }}</small>
               </button>
@@ -111,7 +112,7 @@ const COLLECTIONS: readonly Collection[] = [
             </span>
           </form>
         }
-        <p class="fx__rail-hint">Sleep een bestand op een map om het te verplaatsen. Uploads komen in de open map.</p>
+        <p class="fx__rail-hint">Sleep bestanden of een map op een andere map om ze te verplaatsen. Uploads komen in de open map.</p>
 
         <div class="fx__rail-head fx__rail-head--gap"><b>Op gebruik</b></div>
         <nav class="fx__tree" aria-label="Bestanden op gebruik">
@@ -128,7 +129,9 @@ const COLLECTIONS: readonly Collection[] = [
         <div class="fx__bar">
           <nav class="fx__crumbs" aria-label="Pad">
             @for (crumb of crumbs(); track crumb.id ?? 'top'; let last = $last) {
-              <button type="button" [class.on]="last" (click)="openFolder(crumb.id)">{{ crumb.name }}</button>@if (!last) { <i aria-hidden="true">›</i> }
+              <button type="button" [class.on]="last" [class.fx__node--target]="crumb.id !== null && dragOverFolder() === crumb.id" (click)="openFolder(crumb.id)"
+                      (dragover)="crumb.id !== null && !collection() ? allowAssetDrop($event, crumb.id) : null" (dragleave)="dragOverFolder.set(undefined)"
+                      (drop)="crumb.id !== null && !collection() ? dropOnFolder($event, crumb.id === 'root' ? null : crumb.id) : null">{{ crumb.name }}</button>@if (!last) { <i aria-hidden="true">›</i> }
             }
           </nav>
           <input class="input fx__search" type="search" autocomplete="off" placeholder="Zoeken op naam of bestandsnaam…" aria-label="Zoeken"
@@ -150,6 +153,18 @@ const COLLECTIONS: readonly Collection[] = [
           </span>
         </div>
 
+        @if (selectedIds().size) {
+          <div class="fx__selection" role="status">
+            <b>{{ selectedIds().size }} geselecteerd</b>
+            <span>sleep ze samen naar een map, of</span>
+            <select class="select" [ngModel]="''" (ngModelChange)="moveSelection($event === '' ? null : $event === 'root' ? null : +$event)" aria-label="Verplaats de selectie naar">
+              <option value="" disabled>Verplaats naar…</option>
+              <option value="root">Zonder map</option>
+              @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
+            </select>
+            <button class="linklike" type="button" (click)="clearSelection()">Selectie wissen</button>
+          </div>
+        }
         @if (dropActive()) {
           <div class="fx__drop">Laat los om te uploaden{{ folderName() ? ' in ' + folderName() : '' }}</div>
         }
@@ -167,9 +182,10 @@ const COLLECTIONS: readonly Collection[] = [
               <h3 class="fx__group-title">{{ group.label }} <small>{{ group.assets.length }}</small></h3>
               <div class="fx__grid">
                 @for (asset of group.assets; track asset.id) {
-                  <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--archived]="asset.archived"
-                          draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="dragging.set(null)"
-                          (click)="open(asset)" (dblclick)="download(asset)" [title]="asset.originalFilename">
+                  <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
+                          draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
+                          (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" [title]="asset.originalFilename">
+                    <span class="fx__pick" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
                     @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
                     <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }}</small></span>
                   </button>
@@ -180,9 +196,10 @@ const COLLECTIONS: readonly Collection[] = [
         } @else if (view() === 'grid') {
           <div class="fx__grid">
             @for (asset of assets(); track asset.id) {
-              <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--archived]="asset.archived"
-                      draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="dragging.set(null)"
-                      (click)="open(asset)" (dblclick)="download(asset)" [title]="asset.originalFilename">
+              <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
+                      draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
+                      (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" [title]="asset.originalFilename">
+                <span class="fx__pick" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
                 @if (asset.kind === 'IMAGE') {
                   <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" />
                 } @else {
@@ -204,8 +221,9 @@ const COLLECTIONS: readonly Collection[] = [
               @for (group of groups() ?? [{ label: '', assets: assets() }]; track group.label) {
                 @if (group.label) { <tr class="fx__group-row"><td colspan="5">{{ group.label }} <small>{{ group.assets.length }}</small></td></tr> }
                 @for (asset of group.assets; track asset.id) {
-                  <tr [class.on]="selected()?.id === asset.id" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="dragging.set(null)" (click)="open(asset)">
+                  <tr [class.on]="selected()?.id === asset.id" [class.fx__row--picked]="selectedIds().has(asset.id)" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()" (click)="clickAsset(asset, $event)">
                     <td class="fx__name">
+                      <span class="fx__pick fx__pick--row" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
                       @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
                       <span><b>{{ asset.name }}</b><small>{{ asset.originalFilename }}{{ folderLabel(asset) ? ' · ' + folderLabel(asset) : '' }}</small></span>
                     </td>
@@ -362,6 +380,14 @@ const COLLECTIONS: readonly Collection[] = [
     .fx__card img{display:block;width:100%;aspect-ratio:1;border-radius:9px;object-fit:cover;background:var(--surface-2)}
     .fx__ext{display:grid;width:100%;aspect-ratio:1;place-items:center;border-radius:9px;background:var(--surface-2);color:var(--muted);font-size:14px;font-style:normal;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
     .fx__card-copy{display:grid;min-width:0;padding:0 2px}.fx__card-copy b{overflow:hidden;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}.fx__card-copy small{overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}
+    .fx__pick{position:absolute;top:10px;right:10px;z-index:1;display:grid;width:22px;height:22px;place-items:center;border:2px solid rgb(255 255 255/.9);border-radius:6px;background:rgb(16 13 12/.35);color:#fff;font-size:12px;font-weight:800;opacity:0;cursor:pointer;transition:opacity .12s}
+    .fx__card:hover .fx__pick,.fx__card--picked .fx__pick,.fx__table tr:hover .fx__pick,.fx__row--picked .fx__pick{opacity:1}
+    .fx__pick[aria-checked="true"]{background:var(--rose);border-color:var(--rose)}
+    .fx__card--picked{border-color:var(--rose)}.fx__row--picked td{background:var(--rose-soft)}
+    .fx__pick--row{position:static;flex:none;width:20px;height:20px;border-color:var(--line-strong);background:var(--surface);color:#fff;font-size:11px}.fx__pick--row[aria-checked="true"]{color:#fff}
+    .fx__selection{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;padding:8px 12px;border-radius:12px;background:var(--rose-soft);color:var(--rose-dark);font-size:12.5px}.fx__selection .select{min-height:32px;padding-block:0;font-size:12px}
+    .fx__node--dragging{opacity:.45}
+    .fx__crumbs button.fx__node--target{outline:2px dashed var(--rose);outline-offset:0;background:var(--rose-soft);color:var(--rose-dark)}
     .fx__badges{position:absolute;top:10px;left:10px;display:flex;gap:4px}.fx__badges em{padding:2px 7px;border-radius:999px;background:rgb(16 13 12/.66);color:#fff;font-size:10px;font-style:normal;font-weight:700}
     .fx__table{width:100%;border-collapse:collapse;font-size:12.5px}.fx__table th{padding:6px 8px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-align:left;text-transform:uppercase}
     .fx__table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -499,7 +525,10 @@ export class FilesPage implements OnDestroy {
   readonly uploading = signal(false);
   readonly uploadProgress = signal('Uploaden…');
   readonly dropActive = signal(false);
-  readonly dragging = signal<MediaAssetSummary | null>(null);
+  /** The files on the move: the dragged one, or the whole selection when it was part of it. */
+  readonly dragging = signal<MediaAssetSummary[] | null>(null);
+  readonly draggingFolder = signal<FolderNode | null>(null);
+  readonly selectedIds = signal<ReadonlySet<number>>(new Set());
 
   /* ---- the chosen file */
   readonly selected = signal<MediaAssetDetail | null>(null);
@@ -584,37 +613,125 @@ export class FilesPage implements OnDestroy {
     }
   }
 
-  /* ---- drag a file onto a folder */
+  /* ---- selecting files: a pick box on every card or row, the selection moves as one */
+  togglePick(asset: MediaAssetSummary, event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    this.selectedIds.update((ids) => {
+      const next = new Set(ids);
+      if (next.has(asset.id)) next.delete(asset.id); else next.add(asset.id);
+      return next;
+    });
+  }
+
+  /** A plain click opens the file; with Cmd/Ctrl or Shift it selects instead. */
+  clickAsset(asset: MediaAssetSummary, event: MouseEvent): void {
+    if (event.metaKey || event.ctrlKey || event.shiftKey) { this.togglePick(asset, event); return; }
+    void this.open(asset);
+  }
+
+  clearSelection(): void { this.selectedIds.set(new Set()); }
+
+  private selectedAssets(): MediaAssetSummary[] {
+    const ids = this.selectedIds();
+    return this.assets().filter((asset) => ids.has(asset.id));
+  }
+
+  async moveSelection(folderId: number | null): Promise<void> {
+    const assets = this.selectedAssets();
+    if (assets.length) await this.moveAssets(assets, folderId);
+  }
+
+  /* ---- drag files or a folder onto a folder */
   dragAsset(event: DragEvent, asset: MediaAssetSummary): void {
-    this.dragging.set(asset);
-    event.dataTransfer?.setData('text/plain', String(asset.id));
+    const picked = this.selectedIds().has(asset.id) ? this.selectedAssets() : [asset];
+    this.dragging.set(picked);
+    this.draggingFolder.set(null);
+    event.dataTransfer?.setData('text/plain', picked.map((item) => item.id).join(','));
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
 
+  dragFolder(event: DragEvent, node: FolderNode): void {
+    event.stopPropagation();
+    this.draggingFolder.set(node);
+    this.dragging.set(null);
+    event.dataTransfer?.setData('text/plain', 'folder:' + node.id);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  endDrag(): void {
+    this.dragging.set(null);
+    this.draggingFolder.set(null);
+    this.dragOverFolder.set(undefined);
+  }
+
+  /** A folder may not land in itself or in one of its own subfolders. */
+  private folderCanLand(folder: FolderNode, targetId: number | null): boolean {
+    if (targetId === null) return folder.parentId !== null;
+    if (targetId === folder.id || targetId === folder.parentId) return false;
+    const byId = new Map(this.folders().map((item) => [item.id, item]));
+    for (let cursor = byId.get(targetId); cursor; cursor = cursor.parentId === null ? undefined : byId.get(cursor.parentId)) {
+      if (cursor.id === folder.id) return false;
+    }
+    return true;
+  }
+
   allowAssetDrop(event: DragEvent, folder: number | 'root'): void {
-    if (!this.dragging()) return;
+    const targetId = folder === 'root' ? null : folder;
+    const moving = this.draggingFolder();
+    if (moving ? !this.folderCanLand(moving, targetId) : !this.dragging()) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     this.dragOverFolder.set(folder);
   }
 
   async dropOnFolder(event: DragEvent, folderId: number | null): Promise<void> {
-    const asset = this.dragging();
+    const assets = this.dragging();
+    const moving = this.draggingFolder();
     this.dragOverFolder.set(undefined);
-    if (!asset) return;
+    if (!assets && !moving) return;
     event.preventDefault();
     event.stopPropagation();
     this.dragging.set(null);
-    if ((asset.folderId ?? null) === folderId) return;
+    this.draggingFolder.set(null);
+    if (moving) {
+      if (!this.folderCanLand(moving, folderId)) return;
+      try {
+        await this.media.updateFolder(moving.id, moving.name, folderId);
+        this.ui.toast(`Map “${moving.name}” verplaatst naar ${this.folderTitle(folderId)}`);
+        await this.loadFolders();
+      } catch (failure) {
+        this.ui.toast(messageOf(failure, 'De map kon niet worden verplaatst.'), 'err');
+      }
+      return;
+    }
+    await this.moveAssets(assets!, folderId);
+  }
+
+  private folderTitle(folderId: number | null): string {
+    return folderId === null ? 'Zonder map' : this.folders().find((item) => item.id === folderId)?.name ?? 'de map';
+  }
+
+  private async moveAssets(assets: MediaAssetSummary[], folderId: number | null): Promise<void> {
+    const moving = assets.filter((asset) => (asset.folderId ?? null) !== folderId);
+    if (!moving.length) return;
+    let moved = 0;
     try {
-      const detail = await this.media.move(asset.id, folderId);
-      this.ui.toast(`“${asset.name}” verplaatst naar ${folderId === null ? 'Zonder map' : this.folders().find((item) => item.id === folderId)?.name ?? 'de map'}`);
-      this.applyDetail(detail);
-      await this.loadFolders();
-      if (this.folder() !== null) await this.reload();
+      for (const asset of moving) {
+        const detail = await this.media.move(asset.id, folderId);
+        this.assets.update((items) => items.map((item) => item.id === detail.id ? detail : item));
+        if (this.selected()?.id === detail.id) this.applyDetail(detail);
+        moved++;
+      }
+      this.ui.toast(moved === 1
+        ? `“${moving[0].name}” verplaatst naar ${this.folderTitle(folderId)}`
+        : `${moved} bestanden verplaatst naar ${this.folderTitle(folderId)}`);
     } catch (failure) {
       this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
     }
+    this.clearSelection();
+    await this.loadFolders();
+    if (this.folder() !== null) await this.reload();
   }
 
   /* ================================================================ files */
@@ -631,6 +748,7 @@ export class FilesPage implements OnDestroy {
 
   async reload(): Promise<void> {
     if (this.searchTimer) { clearTimeout(this.searchTimer); this.searchTimer = null; }
+    this.clearSelection();
     const requestId = ++this.requestId;
     this.loading.set(true);
     this.loadError.set('');
@@ -684,14 +802,14 @@ export class FilesPage implements OnDestroy {
   }
 
   dragEnter(event: DragEvent): void {
-    if (this.dragging() || !event.dataTransfer?.types.includes('Files')) return;
+    if (this.dragging() || this.draggingFolder() || !event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
     this.dragDepth++;
     this.dropActive.set(true);
   }
 
   dragOver(event: DragEvent): void {
-    if (this.dragging() || !event.dataTransfer?.types.includes('Files')) return;
+    if (this.dragging() || this.draggingFolder() || !event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   }
