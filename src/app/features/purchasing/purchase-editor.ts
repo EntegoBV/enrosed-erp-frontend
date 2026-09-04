@@ -813,6 +813,17 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         </div>
                         <span class="hint">Nieuwe calculaties starten op € 2.000 per container.</span>
                       </div>
+                      <div class="field span-2">
+                        <label for="c-inspection">Inspectiekost <span class="opt"></span></label>
+                        <div class="input-affix">
+                          <input class="input num right" id="c-inspection" type="number"
+                                 step="50" min="0" inputmode="decimal"
+                                 [ngModel]="data.order.inspectionCostEur"
+                                 (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
+                          <span class="input-affix__suffix">EUR</span>
+                        </div>
+                        <span class="hint">Keuring bij de fabriek. Blijft een apart lijntje op de order en de A4, wordt niet in de stukprijs verrekend.</span>
+                      </div>
                     </div>
                   </section>
 
@@ -1009,6 +1020,19 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       </div>
                     }
                   </div>
+                  @if (data.costing.totals.inspectionEur) {
+                    <div class="cost-summary__group">
+                      <span class="cost-section">Apart · niet in de stukprijs</span>
+                      <div class="stat-row">
+                        <span>Inspectie</span>
+                        <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span>
+                      </div>
+                      <div class="stat-row cost-summary__subtotal">
+                        <span>Totaal incl. inspectie</span>
+                        <span class="num">{{ data.costing.totals.totalWithInspectionEur | eur }}</span>
+                      </div>
+                    </div>
+                  }
 
                   <div class="cost-summary__group">
                     <span class="cost-section">3 · Totaal</span>

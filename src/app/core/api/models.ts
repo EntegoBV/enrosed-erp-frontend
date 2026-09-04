@@ -982,6 +982,8 @@ export interface PurchaseOrder {
   destinationCostsEur: number;
   defaultDutyRatePct: number;
   extraRevenueEur: number;
+  /** Inspection at the factory, in EUR: its own line on the order, never folded into a piece price. */
+  inspectionCostEur?: number | null;
   allocFreight: Allocation;
   allocOrigin: Allocation;
   allocDestination: Allocation;
@@ -1040,6 +1042,8 @@ export interface LandedCost {
     customsValueEur: number; dutyEur: number; destinationEur: number;
     extraRevenueEur: number; totalEur: number;
     averageUnitEur: number; effectiveDutyPct: number;
+    /** Inspection kept apart from the landed total, and the total with it. */
+    inspectionEur?: number; totalWithInspectionEur?: number;
   };
   containerFill: {
     containerCode: string; capacityCbm: number; usedCbm: number;

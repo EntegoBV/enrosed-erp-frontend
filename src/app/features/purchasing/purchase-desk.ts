@@ -575,6 +575,14 @@ type DeskRow =
                         <span class="input-affix__suffix">EUR</span>
                       </div>
                     </div>
+                    <div class="field">
+                      <label for="dk-inspection">Inspectiekost <span class="opt"></span></label>
+                      <div class="input-affix">
+                        <input class="input num right" id="dk-inspection" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.inspectionCostEur" (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
+                        <span class="input-affix__suffix">EUR</span>
+                      </div>
+                      <span class="hint">Apart lijntje, niet in de stukprijs verrekend.</span>
+                    </div>
 
                     <details class="desk-details">
                       <summary>Verdeelsleutels &amp; varianten</summary>
@@ -613,6 +621,10 @@ type DeskRow =
                       }
                       @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>eigen opslag</small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
                       <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal geland <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
+                      @if (data.costing.totals.inspectionEur) {
+                        <div class="desk-chain__row"><i>+</i><span>Inspectie <small>apart, niet in de stukprijs</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
+                        <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal incl. inspectie</span><b>{{ data.costing.totals.totalWithInspectionEur | eur }}</b></div>
+                      }
                     </div>
                     @if (!isDdp() && data.costing.totals.goodsEur > 0) {
                       <div class="desk-overhead">

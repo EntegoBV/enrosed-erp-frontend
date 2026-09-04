@@ -602,6 +602,12 @@ type PurchaseWorkspaceSectionId =
                     <div class="stat-row"><span>Enrosed kost</span>
                       <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
                   }
+                  @if (data.costing.totals.inspectionEur) {
+                    <div class="stat-row"><span>Inspectie <small>apart, niet in de stukprijs</small></span>
+                      <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span></div>
+                    <div class="stat-row"><span><b>Totaal incl. inspectie</b></span>
+                      <span class="num"><b>{{ data.costing.totals.totalWithInspectionEur | eur }}</b></span></div>
+                  }
                 </div>
 
                 <div class="cost-stage">
