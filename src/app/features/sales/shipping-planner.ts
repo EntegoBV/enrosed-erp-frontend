@@ -62,18 +62,21 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
     <div class="planner">
       <!-- ============================ the strip: where the order stands -->
       <div class="plan-summary" aria-label="Samenvatting van transport en levering">
-        <button class="plan-summary__tile" type="button" (click)="openSection.set('mode')">
+        <button class="plan-summary__tile" type="button" (click)="openSection.set('mode')"
+                [class.is-open]="openSection() === 'mode'" [attr.aria-current]="openSection() === 'mode' ? 'true' : null">
           <small>Lading</small>
           <strong>{{ loadSummary() }}</strong>
           <span>{{ loadDetail() }}</span>
         </button>
         <button class="plan-summary__tile" type="button" (click)="openSection.set('layout')"
+                [class.is-open]="openSection() === 'layout'" [attr.aria-current]="openSection() === 'layout' ? 'true' : null"
                 [class.is-ok]="layoutState() === 'ok'" [class.is-warn]="layoutState() === 'warn'">
           <small>Indeling</small>
           <strong>{{ layoutSummary() }}</strong>
           <span>{{ layoutDetail() }}</span>
         </button>
         <button class="plan-summary__tile" type="button" (click)="openSection.set('freight')"
+                [class.is-open]="openSection() === 'freight'" [attr.aria-current]="openSection() === 'freight' ? 'true' : null"
                 [class.is-warn]="freightPending()">
           <small>Vracht</small>
           <strong>@if (freightPending()) { later bepalen } @else { {{ view().priced.totals.freight | eur }} }</strong>
@@ -153,7 +156,6 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
           <button class="plan-section__toggle" type="button" (click)="toggleSection('layout')"
                   [attr.aria-expanded]="openSection() === 'layout'">
             <span><small class="eyebrow">{{ loadMode() === 'PALLETS' ? 'Palletindeling' : 'Volume' }}</small><strong>{{ layoutSummary() }}</strong></span>
-            <em class="pill" [class.pill--ok]="layoutState() === 'ok'" [class.pill--warn]="layoutState() === 'warn'">{{ layoutDetail() }}</em>
             <i aria-hidden="true">⌄</i>
           </button>
           <div class="plan-section__body">
@@ -196,7 +198,7 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
                 <div class="tray" [class.tray--ok]="layoutOk()">
                   <div class="tray__progress">
                     <span><b>{{ assignedCartons() | num }}</b> van {{ view().priced.totals.cartons | num }} dozen geplaatst</span>
-                    <em>{{ layoutOk() ? 'compleet' : layoutStatus() }}</em>
+                    <em>{{ view().order.pallets.length }} {{ view().order.pallets.length === 1 ? 'pallet' : 'pallets' }}@if (layoutOk()) { · compleet }</em>
                   </div>
                   <div class="tray__bar" aria-hidden="true"><i [style.width.%]="assignedPercent()" [class.is-warn]="overassignedAny()"></i></div>
                   @if (unassignedLines().length) {
@@ -208,8 +210,8 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
                   }
                   <div class="tray__actions">
                     <button class="btn btn--sm" type="button" [disabled]="!canEdit()" (click)="action.emit({ type: 'add-pallet' })"><span aria-hidden="true">＋</span> Pallet</button>
-                    <button class="btn btn--sm" type="button" [disabled]="!canEdit() || invalidPalletLines().length > 0" (click)="redoLayout()">Opnieuw automatisch</button>
-                    <button class="btn btn--sm btn--quiet" type="button" [disabled]="!canEdit()" (click)="returnToAutomatic()">Voorstel zonder eigen indeling</button>
+                    <button class="btn btn--sm" type="button" [disabled]="!canEdit() || invalidPalletLines().length > 0" (click)="redoLayout()">Automatisch herindelen</button>
+                    <button class="btn btn--sm btn--quiet" type="button" [disabled]="!canEdit()" (click)="returnToAutomatic()">Eigen indeling wissen</button>
                   </div>
                 </div>
 
@@ -232,8 +234,8 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
                         <span class="pallet__number" aria-hidden="true">{{ pi + 1 }}</span>
                         <input class="pallet__name" [value]="pallet.label" [disabled]="!canEdit()" [attr.aria-label]="'Naam van pallet ' + (pi + 1)"
                                (change)="renamePallet(pi, $any($event.target).value)" />
-                        <span class="pallet__facts">{{ palletCartons(pallet) | num }} {{ palletCartons(pallet) === 1 ? 'doos' : 'dozen' }}
-                          @if (stack.heightCm !== null) { · {{ stack.measured ? '' : '≈ ' }}{{ stack.heightCm | num: 0 }} cm }</span>
+                        <span class="pallet__facts" [class.is-warn]="stack.heightCm !== null && stack.heightCm > maxPalletHeightCm()">{{ palletCartons(pallet) | num }} {{ palletCartons(pallet) === 1 ? 'doos' : 'dozen' }}
+                          @if (stack.heightCm !== null) { · {{ stack.measured ? '' : '≈ ' }}{{ stack.heightCm | num: 0 }} cm@if (stack.heightCm > maxPalletHeightCm()) { · te hoog } }</span>
                         <button class="pallet__remove" type="button" [disabled]="!canEdit()" [attr.aria-label]="'Pallet ' + (pi + 1) + ' verwijderen'" (click)="removePallet(pi)"><span aria-hidden="true">×</span></button>
                       </header>
                       <div class="pallet__stack" [title]="stack.heightCm !== null ? (stack.measured ? 'Gemeten hoogte' : 'Geschatte hoogte') + ' ' + stack.heightCm + ' cm van max. ' + maximumManualHeightCm() + ' cm' : 'Hoogte nog niet te schatten'" aria-hidden="true">
@@ -260,7 +262,8 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
                             </div>
                           </div>
                         } @empty {
-                          <p class="pallet__empty">Lege pallet: zet er een product op of verwijder ze.</p>
+                          <p class="pallet__empty">Lege pallet: zet er een product op, of
+                            <button class="pallet__empty-remove" type="button" [disabled]="!canEdit()" (click)="removePallet(pi)">verwijder ze</button>.</p>
                         }
                         @if (canEdit() && assignable(pi).length) {
                           <div class="pallet__add" aria-label="Product op deze pallet zetten">
@@ -332,7 +335,6 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
           <button class="plan-section__toggle" type="button" (click)="toggleSection('freight')"
                   [attr.aria-expanded]="openSection() === 'freight'">
             <span><small class="eyebrow">Vrachtprijs</small><strong>{{ strategyLabel(pricingStrategy()) }}</strong></span>
-            <em class="pill" [class.pill--warn]="freightPending()">@if (freightPending()) { later bepalen } @else { {{ view().priced.totals.freight | eur }} }</em>
             <i aria-hidden="true">⌄</i>
           </button>
           <div class="plan-section__body">
@@ -456,6 +458,7 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
     .plan-summary__tile strong{overflow:hidden;font-size:13px;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
     .plan-summary__tile span{overflow:hidden;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}
     .plan-summary__tile.is-ok strong{color:var(--ok)}.plan-summary__tile.is-warn strong{color:var(--warn)}
+    .plan-summary__tile.is-open{border-color:var(--rose-line);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose-line)}
     /* ---- sections: an accordion on a phone, columns on a desk */
     .plan-columns{display:grid;gap:10px}
     .plan-section{min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
@@ -507,7 +510,8 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
     .pallet__remove{color:var(--danger);font-size:22px}.pallet__remove:hover,.pallet__remove:focus-visible{background:var(--danger-soft)}.pallet__drag:disabled,.pallet__remove:disabled{cursor:default;opacity:.45}
     .pallet__number{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;background:var(--rose-soft);color:var(--rose-dark);font-size:11px;font-weight:760}
     .pallet__name{min-width:0;height:34px;padding:0 6px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink);font:inherit;font-size:13px;font-weight:700}.pallet__name:hover:not(:disabled),.pallet__name:focus{border-color:var(--line-strong);background:var(--surface-2);outline:none}
-    .pallet__facts{color:var(--muted);font-size:10.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .pallet__facts{color:var(--muted);font-size:10.5px;white-space:nowrap;font-variant-numeric:tabular-nums}.pallet__facts.is-warn{color:var(--danger);font-weight:700}
+    .pallet__empty-remove{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;text-decoration:underline;cursor:pointer}
     .pallet__stack{margin:0 10px;height:10px;border-radius:99px;background:var(--surface-2);overflow:hidden}
     .pallet__stack-fill{display:flex;height:100%;max-width:100%;border-radius:99px;overflow:hidden;transition:width .2s ease}.pallet__stack-fill b{display:block;min-width:3px;height:100%}.pallet__stack-fill.is-warn{outline:2px solid var(--danger);outline-offset:-2px}
     .pallet__items{padding:6px 10px 8px}
@@ -539,7 +543,9 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
       .plan-columns{grid-template-columns:minmax(270px,320px) minmax(0,1fr);grid-template-rows:auto 1fr;grid-template-areas:'mode layout' 'freight layout';align-items:start}
       .plan-section--mode{grid-area:mode}.plan-section--layout{grid-area:layout}.plan-section--freight{grid-area:freight}
       .plan-section__body{display:block}.plan-section__toggle{cursor:default}.plan-section__toggle i{display:none}
-      .pallet-grid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+      .pallet-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+      .plan-summary__tile.is-open{border-color:var(--line);background:var(--surface-2);box-shadow:none}
+      .price-choices button{min-height:46px}
       .plan-summary__tile strong{font-size:15px}
     }
     @media(max-width:359px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-summary{grid-template-columns:1fr}.plan-summary__tile{grid-template-columns:auto 1fr;align-items:center}}

@@ -1170,6 +1170,61 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </app-sheet>
       }
       </div>
+
+      <!-- A wide desk keeps the figures the form drives in view: the cost
+           chain, the carton, what still blocks saving or publishing, and
+           the ways out. Narrower screens leave it out; the hero carries the two numbers. -->
+      <aside class="editor-rail" aria-label="Samenvatting van dit product">
+        <section class="editor-rail__card">
+          <h3>Kostprijs &amp; marge</h3>
+          <div class="desk-chain">
+            <div class="desk-chain__row"><i></i><span>Fabrieksprijs <small>{{ draft().exwCurrency || 'USD' }}@if (draft().extraUnitCost) { · + {{ draft().extraUnitCost | num: 2 }} extra per stuk }</small></span><b>{{ draft().exwPrice !== null && draft().exwPrice !== undefined ? (draft().exwPrice | num: 2) : '—' }}</b></div>
+            <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Gelande kost <small>{{ draft().landedCostSource ? 'uit ' + draft().landedCostSource : 'nog geen calculatie' }}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
+            <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de gelande kost' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
+            <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
+          </div>
+          <button class="linklike editor-rail__link" type="button" (click)="showTab('sales')">Prijs aanpassen ›</button>
+        </section>
+
+        <section class="editor-rail__card">
+          <h3>Omdoos</h3>
+          <dl class="desk-facts">
+            <div><dt>Inhoud</dt><dd>{{ (draft().carton.piecesPerCarton || autoCartonPieces()) ? ((draft().carton.piecesPerCarton || autoCartonPieces()) | num) + ' stuks' : '—' }}@if (!draft().carton.piecesPerCarton && autoCartonPieces()) { <small>automatisch uit de maten</small> }</dd></div>
+            <div><dt>Maat</dt><dd>{{ draft().carton.lengthCm && draft().carton.widthCm && draft().carton.heightCm ? (draft().carton.lengthCm | num) + ' × ' + (draft().carton.widthCm | num) + ' × ' + (draft().carton.heightCm | num) + ' cm' : '—' }}<small>{{ cartonCbm() | cbm }} per doos · {{ pieceCbm() | cbm }} per stuk</small></dd></div>
+            <div><dt>Gewicht</dt><dd>{{ draft().carton.weightKg ? (draft().carton.weightKg | num: 1) + ' kg' : (autoCartonWeight() ? (autoCartonWeight() | num: 1) + ' kg' : '—') }}@if (!draft().carton.weightKg && autoCartonWeight()) { <small>uit het stukgewicht</small> }</dd></div>
+            <div><dt>40' HC</dt><dd>{{ (draft().carton.hcCapacity || autoHcCapacity()) ? ((draft().carton.hcCapacity || autoHcCapacity()) | num) + ' dozen' : '—' }}</dd></div>
+          </dl>
+          <button class="linklike editor-rail__link" type="button" (click)="showTab('packaging')">Omdoos aanpassen ›</button>
+        </section>
+
+        <section class="editor-rail__card" [class.editor-rail__card--warn]="missingFields().length">
+          <h3>{{ missingFields().length ? 'Nog in te vullen' : 'Klaar om op te slaan' }}</h3>
+          @if (missingFields().length) {
+            <ul class="editor-rail__list">
+              @for (item of missingFields(); track item.field) {
+                <li><button type="button" (click)="focusField(item.tab, item.field)"><i aria-hidden="true">!</i><span>{{ item.label }}</span><b aria-hidden="true">›</b></button></li>
+              }
+            </ul>
+          } @else {
+            <p class="editor-rail__ok"><span aria-hidden="true">✓</span> Leverancier, naam, kleur, omdoos en prijs zijn ingevuld.</p>
+          }
+          @if (readinessIssues().length) {
+            <p class="editor-rail__note">Website: {{ readinessIssues().length }} {{ readinessIssues().length === 1 ? 'punt' : 'punten' }} open. <button class="linklike" type="button" (click)="showTab('publication')">Bekijken ›</button></p>
+          }
+        </section>
+
+        @if (!isNew()) {
+          <section class="editor-rail__card">
+            <h3>Acties</h3>
+            <div class="desk-actions">
+              <a class="desk-action" [routerLink]="['/products', draft().id]"><i aria-hidden="true">›</i><span><b>Bekijken</b><small>Het dossier zoals het team het leest</small></span></a>
+              <button class="desk-action" type="button" (click)="startCopy()"><i aria-hidden="true">⧉</i><span><b>Kleur- of maatvariant maken</b><small>Een kopie met dezelfde gegevens</small></span></button>
+              <a class="desk-action" [routerLink]="['/products', draft().id, 'translations']"><i aria-hidden="true">🌐</i><span><b>Vertalingen</b><small>Namen en teksten per taal</small></span></a>
+              <button class="desk-action desk-action--danger" type="button" (click)="remove()"><i aria-hidden="true">×</i><span><b>Verwijderen</b><small>Definitief, na bevestiging</small></span></button>
+            </div>
+          </section>
+        }
+      </aside>
     </div>
 
     @if (!desktop.active()) {
@@ -1333,16 +1388,37 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @media (min-width: 1024px) and (max-width: 1099px) {
       .product-editor-page > .subnav.erp-workspace__nav { margin: -22px -26px 0; }
     }
-    /* Desktop: hero, form and stepper share one centred container. The
-       stepper stands to the right of the form as a card - a tick where a
-       section is complete, a count where fields are missing. */
-    @media (min-width: 1100px) {
+    /* Desktop: the sections stand as a list on the left, the form takes the
+       middle, and on a wide desk a summary rail on the right keeps the cost
+       chain, the carton and what is still missing in view. */
+    .editor-rail { display: none; }
+    @media (min-width: 1024px) {
       .product-editor-lead__content { padding-bottom: 0; }
-      .product-editor-page { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 16px; align-items: start; }
-      .product-editor-page > .subnav.erp-workspace__nav { position: sticky; top: calc(var(--appbar-h) + 14px); z-index: 5; grid-area: 1 / 2; width: 100%; max-width: none; margin: 0;
+      .product-editor-page { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; }
+      .product-editor-page > .subnav.erp-workspace__nav { position: sticky; top: calc(var(--appbar-h) + 14px); z-index: 5; grid-area: 1 / 1; width: 100%; max-width: none; margin: 0;
         padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
-      .product-editor-page > .editor-canvas { grid-area: 1 / 1; max-width: none; margin: 0; }
-      .product-editor-page > :not(.subnav):not(.editor-canvas) { grid-column: 1 / -1; }
+      .product-editor-page > .editor-canvas { grid-area: 1 / 2; max-width: none; margin: 0; }
+      .product-editor-page > :not(.subnav):not(.editor-canvas):not(.editor-rail) { grid-column: 1 / -1; }
+    }
+    @media (min-width: 1360px) {
+      .product-editor-page { grid-template-columns: 200px minmax(0, 1fr) 292px; }
+      .editor-rail { position: sticky; top: calc(var(--appbar-h) + 14px); display: grid; grid-area: 1 / 3; gap: 10px; max-height: calc(100dvh - var(--appbar-h) - 28px); overflow-y: auto; }
+    }
+    .editor-rail__card { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
+    .editor-rail__card--warn { border-color: #eddcb9; background: var(--warn-soft); }
+    .editor-rail__card h3 { margin: 0 0 8px; color: var(--rose); font-size: 10px; font-weight: 760; letter-spacing: .1em; text-transform: uppercase; }
+    .editor-rail__link { display: inline-block; margin-top: 8px; font-size: 12px; }
+    .editor-rail__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+    .editor-rail__list button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+    .editor-rail__list button:hover { border-color: var(--rose-line); background: var(--rose-soft); }
+    .editor-rail__list i { display: grid; width: 18px; height: 18px; flex: none; place-items: center; border-radius: 50%; background: var(--warn); color: #fff; font-size: 11px; font-style: normal; font-weight: 800; }
+    .editor-rail__list span { flex: 1; min-width: 0; }
+    .editor-rail__list b { color: var(--muted); }
+    .editor-rail__ok { display: flex; gap: 8px; margin: 0; color: var(--ok); font-size: 12px; }
+    .editor-rail__note { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; }
+    .editor-rail .desk-chain__row b { font-variant-numeric: tabular-nums; }
+    .editor-rail .desk-facts > div { grid-template-columns: 78px minmax(0, 1fr); }
+    @media (min-width: 1024px) {
       .subnav.erp-workspace__nav .erp-workspace__nav-rail { flex-direction: column; gap: 0; padding: 0; overflow: visible; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item { position: relative; width: 100%; justify-content: flex-start; gap: 10px;
         min-height: 44px; padding: 6px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); box-shadow: none; }
@@ -1638,6 +1714,16 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       .product-editor-lead__content { padding-top: 10px; }
       .product-editor-hero__actions { display: none; }
       .product-editor-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
+      /* The hero stays one glance: a smaller photo, the two numbers side by
+         side as one line each, so the first field is in view at once. */
+      .product-editor-hero { grid-template-columns: 56px minmax(0, 1fr); gap: 8px 10px; padding: 10px 12px; }
+      .product-editor-hero__media { width: 56px; height: 56px; border-radius: 12px; }
+      .product-editor-hero__placeholder { font-size: 18px; }
+      .product-editor-hero .erp-workspace__title { font-size: 15px; }
+      .product-editor-hero .erp-workspace__meta { font-size: 11px; }
+      .product-editor-hero .erp-workspace__fact { padding: 6px 8px; }
+      .product-editor-hero .erp-workspace__fact-value { font-size: 14px; }
+      .product-editor-hero .erp-workspace__fact-note { display: none; }
     }
     @media (min-width: 680px) {
       .product-editor-hero { grid-template-columns: 104px minmax(0, 1fr) auto;
@@ -2544,6 +2630,18 @@ export class ProductEditor implements OnDestroy {
 
   readonly unitMargin = computed(() =>
     Math.round((this.salesPrice() - (this.draft().landedCostEur ?? 0)) * 100) / 100);
+
+  /** The margin as a share of the sales price, for the rail. */
+  marginPercent(): number {
+    const price = this.salesPrice();
+    return price > 0 ? (this.unitMargin() / price) * 100 : 0;
+  }
+
+  /** Jumps to a section and lands the cursor in the field that is still empty. */
+  focusField(tab: string, field: string): void {
+    this.showTab(tab);
+    setTimeout(() => document.getElementById(field)?.focus(), 350);
+  }
 
   readonly readinessIssues = computed(() => {
     const family = this.family();
