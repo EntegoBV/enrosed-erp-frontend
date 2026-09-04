@@ -115,7 +115,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
             </fieldset>
 
             <fieldset class="pdf-option-group">
-              <legend>Afgesproken prijzen</legend>
+              <legend>Afgesproken inkoopprijzen</legend>
               <label class="pdf-option pdf-option--master">
                 <input type="checkbox"
                        [ngModel]="portraitOptions().showPrices"
