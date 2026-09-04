@@ -781,49 +781,51 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           </div>
           <div class="logistics-grid">
-            <div class="logistics-option">
-              <div class="logistics-option__icon" aria-hidden="true">
-                {{ isLooseCartons(data) ? '▤' : '▦' }}
-              </div>
-              <div class="logistics-option__copy">
-                <strong>Transport</strong>
-                <span>
-                  @if (isLooseCartons(data)) {
-                    {{ data.priced.totals.cbm | cbm }} · losse dozen
-                  } @else {
-                    {{ data.order.pallets.length ? 'Zelf ingedeeld' : 'Automatische indeling' }}
-                  }
-                </span>
-                @if (data.order.freight === 'TE_BEPALEN') {
-                  <span class="danger-text">Vrachtprijs nog te bepalen</span>
+            <!-- The facts first, the planner one tap away: on a phone you read
+                 the delivery before you touch it. -->
+            <dl class="desk-facts logistics-facts">
+              <div><dt>Lading</dt><dd>
+                @if (isLooseCartons(data)) {
+                  {{ data.priced.totals.cartons | num }} losse {{ data.priced.totals.cartons === 1 ? 'doos' : 'dozen' }}
+                  <small>{{ data.priced.totals.cbm | cbm }} · {{ data.priced.totals.weightKg | num: 0 }} kg</small>
                 } @else {
-                  <span>{{ freightStrategyLabel(data) }} · {{ data.priced.totals.freight | eur }}</span>
+                  {{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}
+                  {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}
+                  <small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.cbm | cbm }}</small>
                 }
-                @if (transitDays(); as days) {
-                  <span>Transittijd ± {{ days }} {{ days === 1 ? 'werkdag' : 'werkdagen' }}
-                    naar {{ orderCountryName() }}</span>
+              </dd></div>
+              <div><dt>Vracht</dt><dd>
+                @if (data.order.freight === 'TE_BEPALEN') {
+                  <span class="danger-text">nog te bepalen</span><small>de klant ziet nog geen bedrag</small>
+                } @else {
+                  {{ data.priced.totals.freight | eur }}<small>{{ freightStrategyLabel(data) }} · {{ freightBasisLabel(data) }}</small>
                 }
-              </div>
+              </dd></div>
+              @if (transitDays(); as days) {
+                <div><dt>Transit</dt><dd>± {{ days }} {{ days === 1 ? 'werkdag' : 'werkdagen' }}<small>naar {{ orderCountryName() }}</small></dd></div>
+              }
+              <div><dt>Levering</dt><dd>{{ deliverySummary(data) }}</dd></div>
               @if (!isLooseCartons(data) && data.order.pallets.length) {
-                <span class="badge" [class]="layoutOk() ? 'badge--ok' : 'badge--warn'">
-                  {{ layoutOk() ? 'compleet' : 'nakijken' }}
-                </span>
+                <div><dt>Pallets</dt><dd>
+                  @for (pallet of data.order.pallets; track $index) {
+                    <span class="logistics-pallet">{{ pallet.label || 'Pallet ' + ($index + 1) }} · {{ palletCartonCount(pallet) | num }} {{ palletCartonCount(pallet) === 1 ? 'doos' : 'dozen' }}@if (pallet.heightCm) { · {{ pallet.heightCm | num: 0 }} cm }</span>
+                  }
+                </dd></div>
               }
-              <button class="btn btn--sm" type="button" [disabled]="!canEditTerms()"
-                      (click)="canEdit() ? palletSheet.set(true) : freightOpen.set(!freightOpen())"
-                      [attr.aria-expanded]="canEdit() ? palletSheet() : freightOpen()"
-                      [attr.aria-haspopup]="canEdit() ? 'dialog' : null"
-                      [attr.aria-controls]="canEdit() ? null : 'freight-options'">
-                {{ !canEdit() && freightOpen() ? 'Sluiten' : 'Aanpassen' }}
-              </button>
-
-              @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
-                <div class="logistics-option__warning">
-                  {{ data.priced.totals.unassignedCartons }} dozen zijn nog niet toegewezen.
-                </div>
-              }
-
-              @if (!canEdit() && freightOpen()) {
+            </dl>
+            @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
+              <div class="logistics-option__warning">
+                {{ data.priced.totals.unassignedCartons | num }} dozen zijn nog niet aan een pallet toegewezen.
+              </div>
+            }
+            <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditTerms()"
+                    (click)="canEdit() ? palletSheet.set(true) : freightOpen.set(!freightOpen())"
+                    [attr.aria-expanded]="canEdit() ? palletSheet() : freightOpen()"
+                    [attr.aria-haspopup]="canEdit() ? 'dialog' : null"
+                    [attr.aria-controls]="canEdit() ? null : 'freight-options'">
+              {{ canEdit() ? 'Transport & levering aanpassen' : (freightOpen() ? 'Sluiten' : 'Vracht aanvullen') }}
+            </button>
+            @if (!canEdit() && freightOpen()) {
                 <div class="freight-options" id="freight-options">
                   <label class="check-option">
                     <input type="checkbox" [checked]="data.order.freight === 'TE_BEPALEN'"
@@ -890,8 +892,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     <span class="hint">Vul de prijs in en zet ‘Later bepalen’ uit wanneer hij klaar is.</span>
                   }
                 </div>
-              }
-            </div>
+            }
           </div>
         </section>
         }
@@ -1703,6 +1704,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .logistics-option .badge { grid-column:2;justify-self:start }
     .logistics-option>.btn { min-height:44px }
     .logistics-option__warning { grid-column:1/-1;padding:8px 10px;border-radius:9px;background:var(--warn-soft);color:var(--warn);font-size:11.5px }
+    .logistics-facts { margin-bottom:10px } .logistics-pallet { display:block;font-weight:500 } .logistics-open { margin-top:10px } .logistics-option__warning { margin-top:8px }
     .freight-options { grid-column:1/-1;padding-top:10px;border-top:1px solid var(--line) }
     .check-option { min-height:52px;padding:10px;display:flex;gap:10px;border:1px solid var(--line);border-radius:11px;cursor:pointer }
     .check-option input { width:20px;height:20px;margin:1px 0;accent-color:var(--rose) }
@@ -3187,6 +3189,10 @@ export class SalesEditor {
         this.setItemCartons(event.palletIndex, event.productId, event.cartons);
         break;
     }
+  }
+
+  palletCartonCount(pallet: OrderPallet): number {
+    return pallet.items.reduce((sum, item) => sum + item.cartons, 0);
   }
 
   isLooseCartons(data: SalesOrderView): boolean {
