@@ -274,6 +274,18 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                     </div>
                   </div>
                 }
+                @for (extra of data.extraLines ?? []; track $index) {
+                  <div class="list-item">
+                    <div class="portal-line__photo portal-line__photo--empty" aria-hidden="true">＋</div>
+                    <div class="list-item__body">
+                      <div class="list-item__title">{{ extra.description }}</div>
+                      <div class="list-item__meta">{{ extra.quantity | num: 0: locale() }} × {{ extra.unitPrice | eur: 2: locale() }}</div>
+                    </div>
+                    <div class="list-item__end">
+                      <div class="strong num">{{ extra.total | eur: 2: locale() }}</div>
+                    </div>
+                  </div>
+                }
               </div>
             </div>
           </div>
@@ -295,6 +307,10 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
               }
               <div class="stat-row stat-row--sub"><span>{{ t('goodsValue') }}</span>
                 <span class="num">{{ data.totals.goodsTotal | eur: 2: locale() }}</span></div>
+              @if (data.totals.extraLinesTotal) {
+                <div class="stat-row"><span>{{ t('extraLines') }}</span>
+                  <span class="num">{{ data.totals.extraLinesTotal | eur: 2: locale() }}</span></div>
+              }
               <div class="stat-row">
                 <span>
                   {{ t('freight') }}

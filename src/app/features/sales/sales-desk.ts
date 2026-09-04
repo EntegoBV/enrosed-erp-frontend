@@ -27,7 +27,7 @@ type DeskRow =
 
 interface JourneyStep {
   label: string;
-  state: 'done' | 'now' | 'todo';
+  state: 'done' | 'now' | 'todo' | 'stop' | 'wait';
 }
 
 /**
@@ -93,14 +93,13 @@ interface JourneyStep {
                 @if (lastEvent(); as event) { · {{ event.summary }} ({{ event.at | dateTimeNl }}) }</p>
             </div>
             <div class="desk-status" role="group" aria-label="Voortgang van het document">
-              @if (terminalLabel(data.order); as terminal) {
-                <span class="desk-status__step desk-status__step--now"><i aria-hidden="true">!</i>{{ terminal }}</span>
-              }
               @for (step of journey(); track step.label; let last = $last) {
                 <span class="desk-status__step"
                       [class.desk-status__step--done]="step.state === 'done'"
-                      [class.desk-status__step--now]="step.state === 'now'">
-                  <i aria-hidden="true">@if (step.state === 'done') { ✓ } @else { {{ $index + 1 }} }</i>{{ step.label }}
+                      [class.desk-status__step--now]="step.state === 'now'"
+                      [class.desk-status__step--stop]="step.state === 'stop'"
+                      [class.desk-status__step--wait]="step.state === 'wait'">
+                  <i aria-hidden="true">@switch (step.state) { @case ('done') { ✓ } @case ('stop') { × } @case ('wait') { ⇄ } @default { {{ $index + 1 }} } }</i>{{ step.label }}
                 </span>
                 @if (!last) { <span class="desk-status__line" [class.desk-status__line--done]="step.state === 'done'" aria-hidden="true"></span> }
               }
@@ -240,9 +239,13 @@ interface JourneyStep {
               <button class="btn btn--primary btn--sm" type="button" [disabled]="!canEdit() || !available().length" (click)="openPicker()">
                 <span aria-hidden="true">＋</span> Product
               </button>
+              <button class="btn btn--sm" type="button" [disabled]="!canEdit()" (click)="addExtraLine()"
+                      title="Een eigen regel op het document, buiten de staffels">
+                <span aria-hidden="true">＋</span> Andere regel
+              </button>
             </div>
 
-            @if (data.priced.lines.length) {
+            @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
               <table class="desk-table" [class.desk-table--editing]="canEdit()">
                 <thead>
@@ -394,6 +397,50 @@ interface JourneyStep {
                     }
                   }
                 }
+                <!-- Free lines: an own line on the document, priced as typed,
+                     outside the tiers and the product margin. -->
+                @for (extra of data.order.extraLines ?? []; track $index; let i = $index) {
+                  <tr class="desk-row desk-row--extra">
+                    <td class="c-product">
+                      <div class="desk-extra">
+                        <span class="desk-extra__mark" aria-hidden="true">＋</span>
+                        @if (canEdit()) {
+                          <input class="input desk-cell desk-extra__what" type="text" maxlength="120"
+                                 placeholder="Omschrijving, bv. montage ter plaatse"
+                                 [attr.aria-label]="'Omschrijving regel ' + (i + 1)"
+                                 [ngModel]="extra.description"
+                                 (ngModelChange)="setExtraLine(i, { description: $event })" />
+                        } @else {
+                          <span class="desk-product__copy"><strong>{{ extra.description }}</strong><small>eigen regel · buiten de staffels</small></span>
+                        }
+                      </div>
+                    </td>
+                    <td class="c-qty num">
+                      @if (canEdit()) {
+                        <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="decimal"
+                               [attr.aria-label]="'Aantal regel ' + (i + 1)"
+                               [ngModel]="extra.quantity" (ngModelChange)="setExtraLine(i, { quantity: +$event })" />
+                      } @else { <b>{{ extra.quantity | num }}</b> }
+                    </td>
+                    <td class="c-price">
+                      @if (canEdit()) {
+                        <input class="input num right desk-cell" type="number" step="0.01" inputmode="decimal" placeholder="prijs"
+                               [attr.aria-label]="'Prijs per stuk regel ' + (i + 1)"
+                               [ngModel]="extra.unitPriceEur"
+                               (ngModelChange)="setExtraLine(i, { unitPriceEur: $event === '' || $event === null ? null : +$event })" />
+                      } @else { <b class="num">{{ extra.unitPriceEur | eur: 2 }}</b> }
+                    </td>
+                    <td class="c-disc"><span class="muted">—</span></td>
+                    <td class="c-money num c-money--total">{{ extraLineTotal(extra) | eur }}</td>
+                    <td class="c-money num"><span class="muted">—</span></td>
+                    <td class="c-delivery"><small class="muted">eigen regel</small></td>
+                    @if (canEdit()) {
+                      <td class="c-act">
+                        <button class="desk-remove" type="button" [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))" (click)="removeExtraLine(i)">×</button>
+                      </td>
+                    }
+                  </tr>
+                }
                 </tbody>
                 <tfoot>
                   <tr>
@@ -415,6 +462,7 @@ interface JourneyStep {
                 <h3>Nog geen producten</h3>
                 <p>Voeg een product toe, kies het aantal en de prijs wordt meteen berekend.</p>
                 <button class="btn btn--primary" type="button" [disabled]="!canEdit() || !available().length" (click)="openPicker()">Eerste product toevoegen</button>
+                <button class="btn" type="button" [disabled]="!canEdit()" (click)="addExtraLine()">Andere regel</button>
               </div>
             }
           </main>
@@ -594,6 +642,9 @@ interface JourneyStep {
                         <div class="desk-chain__row"><i>−</i><span>{{ data.order.extraDiscountLabel || 'Extra korting' }} <small>{{ data.order.extraDiscountPct | pct: 1 }}</small></span><b>{{ data.priced.totals.extraDiscountAmount | eur }}</b></div>
                       }
                       <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Goederen</span><b>{{ data.priced.totals.goodsTotal | eur }}</b></div>
+                      @if ((data.priced.extraLines ?? []).length) {
+                        <div class="desk-chain__row"><i>+</i><span>Andere regels <small>eigen lijnen, buiten de staffels</small></span><b>{{ data.priced.totals.extraLinesTotal | eur }}</b></div>
+                      }
                       <div class="desk-chain__row"><i>+</i><span>Verzending <small>{{ data.order.freight === 'TE_BEPALEN' ? 'nog te bepalen' : freightBasisLabel(data) }}</small></span>
                         <b>@if (data.order.freight === 'TE_BEPALEN') { <span class="danger-text">—</span> } @else { {{ data.priced.totals.freight + data.priced.totals.handling | eur }} }</b></div>
                       <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Totaal excl. btw</span><b>{{ data.priced.totals.total | eur }}</b></div>
@@ -898,6 +949,9 @@ interface JourneyStep {
   `,
   styles: [`
     :host{display:block;min-width:0}
+    .desk-row--extra td{background:var(--surface-2)}.desk-extra{display:flex;align-items:center;gap:10px}.desk-extra__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose);font-weight:800}.desk-extra__what{flex:1;min-width:0;text-align:left}.desk-empty .btn+.btn{margin-left:8px}
+    .desk-status__step--stop{color:#f6a3a3;border-color:rgb(246 163 163/.4);background:rgb(246 163 163/.12)}.desk-status__step--stop i{background:#c0392b;color:#fff}
+    .desk-status__step--wait{color:#f4cf9a;border-color:rgb(244 207 154/.4);background:rgb(244 207 154/.12)}.desk-status__step--wait i{background:#f4cf9a;color:#3a2a10}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
@@ -980,7 +1034,12 @@ export class SalesDesk extends SalesEditor {
     return rows;
   });
 
-  /** The document's road, as far as it got: four stops for a quote, four for an invoice. */
+  /**
+   * The document's road, as far as it got. A quote that was cancelled,
+   * rejected or expired ends where it stopped: the stops it passed stay
+   * ticked, the end state closes the row, and the stops it never reached
+   * are not drawn. A change request waits between Bekeken and Geaccepteerd.
+   */
   journey(): JourneyStep[] {
     const order = this.view()?.order;
     if (!order) return [];
@@ -991,22 +1050,27 @@ export class SalesDesk extends SalesEditor {
         label, state: flags[index] ? 'done' : index === now ? 'now' : 'todo',
       }));
     }
-    const reached = order.status === 'GEACCEPTEERD' ? 4
-      : order.status === 'BEKEKEN' || order.status === 'WIJZIGING_GEVRAAGD' ? 3
-      : order.status === 'VERZONDEN' || order.sentAt ? 2 : 1;
+    const sent = !!order.sentAt || order.status === 'VERZONDEN' || order.status === 'BEKEKEN'
+      || order.status === 'WIJZIGING_GEVRAAGD' || order.status === 'GEACCEPTEERD';
+    const viewed = !!order.viewedAt || order.status === 'BEKEKEN'
+      || order.status === 'WIJZIGING_GEVRAAGD' || order.status === 'GEACCEPTEERD';
+    if (order.status === 'AFGEWEZEN' || order.status === 'VERLOPEN' || order.status === 'GEANNULEERD') {
+      const passed: JourneyStep[] = [{ label: 'Concept', state: 'done' }];
+      if (sent) passed.push({ label: 'Verzonden', state: 'done' });
+      if (viewed) passed.push({ label: 'Bekeken', state: 'done' });
+      return [...passed, { label: this.label(order.status), state: 'stop' }];
+    }
+    if (order.status === 'WIJZIGING_GEVRAAGD') {
+      return [
+        { label: 'Concept', state: 'done' }, { label: 'Verzonden', state: 'done' },
+        { label: 'Bekeken', state: 'done' }, { label: 'Wijziging gevraagd', state: 'wait' },
+        { label: 'Geaccepteerd', state: 'todo' },
+      ];
+    }
+    const reached = order.status === 'GEACCEPTEERD' ? 4 : viewed ? 3 : sent ? 2 : 1;
     return ['Concept', 'Verzonden', 'Bekeken', 'Geaccepteerd'].map((label, index) => ({
       label, state: index < reached - 1 ? 'done' : index === reached - 1 ? 'now' : 'todo',
     }));
-  }
-
-  /** A state outside the happy road gets its own chip in front of the steps. */
-  terminalLabel(order: SalesOrder): string | null {
-    switch (order.status) {
-      case 'AFGEWEZEN': case 'VERLOPEN': case 'GEANNULEERD': case 'WIJZIGING_GEVRAAGD':
-        return this.label(order.status);
-      default:
-        return null;
-    }
   }
 
   invoiceNextStep(data: SalesOrderView): string {

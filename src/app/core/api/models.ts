@@ -1102,6 +1102,21 @@ export interface PurchaseOrderView {
 
 /* ----------------------------------------------------------------- sales */
 
+/** A free line next to the products: assembly, an extra transport leg, a sample. Outside the tiers. */
+export interface SalesExtraLine {
+  description: string;
+  quantity: number;
+  unitPriceEur: number | null;
+}
+
+/** A free line as priced by the server. */
+export interface PricedExtraLine {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
 export interface SalesOrderLine {
   id: number | null;
   productId: number;
@@ -1174,6 +1189,8 @@ export interface SalesOrder {
   docType?: DocumentType | null;
   /** Put away in the archive tab; null while on the working list. Server-owned. */
   archivedAt?: string | null;
+  /** Free lines next to the products; own lines on the document, outside the tiers. */
+  extraLines?: SalesExtraLine[];
   invoiceDueDate?: string | null;
   paidAt?: string | null;
   sourceQuoteId?: number | null;
@@ -1239,7 +1256,11 @@ export interface PricedOrder {
     total: number; vatRatePct: number; vatAmount: number; totalInclVat: number;
     vatTreatment: string; vatLegalMention: string | null; vatReason: string | null;
     costTotal: number; marginEur: number; marginPct: number; marginAfterFreightEur: number;
+    /** The free lines added up; inside total, outside goodsTotal and the margin. */
+    extraLinesTotal?: number;
   };
+  /** Free lines as priced; optional while an older backend answers. */
+  extraLines?: PricedExtraLine[];
   validation: {
     minOrderValue: number; meetsMinimum: boolean; shortfall: number;
     hasLines: boolean; countrySelected: boolean; productsWithoutCost: string[];
@@ -1412,7 +1433,10 @@ export interface PortalQuote {
     goodsTotal: number; freight: number; handling: number;
     total: number; vatRatePct: number; vatAmount: number; totalInclVat: number;
     vatTreatment: string; vatLegalMention: string | null;
+    extraLinesTotal?: number;
   };
+  /** Free lines next to the products; optional while an older backend answers. */
+  extraLines?: { description: string; quantity: number; unitPrice: number; total: number }[];
   canRespond: boolean;
   signedByName: string | null;
   proposals: { status: string; proposedAt: string; message: string | null;

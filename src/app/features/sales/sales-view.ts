@@ -388,6 +388,21 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   </div>
                 }
 
+                @if ((data.priced.extraLines ?? []).length) {
+                  <section class="extra-lines extra-lines--read" aria-label="Andere regels">
+                    <div class="extra-lines__head">
+                      <strong>Andere regels</strong>
+                      <small>Eigen lijnen op het document, buiten de staffels</small>
+                    </div>
+                    @for (extra of data.priced.extraLines ?? []; track $index) {
+                      <div class="extra-line extra-line--read">
+                        <span class="extra-line__what"><b>{{ extra.description }}</b><small>{{ extra.quantity | num }} × {{ extra.unitPrice | eur: 2 }}</small></span>
+                        <strong class="num extra-line__total">{{ extra.total | eur }}</strong>
+                      </div>
+                    }
+                  </section>
+                }
+
                 <ng-template #salesVariant let-line let-group="group" let-section="section"
                              let-variantIndex="variantIndex">
                   <article class="sales-line" [class.sales-line--variant]="group.familyId !== null">
@@ -512,6 +527,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <header><span class="section-kicker">Controle</span><h2>Totalen</h2></header>
               <dl class="totals-list">
                 <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div>
+                @if ((data.priced.extraLines ?? []).length) {
+                  <div><dt>Andere regels</dt><dd>{{ data.priced.totals.extraLinesTotal | eur: 2 }}</dd></div>
+                }
                 <div><dt>Vracht <small>{{ freightStrategyLabel(data) }}</small></dt><dd>{{ freightAmount(data) }}</dd></div>
                 <div><dt>Handling</dt><dd>{{ data.priced.totals.handling | eur: 2 }}</dd></div>
                 <div class="totals-list__main"><dt>{{ isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }} <small>excl. BTW</small></dt><dd>{{ data.priced.totals.total | eur: 2 }}</dd></div>

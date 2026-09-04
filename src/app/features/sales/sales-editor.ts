@@ -8,7 +8,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
-  MarkupMode, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesOrder, SalesOrderView,
+  MarkupMode, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -762,6 +762,53 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                         (click)="openPicker()">Eerste product toevoegen</button>
               </div>
             }
+
+            <!-- A line of your own next to the products: assembly, an extra
+                 transport leg, a sample. It reads as its own line on the
+                 document and stays outside the tier discounts. -->
+            @if ((data.order.extraLines ?? []).length || canEdit()) {
+              <div class="extra-lines" aria-label="Andere regels">
+                <div class="extra-lines__head">
+                  <strong>Andere regels</strong>
+                  <small>Eigen lijn op het document, buiten de staffels</small>
+                </div>
+                @for (extra of data.order.extraLines ?? []; track $index; let i = $index) {
+                  <div class="extra-line">
+                    <input class="input extra-line__what" type="text" maxlength="120"
+                           placeholder="Omschrijving, bv. montage ter plaatse"
+                           [attr.aria-label]="'Omschrijving regel ' + (i + 1)"
+                           [disabled]="!canEdit()"
+                           [ngModel]="extra.description"
+                           (ngModelChange)="setExtraLine(i, { description: $event })" />
+                    <input class="input num extra-line__qty" type="number" min="0" step="1" inputmode="decimal"
+                           [attr.aria-label]="'Aantal regel ' + (i + 1)"
+                           [disabled]="!canEdit()"
+                           [ngModel]="extra.quantity"
+                           (ngModelChange)="setExtraLine(i, { quantity: +$event })" />
+                    <div class="input-affix extra-line__price">
+                      <input class="input num" type="number" step="0.01" inputmode="decimal"
+                             placeholder="Prijs per stuk"
+                             [attr.aria-label]="'Prijs per stuk regel ' + (i + 1)"
+                             [disabled]="!canEdit()"
+                             [ngModel]="extra.unitPriceEur"
+                             (ngModelChange)="setExtraLine(i, { unitPriceEur: $event === '' || $event === null ? null : +$event })" />
+                      <span class="input-affix__suffix">EUR</span>
+                    </div>
+                    <strong class="num extra-line__total">{{ extraLineTotal(extra) | eur }}</strong>
+                    <button class="other-cost__remove" type="button" [disabled]="!canEdit()"
+                            [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))"
+                            (click)="removeExtraLine(i)">×</button>
+                  </div>
+                }
+                @if (canEdit()) {
+                  <button class="other-costs__add" type="button" (click)="addExtraLine()">
+                    <span aria-hidden="true">+</span>
+                    <b>Andere regel</b>
+                    <small>montage, transport extra, staal … eigen prijs, geen staffel</small>
+                  </button>
+                }
+              </div>
+            }
           </div>
         </section>
 
@@ -930,6 +977,16 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               } @empty {
                 <li class="hint">Nog geen producten op de order.</li>
               }
+              @for (extra of data.priced.extraLines ?? []; track $index) {
+                <li>
+                  <span class="check-lines__photo check-lines__photo--empty" aria-hidden="true">＋</span>
+                  <span class="check-lines__what">
+                    <b>{{ extra.description }}</b>
+                    <small>{{ extra.quantity | num }} × {{ extra.unitPrice | eur: 2 }} · eigen regel, buiten de staffels</small>
+                  </span>
+                  <span class="num check-lines__amount">{{ extra.total | eur }}</span>
+                </li>
+              }
               @if (data.priced.lines.length) {
                 <li class="check-lines__delivery">
                   <span class="check-lines__delivery-icon" aria-hidden="true">
@@ -1023,6 +1080,18 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 }
               }
 
+              @if ((data.priced.extraLines ?? []).length) {
+                <div class="receipt__row receipt__row--head">
+                  <span>Andere regels</span>
+                  <span class="num">{{ data.priced.totals.extraLinesTotal | eur }}</span>
+                </div>
+                @for (extra of data.priced.extraLines ?? []; track $index) {
+                  <div class="receipt__row receipt__row--sub">
+                    <span>{{ extra.description }} · {{ extra.quantity | num }} × {{ extra.unitPrice | eur: 2 }}</span>
+                    <span class="num">{{ extra.total | eur }}</span>
+                  </div>
+                }
+              }
               <div class="receipt__row receipt__row--head">
                 <span>Verzending</span>
                 <span class="num">
@@ -2660,6 +2729,35 @@ export class SalesEditor {
       ...order,
       lines: order.lines.filter((line) => line.productId !== productId),
     }));
+  }
+
+  /* ---- free lines: an own line on the document, outside the tiers ---- */
+  addExtraLine(): void {
+    if (!this.canEdit()) return;
+    this.enqueue((order) => ({
+      ...order,
+      extraLines: [...(order.extraLines ?? []), { description: '', quantity: 1, unitPriceEur: null }],
+    }));
+  }
+
+  setExtraLine(index: number, changes: Partial<SalesExtraLine>): void {
+    if (!this.canEdit()) return;
+    this.enqueue((order) => ({
+      ...order,
+      extraLines: (order.extraLines ?? []).map((line, i) => (i === index ? { ...line, ...changes } : line)),
+    }));
+  }
+
+  removeExtraLine(index: number): void {
+    if (!this.canEdit()) return;
+    this.enqueue((order) => ({
+      ...order,
+      extraLines: (order.extraLines ?? []).filter((_, i) => i !== index),
+    }));
+  }
+
+  extraLineTotal(line: SalesExtraLine): number {
+    return Math.round((line.quantity || 0) * (line.unitPriceEur || 0) * 100) / 100;
   }
 
   openPicker(): void {
