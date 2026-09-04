@@ -15,6 +15,10 @@ import { SupplierAddress } from '../../shared/supplier-address';
 import { Auth } from '../../core/api/auth';
 import { Fx } from '../../core/api/fx';
 import { purchaseFxDefaults, purchaseFxReference } from './purchase-price-context';
+import {
+  ROW_LONG_PRESS_MS, ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
+  rowSwipeDecision,
+} from '../../shared/row-actions';
 
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Vertrokken', ONTVANGEN: 'Ontvangen',
@@ -26,13 +30,25 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
   imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, SupplierAddress,
             EurPipe, NumPipe, CbmPipe, DateNlPipe],
   template: `
-    <app-page-header title="Inkoop" [subtitle]="orders().length + ' containercalculaties'">
+    <app-page-header title="Inkoop" [subtitle]="activeOrders().length + ' containercalculaties'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
         + Nieuw
       </button>
     </app-page-header>
 
     <div class="content">
+      <!-- The working list and the drawer under it: an archived container
+           stays exactly as it was, it just no longer sits in the way. -->
+      <div class="doc-tabs" role="tablist" aria-label="Werklijst of archief">
+        <button type="button" role="tab" [attr.aria-selected]="!archiveTab()"
+                [class.doc-tabs__active]="!archiveTab()" (click)="showArchive(false)">
+          Inkooporders <b>{{ activeOrders().length }}</b>
+        </button>
+        <button type="button" role="tab" [attr.aria-selected]="archiveTab()"
+                [class.doc-tabs__active]="archiveTab()" (click)="showArchive(true)">
+          Archief <b>{{ archivedOrders().length }}</b>
+        </button>
+      </div>
       <!-- One compact pill instead of a rail of chips: the native picker
            opens on tap, the pill just shows where you stand. -->
       <div class="po-filterbar">
@@ -46,7 +62,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             }
           </select>
         </div>
-        <span class="tiny muted">{{ filtered().length }} van {{ orders().length }}</span>
+        <span class="tiny muted">{{ filtered().length }} van {{ (archiveTab() ? archivedOrders() : activeOrders()).length }}</span>
       </div>
 
       @for (group of supplierSections(); track group.supplierId) {
@@ -62,16 +78,28 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
           <!-- iOS pattern, also with a mouse or trackpad: drag or scroll the
                row hard to the left and the delete confirm comes up itself;
                a softer swipe only reveals the button. No standing bin. -->
+          <!-- Drag left for the bin, drag right for the archive; hold the row
+               (or right-click it) for the same choices as a menu. -->
           <div class="swipe"
-               [class.swipe--open]="swiped() === row.order.id"
+               [class.swipe--open]="rowOpenSide(row.order.id) === 'end'"
+               [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
                [class.swipe--dragging]="draggingOrderId() === row.order.id"
                [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
+            <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
+                    [disabled]="archivingOrderId() !== null"
+                    [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ') + row.order.number">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M3 6h18v4H3z" /><path d="M5 10v9h14v-9" /><path d="M10 14h4" />
+              </svg>
+              <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
+            </button>
             <a class="list-item swipe__row" [routerLink]="['/purchasing', row.order.id]"
                (pointerdown)="startSwipe($event, row)"
                (pointermove)="moveSwipe($event, row)"
                (pointerup)="finishSwipe($event, row)"
                (pointercancel)="cancelSwipe($event)"
                (wheel)="wheelSwipe($event, row)"
+               (contextmenu)="openRowMenu($event, row)"
                (dragstart)="$event.preventDefault()"
                (click)="blockWhenSwiped($event)">
             <div class="list-item__body">
@@ -130,8 +158,8 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
           } @else {
           <div class="empty">
             <div class="empty__icon">▩</div>
-            <div class="empty__title">Nog geen inkooporders</div>
-            @if (!loading()) {
+            <div class="empty__title">{{ archiveTab() ? 'Niets in het archief' : 'Nog geen inkooporders' }}</div>
+            @if (!loading() && !archiveTab()) {
               <button class="btn btn--primary" type="button" (click)="startNew()">
                 Nieuwe calculatie
               </button>
@@ -142,6 +170,37 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     </div>
 
     <button class="fab" type="button" (click)="startNew()">+ Calculatie</button>
+
+    @if (rowMenu(); as menuRow) {
+      <app-sheet [title]="menuRow.order.alias || menuRow.order.number" (closed)="rowMenu.set(null)">
+        <div body>
+          <p class="row-menu__who">{{ supplierName(menuRow.order.supplierId) }} · {{ statusLabel(menuRow.order.status) }}
+            · {{ menuRow.costing.totals.totalEur | eur: 0 }}</p>
+          <div class="desk-actions">
+            <a class="desk-action" [routerLink]="['/purchasing', menuRow.order.id]" (click)="rowMenu.set(null)">
+              <i aria-hidden="true">›</i>
+              <span><b>Openen</b><small>Bekijken of bewerken</small></span>
+            </a>
+            <button class="desk-action" type="button" [disabled]="archivingOrderId() !== null"
+                    (click)="toggleArchive(menuRow)">
+              <i aria-hidden="true">▤</i>
+              <span>
+                <b>{{ menuRow.order.archivedAt ? 'Terugzetten uit archief' : 'Archiveren' }}</b>
+                <small>{{ menuRow.order.archivedAt ? 'Terug naar de werklijst' : 'Uit de werklijst, naar het tabblad Archief' }}</small>
+              </span>
+            </button>
+            @if (menuRow.order.status !== 'ONTVANGEN') {
+              <button class="desk-action desk-action--danger" type="button"
+                      [disabled]="deletingOrderId() !== null"
+                      (click)="rowMenu.set(null); remove(menuRow.order.id, menuRow.order.number)">
+                <i aria-hidden="true">×</i>
+                <span><b>Verwijderen</b><small>Definitief, na bevestiging</small></span>
+              </button>
+            }
+          </div>
+        </div>
+      </app-sheet>
+    }
 
     @if (picking()) {
       <app-sheet title="Nieuwe inkoopcalculatie" (closed)="picking.set(false)">
@@ -236,6 +295,11 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
   `,
   styles: [`
     .po-supplier + .po-supplier { margin-top: 16px; }
+    .doc-tabs { display:grid;grid-template-columns:1fr .8fr;gap:3px;margin-bottom:10px;padding:4px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2) }
+    .doc-tabs button { min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:11px;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:650;cursor:pointer }
+    .doc-tabs button b { min-width:20px;padding:1px 6px;border-radius:999px;background:var(--surface-2);font-size:11px }
+    .doc-tabs__active { background:var(--rose-soft)!important;color:var(--rose-dark)!important }
+    .doc-tabs__active b { background:var(--surface)!important }
     .po-filterbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .po-filter { position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 36px;
       padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
@@ -303,10 +367,21 @@ export class PurchaseList {
     { key: 'ONDERWEG', label: 'Vertrokken' }, { key: 'ONTVANGEN', label: 'Ontvangen' }, { key: 'ATTENTION', label: 'Actie vereist' },
   ];
   readonly statusFilter = signal('ALL');
+  /** The drawer under the working list. */
+  readonly archiveTab = signal(false);
+  readonly activeOrders = computed(() => this.orders().filter((row) => !row.order.archivedAt));
+  readonly archivedOrders = computed(() => this.orders().filter((row) => !!row.order.archivedAt));
+
+  showArchive(on: boolean): void {
+    if (this.archiveTab() === on) return;
+    this.archiveTab.set(on);
+    this.openRow.set(null);
+  }
+
   private readonly statusCounts = computed(() => {
     const counts = new Map<string, number>();
     let attention = 0;
-    for (const row of this.orders()) {
+    for (const row of (this.archiveTab() ? this.archivedOrders() : this.activeOrders())) {
       counts.set(row.order.status, (counts.get(row.order.status) ?? 0) + 1);
       if (row.attention?.length) attention++;
     }
@@ -315,9 +390,10 @@ export class PurchaseList {
   });
   readonly filtered = computed(() => {
     const key = this.statusFilter();
-    const rows = key === 'ALL' ? this.orders()
-      : key === 'ATTENTION' ? this.orders().filter((row) => row.attention?.length)
-      : this.orders().filter((row) => row.order.status === key);
+    const pile = this.archiveTab() ? this.archivedOrders() : this.activeOrders();
+    const rows = key === 'ALL' ? pile
+      : key === 'ATTENTION' ? pile.filter((row) => row.attention?.length)
+      : pile.filter((row) => row.order.status === key);
     /* Newest first: the order you placed this week is the one you want. */
     return rows.slice().sort((a, b) => b.order.orderDate.localeCompare(a.order.orderDate)
       || (b.order.id ?? 0) - (a.order.id ?? 0));
@@ -399,36 +475,64 @@ export class PurchaseList {
     return id === null ? null : this.supplierById().get(id) ?? null;
   });
 
-  /** Which row shows its delete button; only one at a time, like iOS. */
-  readonly swiped = signal<number | null>(null);
+  /** One row shows an action at a time, like iOS; a committed delete still asks for confirmation. */
+  readonly openRow = signal<{ id: number; side: RowSwipeSide } | null>(null);
   readonly draggingOrderId = signal<number | null>(null);
   readonly swipeOffset = signal(0);
   readonly deletingOrderId = signal<number | null>(null);
+  readonly archivingOrderId = signal<number | null>(null);
+  /** The row whose menu is open, from a long press or a right-click. */
+  readonly rowMenu = signal<PurchaseOrderView | null>(null);
   private swipeHandled = false;
   private pointerSwipe: { pointerId: number; orderId: number; startX: number; startY: number;
-    startOffset: number; horizontal: boolean; row: HTMLElement } | null = null;
+    startOffset: number; horizontal: boolean; row: HTMLElement;
+    hold: ReturnType<typeof setTimeout> | null } | null = null;
   private swipeResetTimer: ReturnType<typeof setTimeout> | null = null;
   /* Trackpads swipe with a horizontal scroll: gathered per gesture. */
   private wheelTotal = 0;
   private wheelOrderId: number | null = null;
   private wheelTimer: ReturnType<typeof setTimeout> | null = null;
 
+  rowOpenSide(id: number): RowSwipeSide | null {
+    const open = this.openRow();
+    return open !== null && open.id === id ? open.side : null;
+  }
+
+  /** A received container is history: it can be archived, never deleted. */
+  private canDelete(row: PurchaseOrderView): boolean {
+    return row.order.status !== 'ONTVANGEN';
+  }
+
   startSwipe(event: PointerEvent, row: PurchaseOrderView): void {
-    if (row.order.status === 'ONTVANGEN' || row.order.id === null
-        || !event.isPrimary || event.button !== 0) return;
+    if (row.order.id === null || !event.isPrimary || event.button !== 0
+        || this.deletingOrderId() !== null || this.archivingOrderId() !== null) return;
     if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
     this.swipeHandled = false;
-    if (this.swiped() !== null && this.swiped() !== row.order.id) this.swiped.set(null);
+    const open = this.openRow();
+    if (open !== null && open.id !== row.order.id) this.openRow.set(null);
     const target = event.currentTarget as HTMLElement;
-    this.pointerSwipe = {
+    const active = {
       pointerId: event.pointerId, orderId: row.order.id,
       startX: event.clientX, startY: event.clientY,
-      startOffset: this.swiped() === row.order.id ? -76 : 0,
+      startOffset: restingRowOffset(this.rowOpenSide(row.order.id)),
       horizontal: false, row: target,
+      hold: null as ReturnType<typeof setTimeout> | null,
     };
+    /* A press that stays put opens the row menu: the long press of a phone,
+       and just as well a mouse button held down. */
+    active.hold = setTimeout(() => {
+      if (this.pointerSwipe !== active || active.horizontal) return;
+      this.swipeHandled = true;
+      this.releaseSwipePointer(active);
+      this.resetPointerSwipe();
+      this.deferSwipeClickRelease();
+      this.openRowMenu(null, row);
+    }, ROW_LONG_PRESS_MS);
+    this.pointerSwipe = active;
     try {
       target.setPointerCapture(event.pointerId);
     } catch {
+      this.clearHold(active);
       this.pointerSwipe = null;
     }
   }
@@ -439,7 +543,8 @@ export class PurchaseList {
     const dx = event.clientX - active.startX;
     const dy = event.clientY - active.startY;
     if (!active.horizontal) {
-      if (Math.hypot(dx, dy) < 8) return;
+      if (Math.hypot(dx, dy) < ROW_LONG_PRESS_SLOP_PX) return;
+      this.clearHold(active);
       if (Math.abs(dx) <= Math.abs(dy) * 1.2) return;
       active.horizontal = true;
       this.swipeHandled = true;
@@ -447,61 +552,107 @@ export class PurchaseList {
     }
     event.preventDefault();
     event.stopPropagation();
-    this.swipeOffset.set(Math.max(-150, Math.min(0, active.startOffset + dx)));
+    this.swipeOffset.set(clampRowSwipeOffset(active.startOffset + dx, true, this.canDelete(row)));
   }
 
   finishSwipe(event: PointerEvent, row: PurchaseOrderView): void {
     const active = this.pointerSwipe;
     if (!active || active.pointerId !== event.pointerId) return;
+    this.clearHold(active);
     if (active.horizontal) {
       event.preventDefault();
       event.stopPropagation();
-      const offset = this.swipeOffset();
-      /* Dragged well past the button: that is the delete itself, iOS-Mail
-         style. The confirm dialog still guards the actual delete. */
-      if (offset <= -130) {
-        this.swiped.set(null);
-        this.remove(row.order.id, row.order.number);
-      } else {
-        this.swiped.set(offset <= -38 ? active.orderId : null);
-      }
+      this.settleSwipe(row, this.swipeOffset());
       this.deferSwipeClickRelease();
     }
     this.releaseSwipePointer(active);
-    this.draggingOrderId.set(null);
-    this.swipeOffset.set(0);
-    this.pointerSwipe = null;
+    this.resetPointerSwipe();
+  }
+
+  /** Where the row was let go decides: bin, archive, a button left showing, or folded back. */
+  private settleSwipe(row: PurchaseOrderView, offset: number): void {
+    const decision = rowSwipeDecision(offset);
+    if (decision.action === 'commit') {
+      this.openRow.set(null);
+      if (decision.side === 'end') this.remove(row.order.id, row.order.number);
+      else void this.toggleArchive(row);
+      return;
+    }
+    this.openRow.set(decision.action === 'reveal' && decision.side !== null
+      ? { id: row.order.id, side: decision.side } : null);
   }
 
   cancelSwipe(event: PointerEvent): void {
     const active = this.pointerSwipe;
     if (!active || active.pointerId !== event.pointerId) return;
+    this.clearHold(active);
     if (active.horizontal) this.deferSwipeClickRelease();
     else this.swipeHandled = false;
     this.releaseSwipePointer(active);
-    this.draggingOrderId.set(null);
-    this.swipeOffset.set(0);
-    this.pointerSwipe = null;
+    this.resetPointerSwipe();
   }
 
-  /** A hard two-finger swipe on a trackpad reads as the same gesture. */
+  /** A hard two-finger swipe on a trackpad reads as the same gesture, both ways. */
   wheelSwipe(event: WheelEvent, row: PurchaseOrderView): void {
-    if (row.order.status === 'ONTVANGEN' || row.order.id === null) return;
+    if (row.order.id === null || this.deletingOrderId() !== null || this.archivingOrderId() !== null) return;
     if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
     event.preventDefault();
-    if (this.wheelOrderId !== row.order.id) { this.wheelOrderId = row.order.id; this.wheelTotal = 0; }
+    if (this.wheelOrderId !== row.order.id) {
+      const open = this.openRow();
+      if (open !== null && open.id !== row.order.id) this.openRow.set(null);
+      this.wheelOrderId = row.order.id;
+      this.wheelTotal = 0;
+    }
     this.wheelTotal += event.deltaX;
     if (this.wheelTimer !== null) clearTimeout(this.wheelTimer);
     this.wheelTimer = setTimeout(() => { this.wheelOrderId = null; this.wheelTotal = 0; }, 250);
-    if (this.wheelTotal >= 130) {
-      this.wheelOrderId = null; this.wheelTotal = 0;
-      this.swiped.set(null);
-      this.remove(row.order.id, row.order.number);
-    } else if (this.wheelTotal >= 40) {
-      this.swiped.set(row.order.id);
-    } else if (this.wheelTotal <= -40) {
-      this.swiped.set(null);
+    /* Scrolling right slides the row left onto the bin; the other way onto the archive. */
+    const offset = clampRowSwipeOffset(-this.wheelTotal, true, this.canDelete(row));
+    if (rowSwipeDecision(offset).action === 'commit') {
+      this.wheelOrderId = null;
+      this.wheelTotal = 0;
     }
+    this.settleSwipe(row, offset);
+  }
+
+  /** The row's choices as a menu: a long press on a phone, a right-click on a desk. */
+  openRowMenu(event: Event | null, row: PurchaseOrderView): void {
+    event?.preventDefault();
+    this.openRow.set(null);
+    this.rowMenu.set(row);
+  }
+
+  /** Off the working list into the archive drawer, or back; the order itself stays as it is. */
+  async toggleArchive(row: PurchaseOrderView): Promise<void> {
+    if (this.archivingOrderId() !== null || row.order.id === null) return;
+    const id = row.order.id;
+    const toArchive = !row.order.archivedAt;
+    this.rowMenu.set(null);
+    this.openRow.set(null);
+    this.archivingOrderId.set(id);
+    try {
+      const updated = toArchive
+        ? await this.sourcing.archivePurchaseOrder(id) : await this.sourcing.unarchivePurchaseOrder(id);
+      this.orders.update((rows) => rows.map((candidate) => candidate.order.id === id ? updated : candidate));
+      this.ui.toast(toArchive ? `${row.order.number} gearchiveerd` : `${row.order.number} terug op de lijst`);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, toArchive ? 'Archiveren mislukt' : 'Terugzetten mislukt'), 'err');
+    } finally {
+      this.archivingOrderId.set(null);
+    }
+  }
+
+  private clearHold(active: { hold: ReturnType<typeof setTimeout> | null }): void {
+    if (active.hold !== null) {
+      clearTimeout(active.hold);
+      active.hold = null;
+    }
+  }
+
+  private resetPointerSwipe(): void {
+    this.pointerSwipe = null;
+    this.draggingOrderId.set(null);
+    this.swipeOffset.set(0);
   }
 
   private deferSwipeClickRelease(): void {
@@ -524,10 +675,10 @@ export class PurchaseList {
 
   /** A tap on a swiped-open row folds it back instead of navigating. */
   blockWhenSwiped(event: Event): void {
-    if (this.swiped() !== null || this.swipeHandled) {
+    if (this.openRow() !== null || this.swipeHandled) {
       event.preventDefault();
       event.stopPropagation();
-      if (!this.swipeHandled) this.swiped.set(null);
+      if (!this.swipeHandled) this.openRow.set(null);
     }
   }
 
@@ -535,7 +686,7 @@ export class PurchaseList {
     if (this.deletingOrderId() !== null || this.ui.confirmRequest() !== null) return;
     const row = this.orders().find((candidate) => candidate.order.id === id);
     if (row?.order.status === 'ONTVANGEN') {
-      this.swiped.set(null);
+      this.openRow.set(null);
       this.ui.toast('Ontvangen inkooporders kunnen niet worden verwijderd', 'err');
       return;
     }
@@ -548,7 +699,7 @@ export class PurchaseList {
         this.deletingOrderId.set(id);
         try {
           await this.sourcing.deletePurchaseOrder(id);
-          this.swiped.set(null);
+          this.openRow.set(null);
           this.orders.update((orders) =>
             orders.filter((candidate) => candidate.order.id !== id));
           this.ui.toast('Inkooporder verwijderd');

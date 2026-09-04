@@ -170,6 +170,17 @@ export class SourcingApi {
     return firstValueFrom(this.http.delete<void>(api(`/api/purchase-orders/${id}`)));
   }
 
+  /** Off the working list into the archive tab; the order itself does not change. */
+  archivePurchaseOrder(id: number): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.post<PurchaseOrderView>(
+      api(`/api/purchase-orders/${id}/archive`), {}));
+  }
+
+  unarchivePurchaseOrder(id: number): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.post<PurchaseOrderView>(
+      api(`/api/purchase-orders/${id}/unarchive`), {}));
+  }
+
   /** Legt de berekende kostprijzen vast op de producten. */
   applyLandedCosts(id: number): Promise<LandedCost> {
     return firstValueFrom(this.http.post<LandedCost>(api(`/api/purchase-orders/${id}/apply`), {}));

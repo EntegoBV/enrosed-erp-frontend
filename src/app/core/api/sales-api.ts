@@ -182,6 +182,17 @@ export class SalesApi {
     return firstValueFrom(this.http.delete<void>(api(`/api/sales-orders/${id}`)));
   }
 
+  /** Off the working list into the archive tab; the document itself does not change. */
+  archiveOrder(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/archive`), {}));
+  }
+
+  unarchiveOrder(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/unarchive`), {}));
+  }
+
   /* ----------------------------------------------------------- offertes */
 
   /** Builds the PDF, mails it to the customer and marks the quote sent. */

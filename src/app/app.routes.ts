@@ -45,12 +45,15 @@ export const routes: Routes = [
     path: 'sales/:id/edit',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
-    loadComponent: () => import('./features/sales/sales-editor').then((m) => m.SalesEditor),
+    data: { mode: 'edit' },
+    loadComponent: () => import('./features/sales/sales-screen').then((m) => m.SalesScreen),
   },
   {
     path: 'sales/:id',
     canActivate: [authGuard],
-    loadComponent: () => import('./features/sales/sales-view').then((m) => m.SalesView),
+    canDeactivate: [unsavedChangesGuard],
+    data: { mode: 'view' },
+    loadComponent: () => import('./features/sales/sales-screen').then((m) => m.SalesScreen),
   },
   {
     path: 'revisions',

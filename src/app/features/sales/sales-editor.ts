@@ -1820,11 +1820,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
   `],
 })
 export class SalesEditor {
-  private readonly sales = inject(SalesApi);
-  private readonly catalog = inject(CatalogApi);
+  protected readonly sales = inject(SalesApi);
+  protected readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
-  private readonly router = inject(Router);
-  private readonly ui = inject(Ui);
+  protected readonly router = inject(Router);
+  protected readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -2917,7 +2917,7 @@ export class SalesEditor {
   }
 
   /** History loads with the order: the status bar shows its last step. */
-  private async loadHistory(orderId: number): Promise<void> {
+  protected async loadHistory(orderId: number): Promise<void> {
     try {
       this.history.set(await this.sales.history(orderId));
     } catch {

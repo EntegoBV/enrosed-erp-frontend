@@ -992,6 +992,8 @@ export interface PurchaseOrder {
   inspectionCostEur?: number | null;
   /** Other named costs next to the inspection (certificate, lab test, ...): same rule, own lines. */
   otherCosts?: OtherCost[];
+  /** Put away in the archive tab; null while on the working list. Server-owned. */
+  archivedAt?: string | null;
   allocFreight: Allocation;
   allocOrigin: Allocation;
   allocDestination: Allocation;
@@ -1170,6 +1172,8 @@ export interface SalesOrder {
   freightCarrierExtraEur?: number | null;
   /** Quote or invoice; older orders without the field are quotes. */
   docType?: DocumentType | null;
+  /** Put away in the archive tab; null while on the working list. Server-owned. */
+  archivedAt?: string | null;
   invoiceDueDate?: string | null;
   paidAt?: string | null;
   sourceQuoteId?: number | null;

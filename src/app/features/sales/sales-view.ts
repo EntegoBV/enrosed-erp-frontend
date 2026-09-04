@@ -226,6 +226,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </div>
         </section>
 
+        <!-- The four-stop rail walks a phone through the document; a desk
+             shows every section at once and needs no such bar. -->
+        @if (!desktop.active()) {
         <nav class="sales-section-nav erp-workspace__section-nav" aria-label="Onderdelen van het verkoopdocument">
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-products'"
@@ -261,6 +264,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <span class="erp-workspace__section-copy"><b>Status</b><small>{{ label(data.order.status) }}</small></span>
           </button>
         </nav>
+        }
 
         @if (pendingRevision(); as revision) {
           <section class="revision-alert" aria-labelledby="revision-alert-title">

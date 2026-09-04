@@ -2067,6 +2067,19 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
   touch-action: pan-y;
 }
 .swipe--open .swipe__row { transform: translateX(-76px); }
+/* The opposite of the delete: a drag to the right uncovers the archive at the row's start. */
+.swipe--open-start .swipe__row { transform: translateX(76px); }
+.swipe__archive {
+  position: absolute; top: 0; left: 0; bottom: 0; width: 76px;
+  border: 0; background: var(--ok, #2e7d4f); color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  font: inherit; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; cursor: pointer;
+}
+.swipe__archive svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.swipe__archive:active { filter: brightness(0.9); }
+.swipe__archive:disabled { cursor: wait; opacity: 0.58; }
+.row-menu__who { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
+.desk-action--danger b { color: var(--danger); }
 .swipe__delete {
   position: absolute; top: 0; right: 0; bottom: 0; width: 76px;
   border: 0; background: var(--danger, #c0392b); color: #fff;
