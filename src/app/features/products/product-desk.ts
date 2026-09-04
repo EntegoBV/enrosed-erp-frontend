@@ -713,7 +713,6 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-more{margin-top:6px;font-size:12px}
     .pd-channels{display:flex;flex:none;gap:6px}.pd-channels span{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11.5px;font-weight:650;white-space:nowrap}
     .pd-channels i{width:8px;height:8px;border-radius:50%;background:var(--line-strong)}.pd-channels span.is-live{border-color:color-mix(in srgb,var(--ok) 40%,transparent);color:var(--ok)}.pd-channels span.is-live i{background:var(--ok)}
-    .pd-issues{margin:0;padding:0 0 0 18px;color:var(--ink-2);font-size:12px;line-height:1.5}
     .pd-links{margin-top:14px}.desk-action{text-decoration:none}
 
     /* ---- publication: the points, grouped by where they are fixed */
