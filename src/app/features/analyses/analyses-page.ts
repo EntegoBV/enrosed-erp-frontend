@@ -199,7 +199,7 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
           <a class="card attention-card" routerLink="/analyses/market">
             <span>Markt &amp; container</span>
             <strong>Koersen en vracht</strong>
-            <small>Compacte actuele referenties en eigen offertes</small>
+            <small>Valutaverloop per periode, koopkracht en containertarieven</small>
           </a>
         </div>
       </section>
@@ -570,7 +570,7 @@ export class AnalysesPage {
     sales: 'Pijplijn, conversie en facturen',
     inventory: 'Kapitaal, dekking en aankomende voorraad',
     purchasing: 'Ontvangstkwaliteit en inkoopimpact',
-    market: 'Wisselkoers en compacte containerprijzen',
+    market: 'Wisselkoersen met verloop, koopkracht en containervracht',
     website: 'Wie de website bezoekt, vanwaar, wanneer en waar ze naartoe gaan',
   })[this.section()]);
 

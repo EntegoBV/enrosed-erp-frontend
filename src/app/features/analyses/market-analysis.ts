@@ -4,212 +4,479 @@ import { messageOf } from '../../core/api/errors';
 import { Fx } from '../../core/api/fx';
 import type { FreightRate, MarketSourceStatus } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
+import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { Sheet, Ui } from '../../shared/ui';
+import {
+  DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, changeOverMonths, crossOf, freightNarrative, fxInsight,
+  invert, lastStep, periodWords, shortDate, sparseHorizons, summarize, weeklyRows, windowOf,
+} from './market-math';
 
-interface MarketRoute {
-  code: string;
-  label: string;
-  source?: string;
+type PairId = 'usd' | 'cny' | 'cross';
+
+interface PairDefinition {
+  id: PairId;
+  base: string;
+  quote: string;
+  baseName: string;
+  quoteName: string;
 }
 
+interface PairView extends PairDefinition {
+  from: string;
+  to: string;
+  flipped: boolean;
+  latest: number;
+  full: DatedSeries;
+  window: DatedSeries;
+  chart: TrendSeries[];
+  change: { pct: number; since: string } | null;
+  tone: 'ok' | 'warn' | 'neutral';
+  word: string;
+  summary: SeriesSummary | null;
+  horizons: { label: string; months: Months; pct: number | null; tone: 'ok' | 'warn' | 'neutral' }[];
+}
+
+interface FreightDefinition {
+  code: string;
+  label: string;
+  short: string;
+  group: 'own' | 'usd' | 'index';
+  unit: 'usd' | 'points';
+}
+
+interface HistoryRow {
+  rate: FreightRate;
+  stepPct: number | null;
+}
+
+const PAIRS: readonly PairDefinition[] = [
+  { id: 'usd', base: 'EUR', quote: 'USD', baseName: 'euro', quoteName: 'dollar' },
+  { id: 'cny', base: 'EUR', quote: 'CNY', baseName: 'euro', quoteName: 'yuan' },
+  { id: 'cross', base: 'USD', quote: 'CNY', baseName: 'dollar', quoteName: 'yuan' },
+];
+
+const FREIGHT: readonly FreightDefinition[] = [
+  { code: 'NINGBO', label: 'Ningbo → Rotterdam', short: 'Ningbo', group: 'own', unit: 'usd' },
+  { code: 'GUANGZHOU', label: 'Nansha (Guangzhou) → Rotterdam', short: 'Nansha', group: 'own', unit: 'usd' },
+  { code: 'SHENZHEN', label: 'Yantian (Shenzhen) → Rotterdam', short: 'Yantian', group: 'own', unit: 'usd' },
+  { code: 'WCI SHA-RTM', label: 'Drewry WCI · Shanghai → Rotterdam', short: 'Shanghai → Rotterdam', group: 'usd', unit: 'usd' },
+  { code: 'FBX11 CN-NEUR', label: 'Freightos FBX11 · China → Noord-Europa', short: 'China → N-Europa', group: 'usd', unit: 'usd' },
+  { code: 'NCFI NGB-EUR', label: 'NCFI · Ningbo → Europa', short: 'NCFI Ningbo → Europa', group: 'index', unit: 'points' },
+  { code: 'NCFI NINGBO', label: 'NCFI · Ningbo composiet', short: 'NCFI composiet', group: 'index', unit: 'points' },
+  { code: 'CCFI CN-EUR', label: 'CCFI · China → Europa', short: 'CCFI China → Europa', group: 'index', unit: 'points' },
+];
+
+const REFERENCE_CODE = 'WCI SHA-RTM';
+const STORAGE_KEY = 'enrosed.market';
+
 /**
- * Compact purchasing references only: current ECB crosses, forwarder quotes
- * and two licensed USD market benchmarks. Historical prediction belongs
- * nowhere here; the short log merely shows the observations that were saved.
+ * The purchasing desk's market page: the three currency pairs that price a
+ * Chinese container, each readable in either direction and drawn over the
+ * chosen period, the buying-power narrative, and the freight log with our
+ * own forwarder quotes next to the licensed market benchmarks and indexes.
  */
 @Component({
   selector: 'app-market-analysis',
-  standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NumPipe, Sheet],
+  imports: [FormsModule, NumPipe, Sheet, Icon, TrendChart],
   template: `
-    <section class="market-card" aria-labelledby="market-analysis-title"
-             [attr.aria-busy]="loading() || saving()">
-      <header class="market-head">
-        <div>
-          <span class="market-eyebrow">Inkoopreferenties</span>
-          <h2 id="market-analysis-title">Koersen &amp; containervracht</h2>
-          <p>De actuele basis voor een nieuwe inkoopcalculatie.</p>
+    <div class="mk" [attr.aria-busy]="loading() || saving()">
+      <div class="mk-toolbar">
+        <div class="mk-seg" role="group" aria-label="Periode van de grafieken en vergelijkingen">
+          <span class="mk-seg__label">Periode</span>
+          @for (option of monthOptions; track option.months) {
+            <button type="button" [class.is-on]="months() === option.months"
+                    [attr.aria-pressed]="months() === option.months" (click)="setMonths(option.months)">{{ option.label }}</button>
+          }
         </div>
-        <div class="market-head__actions">
-          <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">
-            {{ loading() ? 'Laden…' : 'Vernieuwen' }}
-          </button>
-          <button class="btn btn--primary btn--sm" type="button" (click)="openAdd()">
-            Tarief toevoegen
-          </button>
-        </div>
-      </header>
+        <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">
+          {{ loading() ? 'Laden…' : 'Vernieuwen' }}
+        </button>
+      </div>
 
       @if (loadError()) {
-        <div class="market-warning" role="status">{{ loadError() }}</div>
+        <div class="mk-warning" role="status">{{ loadError() }}</div>
       }
 
-      <div class="market-overview">
-        <section class="market-panel" aria-label="ECB-valutareferenties">
-          <header class="market-panel__head">
-            <div><span>Wisselkoers</span><small>ECB · zonder bankopslag</small></div>
-            @if (fx.series(); as rates) { <time>{{ shortDate(rates.asOf) }}</time> }
-          </header>
-          @if (fx.series(); as rates) {
-            <div class="compact-list">
-              <div class="compact-row">
-                <div><strong>USD → EUR</strong><small>1 Amerikaanse dollar</small></div>
-                <b>€ {{ usdToEur(rates.latestUsd) | num: 4 }}</b>
-              </div>
-              <div class="compact-row">
-                <div><strong>CNY → USD</strong><small>1 Chinese yuan</small></div>
-                <b>$ {{ cnyToUsd(rates.latestUsd, rates.latestCny) | num: 4 }}</b>
-              </div>
-            </div>
-          } @else if (fx.failed()) {
-            <div class="panel-empty">ECB-referenties tijdelijk niet beschikbaar.</div>
-          } @else {
-            <div class="panel-empty">ECB-referenties laden…</div>
-          }
-        </section>
+      <!-- ── Currency ─────────────────────────────────────────────── -->
+      <section class="mk-card" aria-labelledby="mk-fx-title">
+        <header class="mk-card__head">
+          <div>
+            <span class="mk-eyebrow">Wisselkoersen</span>
+            <h2 id="mk-fx-title">Valuta</h2>
+            <p>ECB-referentiekoersen zonder bankopslag
+              @if (fx.series(); as rates) { · bijgewerkt {{ shortDate(rates.asOf) }} }
+              · tik op een paar om de richting om te keren</p>
+          </div>
+        </header>
 
-        <section class="market-panel" aria-label="Eigen containertarieven">
-          <header class="market-panel__head">
-            <div><span>Eigen tarieven</span><small>Forwarderofferte · USD per 40ft</small></div>
-          </header>
-          <div class="compact-list">
-            @for (route of ownRoutes; track route.code) {
-              <article class="compact-row route-row">
-                <div>
-                  <strong>{{ route.label }} → Rotterdam</strong>
-                  @if (latestFor(route.code); as latest) {
-                    <small>{{ shortDate(latest.quotedOn) }}
-                      @if (comparisonFor(route.code); as comparison) {
-                        · <span class="rate-delta" [class.rate-delta--up]="comparison.value > 0"
-                                [class.rate-delta--down]="comparison.value < 0">{{ comparison.label }}</span>
-                      }
-                    </small>
-                  } @else {
-                    <small>Nog geen tarief</small>
+        @if (pairs(); as pairs) {
+          <div class="fx-grid">
+            @for (pair of pairs; track pair.id) {
+              <article class="fx-pair" [attr.aria-label]="pair.from + ' naar ' + pair.to">
+                <button class="fx-pair__flip" type="button" (click)="flip(pair.id)"
+                        [attr.aria-label]="'Richting omkeren naar ' + pair.to + ' → ' + pair.from">
+                  <b>{{ pair.from }}</b><app-icon name="exchange" [size]="14" /><b>{{ pair.to }}</b>
+                  <small>omkeren</small>
+                </button>
+                <div class="fx-pair__now">
+                  <strong>{{ pair.latest | num: 4 }}</strong>
+                  <span>{{ pair.to }} voor 1 {{ pair.from }}</span>
+                </div>
+                @if (pair.change; as change) {
+                  <div class="fx-pair__delta">
+                    <span class="mk-badge" [class]="'mk-badge mk-badge--' + pair.tone">
+                      {{ change.pct >= 0 ? '+' : '' }}{{ change.pct | num: 2 }}%</span>
+                    <span>{{ pair.word }} sinds {{ shortDate(change.since) }}</span>
+                  </div>
+                } @else {
+                  <div class="fx-pair__delta"><span>Nog geen volledige {{ periodWords(months()) }} historiek</span></div>
+                }
+                <app-trend-chart [series]="pair.chart" [decimals]="4" [height]="164"
+                                 [ariaLabel]="pair.from + ' naar ' + pair.to + ', verloop over ' + periodWords(months())" />
+                @if (pair.summary; as summary) {
+                  <dl class="fx-pair__range">
+                    <div><dt>Hoog</dt><dd>{{ summary.max | num: 4 }}<small>{{ shortDate(summary.maxOn) }}</small></dd></div>
+                    <div><dt>Gemiddeld</dt><dd>{{ summary.mean | num: 4 }}<small>{{ periodWords(months()) }}</small></dd></div>
+                    <div><dt>Laag</dt><dd>{{ summary.min | num: 4 }}<small>{{ shortDate(summary.minOn) }}</small></dd></div>
+                  </dl>
+                }
+                <div class="mk-horizons" aria-label="Verandering per periode">
+                  @for (horizon of pair.horizons; track horizon.months) {
+                    <button type="button" [class.is-on]="months() === horizon.months" (click)="setMonths(horizon.months)">
+                      <span>{{ horizon.label }}</span>
+                      @if (horizon.pct !== null) {
+                        <b [class]="'tone-' + horizon.tone">{{ horizon.pct >= 0 ? '+' : '' }}{{ horizon.pct | num: 1 }}%</b>
+                      } @else { <b class="tone-neutral">—</b> }
+                    </button>
                   }
                 </div>
-                <span class="route-row__end">
-                  @if (latestFor(route.code); as latest) {
-                    <b>$ {{ latest.usdPerContainer | num: 0 }}</b>
-                  } @else {
-                    <b class="muted">—</b>
-                  }
-                  <button type="button" aria-label="Tarief voor deze route toevoegen"
-                          (click)="openAdd(route.code)">+</button>
-                </span>
               </article>
             }
           </div>
-        </section>
-      </div>
 
-      <div class="market-section market-section--benchmarks">
-        <header class="market-section__head">
-          <div><span>Marktbenchmark</span><small>Indicatie in USD per 40ft · geen forwarderofferte</small></div>
-          @if (marketSources().length) {
-            <span class="source-summary">{{ enabledSourceCount() }}/{{ benchmarks.length }} bronnen actief</span>
-          }
-        </header>
-        <div class="benchmark-list">
-          @for (benchmark of benchmarks; track benchmark.code) {
-            <div class="benchmark-row">
-              <div>
-                <strong>{{ benchmark.label }}</strong>
-                <small>{{ benchmark.source }}</small>
+          @if (insight(); as insight) {
+            <section class="fx-insight" aria-labelledby="mk-insight-title">
+              <header>
+                <div><span class="mk-eyebrow">Koopkracht</span><h3 id="mk-insight-title">Wat dit betekent voor inkoop</h3></div>
+                <span class="mk-badge mk-badge--lg" [class]="'mk-badge mk-badge--lg mk-badge--' + insight.tone">{{ insight.verdict }}</span>
+              </header>
+              <p class="fx-insight__lead">{{ insight.lead }}</p>
+              <ul>
+                @for (line of insight.lines; track line) { <li>{{ line }}</li> }
+              </ul>
+              <div class="fx-insight__grid" role="group" aria-label="Koopkracht per periode">
+                @for (horizon of insight.horizons; track horizon.months) {
+                  <button type="button" [class.is-on]="months() === horizon.months" [disabled]="horizon.pct === null"
+                          (click)="setMonths(horizon.months)">
+                    <span>{{ horizon.label }}</span>
+                    @if (horizon.pct !== null) {
+                      <b [class]="horizon.pct >= 0 ? 'tone-ok' : 'tone-warn'">{{ horizon.pct >= 0 ? '↑' : '↓' }}{{ abs(horizon.pct) | num: 1 }}%</b>
+                      <small>{{ horizon.pct >= 0 ? 'sterker' : 'zwakker' }}</small>
+                    } @else { <b class="tone-neutral">—</b><small>geen data</small> }
+                  </button>
+                }
               </div>
-              @if (sourceFor(benchmark.code); as source) {
-                @if (source.state !== 'CURRENT') {
-                  <span class="source-state" [class.source-state--off]="source.state === 'DISABLED'">
-                    {{ sourceStateLabel(source.state) }}
+            </section>
+          }
+
+          <details class="mk-table">
+            <summary>Koersen als tabel <span>laatste koers per week · {{ periodWords(months()) }}</span></summary>
+            <div class="mk-table__scroll">
+              <table>
+                <thead><tr><th>Week van</th>@for (pair of pairs; track pair.id) { <th>{{ pair.from }} → {{ pair.to }}</th> }</tr></thead>
+                <tbody>
+                  @for (row of fxTable(); track row.date) {
+                    <tr><td>{{ shortDate(row.date) }}</td>@for (value of row.values; track $index) { <td>{{ value | num: 4 }}</td> }</tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </details>
+        } @else if (fx.failed()) {
+          <div class="mk-empty">
+            <strong>ECB-koersen tijdelijk niet beschikbaar</strong>
+            <p>De referentiekoersen komen rechtstreeks van de ECB-feed. Probeer het zo opnieuw.</p>
+            <button class="btn btn--sm" type="button" (click)="load()">Opnieuw proberen</button>
+          </div>
+        } @else {
+          <div class="mk-empty"><p>ECB-koersen laden…</p></div>
+        }
+      </section>
+
+      <!-- ── Container freight ─────────────────────────────────────── -->
+      <section class="mk-card" aria-labelledby="mk-freight-title">
+        <header class="mk-card__head">
+          <div>
+            <span class="mk-eyebrow">Containervracht</span>
+            <h2 id="mk-freight-title">Zeevracht China → Rotterdam</h2>
+            <p>Eigen forwarderoffertes in USD per 40ft naast de marktbenchmarks en indexen · kies een reeks voor het verloop</p>
+          </div>
+          <button class="btn btn--primary btn--sm" type="button" (click)="openAdd()">Tarief toevoegen</button>
+        </header>
+
+        @for (group of freightGroups; track group.id) {
+          <div class="fr-group">
+            <div class="fr-group__head"><span>{{ group.title }}</span><small>{{ group.hint }}</small></div>
+            <div class="fr-tiles" role="group" [attr.aria-label]="group.title">
+              @for (tile of tilesFor(group.id); track tile.code) {
+                <button class="fr-tile" type="button" [class.is-on]="selected() === tile.code"
+                        [attr.aria-pressed]="selected() === tile.code" (click)="select(tile.code)">
+                  <span class="fr-tile__name">{{ tile.short }}
+                    @if (tile.state && tile.state !== 'CURRENT') {
+                      <i class="mk-chip" [class.mk-chip--off]="tile.state === 'DISABLED'">{{ sourceStateLabel(tile.state) }}</i>
+                    }
                   </span>
-                }
-              }
-              @if (latestFor(benchmark.code); as latest) {
-                <span class="benchmark-row__value">
-                  <b>$ {{ latest.usdPerContainer | num: 0 }}</b>
-                  <small>{{ shortDate(latest.quotedOn) }}</small>
-                </span>
-                @if (comparisonFor(benchmark.code); as comparison) {
-                  <span class="benchmark-row__delta"
-                        [class.rate-delta--up]="comparison.value > 0"
-                        [class.rate-delta--down]="comparison.value < 0">{{ comparison.label }}</span>
-                }
-              } @else {
-                <span class="benchmark-row__value"><b>—</b><small>Geen meetpunt</small></span>
+                  @if (tile.latest; as latest) {
+                    <strong>{{ tile.unit === 'usd' ? '$ ' : '' }}{{ latest.usdPerContainer | num: tile.unit === 'usd' ? 0 : 1 }}
+                      @if (tile.unit === 'points') { <small>ptn</small> }</strong>
+                    <span class="fr-tile__meta">{{ shortDate(latest.quotedOn) }}
+                      @if (tile.step; as step) {
+                        · <b [class]="'tone-' + freightTone(step.pct)">{{ step.pct > 0 ? '+' : '' }}{{ step.pct | num: 1 }}%</b>
+                      }
+                    </span>
+                  } @else {
+                    <strong class="is-empty">—</strong>
+                    <span class="fr-tile__meta">{{ tile.group === 'own' ? 'nog geen offerte' : 'nog geen meetpunt' }}</span>
+                  }
+                </button>
               }
             </div>
-          }
-        </div>
-      </div>
+          </div>
+        }
 
-      <details class="market-history">
-        <summary>Korte historiek <span>Laatste vier noteringen per route</span></summary>
-        <div class="market-history__body">
-          @for (route of historyRoutes; track route.code) {
-            @if (historyFor(route.code).length; as count) {
-              <section class="history-route">
-                <h3>{{ route.label }} <small>{{ count }} meetpunt{{ count === 1 ? '' : 'en' }}</small></h3>
-                <div class="history-rate-list">
-                  @for (rate of historyFor(route.code).slice(0, 4); track rate.id ?? rate.quotedOn) {
-                    <span><b>$ {{ rate.usdPerContainer | num: 0 }}</b><small>{{ shortDate(rate.quotedOn) }}</small></span>
+        @if (detail(); as d) {
+          <section class="fr-detail" [attr.aria-label]="'Verloop ' + d.definition.label">
+            <header class="fr-detail__head">
+              <div>
+                <h3>{{ d.definition.label }}</h3>
+                <p>{{ d.definition.unit === 'usd' ? 'USD per 40ft-container' : 'indexpunten, geen prijs' }}
+                  · {{ d.all.dates.length }} {{ d.all.dates.length === 1 ? 'notering' : 'noteringen' }}
+                  @if (d.source) { · {{ d.source.sourceName }} }
+                  @if (d.definition.group === 'own') { · eigen forwarderoffertes }</p>
+              </div>
+              @if (d.latest; as latest) {
+                <div class="fr-detail__now">
+                  <strong>{{ d.definition.unit === 'usd' ? '$ ' : '' }}{{ latest.usdPerContainer | num: d.definition.unit === 'usd' ? 0 : 1 }}</strong>
+                  <span>{{ shortDate(latest.quotedOn) }}
+                    @if (d.step; as step) {
+                      · <b [class]="'tone-' + freightTone(step.pct)">{{ step.pct > 0 ? '+' : '' }}{{ step.pct | num: 1 }}%</b> vs vorige
+                    }
+                  </span>
+                </div>
+              }
+            </header>
+
+            @if (d.referenceAvailable) {
+              <label class="fr-reference">
+                <input type="checkbox" [ngModel]="showReference()" (ngModelChange)="showReference.set($event)" />
+                Drewry Shanghai → Rotterdam als marktreferentie tonen
+              </label>
+            }
+
+            <app-trend-chart [series]="d.chart" [decimals]="d.definition.unit === 'usd' ? 0 : 1"
+                             [prefix]="d.definition.unit === 'usd' ? '$ ' : ''" [height]="220"
+                             [ariaLabel]="d.definition.label + ', verloop over ' + periodWords(months())"
+                             [emptyText]="d.all.dates.length ? 'Slechts één notering in deze periode · kies een langere periode' : (d.definition.group === 'own' ? 'Nog geen offerte genoteerd voor deze route' : 'Nog geen meetpunten van deze bron')" />
+
+            <div class="fr-horizons" aria-label="Verschil per periode">
+              @for (horizon of d.horizons; track horizon.months) {
+                <div class="fr-horizon">
+                  <span>{{ horizon.label }}</span>
+                  @if (horizon.pct !== null) {
+                    <b [class]="'tone-' + freightTone(horizon.pct)">{{ horizon.pct > 0 ? '↑' : '↓' }}{{ abs(horizon.pct) | num: 1 }}%</b>
+                    <small>{{ horizonWord(d.definition.unit, horizon.pct) }} · vs {{ shortDate(horizon.comparedOn!) }}</small>
+                  } @else {
+                    <b class="tone-neutral">—</b><small>nog geen data</small>
                   }
                 </div>
-              </section>
+              }
+            </div>
+
+            <div class="fr-analysis">
+              <span class="mk-eyebrow">Analyse</span>
+              @for (line of d.narrative; track line) { <p>{{ line }}</p> }
+            </div>
+
+            @if (d.source; as source) {
+              <div class="fr-source" role="note" [class.fr-source--attention]="sourceNeedsAttention(source)">
+                <div class="fr-source__row">
+                  <strong>{{ source.metric === 'INDEX_POINTS' ? 'Marktindex, geen prijs' : 'USD-marktbenchmark' }}</strong>
+                  <i class="mk-chip" [class.mk-chip--ok]="source.state === 'CURRENT'" [class.mk-chip--off]="source.state === 'DISABLED'">{{ sourceStateLabel(source.state) }}</i>
+                </div>
+                <p>{{ source.scope }}</p>
+                <div class="fr-source__meta">
+                  <span>{{ source.sourceName }}</span>
+                  @if (source.latestPublishedOn) { <span>publicatie {{ shortDate(source.latestPublishedOn) }}</span> }
+                  @if (source.lastCheckedAt) { <span>gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
+                  <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer">Bron ↗</a>
+                </div>
+                @if (sourceNeedsAttention(source)) { <p class="fr-source__detail">{{ sourceGuidance(source) }}</p> }
+              </div>
             }
-          }
-          @if (!hasHistory()) {
-            <p class="market-history__empty">Nog geen tarieven opgeslagen.</p>
-          }
-        </div>
-      </details>
-    </section>
+
+            @if (d.history.length) {
+              <div class="fr-history">
+                <div class="fr-history__head"><span>Alle noteringen</span><small>nieuwste eerst · verschil met de vorige</small></div>
+                <div class="mk-table__scroll">
+                  <table>
+                    <thead><tr><th>Datum</th><th class="num">{{ d.definition.unit === 'usd' ? 'USD / 40ft' : 'Punten' }}</th><th class="num">Verschil</th>@if (d.definition.group === 'own') { <th></th> }</tr></thead>
+                    <tbody>
+                      @for (row of visibleHistory(); track row.rate.id ?? row.rate.quotedOn) {
+                        <tr>
+                          <td>{{ shortDate(row.rate.quotedOn) }}</td>
+                          <td class="num">{{ d.definition.unit === 'usd' ? '$ ' : '' }}{{ row.rate.usdPerContainer | num: d.definition.unit === 'usd' ? 0 : 1 }}</td>
+                          <td class="num">@if (row.stepPct !== null) { <b [class]="'tone-' + freightTone(row.stepPct)">{{ row.stepPct > 0 ? '+' : '' }}{{ row.stepPct | num: 1 }}%</b> } @else { <span class="tone-neutral">—</span> }</td>
+                          @if (d.definition.group === 'own') {
+                            <td class="num"><button class="linklike" type="button" [disabled]="deletingId() === row.rate.id" (click)="remove(row.rate)">Verwijderen</button></td>
+                          }
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                @if (d.history.length > historyLimit) {
+                  <button class="linklike fr-history__more" type="button" (click)="historyExpanded.set(!historyExpanded())">
+                    {{ historyExpanded() ? 'Toon minder' : 'Toon alle ' + d.history.length + ' noteringen' }}
+                  </button>
+                }
+              </div>
+            }
+          </section>
+        }
+      </section>
+    </div>
 
     @if (addOpen()) {
       <app-sheet title="Vrachttarief noteren" (closed)="closeAdd()">
         <div body>
           <div class="field">
             <label for="market-rate-route">Route</label>
-            <select class="select" id="market-rate-route" [ngModel]="newRoute()"
-                    (ngModelChange)="newRoute.set($event)">
+            <select class="select" id="market-rate-route" [ngModel]="newRoute()" (ngModelChange)="newRoute.set($event)">
               @for (route of ownRoutes; track route.code) {
-                <option [value]="route.code">{{ route.label }} → Rotterdam</option>
+                <option [value]="route.code">{{ route.label }}</option>
               }
             </select>
           </div>
           <div class="field">
             <label class="req" for="market-rate-value">USD per 40ft-container</label>
-            <input class="input num" id="market-rate-value" type="number" min="1" step="50"
-                   inputmode="decimal" [ngModel]="newRate()"
-                   (ngModelChange)="newRate.set(toNumber($event))" />
+            <input class="input num" id="market-rate-value" type="number" min="1" step="50" inputmode="decimal"
+                   [ngModel]="newRate()" (ngModelChange)="newRate.set(toNumber($event))" />
+            <span class="hint">Wat de forwarder offreert, all-in tot Rotterdam. Het verloop bouwt zichzelf op.</span>
           </div>
           <div class="field">
             <label for="market-rate-date">Datum</label>
-            <input class="input" id="market-rate-date" type="date" [ngModel]="newDate()"
-                   (ngModelChange)="newDate.set($event)" />
+            <input class="input" id="market-rate-date" type="date" [ngModel]="newDate()" (ngModelChange)="newDate.set($event)" />
+            <span class="hint">Laat op vandaag staan, of noteer een oudere offerte om de historiek aan te vullen.</span>
           </div>
-          @if (saveError()) {
-            <p class="save-error" role="alert">{{ saveError() }}</p>
+          @if (recentFor(newRoute()); as recent) {
+            @if (recent.length) {
+              <div class="sheet-recent">
+                <span class="mk-eyebrow">Eerdere offertes</span>
+                @for (rate of recent; track rate.id ?? rate.quotedOn) {
+                  <div class="sheet-recent__row">
+                    <b>$ {{ rate.usdPerContainer | num: 0 }}</b><span>{{ shortDate(rate.quotedOn) }}</span>
+                    <button class="linklike" type="button" [disabled]="deletingId() === rate.id" (click)="remove(rate)">Verwijderen</button>
+                  </div>
+                }
+              </div>
+            }
           }
+          @if (saveError()) { <p class="save-error" role="alert">{{ saveError() }}</p> }
         </div>
         <div foot class="market-sheet-foot">
           <button class="btn" type="button" [disabled]="saving()" (click)="closeAdd()">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="saving() || newRate() <= 0"
-                  (click)="saveRate()">{{ saving() ? 'Bewaren…' : 'Bewaren' }}</button>
+          <button class="btn btn--primary" type="button" [disabled]="saving() || newRate() <= 0" (click)="saveRate()">
+            {{ saving() ? 'Bewaren…' : 'Bewaren' }}</button>
         </div>
       </app-sheet>
     }
   `,
   styles: `
-    :host{display:block}.market-card{overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);box-shadow:var(--sh-1)}
-    .market-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 16px;border-bottom:1px solid var(--line)}
-    .market-eyebrow{display:block;color:var(--rose);font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.market-head h2{margin-top:2px;font-size:17px}.market-head p{margin-top:2px;color:var(--muted);font-size:11px}.market-head__actions{display:flex;flex:none;gap:7px}
-    .market-warning{margin:10px 12px 0;padding:9px 11px;border:1px solid #eddcb9;border-radius:10px;background:var(--warn-soft);color:var(--ink-2);font-size:11.5px}
-    .market-overview{display:grid;grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);border-bottom:1px solid var(--line)}.market-panel{min-width:0}.market-panel+.market-panel{border-left:1px solid var(--line)}.market-panel__head,.market-section__head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;background:var(--surface-2)}.market-panel__head>div,.market-section__head>div{display:grid;min-width:0}.market-panel__head span,.market-section__head>div>span{font-size:10.5px;font-weight:780}.market-panel__head small,.market-section__head small,.market-panel__head time{color:var(--muted);font-size:9px}.compact-list{display:grid}.compact-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;min-height:48px;padding:8px 14px}.compact-row+.compact-row{border-top:1px solid var(--line)}.compact-row>div{display:grid;min-width:0}.compact-row strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.compact-row small{color:var(--muted);font-size:9px}.compact-row>b{font-size:12.5px;text-align:right}.panel-empty{padding:17px 14px;color:var(--muted);font-size:11px}.route-row__end{display:flex;align-items:center;justify-content:flex-end;gap:8px}.route-row__end>b{font-size:12.5px;white-space:nowrap}.route-row__end button{display:grid;width:25px;height:25px;flex:none;place-items:center;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--rose-dark);font:inherit;font-size:16px;cursor:pointer}.route-row__end button:hover{border-color:var(--rose-line);background:var(--rose-soft)}.rate-delta{color:var(--muted)}.rate-delta--up{color:var(--warn)}.rate-delta--down{color:var(--ok)}
-    .market-section{padding:14px 16px}.market-section--benchmarks{padding:0}.market-section__head{margin:0}.source-summary{flex:none;padding:3px 7px;border-radius:99px;background:var(--ok-soft);color:var(--ok);font-size:9px;font-weight:750}.benchmark-list{display:grid;padding:0 14px}.benchmark-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:10px;padding:9px 0}.benchmark-row+.benchmark-row{border-top:1px solid var(--line)}.benchmark-row>div{display:grid;min-width:0}.benchmark-row>div strong{overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}.benchmark-row>div small,.benchmark-row__value small{color:var(--muted);font-size:9.5px}.benchmark-row__value{display:grid;text-align:right}.benchmark-row__value b{font-size:12px}.benchmark-row__delta{min-width:48px;font-size:10px;font-weight:700;text-align:right}.source-state{padding:3px 7px;border-radius:99px;background:var(--warn-soft);color:var(--warn);font-size:9px;font-weight:750;white-space:nowrap}.source-state--off{background:var(--danger-soft);color:var(--danger)}
-    .market-history{border-top:1px solid var(--line);background:var(--surface-2)}.market-history summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;font-size:11.5px;font-weight:750;cursor:pointer}.market-history summary span{color:var(--muted);font-size:9.5px;font-weight:500}.market-history__body{display:grid;gap:10px;padding:0 16px 14px}.history-route{display:grid;gap:5px}.history-route h3{font-size:10.5px}.history-route h3 small{color:var(--muted);font-weight:500}.history-rate-list{display:flex;flex-wrap:wrap;gap:5px}.history-rate-list>span{display:grid;min-width:92px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.history-rate-list b{font-size:10.5px}.history-rate-list small{color:var(--muted);font-size:9px}.market-history__empty{color:var(--muted);font-size:11px}.save-error{margin-top:9px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);color:var(--danger);font-size:11px}.market-sheet-foot{display:flex;width:100%;justify-content:flex-end;gap:8px}
-    @media(max-width:679.98px){.market-head{display:grid}.market-head__actions{width:100%}.market-head__actions .btn{flex:1}.market-overview{grid-template-columns:1fr}.market-panel+.market-panel{border-top:1px solid var(--line);border-left:0}.benchmark-row{grid-template-columns:minmax(0,1fr) auto auto;gap:7px}.source-state{grid-column:1}.benchmark-row__delta{min-width:42px}.market-section__head{align-items:flex-end}.source-summary{margin-bottom:1px}}
+    :host{display:block}.mk{display:grid;gap:18px}
+    .mk-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+    .mk-seg{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:99px;background:var(--surface)}
+    .mk-seg__label{padding:0 8px 0 10px;color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
+    .mk-seg button{padding:6px 12px;border:0;border-radius:99px;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;cursor:pointer}
+    .mk-seg button:hover{color:var(--ink)}.mk-seg button.is-on{background:var(--rose-soft);color:var(--rose-dark)}
+    .mk-warning{padding:9px 12px;border:1px solid #eddcb9;border-radius:10px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
+    .mk-card{overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);box-shadow:var(--sh-1)}
+    .mk-card__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 14px;padding:16px 18px 14px;border-bottom:1px solid var(--line)}
+    .mk-card__head h2{margin:2px 0 0;font-size:18px}.mk-card__head p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+    .mk-eyebrow{display:block;color:var(--rose);font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+    .mk-badge{display:inline-block;padding:3px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-2);font-size:11px;font-weight:750;white-space:nowrap}
+    .mk-badge--ok{background:var(--ok-soft);color:var(--ok)}.mk-badge--warn{background:var(--warn-soft);color:var(--warn)}.mk-badge--lg{padding:5px 11px;font-size:12px}
+    .mk-chip{display:inline-block;padding:2px 7px;border-radius:99px;background:var(--warn-soft);color:var(--warn);font-size:9.5px;font-style:normal;font-weight:750;white-space:nowrap}
+    .mk-chip--ok{background:var(--ok-soft);color:var(--ok)}.mk-chip--off{background:var(--surface-2);color:var(--muted)}
+    .tone-ok{color:var(--ok)}.tone-warn{color:var(--warn)}.tone-neutral{color:var(--muted)}
+    .mk-empty{display:grid;gap:6px;justify-items:start;padding:22px 18px;color:var(--muted);font-size:12.5px}.mk-empty strong{color:var(--ink)}.mk-empty p{margin:0}
+    /* currency pairs */
+    .fx-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+    .fx-pair{display:grid;gap:10px;min-width:0;padding:16px 18px 14px}
+    .fx-pair+.fx-pair{border-left:1px solid var(--line)}
+    .fx-pair__flip{display:inline-flex;align-items:center;gap:7px;justify-self:start;padding:7px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;cursor:pointer;transition:border-color .15s,background .15s}
+    .fx-pair__flip:hover{border-color:var(--rose-line);background:var(--rose-soft)}.fx-pair__flip app-icon{color:var(--rose)}
+    .fx-pair__flip small{margin-left:2px;color:var(--muted);font-size:10.5px}
+    .fx-pair__now{display:grid;gap:1px}.fx-pair__now strong{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1}.fx-pair__now span{color:var(--muted);font-size:11.5px}
+    .fx-pair__delta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:var(--muted);font-size:11.5px}
+    .fx-pair__range{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:10px 0 0;border-top:1px solid var(--line)}
+    .fx-pair__range div{display:grid;gap:1px;min-width:0}.fx-pair__range dt{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+    .fx-pair__range dd{display:grid;margin:0;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}.fx-pair__range small{color:var(--muted);font-size:10px;font-weight:500}
+    .mk-horizons{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+    .mk-horizons button{display:grid;gap:2px;padding:7px 4px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font:inherit;text-align:center;cursor:pointer}
+    .mk-horizons button:hover{border-color:var(--rose-line)}.mk-horizons button.is-on{border-color:var(--rose);background:var(--rose-soft)}
+    .mk-horizons span{color:var(--muted);font-size:10px;font-weight:700}.mk-horizons b{font-size:12px;font-variant-numeric:tabular-nums}
+    /* buying power */
+    .fx-insight{display:grid;gap:10px;padding:16px 18px;border-top:1px solid var(--line);background:var(--surface-2)}
+    .fx-insight header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}.fx-insight h3{margin:2px 0 0;font-size:15px}
+    .fx-insight__lead{margin:0;font-size:13.5px;font-weight:600;line-height:1.45}
+    .fx-insight ul{display:grid;gap:6px;margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;line-height:1.5}
+    .fx-insight__grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px}
+    .fx-insight__grid button{display:grid;gap:1px;padding:9px 6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;text-align:center;cursor:pointer}
+    .fx-insight__grid button:disabled{cursor:default;opacity:.6}.fx-insight__grid button.is-on{border-color:var(--rose);box-shadow:0 0 0 1px var(--rose)}
+    .fx-insight__grid span{color:var(--muted);font-size:10px;font-weight:700}.fx-insight__grid b{font-size:15px;font-variant-numeric:tabular-nums}.fx-insight__grid small{color:var(--muted);font-size:10px}
+    /* tables */
+    .mk-table{border-top:1px solid var(--line)}.mk-table summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;font-size:12px;font-weight:750;cursor:pointer}
+    .mk-table summary span{color:var(--muted);font-size:10.5px;font-weight:500}
+    .mk-table__scroll{overflow-x:auto}.mk-table__scroll table{width:100%;border-collapse:collapse;font-size:12px}
+    .mk-table__scroll th,.mk-table__scroll td{padding:7px 18px;border-top:1px solid var(--line);text-align:left;white-space:nowrap}
+    .mk-table__scroll th{color:var(--muted);font-size:10.5px;font-weight:700}.mk-table__scroll td{font-variant-numeric:tabular-nums}
+    .mk-table__scroll .num{text-align:right}.mk-table__scroll th:not(:first-child),.mk-table__scroll td:not(:first-child){text-align:right}
+    /* freight */
+    .fr-group{padding:12px 18px 0}.fr-group__head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:8px;font-size:11px;font-weight:780}.fr-group__head small{color:var(--muted);font-size:10.5px;font-weight:500}
+    .fr-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr));gap:8px}
+    .fr-tile{display:grid;gap:3px;min-width:0;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+    .fr-tile:hover{border-color:var(--rose-line)}.fr-tile.is-on{border-color:var(--rose);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose)}
+    .fr-tile__name{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--ink-2);font-size:11.5px;font-weight:700}
+    .fr-tile strong{font-size:19px;font-weight:700;letter-spacing:-.01em}.fr-tile strong small{margin-left:2px;color:var(--muted);font-size:11px;font-weight:600}.fr-tile strong.is-empty{color:var(--muted-2)}
+    .fr-tile__meta{color:var(--muted);font-size:10.5px}.fr-tile__meta b{font-weight:750}
+    .fr-detail{display:grid;gap:14px;margin-top:14px;padding:16px 18px 18px;border-top:1px solid var(--line)}
+    .fr-detail__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px}
+    .fr-detail__head h3{margin:0;font-size:15px}.fr-detail__head p{margin:3px 0 0;color:var(--muted);font-size:11.5px}
+    .fr-detail__now{display:grid;justify-items:end;text-align:right}.fr-detail__now strong{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1}.fr-detail__now span{color:var(--muted);font-size:11.5px}
+    .fr-reference{display:inline-flex;align-items:center;gap:8px;color:var(--ink-2);font-size:12px;cursor:pointer}.fr-reference input{accent-color:var(--rose)}
+    .fr-horizons{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    .fr-horizon{display:grid;gap:2px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+    .fr-horizon span{color:var(--muted);font-size:10px;font-weight:700}.fr-horizon b{font-size:15px;font-variant-numeric:tabular-nums}.fr-horizon small{color:var(--muted);font-size:10px}
+    .fr-analysis{display:grid;gap:5px}.fr-analysis p{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}
+    .fr-source{display:grid;gap:5px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-size:11.5px}
+    .fr-source--attention{border-color:#eddcb9;background:var(--warn-soft)}
+    .fr-source__row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}.fr-source strong{font-size:12px}
+    .fr-source p{margin:0;color:var(--ink-2)}.fr-source__meta{display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--muted);font-size:10.5px}.fr-source__meta a{color:var(--rose-dark);font-weight:700}
+    .fr-source__detail{color:var(--warn)}
+    .fr-history{display:grid;gap:8px}.fr-history__head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;font-size:11px;font-weight:780}.fr-history__head small{color:var(--muted);font-weight:500}
+    .fr-history .mk-table__scroll{border:1px solid var(--line);border-radius:12px}.fr-history th,.fr-history td{padding:7px 12px}.fr-history tr:first-child th{border-top:0}
+    .fr-history__more{justify-self:start}
+    .sheet-recent{display:grid;gap:6px;margin-top:14px}.sheet-recent__row{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;font-size:12px}
+    .sheet-recent__row span{flex:1;color:var(--muted)}
+    .save-error{margin-top:9px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);color:var(--danger);font-size:11px}
+    .market-sheet-foot{display:flex;width:100%;justify-content:flex-end;gap:8px}
+    @media(max-width:899.98px){.fx-pair+.fx-pair{border-top:1px solid var(--line);border-left:0}}
+    @media(max-width:679.98px){.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
+      .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons,.fx-insight__grid{grid-template-columns:repeat(2,1fr)}
+      .mk-toolbar .btn{order:-1;margin-left:auto}.mk-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.fx-pair__now strong{font-size:26px}}
   `,
 })
 export class MarketAnalysis {
@@ -217,24 +484,30 @@ export class MarketAnalysis {
   private readonly ui = inject(Ui);
   readonly fx = inject(Fx);
 
-  readonly ownRoutes: readonly MarketRoute[] = [
-    { code: 'NINGBO', label: 'Ningbo' },
-    { code: 'GUANGZHOU', label: 'Nansha' },
-    { code: 'SHENZHEN', label: 'Yantian' },
+  readonly monthOptions = MONTH_OPTIONS;
+  readonly periodWords = periodWords;
+  readonly shortDate = shortDate;
+  readonly historyLimit = 8;
+  readonly freightGroups = [
+    { id: 'own' as const, title: 'Eigen offertes', hint: 'forwarder, USD per 40ft tot Rotterdam' },
+    { id: 'usd' as const, title: 'Marktprijs in dollars', hint: 'spotbenchmarks, wekelijks automatisch' },
+    { id: 'index' as const, title: 'Marktindexen', hint: 'richting van de markt in punten, geen prijs' },
   ];
-  readonly benchmarks: readonly MarketRoute[] = [
-    { code: 'WCI SHA-RTM', label: 'Shanghai → Rotterdam', source: 'Drewry WCI' },
-    { code: 'FBX11 CN-NEUR', label: 'China → Noord-Europa', source: 'Freightos FBX11' },
-  ];
-  readonly historyRoutes = [...this.ownRoutes, ...this.benchmarks];
+  readonly ownRoutes = FREIGHT.filter((definition) => definition.group === 'own');
 
   readonly freightRates = signal<FreightRate[]>([]);
   readonly marketSources = signal<MarketSourceStatus[]>([]);
   readonly loading = signal(false);
   readonly loadError = signal('');
+  readonly months = signal<Months>(6);
+  readonly flipped = signal<Record<PairId, boolean>>({ usd: false, cny: false, cross: false });
+  readonly selected = signal<string>('');
+  readonly showReference = signal(true);
+  readonly historyExpanded = signal(false);
   readonly addOpen = signal(false);
   readonly saving = signal(false);
   readonly saveError = signal('');
+  readonly deletingId = signal<number | null>(null);
   readonly newRoute = signal('NINGBO');
   readonly newRate = signal(0);
   readonly newDate = signal(localIsoDay());
@@ -247,17 +520,111 @@ export class MarketAnalysis {
       grouped.set(rate.route, rows);
     }
     for (const rows of grouped.values()) {
-      rows.sort((left, right) => left.quotedOn.localeCompare(right.quotedOn)
-        || (left.id ?? 0) - (right.id ?? 0));
+      rows.sort((left, right) => left.quotedOn.localeCompare(right.quotedOn) || (left.id ?? 0) - (right.id ?? 0));
     }
     return grouped;
   });
-  private readonly sourceByCode = computed(() =>
-    new Map(this.marketSources().map((source) => [source.code, source])));
-  readonly enabledSourceCount = computed(() => this.benchmarks.filter((benchmark) =>
-    this.sourceFor(benchmark.code)?.automatedAccessAuthorized === true).length);
+  private readonly sourceByCode = computed(() => new Map(this.marketSources().map((source) => [source.code, source])));
 
-  constructor() { void this.load(); }
+  /** The three pairs in their chosen direction, windowed to the period. */
+  readonly pairs = computed<PairView[] | null>(() => {
+    const rates = this.fx.series();
+    if (!rates) return null;
+    const months = this.months();
+    const flipped = this.flipped();
+    return PAIRS.map((pair) => {
+      const natural = pair.id === 'usd' ? rates.usd : pair.id === 'cny' ? rates.cny : crossOf(rates.cny, rates.usd);
+      const isFlipped = flipped[pair.id];
+      const values = isFlipped ? invert(natural) : natural;
+      const full: DatedSeries = { dates: rates.dates, values };
+      const window = windowOf(full, months);
+      const change = changeOverMonths(full, months);
+      const from = isFlipped ? pair.quote : pair.base;
+      const to = isFlipped ? pair.base : pair.quote;
+      const horizons = MONTH_OPTIONS.map((option) => {
+        const result = changeOverMonths(full, option.months);
+        return { label: option.label, months: option.months, pct: result?.pct ?? null,
+          tone: result ? this.toneFor(pair, isFlipped, result.pct) : 'neutral' as const };
+      });
+      return {
+        ...pair, from, to, flipped: isFlipped,
+        latest: values[values.length - 1],
+        full, window,
+        chart: [{ label: `${from} → ${to}`, dates: window.dates, values: window.values, tone: 'accent' }],
+        change: change ? { pct: change.pct, since: rates.dates[change.baselineIndex] } : null,
+        tone: change ? this.toneFor(pair, isFlipped, change.pct) : 'neutral',
+        word: change ? this.wordFor(pair, isFlipped, change.pct) : '',
+        summary: summarize(window),
+        horizons,
+      };
+    });
+  });
+
+  readonly insight = computed<FxInsight | null>(() => {
+    const rates = this.fx.series();
+    return rates ? fxInsight(rates, this.months()) : null;
+  });
+
+  /** Weekly table twin of the three charts, in the directions on screen. */
+  readonly fxTable = computed(() => {
+    const pairs = this.pairs();
+    if (!pairs) return [];
+    const rows = weeklyRows(pairs[0].window);
+    return rows.map((row) => {
+      const index = pairs[0].full.dates.indexOf(row.date);
+      return { date: row.date, values: pairs.map((pair) => pair.full.values[index]) };
+    }).reverse();
+  });
+
+  readonly tiles = computed(() => FREIGHT.map((definition) => {
+    const rows = this.ratesByRoute().get(definition.code) ?? [];
+    const series = toSeries(rows);
+    return {
+      ...definition,
+      latest: rows[rows.length - 1] ?? null,
+      step: lastStep(series),
+      state: this.sourceByCode().get(definition.code)?.state ?? null,
+    };
+  }));
+
+  readonly detail = computed(() => {
+    const code = this.selected();
+    const definition = FREIGHT.find((candidate) => candidate.code === code);
+    if (!definition) return null;
+    const rows = this.ratesByRoute().get(code) ?? [];
+    const all = toSeries(rows);
+    const window = windowOf(all, this.months());
+    const chart: TrendSeries[] = [{ label: definition.short, dates: window.dates, values: window.values, tone: 'accent' }];
+    const referenceRows = code !== REFERENCE_CODE && definition.unit === 'usd'
+      ? windowOf(toSeries(this.ratesByRoute().get(REFERENCE_CODE) ?? []), this.months()) : null;
+    const referenceAvailable = !!referenceRows && referenceRows.dates.length > 1 && window.dates.length > 1;
+    if (referenceAvailable && this.showReference() && referenceRows) {
+      chart.push({ label: 'Drewry Shanghai → Rotterdam', dates: referenceRows.dates, values: referenceRows.values, tone: 'muted' });
+    }
+    const history: HistoryRow[] = rows.map((rate, index) => {
+      const previous = rows[index - 1]?.usdPerContainer;
+      return { rate, stepPct: previous && previous > 0 ? ((rate.usdPerContainer - previous) / previous) * 100 : null };
+    }).reverse();
+    return {
+      definition, all, window, chart, referenceAvailable,
+      latest: rows[rows.length - 1] ?? null,
+      step: lastStep(all),
+      horizons: sparseHorizons(all),
+      narrative: freightNarrative(all, definition.unit),
+      source: this.sourceByCode().get(code) ?? null,
+      history,
+    };
+  });
+
+  readonly visibleHistory = computed(() => {
+    const history = this.detail()?.history ?? [];
+    return this.historyExpanded() ? history : history.slice(0, this.historyLimit);
+  });
+
+  constructor() {
+    this.restorePreferences();
+    void this.load();
+  }
 
   async load(): Promise<void> {
     if (this.loading()) return;
@@ -276,6 +643,7 @@ export class MarketAnalysis {
       if (sources.status === 'fulfilled') this.marketSources.set(sources.value);
       else missing.push('bronstatus');
       if (missing.length) this.loadError.set(`Niet bijgewerkt: ${missing.join(' en ')}.`);
+      if (!this.selected()) this.selected.set(this.defaultSelection());
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'De marktreferenties konden niet worden geladen.'));
     } finally {
@@ -284,29 +652,59 @@ export class MarketAnalysis {
     }
   }
 
-  latestFor(code: string): FreightRate | null {
-    return this.ratesByRoute().get(code)?.at(-1) ?? null;
+  /** Our own lane with data first, then the dollar benchmark, then any series with a trend. */
+  private defaultSelection(): string {
+    const withTrend = (group?: FreightDefinition['group']) => FREIGHT.find((definition) =>
+      (!group || definition.group === group) && (this.ratesByRoute().get(definition.code)?.length ?? 0) > 1);
+    return withTrend('own')?.code ?? withTrend('usd')?.code ?? withTrend()?.code ?? FREIGHT[0].code;
   }
 
-  historyFor(code: string): FreightRate[] {
-    return (this.ratesByRoute().get(code) ?? []).slice().reverse();
+  tilesFor(group: FreightDefinition['group']) {
+    return this.tiles().filter((tile) => tile.group === group);
   }
 
-  changeFor(code: string): number | null {
-    const rows = this.ratesByRoute().get(code) ?? [];
-    if (rows.length < 2) return null;
-    const previous = rows.at(-2)!.usdPerContainer;
-    const latest = rows.at(-1)!.usdPerContainer;
-    return previous > 0 ? ((latest - previous) / previous) * 100 : null;
+  select(code: string): void {
+    this.selected.set(code);
+    this.historyExpanded.set(false);
   }
 
-  comparisonFor(code: string): { value: number; label: string } | null {
-    const value = this.changeFor(code);
-    return value === null ? null : { value, label: this.signed(value) };
+  setMonths(months: Months): void {
+    this.months.set(months);
+    this.storePreferences();
   }
 
-  sourceFor(code: string): MarketSourceStatus | null {
-    return this.sourceByCode().get(code) ?? null;
+  flip(id: PairId): void {
+    this.flipped.update((state) => ({ ...state, [id]: !state[id] }));
+    this.storePreferences();
+  }
+
+  private toneFor(pair: PairDefinition, flipped: boolean, pct: number): 'ok' | 'warn' | 'neutral' {
+    if (pair.id === 'cross') return 'neutral';
+    const euroStronger = flipped ? pct < 0 : pct > 0;
+    return Math.abs(pct) < 0.05 ? 'neutral' : euroStronger ? 'ok' : 'warn';
+  }
+
+  private wordFor(pair: PairDefinition, flipped: boolean, pct: number): string {
+    if (Math.abs(pct) < 0.05) return 'vrijwel onveranderd';
+    if (pair.id === 'cross') {
+      const yuanWeaker = flipped ? pct < 0 : pct > 0;
+      return yuanWeaker ? 'yuan zwakker tegenover de dollar' : 'yuan sterker tegenover de dollar';
+    }
+    if (flipped) return `${pair.quoteName} ${pct > 0 ? 'duurder' : 'goedkoper'} in euro`;
+    return `euro ${pct > 0 ? 'sterker' : 'zwakker'} tegenover de ${pair.quoteName}`;
+  }
+
+  freightTone(pct: number): 'ok' | 'warn' | 'neutral' {
+    return Math.abs(pct) < 0.05 ? 'neutral' : pct > 0 ? 'warn' : 'ok';
+  }
+
+  horizonWord(unit: 'usd' | 'points', pct: number): string {
+    if (unit === 'points') return pct > 0 ? 'hoger' : 'lager';
+    return pct > 0 ? 'duurder' : 'goedkoper';
+  }
+
+  abs(value: number): number {
+    return Math.abs(value);
   }
 
   sourceStateLabel(state: MarketSourceStatus['state']): string {
@@ -320,34 +718,36 @@ export class MarketAnalysis {
     return 'geen data';
   }
 
-  hasHistory(): boolean {
-    return this.historyRoutes.some((route) => this.historyFor(route.code).length > 0);
+  sourceNeedsAttention(source: MarketSourceStatus): boolean {
+    return source.state === 'FAILED' || source.state === 'STALE' || source.state === 'CACHE_AFTER_FAILURE' ||
+      source.state === 'PROVIDER_ACCESS_REQUIRED' || source.state === 'CACHE_AFTER_ACCESS_BLOCK';
   }
 
-  usdToEur(usdPerEur: number): number {
-    return usdPerEur > 0 ? 1 / usdPerEur : 0;
+  sourceGuidance(source: MarketSourceStatus): string {
+    if (source.state === 'PROVIDER_ACCESS_REQUIRED') {
+      return 'De provider blokkeert de automatische bronoproep. Koppel de toegestane feed, credentials of ' +
+        'IP-allowlist; er is nog geen geldige cache.';
+    }
+    if (source.state === 'CACHE_AFTER_ACCESS_BLOCK') {
+      return 'De provider blokkeert de nieuwe bronoproep. De laatst geldige cache blijft zichtbaar; controleer ' +
+        'de feed, credentials of IP-allowlist.';
+    }
+    return source.detail;
   }
 
-  cnyToUsd(usdPerEur: number, cnyPerEur: number): number {
-    return usdPerEur > 0 && cnyPerEur > 0 ? usdPerEur / cnyPerEur : 0;
+  checkedOn(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date);
   }
 
-  signed(value: number): string {
-    return `${value > 0 ? '+' : ''}${value.toLocaleString('nl-BE', {
-      minimumFractionDigits: 1, maximumFractionDigits: 1,
-    })}%`;
+  recentFor(code: string): FreightRate[] {
+    return (this.ratesByRoute().get(code) ?? []).slice(-4).reverse();
   }
 
-  shortDate(value: string): string {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (!match) return value;
-    return new Intl.DateTimeFormat('nl-BE', {
-      day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC',
-    }).format(new Date(Date.UTC(+match[1], +match[2] - 1, +match[3])));
-  }
-
-  openAdd(route = 'NINGBO'): void {
-    this.newRoute.set(this.ownRoutes.some((candidate) => candidate.code === route) ? route : 'NINGBO');
+  openAdd(): void {
+    const selected = this.selected();
+    this.newRoute.set(this.ownRoutes.some((route) => route.code === selected) ? selected : 'NINGBO');
     this.newRate.set(0);
     this.newDate.set(localIsoDay());
     this.saveError.set('');
@@ -372,10 +772,10 @@ export class MarketAnalysis {
     this.saving.set(true);
     this.saveError.set('');
     try {
-      const saved = await this.sourcing.addFreightRate(
-        this.newRoute(), this.newRate(), this.newDate() || null);
+      const saved = await this.sourcing.addFreightRate(this.newRoute(), this.newRate(), this.newDate() || null);
       this.freightRates.update((rows) => [...rows, saved]);
       this.addOpen.set(false);
+      this.selected.set(saved.route);
       this.ui.toast('Vrachttarief bewaard');
     } catch (failure: unknown) {
       this.saveError.set(messageOf(failure, 'Het vrachttarief kon niet worden bewaard.'));
@@ -383,6 +783,53 @@ export class MarketAnalysis {
       this.saving.set(false);
     }
   }
+
+  remove(rate: FreightRate): void {
+    if (rate.id === null) return;
+    const id = rate.id;
+    this.ui.confirm({
+      title: 'Notering verwijderen',
+      message: `$ ${rate.usdPerContainer.toLocaleString('nl-BE', { maximumFractionDigits: 0 })} van ${shortDate(rate.quotedOn)} verdwijnt uit de historiek van deze route.`,
+      confirmLabel: 'Verwijderen',
+      danger: true,
+    }, async () => {
+      this.deletingId.set(id);
+      try {
+        await this.sourcing.deleteFreightRate(id);
+        this.freightRates.update((rows) => rows.filter((row) => row.id !== id));
+        this.ui.toast('Notering verwijderd');
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+      } finally {
+        this.deletingId.set(null);
+      }
+    });
+  }
+
+  /** Direction and period are personal reading habits: keep them on this device. */
+  private restorePreferences(): void {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const stored = JSON.parse(raw) as { months?: number; flipped?: Partial<Record<PairId, boolean>> };
+      if (MONTH_OPTIONS.some((option) => option.months === stored.months)) this.months.set(stored.months as Months);
+      if (stored.flipped) this.flipped.update((state) => ({ ...state, ...stored.flipped }));
+    } catch {
+      /* Private mode or blocked storage: defaults are fine. */
+    }
+  }
+
+  private storePreferences(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ months: this.months(), flipped: this.flipped() }));
+    } catch {
+      /* Not worth a message. */
+    }
+  }
+}
+
+function toSeries(rows: FreightRate[]): DatedSeries {
+  return { dates: rows.map((row) => row.quotedOn), values: rows.map((row) => row.usdPerContainer) };
 }
 
 function localIsoDay(date = new Date()): string {
