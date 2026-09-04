@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
   CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSharedFieldsApplyRequest, ProductSharedFieldsApplyResult, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
+  PhotoRole,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -347,6 +348,12 @@ export class CatalogApi {
       this.http.delete<Product>(api(`/api/products/${productId}/photos/${photoId}`)));
   }
 
+  /** Lets one photo open the website or the printed catalogue, or takes that role away. */
+  setPhotoLead(productId: number, photoId: number, role: PhotoRole, lead: boolean): Promise<Product> {
+    return firstValueFrom(this.http.put<Product>(
+      api(`/api/products/${productId}/photos/${photoId}/lead`), { role, lead }));
+  }
+
   reorderPhotos(productId: number, photoIds: number[]): Promise<Product> {
     return firstValueFrom(
       this.http.put<Product>(api(`/api/products/${productId}/photos/order`), photoIds));
@@ -454,6 +461,31 @@ export class CatalogApi {
 
   deleteCategory(id: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/categories/${id}`)));
+  }
+
+  /* ------------------------------------------------- categoriefoto's */
+
+  uploadCategoryPhoto(id: number, file: File): Promise<Category> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return firstValueFrom(this.http.post<Category>(api(`/api/categories/${id}/photos`), form));
+  }
+
+  /** Takes a picture over from enrosed.com as the category's photo. */
+  importCategoryPhoto(id: number, url: string): Promise<Category> {
+    return firstValueFrom(this.http.post<Category>(api(`/api/categories/${id}/photos/import`), { url }));
+  }
+
+  deleteCategoryPhoto(id: number, photoId: number): Promise<Category> {
+    return firstValueFrom(this.http.delete<Category>(api(`/api/categories/${id}/photos/${photoId}`)));
+  }
+
+  reorderCategoryPhotos(id: number, photoIds: number[]): Promise<Category> {
+    return firstValueFrom(this.http.put<Category>(api(`/api/categories/${id}/photos/order`), photoIds));
+  }
+
+  categoryPhotoUrl(id: number, photoId: number): string {
+    return `/api/categories/${id}/photos/${photoId}`;
   }
 
   contentTranslations(scope: ContentTranslationScope): Promise<ContentTranslationOverview> {

@@ -12,7 +12,7 @@ import { CatalogApi } from '../core/api/catalog-api';
 import { AuthImage } from '../core/api/auth-image';
 import { saveBlob } from '../core/api/download';
 import { messageOf } from '../core/api/errors';
-import { PhotoDto, Product } from '../core/api/models';
+import { PhotoDto, PhotoRole, Product } from '../core/api/models';
 import { MediaApi } from '../core/api/media-api';
 import { MediaAssetSummary } from '../core/api/media-models';
 import { FilePicker } from './file-picker';
@@ -83,7 +83,8 @@ export interface PendingPhotoUploadResult {
       <div class="photo-toolbar__copy">
         <b>Foto’s van deze variant</b>
         <span id="photo-order-help">
-          Voeg foto’s toe of sleep ze hierheen. Deze beelden horen alleen bij dit artikel.
+          Voeg foto’s toe of sleep ze hierheen. De eerste foto is de hoofdfoto in het ERP en op
+          onze documenten; kies per foto of ze de website of de catalogus opent.
         </span>
       </div>
 
@@ -139,6 +140,21 @@ export interface PendingPhotoUploadResult {
                 </button>
               </div>
 
+              <div class="photo-card__roles" role="group" [attr.aria-label]="'Waar ' + photo.originalFilename + ' voorop staat'">
+                <span class="photo-role" [class.photo-role--on]="isEffectivePrimary(photo)" [attr.title]="isEffectivePrimary(photo) ? 'Eerste foto: hoofdfoto in het ERP en op documenten' : 'Sleep naar voren om de hoofdfoto te maken'">Intern</span>
+                <button class="photo-role photo-role--button" type="button"
+                        [class.photo-role--on]="leads(photo, 'WEBSITE')"
+                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
+                        [attr.aria-pressed]="leads(photo, 'WEBSITE')"
+                        title="Deze foto opent het product op de website"
+                        (click)="toggleLead(photo, 'WEBSITE')">Website</button>
+                <button class="photo-role photo-role--button" type="button"
+                        [class.photo-role--on]="leads(photo, 'CATALOGUE')"
+                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
+                        [attr.aria-pressed]="leads(photo, 'CATALOGUE')"
+                        title="Deze foto opent het product in de gedrukte catalogus"
+                        (click)="toggleLead(photo, 'CATALOGUE')">Catalogus</button>
+              </div>
               <div class="photo-card__footer">
                 <span class="photo-card__copy">
                   <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
@@ -271,6 +287,21 @@ export interface PendingPhotoUploadResult {
                 <span class="photo-card__readonly">Gedeeld</span>
               </div>
 
+              <div class="photo-card__roles" role="group" [attr.aria-label]="'Waar ' + photo.originalFilename + ' voorop staat'">
+                <span class="photo-role" [class.photo-role--on]="isEffectivePrimary(photo)" [attr.title]="isEffectivePrimary(photo) ? 'Eerste foto: hoofdfoto in het ERP en op documenten' : 'Sleep naar voren om de hoofdfoto te maken'">Intern</span>
+                <button class="photo-role photo-role--button" type="button"
+                        [class.photo-role--on]="leads(photo, 'WEBSITE')"
+                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
+                        [attr.aria-pressed]="leads(photo, 'WEBSITE')"
+                        title="Deze foto opent het product op de website"
+                        (click)="toggleLead(photo, 'WEBSITE')">Website</button>
+                <button class="photo-role photo-role--button" type="button"
+                        [class.photo-role--on]="leads(photo, 'CATALOGUE')"
+                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
+                        [attr.aria-pressed]="leads(photo, 'CATALOGUE')"
+                        title="Deze foto opent het product in de gedrukte catalogus"
+                        (click)="toggleLead(photo, 'CATALOGUE')">Catalogus</button>
+              </div>
               <div class="photo-card__footer">
                 <span class="photo-card__copy">
                   <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
@@ -481,6 +512,13 @@ export interface PendingPhotoUploadResult {
     @media (prefers-reduced-motion: reduce) {
       .photo-card { transition: none; }
     }
+    .photo-card__roles { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 0; }
+    .photo-role { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font: inherit; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
+    .photo-role--button { cursor: pointer; }
+    .photo-role--button:hover:enabled { border-color: var(--rose-line); color: var(--rose-dark); }
+    .photo-role--button:disabled { cursor: default; opacity: .6; }
+    .photo-role--on { border-color: var(--rose); background: var(--rose); color: #fff; }
+
   `,
 })
 export class PhotoManager {
@@ -904,6 +942,30 @@ export class PhotoManager {
 
   isEffectivePrimary(photo: PhotoDto): boolean {
     return this.photos()[0]?.id === photo.id;
+  }
+
+  leads(photo: PhotoDto, role: PhotoRole): boolean {
+    return (photo.leadFor ?? []).includes(role);
+  }
+
+  /** One lead per channel: giving it to this photo takes it from the one that had it. */
+  readonly roleBusy = signal<number | null>(null);
+
+  async toggleLead(photo: PhotoDto, role: PhotoRole): Promise<void> {
+    const productId = this.productId();
+    if (productId === null || this.roleBusy() !== null) return;
+    this.roleBusy.set(photo.id);
+    try {
+      const product = await this.catalog.setPhotoLead(productId, photo.id, role, !this.leads(photo, role));
+      this.changed.emit(product);
+      this.ui.toast(this.leads(photo, role)
+        ? (role === 'WEBSITE' ? 'Website opent weer met de eerste foto' : 'Catalogus opent weer met de eerste foto')
+        : (role === 'WEBSITE' ? 'Deze foto opent nu de website' : 'Deze foto opent nu de catalogus'));
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Fotokeuze opslaan mislukt'), 'err');
+    } finally {
+      this.roleBusy.set(null);
+    }
   }
 
   effectivePosition(photo: PhotoDto): number | string {

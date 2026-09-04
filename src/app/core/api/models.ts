@@ -171,7 +171,12 @@ export interface PhotoDto {
   position: number;
   url: string;
   downloadUrl: string;
+  /** The channels this photo opens; the first of the series is the internal lead. */
+  leadFor?: PhotoRole[];
 }
+
+export type PhotoRole = 'WEBSITE' | 'CATALOGUE';
+
 
 /**
  * Private visual instruction for the supplier currently linked to a product.
@@ -532,8 +537,21 @@ export interface ProductFamily {
   variantCount: number;
 }
 
+/** A category's own photo; the first one opens the collection on the website and in the catalogue. */
+export interface CategoryPhoto {
+  id: number;
+  originalFilename: string;
+  contentType: string;
+  sizeBytes: number;
+  widthPx: number | null;
+  heightPx: number | null;
+  position: number;
+}
+
 export interface Category {
   id: number | null;
+  /** Read-only on a save; the photo flows change them. */
+  photos?: CategoryPhoto[];
   /** Optimistic-lock revision returned by the server; null for a new/legacy draft. */
   revision?: number | null;
   code: string;

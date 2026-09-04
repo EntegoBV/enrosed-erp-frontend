@@ -123,8 +123,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               <a class="sidebar__link" routerLink="/barcodes" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="barcode" [size]="18" /> EAN-codes
               </a>
-              <a class="sidebar__link sidebar__link--wide" [routerLink]="['/settings']"
-                 [queryParams]="{ sectie: 'categories' }" [class.active]="settingsActive('categories')">
+              <a class="sidebar__link sidebar__link--wide" routerLink="/categories" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="products" [size]="18" /> Categorieën
               </a>
               <a class="sidebar__link sidebar__link--wide" [routerLink]="['/settings']"
@@ -190,11 +189,15 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               <a class="sidebar__link sidebar__link--wide" routerLink="/voorwaarden">
                 <app-icon class="sidebar__icon" name="sales" [size]="18" /> Voorwaarden &amp; privacy
               </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/files" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="media" [size]="18" /> Documenten &amp; media
-              </a>
             </div>
 
+            <!-- The two workspaces everyone opens daily stand on their own,
+                 above the company group: the document and photo library first. -->
+            <a class="sidebar__link sidebar__link--workspace" routerLink="/files" routerLinkActive="active">
+              <app-icon class="sidebar__icon" name="media" [size]="18" />
+              <span class="sidebar__text sidebar__text--full">Documenten &amp; media</span>
+              <span class="sidebar__text sidebar__text--rail">Media</span>
+            </a>
             <a class="sidebar__link sidebar__link--workspace" routerLink="/website" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="countries" [size]="18" />
               <span class="sidebar__text sidebar__text--full">Website beheren</span>

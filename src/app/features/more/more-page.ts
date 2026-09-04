@@ -13,6 +13,14 @@ import { THEMES, Theme } from '../../core/platform/theme';
     <app-page-header title="Meer" [subtitle]="'Aangemeld als ' + (auth.username() ?? '')" />
 
     <div class="content">
+      <!-- The library everyone reaches for daily stands on top, not inside a group. -->
+      <a class="list-item card more-shortcut" routerLink="/files">
+        <span class="thumb thumb--placeholder"><app-icon name="media" /></span>
+        <div class="list-item__body"><div class="list-item__title">Documenten &amp; media</div>
+          <div class="list-item__meta">Foto’s, PDF’s en bestanden beheren en delen</div></div>
+        <span class="list-item__chev">›</span>
+      </a>
+
       <details class="card more-group more-group--analyses" name="meer-groepen" open>
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
@@ -135,10 +143,10 @@ import { THEMES, Theme } from '../../core/platform/theme';
               <div class="list-item__meta">Magazijn, stand en wat de website telt</div></div>
             <span class="list-item__chev">›</span>
           </a>
-          <a class="list-item" routerLink="/website/categories">
+          <a class="list-item" routerLink="/categories">
             <span class="thumb thumb--placeholder"><app-icon name="products" /></span>
             <div class="list-item__body"><div class="list-item__title">Categorieën</div>
-              <div class="list-item__meta">Productgroepen en volgorde</div></div>
+              <div class="list-item__meta">Productgroepen, foto’s en volgorde</div></div>
             <span class="list-item__chev">›</span>
           </a>
           <a class="list-item" routerLink="/website">
@@ -237,6 +245,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
     </div>
   `,
   styles: `
+    .more-shortcut{display:flex;margin-bottom:12px;border-color:var(--rose-line)}
     .more-group { margin-bottom: 10px; }
     .more-group summary { display: flex; align-items: center; gap: 12px; padding: 13px 14px;
       cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent; }

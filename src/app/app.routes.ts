@@ -100,6 +100,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/products/product-list').then((m) => m.ProductList),
   },
   {
+    path: 'categories',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/products/categories-page').then((m) => m.CategoriesPage),
+  },
+  {
     path: 'catalog-export',
     canActivate: [authGuard],
     loadComponent: () =>
