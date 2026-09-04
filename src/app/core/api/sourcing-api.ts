@@ -185,6 +185,12 @@ export class SourcingApi {
         api('/api/freight-rates/market-sources')));
   }
 
+  /** One extra lookup of a single market source right now, outside the daily cadence. */
+  refreshMarketSource(code: string): Promise<MarketSourceStatus> {
+    return firstValueFrom(this.http.post<MarketSourceStatus>(
+        api(`/api/freight-rates/market-sources/${encodeURIComponent(code)}/refresh`), {}));
+  }
+
   addFreightRate(route: string, usdPerContainer: number,
                  quotedOn: string | null = null): Promise<FreightRate> {
     return firstValueFrom(this.http.post<FreightRate>(api('/api/freight-rates'),

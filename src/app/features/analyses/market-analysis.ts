@@ -312,6 +312,9 @@ const STORAGE_KEY = 'enrosed.market';
                   @if (source.latestPublishedOn) { <span>publicatie {{ shortDate(source.latestPublishedOn) }}</span> }
                   @if (source.lastCheckedAt) { <span>gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
                   <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer">Bron ↗</a>
+                  <button class="linklike" type="button" [disabled]="refreshingSource() === source.code"
+                          (click)="refreshSource(source.code)">
+                    {{ refreshingSource() === source.code ? 'Bron ophalen…' : 'Bron nu ophalen' }}</button>
                 </div>
                 @if (sourceNeedsAttention(source)) { <p class="fr-source__detail">{{ sourceGuidance(source) }}</p> }
               </div>
@@ -508,6 +511,7 @@ export class MarketAnalysis {
   readonly saving = signal(false);
   readonly saveError = signal('');
   readonly deletingId = signal<number | null>(null);
+  readonly refreshingSource = signal<string | null>(null);
   readonly newRoute = signal('NINGBO');
   readonly newRate = signal(0);
   readonly newDate = signal(localIsoDay());
@@ -739,6 +743,25 @@ export class MarketAnalysis {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date);
+  }
+
+  /** One extra lookup of this source, then the log and the status again. */
+  async refreshSource(code: string): Promise<void> {
+    if (this.refreshingSource()) return;
+    this.refreshingSource.set(code);
+    try {
+      const status = await this.sourcing.refreshMarketSource(code);
+      const [rates, sources] = await Promise.all([this.sourcing.freightRates(), this.sourcing.marketSourceStatuses()]);
+      this.freightRates.set(rates);
+      this.marketSources.set(sources);
+      this.ui.toast(status.state === 'CURRENT'
+        ? `${status.label} bijgewerkt · publicatie ${status.latestPublishedOn ? shortDate(status.latestPublishedOn) : '—'}`
+        : `${status.label}: ${this.sourceStateLabel(status.state)}`, status.state === 'CURRENT' ? 'ok' : 'err');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Bron ophalen mislukt'), 'err');
+    } finally {
+      this.refreshingSource.set(null);
+    }
   }
 
   recentFor(code: string): FreightRate[] {

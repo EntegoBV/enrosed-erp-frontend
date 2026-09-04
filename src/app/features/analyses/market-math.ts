@@ -423,7 +423,7 @@ export function freightNarrative(entries: DatedSeries, unit: 'usd' | 'points'): 
   const from = entries.values[count - recent];
   const to = entries.values[count - 1];
   const recentPct = from > 0 ? ((to - from) / from) * 100 : 0;
-  const noun = unit === 'usd' ? 'tarief' : 'index';
+  const noun = unit === 'usd' ? 'het tarief' : 'de index';
   const direction = Math.abs(recentPct) < 1 ? 'zijwaarts'
     : recentPct > 0 ? 'omhoog' : 'omlaag';
   lines.push(`De laatste ${recent} noteringen gaan ${direction}` +
@@ -432,11 +432,11 @@ export function freightNarrative(entries: DatedSeries, unit: 'usd' | 'points'): 
   const step = lastStep(entries);
   if (step && Math.abs(step.pct) >= 0.05) {
     lines.push(`Vorige notering (${step.days} dagen eerder): ${step.pct > 0 ? '+' : '−'}${NL(Math.abs(step.pct))}%, ` +
-      `het ${noun} werd dus ${step.pct > 0 ? (unit === 'usd' ? 'duurder' : 'hoger') : (unit === 'usd' ? 'goedkoper' : 'lager')}.`);
+      `${noun} werd dus ${step.pct > 0 ? (unit === 'usd' ? 'duurder' : 'hoger') : (unit === 'usd' ? 'goedkoper' : 'lager')}.`);
   }
   const longest = sparseHorizons(entries).slice().reverse().find((horizon) => horizon.pct !== null);
   if (longest && longest.pct !== null && longest.comparedOn) {
-    lines.push(`Over ${longest.label} staat het ${noun} ${NL(Math.abs(longest.pct))}% ` +
+    lines.push(`Over ${longest.label} staat ${noun} ${NL(Math.abs(longest.pct))}% ` +
       `${longest.pct > 0 ? 'hoger' : 'lager'} dan op ${shortDate(longest.comparedOn)} (${longest.actualDays} dagen).`);
   } else {
     lines.push('De langere vergelijking volgt zodra er voldoende wekelijkse historiek is.');
