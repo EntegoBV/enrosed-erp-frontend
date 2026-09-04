@@ -42,6 +42,10 @@ interface FreightDefinition {
   code: string;
   label: string;
   short: string;
+  /** Who publishes it, as the tile's second line. */
+  source: string;
+  /** One plain sentence on what the number covers, shown above the chart. */
+  describe: string;
   group: 'own' | 'usd' | 'index';
   unit: 'usd' | 'points';
 }
@@ -58,14 +62,30 @@ const PAIRS: readonly PairDefinition[] = [
 ];
 
 const FREIGHT: readonly FreightDefinition[] = [
-  { code: 'NINGBO', label: 'Ningbo → Rotterdam', short: 'Ningbo', group: 'own', unit: 'usd' },
-  { code: 'GUANGZHOU', label: 'Nansha (Guangzhou) → Rotterdam', short: 'Nansha', group: 'own', unit: 'usd' },
-  { code: 'SHENZHEN', label: 'Yantian (Shenzhen) → Rotterdam', short: 'Yantian', group: 'own', unit: 'usd' },
-  { code: 'WCI SHA-RTM', label: 'Drewry WCI · Shanghai → Rotterdam', short: 'Shanghai → Rotterdam', group: 'usd', unit: 'usd' },
-  { code: 'FBX11 CN-NEUR', label: 'Freightos FBX11 · China → Noord-Europa', short: 'China → N-Europa', group: 'usd', unit: 'usd' },
-  { code: 'NCFI NGB-EUR', label: 'NCFI · Ningbo → Europa', short: 'NCFI Ningbo → Europa', group: 'index', unit: 'points' },
-  { code: 'NCFI NINGBO', label: 'NCFI · Ningbo composiet', short: 'NCFI composiet', group: 'index', unit: 'points' },
-  { code: 'CCFI CN-EUR', label: 'CCFI · China → Europa', short: 'CCFI China → Europa', group: 'index', unit: 'points' },
+  { code: 'NINGBO', label: 'Ningbo → Rotterdam', short: 'Ningbo → Rotterdam', source: 'onze forwarder',
+    describe: 'Wat onze forwarder ons offreert voor een 40ft-container van Ningbo tot Rotterdam, all-in zeevracht.',
+    group: 'own', unit: 'usd' },
+  { code: 'GUANGZHOU', label: 'Nansha (Guangzhou) → Rotterdam', short: 'Nansha → Rotterdam', source: 'onze forwarder',
+    describe: 'Wat onze forwarder ons offreert voor een 40ft-container van Nansha (Guangzhou) tot Rotterdam.',
+    group: 'own', unit: 'usd' },
+  { code: 'SHENZHEN', label: 'Yantian (Shenzhen) → Rotterdam', short: 'Yantian → Rotterdam', source: 'onze forwarder',
+    describe: 'Wat onze forwarder ons offreert voor een 40ft-container van Yantian (Shenzhen) tot Rotterdam.',
+    group: 'own', unit: 'usd' },
+  { code: 'WCI SHA-RTM', label: 'Shanghai → Rotterdam', short: 'Shanghai → Rotterdam', source: 'Drewry WCI',
+    describe: 'Spotprijs in USD per 40ft van Shanghai naar Rotterdam, wekelijks door Drewry. Dit is de prijs om naast onze offertes te leggen.',
+    group: 'usd', unit: 'usd' },
+  { code: 'FBX11 CN-NEUR', label: 'China → Noord-Europa', short: 'China → Noord-Europa', source: 'Freightos FBX11',
+    describe: 'Spotprijs in USD per 40ft van China en Oost-Azië naar de Noord-Europese havens (Rotterdam, Antwerpen, Hamburg, Felixstowe), wekelijks door Freightos.',
+    group: 'usd', unit: 'usd' },
+  { code: 'NCFI NGB-EUR', label: 'Ningbo → Europa', short: 'Ningbo → Europa', source: 'NCFI · Ningbo Exchange',
+    describe: 'Index van de vracht vanuit Ningbo-Zhoushan naar de Europese basishavens Hamburg en Rotterdam. De exacte route van onze containers, in punten.',
+    group: 'index', unit: 'points' },
+  { code: 'NCFI NINGBO', label: 'Ningbo → alle routes', short: 'Ningbo → alle routes', source: 'NCFI composiet',
+    describe: 'Samengestelde index over alle 21 routes vanuit Ningbo-Zhoushan. Zegt of de haven als geheel duurder of goedkoper wordt.',
+    group: 'index', unit: 'points' },
+  { code: 'CCFI CN-EUR', label: 'China → Europa', short: 'China → Europa', source: 'CCFI · Shanghai Exchange',
+    describe: 'Brede index voor de Europa-route vanuit tien Chinese havens, waaronder Guangzhou en Shenzhen. Contractgebaseerd, beweegt trager dan spot.',
+    group: 'index', unit: 'points' },
 ];
 
 const REFERENCE_CODE = 'WCI SHA-RTM';
@@ -212,14 +232,18 @@ const STORAGE_KEY = 'enrosed.market';
           <div>
             <span class="mk-eyebrow">Containervracht</span>
             <h2 id="mk-freight-title">Zeevracht China → Rotterdam</h2>
-            <p>Eigen forwarderoffertes in USD per 40ft naast de marktbenchmarks en indexen · kies een reeks voor het verloop</p>
+            <p>Wat wij betalen, wat de markt betaalt en welke kant het op gaat · tik op een tegel voor het verloop en de uitleg</p>
           </div>
           <button class="btn btn--primary btn--sm" type="button" (click)="openAdd()">Tarief toevoegen</button>
         </header>
 
         @for (group of freightGroups; track group.id) {
           <div class="fr-group">
-            <div class="fr-group__head"><span>{{ group.title }}</span><small>{{ group.hint }}</small></div>
+            <div class="fr-group__head">
+              <span>{{ group.title }}</span>
+              <i class="mk-chip mk-chip--unit">{{ group.unit }}</i>
+              <small>{{ group.hint }}</small>
+            </div>
             <div class="fr-tiles" role="group" [attr.aria-label]="group.title">
               @for (tile of tilesFor(group.id); track tile.code) {
                 <button class="fr-tile" type="button" [class.is-on]="selected() === tile.code"
@@ -229,6 +253,7 @@ const STORAGE_KEY = 'enrosed.market';
                       <i class="mk-chip" [class.mk-chip--off]="tile.state === 'DISABLED'">{{ sourceStateLabel(tile.state) }}</i>
                     }
                   </span>
+                  <span class="fr-tile__source">{{ tile.source }}</span>
                   @if (tile.latest; as latest) {
                     <strong>{{ tile.unit === 'usd' ? '$ ' : '' }}{{ latest.usdPerContainer | num: tile.unit === 'usd' ? 0 : 1 }}
                       @if (tile.unit === 'points') { <small>ptn</small> }</strong>
@@ -251,11 +276,13 @@ const STORAGE_KEY = 'enrosed.market';
           <section class="fr-detail" [attr.aria-label]="'Verloop ' + d.definition.label">
             <header class="fr-detail__head">
               <div>
+                <span class="mk-eyebrow">{{ d.definition.source }}</span>
                 <h3>{{ d.definition.label }}</h3>
+                <p class="fr-detail__what">{{ d.definition.describe }}</p>
                 <p>{{ d.definition.unit === 'usd' ? 'USD per 40ft-container' : 'indexpunten, geen prijs' }}
                   · {{ d.all.dates.length }} {{ d.all.dates.length === 1 ? 'notering' : 'noteringen' }}
-                  @if (d.source) { · {{ d.source.sourceName }} }
-                  @if (d.definition.group === 'own') { · eigen forwarderoffertes }</p>
+                  @if (d.definition.group !== 'own') { · wekelijks automatisch opgehaald }
+                  @if (d.definition.group === 'own') { · door ons genoteerd }</p>
               </div>
               @if (d.latest; as latest) {
                 <div class="fr-detail__now">
@@ -448,8 +475,11 @@ const STORAGE_KEY = 'enrosed.market';
     .mk-table__scroll th{color:var(--muted);font-size:10.5px;font-weight:700}.mk-table__scroll td{font-variant-numeric:tabular-nums}
     .mk-table__scroll .num{text-align:right}.mk-table__scroll th:not(:first-child),.mk-table__scroll td:not(:first-child){text-align:right}
     /* freight */
-    .fr-group{padding:12px 18px 0}.fr-group__head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:8px;font-size:11px;font-weight:780}.fr-group__head small{color:var(--muted);font-size:10.5px;font-weight:500}
-    .fr-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr));gap:8px}
+    .fr-group{padding:14px 18px 0}.fr-group__head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-bottom:8px;font-size:12px;font-weight:780}.fr-group__head small{flex-basis:100%;color:var(--muted);font-size:10.5px;font-weight:500}
+    .mk-chip--unit{background:var(--surface-2);color:var(--ink-2);font-variant-numeric:tabular-nums}
+    .fr-tile__source{color:var(--muted);font-size:10.5px;line-height:1.3}
+    .fr-detail__what{margin:4px 0 2px;color:var(--ink-2);font-size:12.5px;line-height:1.45}
+    .fr-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,160px),224px));gap:8px}
     .fr-tile{display:grid;gap:3px;min-width:0;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
     .fr-tile:hover{border-color:var(--rose-line)}.fr-tile.is-on{border-color:var(--rose);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose)}
     .fr-tile__name{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--ink-2);font-size:11.5px;font-weight:700}
@@ -492,9 +522,12 @@ export class MarketAnalysis {
   readonly shortDate = shortDate;
   readonly historyLimit = 8;
   readonly freightGroups = [
-    { id: 'own' as const, title: 'Eigen offertes', hint: 'forwarder, USD per 40ft tot Rotterdam' },
-    { id: 'usd' as const, title: 'Marktprijs in dollars', hint: 'spotbenchmarks, wekelijks automatisch' },
-    { id: 'index' as const, title: 'Marktindexen', hint: 'richting van de markt in punten, geen prijs' },
+    { id: 'own' as const, title: 'Wat wij betalen', unit: 'USD per 40ft',
+      hint: 'offertes van onze forwarder, all-in tot Rotterdam, door ons genoteerd' },
+    { id: 'usd' as const, title: 'Wat de markt betaalt', unit: 'USD per 40ft',
+      hint: 'spotprijzen van de markt, dezelfde eenheid als onze offertes, wekelijks automatisch' },
+    { id: 'index' as const, title: 'Welke kant de markt op gaat', unit: 'indexpunten',
+      hint: 'geen prijs maar een peil: alleen het stijgen of dalen telt, wekelijks automatisch' },
   ];
   readonly ownRoutes = FREIGHT.filter((definition) => definition.group === 'own');
 
