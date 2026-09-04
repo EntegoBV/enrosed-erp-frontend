@@ -516,10 +516,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         <label [attr.for]="'qty-' + line.productId">Aantal stuks</label>
                         <input class="input num right" [id]="'qty-' + line.productId"
                                type="number" min="0" step="1" inputmode="numeric"
-                               [disabled]="isReceived()" [ngModel]="line.quantity"
-                               (ngModelChange)="setQuantity(line.productId, +$event)" />
+                               [disabled]="isReceived()" [ngModel]="quantityValue(line.productId, line.quantity)"
+                               (ngModelChange)="typeQuantity(line.productId, $event)"
+                               (blur)="leaveQuantity(line.productId)" />
                         @if (!isReceived()) {
-                          @if (cartonNotice(line.quantity, line.productId); as cartonNote) {
+                          @if (cartonNotice(draftQuantity(line.productId, line.quantity), line.productId); as cartonNote) {
                             <span class="hint carton-quantity-note" role="status">{{ cartonNote }}</span>
                           }
                         }
@@ -1239,6 +1240,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       @if (!desktop.active()) {
         <nav class="purchase-mobile-dock erp-workspace__mobile-dock"
              aria-label="Inkooporder navigatie en acties">
+          <!-- A hairline along the top edge: how full the container is while
+               you are composing it, without stealing room from the buttons. -->
+          @if (phoneStep() === 1 && !isDdp() && data.costing.containerFill; as fill) {
+            <div class="dock-fill" role="meter" aria-label="Containervulling"
+                 aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="fill.fillPercent"
+                 [class.dock-fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
+                 [class.dock-fill--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
+                 [class.dock-fill--danger]="fill.fillPercent > 105">
+              <span class="dock-fill__label"><b>{{ fill.fillPercent | num: 0 }}%</b> · {{ fill.usedCbm | num: 1 }} van {{ fill.capacityCbm }} m³</span>
+              <span class="dock-fill__track"><i [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i></span>
+            </div>
+          }
           @if (phoneStep() > 0) {
             <button class="purchase-mobile-dock__back" type="button"
                     (click)="previousPhoneStep()"
@@ -1611,7 +1624,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-fact--total strong{color:var(--rose-dark)}
     .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}.fill-overview strong.fill-pct--over,.po-fact strong.fill-pct--over{color:var(--warn)}.fill-overview strong.fill-pct--danger,.po-fact strong.fill-pct--danger{color:var(--danger)}.meter__fill--danger{background:var(--danger)}.capacity-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.capacity-alert--tight .alert__icon{background:var(--warn);color:#fff}
     .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-    .purchase-mobile-dock{display:flex;align-items:center;gap:7px}
+    .purchase-mobile-dock{display:flex;align-items:center;gap:7px}.dock-fill{position:absolute;top:0;right:14px;left:14px;height:3px;pointer-events:none}.dock-fill__track{display:block;height:3px;overflow:hidden;border-radius:0 0 3px 3px;background:var(--line)}.dock-fill__track i{display:block;height:100%;border-radius:inherit;background:var(--rose);transition:width .2s ease}.dock-fill__label{position:absolute;top:-22px;right:0;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:rgb(255 255 255 / 90%);color:var(--muted);font-size:9.5px;font-weight:650;line-height:1.4;white-space:nowrap;box-shadow:0 2px 8px rgb(26 22 20 / 8%);backdrop-filter:blur(8px)}.dock-fill__label b{color:var(--rose-dark);font-weight:800}.dock-fill--full .dock-fill__track i{background:var(--ok)}.dock-fill--full .dock-fill__label b{color:var(--ok)}.dock-fill--over .dock-fill__track i{background:var(--warn)}.dock-fill--over .dock-fill__label b{color:var(--warn)}.dock-fill--danger .dock-fill__track i{background:var(--danger)}.dock-fill--danger .dock-fill__label b{color:var(--danger)}
     .purchase-mobile-dock__back,.purchase-mobile-dock__next{width:42px;height:42px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer}
     .purchase-mobile-dock__next{background:var(--ink);color:#fff}
     .purchase-mobile-dock__context{min-width:48px;display:grid;flex:1;line-height:1.15}
@@ -1621,7 +1634,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .purchase-mobile-dock__pdf{flex:none}
     .purchase-mobile-dock__save:disabled{opacity:.58}
     .purchase-mobile-dock__primary{flex:none}
-    @media(max-width:390px){.purchase-mobile-dock__context{display:none}.purchase-mobile-dock__save,.purchase-mobile-dock__pdf{padding-inline:9px!important}.purchase-mobile-dock__primary{flex:1}}
+    @media(max-width:390px){.purchase-mobile-dock__context{display:none}.purchase-mobile-dock__save,.purchase-mobile-dock__pdf{padding-inline:9px!important}.purchase-mobile-dock__save,.purchase-mobile-dock__primary{flex:1}}
     @media(max-width:679px){
       .pdf-header-button{display:none}
       .po-page{padding-bottom:calc(var(--tabbar-h) + var(--safe-b) + 128px)}
@@ -2694,6 +2707,45 @@ export class PurchaseEditor {
   setQuantity(productId: number, quantity: number): void {
     if (this.isReceived()) return;
     this.setLine(productId, { quantity });
+  }
+
+  /**
+   * What is being typed in a quantity field, per line, until the field is
+   * left. The field used to mirror the server's calculation line, which
+   * lags a keystroke or two behind: clearing it wrote a zero back into the
+   * box while you were still typing, so "50" became "050". While a draft
+   * exists the box shows exactly what you typed; the order line follows
+   * every complete number at once and the calculation catches up quietly.
+   */
+  readonly quantityDrafts = signal<Record<number, string>>({});
+
+  /** The text the quantity box shows: the draft while typing, else the order line. */
+  quantityValue(productId: number, shown: number): string | number {
+    const draft = this.quantityDrafts()[productId];
+    return draft !== undefined ? draft : this.draftQuantity(productId, shown);
+  }
+
+  /** The quantity as the draft order has it, before the calculation caught up. */
+  draftQuantity(productId: number, shown: number): number {
+    return this.orderLine(productId)?.quantity ?? shown;
+  }
+
+  typeQuantity(productId: number, raw: string | number | null): void {
+    if (this.isReceived()) return;
+    const text = raw === null || raw === undefined ? '' : String(raw).trim();
+    this.quantityDrafts.update((drafts) => ({ ...drafts, [productId]: text }));
+    const parsed = Number(text);
+    if (text !== '' && Number.isInteger(parsed) && parsed >= 0) this.setLine(productId, { quantity: parsed });
+  }
+
+  /** An emptied box means "unchanged": the order line keeps its last complete number. */
+  leaveQuantity(productId: number): void {
+    this.quantityDrafts.update((drafts) => {
+      if (!(productId in drafts)) return drafts;
+      const next = { ...drafts };
+      delete next[productId];
+      return next;
+    });
   }
 
   /** The order line behind a calculation line, with the raw input. */

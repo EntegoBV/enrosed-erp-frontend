@@ -251,7 +251,7 @@ type DeskRow =
                                 }{{ variant }}
                               </span>
                             }
-                            @if (editing() && !isReceived() && cartonNotice(line.quantity, line.productId); as note) {
+                            @if (editing() && !isReceived() && cartonNotice(draftQuantity(line.productId, line.quantity), line.productId); as note) {
                               <span role="status">{{ note }}</span>
                             }
                             @if (shortShipped(line.productId); as ordered) {
@@ -267,8 +267,10 @@ type DeskRow =
                         <td class="c-qty num">
                           @if (editing() && !isReceived()) {
                             <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
-                                   [attr.aria-label]="'Aantal ' + line.productName" [ngModel]="line.quantity"
-                                   (ngModelChange)="setQuantity(line.productId, +$event)" />
+                                   [attr.aria-label]="'Aantal ' + line.productName"
+                                   [ngModel]="quantityValue(line.productId, line.quantity)"
+                                   (ngModelChange)="typeQuantity(line.productId, $event)"
+                                   (blur)="leaveQuantity(line.productId)" />
                           } @else {
                             <b>{{ line.quantity | num }}</b>
                           }
