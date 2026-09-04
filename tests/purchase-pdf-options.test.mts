@@ -20,6 +20,7 @@ test('fixed landscape preset preserves the existing output', () => {
     showPaymentTerms: false,
     showOuterCarton: false,
     showBarcode: false,
+    showSeparateCosts: true,
     showFreight: false,
     includeFreight: false,
   });
@@ -45,6 +46,7 @@ test('every optional standard portrait field starts hidden', () => {
     showPaymentTerms: false,
     showOuterCarton: false,
     showBarcode: false,
+    showSeparateCosts: true,
     showFreight: false,
     includeFreight: false,
   });
@@ -156,7 +158,29 @@ test('purchase PDF query serializes every explicit backend option', () => {
     showPaymentTerms: 'true',
     showOuterCarton: 'true',
     showBarcode: 'true',
+    showSeparateCosts: 'true',
     showFreight: 'false',
     includeFreight: 'false',
   });
+});
+
+test('the separate costs start on and can only be left off the standard portrait', () => {
+  const standard = normalizePurchasePdfOptions({ layout: 'PORTRAIT', audience: 'STANDARD' });
+  assert.equal(standard.showSeparateCosts, true);
+
+  const hidden = normalizePurchasePdfOptions({
+    layout: 'PORTRAIT',
+    audience: 'STANDARD',
+    showSeparateCosts: false,
+  });
+  assert.equal(hidden.showSeparateCosts, false);
+  assert.equal(new URLSearchParams(purchasePdfQuery(hidden)).get('showSeparateCosts'), 'false');
+
+  for (const preset of [
+    { layout: 'LANDSCAPE', audience: 'STANDARD' },
+    { layout: 'PORTRAIT', audience: 'SUPPLIER' },
+  ] as const) {
+    assert.equal(normalizePurchasePdfOptions({ ...preset, showSeparateCosts: false }).showSeparateCosts, true,
+      'the fixed presets always print what is booked');
+  }
 });

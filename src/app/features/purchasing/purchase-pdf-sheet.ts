@@ -178,6 +178,18 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                   <small>De gelande kost omgerekend naar één product.</small>
                 </span>
               </label>
+              @if (separateCosts()) {
+                <label class="pdf-option">
+                  <input type="checkbox"
+                         [ngModel]="portraitOptions().showSeparateCosts"
+                         [disabled]="!portraitOptions().includeEnrosedCost || busyChoice() !== null"
+                         (ngModelChange)="patchPortraitOptions({ showSeparateCosts: $event })" />
+                  <span>
+                    <b>Inspectie en andere kosten</b>
+                    <small>Als aparte lijntjes onder de totale kost, niet in de stukprijs. Hoort bij de totale kost per regel.</small>
+                  </span>
+                </label>
+              }
             </fieldset>
           </div>
         } @else {
@@ -287,6 +299,8 @@ export class PurchasePdfSheet {
   readonly orderNumber = input.required<string>();
   readonly dirty = input(false);
   readonly saving = input(false);
+  /** The order books an inspection or another named cost; only then is there a switch to show. */
+  readonly separateCosts = input(false);
   readonly closed = output<void>();
   readonly saveRequested = output<void>();
 

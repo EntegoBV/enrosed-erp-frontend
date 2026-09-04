@@ -16,8 +16,8 @@ import {
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import {
-  Allocation, Category, Currency, DocumentKind, FreightRate, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder, PurchaseOrderLine,
-  PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
+  Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
+  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { FilePicker } from '../../shared/file-picker';
@@ -33,7 +33,9 @@ import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
 import {
   effectiveUsdToEur,
+  hasSeparateCosts,
   purchaseCostLabels,
+  separateCostsTotalLabel,
   withUsdToEur,
 } from './purchase-cost-labels';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
@@ -802,27 +804,58 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         </div>
                       </div>
                       }
-                      <div class="field span-2">
-                        <label for="c-extra">Enrosed kost <span class="opt"></span></label>
-                        <div class="input-affix">
-                          <input class="input num right" id="c-extra" type="number"
-                                 step="100" min="0" inputmode="decimal"
-                                 [ngModel]="data.order.extraRevenueEur"
-                                 (ngModelChange)="patch({ extraRevenueEur: +$event })" />
-                          <span class="input-affix__suffix">EUR</span>
+                      <!-- Our own costs side by side: the Enrosed kost goes into the piece
+                           price, the inspection stays a line of its own. -->
+                      <div class="field-duo span-2">
+                        <div class="field">
+                          <label for="c-extra">Enrosed kost <span class="opt"></span></label>
+                          <div class="input-affix">
+                            <input class="input num right" id="c-extra" type="number"
+                                   step="100" min="0" inputmode="decimal"
+                                   [ngModel]="data.order.extraRevenueEur"
+                                   (ngModelChange)="patch({ extraRevenueEur: +$event })" />
+                            <span class="input-affix__suffix">EUR</span>
+                          </div>
+                          <span class="hint">In de stukprijs · start op € 2.000 per container.</span>
                         </div>
-                        <span class="hint">Nieuwe calculaties starten op € 2.000 per container.</span>
+                        <div class="field">
+                          <label for="c-inspection">Inspectiekost <span class="opt"></span></label>
+                          <div class="input-affix">
+                            <input class="input num right" id="c-inspection" type="number"
+                                   step="50" min="0" inputmode="decimal"
+                                   [ngModel]="data.order.inspectionCostEur"
+                                   (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
+                            <span class="input-affix__suffix">EUR</span>
+                          </div>
+                          <span class="hint">Apart lijntje, niet in de stukprijs.</span>
+                        </div>
                       </div>
-                      <div class="field span-2">
-                        <label for="c-inspection">Inspectiekost <span class="opt"></span></label>
-                        <div class="input-affix">
-                          <input class="input num right" id="c-inspection" type="number"
-                                 step="50" min="0" inputmode="decimal"
-                                 [ngModel]="data.order.inspectionCostEur"
-                                 (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
-                          <span class="input-affix__suffix">EUR</span>
-                        </div>
-                        <span class="hint">Keuring bij de fabriek. Blijft een apart lijntje op de order en de A4, wordt niet in de stukprijs verrekend.</span>
+                      <div class="other-costs span-2" aria-label="Andere kosten">
+                        @for (cost of data.order.otherCosts ?? []; track $index; let i = $index) {
+                          <div class="other-cost">
+                            <input class="input" type="text" maxlength="60"
+                                   placeholder="Naam, bv. certificaat"
+                                   [attr.aria-label]="'Naam andere kost ' + (i + 1)"
+                                   [ngModel]="cost.label"
+                                   (ngModelChange)="setOtherCost(i, { label: $event })" />
+                            <div class="input-affix">
+                              <input class="input num right" type="number"
+                                     step="50" min="0" inputmode="decimal"
+                                     [attr.aria-label]="'Bedrag andere kost ' + (i + 1)"
+                                     [ngModel]="cost.amountEur"
+                                     (ngModelChange)="setOtherCost(i, { amountEur: $event === '' || $event === null ? null : +$event })" />
+                              <span class="input-affix__suffix">EUR</span>
+                            </div>
+                            <button class="other-cost__remove" type="button"
+                                    [attr.aria-label]="'Verwijder ' + (cost.label || 'andere kost')"
+                                    (click)="removeOtherCost(i)">×</button>
+                          </div>
+                        }
+                        <button class="other-costs__add" type="button" (click)="addOtherCost()">
+                          <span aria-hidden="true">+</span>
+                          <b>Andere kost</b>
+                          <small>certificaat, labo, staal … apart, niet in de stukprijs</small>
+                        </button>
                       </div>
                     </div>
                   </section>
@@ -1020,16 +1053,24 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       </div>
                     }
                   </div>
-                  @if (data.costing.totals.inspectionEur) {
+                  @if (data.costing.totals.separateCostsEur) {
                     <div class="cost-summary__group">
                       <span class="cost-section">Apart · niet in de stukprijs</span>
-                      <div class="stat-row">
-                        <span>Inspectie</span>
-                        <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span>
-                      </div>
+                      @if (data.costing.totals.inspectionEur) {
+                        <div class="stat-row">
+                          <span>Inspectie</span>
+                          <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span>
+                        </div>
+                      }
+                      @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
+                        <div class="stat-row">
+                          <span>{{ cost.label }}</span>
+                          <span class="num">{{ cost.amountEur | eur }}</span>
+                        </div>
+                      }
                       <div class="stat-row cost-summary__subtotal">
-                        <span>Totaal incl. inspectie</span>
-                        <span class="num">{{ data.costing.totals.totalWithInspectionEur | eur }}</span>
+                        <span>{{ separateCostsTotalLabel(data.costing.totals) }}</span>
+                        <span class="num">{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</span>
                       </div>
                     </div>
                   }
@@ -1621,6 +1662,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
                                 [dirty]="dirty()" [saving]="saving()"
+                                [separateCosts]="hasSeparateCosts(data.order)"
                                 (saveRequested)="save()" (closed)="pdfOpen.set(false)" />
       }
     } @else {
@@ -2703,6 +2745,36 @@ export class PurchaseEditor {
 
   patch(changes: Partial<PurchaseOrder>): void {
     this.enqueue((order) => ({ ...order, ...changes }));
+  }
+
+  /** A new named cost next to the inspection; the server drops it again when it stays empty. */
+  addOtherCost(): void {
+    this.enqueue((order) => ({
+      ...order,
+      otherCosts: [...(order.otherCosts ?? []), { label: '', amountEur: null }],
+    }));
+  }
+
+  setOtherCost(index: number, changes: Partial<OtherCost>): void {
+    this.enqueue((order) => ({
+      ...order,
+      otherCosts: (order.otherCosts ?? []).map((cost, i) => (i === index ? { ...cost, ...changes } : cost)),
+    }));
+  }
+
+  removeOtherCost(index: number): void {
+    this.enqueue((order) => ({
+      ...order,
+      otherCosts: (order.otherCosts ?? []).filter((_, i) => i !== index),
+    }));
+  }
+
+  hasSeparateCosts(order: PurchaseOrder): boolean {
+    return hasSeparateCosts(order);
+  }
+
+  separateCostsTotalLabel(totals: { otherCosts?: OtherCost[] }): string {
+    return separateCostsTotalLabel(totals);
   }
 
   usdToEurRate(): number {

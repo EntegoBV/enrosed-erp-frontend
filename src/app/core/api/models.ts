@@ -962,6 +962,12 @@ export interface ExpectedStock {
   orderIds: number[];
 }
 
+/** One named cost booked apart from the piece price, next to the inspection. */
+export interface OtherCost {
+  label: string;
+  amountEur: number | null;
+}
+
 export interface PurchaseOrder {
   id: number;
   number: string;
@@ -984,6 +990,8 @@ export interface PurchaseOrder {
   extraRevenueEur: number;
   /** Inspection at the factory, in EUR: its own line on the order, never folded into a piece price. */
   inspectionCostEur?: number | null;
+  /** Other named costs next to the inspection (certificate, lab test, ...): same rule, own lines. */
+  otherCosts?: OtherCost[];
   allocFreight: Allocation;
   allocOrigin: Allocation;
   allocDestination: Allocation;
@@ -1042,8 +1050,9 @@ export interface LandedCost {
     customsValueEur: number; dutyEur: number; destinationEur: number;
     extraRevenueEur: number; totalEur: number;
     averageUnitEur: number; effectiveDutyPct: number;
-    /** Inspection kept apart from the landed total, and the total with it. */
-    inspectionEur?: number; totalWithInspectionEur?: number;
+    /** Inspection and other named costs kept apart from the landed total, and the total with them. */
+    inspectionEur?: number; otherCosts?: OtherCost[]; otherCostsEur?: number;
+    separateCostsEur?: number; totalWithSeparateCostsEur?: number;
   };
   containerFill: {
     containerCode: string; capacityCbm: number; usedCbm: number;

@@ -568,20 +568,38 @@ type DeskRow =
                         </div>
                       </div>
                     }
-                    <div class="field">
-                      <label for="dk-extra">Enrosed kost <span class="opt"></span></label>
-                      <div class="input-affix">
-                        <input class="input num right" id="dk-extra" type="number" step="100" min="0" inputmode="decimal" [ngModel]="data.order.extraRevenueEur" (ngModelChange)="patch({ extraRevenueEur: +$event })" />
-                        <span class="input-affix__suffix">EUR</span>
+                    <div class="desk-form__duo">
+                      <div class="field">
+                        <label for="dk-extra">Enrosed kost <span class="opt"></span></label>
+                        <div class="input-affix">
+                          <input class="input num right" id="dk-extra" type="number" step="100" min="0" inputmode="decimal" [ngModel]="data.order.extraRevenueEur" (ngModelChange)="patch({ extraRevenueEur: +$event })" />
+                          <span class="input-affix__suffix">EUR</span>
+                        </div>
+                        <span class="hint">In de stukprijs.</span>
+                      </div>
+                      <div class="field">
+                        <label for="dk-inspection">Inspectiekost <span class="opt"></span></label>
+                        <div class="input-affix">
+                          <input class="input num right" id="dk-inspection" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.inspectionCostEur" (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
+                          <span class="input-affix__suffix">EUR</span>
+                        </div>
+                        <span class="hint">Apart, niet in de stukprijs.</span>
                       </div>
                     </div>
-                    <div class="field">
-                      <label for="dk-inspection">Inspectiekost <span class="opt"></span></label>
-                      <div class="input-affix">
-                        <input class="input num right" id="dk-inspection" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.inspectionCostEur" (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
-                        <span class="input-affix__suffix">EUR</span>
-                      </div>
-                      <span class="hint">Apart lijntje, niet in de stukprijs verrekend.</span>
+                    <div class="other-costs" aria-label="Andere kosten">
+                      @for (cost of data.order.otherCosts ?? []; track $index; let i = $index) {
+                        <div class="other-cost">
+                          <input class="input" type="text" maxlength="60" placeholder="Naam, bv. certificaat" [attr.aria-label]="'Naam andere kost ' + (i + 1)" [ngModel]="cost.label" (ngModelChange)="setOtherCost(i, { label: $event })" />
+                          <div class="input-affix">
+                            <input class="input num right" type="number" step="50" min="0" inputmode="decimal" [attr.aria-label]="'Bedrag andere kost ' + (i + 1)" [ngModel]="cost.amountEur" (ngModelChange)="setOtherCost(i, { amountEur: $event === '' || $event === null ? null : +$event })" />
+                            <span class="input-affix__suffix">EUR</span>
+                          </div>
+                          <button class="other-cost__remove" type="button" [attr.aria-label]="'Verwijder ' + (cost.label || 'andere kost')" (click)="removeOtherCost(i)">×</button>
+                        </div>
+                      }
+                      <button class="other-costs__add" type="button" (click)="addOtherCost()">
+                        <span aria-hidden="true">+</span><b>Andere kost</b><small>certificaat, labo, staal … apart, niet in de stukprijs</small>
+                      </button>
                     </div>
 
                     <details class="desk-details">
@@ -621,9 +639,14 @@ type DeskRow =
                       }
                       @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>eigen opslag</small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
                       <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal geland <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
-                      @if (data.costing.totals.inspectionEur) {
-                        <div class="desk-chain__row"><i>+</i><span>Inspectie <small>apart, niet in de stukprijs</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
-                        <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal incl. inspectie</span><b>{{ data.costing.totals.totalWithInspectionEur | eur }}</b></div>
+                      @if (data.costing.totals.separateCostsEur) {
+                        @if (data.costing.totals.inspectionEur) {
+                          <div class="desk-chain__row"><i>+</i><span>Inspectie <small>apart, niet in de stukprijs</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
+                        }
+                        @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
+                          <div class="desk-chain__row"><i>+</i><span>{{ cost.label }} <small>apart, niet in de stukprijs</small></span><b>{{ cost.amountEur | eur }}</b></div>
+                        }
+                        <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ separateCostsTotalLabel(data.costing.totals) }}</span><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></div>
                       }
                     </div>
                     @if (!isDdp() && data.costing.totals.goodsEur > 0) {
@@ -1108,6 +1131,7 @@ type DeskRow =
       }
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [saving]="saving()"
+                                [separateCosts]="hasSeparateCosts(data.order)"
                                 (saveRequested)="save()" (closed)="pdfOpen.set(false)" />
       }
     } @else {

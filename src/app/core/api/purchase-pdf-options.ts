@@ -23,6 +23,8 @@ export interface PurchasePdfOptions {
   showOuterCarton?: boolean;
   /** Shows the product barcode on each product row. */
   showBarcode?: boolean;
+  /** Prints the inspection and other named costs under the order total; on unless switched off. */
+  showSeparateCosts?: boolean;
   /** @deprecated Kept only for compatibility with older API deployments. */
   showFreight?: boolean;
   /** @deprecated Kept only for compatibility with older API deployments. */
@@ -43,6 +45,7 @@ export interface NormalizedPurchasePdfOptions {
   showPaymentTerms: boolean;
   showOuterCarton: boolean;
   showBarcode: boolean;
+  showSeparateCosts: boolean;
   showFreight: boolean;
   includeFreight: boolean;
 }
@@ -85,6 +88,10 @@ export function normalizePurchasePdfOptions(
     showPaymentTerms: standardPortrait && (options.showPaymentTerms ?? false),
     showOuterCarton: standardPortrait && (options.showOuterCarton ?? false),
     showBarcode: standardPortrait && (options.showBarcode ?? false),
+    /* The one field that starts on: a booked inspection belongs on the
+       internal sheet unless the buyer leaves it off this copy. The fixed
+       presets always print it. */
+    showSeparateCosts: standardPortrait ? (options.showSeparateCosts ?? true) : true,
     showFreight: false,
     includeFreight: false,
   };
@@ -107,6 +114,7 @@ export function purchasePdfQuery(options: PurchasePdfOptions = {}): string {
   query.set('showPaymentTerms', String(resolved.showPaymentTerms));
   query.set('showOuterCarton', String(resolved.showOuterCarton));
   query.set('showBarcode', String(resolved.showBarcode));
+  query.set('showSeparateCosts', String(resolved.showSeparateCosts));
   query.set('showFreight', String(resolved.showFreight));
   query.set('includeFreight', String(resolved.includeFreight));
   return query.toString();

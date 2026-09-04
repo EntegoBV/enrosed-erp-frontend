@@ -3620,6 +3620,9 @@ a.desk-kpi{text-decoration:none}
 .desk-facts dt{color:var(--muted)}.desk-facts dd{margin:0;font-weight:650}.desk-facts dd small{display:block;color:var(--muted);font-size:11px;font-weight:500}
 .desk-form{display:grid;gap:10px}.desk-form .field{min-width:0}
 .desk-form__duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* Own costs side by side, and the named other costs the buyer adds with the plus (phone editor and desk). */
+.field-duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field-duo .field{min-width:0}.other-costs{display:grid;gap:8px;margin:2px 0 4px}.other-cost{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 34px;gap:8px;align-items:center}.other-cost__remove{width:34px;height:40px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--muted);font-size:19px;line-height:1;cursor:pointer}.other-cost__remove:hover{border-color:var(--danger);background:var(--danger-soft);color:var(--danger)}.other-costs__add{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;border:1px dashed var(--line);border-radius:12px;background:transparent;color:var(--ink);font:inherit;font-size:13px;text-align:left;cursor:pointer}.other-costs__add>span{display:grid;flex:none;width:22px;height:22px;place-items:center;border-radius:50%;background:var(--rose-soft);color:var(--rose);font-weight:800}.other-costs__add b{flex:none;font-weight:700}.other-costs__add small{min-width:0;color:var(--muted);font-size:11.5px;line-height:1.3}.other-costs__add:hover{border-color:var(--rose);background:var(--rose-soft)}
+@media(max-width:480px){.other-cost{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr) 34px}.other-costs__add small{display:none}}
 .desk-form__group{margin:14px 0 6px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
 .desk-form__group:first-child{margin-top:0}
 .desk-readonly{background:var(--surface-2)}

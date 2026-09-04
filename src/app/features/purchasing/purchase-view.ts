@@ -14,13 +14,16 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import {
-  Category, Product, ProductFamily, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument,
+  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation,
+  PurchasePayment, PurchaseDocument,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
 } from '../../core/api/geo';
 import { DateNlPipe } from '../../shared/pipes';
-import { effectiveUsdToEur, purchaseCostLabels } from './purchase-cost-labels';
+import {
+  effectiveUsdToEur, hasSeparateCosts, purchaseCostLabels, separateCostsTotalLabel,
+} from './purchase-cost-labels';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
@@ -602,11 +605,17 @@ type PurchaseWorkspaceSectionId =
                     <div class="stat-row"><span>Enrosed kost</span>
                       <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span></div>
                   }
-                  @if (data.costing.totals.inspectionEur) {
-                    <div class="stat-row"><span>Inspectie <small>apart, niet in de stukprijs</small></span>
-                      <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span></div>
-                    <div class="stat-row"><span><b>Totaal incl. inspectie</b></span>
-                      <span class="num"><b>{{ data.costing.totals.totalWithInspectionEur | eur }}</b></span></div>
+                  @if (data.costing.totals.separateCostsEur) {
+                    @if (data.costing.totals.inspectionEur) {
+                      <div class="stat-row"><span>Inspectie <small>apart, niet in de stukprijs</small></span>
+                        <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span></div>
+                    }
+                    @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
+                      <div class="stat-row"><span>{{ cost.label }} <small>apart, niet in de stukprijs</small></span>
+                        <span class="num">{{ cost.amountEur | eur }}</span></div>
+                    }
+                    <div class="stat-row"><span><b>{{ separateCostsTotalLabel(data.costing.totals) }}</b></span>
+                      <span class="num"><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></span></div>
                   }
                 </div>
 
@@ -768,6 +777,7 @@ type PurchaseWorkspaceSectionId =
       </div>
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
+                                [separateCosts]="hasSeparateCosts(data.order)"
                                 (closed)="pdfOpen.set(false)" />
       }
       @if (issue(); as report) {
@@ -1191,6 +1201,14 @@ export class PurchaseView {
   }
 
   readonly costLabels = computed(() => purchaseCostLabels(this.view(), this.supplier()));
+
+  hasSeparateCosts(order: PurchaseOrder): boolean {
+    return hasSeparateCosts(order);
+  }
+
+  separateCostsTotalLabel(totals: { otherCosts?: OtherCost[] }): string {
+    return separateCostsTotalLabel(totals);
+  }
 
   usdToEurRate(): number {
     return effectiveUsdToEur(this.view()?.order);

@@ -43,6 +43,21 @@ export function withUsdToEur(order: PurchaseOrder, rate: number): PurchaseOrder 
   return { ...order, usdToEurGoods: rate, usdToEurTransport: rate };
 }
 
+/** True when an inspection or another named cost is booked apart from the piece price. */
+export function hasSeparateCosts(order: PurchaseOrder | null | undefined): boolean {
+  if (!order) return false;
+  if ((order.inspectionCostEur ?? 0) > 0) return true;
+  return (order.otherCosts ?? []).some((cost) => (cost.amountEur ?? 0) > 0);
+}
+
+/** The bottom line under the landed total, named after what it adds. */
+export function separateCostsTotalLabel(totals: {
+  otherCosts?: { amountEur: number | null }[];
+}): string {
+  const others = (totals.otherCosts ?? []).some((cost) => (cost.amountEur ?? 0) > 0);
+  return others ? 'Totaal incl. aparte kosten' : 'Totaal incl. inspectie';
+}
+
 function clean(value: string | null | undefined): string {
   return value?.trim() ?? '';
 }
