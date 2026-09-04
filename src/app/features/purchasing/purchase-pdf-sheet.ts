@@ -293,9 +293,16 @@ export class PurchasePdfSheet {
   readonly busyChoice = signal<PurchasePdfChoice | null>(null);
   readonly error = signal<string | null>(null);
   readonly portraitOpen = signal(false);
+  /* The portrait order opens with what the buying desk reads first: the
+     landed cost per piece and per line, and the packing facts of every
+     product. Prices and the supplier block stay a deliberate choice. */
   readonly portraitOptions = signal<NormalizedPurchasePdfOptions>(normalizePurchasePdfOptions({
     layout: 'PORTRAIT',
     audience: 'STANDARD',
+    includeEnrosedCost: true,
+    includeEnrosedUnitCost: true,
+    showOuterCarton: true,
+    showBarcode: true,
   }));
   readonly portraitOptionCount = computed(() => {
     const options = this.portraitOptions();
