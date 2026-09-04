@@ -83,6 +83,11 @@ export const PRODUCT_FAMILY_SHARED_FIELD_GROUPS: readonly ProductFamilySharedFie
         label: 'HS-code',
         summary: 'De tariefcode waarmee invoerrechten worden berekend.',
       },
+      {
+        key: 'SUPPLIER_NOTE',
+        label: 'Leveranciersnotitie',
+        summary: 'De afspraak met de leverancier; gaat alleen naar kleuren van dezelfde leverancier.',
+      },
     ],
   },
   {
@@ -137,6 +142,10 @@ export function productFamilySharedFieldValue(
     }
     case 'PURCHASE_PRICE':
       return `${product.exwCurrency} ${number(product.exwPrice)} · extra ${number(product.extraUnitCost)}`;
+    case 'SUPPLIER_NOTE': {
+      const text = product.supplierNote?.trim() || 'Niet ingevuld';
+      return text.length > 105 ? `${text.slice(0, 102)}…` : text;
+    }
     case 'SALES_PRICE':
       return (product.fixedSalesPriceEur ?? 0) > 0
         ? `Vast € ${number(product.fixedSalesPriceEur)}`

@@ -85,6 +85,13 @@ export class SourcingApi {
   }
 
   /** Earlier containers on which one product arrived short or damaged, newest first. */
+  /** Damage or a shortage found while unpacking, booked against the container it came on. */
+  reportAfterReceipt(orderId: number, body: {
+    productId: number; locationId: number | null; quantity: number; kind: 'DAMAGED' | 'SHORTAGE'; note: string | null;
+  }): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${orderId}/receipt-reports`), body));
+  }
+
   receiptIssues(productId: number, excludeOrderId?: number): Promise<ReceiptIssue[]> {
     const query = new URLSearchParams({ productId: String(productId) });
     if (excludeOrderId !== undefined) query.set('excludeOrderId', String(excludeOrderId));

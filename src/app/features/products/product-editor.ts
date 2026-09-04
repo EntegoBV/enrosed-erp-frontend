@@ -89,13 +89,13 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
            this family; the unsaved-changes guard still asks before leaving. -->
       @if (!isNew() && variantNeighbours(); as around) {
         <span class="product-nav" role="group" aria-label="Kleurvarianten">
-          <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
+          <a class="product-nav__btn" [class.product-nav__btn--off]="!around.previous"
              [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null"
              [attr.aria-disabled]="!around.previous"
              [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'"
              [title]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Dit is de eerste kleur'">‹</a>
           <small class="product-nav__pos" [title]="variantOptionLabel(around.current)">Kleur {{ around.index + 1 }}/{{ around.total }}</small>
-          <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
+          <a class="product-nav__btn" [class.product-nav__btn--off]="!around.next"
              [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null"
              [attr.aria-disabled]="!around.next"
              [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'"
@@ -1218,6 +1218,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <h3>Acties</h3>
             <div class="desk-actions">
               <a class="desk-action" [routerLink]="['/products', draft().id]"><i aria-hidden="true">›</i><span><b>Bekijken</b><small>Het dossier zoals het team het leest</small></span></a>
+              <button class="desk-action" type="button" (click)="openSharedFields()"><i aria-hidden="true">⇄</i><span><b>Naar de reeks kopiëren</b><small>Gegevens van deze kleur naar de andere kleuren; slaat eerst op</small></span></button>
               <button class="desk-action" type="button" (click)="startCopy()"><i aria-hidden="true">⧉</i><span><b>Kleur- of maatvariant maken</b><small>Een kopie met dezelfde gegevens</small></span></button>
               <a class="desk-action" [routerLink]="['/products', draft().id, 'translations']"><i aria-hidden="true">🌐</i><span><b>Vertalingen</b><small>Namen en teksten per taal</small></span></a>
               <button class="desk-action desk-action--danger" type="button" (click)="remove()"><i aria-hidden="true">×</i><span><b>Verwijderen</b><small>Definitief, na bevestiging</small></span></button>
@@ -1544,12 +1545,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
     /* Desktop idiom only (the rail breakpoint); a phone has no room next
        to Opslaan and goes back to the list anyway. */
-    .product-nav { display: none; align-items: center; gap: 4px; margin-right: 6px; }
+    .product-nav { display: none; }
     @media (min-width: 680px) { .product-nav { display: inline-flex; } }
-    .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
-    .product-nav__btn--off { opacity: .35; pointer-events: none; }
-    .product-nav__pos { min-width: 54px; color: var(--muted); font-size: 11px; text-align: center;
-      font-variant-numeric: tabular-nums; white-space: nowrap; }
     .magic-field { position: relative; display: block; }
     .magic-field .input { padding-right: 44px; }
     .magic-field__btn { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px;
@@ -2798,7 +2795,8 @@ export class ProductEditor implements OnDestroy {
       return;
     }
     if (this.translationDirty() || this.translationSaving()) {
-      this.ui.toast('Sla eerst de vertalingen op voordat je gegevens naar andere kleuren kopieert.', 'err');
+      this.ui.toast('Bewaar eerst de vertalingen onderaan; de rest slaat vanzelf op bij het kopiëren.', 'err');
+      this.showTab('publication');
       return;
     }
     this.sharedFieldsOpen.set(true);

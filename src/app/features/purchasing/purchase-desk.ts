@@ -737,6 +737,24 @@ type DeskRow =
                       }
                     </section>
                     <section>
+                      <header class="desk-dossier__head"><strong>Schade en tekorten <small>{{ (data.receiptReports ?? []).length }}</small></strong></header>
+                      @if (data.receiptReports?.length) {
+                        <ul class="desk-reports">
+                          @for (report of data.receiptReports; track $index) {
+                            <li [class.desk-reports__row--later]="report.source === 'LATER'">
+                              <span class="desk-reports__tag">{{ report.source === 'LATER' ? 'Na uitpakken' : 'Bij ontvangst' }}</span>
+                              <span class="desk-reports__what"><b>{{ report.productName }}</b><small>{{ report.sku || '' }}{{ report.on ? ' · ' + (report.on | dateNl) : '' }}{{ report.actor ? ' · ' + report.actor : '' }}</small></span>
+                              <span class="desk-reports__count">@if (report.damaged) { <b>{{ report.damaged | num }}</b> beschadigd }@if (report.damaged && report.missing) { · }@if (report.missing) { <b>{{ report.missing | num }}</b> te weinig }</span>
+                              @if (report.note) { <em class="desk-reports__note">{{ report.note }}</em> }
+                            </li>
+                          }
+                        </ul>
+                        <p class="desk-dossier__hint">Staat als waarschuwing op de volgende leveranciersorder van deze producten.</p>
+                      } @else {
+                        <p class="desk-dossier__empty">Niets gemeld: ontvangen zoals besteld. Schade of tekort meld je op de productpagina, gekoppeld aan deze container.</p>
+                      }
+                    </section>
+                    <section>
                       <header class="desk-dossier__head"><strong>Documenten <small>{{ (documents() ?? []).length }}</small></strong>
                         <button class="btn btn--sm" type="button" (click)="openDocument()">+ Document</button></header>
                       <button class="desk-drop" type="button" (click)="openDocument()" (dragover)="$event.preventDefault()" (drop)="dropDocument($event)">
@@ -1217,6 +1235,7 @@ type DeskRow =
     .desk-mix__legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0 12px;padding:0;list-style:none;color:var(--muted);font-size:11px}.desk-mix__legend li{display:inline-flex;align-items:center;gap:5px}.desk-mix__legend i{width:9px;height:9px;border-radius:2px}.desk-mix__legend b{color:var(--ink-2)}
     .desk-mix__goods{background:var(--rose-dark)}.desk-mix__transport{background:var(--gold)}.desk-mix__duty{background:var(--warn)}.desk-mix__destination{background:var(--blue)}.desk-mix__extra{background:var(--muted)}
     .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
+    .desk-reports{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-reports li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:6px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-reports__row--later{border-color:var(--rose-line);background:var(--rose-soft)}.desk-reports__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.desk-reports__row--later .desk-reports__tag{background:var(--rose);color:#fff}.desk-reports__what{display:grid;min-width:0}.desk-reports__what b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-reports__what small{color:var(--muted);font-size:11px}.desk-reports__count{color:var(--danger);font-size:12px;font-weight:650;white-space:nowrap}.desk-reports__count b{font-size:14px}.desk-reports__note{grid-column:2/-1;color:var(--ink-2);font-size:12px}.desk-dossier__hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
     .desk-dossier__diary{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.desk-dossier__empty{margin:0;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);font-size:12px}
     .desk-drop{display:grid;width:100%;gap:2px;margin-bottom:8px;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font:inherit;text-align:center;cursor:pointer}.desk-drop b{font-size:12.5px}.desk-drop small{color:var(--muted);font-size:11px}.desk-drop:hover{border-color:var(--rose);background:var(--rose-soft)}
     .desk-docs{margin:0;padding:0;list-style:none}.desk-docs li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}

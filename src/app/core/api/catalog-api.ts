@@ -252,7 +252,10 @@ export class CatalogApi {
   }
 
   /** Pieces leaving the shelf as broken or as a demo for a customer. */
-  takeOutStock(productId: number, body: { locationId: number | null; quantity: number; kind: 'DAMAGED' | 'DEMO'; note: string | null }): Promise<Product> {
+  takeOutStock(productId: number, body: {
+    locationId: number | null; quantity: number; kind: 'DAMAGED' | 'DEMO' | 'SHORTAGE'; note: string | null;
+    purchaseOrderId?: number | null;
+  }): Promise<Product> {
     return firstValueFrom(this.http.post<Product>(api(`/api/products/${productId}/stock/take-out`), body));
   }
 

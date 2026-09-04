@@ -107,7 +107,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
                     [class.sidebar__group--open]="groupOpen('producten')"
                     [class.sidebar__group--current]="groupCurrent('producten')">
               <app-icon class="sidebar__group-icon" name="products" [size]="16" />
-              <span class="sidebar__group-label">Producten &amp; voorraad</span>
+              <span class="sidebar__group-label"><span class="sidebar__text sidebar__text--full">Producten &amp; voorraad</span><span class="sidebar__text sidebar__text--rail">Producten</span></span>
               <span class="sidebar__group-chev" aria-hidden="true"
                     [class.sidebar__group-chev--open]="groupOpen('producten')">›</span>
             </button>

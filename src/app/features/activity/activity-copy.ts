@@ -18,6 +18,7 @@ const ACTION_LABELS: Record<string, string> = {
   PHOTO_DELETED: 'Foto verwijderd',
   PHOTO_REORDERED: 'Foto’s herschikt',
   STOCK_BOOKED: 'Voorraad bijgeboekt',
+  RECEIPT_REPORTED: 'Schade of tekort nagemeld',
   COSTS_APPLIED: 'Kostprijzen toegepast',
   DELETED: 'Verwijderd',
   CUSTOMER_ACCEPTED: 'Door klant aanvaard',

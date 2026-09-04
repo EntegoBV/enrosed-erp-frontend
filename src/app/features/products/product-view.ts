@@ -31,6 +31,24 @@ import { parseSupplierNote } from './supplier-note';
  * story (photo, price, availability) from operational data. Editing remains
  * an explicit action, so a warehouse or sales colleague can safely browse it.
  */
+type TakeoutKind = 'DAMAGED' | 'DEMO' | 'SHORTAGE';
+
+export interface ReceivedContainer {
+  id: number;
+  number: string;
+  receivedOn: string | null;
+}
+
+/** The received containers that carried this product, newest first, so a report can name its origin. */
+export function receivedContainersFor(orders: readonly PurchaseOrderView[], productId: number): ReceivedContainer[] {
+  return orders
+    .filter((row) => row.order.status === 'ONTVANGEN'
+      && row.order.lines.some((line) => line.productId === productId))
+    .map((row) => ({ id: row.order.id, number: row.order.number, receivedOn: row.order.receivedOn ?? null }))
+    .sort((left, right) => (right.receivedOn ?? '').localeCompare(left.receivedOn ?? '') || right.id - left.id)
+    .slice(0, 12);
+}
+
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -48,7 +66,7 @@ import { parseSupplierNote } from './supplier-note';
                product model in the canonical catalogue order. -->
           @if (variantNeighbours(); as around) {
             <span class="product-nav" role="group" aria-label="Producten en kleurvarianten">
-              <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.previous"
+              <a class="product-nav__btn" [class.product-nav__btn--off]="!around.previous"
                  [routerLink]="around.previous ? ['/products', around.previous.productId] : null"
                  [attr.aria-disabled]="!around.previous"
                  [attr.aria-label]="around.previous
@@ -60,7 +78,7 @@ import { parseSupplierNote } from './supplier-note';
               <small class="product-nav__pos" [title]="around.current.groupName + ' · ' + around.current.optionLabel">
                 {{ around.total > 1 ? 'Kleur ' + (around.index + 1) + '/' + around.total : 'Product' }}
               </small>
-              <a class="btn btn--sm product-nav__btn" [class.product-nav__btn--off]="!around.next"
+              <a class="product-nav__btn" [class.product-nav__btn--off]="!around.next"
                  [routerLink]="around.next ? ['/products', around.next.productId] : null"
                  [attr.aria-disabled]="!around.next"
                  [attr.aria-label]="around.next
@@ -574,6 +592,7 @@ import { parseSupplierNote } from './supplier-note';
                 <div class="stock-row__actions">
                   <button type="button" (click)="correctOpen.set(true)">Corrigeren</button>
                   <button type="button" (click)="openTakeout('DAMAGED')">Beschadigd</button>
+                  <button type="button" (click)="openTakeout('SHORTAGE')">Te weinig</button>
                   <button type="button" (click)="openTakeout('DEMO')">Demo</button>
                 </div>
               </div>
@@ -591,8 +610,9 @@ import { parseSupplierNote } from './supplier-note';
                 @for (issue of receiptIssues(); track issue.orderId) {
                   <li>
                     <a [routerLink]="['/purchasing', issue.orderId]">{{ issue.orderNumber }}</a>
-                    <small>{{ issue.receivedOn ? (issue.receivedOn | dateNl) : '—' }} · {{ issue.ordered | num }} besteld · {{ issue.received | num }} ontvangen@if (issue.damaged) { · {{ issue.damaged | num }} beschadigd }@if (issue.missing) { · {{ issue.missing | num }} te weinig }</small>
+                    <small>{{ issue.receivedOn ? (issue.receivedOn | dateNl) : '—' }} · {{ issue.ordered | num }} besteld · {{ issue.received | num }} ontvangen@if (issue.damaged) { · {{ issue.damaged | num }} beschadigd }@if (issue.missing) { · {{ issue.missing | num }} te weinig }@if (issue.laterDamaged || issue.laterMissing) { · na uitpakken gemeld: @if (issue.laterDamaged) { {{ issue.laterDamaged | num }} beschadigd }@if (issue.laterDamaged && issue.laterMissing) { en }@if (issue.laterMissing) { {{ issue.laterMissing | num }} te weinig } }</small>
                     @if (issue.note) { <em>{{ issue.note }}</em> }
+                    @if (issue.laterNote) { <em>{{ issue.laterNote }}</em> }
                   </li>
                 }
               </ul>
@@ -706,14 +726,31 @@ import { parseSupplierNote } from './supplier-note';
       <!-- Broken or given away as demo: the piece leaves the shelf with a
            note that says why - right here, not in the editor. -->
       @if (takeout(); as out) {
-        <app-sheet [title]="out.kind === 'DAMAGED' ? 'Stuk / beschadigd' : 'Demo weggegeven'" (closed)="takeout.set(null)">
+        <app-sheet [title]="takeoutTitle(out.kind)" (closed)="takeout.set(null)">
           <div body>
             <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
               <button type="button" [class.on]="out.kind === 'DAMAGED'"
                       (click)="takeout.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
+              <button type="button" [class.on]="out.kind === 'SHORTAGE'"
+                      (click)="takeout.set({ ...out, kind: 'SHORTAGE' })">Te weinig geleverd</button>
               <button type="button" [class.on]="out.kind === 'DEMO'"
-                      (click)="takeout.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
+                      (click)="takeout.set({ ...out, kind: 'DEMO', purchaseOrderId: null })">Demo</button>
             </div>
+            @if (out.kind !== 'DEMO') {
+              <div class="field mt-12">
+                <label for="out-po">Uit welke container? <span class="opt"></span></label>
+                <select class="select" id="out-po"
+                        (change)="takeout.set({ ...out, purchaseOrderId: $any($event.target).value ? +$any($event.target).value : null })">
+                  <option value="" [selected]="out.purchaseOrderId === null">Niet aan een container gekoppeld</option>
+                  @for (order of receivedOrders(); track order.id) {
+                    <option [value]="order.id" [selected]="out.purchaseOrderId === order.id">{{ containerLabel(order) }}</option>
+                  }
+                </select>
+                <small class="takeout-hint">{{ out.purchaseOrderId === null
+                  ? 'Gekoppeld aan een container komt de melding in het dossier van die order en als waarschuwing op de volgende leveranciersorder.'
+                  : 'De melding komt in het dossier van deze container en op de volgende leveranciersorder van dit product.' }}</small>
+              </div>
+            }
             <div class="form-grid mt-12">
               @if ((stockLevels() ?? []).length > 1) {
                 <div class="field">
@@ -737,7 +774,7 @@ import { parseSupplierNote } from './supplier-note';
               <div class="field span-2">
                 <label for="out-note">Notitie <span class="opt"></span></label>
                 <input class="input" id="out-note"
-                       [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens'"
+                       [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gebarsten bij het uitpakken' : out.kind === 'SHORTAGE' ? 'bijv. doos 12 bevatte 18 in plaats van 24' : 'bijv. klant Janssens'"
                        [value]="out.note"
                        (input)="takeout.set({ ...out, note: $any($event.target).value })" />
               </div>
@@ -788,11 +825,6 @@ import { parseSupplierNote } from './supplier-note';
 
     .phero { overflow: hidden; padding: 16px; border-radius: 22px;
       background: linear-gradient(145deg, #27211f, #151210); color: #fff; box-shadow: var(--sh-2); }
-    .product-nav { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
-    .product-nav__btn { min-width: 32px; padding: 0 9px; font-size: 18px; line-height: 1; text-decoration: none; }
-    .product-nav__btn--off { opacity: .35; pointer-events: none; }
-    .product-nav__pos { min-width: 54px; color: var(--muted); font-size: 11px; text-align: center;
-      font-variant-numeric: tabular-nums; white-space: nowrap; }
     .phero__bar { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; }
     .phero__back { display: grid; place-items: center; width: 34px; height: 34px; padding: 0 0 2px;
       border: 0; border-radius: 50%; background: rgb(255 255 255 / 12%); color: #fff;
@@ -935,6 +967,7 @@ import { parseSupplierNote } from './supplier-note';
       font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
     .stock-more { margin: 2px 0 0; padding: 6px 2px 0; border: 0; background: none; color: var(--muted);
       font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+    .takeout-hint { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.4; }
     .takeout-kind { margin-bottom: 4px; }
     .correct-levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     .correct-levels__tile { display: grid; gap: 3px; padding: 10px 11px; border: 1px solid var(--line);
@@ -1320,13 +1353,28 @@ export class ProductView {
   readonly correctOpen = signal(false);
   readonly stockSaving = signal(false);
   readonly takeout = signal<{
-    kind: 'DAMAGED' | 'DEMO'; locationId: number | null; quantity: number; note: string;
+    kind: TakeoutKind; locationId: number | null; quantity: number; note: string; purchaseOrderId: number | null;
   } | null>(null);
+  /** Received containers that carried this product: what a damage or shortage report can point at. */
+  readonly receivedOrders = signal<ReceivedContainer[]>([]);
 
-  openTakeout(kind: 'DAMAGED' | 'DEMO'): void {
+  openTakeout(kind: TakeoutKind): void {
     const levels = this.stockLevels() ?? [];
     const preferred = levels.find((level) => level.quantity > 0) ?? levels[0];
-    this.takeout.set({ kind, locationId: preferred?.locationId ?? null, quantity: 0, note: '' });
+    this.takeout.set({ kind, locationId: preferred?.locationId ?? null, quantity: 0, note: '', purchaseOrderId: null });
+  }
+
+  takeoutTitle(kind: TakeoutKind): string {
+    return kind === 'DAMAGED' ? 'Stuk / beschadigd' : kind === 'SHORTAGE' ? 'Te weinig geleverd' : 'Demo weggegeven';
+  }
+
+  containerLabel(order: ReceivedContainer): string {
+    return order.receivedOn ? `${order.number} · ontvangen ${this.dateLabel(order.receivedOn)}` : order.number;
+  }
+
+  private dateLabel(day: string): string {
+    const [year, month, date] = day.split('-');
+    return `${date}/${month}/${year}`;
   }
 
   async confirmTakeout(): Promise<void> {
@@ -1335,13 +1383,22 @@ export class ProductView {
     if (!product || product.id === null || !out || !(out.quantity > 0)) return;
     this.stockSaving.set(true);
     try {
-      await this.catalog.takeOutStock(product.id, {
-        locationId: out.locationId, quantity: out.quantity, kind: out.kind,
-        note: out.note.trim() || null,
-      });
+      const note = out.note.trim() || null;
+      const container = out.kind === 'DEMO' ? null : this.receivedOrders().find((order) => order.id === out.purchaseOrderId) ?? null;
+      if (container && out.kind !== 'DEMO') {
+        await this.sourcing.reportAfterReceipt(container.id, {
+          productId: product.id, locationId: out.locationId, quantity: out.quantity, kind: out.kind, note,
+        });
+      } else {
+        await this.catalog.takeOutStock(product.id, {
+          locationId: out.locationId, quantity: out.quantity, kind: out.kind, note,
+        });
+      }
       this.takeout.set(null);
-      this.ui.toast(out.kind === 'DAMAGED' ? 'Beschadigde stuks geboekt' : 'Demo geboekt');
+      const booked = out.kind === 'DAMAGED' ? 'Beschadigde stuks geboekt' : out.kind === 'SHORTAGE' ? 'Tekort geboekt' : 'Demo geboekt';
+      this.ui.toast(container ? `${booked} · gemeld op ${container.number}` : booked);
       this.refreshStock(product.id);
+      void this.sourcing.receiptIssues(product.id).then((issues) => this.receiptIssues.set(issues)).catch(() => {});
     } catch (failure) {
       this.ui.toast(messageOf(failure, 'Boeken mislukt'), 'err');
     } finally {
@@ -1502,10 +1559,14 @@ export class ProductView {
     this.agreementLightbox.set(-1);
     this.agreementPhotos.set([]);
     this.receiptIssues.set([]);
+    this.receivedOrders.set([]);
     this.agreementLoadError.set(null);
     void this.sourcing.receiptIssues(id)
       .then((issues) => { if (version === this.loadVersion) this.receiptIssues.set(issues); })
       .catch(() => { /* the history is a bonus on the page */ });
+    void this.sourcing.purchaseOrders()
+      .then((orders) => { if (version === this.loadVersion) this.receivedOrders.set(receivedContainersFor(orders, id)); })
+      .catch(() => { /* without the list a report simply has no container to point at */ });
     this.activeDetailSection.set('product-overview');
     void this.loadSupplierAgreement(id, version);
 

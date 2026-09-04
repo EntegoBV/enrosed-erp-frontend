@@ -18,6 +18,7 @@ test('exposes every backend field key exactly once in a stable review order', ()
     'CARTON',
     'PURCHASE_PRICE',
     'HS_CODE',
+    'SUPPLIER_NOTE',
     'SALES_PRICE',
   ]);
   assert.equal(new Set(PRODUCT_FAMILY_SHARED_FIELDS).size, PRODUCT_FAMILY_SHARED_FIELDS.length);

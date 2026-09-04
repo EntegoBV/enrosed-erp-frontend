@@ -86,12 +86,14 @@ export interface StockMovement {
   at: string;
   delta: number;
   quantityAfter: number;
-  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'DAMAGED' | 'DEMO';
+  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'DAMAGED' | 'DEMO' | 'SHORTAGE';
   kindLabel: string;
   reference: string | null;
   actor: string | null;
   locationId: number | null;
   locationName: string | null;
+  /** The container a damage or shortage report points at; absent on older lines. */
+  purchaseOrderId?: number | null;
 }
 
 /** A place where stock sits: the warehouse, or a sales point such as a TICA stand. */
@@ -284,7 +286,8 @@ export type ProductSharedField =
   | 'CARTON'
   | 'PURCHASE_PRICE'
   | 'SALES_PRICE'
-  | 'HS_CODE';
+  | 'HS_CODE'
+  | 'SUPPLIER_NOTE';
 
 export interface ProductSharedFieldsApplyRequest {
   expectedFamilyId: number;
@@ -826,6 +829,23 @@ export interface ReceiptIssue {
   damaged: number;
   missing: number;
   note: string | null;
+  /** Reported after receipt, while unpacking; part of damaged/missing. Absent on older backends. */
+  laterDamaged?: number;
+  laterMissing?: number;
+  laterNote?: string | null;
+}
+
+/** One complaint on a received container: counted at receipt, or reported while unpacking. */
+export interface ReceiptReport {
+  productId: number;
+  sku: string | null;
+  productName: string;
+  source: 'ARRIVAL' | 'LATER';
+  on: string | null;
+  damaged: number;
+  missing: number;
+  note: string | null;
+  actor: string | null;
 }
 
 /** What arrived of one line, and how much of that was broken. */
@@ -1116,6 +1136,8 @@ export interface PurchaseOrderView {
   payable?: Payable;
   /** What the order waits on from us, in words; empty when nothing. */
   attention?: string[];
+  /** Damage and shortages on this container: at receipt and reported afterwards. */
+  receiptReports?: ReceiptReport[];
 }
 
 /* ----------------------------------------------------------------- sales */
