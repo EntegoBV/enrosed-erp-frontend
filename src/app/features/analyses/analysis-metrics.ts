@@ -47,9 +47,30 @@ export interface InvoiceAnalysis {
   paidValueEur: number;
   outstandingValueEur: number;
   overdueValueEur: number;
+  /** The issued claim divided by the issued count; null without invoices. */
+  averageClaimEur: number | null;
+  /** Days from invoice date to payment, over paid invoices that carry both dates. */
+  avgDaysToPaid: number | null;
   marginEur: number;
   marginPct: number | null;
   missingCostLines: number;
+}
+
+/** One calendar month of the period: what was invoiced, accepted and asked. */
+export interface SalesMonthPoint {
+  /** ISO month, "2026-03". */
+  month: string;
+  invoicedEur: number;
+  acceptedEur: number;
+  quotesCreated: number;
+  invoicesIssued: number;
+}
+
+export interface SalesCountryMetric {
+  countryCode: string | null;
+  orderCount: number;
+  /** Issued invoice claims, including VAT. */
+  calculatedValueEur: number;
 }
 
 export interface SalesCustomerMetric {
@@ -95,6 +116,9 @@ export interface SalesAnalysis {
   invoices: InvoiceAnalysis;
   topCustomers: SalesCustomerMetric[];
   topProducts: SalesProductMetric[];
+  topCountries: SalesCountryMetric[];
+  /** Oldest month first, one point per month of the period; empty without bounds and orders. */
+  monthly: SalesMonthPoint[];
   attentionOrders: SalesAttentionOrder[];
 }
 
@@ -171,6 +195,37 @@ export interface InventoryCapitalMetric {
   sharePct: number;
 }
 
+/** How fast a product leaves, from issued invoices of the last weeks. */
+export interface InventoryVelocity {
+  days: number;
+  piecesSold: number;
+  skuCount: number;
+  weeklyPieces: number;
+}
+
+export interface ReorderRow {
+  productId: number;
+  sku: string | null;
+  name: string;
+  colour: string | null;
+  stockPieces: number;
+  expectedPieces: number;
+  weeklyPieces: number;
+  /** Weeks the shelf lasts at the current pace; null when nothing sells. */
+  weeksLeft: number | null;
+  /** The same with what is on the water counted in. */
+  weeksLeftWithIncoming: number | null;
+}
+
+export interface SlowMoverRow {
+  productId: number;
+  sku: string | null;
+  name: string;
+  colour: string | null;
+  stockPieces: number;
+  costValueEur: number;
+}
+
 export interface InventoryAnalysis {
   snapshotBasis: 'CURRENT_PRODUCT_DATA';
   stock: InventoryStockSummary;
@@ -179,6 +234,18 @@ export interface InventoryAnalysis {
   belowCarton: InventoryAttentionGroup;
   incoming: IncomingInventoryAnalysis;
   topCapital: InventoryCapitalMetric[];
+  velocity: InventoryVelocity;
+  /** Products that run out within the reorder horizon, soonest first. */
+  reorder: { horizonWeeks: number; count: number; rows: ReorderRow[] };
+  /** Valued stock that did not sell at all in the velocity window, most money first. */
+  slowMovers: { count: number; valueEur: number; rows: SlowMoverRow[] };
+}
+
+export interface InventoryOptions extends Pick<AnalysisOptions, 'topLimit' | 'today'> {
+  /** Issued invoices feed the sales pace; without them the pace is simply unknown. */
+  sales?: readonly SalesOrderView[];
+  velocityDays?: number;
+  reorderWeeks?: number;
 }
 
 const OPEN_QUOTE_STATUSES = new Set<SalesOrderView['order']['status']>([
@@ -226,6 +293,13 @@ export function salesAnalysis(
   const invoiceMargin = issuedInvoices.reduce(
     (sum, row) => sum + finite(row.priced.totals.marginEur), 0);
   const customerNames = new Map(customers.map((customer) => [customer.id, customer.company]));
+  const issuedValue = sumInvoiceClaims(issuedInvoices);
+  const paymentDays = paidInvoices.flatMap((row) => {
+    const paidDay = isoDayOrNull(row.order.paidAt?.slice(0, 10));
+    const invoiceDay = isoDayOrNull(row.order.orderDate);
+    if (!paidDay || !invoiceDay) return [];
+    return [Math.max(0, daysBetween(invoiceDay, paidDay))];
+  });
 
   return {
     valueBasis: 'CURRENT_ORDER_PRICING',
@@ -255,23 +329,94 @@ export function salesAnalysis(
       paidValueEur: sumInvoiceClaims(paidInvoices),
       outstandingValueEur: sumInvoiceClaims(outstandingInvoices),
       overdueValueEur: sumInvoiceClaims(overdueInvoices),
+      averageClaimEur: issuedInvoices.length ? issuedValue / issuedInvoices.length : null,
+      avgDaysToPaid: paymentDays.length
+        ? Math.round(paymentDays.reduce((sum, days) => sum + days, 0) / paymentDays.length) : null,
       marginEur: invoiceMargin,
       marginPct: percentage(invoiceMargin, invoiceGoods),
       missingCostLines: missingCostLines(issuedInvoices),
     },
     topCustomers: topCustomers(issuedInvoices, customerNames, limit),
     topProducts: topProducts(issuedInvoices, limit),
+    topCountries: topCountries(issuedInvoices, limit),
+    monthly: monthlyPoints(quotes, issuedInvoices, acceptedRows, from, to),
     attentionOrders: attentionOrders(selected, customerNames, today),
   };
+}
+
+function topCountries(rows: readonly SalesOrderView[], limit: number): SalesCountryMetric[] {
+  const grouped = new Map<string | null, SalesCountryMetric>();
+  for (const row of rows) {
+    const code = row.order.countryCode ? row.order.countryCode.toUpperCase() : null;
+    const current = grouped.get(code) ?? { countryCode: code, orderCount: 0, calculatedValueEur: 0 };
+    current.orderCount++;
+    current.calculatedValueEur += invoiceClaim(row);
+    grouped.set(code, current);
+  }
+  return [...grouped.values()]
+    .sort((left, right) => right.calculatedValueEur - left.calculatedValueEur || right.orderCount - left.orderCount)
+    .slice(0, limit);
+}
+
+/**
+ * One point per month between the bounds; without bounds the months run from
+ * the oldest to the newest document. Empty when there is nothing at all.
+ */
+function monthlyPoints(
+  quotes: readonly SalesOrderView[],
+  issuedInvoices: readonly SalesOrderView[],
+  accepted: readonly SalesOrderView[],
+  from: string | null,
+  to: string | null,
+): SalesMonthPoint[] {
+  const all = [...quotes, ...issuedInvoices];
+  const dates = all.map((row) => row.order.orderDate).filter((day) => isoDayOrNull(day)).sort();
+  const first = (from ?? dates[0] ?? null)?.slice(0, 7) ?? null;
+  const last = (to ?? dates.at(-1) ?? null)?.slice(0, 7) ?? null;
+  if (!first || !last || first > last) return [];
+  const points = new Map<string, SalesMonthPoint>();
+  let [year, month] = first.split('-').map(Number);
+  for (let guard = 0; guard < 120; guard++) {
+    const key = `${year}-${String(month).padStart(2, '0')}`;
+    points.set(key, { month: key, invoicedEur: 0, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 0 });
+    if (key >= last) break;
+    month++;
+    if (month > 12) { month = 1; year++; }
+  }
+  for (const row of quotes) {
+    const point = points.get(row.order.orderDate.slice(0, 7));
+    if (point) point.quotesCreated++;
+  }
+  for (const row of accepted) {
+    const point = points.get(row.order.orderDate.slice(0, 7));
+    if (point) point.acceptedEur += finiteNonNegative(row.priced.totals.total);
+  }
+  for (const row of issuedInvoices) {
+    const point = points.get(row.order.orderDate.slice(0, 7));
+    if (!point) continue;
+    point.invoicedEur += invoiceClaim(row);
+    point.invoicesIssued++;
+  }
+  return [...points.values()];
+}
+
+function daysBetween(fromDay: string, toDay: string): number {
+  const from = Date.UTC(Number(fromDay.slice(0, 4)), Number(fromDay.slice(5, 7)) - 1, Number(fromDay.slice(8, 10)));
+  const to = Date.UTC(Number(toDay.slice(0, 4)), Number(toDay.slice(5, 7)) - 1, Number(toDay.slice(8, 10)));
+  return Math.round((to - from) / 86_400_000);
 }
 
 /** Current inventory snapshot. It intentionally makes no historical turnover claim. */
 export function inventoryAnalysis(
   products: readonly Product[],
   expected: readonly ExpectedStock[],
-  options: Pick<AnalysisOptions, 'topLimit'> = {},
+  options: InventoryOptions = {},
 ): InventoryAnalysis {
   const limit = positiveWhole(options.topLimit, 8);
+  const today = isoDayOrNull(options.today) ?? localIsoDay();
+  const velocityDays = positiveWhole(options.velocityDays, 90);
+  const reorderWeeks = positiveWhole(options.reorderWeeks, 8);
+  const soldByProduct = piecesSoldByProduct(options.sales ?? [], today, velocityDays);
   const known = products.filter((product) => product.inventoryKnown === true);
   const positiveKnown = known.filter((product) => finite(product.stockQuantity) > 0);
   const valued = positiveKnown.filter((product) => validMoney(product.landedCostEur));
@@ -349,6 +494,47 @@ export function inventoryAnalysis(
     row.sharePct = percentage(row.costValueEur, costValueEur) ?? 0;
   }
 
+  const weeks = velocityDays / 7;
+  const piecesSold = [...soldByProduct.values()].reduce((sum, pieces) => sum + pieces, 0);
+  const reorderRows: ReorderRow[] = products
+    .filter((product): product is Product & { id: number } => product.id != null
+      && product.active && !product.demo && product.inventoryKnown === true)
+    .flatMap((product) => {
+      const sold = soldByProduct.get(product.id) ?? 0;
+      if (sold <= 0) return [];
+      const weekly = sold / weeks;
+      const stockPieces = finiteNonNegative(product.stockQuantity);
+      const expectedPieces = expectedByProduct.get(product.id)?.pieces ?? 0;
+      const weeksLeft = stockPieces / weekly;
+      const weeksLeftWithIncoming = (stockPieces + expectedPieces) / weekly;
+      if (weeksLeftWithIncoming >= reorderWeeks) return [];
+      return [{
+        productId: product.id,
+        sku: product.sku,
+        name: product.name,
+        colour: product.colour,
+        stockPieces,
+        expectedPieces,
+        weeklyPieces: Math.round(weekly * 10) / 10,
+        weeksLeft: Math.round(weeksLeft * 10) / 10,
+        weeksLeftWithIncoming: Math.round(weeksLeftWithIncoming * 10) / 10,
+      }];
+    })
+    .sort((left, right) => (left.weeksLeftWithIncoming ?? 0) - (right.weeksLeftWithIncoming ?? 0)
+      || compareName(left.name, right.name));
+  const slowRows: SlowMoverRow[] = options.sales === undefined ? [] : valued
+    .filter((product): product is Product & { id: number } => product.id != null
+      && product.active && !product.demo && (soldByProduct.get(product.id) ?? 0) <= 0)
+    .map((product) => ({
+      productId: product.id,
+      sku: product.sku,
+      name: product.name,
+      colour: product.colour,
+      stockPieces: finiteNonNegative(product.stockQuantity),
+      costValueEur: finiteNonNegative(product.stockQuantity) * finiteNonNegative(product.landedCostEur),
+    }))
+    .sort((left, right) => right.costValueEur - left.costValueEur || compareName(left.name, right.name));
+
   return {
     snapshotBasis: 'CURRENT_PRODUCT_DATA',
     stock: {
@@ -388,7 +574,43 @@ export function inventoryAnalysis(
       rows: incomingRows,
     },
     topCapital: capitalRows.slice(0, limit),
+    velocity: {
+      days: velocityDays,
+      piecesSold,
+      skuCount: [...soldByProduct.values()].filter((pieces) => pieces > 0).length,
+      weeklyPieces: Math.round((piecesSold / weeks) * 10) / 10,
+    },
+    reorder: { horizonWeeks: reorderWeeks, count: reorderRows.length, rows: reorderRows.slice(0, limit) },
+    slowMovers: {
+      count: slowRows.length,
+      valueEur: slowRows.reduce((sum, row) => sum + row.costValueEur, 0),
+      rows: slowRows.slice(0, limit),
+    },
   };
+}
+
+/** Pieces per product on issued invoices dated within the last `days` days up to today. */
+function piecesSoldByProduct(
+  sales: readonly SalesOrderView[],
+  today: string,
+  days: number,
+): Map<number, number> {
+  const sold = new Map<number, number>();
+  const start = shiftIsoDay(today, -(days - 1));
+  for (const row of sales) {
+    if (docType(row) !== 'FACTUUR' || row.order.status === 'CONCEPT') continue;
+    if (!inOrderDateRange(row.order.orderDate, start, today)) continue;
+    for (const line of row.priced.lines) {
+      if (!Number.isInteger(line.productId)) continue;
+      sold.set(line.productId, (sold.get(line.productId) ?? 0) + finiteNonNegative(line.quantity));
+    }
+  }
+  return sold;
+}
+
+function shiftIsoDay(day: string, offset: number): string {
+  const date = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)) + offset));
+  return date.toISOString().slice(0, 10);
 }
 
 function commercialBucket(rows: readonly SalesOrderView[]): CommercialBucket {

@@ -10,7 +10,7 @@ import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
 import { Icon } from './shared/icon';
 import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
-import { sidebarGroupForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
+import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
 
 /**
@@ -29,11 +29,15 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
       @if (websiteWorkspace()) {
         <app-website-admin-nav />
       } @else if (!bare()) {
-        <aside class="sidebar">
+        <aside class="sidebar" [class.sidebar--rail]="railed()">
           <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
             <app-brand-mark subtitle="Sales &amp; Sourcing" />
           </a>
-          <nav class="sidebar__nav">
+          <nav class="sidebar__nav" (click)="sidebarClicked($event)">
+            @if (railed()) {
+              <button class="sidebar__expand" type="button" title="Menu uitklappen"
+                      aria-label="Menu uitklappen" data-expand>»</button>
+            }
             <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
             </a>
@@ -193,7 +197,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
 
             <!-- The two workspaces everyone opens daily stand on their own,
                  above the company group: the document and photo library first. -->
-            <a class="sidebar__link sidebar__link--workspace" routerLink="/files" routerLinkActive="active">
+            <a class="sidebar__link sidebar__link--workspace" routerLink="/files" routerLinkActive="active" data-rail>
               <app-icon class="sidebar__icon" name="media" [size]="18" />
               <span class="sidebar__text sidebar__text--full">Documenten &amp; media</span>
               <span class="sidebar__text sidebar__text--rail">Media</span>
@@ -300,6 +304,30 @@ export class App {
   private readonly syncOpenGroupWithRoute = effect(() => {
     this.openGroup.set(this.currentGroup());
   });
+
+  /**
+   * Documenten & media wants the room: on a desktop the sidebar folds to the
+   * rail while the library is open, and unfolds at the next click in the
+   * sidebar or when the route leaves the library by any other way.
+   */
+  readonly railed = signal(sidebarRailForUrl(this.router.url));
+  private readonly syncRailWithRoute = effect(() => {
+    this.railed.set(sidebarRailForUrl(this.url()));
+  });
+
+  /** One listener for the whole navigation: the library folds it, anything else unfolds it. */
+  sidebarClicked(event: Event): void {
+    const target = event.target as HTMLElement | null;
+    const control = target?.closest<HTMLElement>('a, button');
+    if (!control) return;
+    if (control.hasAttribute('data-rail')) {
+      this.railed.set(true);
+      this.openGroup.set(null);
+      return;
+    }
+    this.railed.set(false);
+    if (control.hasAttribute('data-expand')) this.openGroup.set(this.currentGroup());
+  }
 
   groupOpen(group: SidebarGroup): boolean {
     return this.openGroup() === group;

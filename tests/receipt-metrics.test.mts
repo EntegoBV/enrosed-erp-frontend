@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  averageLeadDays,
+  supplierScorecards,
   inDateRange,
   receiptLineMetrics,
   receiptMetrics,
@@ -82,4 +84,23 @@ test('ISO-day range boundaries are inclusive', () => {
   assert.equal(inDateRange('2026-01-01', '2026-01-01', '2026-12-31'), true);
   assert.equal(inDateRange('2025-12-31', '2026-01-01', '2026-12-31'), false);
   assert.equal(inDateRange(null, '2026-01-01', '2026-12-31'), false);
+});
+
+test('supplier scorecards line every supplier up by business, quality and speed', () => {
+  const cards = supplierScorecards([
+    { supplierId: 1, supplierName: 'Ningbo Glass', orderDate: '2026-01-10', receivedOn: '2026-03-01', expectedArrival: '2026-03-05', totalEur: 12_000,
+      lines: [{ orderedQuantity: 10, quantity: 10, damagedQuantity: 0 }] },
+    { supplierId: 1, supplierName: 'Ningbo Glass', orderDate: '2026-02-01', receivedOn: '2026-04-02', expectedArrival: '2026-04-01', totalEur: 8_000,
+      lines: [{ orderedQuantity: 10, quantity: 9, damagedQuantity: 0 }] },
+    { supplierId: 2, supplierName: 'Yiwu Foam', orderDate: null, receivedOn: '2026-05-01', expectedArrival: null, totalEur: 30_000,
+      lines: [{ orderedQuantity: 5, quantity: 5, damagedQuantity: 0 }] },
+  ]);
+  assert.deepEqual(cards.map((card) => card.name), ['Yiwu Foam', 'Ningbo Glass']);
+  assert.deepEqual(cards[1], {
+    supplierId: 1, name: 'Ningbo Glass', orders: 2, totalEur: 20_000, perfectPct: 50, onTimePct: 50,
+    avgLeadDays: 55, latestReceivedOn: '2026-04-02',
+  });
+  assert.equal(cards[0].avgLeadDays, null);
+  assert.equal(averageLeadDays([{ orderDate: '2026-01-01', receivedOn: '2026-01-31' }, { orderDate: null, receivedOn: '2026-02-01' }]), 30);
+  assert.equal(averageLeadDays([]), null);
 });

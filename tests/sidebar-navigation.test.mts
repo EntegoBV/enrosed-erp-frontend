@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   sidebarGroupForUrl,
+  sidebarRailForUrl,
   toggleSidebarGroup,
 } from '../src/app/core/platform/sidebar-navigation.ts';
 
@@ -34,4 +35,13 @@ test('opening another section closes the previous section', () => {
   assert.equal(toggleSidebarGroup('verkoop', 'inkoop'), 'inkoop');
   assert.equal(toggleSidebarGroup('inkoop', 'inkoop'), null);
   assert.equal(toggleSidebarGroup(null, 'producten'), 'producten');
+});
+
+test('the document library stands outside every group and folds the desktop sidebar', () => {
+  assert.equal(sidebarGroupForUrl('/files'), null);
+  assert.equal(sidebarGroupForUrl('/files/photos?map=3'), null);
+  assert.equal(sidebarRailForUrl('/files'), true);
+  assert.equal(sidebarRailForUrl('/files/photos?map=3#top'), true);
+  assert.equal(sidebarRailForUrl('/filesystem'), false);
+  assert.equal(sidebarRailForUrl('/products'), false);
 });

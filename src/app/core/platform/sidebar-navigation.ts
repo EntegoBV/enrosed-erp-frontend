@@ -37,12 +37,19 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
 
   if (
     path.startsWith('/activity')
-    || path.startsWith('/files')
-    || path.startsWith('/settings/documents-media')
     || section === 'company'
   ) return 'bedrijf';
 
   return null;
+}
+
+/**
+ * The document and photo library is the one workspace that asks the desktop
+ * sidebar to fold to its rail: the library is wide, the menu is not needed.
+ */
+export function sidebarRailForUrl(url: string): boolean {
+  const path = url.split('?', 1)[0].split('#', 1)[0];
+  return path === '/files' || path.startsWith('/files/');
 }
 
 /** A real accordion: opening one section closes the previous one. */

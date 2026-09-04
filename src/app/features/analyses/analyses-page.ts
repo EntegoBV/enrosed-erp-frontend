@@ -24,7 +24,8 @@ import { Ui } from '../../shared/ui';
 import { inventoryAnalysis, salesAnalysis } from './analysis-metrics';
 import { MarketAnalysis } from './market-analysis';
 import { WebsiteAnalytics } from './website-analytics';
-import { inDateRange, supplierReceiptPerformance } from './receipt-metrics';
+import { averageLeadDays, inDateRange, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
+import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 
 type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'market' | 'website';
 
@@ -71,12 +72,26 @@ const EMPTY_REPORT: ReceiptVarianceReport = {
 };
 const TODAY = localIsoDay();
 const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
+const CURRENT_MONTH_START = `${TODAY.slice(0, 7)}-01`;
+const CURRENT_QUARTER_START = `${TODAY.slice(0, 4)}-${String(Math.floor((Number(TODAY.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, '0')}-01`;
+const LAST_YEAR = String(Number(TODAY.slice(0, 4)) - 1);
+
+type SalesPresetId = 'month' | 'quarter' | 'year' | 'lastYear' | 'all';
+
+/** The periods a sales question is usually asked about; the date fields stay for the rest. */
+const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: string; to: string }> = [
+  { id: 'month', label: 'Deze maand', from: CURRENT_MONTH_START, to: TODAY },
+  { id: 'quarter', label: 'Dit kwartaal', from: CURRENT_QUARTER_START, to: TODAY },
+  { id: 'year', label: 'Dit jaar', from: CURRENT_YEAR_START, to: TODAY },
+  { id: 'lastYear', label: LAST_YEAR, from: `${LAST_YEAR}-01-01`, to: `${LAST_YEAR}-12-31` },
+  { id: 'all', label: 'Alle jaren', from: '', to: '' },
+];
 
 /** Company-wide analysis with durable receipt losses as its operational drill-down. */
 @Component({
   selector: 'app-analyses-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
+  imports: [TrendChart, 
     FormsModule,
     RouterLink,
     PageHeader,
@@ -213,7 +228,12 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
             <h2 id="sales-analysis-title">Van offerte tot betaling</h2>
             <p>De periode volgt de aanmaakdatum van de verkoopdocumenten.</p>
           </div>
-          <button class="btn btn--sm" type="button" (click)="showSalesAllTime()">Alle jaren</button>
+          <div class="period-chips" role="group" aria-label="Periode">
+            @for (preset of salesPresets; track preset.id) {
+              <button class="chip" type="button" [class.active]="salesPreset() === preset.id"
+                      (click)="applySalesPreset(preset.id)">{{ preset.label }}</button>
+            }
+          </div>
         </header>
 
         <div class="card period-filter">
@@ -224,13 +244,26 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
           <p>Bedragen zijn volgens de huidige orderberekening; oude documenten hebben nog geen bevroren historische prijs.</p>
         </div>
 
-        <div class="analysis-kpis analysis-kpis--sales">
+        <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark">
+            <span class="metric-card__label">Gefactureerd</span>
+            <strong>{{ salesMetrics().invoices.issuedValueEur | eur: 0 }}</strong>
+            <p>{{ salesMetrics().invoices.issued }} factuur/facturen incl. btw
+              @if (salesMetrics().invoices.averageClaimEur !== null) { · gem. {{ salesMetrics().invoices.averageClaimEur | eur: 0 }} }</p>
+          </article>
+          <article class="card metric-card metric-card--quality">
+            <span class="metric-card__label">Brutomarge</span>
+            <strong>{{ salesMetrics().invoices.missingCostLines ? '—' : (salesMetrics().invoices.marginEur | eur: 0) }}</strong>
+            <p>{{ salesMetrics().invoices.missingCostLines
+              ? salesMetrics().invoices.missingCostLines + ' factuurregel(s) zonder kost'
+              : salesMetrics().invoices.marginPct === null ? 'op uitgegeven facturen' : (salesMetrics().invoices.marginPct | pct: 1) + ' op goederen' }}</p>
+          </article>
+          <article class="card metric-card">
             <span class="metric-card__label">Open pijplijn</span>
             <strong>{{ salesMetrics().pipeline.calculatedValueEur | eur: 0 }}</strong>
             <p>{{ salesMetrics().pipeline.count }} offerte(s) · {{ salesMetrics().pipeline.pieces | num }} stuks</p>
           </article>
-          <article class="card metric-card metric-card--quality">
+          <article class="card metric-card">
             <span class="metric-card__label">Geaccepteerd</span>
             <strong>{{ salesMetrics().accepted.calculatedValueEur | eur: 0 }}</strong>
             <p>{{ salesMetrics().accepted.count }} offerte(s) in deze periode</p>
@@ -238,7 +271,8 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
           <article class="card metric-card">
             <span class="metric-card__label">Open facturen</span>
             <strong>{{ salesMetrics().invoices.outstandingValueEur | eur: 0 }}</strong>
-            <p>{{ salesMetrics().invoices.outstanding }} factuur/facturen</p>
+            <p>{{ salesMetrics().invoices.outstanding }} factuur/facturen
+              @if (salesMetrics().invoices.avgDaysToPaid !== null) { · betaald na gem. {{ salesMetrics().invoices.avgDaysToPaid }} dagen }</p>
           </article>
           <article class="card metric-card" [class.metric-card--danger]="salesMetrics().invoices.overdue > 0">
             <span class="metric-card__label">Vervallen</span>
@@ -257,7 +291,25 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
           <div class="funnel-step funnel-step--accent"><span>Geaccepteerd</span><b>{{ salesMetrics().funnel.accepted }}</b><small>{{ salesMetrics().funnel.conversionRatePct === null ? '—' : (salesMetrics().funnel.conversionRatePct | pct: 0) }} van gesloten</small></div>
         </div>
 
-        <div class="analysis-columns">
+        <article class="card analysis-list trend-card">
+          <header><div><span>Verloop</span><h3>Gefactureerd per maand</h3></div><small>incl. btw · geaccepteerde offertes als referentie</small></header>
+          <div class="trend-card__body">
+            <app-trend-chart [series]="salesTrend()" prefix="€ " [decimals]="0" [height]="190"
+                             ariaLabel="Gefactureerd per maand" emptyText="Nog geen facturen of geaccepteerde offertes in deze periode" />
+          </div>
+        </article>
+
+        <div class="analysis-columns analysis-columns--three">
+          <article class="card analysis-list">
+            <header><div><span>Landen</span><h3>Omzet per land</h3></div><small>uitgegeven facturen · incl. btw</small></header>
+            @for (country of salesMetrics().topCountries; track country.countryCode ?? 'none') {
+              <div class="rank-row">
+                <span class="rank">{{ $index + 1 }}</span>
+                <div><b>{{ countryLabel(country.countryCode) }}</b><small>{{ country.orderCount }} factuur/facturen</small></div>
+                <strong>{{ country.calculatedValueEur | eur: 0 }}</strong>
+              </div>
+            } @empty { <p class="list-empty">Geen uitgegeven facturen in deze periode.</p> }
+          </article>
           <article class="card analysis-list">
             <header><div><span>Klanten</span><h3>Hoogste factuurwaarde</h3></div><small>incl. btw</small></header>
             @for (customer of salesMetrics().topCustomers; track customer.customerId ?? customer.name) {
@@ -299,10 +351,10 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
         <header class="section-copy">
           <span class="eyebrow">Voorraadanalyse</span>
           <h2 id="inventory-analysis-title">Waarde, tekorten en wat onderweg is</h2>
-          <p>Een actuele momentopname uit de productkaart en open inkooporders.</p>
+          <p>Een actuele momentopname uit de productkaart en open inkooporders; het tempo komt van de facturen van de laatste {{ inventoryMetrics().velocity.days }} dagen.</p>
         </header>
 
-        <div class="analysis-kpis">
+        <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark">
             <span class="metric-card__label">Kostwaarde voorraad</span>
             <strong>{{ inventoryMetrics().stock.costValueEur | eur: 0 }}</strong>
@@ -322,6 +374,16 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
             <span class="metric-card__label">Onderweg</span>
             <strong>{{ inventoryMetrics().incoming.pieces | num }} st</strong>
             <p>{{ inventoryMetrics().incoming.skuCount }} SKU's · eerst verwacht {{ inventoryMetrics().incoming.nextArrival | dateNl }}</p>
+          </article>
+          <article class="card metric-card">
+            <span class="metric-card__label">Verkooptempo</span>
+            <strong>{{ inventoryMetrics().velocity.weeklyPieces | num }}</strong>
+            <p>stuks per week · {{ inventoryMetrics().velocity.piecesSold | num }} gefactureerd in {{ inventoryMetrics().velocity.days }} dagen over {{ inventoryMetrics().velocity.skuCount }} SKU's</p>
+          </article>
+          <article class="card metric-card" [class.metric-card--danger]="inventoryMetrics().reorder.count > 0">
+            <span class="metric-card__label">Snel bestellen</span>
+            <strong>{{ inventoryMetrics().reorder.count }} {{ inventoryMetrics().reorder.count === 1 ? 'SKU' : 'SKU’s' }}</strong>
+            <p>Binnen {{ inventoryMetrics().reorder.horizonWeeks }} weken op, ook met wat onderweg is</p>
           </article>
         </div>
 
@@ -350,6 +412,27 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
                 <span>{{ row.missingPiecesToCarton | num }} nodig voor carton</span>
               </a>
             } @empty { <p class="list-empty">Alle bekende positieve voorraden vullen minstens één outer carton.</p> }
+          </article>
+        </div>
+
+        <div class="analysis-columns">
+          <article class="card analysis-list">
+            <header><div><span>Bestellen</span><h3>Raakt binnenkort op</h3></div><small>op het tempo van {{ inventoryMetrics().velocity.days }} dagen</small></header>
+            @for (row of inventoryMetrics().reorder.rows; track row.productId) {
+              <a class="stock-row" [routerLink]="['/products', row.productId]">
+                <div><b>{{ row.name }}</b><small>{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ row.stockPieces | num }} op voorraad@if (row.expectedPieces) { · {{ row.expectedPieces | num }} onderweg } · {{ row.weeklyPieces }} st/week</small></div>
+                <span [class.ok-text]="(row.weeksLeftWithIncoming ?? 0) >= 4">{{ weeksLabel(row.weeksLeftWithIncoming) }}</span>
+              </a>
+            } @empty { <p class="list-empty">Niets raakt binnen {{ inventoryMetrics().reorder.horizonWeeks }} weken op, of er werd nog niets gefactureerd.</p> }
+          </article>
+          <article class="card analysis-list">
+            <header><div><span>Stilstaand</span><h3>Trage verkopers</h3></div><small>{{ inventoryMetrics().slowMovers.valueEur | eur: 0 }} in {{ inventoryMetrics().slowMovers.count }} SKU's</small></header>
+            @for (row of inventoryMetrics().slowMovers.rows; track row.productId) {
+              <a class="stock-row" [routerLink]="['/products', row.productId]">
+                <div><b>{{ row.name }}</b><small>{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ row.stockPieces | num }} stuks zonder verkoop</small></div>
+                <span class="capital-text">{{ row.costValueEur | eur: 0 }}</span>
+              </a>
+            } @empty { <p class="list-empty">Elke gewaardeerde voorraadpositie verkocht in de laatste {{ inventoryMetrics().velocity.days }} dagen.</p> }
           </article>
         </div>
 
@@ -382,12 +465,40 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
           <h2 id="purchase-summary-title">Onderweg en ontvangen kwaliteit</h2>
           <p>Actuele containerwaarde plus blijvend geregistreerde tekorten en schade.</p>
         </header>
-        <div class="analysis-kpis">
+        <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark"><span class="metric-card__label">Inkoop onderweg</span><strong>{{ incomingValue() | eur: 0 }}</strong><p>{{ incomingPieces() | num }} stuks in {{ incomingOrders().length }} order(s)</p></article>
           <article class="card metric-card metric-card--quality"><span class="metric-card__label">Perfect ontvangen</span><strong>{{ supplierPerformance().perfectPct === null ? '—' : (supplierPerformance().perfectPct | pct: 1) }}</strong><p>{{ supplierPerformance().perfectOrders }} van {{ supplierPerformance().comparableOrders }} vergelijkbare orders</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Op tijd</span><strong>{{ supplierPerformance().onTimePct === null ? '—' : (supplierPerformance().onTimePct | pct: 0) }}</strong><p>{{ supplierPerformance().onTimeOrders }} van {{ supplierPerformance().datedOrders }} ontvangsten tegen de laatst opgeslagen ETA</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Doorlooptijd</span><strong>{{ leadDays() === null ? '—' : leadDays() + ' dagen' }}</strong><p>Van bestelling tot ontvangst, gemiddeld over de gefilterde orders</p></article>
           <article class="card metric-card"><span class="metric-card__label">Bekende verliesimpact</span><strong>{{ report().totals.totalLossValueEur | eur: 0 }}</strong><p>{{ report().totals.missingPieces + report().totals.damagedPieces | num }} afwijkende stuks</p></article>
           <article class="card metric-card"><span class="metric-card__label">Zonder waarde</span><strong>{{ report().totals.unvaluedLossPieces | num }} st</strong><p>Vul de ontvangstwaarde in om de impact compleet te maken</p></article>
         </div>
+
+        <article class="card analysis-list scorecard-card">
+          <header><div><span>Leveranciers</span><h3>Scorekaart per leverancier</h3></div><small>ontvangen orders in de gekozen periode</small></header>
+          @if (supplierCards().length) {
+            <div class="scorecard-scroll">
+              <table class="scorecard">
+                <thead><tr><th>Leverancier</th><th>Orders</th><th>Waarde</th><th>Perfect</th><th>Op tijd</th><th>Doorlooptijd</th><th>Laatste ontvangst</th></tr></thead>
+                <tbody>
+                  @for (card of supplierCards(); track card.supplierId) {
+                    <tr>
+                      <td><a [routerLink]="['/suppliers', card.supplierId]">{{ card.name }}</a></td>
+                      <td>{{ card.orders }}</td>
+                      <td>{{ card.totalEur | eur: 0 }}</td>
+                      <td [class.scorecard__warn]="card.perfectPct !== null && card.perfectPct < 80">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</td>
+                      <td [class.scorecard__warn]="card.onTimePct !== null && card.onTimePct < 80">{{ card.onTimePct === null ? '—' : (card.onTimePct | pct: 0) }}</td>
+                      <td>{{ card.avgLeadDays === null ? '—' : card.avgLeadDays + ' d' }}</td>
+                      <td>{{ card.latestReceivedOn | dateNl }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="list-empty">Nog geen ontvangen orders in deze periode.</p>
+          }
+        </article>
       </section>
 
       <section class="analysis-section receipt-section" aria-labelledby="receipt-analysis-title">
@@ -551,7 +662,11 @@ const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
     .variance-list{display:grid;gap:10px}.variance-order{overflow:hidden}.variance-order__head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}.variance-order__head>a{display:grid;min-width:0;color:inherit;text-decoration:none}.variance-order__head>a>span{color:var(--rose);font-size:9.5px;font-weight:760;text-transform:uppercase}.variance-order__head>a>strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.variance-order__head>a>small{color:var(--muted);font-size:10.5px}.variance-order__head>a:hover strong{color:var(--rose-dark);text-decoration:underline}.variance-order__value{display:grid;flex:none;text-align:right}.variance-order__value b{font-size:14px}.variance-order__value small{color:var(--warn);font-size:9.5px}.variance-order__value a{margin-top:5px;color:var(--rose-dark);font-size:11px;font-weight:720;text-decoration:none}.variance-order__value a:hover{text-decoration:underline}
     .variance-lines{display:grid}.variance-line{display:grid;gap:11px;padding:14px}.variance-line+.variance-line{border-top:1px solid var(--line)}.variance-line__product{display:grid;min-width:0}.variance-line__product>strong{overflow:hidden;font-size:13.5px;text-overflow:ellipsis;white-space:nowrap}.variance-line__product>span{color:var(--muted);font-size:10.5px}.variance-line__chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.variance-line__chips span{padding:3px 7px;border-radius:99px;background:var(--danger-soft);color:var(--danger);font-size:10px;font-weight:700}.variance-line__chips .ok{background:var(--ok-soft);color:var(--ok)}.variance-line__impact{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:10px;background:var(--surface-2)}.variance-line__impact span{color:var(--muted);font-size:10px;text-transform:uppercase}.variance-line__impact b{font-size:13px}.variance-line__valuation{display:grid;gap:4px}.variance-line__valuation>label{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase}.variance-line__valuation>small{color:var(--warn);font-size:10px}.value-edit{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center}.value-edit>span{align-self:stretch;display:grid;place-items:center;padding:0 9px;border:1px solid var(--line);border-right:0;border-radius:var(--r-sm) 0 0 var(--r-sm);background:var(--surface-2);color:var(--muted);font-size:12px}.value-edit .input{min-width:0;border-radius:0}.value-edit .btn{min-height:44px;border-radius:0 var(--r-sm) var(--r-sm) 0}.receipt-empty{display:flex;align-items:center;gap:12px;padding:18px}.receipt-empty>span{display:grid;width:38px;height:38px;flex:none;place-items:center;border-radius:50%;background:var(--ok-soft);color:var(--ok);font-weight:800}.receipt-empty p{margin-top:2px;color:var(--muted);font-size:12px}
     @media(min-width:680px){.analysis-tabs{top:0}.analysis-kpis,.attention-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.period-filter{grid-template-columns:190px 190px minmax(0,1fr);align-items:end}.funnel-card{grid-template-columns:repeat(7,auto);justify-content:space-between}.funnel-arrow{display:block}.analysis-columns{grid-template-columns:repeat(2,minmax(0,1fr))}.attention-row{grid-template-columns:minmax(180px,.7fr) minmax(240px,1fr) auto;align-items:center}.receipt-filters{grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end}.receipt-filters__actions{grid-template-columns:auto auto}.receipt-totals{grid-template-columns:repeat(4,minmax(0,1fr))}.variance-line{grid-template-columns:minmax(220px,1fr) 145px minmax(235px,.8fr);align-items:end}.variance-line__impact{display:grid;align-content:center;text-align:right}.variance-line__impact b{margin-top:2px}.analyses-page{padding-bottom:40px}}
-    @media(min-width:980px){.analysis-kpis,.attention-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    @media(min-width:980px){.analysis-kpis,.attention-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.analysis-kpis--flow{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}.analysis-columns--three{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    .period-chips{display:flex;flex-wrap:wrap;gap:6px}.period-chips .chip{min-height:34px}
+    .trend-card{margin-top:10px}.trend-card__body{padding:10px 14px 14px}
+    .capital-text{color:var(--ink-2)!important;font-weight:700}
+    .scorecard-card{margin-top:10px}.scorecard-scroll{overflow-x:auto}.scorecard{width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px}.scorecard th{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.05em;text-align:left;text-transform:uppercase}.scorecard td{padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.scorecard tr:last-child td{border-bottom:0}.scorecard td a{color:inherit;font-weight:650;text-decoration:none}.scorecard td a:hover{color:var(--rose-dark);text-decoration:underline}.scorecard__warn{color:var(--warn);font-weight:700}
     @keyframes pulse{50%{opacity:.48}}
   `,
 })
@@ -666,7 +781,38 @@ export class AnalysesPage {
     topLimit: 8,
   }));
   readonly inventoryMetrics = computed(() => inventoryAnalysis(
-    this.products(), this.expectedStock(), { topLimit: 10 }));
+    this.products(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: TODAY }));
+
+  /** The month by month view as two lines: what was invoiced, what was accepted. */
+  readonly salesTrend = computed<TrendSeries[]>(() => {
+    const monthly = this.salesMetrics().monthly;
+    if (!monthly.some((point) => point.invoicedEur > 0 || point.acceptedEur > 0)) return [];
+    const dates = monthly.map((point) => `${point.month}-01`);
+    return [
+      { label: 'Gefactureerd', dates, values: monthly.map((point) => point.invoicedEur), tone: 'accent' },
+      { label: 'Geaccepteerde offertes', dates, values: monthly.map((point) => point.acceptedEur), tone: 'muted' },
+    ];
+  });
+
+  readonly salesPresets = SALES_PRESETS;
+  /** Which preset the two dates spell, if any; a hand-picked range lights none. */
+  readonly salesPreset = computed<SalesPresetId | null>(() => {
+    const from = this.salesFromDate();
+    const to = this.salesToDate();
+    return SALES_PRESETS.find((preset) => preset.from === from && preset.to === to)?.id ?? null;
+  });
+
+  readonly supplierCards = computed(() => supplierScorecards(this.receivedForPerformance().map((row) => ({
+    supplierId: row.order.supplierId,
+    supplierName: this.supplierName(row.order.supplierId),
+    orderDate: row.order.orderDate,
+    receivedOn: row.order.receivedOn,
+    expectedArrival: row.order.expectedArrival,
+    lines: row.order.lines,
+    totalEur: row.costing.totals.totalEur,
+  }))));
+  readonly leadDays = computed(() => averageLeadDays(this.receivedForPerformance().map((row) => row.order)));
+  private readonly regionNames = new Intl.DisplayNames(['nl'], { type: 'region' });
 
   readonly varianceGroups = computed<VarianceGroup[]>(() => {
     const groups = new Map<number, VarianceGroup>();
@@ -786,9 +932,26 @@ export class AnalysesPage {
     this.supplierId.set(value === '' || value === null || !Number.isFinite(parsed) ? null : parsed);
   }
 
-  showSalesAllTime(): void {
-    this.salesFromDate.set('');
-    this.salesToDate.set('');
+  applySalesPreset(id: SalesPresetId): void {
+    const preset = SALES_PRESETS.find((row) => row.id === id);
+    if (!preset) return;
+    this.salesFromDate.set(preset.from);
+    this.salesToDate.set(preset.to);
+  }
+
+  supplierName(id: number): string {
+    return this.suppliers().find((supplier) => supplier.id === id)?.name ?? `Leverancier ${id}`;
+  }
+
+  countryLabel(code: string | null): string {
+    if (!code) return 'Land onbekend';
+    try { return this.regionNames.of(code) ?? code; } catch { return code; }
+  }
+
+  weeksLabel(weeks: number | null): string {
+    if (weeks === null) return 'Geen verkoop';
+    if (weeks < 1) return 'Minder dan een week';
+    return `Nog ${weeks} weken`;
   }
 
   attentionReason(reason: string): string {

@@ -185,3 +185,66 @@ function finiteNonNegative(value: number | null | undefined): number | null {
 function isoDay(value: string | null | undefined): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
+
+export interface SupplierScorecardInput extends SupplierReceiptOrderInput {
+  supplierId: number;
+  supplierName: string;
+  orderDate: string | null | undefined;
+  totalEur: number;
+}
+
+export interface SupplierScorecard {
+  supplierId: number;
+  name: string;
+  orders: number;
+  totalEur: number;
+  perfectPct: number | null;
+  onTimePct: number | null;
+  /** Days from order to receipt, over orders that carry both dates. */
+  avgLeadDays: number | null;
+  latestReceivedOn: string | null;
+}
+
+/** Every supplier on one line: how much, how well, how fast. Most business first. */
+export function supplierScorecards(orders: readonly SupplierScorecardInput[]): SupplierScorecard[] {
+  const grouped = new Map<number, SupplierScorecardInput[]>();
+  for (const order of orders) {
+    grouped.set(order.supplierId, [...(grouped.get(order.supplierId) ?? []), order]);
+  }
+  return [...grouped.entries()].map(([supplierId, rows]) => {
+    const performance = supplierReceiptPerformance(rows);
+    const leadDays = rows.flatMap((row) => {
+      if (!isoDay(row.orderDate) || !isoDay(row.receivedOn)) return [];
+      const days = daysBetweenIso(row.orderDate!, row.receivedOn!);
+      return days >= 0 ? [days] : [];
+    });
+    return {
+      supplierId,
+      name: rows[0].supplierName,
+      orders: rows.length,
+      totalEur: rows.reduce((sum, row) => sum + (Number.isFinite(row.totalEur) ? row.totalEur : 0), 0),
+      perfectPct: performance.perfectPct,
+      onTimePct: performance.onTimePct,
+      avgLeadDays: leadDays.length
+        ? Math.round(leadDays.reduce((sum, days) => sum + days, 0) / leadDays.length) : null,
+      latestReceivedOn: rows.map((row) => row.receivedOn).filter((day): day is string => isoDay(day)).sort().at(-1) ?? null,
+    };
+  }).sort((left, right) => right.totalEur - left.totalEur || right.orders - left.orders
+    || left.name.localeCompare(right.name, 'nl'));
+}
+
+/** Days from order to receipt over every order that carries both dates; null without any. */
+export function averageLeadDays(orders: readonly { orderDate?: string | null; receivedOn?: string | null }[]): number | null {
+  const days = orders.flatMap((order) => {
+    if (!isoDay(order.orderDate) || !isoDay(order.receivedOn)) return [];
+    const value = daysBetweenIso(order.orderDate!, order.receivedOn!);
+    return value >= 0 ? [value] : [];
+  });
+  return days.length ? Math.round(days.reduce((sum, value) => sum + value, 0) / days.length) : null;
+}
+
+function daysBetweenIso(fromDay: string, toDay: string): number {
+  const from = Date.UTC(Number(fromDay.slice(0, 4)), Number(fromDay.slice(5, 7)) - 1, Number(fromDay.slice(8, 10)));
+  const to = Date.UTC(Number(toDay.slice(0, 4)), Number(toDay.slice(5, 7)) - 1, Number(toDay.slice(8, 10)));
+  return Math.round((to - from) / 86_400_000);
+}

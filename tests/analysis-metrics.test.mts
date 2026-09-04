@@ -136,6 +136,8 @@ test('sales analysis keeps a clear cohort funnel and current-calculation values'
     paidValueEur: 968,
     outstandingValueEur: 847,
     overdueValueEur: 847,
+    averageClaimEur: 907.5,
+    avgDaysToPaid: null,
     marginEur: 450,
     marginPct: (450 / 1_300) * 100,
     missingCostLines: 0,
@@ -278,4 +280,65 @@ test('inventory uplift is available only when every saleable stock line has a co
   ], []);
   assert.equal(result.stock.salesValueEur, 62);
   assert.equal(result.stock.potentialUpliftEur, 36);
+});
+
+test('sales analysis adds the month by month view, countries and the payment term', () => {
+  const paid = salesRow({ id: 21, date: '2026-02-10', docType: 'FACTUUR', status: 'BETAALD', total: 500, claim: 605 });
+  paid.order.paidAt = '2026-03-02T09:00:00Z';
+  paid.order.countryCode = 'de';
+  const open = salesRow({ id: 22, date: '2026-03-15', docType: 'FACTUUR', status: 'VERZONDEN', total: 300, claim: 363 });
+  open.order.countryCode = 'BE';
+  const paidFast = salesRow({ id: 23, date: '2026-03-20', docType: 'FACTUUR', status: 'BETAALD', total: 100, claim: 121 });
+  paidFast.order.paidAt = '2026-03-26T09:00:00Z';
+  paidFast.order.countryCode = 'DE';
+  const rows = [
+    paid, open, paidFast,
+    salesRow({ id: 24, date: '2026-01-05', status: 'GEACCEPTEERD', total: 900 }),
+    salesRow({ id: 25, date: '2026-03-05', status: 'VERZONDEN', total: 50 }),
+  ];
+  const result = salesAnalysis(rows, [], { from: '2026-01-01', to: '2026-04-30', today: '2026-05-01' });
+
+  assert.deepEqual(result.monthly, [
+    { month: '2026-01', invoicedEur: 0, acceptedEur: 900, quotesCreated: 1, invoicesIssued: 0 },
+    { month: '2026-02', invoicedEur: 605, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 1 },
+    { month: '2026-03', invoicedEur: 484, acceptedEur: 0, quotesCreated: 1, invoicesIssued: 2 },
+    { month: '2026-04', invoicedEur: 0, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 0 },
+  ]);
+  assert.deepEqual(result.topCountries, [
+    { countryCode: 'DE', orderCount: 2, calculatedValueEur: 726 },
+    { countryCode: 'BE', orderCount: 1, calculatedValueEur: 363 },
+  ]);
+  assert.equal(result.invoices.avgDaysToPaid, 13);
+  assert.equal(result.invoices.averageClaimEur, 363);
+  assert.deepEqual(salesAnalysis([], [], {}).monthly, []);
+});
+
+test('inventory analysis reads the sales pace into reorder advice and slow movers', () => {
+  const products: Product[] = [
+    product({ id: 1, name: 'Hardloper', stock: 10, per: 6, cost: 5, sales: 10 }),
+    product({ id: 2, name: 'Gedekt', stock: 100, per: 6, cost: 2, sales: 5 }),
+    product({ id: 3, name: 'Slaper', stock: 40, per: 6, cost: 3, sales: 8 }),
+    product({ id: 4, name: 'Onderweg genoeg', stock: 2, per: 6, cost: 4, sales: 8 }),
+  ];
+  const sales: SalesOrderView[] = [
+    salesRow({ id: 50, date: '2026-05-20', docType: 'FACTUUR', status: 'BETAALD',
+      lines: [{ productId: 1, quantity: 30 }, { productId: 2, quantity: 13 }, { productId: 4, quantity: 26 }] }),
+    salesRow({ id: 51, date: '2026-01-01', docType: 'FACTUUR', status: 'BETAALD',
+      lines: [{ productId: 3, quantity: 99 }] }),
+    salesRow({ id: 52, date: '2026-05-25', docType: 'FACTUUR', status: 'CONCEPT',
+      lines: [{ productId: 3, quantity: 99 }] }),
+  ];
+  const expected: ExpectedStock[] = [
+    { productId: 4, quantity: 60, expectedArrival: '2026-07-01', orderIds: [1], orderNumbers: ['PO-1'] },
+  ];
+  const result = inventoryAnalysis(products, expected, { sales, today: '2026-06-01', velocityDays: 91, reorderWeeks: 8 });
+
+  assert.deepEqual(result.velocity, { days: 91, piecesSold: 69, skuCount: 3, weeklyPieces: 5.3 });
+  assert.deepEqual(result.reorder.rows.map((row) => [row.productId, row.weeksLeft, row.weeksLeftWithIncoming]), [
+    [1, 4.3, 4.3],
+  ]);
+  assert.equal(result.reorder.count, 1);
+  assert.deepEqual(result.slowMovers.rows.map((row) => row.productId), [3]);
+  assert.equal(result.slowMovers.valueEur, 120);
+  assert.equal(inventoryAnalysis(products, expected, {}).slowMovers.count, 0);
 });

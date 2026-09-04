@@ -310,6 +310,7 @@ a { color: var(--rose); }
   text-decoration: none;
 }
 .sidebar__text--rail { display: none; }
+.sidebar__expand { display: none; }
 
 /* From 680px the phone chrome goes: an unfolded Galaxy Fold (about 690px
    wide) or a tablet wants the desktop idiom, not a thumb bar. Up to 1023px
@@ -335,17 +336,22 @@ a { color: var(--rose); }
   .hide-desktop.hide-desktop { display: none !important; }
 }
 
-@media (min-width: 680px) and (max-width: 1023.98px) {
-  .sidebar { width: 84px; flex: 0 0 84px; overflow-x: clip; }
+/* The narrow rail: icon over a short label, no group headers, the long
+   tail behind Meer. Tablets get it by width; a desktop gets it on request
+   (see .sidebar--rail) when a workspace wants the room. */
+@mixin sidebar-rail {
+  width: 84px;
+  flex: 0 0 84px;
+  overflow-x: clip;
   .sidebar__brand {
     display: flex;
     justify-content: center;
     padding: 14px 8px 10px;
     border-bottom: 1px solid var(--line);
   }
-  .sidebar .sidebar__brand .brand-mark { padding: 4px; margin: 0; }
-  .sidebar .sidebar__brand .brand-mark__logo { height: 18px; max-width: 64px; }
-  .sidebar .sidebar__brand .brand-mark__sub { display: none; }
+  .sidebar__brand .brand-mark { padding: 4px; margin: 0; }
+  .sidebar__brand .brand-mark__logo { height: 18px; max-width: 64px; }
+  .sidebar__brand .brand-mark__sub { display: none; }
   .sidebar__nav { padding: 6px 6px; flex: 1; overflow-y: auto; }
   .sidebar__label { display: none; }
   .sidebar__group { display: none; }
@@ -359,7 +365,7 @@ a { color: var(--rose); }
     align-items: center;
     gap: 4px;
     padding: 9px 2px 8px;
-    margin-bottom: 2px;
+    margin: 0 0 2px;
     border-radius: 10px;
     color: var(--ink-2);
     text-decoration: none;
@@ -371,9 +377,11 @@ a { color: var(--rose); }
   .sidebar__text { min-width: 0; max-width: 100%; }
   .sidebar__text--full { display: none; }
   .sidebar__text--rail { display: inline; }
+  .sidebar__link--workspace { margin-top: 2px; border-color: transparent; }
   .sidebar__link--workspace i { display: none; }
   .sidebar__link:hover { background: var(--surface-2); color: var(--ink); }
   .sidebar__link.active { background: var(--rose-soft); color: var(--rose-dark); font-weight: 700; }
+  .sidebar__link.sidebar__link--rail { display: flex; }
   .sidebar__icon { width: 20px; display: inline-flex; justify-content: center; }
   .sidebar__count { position: absolute; top: 4px; right: 8px; margin: 0; }
   .sidebar__foot { padding: 8px 6px 12px; border-top: 1px solid var(--line); text-align: center; }
@@ -396,6 +404,10 @@ a { color: var(--rose); }
     font-size: 11px;
     cursor: pointer;
   }
+}
+
+@media (min-width: 680px) and (max-width: 1023.98px) {
+  .sidebar { @include sidebar-rail; }
   .content { padding: 18px 20px 60px; }
   .appbar { padding: var(--safe-t) 20px 0; }
 }
@@ -531,6 +543,26 @@ a { color: var(--rose); }
     cursor: pointer;
   }
   .sidebar__theme button.active { border-color: var(--ink); }
+
+  /* Documenten & media asks for the room: the sidebar folds to the rail until
+     the next click in it. The double chevron is the way back without leaving. */
+  .sidebar { transition: width .2s ease, flex-basis .2s ease; }
+  .sidebar.sidebar--rail { @include sidebar-rail; }
+  .sidebar--rail .sidebar__expand {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: 2px 0 6px;
+    padding: 7px 0;
+    border: 1px dashed var(--line-strong);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .sidebar--rail .sidebar__expand:hover { background: var(--surface-2); color: var(--ink); }
 
   .tabbar { display: none; }
   .content { padding: 22px 26px 60px; }
