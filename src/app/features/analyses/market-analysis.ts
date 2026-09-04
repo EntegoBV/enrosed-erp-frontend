@@ -509,7 +509,7 @@ const STORAGE_KEY = 'enrosed.market';
     @media(max-width:899.98px){.fx-pair+.fx-pair{border-top:1px solid var(--line);border-left:0}}
     @media(max-width:679.98px){.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
       .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons,.fx-insight__grid{grid-template-columns:repeat(2,1fr)}
-      .mk-toolbar .btn{order:-1;margin-left:auto}.mk-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.fx-pair__now strong{font-size:26px}}
+      .mk-toolbar .btn{order:-1;margin-left:auto}.mk-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.fx-pair__now strong{font-size:26px}.fr-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
   `,
 })
 export class MarketAnalysis {
