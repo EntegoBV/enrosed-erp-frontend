@@ -8,6 +8,7 @@ import { WorkQueue } from '../../core/api/work-queue';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { channelCode, channelLabel } from './sales-channels';
 import {
   STATUS_LABEL, actionNeeded, isWebsiteQuoteRequest, statusClass,
 } from './quote-status';
@@ -191,6 +192,7 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
                 <div class="list-item__meta list-item__meta--wrap">
                   @if (docTab() === 'ARCHIEF') { {{ documentLabel(row.order) }} · }
                   {{ row.order.number }} · {{ row.order.orderDate | dateNl }}
+                  @if (channelCode(row.order.salesChannel) !== 'DIRECT') { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
                   @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate) {
                     · vervalt {{ row.order.invoiceDueDate | dateNl }}
                   }
@@ -679,6 +681,7 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
       }
       .status-option--active .status-option__count { background: rgb(255 255 255 / 22%); }
     }
+    .channel-tag{padding:1px 7px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10px;font-weight:750;letter-spacing:.03em;text-transform:uppercase;vertical-align:middle}
   `,
 })
 export class SalesList {
@@ -1158,6 +1161,8 @@ export class SalesList {
   }
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];
+  readonly channelCode = channelCode;
+  readonly channelLabel = channelLabel;
   cls = statusClass;
 
   /** What is waiting on us; the same source as the bell and the dot. */

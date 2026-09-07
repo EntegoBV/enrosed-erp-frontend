@@ -4,6 +4,7 @@ import type {
   Customer,
   ExpectedStock,
   PricedLine,
+  CompanyCost,
   Product,
   PurchaseOrderView,
   QuoteStatus,
@@ -12,6 +13,7 @@ import type {
 import {
   inventoryAnalysis,
   partnerFinancingAnalysis,
+  resultAnalysis,
   salesAnalysis,
 } from '../src/app/features/analyses/analysis-metrics.ts';
 
@@ -414,4 +416,56 @@ test('inventory value keeps the partner pieces that wait for shipment apart from
   assert.equal(result.stock.partnerPieces, 30 + 10, 'shipped goods are gone, and never more than the stock');
   assert.equal(result.stock.partnerCostValueEur, 30 * 20 + 10 * 5);
   assert.equal(result.stock.ownCostValueEur, 10 * 20);
+});
+
+test('sales analysis splits the issued invoices per channel', () => {
+  const rows = [
+    salesRow({ id: 1, docType: 'FACTUUR', status: 'VERZONDEN', total: 1000, claim: 1210, goods: 900, margin: 300 }),
+    salesRow({ id: 2, docType: 'FACTUUR', status: 'BETAALD', total: 500, claim: 605, goods: 500, margin: 100 }),
+    salesRow({ id: 3, docType: 'FACTUUR', status: 'CONCEPT', total: 9999 }),
+  ];
+  rows[1].order.salesChannel = 'tica';
+  const result = salesAnalysis(rows, [], { from: '2026-01-01', to: '2026-12-31', today: '2026-05-01' });
+  assert.deepEqual(result.channels.map((row) => [row.channel, row.invoiceCount, row.revenueExclEur, row.marginEur, row.sharePct]),
+    [['DIRECT', 1, 1000, 300, 66.67], ['TICA', 1, 500, 100, 33.33]]);
+});
+
+test('the result sets the margin on the goods against the own costs, per channel and per month', () => {
+  const sales = [
+    salesRow({ id: 1, docType: 'FACTUUR', status: 'VERZONDEN', date: '2026-10-05', total: 1000, goods: 900, margin: 300 }),
+    salesRow({ id: 2, docType: 'FACTUUR', status: 'BETAALD', date: '2026-10-20', total: 500, goods: 500, margin: 100 }),
+    salesRow({ id: 3, docType: 'FACTUUR', status: 'VERZONDEN', date: '2026-09-02', total: 700, goods: 700, margin: 200 }),
+    salesRow({ id: 4, docType: 'OFFERTE', status: 'GEACCEPTEERD', date: '2026-10-06', total: 5000, margin: 2000 }),
+    salesRow({ id: 5, docType: 'FACTUUR', status: 'GEANNULEERD', date: '2026-10-07', total: 800, margin: 400 }),
+  ];
+  sales[1].order.salesChannel = 'TICA';
+  sales[1].priced.totals.costTotal = 400;
+  sales[0].priced.totals.costTotal = 600;
+  sales[2].priced.totals.costTotal = 500;
+  const costs: CompanyCost[] = [
+    { id: 1, date: '2026-10-01', category: 'TICA', description: 'Stand', party: null, amountExclEur: 250, vatPct: 21, reference: null, paidOn: null, salesChannel: 'TICA', notes: null },
+    { id: 2, date: '2026-10-15', category: 'BOEKHOUDER', description: 'Kwartaal', party: null, amountExclEur: 300, vatPct: 21, reference: null, paidOn: '2026-10-16', salesChannel: null, notes: null },
+    { id: 3, date: '2026-08-01', category: 'HUUR', description: 'Augustus', party: null, amountExclEur: 900, vatPct: 21, reference: null, paidOn: '2026-08-01', salesChannel: null, notes: null },
+  ];
+  const purchases = [
+    { order: { id: 1, number: 'PO-1', alias: null, status: 'ONTVANGEN', supplierId: 1, receivedOn: '2026-10-03' }, costing: { totals: { totalEur: 4000, totalWithSeparateCostsEur: 4230 } } },
+    { order: { id: 2, number: 'PO-2', alias: null, status: 'ONDERWEG', supplierId: 1, receivedOn: null }, costing: { totals: { totalEur: 1000 } } },
+  ] as unknown as PurchaseOrderView[];
+
+  const result = resultAnalysis(sales, purchases, costs, { from: '2026-09-01', to: '2026-10-31' });
+
+  assert.equal(result.invoiceCount, 3);
+  assert.equal(result.revenueEur, 2200);
+  assert.equal(result.marginEur, 600);
+  assert.equal(result.goodsCostEur, 1500);
+  assert.equal(result.costsEur, 550, 'august rent is outside the period');
+  assert.equal(result.unpaidCostsEur, 302.5);
+  assert.equal(result.resultEur, 50);
+  assert.equal(result.purchasedEur, 4230);
+  assert.equal(result.receivedContainers, 1);
+  assert.deepEqual(result.byChannel.map((row) => [row.channel, row.revenueEur, row.marginEur, row.costsEur, row.resultEur]),
+    [['DIRECT', 1700, 500, 0, 500], ['TICA', 500, 100, 250, -150]]);
+  assert.deepEqual(result.byCategory.map((row) => [row.category, row.amountEur]), [['BOEKHOUDER', 300], ['TICA', 250]]);
+  assert.deepEqual(result.monthly.map((row) => [row.month, row.revenueEur, row.marginEur, row.costsEur, row.resultEur]),
+    [['2026-09', 700, 200, 0, 200], ['2026-10', 1500, 400, 550, -150]]);
 });

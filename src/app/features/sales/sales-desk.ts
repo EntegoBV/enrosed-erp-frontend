@@ -20,6 +20,7 @@ import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-s
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice } from './partner-settlement';
+import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { salesDocumentLabel } from './sales-list-swipe';
 
 type RailTab = 'order' | 'delivery' | 'check' | 'status';
@@ -542,6 +543,13 @@ interface JourneyStep {
                         <input class="input mt-8" aria-label="Eigen betaalvoorwaarden" placeholder="Eigen voorwaarden…"
                                [ngModel]="data.order.paymentTerms" (ngModelChange)="patch({ paymentTerms: $event })" />
                       }
+                    </div>
+                    <div class="field">
+                      <label for="sd-channel">Verkoopkanaal</label>
+                      <select class="select" id="sd-channel" [ngModel]="channelCode(data.order.salesChannel)" (ngModelChange)="patch({ salesChannel: $event })">
+                        @for (channel of channels; track channel.code) { <option [value]="channel.code">{{ channel.label }}</option> }
+                      </select>
+                      <span class="hint">{{ channelHint(data.order.salesChannel) }}</span>
                     </div>
                     <div class="desk-form__duo">
                       <div class="field">
@@ -1144,6 +1152,11 @@ export class SalesDesk extends SalesEditor {
   }
   readonly isSettlement = isSettlementInvoice;
   readonly partnerLinkOpen = signal(false);
+  readonly channels = channelChoices([]);
+  readonly channelCode = channelCode;
+  channelHint(code: string | null | undefined): string {
+    return SALES_CHANNELS.find((channel) => channel.code === channelCode(code))?.hint ?? 'Eigen kanaal';
+  }
   /** Which line shows its extra-discount field on a narrow screen. */
   readonly discOpen = signal<number | null>(null);
 

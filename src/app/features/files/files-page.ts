@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, inject, OnDestroy, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
@@ -39,11 +41,11 @@ interface UploadItem { id: number; file: File; status: 'queued' | 'busy' | 'done
 interface UploadTray { items: UploadItem[]; folderId: number | null; running: boolean; done: boolean; }
 
 /** The library seen by use: where the ERP puts files, not where people filed them. */
-interface Collection {
+export interface Collection {
   key: string; label: string; hint: string; icon: string;
   filters: { targetType?: MediaTargetType; role?: MediaRole; kind?: MediaKind; linked?: boolean };
 }
-const COLLECTIONS: readonly Collection[] = [
+export const COLLECTIONS: readonly Collection[] = [
   { key: 'product', label: 'Productfoto’s', hint: 'per product', icon: '❀', filters: { targetType: 'PRODUCT', kind: 'IMAGE' } },
   { key: 'family', label: 'Reeks- & websitefoto’s', hint: 'per productreeks', icon: '◫', filters: { targetType: 'PRODUCT_FAMILY' } },
   { key: 'purchase', label: 'Inkoopdocumenten', hint: 'per inkooporder', icon: '▤', filters: { targetType: 'PURCHASE_ORDER' } },
@@ -88,6 +90,10 @@ const COLLECTIONS: readonly Collection[] = [
             <button type="button" [class.on]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button>
             <button type="button" [class.on]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Docs</button>
           </span>
+          <span class="fm__kinds fm__kinds--view" role="group" aria-label="Weergave">
+            <button type="button" [class.on]="view() === 'list'" (click)="setView('list')" aria-label="Lijst">☰</button>
+            <button type="button" [class.on]="view() === 'grid'" (click)="setView('grid')" aria-label="Tegels">▦</button>
+          </span>
           @if (folder() === 'root' && !collection() && !query().trim()) {
             <i class="fm__sep" aria-hidden="true"></i>
             <button class="fm__chip" type="button" (click)="openFolder(null)"><i aria-hidden="true">▦</i>Alle bestanden</button>
@@ -131,6 +137,19 @@ const COLLECTIONS: readonly Collection[] = [
           @if (!assets().length) {
             <p class="fm__state">Nog geen bestanden hier. Tik op + om er toe te voegen.</p>
           } @else {
+            @if (view() === 'grid') {
+            <ul class="fm__grid" aria-label="Bestanden als tegels">
+              @for (asset of sorted(); track asset.id) {
+                <li>
+                  <button class="fm__tile" type="button" [class.fm__tile--picked]="selectedIds().has(asset.id)" (click)="rowClick(asset, $event)" (contextmenu)="$event.preventDefault(); actionsFor.set({ asset })">
+                    @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" draggable="false" /> } @else { <i aria-hidden="true">{{ extension(asset) }}</i> }
+                    @if (picking()) { <em class="fm__tick" [class.on]="selectedIds().has(asset.id)" aria-hidden="true">{{ selectedIds().has(asset.id) ? '✓' : '' }}</em> }
+                    <span>{{ asset.name }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+            } @else {
             <ul class="fm__list">
               @for (asset of sorted(); track asset.id) {
                 <li class="fm__swipe" [class.fm__swipe--open]="swipe()?.id === asset.id && swipe()?.open">
@@ -147,6 +166,7 @@ const COLLECTIONS: readonly Collection[] = [
                 </li>
               }
             </ul>
+            }
             @if (hasMore()) { <button class="btn fm__more-btn" type="button" [disabled]="loadingMore()" (click)="loadMore()">{{ loadingMore() ? 'Laden…' : 'Meer laden' }}</button> }
           }
         }
@@ -275,17 +295,7 @@ const COLLECTIONS: readonly Collection[] = [
         }
         <p class="fx__rail-hint">Sleep bestanden of een map op een andere map om ze te verplaatsen. Uploads komen in de open map.</p>
 
-        <div class="fx__rail-head fx__rail-head--gap"><b>Op gebruik</b></div>
-        <nav class="fx__tree" aria-label="Bestanden op gebruik">
-          <button class="fx__node" type="button" [class.on]="folder() === null && !collection()" (click)="openFolder(null)" title="Alles plat, ongeacht de map">
-            <i aria-hidden="true">▦</i><span>Alle bestanden</span>
-          </button>
-          @for (item of collections; track item.key) {
-            <button class="fx__node" type="button" [class.on]="collection()?.key === item.key" (click)="openCollection(item)" [title]="item.hint">
-              <i aria-hidden="true">{{ item.icon }}</i><span>{{ item.label }}</span>
-            </button>
-          }
-        </nav>
+        <!-- The sections by use live in the workspace navigation on the left; the rail keeps to the folders. -->
       </aside>
 
       <!-- ============================ files -->
@@ -1252,10 +1262,43 @@ export class FilesPage implements OnDestroy {
   private requestId = 0;
   private dragDepth = 0;
 
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  /** True while this page writes the address bar itself, so the echo does not reload. */
+  private syncingUrl = false;
+
   constructor() {
     window.addEventListener('resize', this.onResize, { passive: true });
     void this.loadFolders();
+    /* The address bar is the source of truth for the section: the workspace
+       navigation links here with query parameters, and a reload keeps its place. */
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.applyQuery(params));
+  }
+
+  /** view: a collection key, 'all' for the flat list, nothing for the folders; kind and archief as filters. */
+  private applyQuery(params: ParamMap): void {
+    if (this.syncingUrl) return;
+    const view = params.get('view');
+    const kind = params.get('kind');
+    const collection = view ? COLLECTIONS.find((item) => item.key === view) ?? null : null;
+    this.collection.set(collection);
+    this.folder.set(collection ? null : view === 'all' ? null : this.folder() === null ? 'root' : this.folder());
+    this.kind.set(kind === 'IMAGE' || kind === 'DOCUMENT' ? kind : collection?.filters.kind ?? null);
+    this.archived.set(params.get('archief') === '1');
     void this.reload();
+  }
+
+  /** Writes the section into the address bar without a reload, so the navigation follows. */
+  private syncUrl(): void {
+    const queryParams: Record<string, string> = {};
+    const collection = this.collection();
+    if (collection) queryParams['view'] = collection.key;
+    else if (this.folder() === null) queryParams['view'] = 'all';
+    if (this.kind()) queryParams['kind'] = this.kind()!;
+    if (this.archived()) queryParams['archief'] = '1';
+    this.syncingUrl = true;
+    void this.router.navigate([], { relativeTo: this.route, queryParams, replaceUrl: true })
+      .finally(() => { this.syncingUrl = false; });
   }
 
   ngOnDestroy(): void {
@@ -1275,6 +1318,7 @@ export class FilesPage implements OnDestroy {
   openFolder(folder: number | 'root' | null): void {
     this.collection.set(null);
     this.folder.set(folder);
+    this.syncUrl();
     void this.reload();
   }
 
@@ -1282,6 +1326,7 @@ export class FilesPage implements OnDestroy {
     this.folder.set(null);
     this.collection.set(collection);
     if (collection.filters.kind) this.kind.set(collection.filters.kind);
+    this.syncUrl();
     void this.reload();
   }
 
@@ -1498,8 +1543,8 @@ export class FilesPage implements OnDestroy {
     this.searchTimer = setTimeout(() => void this.reload(), 240);
   }
 
-  setKind(kind: MediaKind | null): void { this.kind.set(kind); void this.reload(); }
-  setArchived(on: boolean): void { this.archived.set(on); void this.reload(); }
+  setKind(kind: MediaKind | null): void { this.kind.set(kind); this.syncUrl(); void this.reload(); }
+  setArchived(on: boolean): void { this.archived.set(on); this.syncUrl(); void this.reload(); }
 
   /* ---- uploads land in the open folder */
   /* ---- the upload tray: everything you pick lands in one list first */

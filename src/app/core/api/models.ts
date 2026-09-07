@@ -1243,6 +1243,8 @@ export interface SalesOrder {
   partnerSharePct?: number | null;
   /** The auction settlement invoice of a partner deal: financed cost and profit share, per product. */
   partnerSettlement?: boolean;
+  /** Where the sale comes from: DIRECT, WEBSITE, TICA, PARTNER, FAIR or an own code; null reads as direct. */
+  salesChannel?: string | null;
   invoiceDueDate?: string | null;
   paidAt?: string | null;
   sourceQuoteId?: number | null;
@@ -1586,4 +1588,24 @@ export interface AuctionSettlementRequest {
   profitSharePct: number;
   lines: AuctionLine[];
   note: string | null;
+}
+
+/** A cost the company made outside purchasing, booked by date and category, excluding VAT. */
+export interface CompanyCost {
+  id: number | null;
+  date: string;
+  category: string;
+  description: string;
+  party: string | null;
+  amountExclEur: number;
+  vatPct: number | null;
+  reference: string | null;
+  paidOn: string | null;
+  salesChannel: string | null;
+  notes: string | null;
+  createdAt?: string | null;
+  /** Server-computed: the VAT on top and the total. */
+  vatEur?: number;
+  amountInclEur?: number;
+  paid?: boolean;
 }

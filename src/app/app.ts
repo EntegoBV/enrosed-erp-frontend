@@ -10,6 +10,8 @@ import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
 import { Icon } from './shared/icon';
 import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
+import { FilesAdminNav } from './features/files/files-admin-nav';
+import { DesktopViewport } from './core/platform/desktop-viewport';
 import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
 
@@ -23,11 +25,13 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav],
   template: `
-    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()">
+    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace() || filesWorkspace()">
       @if (websiteWorkspace()) {
         <app-website-admin-nav />
+      } @else if (filesWorkspace()) {
+        <app-files-admin-nav />
       } @else if (!bare()) {
         <aside class="sidebar" [class.sidebar--rail]="railed()">
           <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
@@ -163,6 +167,9 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               <a class="sidebar__link" routerLink="/analyses/purchasing" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkoop
               </a>
+              <a class="sidebar__link" routerLink="/analyses/result" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Resultaat
+              </a>
               <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
               </a>
@@ -183,6 +190,9 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
             </button>
             <div class="sidebar__sub" id="sidebar-bedrijf"
                  [class.sidebar__sub--closed]="!groupOpen('bedrijf')">
+              <a class="sidebar__link sidebar__link--wide" routerLink="/costs" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Kosten
+              </a>
               <a class="sidebar__link sidebar__link--wide" routerLink="/activity" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="activity" [size]="18" /> Logboek
               </a>
@@ -361,6 +371,9 @@ export class App {
 
   /** Website editing is a separate desktop workspace, not an ERP submenu. */
   readonly websiteWorkspace = computed(() => this.url().startsWith('/website'));
+  /** The library gets its own workspace navigation on a desktop; a phone keeps the tab bar. */
+  private readonly desktopViewport = inject(DesktopViewport);
+  readonly filesWorkspace = computed(() => this.url().startsWith('/files') && this.desktopViewport.active());
 
   readonly salesRoute = computed(() => {
     const url = this.url();

@@ -217,6 +217,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/settings/country-list').then((m) => m.CountryList),
   },
   {
+    path: 'costs',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/finance/costs-page').then((m) => m.CostsPage),
+  },
+  {
     path: 'stock',
     canActivate: [authGuard],
     loadComponent: () => import('./features/products/stock-page').then((m) => m.StockPage),

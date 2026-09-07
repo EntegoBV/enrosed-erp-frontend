@@ -8,9 +8,10 @@ import {
   PurchaseOrderView,
   QuoteRevision,
   SalesOrderView,
-  Supplier,
+  Supplier, CompanyCost,
 } from '../../core/api/models';
-import { partnerFinancingAnalysis } from '../analyses/analysis-metrics';
+import { partnerFinancingAnalysis, resultAnalysis } from '../analyses/analysis-metrics';
+import { FinanceApi } from '../../core/api/finance-api';
 import { PlannerStore } from '../../core/api/planner-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -27,6 +28,10 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
  * and what is planned next. On a wide screen the figures sit beside the work
  * so everything is on one screen; detailed analysis lives under /analyses.
  */
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
+const YEAR_START = TODAY_ISO.slice(0, 4) + '-01-01';
+const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
+
 @Component({
   selector: 'app-dashboard-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -265,6 +270,19 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
             <span class="home-kpi__chev" aria-hidden="true">›</span>
           </a>
 
+          <a class="home-kpi" routerLink="/analyses/result" [class.home-kpi--dark]="yearResult().resultEur < 0">
+            <span class="home-kpi__icon"><app-icon name="analytics" [size]="17" /></span>
+            <span class="home-kpi__label">Resultaat dit jaar</span>
+            @if (salesReady() && costsReady()) {
+              <strong>{{ yearResult().resultEur | eur: 0 }}</strong>
+              <small>marge {{ yearResult().marginEur | eur: 0 }} · eigen kosten {{ yearResult().costsEur | eur: 0 }}</small>
+              <em>{{ monthCosts() | eur: 0 }} kosten deze maand</em>
+            } @else {
+              <strong>—</strong><small>Nog niet beschikbaar</small>
+            }
+            <span class="home-kpi__chev" aria-hidden="true">›</span>
+          </a>
+
           <a class="home-market-link" routerLink="/analyses/market">
             <span class="home-market-link__icon"><app-icon name="analytics" [size]="17" /></span>
             <span><b>Valuta en containermarkt</b><small>Koersen, containertarieven en historie bij Analyses.</small></span>
@@ -417,6 +435,7 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
 })
 export class DashboardHome {
   private readonly sales = inject(SalesApi);
+  private readonly finance = inject(FinanceApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
   private readonly planner = inject(PlannerStore);
@@ -465,6 +484,10 @@ export class DashboardHome {
   readonly purchaseAttentionOrders = computed(() => this.purchases()
     .filter((row) => (row.attention?.length ?? 0) > 0));
   readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders()));
+  readonly costs = signal<CompanyCost[]>([]);
+  readonly costsReady = signal(false);
+  readonly yearResult = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), { from: YEAR_START, to: TODAY_ISO }));
+  readonly monthCosts = computed(() => resultAnalysis([], [], this.costs(), { from: MONTH_START_ISO, to: TODAY_ISO }).costsEur);
   readonly zeroStockCount = computed(() => this.products().filter((product) =>
     product.active && !product.demo && product.inventoryKnown === true && product.stockQuantity <= 0).length);
   readonly workGroupCount = computed(() =>
@@ -584,7 +607,7 @@ export class DashboardHome {
     else this.loading.set(true);
 
     try {
-      const [sales, purchases, revisions, products, families, suppliers, website] = await Promise.allSettled([
+      const [sales, purchases, revisions, products, families, suppliers, website, costs] = await Promise.allSettled([
         this.sales.orders(),
         this.sourcing.purchaseOrders(),
         this.sales.pendingRevisions(),
@@ -592,6 +615,7 @@ export class DashboardHome {
         this.catalog.productFamilies(),
         this.sourcing.suppliers(),
         this.analytics.websiteReport(7),
+        this.finance.costs(),
       ] as const);
 
       const warnings: string[] = [];
@@ -627,6 +651,7 @@ export class DashboardHome {
       }
       if (suppliers.status === 'fulfilled') this.suppliers.set(suppliers.value);
       if (website.status === 'fulfilled') this.website.set(website.value);
+      if (costs.status === 'fulfilled') { this.costs.set(costs.value); this.costsReady.set(true); }
 
       const currentProducts = products.status === 'fulfilled' ? products.value : this.products();
       if (families.status === 'fulfilled') {

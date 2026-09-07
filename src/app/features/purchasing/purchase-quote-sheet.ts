@@ -384,6 +384,7 @@ export class PurchaseQuoteSheet {
           unitPriceEur: atCost ? this.unitPrice(line) : null, manualDiscountPct: null, deliveryWeek: null,
         })),
         extraLines,
+        salesChannel: partnerDeal ? 'PARTNER' : created.order.salesChannel ?? null,
         partnerPurchaseOrderId: partnerDeal ? this.order().id : null,
         partnerSharePct: partnerDeal ? this.sharePct() : null,
         internalNotes: partnerDeal

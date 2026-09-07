@@ -13,7 +13,7 @@ import {
   ReceiptVarianceReport,
   ReceiptVarianceRow,
   SalesOrderView,
-  Supplier,
+  Supplier, CompanyCost,
 } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -21,19 +21,23 @@ import { PageHeader } from '../../shared/page-header';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
-import { inventoryAnalysis, partnerFinancingAnalysis, salesAnalysis } from './analysis-metrics';
+import { inventoryAnalysis, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
+import { FinanceApi } from '../../core/api/finance-api';
+import { channelLabel } from '../sales/sales-channels';
+import { categoryLabel } from '../finance/cost-categories';
 import { MarketAnalysis } from './market-analysis';
 import { WebsiteAnalytics } from './website-analytics';
 import { averageLeadDays, inDateRange, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 
-type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'market' | 'website';
+type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
 const ANALYSIS_TABS: ReadonlyArray<{ id: AnalysisSection; label: string }> = [
   { id: 'overview', label: 'Overzicht' },
   { id: 'sales', label: 'Verkoop' },
   { id: 'inventory', label: 'Voorraad' },
   { id: 'purchasing', label: 'Inkoop' },
+  { id: 'result', label: 'Resultaat' },
   { id: 'market', label: 'Markt & container' },
   { id: 'website', label: 'Website' },
 ];
@@ -308,6 +312,18 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
           </div>
         </article>
 
+        <article class="card analysis-list channel-card">
+          <header><div><span>Kanalen</span><h3>Omzet per verkoopkanaal</h3></div><small>uitgegeven facturen · excl. btw</small></header>
+          @for (channel of salesMetrics().channels; track channel.channel) {
+            <div class="channel-row">
+              <div><b>{{ channelLabel(channel.channel) }}</b><small>{{ channel.invoiceCount }} factuur/facturen · marge {{ channel.marginEur | eur: 0 }}</small></div>
+              <span class="channel-row__bar"><i [style.width.%]="channel.sharePct"></i></span>
+              <strong>{{ channel.revenueExclEur | eur: 0 }}</strong>
+              <small>{{ channel.sharePct | pct: 0 }}</small>
+            </div>
+          } @empty { <p class="list-empty">Geen uitgegeven facturen in deze periode.</p> }
+        </article>
+
         <div class="analysis-columns analysis-columns--three">
           <article class="card analysis-list">
             <header><div><span>Landen</span><h3>Omzet per land</h3></div><small>uitgegeven facturen · incl. btw</small></header>
@@ -460,6 +476,86 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
               <small>{{ row.sharePct | pct: 1 }}</small>
             </a>
           } @empty { <p class="list-empty">Nog geen actuele voorraad met kostwaarde.</p> }
+        </article>
+      </section>
+      }
+
+      @if (section() === 'result') {
+      <section class="analysis-section" aria-labelledby="result-analysis-title">
+        <header class="section-copy section-copy--split">
+          <div>
+            <span class="eyebrow">Resultaat</span>
+            <h2 id="result-analysis-title">Wat we overhouden</h2>
+            <p>De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten. Verkoop telt op de factuurdatum, kosten op hun datum; alles excl. btw.</p>
+          </div>
+          <div class="sales-presets" role="group" aria-label="Periode">
+            @for (preset of salesPresets; track preset.id) {
+              <button type="button" [class.on]="salesFromDate() === preset.from && salesToDate() === preset.to" (click)="applySalesPreset(preset.id)">{{ preset.label }}</button>
+            }
+          </div>
+        </header>
+        <div class="analysis-kpis analysis-kpis--flow">
+          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Omzet</span><strong>{{ result().revenueEur | eur: 0 }}</strong><p>{{ result().invoiceCount }} uitgegeven factuur/facturen · excl. btw</p></article>
+          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Marge op goederen</span><strong>{{ result().marginEur | eur: 0 }}</strong><p>{{ result().marginPct === null ? 'kost van de goederen ' + (result().goodsCostEur | eur: 0) : (result().marginPct | pct: 1) + ' · goederen kostten ' + (result().goodsCostEur | eur: 0) }}@if (result().missingCostLines) { · {{ result().missingCostLines }} regel(s) zonder kost }</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Eigen kosten</span><strong>{{ result().costsEur | eur: 0 }}</strong><p>@if (result().unpaidCostsEur) { {{ result().unpaidCostsEur | eur: 0 }} nog te betalen incl. btw } @else { alles betaald }</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="result().resultEur < 0"><span class="metric-card__label">Resultaat</span><strong>{{ result().resultEur | eur: 0 }}</strong><p>marge min eigen kosten</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Ingekocht</span><strong>{{ result().purchasedEur | eur: 0 }}</strong><p>{{ result().receivedContainers }} container(s) ontvangen, gelande kost incl. aparte kosten</p></article>
+        </div>
+        <div class="analysis-columns">
+          <article class="card analysis-list scorecard-card">
+            <header><div><span>Kanalen</span><h3>Per verkoopkanaal</h3></div><small>omzet, marge en de kosten die erbij horen</small></header>
+            @if (result().byChannel.length) {
+              <div class="scorecard-scroll">
+                <table class="scorecard">
+                  <thead><tr><th>Kanaal</th><th>Facturen</th><th>Omzet</th><th>Marge</th><th>Kosten</th><th>Resultaat</th></tr></thead>
+                  <tbody>
+                    @for (row of result().byChannel; track row.channel) {
+                      <tr>
+                        <td>{{ channelLabel(row.channel) }}</td>
+                        <td>{{ row.invoiceCount }}</td>
+                        <td>{{ row.revenueEur | eur: 0 }}</td>
+                        <td>{{ row.marginEur | eur: 0 }}</td>
+                        <td>{{ row.costsEur ? (row.costsEur | eur: 0) : '—' }}</td>
+                        <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else { <p class="list-empty">Nog geen facturen of kanaalkosten in deze periode.</p> }
+          </article>
+          <article class="card analysis-list">
+            <header><div><span>Kosten</span><h3>Per categorie</h3></div><small><a routerLink="/costs">alle kosten ›</a></small></header>
+            @for (row of result().byCategory; track row.category) {
+              <div class="channel-row">
+                <div><b>{{ categoryLabel(row.category) }}</b></div>
+                <span class="channel-row__bar"><i [style.width.%]="row.sharePct"></i></span>
+                <strong>{{ row.amountEur | eur: 0 }}</strong>
+                <small>{{ row.sharePct | pct: 0 }}</small>
+              </div>
+            } @empty { <p class="list-empty">Nog geen kosten geboekt in deze periode.</p> }
+          </article>
+        </div>
+        <article class="card analysis-list scorecard-card">
+          <header><div><span>Verloop</span><h3>Per maand</h3></div><small>oudste maand eerst</small></header>
+          @if (result().monthly.length) {
+            <div class="scorecard-scroll">
+              <table class="scorecard">
+                <thead><tr><th>Maand</th><th>Omzet</th><th>Marge</th><th>Eigen kosten</th><th>Resultaat</th></tr></thead>
+                <tbody>
+                  @for (row of result().monthly; track row.month) {
+                    <tr>
+                      <td>{{ row.month }}</td>
+                      <td>{{ row.revenueEur | eur: 0 }}</td>
+                      <td>{{ row.marginEur | eur: 0 }}</td>
+                      <td>{{ row.costsEur | eur: 0 }}</td>
+                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else { <p class="list-empty">Nog niets in deze periode.</p> }
         </article>
       </section>
       }
@@ -724,12 +820,14 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
     .scorecard-card{margin-top:10px}.scorecard-scroll{overflow-x:auto}.scorecard{width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px}.scorecard th{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.05em;text-align:left;text-transform:uppercase}.scorecard td{padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.scorecard tr:last-child td{border-bottom:0}.scorecard td a{color:inherit;font-weight:650;text-decoration:none}.scorecard td a:hover{color:var(--rose-dark);text-decoration:underline}.scorecard__warn{color:var(--warn);font-weight:700}
     @keyframes pulse{50%{opacity:.48}}
     .section-copy--sub{margin-top:8px}.scorecard .muted{color:var(--muted);font-size:11px}
+    .channel-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto 44px;align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}.channel-row:first-of-type{border-top:0}.channel-row b{display:block}.channel-row small{color:var(--muted);font-size:11px}.channel-row__bar{display:block;height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden}.channel-row__bar i{display:block;height:100%;border-radius:999px;background:var(--rose)}.channel-row strong{font-variant-numeric:tabular-nums}.channel-row>small:last-child{text-align:right}
   `,
 })
 export class AnalysesPage {
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
+  private readonly finance = inject(FinanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
 
@@ -738,6 +836,7 @@ export class AnalysesPage {
     analysisSection(params.get('section')))), { initialValue: 'overview' as AnalysisSection });
   readonly sectionSubtitle = computed(() => ({
     overview: 'De belangrijkste signalen op één plek',
+    result: 'Wat we overhouden: marge op de goederen min onze eigen kosten',
     sales: 'Pijplijn, conversie en facturen',
     inventory: 'Kapitaal, dekking en aankomende voorraad',
     purchasing: 'Ontvangstkwaliteit en inkoopimpact',
@@ -756,6 +855,7 @@ export class AnalysesPage {
   readonly products = signal<Product[]>([]);
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly customers = signal<Customer[]>([]);
+  readonly costs = signal<CompanyCost[]>([]);
   readonly expectedStock = signal<ExpectedStock[]>([]);
 
   readonly fromDate = signal(CURRENT_YEAR_START);
@@ -837,6 +937,11 @@ export class AnalysesPage {
     topLimit: 8,
   }));
   readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers()));
+  readonly result = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
+    from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined,
+  }));
+  readonly channelLabel = channelLabel;
+  readonly categoryLabel = categoryLabel;
 
   readonly inventoryMetrics = computed(() => inventoryAnalysis(
     this.products(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: TODAY }));
@@ -934,7 +1039,7 @@ export class AnalysesPage {
     this.loading.set(true);
     this.receiptError.set('');
     try {
-      const [report, purchases, suppliers, products, sales, customers, expectedStock] = await Promise.allSettled([
+      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs] = await Promise.allSettled([
         this.sourcing.receiptVariances(this.filters()),
         this.sourcing.purchaseOrders(),
         this.sourcing.suppliers(),
@@ -942,6 +1047,7 @@ export class AnalysesPage {
         this.sales.orders(),
         this.sales.customers(),
         this.sourcing.expectedStock(),
+        this.finance.costs(),
       ] as const);
       const warnings: string[] = [];
       if (report.status === 'fulfilled') this.acceptReport(report.value);
@@ -952,6 +1058,7 @@ export class AnalysesPage {
       if (sales.status === 'fulfilled') this.salesOrders.set(sales.value); else warnings.push('verkoop');
       if (customers.status === 'fulfilled') this.customers.set(customers.value); else warnings.push('klanten');
       if (expectedStock.status === 'fulfilled') this.expectedStock.set(expectedStock.value); else warnings.push('verwachte voorraad');
+      if (costs.status === 'fulfilled') this.costs.set(costs.value); else warnings.push('kosten');
       this.dataWarnings.set(warnings);
     } finally {
       this.loading.set(false);

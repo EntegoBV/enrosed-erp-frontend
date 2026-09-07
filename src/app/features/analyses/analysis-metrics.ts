@@ -4,6 +4,7 @@ import type {
   Product,
   SalesOrderView,
   PurchaseOrderView,
+  CompanyCost,
 } from '../../core/api/models';
 
 export interface AnalysisOptions {
@@ -67,6 +68,17 @@ export interface SalesMonthPoint {
   invoicesIssued: number;
 }
 
+export interface SalesChannelMetric {
+  channel: string;
+  invoiceCount: number;
+  /** Excluding VAT: the revenue as the result analysis counts it. */
+  revenueExclEur: number;
+  claimInclEur: number;
+  goodsValueEur: number;
+  marginEur: number;
+  sharePct: number;
+}
+
 export interface SalesCountryMetric {
   countryCode: string | null;
   orderCount: number;
@@ -118,6 +130,8 @@ export interface SalesAnalysis {
   topCustomers: SalesCustomerMetric[];
   topProducts: SalesProductMetric[];
   topCountries: SalesCountryMetric[];
+  /** Issued invoices per sales channel, biggest first: direct, website, TICA, partner, fair. */
+  channels: SalesChannelMetric[];
   /** Oldest month first, one point per month of the period; empty without bounds and orders. */
   monthly: SalesMonthPoint[];
   attentionOrders: SalesAttentionOrder[];
@@ -345,9 +359,33 @@ export function salesAnalysis(
     topCustomers: topCustomers(issuedInvoices, customerNames, limit),
     topProducts: topProducts(issuedInvoices, limit),
     topCountries: topCountries(issuedInvoices, limit),
+    channels: channelMetrics(issuedInvoices),
     monthly: monthlyPoints(quotes, issuedInvoices, acceptedRows, from, to),
     attentionOrders: attentionOrders(selected, customerNames, today),
   };
+}
+
+/** Where a document sold: the stored channel, direct when none was chosen. */
+function channelOf(order: SalesOrderView['order']): string {
+  return (order.salesChannel ?? '').trim().toUpperCase() || 'DIRECT';
+}
+
+function channelMetrics(rows: readonly SalesOrderView[]): SalesChannelMetric[] {
+  const buckets = new Map<string, SalesChannelMetric>();
+  for (const row of rows) {
+    const channel = channelOf(row.order);
+    const bucket = buckets.get(channel) ?? { channel, invoiceCount: 0, revenueExclEur: 0, claimInclEur: 0, goodsValueEur: 0, marginEur: 0, sharePct: 0 };
+    bucket.invoiceCount += 1;
+    bucket.revenueExclEur = round2(bucket.revenueExclEur + finite(row.priced.totals.total));
+    bucket.claimInclEur = round2(bucket.claimInclEur + finite(row.priced.totals.totalInclVat));
+    bucket.goodsValueEur = round2(bucket.goodsValueEur + finite(row.priced.totals.goodsTotal));
+    bucket.marginEur = round2(bucket.marginEur + finite(row.priced.totals.marginEur));
+    buckets.set(channel, bucket);
+  }
+  const total = [...buckets.values()].reduce((sum, bucket) => sum + bucket.revenueExclEur, 0);
+  return [...buckets.values()]
+    .map((bucket) => ({ ...bucket, sharePct: total > 0 ? round2(bucket.revenueExclEur / total * 100) : 0 }))
+    .sort((left, right) => right.revenueExclEur - left.revenueExclEur || left.channel.localeCompare(right.channel));
 }
 
 function topCountries(rows: readonly SalesOrderView[], limit: number): SalesCountryMetric[] {
@@ -1036,4 +1074,149 @@ function compareName(left: string, right: string): number {
 
 function severityRank(severity: SalesAttentionOrder['severity']): number {
   return severity === 'danger' ? 0 : severity === 'warning' ? 1 : 2;
+}
+
+/* ------------------------------------------------------------------ result */
+
+export interface ResultChannelRow {
+  channel: string;
+  invoiceCount: number;
+  revenueEur: number;
+  goodsCostEur: number;
+  marginEur: number;
+  /** The company costs booked on this channel, such as the TICA stand. */
+  costsEur: number;
+  resultEur: number;
+}
+
+export interface ResultMonthRow {
+  month: string;
+  revenueEur: number;
+  marginEur: number;
+  costsEur: number;
+  resultEur: number;
+}
+
+export interface ResultAnalysis {
+  period: { from: string | null; to: string | null };
+  invoiceCount: number;
+  /** Issued invoices, excluding VAT. */
+  revenueEur: number;
+  /** The landed cost of the goods on those invoices. */
+  goodsCostEur: number;
+  marginEur: number;
+  marginPct: number | null;
+  /** The company's own costs in the period, excluding VAT. */
+  costsEur: number;
+  unpaidCostsEur: number;
+  /** Margin on the goods minus the company costs. */
+  resultEur: number;
+  /** What the containers received in the period cost us landed: money out, not yet a cost of goods sold. */
+  purchasedEur: number;
+  receivedContainers: number;
+  byChannel: ResultChannelRow[];
+  byCategory: { category: string; amountEur: number; sharePct: number }[];
+  /** Oldest month first. */
+  monthly: ResultMonthRow[];
+  /** Invoice lines whose product has no landed cost: the margin is incomplete by that much. */
+  missingCostLines: number;
+}
+
+const DEAD_STATUSES = new Set<SalesOrderView['order']['status']>(['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
+
+/**
+ * What the company keeps: the margin on the goods invoiced in the period
+ * minus what it spent on itself, per channel and per month. Sales are
+ * counted when they were invoiced, costs when they were made.
+ */
+export function resultAnalysis(
+  sales: readonly SalesOrderView[],
+  purchases: readonly PurchaseOrderView[],
+  costs: readonly CompanyCost[],
+  options: { from?: string | null; to?: string | null } = {},
+): ResultAnalysis {
+  const from = isoDayOrNull(options.from);
+  const to = isoDayOrNull(options.to);
+  const inPeriod = (day: string | null | undefined): boolean =>
+    !!day && (!from || day >= from) && (!to || day <= to);
+  const invoices = sales.filter((row) => row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT'
+    && !DEAD_STATUSES.has(row.order.status) && inPeriod(row.order.orderDate));
+  const periodCosts = costs.filter((cost) => inPeriod(cost.date));
+  const received = purchases.filter((row) => row.order.status === 'ONTVANGEN' && inPeriod(row.order.receivedOn ?? null));
+
+  const revenueEur = round2(invoices.reduce((sum, row) => sum + finite(row.priced.totals.total), 0));
+  const marginEur = round2(invoices.reduce((sum, row) => sum + finite(row.priced.totals.marginEur), 0));
+  const goodsCostEur = round2(invoices.reduce((sum, row) => sum + finite(row.priced.totals.costTotal), 0));
+  const costsEur = round2(periodCosts.reduce((sum, cost) => sum + finiteNonNegative(cost.amountExclEur), 0));
+  const unpaidCostsEur = round2(periodCosts.filter((cost) => !cost.paidOn)
+    .reduce((sum, cost) => sum + finiteNonNegative(cost.amountExclEur) * (1 + finiteNonNegative(cost.vatPct) / 100), 0));
+  const goodsTotal = invoices.reduce((sum, row) => sum + finite(row.priced.totals.goodsTotal), 0);
+
+  const channels = new Map<string, ResultChannelRow>();
+  const channelRow = (channel: string): ResultChannelRow => {
+    const row = channels.get(channel) ?? { channel, invoiceCount: 0, revenueEur: 0, goodsCostEur: 0, marginEur: 0, costsEur: 0, resultEur: 0 };
+    channels.set(channel, row);
+    return row;
+  };
+  for (const invoice of invoices) {
+    const row = channelRow(channelOf(invoice.order));
+    row.invoiceCount += 1;
+    row.revenueEur = round2(row.revenueEur + finite(invoice.priced.totals.total));
+    row.goodsCostEur = round2(row.goodsCostEur + finite(invoice.priced.totals.costTotal));
+    row.marginEur = round2(row.marginEur + finite(invoice.priced.totals.marginEur));
+  }
+  for (const cost of periodCosts) {
+    if (!cost.salesChannel) continue;
+    const row = channelRow(cost.salesChannel.trim().toUpperCase());
+    row.costsEur = round2(row.costsEur + finiteNonNegative(cost.amountExclEur));
+  }
+  const byChannel = [...channels.values()]
+    .map((row) => ({ ...row, resultEur: round2(row.marginEur - row.costsEur) }))
+    .sort((left, right) => right.revenueEur - left.revenueEur || left.channel.localeCompare(right.channel));
+
+  const categories = new Map<string, number>();
+  for (const cost of periodCosts) {
+    const key = (cost.category ?? '').trim().toUpperCase() || 'ANDERE';
+    categories.set(key, round2((categories.get(key) ?? 0) + finiteNonNegative(cost.amountExclEur)));
+  }
+  const byCategory = [...categories.entries()]
+    .map(([category, amountEur]) => ({ category, amountEur, sharePct: costsEur > 0 ? round2(amountEur / costsEur * 100) : 0 }))
+    .sort((left, right) => right.amountEur - left.amountEur || left.category.localeCompare(right.category));
+
+  const months = new Map<string, ResultMonthRow>();
+  const monthRow = (month: string): ResultMonthRow => {
+    const row = months.get(month) ?? { month, revenueEur: 0, marginEur: 0, costsEur: 0, resultEur: 0 };
+    months.set(month, row);
+    return row;
+  };
+  for (const invoice of invoices) {
+    const row = monthRow(invoice.order.orderDate.slice(0, 7));
+    row.revenueEur = round2(row.revenueEur + finite(invoice.priced.totals.total));
+    row.marginEur = round2(row.marginEur + finite(invoice.priced.totals.marginEur));
+  }
+  for (const cost of periodCosts) {
+    const row = monthRow(cost.date.slice(0, 7));
+    row.costsEur = round2(row.costsEur + finiteNonNegative(cost.amountExclEur));
+  }
+  const monthly = [...months.values()]
+    .map((row) => ({ ...row, resultEur: round2(row.marginEur - row.costsEur) }))
+    .sort((left, right) => left.month.localeCompare(right.month));
+
+  return {
+    period: { from, to },
+    invoiceCount: invoices.length,
+    revenueEur,
+    goodsCostEur,
+    marginEur,
+    marginPct: goodsTotal > 0 ? round2(marginEur / goodsTotal * 100) : null,
+    costsEur,
+    unpaidCostsEur: round2(unpaidCostsEur),
+    resultEur: round2(marginEur - costsEur),
+    purchasedEur: round2(received.reduce((sum, row) => sum + finiteNonNegative(row.costing?.totals?.totalWithSeparateCostsEur ?? row.costing?.totals?.totalEur), 0)),
+    receivedContainers: received.length,
+    byChannel,
+    byCategory,
+    monthly,
+    missingCostLines: invoices.reduce((sum, row) => sum + (row.priced.validation?.productsWithoutCost?.length ?? 0), 0),
+  };
 }

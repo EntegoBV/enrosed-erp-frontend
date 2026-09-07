@@ -3796,3 +3796,6 @@ a.desk-kpi{text-decoration:none}
 .switch-row--on .switch-row__track { background: var(--ok); }
 .switch-row--on .switch-row__track i { transform: translateX(18px); }
 .switch-row__input:focus-visible + .switch-row__track { outline: 2px solid var(--rose); outline-offset: 2px; }
+
+/* Documenten & media on a phone: the tile view of the library. */
+.fm__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px;padding:0;list-style:none}.fm__tile{position:relative;display:grid;gap:4px;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left}.fm__tile img,.fm__tile>i{display:grid;place-items:center;aspect-ratio:1;width:100%;border-radius:12px;background:var(--surface-2);color:var(--muted);font-size:12px;font-style:normal;font-weight:800;object-fit:cover}.fm__tile--picked img,.fm__tile--picked>i{outline:3px solid var(--rose);outline-offset:-3px}.fm__tile>span{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.fm__tile .fm__tick{position:absolute;top:6px;left:6px}.fm__kinds--view{margin-left:auto}
