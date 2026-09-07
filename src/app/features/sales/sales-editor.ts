@@ -1522,18 +1522,25 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
   `, `
 
     .workflow-layout { position:relative }
-    .workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;padding:5px;border:1px solid var(--line);border-radius:16px;background:rgb(255 255 255/.92);box-shadow:0 5px 18px rgb(26 22 20/.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px) }
-    .workflow-nav button { min-width:0;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 2px;border:0;border-radius:11px;background:transparent;color:var(--muted);font-size:10px;font-weight:670;cursor:pointer }
-    .workflow-nav button:active { background:var(--surface-2) }
+    /* The stepper: one glass pill with equal segments, the current step a
+       raised white thumb, the marks and labels centred on one axis. It
+       owns every property the generic section rail would otherwise lend
+       it (margins, hairlines, scrolling), so it sits flush in the column. */
+    .workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;margin:12px 0;padding:4px;overflow:visible;border:1px solid rgb(255 255 255/.7);border-radius:20px;background:color-mix(in srgb,var(--surface) 76%,transparent);box-shadow:0 10px 28px rgb(26 22 20/.08),inset 0 0 0 1px rgb(26 22 20/.05);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);mask-image:none;-webkit-mask-image:none }
+    .workflow-nav button { position:static;min-width:0;min-height:54px;display:flex;flex:1 1 0;flex-direction:column;align-items:center;justify-content:center;gap:4px;margin:0;padding:6px 2px 5px;border:0;border-radius:16px;background:transparent;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.01em;line-height:1;white-space:nowrap;box-shadow:none;cursor:pointer;transition:background .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease }
+    .workflow-nav button:hover { border-color:transparent }
+    .workflow-nav button:active { transform:scale(.97) }
     @media (min-width:680px) { .workflow-nav { grid-template-columns:repeat(5,minmax(0,1fr)) } }
-    .workflow-nav button>.workflow-nav__mark { width:19px;height:19px;display:grid;flex:none;place-items:center;border:1px solid var(--line-strong);border-radius:50%;color:var(--ink-2) }
-    .workflow-nav__copy { min-width:0;display:grid;gap:0;text-align:inherit;line-height:1.1 }
-    .workflow-nav__copy b { overflow:hidden;font-size:inherit;font-weight:720;text-overflow:ellipsis;white-space:nowrap }
-    .workflow-nav__copy small { display:none;overflow:hidden;color:var(--muted);font-size:9px;font-weight:540;text-overflow:ellipsis;white-space:nowrap }
-    .workflow-nav .workflow-nav__active { background:var(--rose-soft);color:var(--rose-dark) }
-    .workflow-nav .workflow-nav__active>.workflow-nav__mark { border-color:var(--rose-line);background:var(--surface);color:var(--rose-dark) }
+    .workflow-nav button>.workflow-nav__mark { width:22px;height:22px;display:grid;flex:none;place-items:center;margin:0;border:1.5px solid var(--line-strong);border-radius:50%;background:transparent;color:var(--muted);font-size:10px;font-weight:800;line-height:1 }
+    .workflow-nav__copy { min-width:0;display:grid;gap:0;justify-items:center;text-align:center;line-height:1 }
+    .workflow-nav__copy b { overflow:hidden;font-size:inherit;font-weight:700;line-height:1;text-overflow:ellipsis;white-space:nowrap }
+    .workflow-nav__copy small { display:none }
+    .workflow-nav .workflow-nav__active { background:var(--surface);color:var(--rose-dark);box-shadow:0 2px 8px rgb(26 22 20/.14),0 0 0 1px rgb(26 22 20/.05) }
+    .workflow-nav .workflow-nav__active>.workflow-nav__mark { border-color:var(--rose);background:var(--rose);color:#fff }
     .workflow-nav .erp-workspace__section-link--complete>.workflow-nav__mark { border-color:var(--ok);background:var(--ok);color:#fff }
+    .workflow-nav .erp-workspace__section-link--complete { color:var(--ink-2) }
     .workflow-nav .erp-workspace__section-link--attention>.workflow-nav__mark { border-color:var(--warn);background:var(--warn-soft);color:var(--warn) }
+    @media (prefers-reduced-motion:reduce) { .workflow-nav button { transition:none } .workflow-nav button:active { transform:none } }
     .workflow-content { min-width:0;margin-top:0 }
     .workflow-content>*+* { margin-top:0 }
 
