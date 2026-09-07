@@ -968,7 +968,9 @@ interface JourneyStep {
     .c-qty b,.c-price>b,.c-disc>b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
-    .desk-group td{background:var(--surface-2)}.desk-group .c-money,.desk-group .c-qty b{font-weight:750}
+    .desk-group td{background:var(--surface-2);border-top:2px solid var(--line-strong)}.desk-group .c-money,.desk-group .c-qty b{font-weight:750}
+    .desk-group .desk-product__copy strong{font-size:14px}.desk-group .desk-product__copy small::before{content:'REEKS';display:inline-block;margin-right:6px;padding:1px 6px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:9px;font-weight:800;letter-spacing:.06em}
+    .desk-row--variant td.c-product{box-shadow:inset 4px 0 0 var(--rose-line)}
     .desk-row--variant td.c-product{padding-left:34px}.desk-row--variant .desk-product__photo{width:36px;height:36px}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
     .desk-product{display:flex;align-items:center;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__copy{display:grid;min-width:0;line-height:1.25}
@@ -998,11 +1000,15 @@ interface JourneyStep {
       .desk-table tbody,.desk-table tfoot{display:block}
       .desk-table tr.desk-section__row{display:block}.desk-section__row th{display:block;padding:12px 14px 4px}
       .desk-table tr.desk-row,.desk-table tr.desk-group{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:'product product product' 'qty price disc' 'net profit delivery';gap:8px 10px;padding:12px 14px;border-bottom:1px solid var(--line)}
-      .desk-table tr.desk-group{grid-template-areas:'product product product' 'qty net net'}
+      .desk-table tr.desk-group{grid-template-areas:'product product product' 'qty net net';border-top:2px solid var(--line-strong);background:var(--surface-2)}
+      .desk-table tr.desk-row--variant{margin-left:14px;border-left:3px solid var(--rose-line)}
+      .desk-table tr.desk-row{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,.85fr)}
       .desk-table td,.desk-table--editing td.c-qty,.desk-table--editing td.c-price,.desk-table--editing td.c-disc{display:block;width:auto;min-width:0;padding:0;border:0;text-align:left;background:transparent}
       .desk-table td:empty{display:none}
       .desk-row td.c-product,.desk-group td.c-product{grid-area:product;padding-right:34px}
-      .desk-row--variant td.c-product{padding-left:0}
+      .desk-row--variant td.c-product{padding-left:0;box-shadow:none}
+      .desk-row td.c-disc:has(> .muted){display:none}
+      .desk-disc__unit{padding:0 6px;font-size:11px}
       .desk-table td.c-qty{grid-area:qty}.desk-table td.c-price{grid-area:price}.desk-table td.c-disc{grid-area:disc}
       .desk-table td.c-money--total{grid-area:net}.desk-table td.c-money:not(.c-money--total){grid-area:profit}.desk-table td.c-delivery{grid-area:delivery}
       .desk-table td.c-act{position:absolute;top:8px;right:8px;display:block;width:auto}

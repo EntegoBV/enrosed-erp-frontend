@@ -199,7 +199,9 @@ export const COLOUR_SWATCHES: Record<string, string> = {
  */
 export const STANDARD_PAYMENT_TERMS = [
   'Vooruitbetaling',
+  '30% voorschot / 70% bij levering',
   '50% voorschot / 50% bij levering',
+  '30% voorschot / 40% voor verzending / 30% bij levering',
   'Bij levering',
   '14 dagen netto',
   '30 dagen netto',
