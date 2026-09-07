@@ -65,14 +65,14 @@ export interface AuctionSheetLine {
               @for (line of lines(); track line.productId) {
                 @let split = splitOf(line);
                 <tr>
-                  <td><b>{{ line.name }}</b><small>{{ line.landedUnitEur | eur: 4 }} / st geland</small></td>
-                  <td class="num"><input class="input num right" type="number" min="0" step="1" inputmode="numeric" [attr.aria-label]="'Verkocht ' + line.name"
+                  <td class="as__product"><b>{{ line.name }}</b><small>{{ line.landedUnitEur | eur: 4 }} / st geland</small></td>
+                  <td class="num" data-label="Verkocht"><input class="input num right" type="number" min="0" step="1" inputmode="numeric" [attr.aria-label]="'Verkocht ' + line.name"
                                          [value]="soldOf(line)" (input)="setSold(line.productId, $any($event.target).value)" /></td>
-                  <td class="num"><span class="as__money"><i>€</i><input class="input num right" type="number" min="0" step="0.01" inputmode="decimal" [attr.aria-label]="'Opbrengst ' + line.name"
+                  <td class="num" data-label="Opbrengst"><span class="as__money"><i>€</i><input class="input num right" type="number" min="0" step="0.01" inputmode="decimal" [attr.aria-label]="'Opbrengst ' + line.name"
                                          [value]="proceedsOf(line.productId) || ''" (input)="setProceeds(line.productId, $any($event.target).value)" /></span></td>
-                  <td class="num">{{ split.cost | eur }}</td>
-                  <td class="num" [class.is-bad]="split.profit < 0">{{ proceedsOf(line.productId) > 0 ? (split.profit | eur) : '—' }}</td>
-                  <td class="num as__ours">{{ proceedsOf(line.productId) > 0 ? (split.ours | eur) : '—' }}</td>
+                  <td class="num" data-label="Kost">{{ split.cost | eur }}</td>
+                  <td class="num" data-label="Winst" [class.is-bad]="split.profit < 0">{{ proceedsOf(line.productId) > 0 ? (split.profit | eur) : '—' }}</td>
+                  <td class="num as__ours" data-label="Ons deel">{{ proceedsOf(line.productId) > 0 ? (split.ours | eur) : '—' }}</td>
                 </tr>
               }
             </tbody>
@@ -89,9 +89,9 @@ export interface AuctionSheetLine {
           </table>
         </div>
         <dl class="as__sums">
-          <div><dt>Kost terug · {{ costShare() }} %</dt><dd>{{ totals().costPart | eur }}</dd></div>
-          <div><dt>Winstdeling · {{ profitShare() }} %</dt><dd>{{ totals().profitPart | eur }}</dd></div>
-          <div class="as__sums-ours"><dt>Op de factuur, excl. btw</dt><dd>{{ totals().ours | eur }}</dd></div>
+          <div><dt>Kost terug · {{ costShare() }} %</dt><dd>{{ totals().proceeds > 0 ? (totals().costPart | eur) : '—' }}</dd></div>
+          <div><dt>Winstdeling · {{ profitShare() }} %</dt><dd>{{ totals().proceeds > 0 ? (totals().profitPart | eur) : '—' }}</dd></div>
+          <div class="as__sums-ours"><dt>Op de factuur, excl. btw</dt><dd>{{ totals().proceeds > 0 ? (totals().ours | eur) : '—' }}</dd></div>
         </dl>
         <div class="field">
           <label for="as-note">Interne notitie <span class="opt"></span></label>
@@ -125,6 +125,17 @@ export interface AuctionSheetLine {
     .as__table tfoot th { border-bottom: 0; background: var(--surface-2); font-weight: 700; }
     .as__ours { color: var(--rose-dark); font-weight: 750; }
     .is-bad { color: var(--danger); }
+    @media (max-width: 719px) {
+      .as__table thead, .as__table tfoot { display: none; }
+      .as__table, .as__table tbody { display: block; }
+      .as__table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+      .as__table tr:last-child { border-bottom: 0; }
+      .as__table td { display: block; padding: 0; border: 0; text-align: left !important; }
+      .as__table td.as__product { grid-column: 1 / -1; }
+      .as__table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; color: var(--muted); font-size: 9.5px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+      .as__table td .input, .as__money .input { width: 100%; }
+      .as__money { display: flex; }
+    }
     .as__sums { display: grid; margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .as__sums > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 13px; }
     .as__sums > div + div { border-top: 1px solid var(--line); }

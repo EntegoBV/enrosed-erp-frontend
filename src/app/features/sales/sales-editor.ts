@@ -3,12 +3,16 @@ import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
+import { PartnerLinkSheet } from './partner-link-sheet';
+import { isSettlementInvoice } from './partner-settlement';
+import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
-  MarkupMode, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView,
+  MarkupMode, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -46,7 +50,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet,
+            ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
     @if (view(); as data) {
@@ -444,6 +448,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <span class="hint">
                   Standaard gebruiken we de voorwaarden uit het klantprofiel.
                 </span>
+              </div>
+              <div class="field">
+                <label for="so-channel">Verkoopkanaal</label>
+                <select class="select" id="so-channel" [ngModel]="channelCode(data.order.salesChannel)" (ngModelChange)="patch({ salesChannel: $event })">
+                  @for (channel of channels; track channel.code) { <option [value]="channel.code">{{ channel.label }}</option> }
+                </select>
+                <span class="hint">{{ channelHint(data.order.salesChannel) }}</span>
               </div>
               <div class="field">
                 <label for="so-date">Datum</label>
@@ -957,6 +968,25 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           </div>
           <div class="card__body">
+            @if (data.order.partnerPurchaseOrderId) {
+              <section class="desk-partner" aria-label="Partnercontainer">
+                <p class="desk-form__group">Partnercontainer</p>
+                @if (isSettlement(data.order)) {
+                  <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
+                } @else {
+                  <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
+                  <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
+                  <div class="desk-partner__actions">
+                    <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>
+                    <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
+                    <button class="linklike" type="button" [disabled]="busy()" (click)="unlinkPartner(data)">Ontkoppelen</button>
+                  </div>
+                }
+              </section>
+            } @else {
+              <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
+                <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Aan partnercontainer koppelen</button></p>
+            }
             <!-- What is actually in the box, before any figure: the check
                  starts with the order as the customer will read it. -->
             <ol class="check-lines">
@@ -1314,6 +1344,19 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
         </app-sheet>
       }
 
+    @if (settlementOpen()) {
+      @if (view(); as data) {
+        <app-auction-settlement-sheet [lines]="auctionLines(data)" [customerId]="data.order.customerId" [customerName]="customerName()"
+                                      [purchaseOrderId]="data.order.partnerPurchaseOrderId ?? null" [reference]="partnerReference()" [sourceId]="data.order.id"
+                                      [costSharePct]="settlementCostShare(data)" [profitSharePct]="data.order.partnerSharePct ?? 50"
+                                      (closed)="settlementOpen.set(false)" />
+      }
+    }
+    @if (partnerLinkOpen()) {
+      @if (view(); as data) {
+        <app-partner-link-sheet [order]="data.order" (closed)="partnerLinkOpen.set(false)" (linked)="applyPartner($event)" />
+      }
+    }
     @if (picking()) {
         <app-product-picker
           heading="Producten toevoegen"
@@ -2011,6 +2054,73 @@ export class SalesEditor {
     const pct = Math.max(0, Math.min(100, (amount / line.gross) * 100));
     this.setLine(line.productId, { manualDiscountPct: Math.round(pct * 10000) / 10000 });
   }
+
+  /* ---- partner container: shared by the desk and the phone editor ---- */
+  /** The auction settlement of the partner deal starts from here. */
+  readonly settlementOpen = signal(false);
+  /** The partner container itself: its number for the settlement text, its costing for the cost per piece. */
+  readonly partnerContainer = signal<PurchaseOrderView | null>(null);
+  readonly partnerReference = computed(() => this.partnerContainer()?.order.number ?? null);
+
+  private readonly partnerContainerLoader = effect(() => {
+    const id = this.view()?.order.partnerPurchaseOrderId ?? null;
+    this.partnerContainer.set(null);
+    if (id == null) return;
+    this.sourcing.purchaseOrder(id)
+      .then((view) => this.partnerContainer.set(view))
+      .catch(() => this.partnerContainer.set(null));
+  });
+
+  /**
+   * The products of this document as they appear on the partner's auction
+   * statement. The cost per piece is what this container cost us landed;
+   * only without the container does the product card's landed cost step in.
+   */
+  auctionLines(data: SalesOrderView): AuctionSheetLine[] {
+    const containerCost = new Map((this.partnerContainer()?.costing.lines ?? []).map((line) => [line.productId, line.landedUnitEur] as const));
+    return data.priced.lines.map((line) => ({
+      productId: line.productId, name: line.description, quantity: line.quantity,
+      landedUnitEur: containerCost.get(line.productId) ?? line.landedUnitCost ?? 0,
+    }));
+  }
+
+  /** What we still recover of the landed cost: whatever the partner did not pay up front. */
+  settlementCostShare(data: SalesOrderView): number {
+    const customer = this.customers().find((row) => row.id === data.order.customerId);
+    return Math.min(100, Math.max(0, 100 - (customer?.partnerCostPct ?? 100)));
+  }
+  readonly isSettlement = isSettlementInvoice;
+  readonly partnerLinkOpen = signal(false);
+  readonly channels = channelChoices([]);
+  readonly channelCode = channelCode;
+  channelHint(code: string | null | undefined): string {
+    return SALES_CHANNELS.find((channel) => channel.code === channelCode(code))?.hint ?? 'Eigen kanaal';
+  }
+  applyPartner(view: SalesOrderView): void {
+    this.view.set(view);
+    void this.loadHistory(view.order.id);
+  }
+
+  unlinkPartner(data: SalesOrderView): void {
+    this.ui.confirm({
+      title: 'Ontkoppelen van de partnercontainer',
+      message: `${data.order.number} telt daarna weer als een gewoon document; de container staat dan op ons eigen geld.`,
+      confirmLabel: 'Ontkoppelen', danger: true,
+    }, async () => {
+      try {
+        this.applyPartner(await this.sales.setPartnerDeal(data.order.id, { purchaseOrderId: null, sharePct: null, reference: null }));
+        this.ui.toast('Losgekoppeld van de partnercontainer');
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Ontkoppelen mislukt'), 'err');
+      }
+    });
+  }
+
+  /** What the partner paid us for the goods and the extra lines: the basis the auction profit is measured against. */
+  costBasis(data: SalesOrderView): number {
+    return (data.priced.totals.goodsTotal ?? 0) + (data.priced.totals.extraLinesTotal ?? 0);
+  }
+
 
   readonly workflowSections = [
     { id: 'quote-setup', label: 'Klant' },

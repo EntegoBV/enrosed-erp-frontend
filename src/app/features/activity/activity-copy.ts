@@ -35,6 +35,7 @@ const ENTITY_CATEGORIES: Record<string, ActivityCategory> = {
   PRODUCT_FAMILY: 'CATALOGUE',
   CUSTOMER: 'RELATIONS',
   PLANNER_ITEM: 'PLANNING',
+  COMPANY_COST: 'FINANCE',
 };
 
 const CATEGORY_LABELS: Record<ActivityCategory, string> = {
@@ -43,6 +44,7 @@ const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   CATALOGUE: 'Producten',
   RELATIONS: 'Relaties',
   PLANNING: 'Planning',
+  FINANCE: 'Kosten',
   OTHER: 'Overig',
 };
 
@@ -52,6 +54,7 @@ const CATEGORY_ICONS: Record<ActivityCategory, string> = {
   CATALOGUE: 'products',
   RELATIONS: 'customers',
   PLANNING: 'activity',
+  FINANCE: 'exchange',
   OTHER: 'more',
 };
 
@@ -84,6 +87,7 @@ export function activityEntityLabel(event: ActivityEvent): string {
   if (type === 'SUPPLIER') return 'Leverancier';
   if (type === 'CUSTOMER') return 'Klant';
   if (type === 'PLANNER_ITEM') return 'Planning';
+  if (type === 'COMPANY_COST') return 'Kost';
   return event.entityType.replaceAll('_', ' ').toLocaleLowerCase('nl-BE');
 }
 
@@ -95,5 +99,6 @@ export function activityRoute(event: ActivityEvent): string[] | null {
   if (type === 'SALES_ORDER') return ['/sales', String(event.entityId)];
   if (type === 'PRODUCT') return ['/products', String(event.entityId)];
   if (type === 'PRODUCT_FAMILY') return ['/website/products'];
+  if (type === 'COMPANY_COST') return ['/costs'];
   return null;
 }

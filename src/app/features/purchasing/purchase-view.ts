@@ -724,8 +724,8 @@ type PurchaseWorkspaceSectionId =
                   }
                 </ul>
               } @else {
-                <h2 id="purchase-partner-title">Op ons eigen geld</h2>
-                <p class="partner-list__lead">Ging er toch een offerte of factuur naar een partner die de goederen overneemt? Koppel ze hier, dan telt de container in de analyses als partnergeld.</p>
+                <h2 id="purchase-partner-title">Geen partner</h2>
+                <p class="partner-list__lead">Deze container betalen we volledig zelf. Neemt een partner de goederen over voor de veiling? Maak dan een verkoopofferte voor hem, of koppel zijn bestaande offerte of factuur; de container telt dan als partnercontainer.</p>
               }
               <div class="partner-list__buttons">
                 @if (auctionLines().length) { <button class="btn btn--primary btn--block" type="button" (click)="auctionOpen.set(true)">Veilingafrekening maken</button> }

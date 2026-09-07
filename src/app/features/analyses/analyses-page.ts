@@ -386,9 +386,9 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <p>{{ inventoryMetrics().stock.valuedPieces | num }} gewaardeerde stuks</p>
           </article>
           <article class="card metric-card">
-            <span class="metric-card__label">Op ons eigen geld</span>
+            <span class="metric-card__label">Eigen voorraadwaarde</span>
             <strong>{{ inventoryMetrics().stock.ownCostValueEur | eur: 0 }}</strong>
-            <p>@if (inventoryMetrics().stock.partnerPieces) { {{ inventoryMetrics().stock.partnerCostValueEur | eur: 0 }} voor partners: {{ inventoryMetrics().stock.partnerPieces | num }} stuks gefactureerd, nog niet verzonden } @else { geen voorraad die al aan een partner gefactureerd is }</p>
+            <p>@if (inventoryMetrics().stock.partnerPieces) { daarnaast ligt hier {{ inventoryMetrics().stock.partnerCostValueEur | eur: 0 }} voor een partner: {{ inventoryMetrics().stock.partnerPieces | num }} stuks al gefactureerd, nog te verzenden } @else { niets van de voorraad is al aan een partner gefactureerd }</p>
           </article>
           <article class="card metric-card">
             <span class="metric-card__label">Verkoopwaarde</span>
@@ -611,17 +611,17 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
         </article>
 
         <header class="section-copy section-copy--sub">
-          <span class="eyebrow">Financiering</span>
-          <h2>Eigen geld of partnergeld</h2>
-          <p>Wij betalen de leverancier, de vracht en de douane rechtstreeks. Een partner die de container meebestelt betaalt de gelande kost vooraf of na de veiling terug en deelt de winst; die containers staan hier apart.</p>
+          <span class="eyebrow">Partnercontainers</span>
+          <h2>Zelf betaald of met een partner</h2>
+          <p>De meeste containers betalen we volledig zelf. Bij een partnercontainer bestelt een partner mee: hij betaalt onze gelande kost (vooraf, of na de veiling) en deelt de winst met ons. Hieronder staan beide soorten apart, zodat je ziet wat ons eigen geld is.</p>
         </header>
         <div class="analysis-kpis analysis-kpis--flow">
-          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Op eigen geld</span><strong>{{ financing().own.landedEur | eur: 0 }}</strong><p>{{ financing().own.count }} container{{ financing().own.count === 1 ? '' : 's' }} volledig door ons betaald</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Partnercontainers</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} container{{ financing().partner.count === 1 ? '' : 's' }} gelande kost, door een partner overgenomen</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Gefactureerd aan partners</span><strong>{{ financing().invoicedEur | eur: 0 }}</strong><p>goederen aan kostprijs, vooraf betaald</p></article>
-          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Veilingafrekeningen</span><strong>{{ financing().settlementEur | eur: 0 }}</strong><p>kost terug plus ons deel van de winst</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Resultaat partnercontainers</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>gefactureerd plus winstdeling, min gelande kost</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="financing().awaitingSettlement > 0"><span class="metric-card__label">Afrekening open</span><strong>{{ financing().awaitingSettlement }}</strong><p>ontvangen partnercontainers zonder veilingafrekening</p></article>
+          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Zonder partner</span><strong>{{ financing().own.landedEur | eur: 0 }}</strong><p>{{ financing().own.count }} container{{ financing().own.count === 1 ? '' : 's' }} die we volledig zelf betalen</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Met partner</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} container{{ financing().partner.count === 1 ? '' : 's' }} · onze gelande kost, die de partner terugbetaalt</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Vooraf gefactureerd</span><strong>{{ financing().invoicedEur | eur: 0 }}</strong><p>goederen aan kostprijs, aan de partner gefactureerd vóór de veiling</p></article>
+          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Veilingafrekeningen</span><strong>{{ financing().settlementEur | eur: 0 }}</strong><p>na de veiling: onze kost terug plus ons deel van de winst</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Wat het ons opbrengt</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>alles wat de partner betaalt, min wat de containers ons kostten</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="financing().awaitingSettlement > 0"><span class="metric-card__label">Nog af te rekenen</span><strong>{{ financing().awaitingSettlement }}</strong><p>partnercontainer{{ financing().awaitingSettlement === 1 ? '' : 's' }} ontvangen, veilingoverzicht nog niet afgerekend</p></article>
         </div>
         <article class="card analysis-list scorecard-card">
           <header><div><span>Partners</span><h3>Per partnercontainer</h3></div><small>{{ financing().rows.length }} container{{ financing().rows.length === 1 ? '' : 's' }}</small></header>
@@ -645,7 +645,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
               </table>
             </div>
           } @else {
-            <p class="list-empty">Nog geen container met een partner: alles staat op ons eigen geld.</p>
+            <p class="list-empty">Nog geen container met een partner: alles betalen we zelf.</p>
           }
         </article>
       </section>

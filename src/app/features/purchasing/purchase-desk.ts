@@ -779,7 +779,7 @@ type DeskRow =
                           }
                         </ul>
                       } @else {
-                        <p class="desk-dossier__empty">Wij betalen deze container zelf. Ging er toch een offerte of factuur naar een partner die de goederen overneemt? Koppel ze hier, dan telt de container in de analyses als partnergeld.</p>
+                        <p class="desk-dossier__empty">Geen partner: deze container betalen we volledig zelf. Neemt een partner de goederen over voor de veiling? Maak een verkoopofferte voor hem onder Afronden, of koppel hier zijn bestaande offerte of factuur.</p>
                       }
                     </section>
                     <section>

@@ -36,7 +36,7 @@ export interface ActorRef {
 
 /** One durable business action in the company-wide logbook. */
 export type ActivityCategory =
-  | 'SALES' | 'PURCHASING' | 'CATALOGUE' | 'RELATIONS' | 'PLANNING' | 'OTHER';
+  | 'SALES' | 'PURCHASING' | 'CATALOGUE' | 'RELATIONS' | 'PLANNING' | 'FINANCE' | 'OTHER';
 
 export interface ActivityChange {
   field: string;
@@ -1608,4 +1608,18 @@ export interface CompanyCost {
   vatEur?: number;
   amountInclEur?: number;
   paid?: boolean;
+}
+
+/** What the quote sheet asks for when a container becomes a quote. */
+export interface FromPurchaseOrderRequest {
+  purchaseOrderId: number;
+  customerId: number;
+  pricing: 'CUSTOMER' | 'COST';
+  markupPct: number;
+  partner: boolean;
+  sharePct: number | null;
+  costPct: number | null;
+  includeInspection: boolean;
+  otherCostIndexes: number[];
+  salesChannel: string | null;
 }

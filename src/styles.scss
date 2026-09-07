@@ -3799,3 +3799,8 @@ a.desk-kpi{text-decoration:none}
 
 /* Documenten & media on a phone: the tile view of the library. */
 .fm__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px;padding:0;list-style:none}.fm__tile{position:relative;display:grid;gap:4px;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left}.fm__tile img,.fm__tile>i{display:grid;place-items:center;aspect-ratio:1;width:100%;border-radius:12px;background:var(--surface-2);color:var(--muted);font-size:12px;font-style:normal;font-weight:800;object-fit:cover}.fm__tile--picked img,.fm__tile--picked>i{outline:3px solid var(--rose);outline-offset:-3px}.fm__tile>span{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.fm__tile .fm__tick{position:absolute;top:6px;left:6px}.fm__kinds--view{margin-left:auto}
+
+/* The partner container card on a sales document: the desk and the phone editor share it. */
+.desk-partner__actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}.desk-partner-offer{margin:0 0 14px;color:var(--muted);font-size:12.5px}
+.desk-partner{display:grid;gap:8px;margin-bottom:14px;padding:12px;border:1px solid var(--rose-line);border-radius:12px;background:var(--rose-soft)}.desk-partner .desk-form__group{margin:0}.desk-partner__copy{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}.desk-partner__copy a{color:var(--rose-dark);font-weight:650}.desk-partner__facts{display:flex;justify-content:space-between;gap:10px;font-size:13px}.desk-partner__facts b{font-variant-numeric:tabular-nums}.desk-partner .btn{justify-self:start}
+

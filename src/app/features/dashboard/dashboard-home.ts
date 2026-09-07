@@ -260,7 +260,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
             <span class="home-kpi__label">Partnercontainers</span>
             @if (salesReady() && purchasesReady()) {
               <strong>{{ financing().resultEur | eur: 0 }}</strong>
-              <small>{{ financing().partner.count }} {{ financing().partner.count === 1 ? 'container' : 'containers' }} · {{ financing().own.landedEur | eur: 0 }} op eigen geld</small>
+              <small>{{ financing().partner.count }} met partner · {{ financing().own.count }} zelf betaald · brengt ons dit op</small>
               @if (financing().awaitingSettlement) {
                 <em>{{ financing().awaitingSettlement }} {{ financing().awaitingSettlement === 1 ? 'afrekening' : 'afrekeningen' }} nog te maken</em>
               }

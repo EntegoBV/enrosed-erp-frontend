@@ -148,6 +148,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
         </ul>
       </div>
       <div foot style="display:contents">
+        @if (createError(); as error) { <p class="pq__error pq__error--foot" role="alert">{{ error }}</p> }
         <span class="spacer"></span>
         <button class="btn" type="button" [disabled]="busy()" (click)="closed.emit()">Annuleren</button>
         <button class="btn btn--primary" type="button" [disabled]="busy() || chosen() === null || !lines().length"
@@ -160,6 +161,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
     .pq { display: grid; gap: 14px; }
     .pq__intro { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
     .pq__error { margin: 0; color: var(--danger); font-size: 13px; }
+    .pq__error--foot { flex: 1 1 100%; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
     .pq__pick { display: grid; gap: 8px; }
     .pq__search { position: relative; display: block; }
     .pq__search svg { position: absolute; left: 12px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; pointer-events: none; }
@@ -227,6 +229,8 @@ export class PurchaseQuoteSheet {
   readonly chosen = signal<number | null>(null);
   readonly busy = signal(false);
   readonly query = signal('');
+  /** Why the last attempt was refused, shown next to the button until the next try. */
+  readonly createError = signal<string | null>(null);
   readonly pricing = signal<PurchaseQuotePricing>('CUSTOMER');
   readonly markupPct = signal(0);
   /** A partner deal: the customer sponsors the container and shares the auction profit with us. */
@@ -367,40 +371,36 @@ export class PurchaseQuoteSheet {
     return [...code.toUpperCase()].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('');
   }
 
-  /** Creates the quote for the customer, puts every line on it, and opens it. */
+  /** Creates the quote in one go on the server and opens it; a rule that blocks it shows here, not in a half-made draft. */
   async create(): Promise<void> {
     const customer = this.customers().find((row) => row.id === this.chosen());
     if (!customer || customer.id === null || this.busy()) return;
     this.busy.set(true);
+    this.createError.set(null);
     try {
-      const created = await this.sales.createOrder(customer.id, customer.countryCode, customer.incoterm || 'DAP', 'OFFERTE');
       const atCost = this.pricing() === 'COST' && this.costKnown();
-      const extraLines = atCost ? this.chosenCosts().map((cost) => ({ description: cost.description, quantity: 1, unitPriceEur: this.costAmount(cost) })) : [];
-      const partnerDeal = atCost && this.partner() && this.sharePct() > 0;
-      let filled = await this.sales.updateOrder(created.order.id, {
-        ...created.order,
-        lines: this.lines().map((line) => ({
-          id: null, productId: line.productId, quantity: line.quantity,
-          unitPriceEur: atCost ? this.unitPrice(line) : null, manualDiscountPct: null, deliveryWeek: null,
-        })),
-        extraLines,
-        salesChannel: partnerDeal ? 'PARTNER' : created.order.salesChannel ?? null,
-        partnerPurchaseOrderId: partnerDeal ? this.order().id : null,
-        partnerSharePct: partnerDeal ? this.sharePct() : null,
-        internalNotes: partnerDeal
-          ? `Partnercontainer ${this.order().number}: goederen aan ${this.costPct()} % van onze gelande kostprijs (fabriek, zeevracht, invoerrechten en afhandeling). Na de veiling volgt de veilingafrekening: ${100 - this.costPct()} % van de kost terug en ${this.sharePct()} % van de winst.`
-          : created.order.internalNotes,
+      const partnerDeal = atCost && this.partner();
+      const included = this.chosenCosts().map((cost) => cost.key);
+      const view = await this.sales.createFromPurchaseOrder({
+        purchaseOrderId: this.order().id,
+        customerId: customer.id,
+        pricing: atCost ? 'COST' : 'CUSTOMER',
+        markupPct: atCost ? this.markupPct() : 0,
+        partner: partnerDeal,
+        sharePct: partnerDeal ? this.sharePct() : null,
+        costPct: partnerDeal ? this.costPct() : null,
+        includeInspection: atCost && included.includes('inspection'),
+        otherCostIndexes: atCost ? included.filter((key) => key.startsWith('other-')).map((key) => Number(key.slice('other-'.length))) : [],
+        salesChannel: partnerDeal ? 'PARTNER' : null,
       });
-      if (atCost) {
-        /* The container's freight is already inside the landed cost; the quote adds none of its own. */
-        filled = await this.sales.updateFreight(filled.order.id, 'AANGEVULD', 0, null, null);
-      }
-      const count = this.lines().length + extraLines.length;
-      this.ui.toast(`Offerte ${filled.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${partnerDeal ? ' als partnercontainer' : atCost ? ' aan kostprijs' : ''}`, 'ok');
+      const count = view.order.lines.length + (view.order.extraLines ?? []).length;
+      this.ui.toast(`Offerte ${view.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${partnerDeal ? ' als partnercontainer' : atCost ? ' aan kostprijs' : ''}`, 'ok');
       this.closed.emit();
-      await this.router.navigate(['/sales', filled.order.id, 'edit']);
+      await this.router.navigate(['/sales', view.order.id, 'edit']);
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Offerte maken mislukt'), 'err');
+      const message = messageOf(failure, 'Offerte maken mislukt');
+      this.createError.set(message);
+      this.ui.toast(message, 'err');
     } finally {
       this.busy.set(false);
     }

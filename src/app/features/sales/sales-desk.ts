@@ -1101,8 +1101,6 @@ interface JourneyStep {
     .desk-lock{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px}.desk-lock>span:first-child{color:var(--ok);font-weight:800}.desk-lock>span:nth-child(2){flex:1}
     .desk-price{display:contents}.desk-disc-pill,.desk-price-disc,.desk-price__disc{display:none}
     .desk-partner-tag{display:inline-flex;align-items:center;padding:4px 10px;border:1px solid var(--rose-line);border-radius:999px;background:var(--rose-soft);color:var(--rose);font-size:11px;font-weight:750;letter-spacing:.03em;text-decoration:none;white-space:nowrap}
-    .desk-partner__actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}.desk-partner-offer{margin:0 0 14px;color:var(--muted);font-size:12.5px}
-    .desk-partner{display:grid;gap:8px;margin-bottom:14px;padding:12px;border:1px solid var(--rose-line);border-radius:12px;background:var(--rose-soft)}.desk-partner .desk-form__group{margin:0}.desk-partner__copy{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}.desk-partner__copy a{color:var(--rose-dark);font-weight:650}.desk-partner__facts{display:flex;justify-content:space-between;gap:10px;font-size:13px}.desk-partner__facts b{font-variant-numeric:tabular-nums}.desk-partner .btn{justify-self:start}
     .desk-minimum{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin-top:10px;padding:9px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);font-size:12px}.desk-minimum--ok{border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,var(--surface))}.desk-minimum b{font-variant-numeric:tabular-nums}.desk-minimum__track{grid-column:1/-1;display:block;height:5px;border-radius:99px;background:rgb(0 0 0/.08);overflow:hidden}.desk-minimum__track i{display:block;height:100%;background:var(--ok);border-radius:99px}
     .desk-flip{min-width:56px;font-size:12px}
     .desk-ok{display:flex;gap:8px;margin:0;padding:9px 12px;border-radius:12px;background:color-mix(in srgb,var(--ok) 10%,var(--surface));color:var(--ok);font-size:12.5px}
@@ -1116,77 +1114,11 @@ interface JourneyStep {
   `],
 })
 export class SalesDesk extends SalesEditor {
-  /** The partner deal's closing invoice starts from this desk. */
-  readonly settlementOpen = signal(false);
-  private readonly sourcingApi = inject(SourcingApi);
-  /** The partner container itself: its number for the settlement text, its costing for the cost per piece. */
-  readonly partnerContainer = signal<PurchaseOrderView | null>(null);
-  readonly partnerReference = computed(() => this.partnerContainer()?.order.number ?? null);
-
-  private readonly partnerContainerLoader = effect(() => {
-    const id = this.view()?.order.partnerPurchaseOrderId ?? null;
-    this.partnerContainer.set(null);
-    if (id == null) return;
-    this.sourcingApi.purchaseOrder(id)
-      .then((view) => this.partnerContainer.set(view))
-      .catch(() => this.partnerContainer.set(null));
-  });
-
-  /**
-   * The products of this document as they appear on the partner's auction
-   * statement. The cost per piece is what this container cost us landed;
-   * only without the container does the product card's landed cost step in.
-   */
-  auctionLines(data: SalesOrderView): AuctionSheetLine[] {
-    const containerCost = new Map((this.partnerContainer()?.costing.lines ?? []).map((line) => [line.productId, line.landedUnitEur] as const));
-    return data.priced.lines.map((line) => ({
-      productId: line.productId, name: line.description, quantity: line.quantity,
-      landedUnitEur: containerCost.get(line.productId) ?? line.landedUnitCost ?? 0,
-    }));
-  }
-
-  /** What we still recover of the landed cost: whatever the partner did not pay up front. */
-  settlementCostShare(data: SalesOrderView): number {
-    const customer = this.customers().find((row) => row.id === data.order.customerId);
-    return Math.min(100, Math.max(0, 100 - (customer?.partnerCostPct ?? 100)));
-  }
-  readonly isSettlement = isSettlementInvoice;
-  readonly partnerLinkOpen = signal(false);
-  readonly channels = channelChoices([]);
-  readonly channelCode = channelCode;
-  channelHint(code: string | null | undefined): string {
-    return SALES_CHANNELS.find((channel) => channel.code === channelCode(code))?.hint ?? 'Eigen kanaal';
-  }
   /** Which line shows its extra-discount field on a narrow screen. */
   readonly discOpen = signal<number | null>(null);
 
   toggleDisc(productId: number): void {
     this.discOpen.set(this.discOpen() === productId ? null : productId);
-  }
-
-  applyPartner(view: SalesOrderView): void {
-    this.view.set(view);
-    void this.loadHistory(view.order.id);
-  }
-
-  unlinkPartner(data: SalesOrderView): void {
-    this.ui.confirm({
-      title: 'Ontkoppelen van de partnercontainer',
-      message: `${data.order.number} telt daarna weer als een gewoon document; de container staat dan op ons eigen geld.`,
-      confirmLabel: 'Ontkoppelen', danger: true,
-    }, async () => {
-      try {
-        this.applyPartner(await this.sales.setPartnerDeal(data.order.id, { purchaseOrderId: null, sharePct: null, reference: null }));
-        this.ui.toast('Losgekoppeld van de partnercontainer');
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Ontkoppelen mislukt'), 'err');
-      }
-    });
-  }
-
-  /** What the partner paid us for the goods and the extra lines: the basis the auction profit is measured against. */
-  costBasis(data: SalesOrderView): number {
-    return (data.priced.totals.goodsTotal ?? 0) + (data.priced.totals.extraLinesTotal ?? 0);
   }
 
   /** Which drawer of the rail is open; the customer first, as on paper. */

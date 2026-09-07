@@ -205,6 +205,7 @@ export class ActivityPage {
     { value: 'CATALOGUE', label: 'Producten', icon: 'products' },
     { value: 'RELATIONS', label: 'Relaties', icon: 'customers' },
     { value: 'PLANNING', label: 'Planning', icon: 'activity' },
+    { value: 'FINANCE', label: 'Kosten', icon: 'exchange' },
     { value: 'OTHER', label: 'Overig', icon: 'more' },
   ];
 

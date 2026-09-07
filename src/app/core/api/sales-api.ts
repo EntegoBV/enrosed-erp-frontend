@@ -5,7 +5,7 @@ import { API_BASE, api } from './api.config';
 import {
   CompanyProfile, Country, Customer, CustomerPortalLink, DiscountTier, FreightPricingStrategy, LanguageCode,
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
-  SalesOrderView, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest,
+  SalesOrderView, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest, FromPurchaseOrderRequest,
 } from './models';
 import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
@@ -95,6 +95,11 @@ export class SalesApi {
   /** Ties a document to the container a partner co-finances; a null container cuts the tie. */
   setPartnerDeal(id: number, body: { purchaseOrderId: number | null; sharePct: number | null; reference: string | null }): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/partner-deal`), body));
+  }
+
+  /** A container becomes a quote in one go: lines, costs and the partner deal, or nothing at all. */
+  createFromPurchaseOrder(body: FromPurchaseOrderRequest): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api('/api/sales-orders/from-purchase-order'), body));
   }
 
   /** The auction settlement of a partner container: our financed cost and profit share, per product. */
