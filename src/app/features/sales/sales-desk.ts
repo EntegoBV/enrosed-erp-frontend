@@ -987,6 +987,41 @@ interface JourneyStep {
     .desk-week{margin-top:6px}
     .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .desk-table tfoot th.c-product{text-align:left;padding-left:16px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.desk-table tfoot th.is-bad{color:var(--danger)}
+    /* A narrow desk (an unfolded Fold, a small tablet): the table gives up
+       its columns and every line becomes a card, product on top, the numbers
+       in a labelled grid under it, nothing pushed off the edge. */
+    @media(max-width:899px){
+      .desk-table-bar{flex-wrap:wrap;gap:10px}.desk-table-bar>div{flex-basis:100%}
+      .desk-table-wrap{overflow:visible}
+      .desk-table,.desk-table--editing{min-width:0;display:block}
+      .desk-table thead{display:none}
+      .desk-table tbody,.desk-table tfoot{display:block}
+      .desk-table tr.desk-section__row{display:block}.desk-section__row th{display:block;padding:12px 14px 4px}
+      .desk-table tr.desk-row,.desk-table tr.desk-group{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:'product product product' 'qty price disc' 'net profit delivery';gap:8px 10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+      .desk-table tr.desk-group{grid-template-areas:'product product product' 'qty net net'}
+      .desk-table td,.desk-table--editing td.c-qty,.desk-table--editing td.c-price,.desk-table--editing td.c-disc{display:block;width:auto;min-width:0;padding:0;border:0;text-align:left;background:transparent}
+      .desk-table td:empty{display:none}
+      .desk-row td.c-product,.desk-group td.c-product{grid-area:product;padding-right:34px}
+      .desk-row--variant td.c-product{padding-left:0}
+      .desk-table td.c-qty{grid-area:qty}.desk-table td.c-price{grid-area:price}.desk-table td.c-disc{grid-area:disc}
+      .desk-table td.c-money--total{grid-area:net}.desk-table td.c-money:not(.c-money--total){grid-area:profit}.desk-table td.c-delivery{grid-area:delivery}
+      .desk-table td.c-act{position:absolute;top:8px;right:8px;display:block;width:auto}
+      .desk-table td.c-qty::before,.desk-table td.c-price::before,.desk-table td.c-disc::before,.desk-table td.c-money::before,.desk-table td.c-delivery::before{display:block;margin-bottom:3px;color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
+      .desk-table td.c-qty::before{content:'Aantal'}.desk-table td.c-price::before{content:'Stukprijs'}.desk-table td.c-disc::before{content:'Korting'}
+      .desk-table td.c-money--total::before{content:'Netto'}.desk-table td.c-money:not(.c-money--total)::before{content:'Winst'}.desk-table td.c-delivery::before{content:'Levering'}
+      .desk-group td.c-money--total::before{content:'Netto reeks'}
+      .desk-row--extra td.c-disc,.desk-row--extra td.c-money:not(.c-money--total){display:none}
+      .desk-cell{width:100%}.desk-disc{width:100%}
+      .desk-total{margin:0;padding:0;justify-items:start}
+      .desk-row:hover td{background:transparent}.desk-row:hover{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
+      .desk-table tfoot tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;padding:12px 14px;border-top:2px solid var(--line-strong);background:var(--surface-2)}
+      .desk-table tfoot th{display:block;padding:0;border:0;text-align:left;white-space:normal}
+      .desk-table tfoot th:empty{display:none}
+      .desk-table tfoot th.c-product{grid-column:1/-1}
+      .desk-table tfoot th.c-qty::before{content:'Stuks · '}.desk-table tfoot th.c-disc::before{content:'Korting · '}
+      .desk-table tfoot th.c-money:nth-of-type(5)::before{content:'Subtotaal · '}.desk-table tfoot th.c-money:nth-of-type(6)::before{content:'Winst · '}
+      .desk-table tfoot th::before{color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+    }
     .desk-empty{display:grid;justify-items:center;gap:6px;padding:40px 20px;text-align:center}.desk-empty__art{display:grid;width:52px;height:52px;place-items:center;border-radius:50%;background:var(--rose-soft);color:var(--rose);font-size:24px}.desk-empty h3{font-size:15px}.desk-empty p{max-width:360px;color:var(--muted);font-size:12.5px}
     .desk-lock{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px}.desk-lock>span:first-child{color:var(--ok);font-weight:800}.desk-lock>span:nth-child(2){flex:1}
     .desk-minimum{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin-top:10px;padding:9px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);font-size:12px}.desk-minimum--ok{border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,var(--surface))}.desk-minimum b{font-variant-numeric:tabular-nums}.desk-minimum__track{grid-column:1/-1;display:block;height:5px;border-radius:99px;background:rgb(0 0 0/.08);overflow:hidden}.desk-minimum__track i{display:block;height:100%;background:var(--ok);border-radius:99px}
