@@ -16,6 +16,7 @@ import { ShippingPlanner } from './shipping-planner';
 import { SalesPdfSheet } from './sales-pdf-sheet';
 import { SalesEditor } from './sales-editor';
 import { PartnerSettlementSheet } from './partner-settlement-sheet';
+import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice } from './partner-settlement';
 import { salesDocumentLabel } from './sales-list-swipe';
 
@@ -45,7 +46,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PartnerSettlementSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [PartnerSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -335,11 +336,26 @@ interface JourneyStep {
                         </td>
                         <td class="c-price num">
                           @if (canEdit()) {
-                            <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
-                                   [attr.aria-label]="'Stukprijs ' + line.description"
-                                   [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
+                            <div class="desk-price">
+                              <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
+                                     [attr.aria-label]="'Stukprijs ' + line.description"
+                                     [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
+                              <button class="desk-disc-pill" type="button" [class.is-on]="line.manualPercent"
+                                      [attr.aria-expanded]="discOpen() === line.productId" [attr.aria-label]="'Extra korting ' + line.description"
+                                      (click)="toggleDisc(line.productId)">{{ line.manualPercent ? '−' + (line.manualPercent | pct: 1) : 'Korting' }}</button>
+                            </div>
+                            @if (discOpen() === line.productId) {
+                              <div class="desk-price-disc">
+                                <input class="input num right desk-cell" type="number" min="0" max="100" step="0.5" inputmode="decimal" autofocus
+                                       [attr.aria-label]="'Extra korting ' + line.description"
+                                       [ngModel]="line.manualPercent || null" placeholder="–"
+                                       (ngModelChange)="setLine(line.productId, { manualDiscountPct: $event === '' || $event === null ? 0 : +$event })" />
+                                <span>% extra korting</span>
+                              </div>
+                            }
                           } @else {
                             <b>{{ line.unitPrice | eur: 2 }}</b>
+                            @if (line.discountPct) { <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small> }
                           }
                           @if (line.tierPercent) { <small>staffel −{{ line.tierPercent | pct: 1 }}</small> }
                         </td>
@@ -642,9 +658,16 @@ interface JourneyStep {
                         } @else {
                           <p class="desk-partner__copy">De klant sponsort <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> tegen onze volledige gelande kost en verkoopt de goederen door. Na de veiling delen we de winst: <b>{{ data.order.partnerSharePct | num }} %</b> voor ons.</p>
                           <div class="desk-partner__facts"><span>Kostbasis, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
-                          <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Slotfactuur maken</button>
+                          <div class="desk-partner__actions">
+                            <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Slotfactuur maken</button>
+                            <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
+                            <button class="linklike" type="button" [disabled]="busy()" (click)="unlinkPartner(data)">Ontkoppelen</button>
+                          </div>
                         }
                       </section>
+                    } @else {
+                      <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
+                        <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Aan partnercontainer koppelen</button></p>
                     }
                     <p class="desk-form__group">Prijsopbouw</p>
                     <div class="desk-chain">
@@ -859,6 +882,11 @@ interface JourneyStep {
           <app-partner-settlement-sheet [order]="data.order" [costBasis]="costBasis(data)" (closed)="settlementOpen.set(false)" />
         }
       }
+      @if (partnerLinkOpen()) {
+        @if (view(); as data) {
+          <app-partner-link-sheet [order]="data.order" (closed)="partnerLinkOpen.set(false)" (linked)="applyPartner($event)" />
+        }
+      }
 
       @if (picking()) {
         <app-product-picker heading="Producten toevoegen" [products]="available()" [categories]="categories()"
@@ -1022,7 +1050,7 @@ interface JourneyStep {
       .desk-table thead{display:none}
       .desk-table tbody,.desk-table tfoot{display:block}
       .desk-table tr.desk-section__row{display:block}.desk-section__row th{display:block;padding:12px 14px 4px}
-      .desk-table tr.desk-row,.desk-table tr.desk-group{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:'product product product' 'qty price disc' 'net profit delivery';gap:8px 10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+      .desk-table tr.desk-row,.desk-table tr.desk-group{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:'product product product' 'qty price price' 'net profit delivery';gap:8px 10px;padding:12px 14px;border-bottom:1px solid var(--line)}
       .desk-table tr.desk-group{grid-template-areas:'product product product' 'qty net net';border-top:2px solid var(--line-strong);background:var(--surface-2)}
       .desk-table tr.desk-row--variant{margin-left:14px;border-left:3px solid var(--rose-line)}
       .desk-table tr.desk-row{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,.85fr)}
@@ -1031,6 +1059,12 @@ interface JourneyStep {
       .desk-row td.c-product,.desk-group td.c-product{grid-area:product;padding-right:34px}
       .desk-row--variant td.c-product{padding-left:0;box-shadow:none}
       .desk-row td.c-disc:has(> .muted){display:none}
+      .desk-table tr.desk-row td.c-disc{display:none}
+      .desk-table .desk-price{display:flex;align-items:center;gap:6px}.desk-table .desk-price .desk-cell{flex:1;min-width:0}
+      .desk-table .desk-disc-pill{display:inline-flex;align-items:center;flex:none;min-height:34px;padding:0 10px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;white-space:nowrap;cursor:pointer}
+      .desk-disc-pill.is-on{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+      .desk-table .desk-price-disc{display:flex;align-items:center;gap:6px;margin-top:6px}.desk-price-disc .desk-cell{width:88px;flex:none}.desk-price-disc span{color:var(--muted);font-size:11.5px}
+      .desk-table .desk-price__disc{display:block;color:var(--rose-dark)}
       .desk-disc__unit{padding:0 6px;font-size:11px}
       .desk-table td.c-qty{grid-area:qty}.desk-table td.c-price{grid-area:price}.desk-table td.c-disc{grid-area:disc}
       .desk-table td.c-money--total{grid-area:net}.desk-table td.c-money:not(.c-money--total){grid-area:profit}.desk-table td.c-delivery{grid-area:delivery}
@@ -1053,7 +1087,9 @@ interface JourneyStep {
     }
     .desk-empty{display:grid;justify-items:center;gap:6px;padding:40px 20px;text-align:center}.desk-empty__art{display:grid;width:52px;height:52px;place-items:center;border-radius:50%;background:var(--rose-soft);color:var(--rose);font-size:24px}.desk-empty h3{font-size:15px}.desk-empty p{max-width:360px;color:var(--muted);font-size:12.5px}
     .desk-lock{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px}.desk-lock>span:first-child{color:var(--ok);font-weight:800}.desk-lock>span:nth-child(2){flex:1}
+    .desk-price{display:contents}.desk-disc-pill,.desk-price-disc,.desk-price__disc{display:none}
     .desk-partner-tag{display:inline-flex;align-items:center;padding:4px 10px;border:1px solid var(--rose-line);border-radius:999px;background:var(--rose-soft);color:var(--rose);font-size:11px;font-weight:750;letter-spacing:.03em;text-decoration:none;white-space:nowrap}
+    .desk-partner__actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}.desk-partner-offer{margin:0 0 14px;color:var(--muted);font-size:12.5px}
     .desk-partner{display:grid;gap:8px;margin-bottom:14px;padding:12px;border:1px solid var(--rose-line);border-radius:12px;background:var(--rose-soft)}.desk-partner .desk-form__group{margin:0}.desk-partner__copy{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}.desk-partner__copy a{color:var(--rose-dark);font-weight:650}.desk-partner__facts{display:flex;justify-content:space-between;gap:10px;font-size:13px}.desk-partner__facts b{font-variant-numeric:tabular-nums}.desk-partner .btn{justify-self:start}
     .desk-minimum{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin-top:10px;padding:9px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);font-size:12px}.desk-minimum--ok{border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,var(--surface))}.desk-minimum b{font-variant-numeric:tabular-nums}.desk-minimum__track{grid-column:1/-1;display:block;height:5px;border-radius:99px;background:rgb(0 0 0/.08);overflow:hidden}.desk-minimum__track i{display:block;height:100%;background:var(--ok);border-radius:99px}
     .desk-flip{min-width:56px;font-size:12px}
@@ -1071,6 +1107,33 @@ export class SalesDesk extends SalesEditor {
   /** The partner deal's closing invoice starts from this desk. */
   readonly settlementOpen = signal(false);
   readonly isSettlement = isSettlementInvoice;
+  readonly partnerLinkOpen = signal(false);
+  /** Which line shows its extra-discount field on a narrow screen. */
+  readonly discOpen = signal<number | null>(null);
+
+  toggleDisc(productId: number): void {
+    this.discOpen.set(this.discOpen() === productId ? null : productId);
+  }
+
+  applyPartner(view: SalesOrderView): void {
+    this.view.set(view);
+    void this.loadHistory(view.order.id);
+  }
+
+  unlinkPartner(data: SalesOrderView): void {
+    this.ui.confirm({
+      title: 'Ontkoppelen van de partnercontainer',
+      message: `${data.order.number} telt daarna weer als een gewoon document; de container staat dan op ons eigen geld.`,
+      confirmLabel: 'Ontkoppelen', danger: true,
+    }, async () => {
+      try {
+        this.applyPartner(await this.sales.setPartnerDeal(data.order.id, { purchaseOrderId: null, sharePct: null, reference: null }));
+        this.ui.toast('Losgekoppeld van de partnercontainer');
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Ontkoppelen mislukt'), 'err');
+      }
+    });
+  }
 
   /** What the partner paid us for the goods and the extra lines: the basis the auction profit is measured against. */
   costBasis(data: SalesOrderView): number {

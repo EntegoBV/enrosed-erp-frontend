@@ -10,6 +10,7 @@ import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PageHeader } from '../../shared/page-header';
 import { quoteLinesOf } from './purchase-editor';
 import { PurchaseQuoteSheet } from './purchase-quote-sheet';
+import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
@@ -53,7 +54,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -703,27 +704,30 @@ type PurchaseWorkspaceSectionId =
               </section>
             }
 
-            @if (partnerDocs(); as deals) {
-              @if (deals.length) {
-                <section class="card payments-card erp-workspace__section erp-workspace__support-card"
-                         aria-labelledby="purchase-partner-title">
-                  <span class="section-kicker">Partnercontainer</span>
-                  <h2 id="purchase-partner-title">{{ partnerCompany() || 'Partner' }} · {{ deals[0].order.partnerSharePct | num }} % winstdeling</h2>
-                  <p class="partner-list__lead">De partner betaalt onze volledige gelande kost en verkoopt de goederen zelf door. Na de veiling volgt de slotfactuur met ons deel van de winst.</p>
-                  <ul class="partner-list">
-                    @for (deal of deals; track deal.order.id) {
-                      <li>
-                        <a class="partner-list__what" [routerLink]="['/sales', deal.order.id, 'edit']">
-                          <b>{{ deal.order.number }}</b>
-                          <small>{{ partnerKind(deal.order) }} · {{ statusLabel$[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}</small>
-                        </a>
-                        <span class="partner-list__amount">{{ deal.priced.totals.total | eur }}</span>
-                      </li>
-                    }
-                  </ul>
-                </section>
+            <section class="card payments-card erp-workspace__section erp-workspace__support-card"
+                     aria-labelledby="purchase-partner-title">
+              <span class="section-kicker">Partnercontainer</span>
+              @if (partnerDocs().length) {
+                <h2 id="purchase-partner-title">{{ partnerCompany() || 'Partner' }} · {{ partnerDocs()[0].order.partnerSharePct | num }} % winstdeling</h2>
+                <p class="partner-list__lead">De partner betaalt onze volledige gelande kost en verkoopt de goederen zelf door. Na de veiling volgt de slotfactuur met ons deel van de winst.</p>
+                <ul class="partner-list">
+                  @for (deal of partnerDocs(); track deal.order.id) {
+                    <li>
+                      <a class="partner-list__what" [routerLink]="['/sales', deal.order.id, 'edit']">
+                        <b>{{ deal.order.number }}</b>
+                        <small>{{ partnerKind(deal.order) }} · {{ statusLabel$[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}</small>
+                      </a>
+                      <span class="partner-list__amount">{{ deal.priced.totals.total | eur }}</span>
+                      <button class="partner-list__unlink" type="button" [attr.aria-label]="'Koppeling van ' + deal.order.number + ' verwijderen'" (click)="unlinkPartnerDoc(deal)">×</button>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <h2 id="purchase-partner-title">Op ons eigen geld</h2>
+                <p class="partner-list__lead">Ging er toch een offerte of factuur naar een partner die de goederen overneemt? Koppel ze hier, dan telt de container in de analyses als partnergeld.</p>
               }
-            }
+              <button class="btn btn--block" type="button" (click)="partnerSheetOpen.set(true)">Verkoopdocument koppelen</button>
+            </section>
 
             @if (documents(); as docs) {
               @if (docs.length) {
@@ -769,6 +773,9 @@ type PurchaseWorkspaceSectionId =
             </section>
             @if (quoteOpen()) {
               <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLinesOf(data)" (closed)="quoteOpen.set(false)" />
+            }
+            @if (partnerSheetOpen()) {
+              <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerDocs()[0]?.order?.partnerSharePct ?? null" (closed)="partnerSheetOpen.set(false)" (linked)="reloadPartnerDocs()" />
             }
           </main>
 
@@ -970,7 +977,7 @@ type PurchaseWorkspaceSectionId =
 
     @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.line-facts--purchase{grid-template-columns:repeat(5,minmax(0,1fr))}.line-facts--purchase>.line-fact--total{grid-column:auto}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
     .report-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.report-list li{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.report-list__later{border-color:var(--rose-line);background:var(--rose-soft)}.report-list__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.report-list__later .report-list__tag{background:var(--rose);color:#fff}.report-list__what{display:grid;min-width:0}.report-list__what b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.report-list__what small{color:var(--muted);font-size:11px}.report-list__count{grid-column:2;color:var(--danger);font-size:12px;font-weight:650}.report-list__count b{font-size:14px}.report-list__note{grid-column:2;color:var(--ink-2);font-size:12px}.report-list__hint{margin:8px 0 0;color:var(--muted);font-size:11.5px}
-    .partner-list__lead{margin:6px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.45}.partner-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.partner-list li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.partner-list__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.partner-list__what b{font-size:13px}.partner-list__what small{color:var(--muted);font-size:11px}.partner-list__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}
+    .partner-list__lead{margin:6px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.45}.partner-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.partner-list li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.partner-list__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.partner-list__what b{font-size:13px}.partner-list__what small{color:var(--muted);font-size:11px}.partner-list__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}.partner-list__unlink{flex:none;width:28px;height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:16px;line-height:1}.payments-card .btn--block{margin-top:12px}
     @media(min-width:680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}.purchase-payment-streams{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}.purchase-payment-streams .pay-stream{margin-top:0}.purchase-payment-streams .pay-ours{grid-column:1/-1;margin-top:0}.purchase-dossier{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}.purchase-dossier app-purchase-activity{margin:0}.purchase-final-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:24px}.purchase-final-action .action-card__buttons{grid-column:2;grid-row:1/span 3;min-width:250px;margin-top:0}}
     @media(min-width:1024px){#purchase-overview,#purchase-products-section,#purchase-costs-section,#purchase-payments-section,#purchase-files-section,#purchase-actions-section{scroll-margin-top:calc(var(--appbar-h) + 90px)}.purchase-section-nav.erp-workspace__nav{display:grid;width:100%;max-width:none;grid-template-columns:repeat(6,minmax(0,1fr));margin:14px 0;overflow:visible}.purchase-section-nav .erp-workspace__nav-item{width:100%;min-width:0;border-radius:13px;justify-content:flex-start}.purchase-section-nav .erp-workspace__nav-item--action:not(.erp-workspace__nav-item--active){background:rgb(255 255 255 / 82%);color:var(--muted)}.purchase-section-nav .erp-workspace__nav-item>span:last-child,.purchase-section-nav .erp-workspace__nav-item small{overflow:hidden;text-overflow:ellipsis}.view-layout{grid-template-columns:minmax(0,1fr) 292px;gap:18px;align-items:start}.purchase-control-rail.erp-workspace__rail{display:grid;position:sticky;top:calc(var(--appbar-h) + 88px);max-height:none;overflow:visible;overscroll-behavior:auto;padding-bottom:0;scrollbar-width:auto}.cost-card__body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:0}.cost-card__body>.cost-hero{grid-column:1/-1;margin:0;padding:18px;border-width:0 0 1px;border-radius:0}.cost-card__body>.cost-stage{padding:18px}.cost-card__body>.cost-stage+.cost-stage{border-top:0;border-left:1px solid var(--line)}}
   `],
@@ -1118,6 +1125,41 @@ export class PurchaseView {
   readonly partnerDocs = signal<SalesOrderView[]>([]);
   /** The partner behind those documents, by company name. */
   readonly partnerCompany = signal('');
+  readonly partnerSheetOpen = signal(false);
+
+  private async loadPartnerDocs(id: number): Promise<void> {
+    try {
+      const deals = (await this.sales.orders()).filter((view) => view.order.partnerPurchaseOrderId === id);
+      this.partnerDocs.set(deals);
+      const customerId = deals[0]?.order.customerId;
+      if (!customerId) { this.partnerCompany.set(''); return; }
+      const customers = await this.sales.customers().catch(() => [] as Customer[]);
+      this.partnerCompany.set(customers.find((row) => row.id === customerId)?.company ?? '');
+    } catch {
+      this.partnerDocs.set([]);
+    }
+  }
+
+  reloadPartnerDocs(): void {
+    const id = this.view()?.order.id;
+    if (id != null) void this.loadPartnerDocs(id);
+  }
+
+  unlinkPartnerDoc(doc: SalesOrderView): void {
+    this.ui.confirm({
+      title: 'Koppeling verwijderen',
+      message: `${doc.order.number} telt daarna niet meer als partnerdocument van deze container.`,
+      confirmLabel: 'Ontkoppelen', danger: true,
+    }, async () => {
+      try {
+        await this.sales.setPartnerDeal(doc.order.id, { purchaseOrderId: null, sharePct: null, reference: null });
+        this.ui.toast('Koppeling verwijderd');
+        this.reloadPartnerDocs();
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Ontkoppelen mislukt'), 'err');
+      }
+    });
+  }
   readonly statusLabel$ = STATUS_LABEL;
   readonly supplierOwed = computed(() => this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
   readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
@@ -1204,16 +1246,7 @@ export class PurchaseView {
     this.openProductGroups.set(new Set());
     void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
     void this.sourcing.documents(id).then((list) => this.documents.set(list)).catch(() => this.documents.set([]));
-    void this.sales.orders()
-      .then(async (list) => {
-        const deals = list.filter((view) => view.order.partnerPurchaseOrderId === id);
-        this.partnerDocs.set(deals);
-        const customerId = deals[0]?.order.customerId;
-        if (!customerId) return;
-        const customers = await this.sales.customers().catch(() => [] as Customer[]);
-        this.partnerCompany.set(customers.find((row) => row.id === customerId)?.company ?? '');
-      })
-      .catch(() => this.partnerDocs.set([]));
+    void this.loadPartnerDocs(id);
     /* Family metadata enriches the product groups, but a slow or older API
        must never hold the operational order screen hostage. */
     void this.catalog.productFamilies()

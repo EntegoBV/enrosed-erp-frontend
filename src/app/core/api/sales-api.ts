@@ -92,6 +92,11 @@ export class SalesApi {
       { customerId, countryCode, incoterm, docType }));
   }
 
+  /** Ties a document to the container a partner co-finances; a null container cuts the tie. */
+  setPartnerDeal(id: number, body: { purchaseOrderId: number | null; sharePct: number | null; reference: string | null }): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/partner-deal`), body));
+  }
+
   /** The partner deal's closing invoice: our share of the auction profit as one line. */
   createSettlement(sourceId: number, body: {
     proceedsEur: number; sharePct: number; reference: string | null; note: string | null;

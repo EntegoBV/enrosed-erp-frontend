@@ -3,6 +3,7 @@ import type {
   ExpectedStock,
   Product,
   SalesOrderView,
+  PurchaseOrderView,
 } from '../../core/api/models';
 
 export interface AnalysisOptions {
@@ -129,6 +130,11 @@ export interface InventoryStockSummary {
   positivePieces: number;
   valuedPieces: number;
   costValueEur: number;
+  /** Pieces already invoiced to a partner but not yet shipped: their money sits on our shelves. */
+  partnerPieces: number;
+  partnerCostValueEur: number;
+  /** The cost value that is really ours: everything valued minus the partner's pieces. */
+  ownCostValueEur: number;
   saleablePieces: number;
   salesValueEur: number;
   /** Null means at least one saleable stock line has no landed cost. */
@@ -429,6 +435,12 @@ export function inventoryAnalysis(
 
   const costValueEur = valued.reduce((sum, product) =>
     sum + finiteNonNegative(product.stockQuantity) * finiteNonNegative(product.landedCostEur), 0);
+  const partnerQty = partnerPiecesAwaitingShipment(options.sales ?? []);
+  const partnerPiecesOf = (product: Product): number =>
+    product.id == null ? 0 : Math.min(finiteNonNegative(product.stockQuantity), partnerQty.get(product.id) ?? 0);
+  const partnerPieces = positiveKnown.reduce((sum, product) => sum + partnerPiecesOf(product), 0);
+  const partnerCostValueEur = valued.reduce((sum, product) =>
+    sum + partnerPiecesOf(product) * finiteNonNegative(product.landedCostEur), 0);
   const salesValueEur = saleable.reduce((sum, product) =>
     sum + finiteNonNegative(product.stockQuantity) * finiteNonNegative(product.computedSalesPriceEur), 0);
   const saleableCostValueEur = saleable.reduce((sum, product) =>
@@ -546,6 +558,9 @@ export function inventoryAnalysis(
       valuedPieces: valued.reduce(
         (sum, product) => sum + finiteNonNegative(product.stockQuantity), 0),
       costValueEur,
+      partnerPieces,
+      partnerCostValueEur,
+      ownCostValueEur: costValueEur - partnerCostValueEur,
       saleablePieces: saleable.reduce(
         (sum, product) => sum + finiteNonNegative(product.stockQuantity), 0),
       salesValueEur,
@@ -590,6 +605,135 @@ export function inventoryAnalysis(
 }
 
 /** Pieces per product on issued invoices dated within the last `days` days up to today. */
+/**
+ * Pieces on partner invoices that have not left the door yet, per product.
+ * Those goods are on our shelves but already the partner's money: a
+ * settlement invoice carries no goods and a shipped invoice no longer counts.
+ */
+function partnerPiecesAwaitingShipment(sales: readonly SalesOrderView[]): Map<number, number> {
+  const pieces = new Map<number, number>();
+  for (const view of sales) {
+    const order = view.order;
+    if (order.docType !== 'FACTUUR' || !order.partnerPurchaseOrderId || order.goodsShippedAt) continue;
+    if (order.status === 'GEANNULEERD' || order.status === 'AFGEWEZEN' || order.status === 'VERLOPEN') continue;
+    for (const line of view.priced.lines ?? []) {
+      if (line.productId == null) continue;
+      pieces.set(line.productId, (pieces.get(line.productId) ?? 0) + finiteNonNegative(line.quantity));
+    }
+  }
+  return pieces;
+}
+
+/* ---------------------------------------------------------- partner money */
+
+export interface PartnerFinancingRow {
+  purchaseOrderId: number;
+  number: string;
+  alias: string | null;
+  status: PurchaseOrderView['order']['status'];
+  partnerName: string;
+  sharePct: number | null;
+  /** What the container cost us, landed. */
+  landedEur: number;
+  /** What the partner is invoiced for the goods, excluding the settlement. */
+  invoicedEur: number;
+  /** Only a quote so far: the partner has not been invoiced yet. */
+  quotedOnly: boolean;
+  /** Whether every partner invoice for the goods is paid. */
+  invoicesPaid: boolean;
+  /** Our profit share invoiced after the auction. */
+  settlementEur: number;
+  /** Invoiced plus settlement minus landed: what the container earns us. */
+  resultEur: number;
+  documents: { id: number; number: string; docType: 'OFFERTE' | 'FACTUUR'; settlement: boolean }[];
+}
+
+export interface PartnerFinancingAnalysis {
+  own: { count: number; landedEur: number };
+  partner: { count: number; landedEur: number };
+  invoicedEur: number;
+  settlementEur: number;
+  resultEur: number;
+  rows: PartnerFinancingRow[];
+}
+
+const DEAD_SALES_STATUSES = new Set<SalesOrderView['order']['status']>(['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
+
+/**
+ * Which containers run on our own money and which on a partner's, with
+ * what each partner container earns us: the goods invoiced at landed cost,
+ * plus our share of the auction profit, minus what the container cost.
+ */
+export function partnerFinancingAnalysis(
+  purchases: readonly PurchaseOrderView[],
+  sales: readonly SalesOrderView[],
+  customers: readonly Customer[] = [],
+): PartnerFinancingAnalysis {
+  const byContainer = new Map<number, SalesOrderView[]>();
+  for (const view of sales) {
+    const id = view.order.partnerPurchaseOrderId;
+    if (id == null || DEAD_SALES_STATUSES.has(view.order.status)) continue;
+    byContainer.set(id, [...(byContainer.get(id) ?? []), view]);
+  }
+  const customerName = (id: number | null | undefined): string =>
+    customers.find((row) => row.id === id)?.company ?? 'Partner';
+  const rows: PartnerFinancingRow[] = [];
+  let ownCount = 0;
+  let ownLanded = 0;
+  for (const purchase of purchases) {
+    const docs = byContainer.get(purchase.order.id) ?? [];
+    const landedEur = finiteNonNegative(purchase.costing?.totals?.totalEur);
+    if (!docs.length) {
+      ownCount += 1;
+      ownLanded += landedEur;
+      continue;
+    }
+    const settlement = (view: SalesOrderView): boolean =>
+      view.order.docType === 'FACTUUR' && (view.priced.lines ?? []).length === 0
+      && (view.order.extraLines ?? []).some((line) => (line.description ?? '').startsWith('Winstdeling'));
+    const goodsInvoices = docs.filter((view) => view.order.docType === 'FACTUUR' && !settlement(view));
+    const settlements = docs.filter(settlement);
+    const quotes = docs.filter((view) => view.order.docType !== 'FACTUUR');
+    const invoicedEur = goodsInvoices.reduce((sum, view) => sum + finite(view.priced.totals.total), 0);
+    const quotedEur = quotes.reduce((sum, view) => sum + finite(view.priced.totals.total), 0);
+    const settlementEur = settlements.reduce((sum, view) => sum + finite(view.priced.totals.total), 0);
+    const quotedOnly = goodsInvoices.length === 0;
+    const goodsEur = quotedOnly ? quotedEur : invoicedEur;
+    const first = docs.slice().sort((left, right) => left.order.id - right.order.id)[0];
+    rows.push({
+      purchaseOrderId: purchase.order.id,
+      number: purchase.order.number,
+      alias: purchase.order.alias ?? null,
+      status: purchase.order.status,
+      partnerName: customerName(first.order.customerId),
+      sharePct: first.order.partnerSharePct ?? null,
+      landedEur,
+      invoicedEur: goodsEur,
+      quotedOnly,
+      invoicesPaid: goodsInvoices.length > 0 && goodsInvoices.every((view) => view.order.status === 'BETAALD'),
+      settlementEur,
+      resultEur: round2(goodsEur + settlementEur - landedEur),
+      documents: docs
+        .slice()
+        .sort((left, right) => left.order.id - right.order.id)
+        .map((view) => ({ id: view.order.id, number: view.order.number, docType: view.order.docType === 'FACTUUR' ? 'FACTUUR' : 'OFFERTE', settlement: settlement(view) })),
+    });
+  }
+  rows.sort((left, right) => right.purchaseOrderId - left.purchaseOrderId);
+  return {
+    own: { count: ownCount, landedEur: round2(ownLanded) },
+    partner: { count: rows.length, landedEur: round2(rows.reduce((sum, row) => sum + row.landedEur, 0)) },
+    invoicedEur: round2(rows.reduce((sum, row) => sum + (row.quotedOnly ? 0 : row.invoicedEur), 0)),
+    settlementEur: round2(rows.reduce((sum, row) => sum + row.settlementEur, 0)),
+    resultEur: round2(rows.reduce((sum, row) => sum + row.resultEur, 0)),
+    rows,
+  };
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function piecesSoldByProduct(
   sales: readonly SalesOrderView[],
   today: string,

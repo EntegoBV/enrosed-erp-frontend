@@ -21,7 +21,7 @@ import { PageHeader } from '../../shared/page-header';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
-import { inventoryAnalysis, salesAnalysis } from './analysis-metrics';
+import { inventoryAnalysis, partnerFinancingAnalysis, salesAnalysis } from './analysis-metrics';
 import { MarketAnalysis } from './market-analysis';
 import { WebsiteAnalytics } from './website-analytics';
 import { averageLeadDays, inDateRange, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
@@ -370,6 +370,11 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <p>{{ inventoryMetrics().stock.valuedPieces | num }} gewaardeerde stuks</p>
           </article>
           <article class="card metric-card">
+            <span class="metric-card__label">Op ons eigen geld</span>
+            <strong>{{ inventoryMetrics().stock.ownCostValueEur | eur: 0 }}</strong>
+            <p>@if (inventoryMetrics().stock.partnerPieces) { {{ inventoryMetrics().stock.partnerCostValueEur | eur: 0 }} voor partners: {{ inventoryMetrics().stock.partnerPieces | num }} stuks gefactureerd, nog niet verzonden } @else { geen voorraad die al aan een partner gefactureerd is }</p>
+          </article>
+          <article class="card metric-card">
             <span class="metric-card__label">Verkoopwaarde</span>
             <strong>{{ inventoryMetrics().stock.salesValueEur | eur: 0 }}</strong>
             <p>{{ inventoryMetrics().stock.saleablePieces | num }} actieve verkoopbare stuks</p>
@@ -506,6 +511,44 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             </div>
           } @else {
             <p class="list-empty">Nog geen ontvangen orders in deze periode.</p>
+          }
+        </article>
+
+        <header class="section-copy section-copy--sub">
+          <span class="eyebrow">Financiering</span>
+          <h2>Eigen geld of partnergeld</h2>
+          <p>Wij betalen de leverancier, de vracht en de douane rechtstreeks. Een partner die de container meebestelt betaalt ons de gelande kost terug en deelt na de veiling de winst; die containers staan hier apart.</p>
+        </header>
+        <div class="analysis-kpis analysis-kpis--flow">
+          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Op eigen geld</span><strong>{{ financing().own.landedEur | eur: 0 }}</strong><p>{{ financing().own.count }} container{{ financing().own.count === 1 ? '' : 's' }} volledig door ons betaald</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Partnercontainers</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} container{{ financing().partner.count === 1 ? '' : 's' }} gelande kost, door een partner overgenomen</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Gefactureerd aan partners</span><strong>{{ financing().invoicedEur | eur: 0 }}</strong><p>goederen aan kostprijs, zonder slotfacturen</p></article>
+          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Winstdeling</span><strong>{{ financing().settlementEur | eur: 0 }}</strong><p>ons deel op de slotfacturen</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Resultaat partnercontainers</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>gefactureerd plus winstdeling, min gelande kost</p></article>
+        </div>
+        <article class="card analysis-list scorecard-card">
+          <header><div><span>Partners</span><h3>Per partnercontainer</h3></div><small>{{ financing().rows.length }} container{{ financing().rows.length === 1 ? '' : 's' }}</small></header>
+          @if (financing().rows.length) {
+            <div class="scorecard-scroll">
+              <table class="scorecard">
+                <thead><tr><th>Container</th><th>Partner</th><th>Gelande kost</th><th>Gefactureerd</th><th>Winstdeling</th><th>Resultaat</th><th>Documenten</th></tr></thead>
+                <tbody>
+                  @for (row of financing().rows; track row.purchaseOrderId) {
+                    <tr>
+                      <td><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ row.alias || row.number }}</a>@if (row.alias) { <small class="muted"> {{ row.number }}</small> }</td>
+                      <td>{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
+                      <td>{{ row.landedEur | eur: 0 }}</td>
+                      <td [class.scorecard__warn]="row.quotedOnly">{{ row.invoicedEur | eur: 0 }}<small class="muted"> {{ row.quotedOnly ? 'offerte' : row.invoicesPaid ? 'betaald' : 'open' }}</small></td>
+                      <td>{{ row.settlementEur ? (row.settlementEur | eur: 0) : '—' }}</td>
+                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
+                      <td>@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a>{{ last ? '' : ' · ' }}}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="list-empty">Nog geen container met een partner: alles staat op ons eigen geld.</p>
           }
         </article>
       </section>
@@ -679,6 +722,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
     .capital-text{color:var(--ink-2)!important;font-weight:700}
     .scorecard-card{margin-top:10px}.scorecard-scroll{overflow-x:auto}.scorecard{width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px}.scorecard th{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.05em;text-align:left;text-transform:uppercase}.scorecard td{padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.scorecard tr:last-child td{border-bottom:0}.scorecard td a{color:inherit;font-weight:650;text-decoration:none}.scorecard td a:hover{color:var(--rose-dark);text-decoration:underline}.scorecard__warn{color:var(--warn);font-weight:700}
     @keyframes pulse{50%{opacity:.48}}
+    .section-copy--sub{margin-top:8px}.scorecard .muted{color:var(--muted);font-size:11px}
   `,
 })
 export class AnalysesPage {
@@ -791,6 +835,8 @@ export class AnalysesPage {
     today: TODAY,
     topLimit: 8,
   }));
+  readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers()));
+
   readonly inventoryMetrics = computed(() => inventoryAnalysis(
     this.products(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: TODAY }));
 

@@ -5,11 +5,13 @@ import type {
   ExpectedStock,
   PricedLine,
   Product,
+  PurchaseOrderView,
   QuoteStatus,
   SalesOrderView,
 } from '../src/app/core/api/models.ts';
 import {
   inventoryAnalysis,
+  partnerFinancingAnalysis,
   salesAnalysis,
 } from '../src/app/features/analyses/analysis-metrics.ts';
 
@@ -238,6 +240,9 @@ test('inventory analysis separates current value, data gaps and carton attention
     positivePieces: 34,
     valuedPieces: 22,
     costValueEur: 142,
+    partnerPieces: 0,
+    partnerCostValueEur: 0,
+    ownCostValueEur: 142,
     saleablePieces: 20,
     salesValueEur: 145,
     potentialUpliftEur: null,
@@ -341,4 +346,72 @@ test('inventory analysis reads the sales pace into reorder advice and slow mover
   assert.deepEqual(result.slowMovers.rows.map((row) => row.productId), [3]);
   assert.equal(result.slowMovers.valueEur, 120);
   assert.equal(inventoryAnalysis(products, expected, {}).slowMovers.count, 0);
+});
+
+function container(id: number, landed: number, status = 'ONTVANGEN'): PurchaseOrderView {
+  return { order: { id, number: `PO-${id}`, alias: null, status, supplierId: 1 }, costing: { totals: { totalEur: landed } } } as unknown as PurchaseOrderView;
+}
+
+function partnerDoc(input: SalesFixture & { container: number; share?: number; shipped?: boolean; settlement?: number }): SalesOrderView {
+  const row = salesRow(input);
+  row.order.partnerPurchaseOrderId = input.container;
+  row.order.partnerSharePct = input.share ?? 50;
+  row.order.goodsShippedAt = input.shipped ? '2026-05-01T10:00:00Z' : null;
+  if (input.settlement !== undefined) {
+    row.priced.lines = [];
+    row.order.extraLines = [{ description: 'Winstdeling veiling · PO · 50 % van € 1.000,00', quantity: 1, unitPriceEur: input.settlement }];
+    row.priced.totals.total = input.settlement;
+  }
+  return row;
+}
+
+test('partner financing tells our containers from the partner ones and what each earns', () => {
+  const purchases = [container(1, 4000), container(2, 1000), container(3, 2500)];
+  const customers = [{ id: 7, company: 'Frans Verhoeven' }] as unknown as Customer[];
+  const sales = [
+    partnerDoc({ id: 10, docType: 'OFFERTE', status: 'GEACCEPTEERD', total: 4000, container: 1, customerId: 7 }),
+    partnerDoc({ id: 11, docType: 'FACTUUR', status: 'BETAALD', total: 4000, container: 1, customerId: 7 }),
+    partnerDoc({ id: 12, docType: 'FACTUUR', status: 'CONCEPT', total: 4000, container: 1, customerId: 7, settlement: 900 }),
+    partnerDoc({ id: 13, docType: 'OFFERTE', status: 'VERZONDEN', total: 2600, container: 3, customerId: 7, share: 40 }),
+    partnerDoc({ id: 14, docType: 'FACTUUR', status: 'GEANNULEERD', total: 999, container: 2, customerId: 7 }),
+    salesRow({ id: 15, docType: 'FACTUUR', status: 'VERZONDEN', total: 500 }),
+  ];
+
+  const result = partnerFinancingAnalysis(purchases, sales, customers);
+
+  assert.deepEqual(result.own, { count: 1, landedEur: 1000 });
+  assert.deepEqual(result.partner, { count: 2, landedEur: 6500 });
+  assert.equal(result.invoicedEur, 4000, 'a quote alone is not invoiced money');
+  assert.equal(result.settlementEur, 900);
+  assert.equal(result.resultEur, 900 + 100);
+  const first = result.rows.find((row) => row.purchaseOrderId === 1)!;
+  assert.equal(first.partnerName, 'Frans Verhoeven');
+  assert.equal(first.invoicedEur, 4000);
+  assert.equal(first.invoicesPaid, true);
+  assert.equal(first.settlementEur, 900);
+  assert.equal(first.resultEur, 900);
+  assert.deepEqual(first.documents.map((doc) => `${doc.number}${doc.settlement ? '*' : ''}`), ['OFF-10', 'INV-11', 'INV-12*']);
+  const third = result.rows.find((row) => row.purchaseOrderId === 3)!;
+  assert.equal(third.quotedOnly, true);
+  assert.equal(third.sharePct, 40);
+  assert.equal(third.resultEur, 100);
+});
+
+test('inventory value keeps the partner pieces that wait for shipment apart from our own money', () => {
+  const products: Product[] = [
+    product({ id: 1, name: 'Rood', stock: 40, per: 6, cost: 20, sales: 30 }),
+    product({ id: 2, name: 'Wit', stock: 10, per: 6, cost: 5, sales: 8 }),
+  ];
+  const sales = [
+    partnerDoc({ id: 1, docType: 'FACTUUR', status: 'VERZONDEN', total: 600, container: 1, lines: [{ productId: 1, quantity: 30 }] }),
+    partnerDoc({ id: 2, docType: 'FACTUUR', status: 'BETAALD', total: 200, container: 1, shipped: true, lines: [{ productId: 1, quantity: 10 }] }),
+    partnerDoc({ id: 3, docType: 'FACTUUR', status: 'CONCEPT', total: 100, container: 2, lines: [{ productId: 2, quantity: 25 }] }),
+  ];
+
+  const result = inventoryAnalysis(products, [], { sales });
+
+  assert.equal(result.stock.costValueEur, 40 * 20 + 10 * 5);
+  assert.equal(result.stock.partnerPieces, 30 + 10, 'shipped goods are gone, and never more than the stock');
+  assert.equal(result.stock.partnerCostValueEur, 30 * 20 + 10 * 5);
+  assert.equal(result.stock.ownCostValueEur, 10 * 20);
 });

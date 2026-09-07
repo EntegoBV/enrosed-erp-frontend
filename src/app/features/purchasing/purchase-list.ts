@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } 
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { SalesApi } from '../../core/api/sales-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import {
@@ -111,6 +112,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               <div class="list-item__meta">
                 {{ creatorName(row) }} · {{ row.order.orderDate | dateNl }}
                 @if (row.order.alias) { · <b class="po-row__number">{{ row.order.number }}</b> }
+                @if (partnerIds().has(row.order.id)) { <span class="po-partner-tag">Partner</span> }
               </div>
               <div class="list-item__meta hide-mobile">
                 {{ containerLabel(row.order.containerType) }} ·
@@ -329,6 +331,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     .swipe--dragging .swipe__row { transform: translateX(var(--swipe-offset, 0px)); transition: none; }
     .swipe__row { touch-action: pan-y; }
     .po-row__number { color: var(--ink-2); font-weight: 650; }
+    .po-partner-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); font-size: 10px; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; vertical-align: middle; }
     .chip-rail { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
     .chip-rail::-webkit-scrollbar { display: none; }
     .chip { display: inline-flex; align-items: center; gap: 5px; flex: none; min-height: 34px; padding: 0 12px;
@@ -356,12 +359,15 @@ export class PurchaseList {
   readonly containerLabel = containerLabel;
 
   private readonly sourcing = inject(SourcingApi);
+  private readonly sales = inject(SalesApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
   readonly fx = inject(Fx);
   readonly auth = inject(Auth);
 
   readonly orders = signal<PurchaseOrderView[]>([]);
+  /** Containers a partner co-finances, by id: they get a tag on the row. */
+  readonly partnerIds = signal<Set<number>>(new Set());
   readonly statusOptions: { key: string; label: string }[] = [
     { key: 'ALL', label: 'Alle' }, { key: 'CONCEPT', label: 'Concept' }, { key: 'BESTELD', label: 'Besteld' },
     { key: 'ONDERWEG', label: 'Vertrokken' }, { key: 'ONTVANGEN', label: 'Ontvangen' }, { key: 'ATTENTION', label: 'Actie vereist' },
@@ -452,6 +458,9 @@ export class PurchaseList {
   private async load(): Promise<void> {
     const [orders, suppliers] = await Promise.all([
       this.sourcing.purchaseOrders(), this.sourcing.suppliers()]);
+    void this.sales.orders()
+      .then((sales) => this.partnerIds.set(new Set(sales.flatMap((view) => view.order.partnerPurchaseOrderId == null ? [] : [view.order.partnerPurchaseOrderId]))))
+      .catch(() => undefined);
     this.orders.set(orders);
     this.suppliers.set(suppliers);
     this.chosen.set(suppliers[0]?.id ?? null);

@@ -2158,6 +2158,30 @@ export class PurchaseEditor {
   /** Sales documents of a partner who co-orders this container at our landed cost: quote, invoice, settlement. */
   readonly partnerDocs = signal<SalesOrderView[]>([]);
   readonly partnerCompany = signal('');
+  readonly partnerSheetOpen = signal(false);
+  /** The share the container already runs on, from its first linked document. */
+  readonly partnerShare = computed(() => this.partnerDocs()[0]?.order.partnerSharePct ?? null);
+
+  onPartnerLinked(): void {
+    const id = this.view()?.order.id;
+    if (id != null) void this.loadPartnerDocs(id);
+  }
+
+  unlinkPartnerDoc(doc: SalesOrderView): void {
+    this.ui.confirm({
+      title: 'Koppeling verwijderen',
+      message: `${doc.order.number} telt daarna niet meer als partnerdocument van deze container.`,
+      confirmLabel: 'Ontkoppelen', danger: true,
+    }, async () => {
+      try {
+        await this.sales.setPartnerDeal(doc.order.id, { purchaseOrderId: null, sharePct: null, reference: null });
+        this.ui.toast('Koppeling verwijderd');
+        this.onPartnerLinked();
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Ontkoppelen mislukt'), 'err');
+      }
+    });
+  }
 
   protected async loadPartnerDocs(orderId: number): Promise<void> {
     try {
