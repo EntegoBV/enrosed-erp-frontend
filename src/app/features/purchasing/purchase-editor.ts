@@ -3124,8 +3124,13 @@ export class PurchaseEditor {
 /** The product lines of the container as a quote would carry them: product and pieces. */
 export function quoteLinesOf(view: PurchaseOrderView | null | undefined): PurchaseQuoteLine[] {
   if (!view) return [];
-  const names = new Map(view.costing.lines.map((line) => [line.productId, line.productName] as const));
+  const costing = new Map(view.costing.lines.map((line) => [line.productId, line] as const));
   return view.order.lines
     .filter((line) => line.productId !== null && line.quantity > 0)
-    .map((line) => ({ productId: line.productId!, name: names.get(line.productId!) ?? `Product ${line.productId}`, quantity: line.quantity }));
+    .map((line) => ({
+      productId: line.productId!,
+      name: costing.get(line.productId!)?.productName ?? `Product ${line.productId}`,
+      quantity: line.quantity,
+      landedUnitEur: costing.get(line.productId!)?.landedUnitEur ?? null,
+    }));
 }

@@ -1,9 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
 import { Customer, PurchaseOrder } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
-import { NumPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 
 /** One product line of the container as it will land on the quote. */
@@ -11,7 +11,18 @@ export interface PurchaseQuoteLine {
   productId: number;
   name: string;
   quantity: number;
+  /** What one piece of this container cost us landed, freight and duties included; null when unknown. */
+  landedUnitEur: number | null;
 }
+
+/** A cost of the container that can travel to the quote as a line of its own. */
+export interface PurchaseQuoteCost {
+  key: string;
+  description: string;
+  amountEur: number;
+}
+
+export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
 
 /**
  * A container becomes an offer: pick the customer, and a new sales quote
@@ -21,7 +32,7 @@ export interface PurchaseQuoteLine {
 @Component({
   selector: 'app-purchase-quote-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, NumPipe],
+  imports: [Sheet, NumPipe, EurPipe],
   template: `
     <app-sheet title="Verkoopofferte maken" (closed)="closed.emit()">
       <div body class="pq">
@@ -62,11 +73,46 @@ export interface PurchaseQuoteLine {
             <p class="pq__chosen">Offerte voor <b>{{ customer.company }}</b> · {{ customer.incoterm || 'DAP' }}@if (customer.language) { · {{ customer.language }} }</p>
           }
         </div>
-        <ul class="pq__lines" aria-label="Productregels die meegaan">
+        <div class="pq__pricing">
+          <div class="per-toggle" role="group" aria-label="Prijzen op de offerte">
+            <button type="button" [class.on]="pricing() === 'CUSTOMER'" (click)="pricing.set('CUSTOMER')">Klantprijzen</button>
+            <button type="button" [class.on]="pricing() === 'COST'" [disabled]="!costKnown()" (click)="pricing.set('COST')">Kostprijs van deze container</button>
+          </div>
+          @if (pricing() === 'COST') {
+            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container, vracht en rechten inbegrepen. Inspectie en andere kosten gaan als aparte regels mee; alles blijft op de offerte aanpasbaar.</p>
+            <div class="pq__markup">
+              <label for="pq-markup">Opslag op de kostprijs</label>
+              <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" step="0.5" inputmode="decimal"
+                     [value]="markupPct()" (input)="setMarkup($any($event.target).value)" /><i>%</i></span>
+            </div>
+            @if (costs().length) {
+              <div class="pq__costs" role="group" aria-label="Aparte kosten van de container">
+                @for (cost of costs(); track cost.key) {
+                  <label class="pq__cost">
+                    <input type="checkbox" [checked]="includedCosts().has(cost.key)" (change)="toggleCost(cost.key)" />
+                    <span>{{ cost.description }}</span><b>{{ cost.amountEur | eur }}</b>
+                  </label>
+                }
+              </div>
+            }
+          } @else if (!costKnown()) {
+            <p class="pq__hint">De kostprijs per stuk is nog niet bekend voor elke regel; reken de calculatie eerst door om aan kostprijs te kunnen offreren.</p>
+          }
+        </div>
+        <ul class="pq__lines" aria-label="Regels die meegaan">
           @for (line of lines(); track line.productId) {
-            <li><span>{{ line.name }}</span><b>{{ line.quantity | num }} st.</b></li>
+            <li>
+              <span>{{ line.name }}</span>
+              <b>{{ line.quantity | num }} st.@if (pricing() === 'COST' && line.landedUnitEur !== null) { · {{ unitPrice(line) | eur }} / st }</b>
+            </li>
           } @empty {
             <li class="pq__empty">Deze container heeft nog geen productregels.</li>
+          }
+          @if (pricing() === 'COST') {
+            @for (cost of chosenCosts(); track cost.key) {
+              <li class="pq__extra"><span>{{ cost.description }}</span><b>{{ cost.amountEur | eur }}</b></li>
+            }
+            <li class="pq__total"><span>Goederen en aparte kosten, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
           }
         </ul>
       </div>
@@ -106,6 +152,20 @@ export interface PurchaseQuoteLine {
     .pq__lines li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pq__lines b { flex: none; font-variant-numeric: tabular-nums; }
     .pq__empty { color: var(--muted); }
+    .pq__pricing { display: grid; gap: 10px; }
+    .pq__hint { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+    .pq__markup { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+    .pq__markup-field { display: inline-flex; align-items: center; gap: 6px; }
+    .pq__markup-field .input { width: 84px; min-height: 40px; }
+    .pq__markup-field i { color: var(--muted); font-style: normal; }
+    .pq__costs { display: grid; gap: 6px; }
+    .pq__cost { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; cursor: pointer; }
+    .pq__cost input { width: 18px; height: 18px; accent-color: var(--rose); }
+    .pq__cost span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pq__cost b { font-variant-numeric: tabular-nums; }
+    .pq__extra span { color: var(--ink-2); font-style: italic; }
+    .pq__total { background: var(--surface-2); font-weight: 700; }
+    .pq__total span { color: var(--muted); font-size: 12px; font-weight: 600; white-space: normal; }
   `,
 })
 export class PurchaseQuoteSheet {
@@ -123,6 +183,29 @@ export class PurchaseQuoteSheet {
   readonly chosen = signal<number | null>(null);
   readonly busy = signal(false);
   readonly query = signal('');
+  readonly pricing = signal<PurchaseQuotePricing>('CUSTOMER');
+  readonly markupPct = signal(0);
+
+  /** Cost pricing needs a landed cost on every line; a half-calculated container cannot be passed on. */
+  readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => line.landedUnitEur !== null));
+  /** The container's separate costs: inspection and the named others, each a line of its own. */
+  readonly costs = computed<PurchaseQuoteCost[]>(() => {
+    const order = this.order();
+    const suffix = ` · ${order.number}`;
+    const costs: PurchaseQuoteCost[] = [];
+    if ((order.inspectionCostEur ?? 0) > 0) costs.push({ key: 'inspection', description: `Inspectie${suffix}`, amountEur: order.inspectionCostEur! });
+    (order.otherCosts ?? []).forEach((cost, index) => {
+      const amount = cost.amountEur ?? 0;
+      if (!cost.label?.trim() || !(amount > 0)) return;
+      costs.push({ key: `other-${index}`, description: `${cost.label.trim()}${suffix}`, amountEur: amount });
+    });
+    return costs;
+  });
+  /* Every separate cost travels along unless it is ticked off; a new container resets the ticks. */
+  readonly includedCosts = linkedSignal<ReadonlySet<string>>(() => new Set(this.costs().map((cost) => cost.key)));
+  readonly chosenCosts = computed(() => this.costs().filter((cost) => this.includedCosts().has(cost.key)));
+  readonly previewTotal = computed(() => this.lines().reduce((sum, line) => sum + this.unitPrice(line) * line.quantity, 0)
+    + this.chosenCosts().reduce((sum, cost) => sum + cost.amountEur, 0));
 
   /** Every customer the search matches, the chosen one always among them. */
   readonly matches = computed(() => {
@@ -139,6 +222,26 @@ export class PurchaseQuoteSheet {
 
   constructor() {
     void this.load();
+  }
+
+  setMarkup(raw: string): void {
+    const value = Number(String(raw).replace(',', '.'));
+    this.markupPct.set(Number.isFinite(value) && value >= 0 ? value : 0);
+  }
+
+  toggleCost(key: string): void {
+    this.includedCosts.update((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  /** The line's price at cost: the container's landed cost per piece plus the chosen markup. */
+  unitPrice(line: PurchaseQuoteLine): number {
+    if (line.landedUnitEur === null) return 0;
+    return Math.round(line.landedUnitEur * (1 + this.markupPct() / 100) * 100) / 100;
   }
 
   async load(): Promise<void> {
@@ -181,14 +284,18 @@ export class PurchaseQuoteSheet {
     this.busy.set(true);
     try {
       const created = await this.sales.createOrder(customer.id, customer.countryCode, customer.incoterm || 'DAP', 'OFFERTE');
+      const atCost = this.pricing() === 'COST' && this.costKnown();
+      const extraLines = atCost ? this.chosenCosts().map((cost) => ({ description: cost.description, quantity: 1, unitPriceEur: cost.amountEur })) : [];
       const filled = await this.sales.updateOrder(created.order.id, {
         ...created.order,
         lines: this.lines().map((line) => ({
           id: null, productId: line.productId, quantity: line.quantity,
-          unitPriceEur: null, manualDiscountPct: null, deliveryWeek: null,
+          unitPriceEur: atCost ? this.unitPrice(line) : null, manualDiscountPct: null, deliveryWeek: null,
         })),
+        extraLines,
       });
-      this.ui.toast(`Offerte ${filled.order.number} gemaakt met ${this.lines().length} regel${this.lines().length === 1 ? '' : 's'}`, 'ok');
+      const count = this.lines().length + extraLines.length;
+      this.ui.toast(`Offerte ${filled.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${atCost ? ' aan kostprijs' : ''}`, 'ok');
       this.closed.emit();
       await this.router.navigate(['/sales', filled.order.id, 'edit']);
     } catch (failure: unknown) {
