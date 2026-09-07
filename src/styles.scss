@@ -47,8 +47,13 @@ app-product-editor :is(.product-editor-dock__save, .product-editor-dock__view) {
   --gold: #a8853f;
   --gold-soft: #fbf4e6;
 
-  --ok: #1b7a4c;
-  --ok-soft: #e8f5ee;
+  /* "Done" states (received, paid, on time) step aside into blue while the
+     accent is green, so Besteld and Ontvangen never wear the same colour;
+     every other palette hands them the classic green back. */
+  --ok: #1f5f8b;
+  --ok-soft: #e9f2f8;
+  --done-fill: #1f5f8b;
+  --done-ink: #b6dcf2;
   --warn: #a85e10;
   --warn-soft: #fdf3e4;
   --danger: #b4342a;
@@ -113,6 +118,9 @@ input, select, textarea { font: inherit; color: inherit; }
 }
 .theme-green {
   --rose: #1f7a4d; --rose-dark: #145c39; --rose-mid: #3f9e6d; --rose-soft: #e9f5ee; --rose-line: #cbe6d7;
+}
+.theme-blue, .theme-plum, .theme-terracotta, .theme-brown, .theme-rose {
+  --ok: #1b7a4c; --ok-soft: #e8f5ee; --done-fill: #2e7d4f; --done-ink: #9fe0b4;
 }
 .theme-plum {
   --rose: #6f3c8f; --rose-dark: #532a6d; --rose-mid: #9a6cb7; --rose-soft: #f3ebf8; --rose-line: #ddcbe8;
@@ -3701,9 +3709,9 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
 .desk-status{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px;max-width:520px}
 .desk-status__step{display:inline-flex;align-items:center;gap:6px;padding:5px 11px 5px 5px;border:1px solid rgb(255 255 255/.16);border-radius:999px;background:rgb(255 255 255/.06);color:rgb(255 255 255/.62);font-size:11.5px;font-weight:650;white-space:nowrap}
 .desk-status__step i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:rgb(255 255 255/.12);color:#fff;font-size:10px;font-style:normal;font-weight:800}
-.desk-status__step--done,.desk-status__step--arrived{color:#9fe0b4;border-color:rgb(159 224 180/.35);background:rgb(159 224 180/.1)}.desk-status__step--done i,.desk-status__step--arrived i{background:#2e7d4f;color:#fff}
+.desk-status__step--done,.desk-status__step--arrived{color:var(--done-ink);border-color:color-mix(in srgb,var(--done-ink) 35%,transparent);background:color-mix(in srgb,var(--done-ink) 10%,transparent)}.desk-status__step--done i,.desk-status__step--arrived i{background:var(--done-fill);color:#fff}
 .desk-status__step--now{color:#fff;border-color:rgb(255 255 255/.5);background:rgb(255 255 255/.16)}.desk-status__step--now i{background:#fff;color:var(--rose-dark)}
-.desk-status__line{width:12px;height:2px;background:rgb(255 255 255/.18)}.desk-status__line--done{background:#2e7d4f}
+.desk-status__line{width:12px;height:2px;background:rgb(255 255 255/.18)}.desk-status__line--done{background:var(--done-fill)}
 .desk-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;border-top:1px solid rgb(255 255 255/.12);background:rgb(255 255 255/.12)}
 .desk-kpi{display:grid;min-width:0;align-content:start;gap:2px;padding:12px 16px 13px;border:0;background:rgb(33 26 23/.55);color:#fff;font:inherit;text-align:left}
 .desk-kpi small{color:rgb(255 255 255/.55);font-size:9.5px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}

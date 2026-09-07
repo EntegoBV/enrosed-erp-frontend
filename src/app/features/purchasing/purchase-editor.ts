@@ -20,6 +20,7 @@ import {
   PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
 import { FilePicker } from '../../shared/file-picker';
 import { MediaApi } from '../../core/api/media-api';
 import { MediaAssetSummary } from '../../core/api/media-models';
@@ -83,7 +84,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1283,6 +1284,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <button class="btn btn--block" type="button" (click)="duplicate()">
                   Deze container kopiëren
                 </button>
+                <button class="btn btn--block" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)">
+                  Verkoopofferte maken
+                </button>
               </div>
 
               @if (!isReceived()) {
@@ -1347,6 +1351,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             </button>
           }
         </nav>
+      }
+
+      @if (quoteOpen()) {
+        @if (view(); as data) {
+          <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" (closed)="quoteOpen.set(false)" />
+        }
       }
 
       @if (picking()) {
@@ -1781,6 +1791,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 export class PurchaseEditor {
   readonly desktop = inject(DesktopViewport);
   readonly pdfOpen = signal(false);
+  /** The container as an offer: the sheet that picks the customer and opens the new quote. */
+  readonly quoteOpen = signal(false);
+  readonly quoteLines = computed<PurchaseQuoteLine[]>(() => quoteLinesOf(this.view()));
   readonly phoneStep = signal(0);
   readonly phoneStepLabels = ['Order', 'Producten', 'Kosten', 'Betalingen', 'Dossier', 'Afronden'] as const;
   private readonly phoneStepIds = [
@@ -3106,4 +3119,13 @@ export class PurchaseEditor {
         await this.router.navigate(['/purchasing']);
       });
   }
+}
+
+/** The product lines of the container as a quote would carry them: product and pieces. */
+export function quoteLinesOf(view: PurchaseOrderView | null | undefined): PurchaseQuoteLine[] {
+  if (!view) return [];
+  const names = new Map(view.costing.lines.map((line) => [line.productId, line.productName] as const));
+  return view.order.lines
+    .filter((line) => line.productId !== null && line.quantity > 0)
+    .map((line) => ({ productId: line.productId!, name: names.get(line.productId!) ?? `Product ${line.productId}`, quantity: line.quantity }));
 }

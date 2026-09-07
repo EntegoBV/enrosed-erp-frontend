@@ -7,6 +7,8 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PageHeader } from '../../shared/page-header';
+import { quoteLinesOf } from './purchase-editor';
+import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
@@ -48,7 +50,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseQuoteSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -735,8 +737,14 @@ type PurchaseWorkspaceSectionId =
                 <button class="btn btn--block" type="button" (click)="pdfOpen.set(true)">
                   PDF downloaden
                 </button>
+                <button class="btn btn--block" type="button" [disabled]="!quoteLinesOf(data).length" (click)="quoteOpen.set(true)">
+                  Verkoopofferte maken
+                </button>
               </div>
             </section>
+            @if (quoteOpen()) {
+              <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLinesOf(data)" (closed)="quoteOpen.set(false)" />
+            }
           </main>
 
           @if (desktop.active()) {
@@ -943,6 +951,8 @@ type PurchaseWorkspaceSectionId =
 })
 export class PurchaseView {
   readonly pdfOpen = signal(false);
+  readonly quoteOpen = signal(false);
+  readonly quoteLinesOf = quoteLinesOf;
   readonly workspaceSections: readonly PurchaseWorkspaceSectionId[] = [
     'purchase-overview',
     'purchase-products-section',
