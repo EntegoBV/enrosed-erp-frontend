@@ -15,6 +15,8 @@ import {
 import { ShippingPlanner } from './shipping-planner';
 import { SalesPdfSheet } from './sales-pdf-sheet';
 import { SalesEditor } from './sales-editor';
+import { PartnerSettlementSheet } from './partner-settlement-sheet';
+import { isSettlementInvoice } from './partner-settlement';
 import { salesDocumentLabel } from './sales-list-swipe';
 
 type RailTab = 'order' | 'delivery' | 'check' | 'status';
@@ -43,7 +45,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [PartnerSettlementSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -52,6 +54,9 @@ interface JourneyStep {
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="canEdit()"
                        (titleChange)="patch({ number: $event })">
+        @if (data.order.partnerPurchaseOrderId) {
+          <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" title="Partnercontainer openen">Partner {{ data.order.partnerSharePct | num }} %</a>
+        }
         @if (canEdit() && (dirty() || saving())) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="save()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
@@ -629,6 +634,18 @@ interface JourneyStep {
 
                 @case ('check') {
                   <div class="desk-form">
+                    @if (data.order.partnerPurchaseOrderId) {
+                      <section class="desk-partner" aria-label="Partnercontainer">
+                        <p class="desk-form__group">Partnercontainer</p>
+                        @if (isSettlement(data.order)) {
+                          <p class="desk-partner__copy">Dit is de slotfactuur van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: ons deel van <b>{{ data.order.partnerSharePct | num }} %</b> op de winst die de partner op de veiling maakte. De berekening staat in de notities.</p>
+                        } @else {
+                          <p class="desk-partner__copy">De klant sponsort <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> tegen onze volledige gelande kost en verkoopt de goederen door. Na de veiling delen we de winst: <b>{{ data.order.partnerSharePct | num }} %</b> voor ons.</p>
+                          <div class="desk-partner__facts"><span>Kostbasis, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
+                          <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Slotfactuur maken</button>
+                        }
+                      </section>
+                    }
                     <p class="desk-form__group">Prijsopbouw</p>
                     <div class="desk-chain">
                       <div class="desk-chain__row"><i></i><span>Bruto <small>{{ data.priced.totals.pieces | num }} stuks</small></span><b>{{ data.priced.totals.gross | eur }}</b></div>
@@ -837,6 +854,12 @@ interface JourneyStep {
         </app-sheet>
       }
 
+      @if (settlementOpen()) {
+        @if (view(); as data) {
+          <app-partner-settlement-sheet [order]="data.order" [costBasis]="costBasis(data)" (closed)="settlementOpen.set(false)" />
+        }
+      }
+
       @if (picking()) {
         <app-product-picker heading="Producten toevoegen" [products]="available()" [categories]="categories()"
                             [families]="families()" [groupByFamily]="true" [preserveSourceOrder]="true"
@@ -1030,6 +1053,8 @@ interface JourneyStep {
     }
     .desk-empty{display:grid;justify-items:center;gap:6px;padding:40px 20px;text-align:center}.desk-empty__art{display:grid;width:52px;height:52px;place-items:center;border-radius:50%;background:var(--rose-soft);color:var(--rose);font-size:24px}.desk-empty h3{font-size:15px}.desk-empty p{max-width:360px;color:var(--muted);font-size:12.5px}
     .desk-lock{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px}.desk-lock>span:first-child{color:var(--ok);font-weight:800}.desk-lock>span:nth-child(2){flex:1}
+    .desk-partner-tag{display:inline-flex;align-items:center;padding:4px 10px;border:1px solid var(--rose-line);border-radius:999px;background:var(--rose-soft);color:var(--rose);font-size:11px;font-weight:750;letter-spacing:.03em;text-decoration:none;white-space:nowrap}
+    .desk-partner{display:grid;gap:8px;margin-bottom:14px;padding:12px;border:1px solid var(--rose-line);border-radius:12px;background:var(--rose-soft)}.desk-partner .desk-form__group{margin:0}.desk-partner__copy{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}.desk-partner__copy a{color:var(--rose-dark);font-weight:650}.desk-partner__facts{display:flex;justify-content:space-between;gap:10px;font-size:13px}.desk-partner__facts b{font-variant-numeric:tabular-nums}.desk-partner .btn{justify-self:start}
     .desk-minimum{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin-top:10px;padding:9px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);font-size:12px}.desk-minimum--ok{border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,var(--surface))}.desk-minimum b{font-variant-numeric:tabular-nums}.desk-minimum__track{grid-column:1/-1;display:block;height:5px;border-radius:99px;background:rgb(0 0 0/.08);overflow:hidden}.desk-minimum__track i{display:block;height:100%;background:var(--ok);border-radius:99px}
     .desk-flip{min-width:56px;font-size:12px}
     .desk-ok{display:flex;gap:8px;margin:0;padding:9px 12px;border-radius:12px;background:color-mix(in srgb,var(--ok) 10%,var(--surface));color:var(--ok);font-size:12.5px}
@@ -1043,6 +1068,15 @@ interface JourneyStep {
   `],
 })
 export class SalesDesk extends SalesEditor {
+  /** The partner deal's closing invoice starts from this desk. */
+  readonly settlementOpen = signal(false);
+  readonly isSettlement = isSettlementInvoice;
+
+  /** What the partner paid us for the goods and the extra lines: the basis the auction profit is measured against. */
+  costBasis(data: SalesOrderView): number {
+    return (data.priced.totals.goodsTotal ?? 0) + (data.priced.totals.extraLinesTotal ?? 0);
+  }
+
   /** Which drawer of the rail is open; the customer first, as on paper. */
   readonly railTab = signal<RailTab>('order');
   /** Profit per piece or per line in the table. */

@@ -79,11 +79,24 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <button type="button" [class.on]="pricing() === 'COST'" [disabled]="!costKnown()" (click)="pricing.set('COST')">Kostprijs van deze container</button>
           </div>
           @if (pricing() === 'COST') {
-            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container, vracht en rechten inbegrepen. Inspectie en andere kosten gaan als aparte regels mee; alles blijft op de offerte aanpasbaar.</p>
+            <p class="pq__hint">Elke regel op de volledige gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling. Inspectie en andere kosten gaan als aparte regels mee. De vracht op de offerte staat op nul, want die zit al in de kost.</p>
             <div class="pq__markup">
               <label for="pq-markup">Opslag op de kostprijs</label>
               <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" step="0.5" inputmode="decimal"
                      [value]="markupPct()" (input)="setMarkup($any($event.target).value)" /><i>%</i></span>
+            </div>
+            <div class="pq__partner">
+              <label class="pq__partner-toggle">
+                <input type="checkbox" [checked]="partner()" (change)="partner.set($any($event.target).checked)" />
+                <span><b>Partnercontainer</b><small>De klant bestelt de container mee en verkoopt de goederen door; na de veiling maken we een slotfactuur voor ons deel van de winst.</small></span>
+              </label>
+              @if (partner()) {
+                <div class="pq__markup">
+                  <label for="pq-share">Ons deel van de winst</label>
+                  <span class="pq__markup-field"><input class="input num right" id="pq-share" type="number" min="1" max="100" step="0.5" inputmode="decimal"
+                         [value]="sharePct()" (input)="setShare($any($event.target).value)" /><i>%</i></span>
+                </div>
+              }
             </div>
             @if (costs().length) {
               <div class="pq__costs" role="group" aria-label="Aparte kosten van de container">
@@ -158,6 +171,11 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
     .pq__markup-field { display: inline-flex; align-items: center; gap: 6px; }
     .pq__markup-field .input { width: 84px; min-height: 40px; }
     .pq__markup-field i { color: var(--muted); font-style: normal; }
+    .pq__partner { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--rose-line); border-radius: 12px; background: var(--rose-soft); }
+    .pq__partner-toggle { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 10px; cursor: pointer; }
+    .pq__partner-toggle input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--rose); }
+    .pq__partner-toggle span { display: grid; gap: 2px; font-size: 13px; }
+    .pq__partner-toggle small { color: var(--ink-2); font-size: 12px; line-height: 1.4; }
     .pq__costs { display: grid; gap: 6px; }
     .pq__cost { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; cursor: pointer; }
     .pq__cost input { width: 18px; height: 18px; accent-color: var(--rose); }
@@ -185,6 +203,9 @@ export class PurchaseQuoteSheet {
   readonly query = signal('');
   readonly pricing = signal<PurchaseQuotePricing>('CUSTOMER');
   readonly markupPct = signal(0);
+  /** A partner deal: the customer sponsors the container and shares the auction profit with us. */
+  readonly partner = signal(true);
+  readonly sharePct = signal(50);
 
   /** Cost pricing needs a landed cost on every line; a half-calculated container cannot be passed on. */
   readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => line.landedUnitEur !== null));
@@ -222,6 +243,11 @@ export class PurchaseQuoteSheet {
 
   constructor() {
     void this.load();
+  }
+
+  setShare(raw: string): void {
+    const value = Number(String(raw).replace(',', '.'));
+    this.sharePct.set(Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0);
   }
 
   setMarkup(raw: string): void {
@@ -286,16 +312,26 @@ export class PurchaseQuoteSheet {
       const created = await this.sales.createOrder(customer.id, customer.countryCode, customer.incoterm || 'DAP', 'OFFERTE');
       const atCost = this.pricing() === 'COST' && this.costKnown();
       const extraLines = atCost ? this.chosenCosts().map((cost) => ({ description: cost.description, quantity: 1, unitPriceEur: cost.amountEur })) : [];
-      const filled = await this.sales.updateOrder(created.order.id, {
+      const partnerDeal = atCost && this.partner() && this.sharePct() > 0;
+      let filled = await this.sales.updateOrder(created.order.id, {
         ...created.order,
         lines: this.lines().map((line) => ({
           id: null, productId: line.productId, quantity: line.quantity,
           unitPriceEur: atCost ? this.unitPrice(line) : null, manualDiscountPct: null, deliveryWeek: null,
         })),
         extraLines,
+        partnerPurchaseOrderId: partnerDeal ? this.order().id : null,
+        partnerSharePct: partnerDeal ? this.sharePct() : null,
+        notes: partnerDeal
+          ? `Partnercontainer ${this.order().number}: goederen aan onze gelande kostprijs (fabriek, zeevracht, invoerrechten en afhandeling). Na de verkoop volgt een slotfactuur voor ${this.sharePct()} % van de gerealiseerde winst.`
+          : created.order.notes,
       });
+      if (atCost) {
+        /* The container's freight is already inside the landed cost; the quote adds none of its own. */
+        filled = await this.sales.updateFreight(filled.order.id, 'AANGEVULD', 0, null, null);
+      }
       const count = this.lines().length + extraLines.length;
-      this.ui.toast(`Offerte ${filled.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${atCost ? ' aan kostprijs' : ''}`, 'ok');
+      this.ui.toast(`Offerte ${filled.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${partnerDeal ? ' als partnercontainer' : atCost ? ' aan kostprijs' : ''}`, 'ok');
       this.closed.emit();
       await this.router.navigate(['/sales', filled.order.id, 'edit']);
     } catch (failure: unknown) {

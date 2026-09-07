@@ -3,6 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { SalesApi } from '../../core/api/sales-api';
 import { saveBlob } from '../../core/api/download';
 import {
   CHINESE_DEPARTURE_PORTS,
@@ -15,9 +16,10 @@ import {
   containerLabel,
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
+import { partnerDocumentKind } from '../sales/partner-settlement';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
-  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation,
+  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
@@ -2152,6 +2154,26 @@ export class PurchaseEditor {
     try { this.documents.set(await this.sourcing.documents(orderId)); } catch { this.documents.set([]); }
   }
 
+  /* ---- partner container --------------------------------------------- */
+  /** Sales documents of a partner who co-orders this container at our landed cost: quote, invoice, settlement. */
+  readonly partnerDocs = signal<SalesOrderView[]>([]);
+  readonly partnerCompany = signal('');
+
+  protected async loadPartnerDocs(orderId: number): Promise<void> {
+    try {
+      const deals = (await this.sales.orders()).filter((view) => view.order.partnerPurchaseOrderId === orderId);
+      this.partnerDocs.set(deals);
+      const customerId = deals[0]?.order.customerId;
+      if (!customerId) { this.partnerCompany.set(''); return; }
+      const customers = await this.sales.customers().catch(() => [] as Customer[]);
+      this.partnerCompany.set(customers.find((row) => row.id === customerId)?.company ?? '');
+    } catch {
+      this.partnerDocs.set([]);
+    }
+  }
+
+  readonly partnerKind = partnerDocumentKind;
+
   proofsOf(paymentId: number): PurchaseDocument[] {
     return (this.documents() ?? []).filter((doc) => doc.paymentId === paymentId);
   }
@@ -2493,6 +2515,7 @@ export class PurchaseEditor {
   readonly costLabels = computed(() => purchaseCostLabels(this.view(), this.supplier()));
 
   protected readonly sourcing = inject(SourcingApi);
+  protected readonly sales = inject(SalesApi);
   private readonly catalog = inject(CatalogApi);
 
   /** Active stock locations; the container is unloaded at one of them. */
@@ -2579,6 +2602,7 @@ export class PurchaseEditor {
     const view = await this.sourcing.purchaseOrder(orderId);
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
+    void this.loadPartnerDocs(orderId);
     this.savedOrder.set(JSON.stringify(view.order));
     const [products, categories, suppliers, locations, freightRates] = await Promise.all([
       this.catalog.products(view.order.supplierId),

@@ -1231,6 +1231,10 @@ export interface SalesOrder {
   archivedAt?: string | null;
   /** Free lines next to the products; own lines on the document, outside the tiers. */
   extraLines?: SalesExtraLine[];
+  /** The container a partner sponsors at our landed cost, when this is that deal; null otherwise. */
+  partnerPurchaseOrderId?: number | null;
+  /** Our share of the partner's profit on that container, in percent. */
+  partnerSharePct?: number | null;
   invoiceDueDate?: string | null;
   paidAt?: string | null;
   sourceQuoteId?: number | null;

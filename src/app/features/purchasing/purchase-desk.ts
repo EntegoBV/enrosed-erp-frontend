@@ -20,6 +20,7 @@ import { PurchaseEditor } from './purchase-editor';
 import { PurchaseDeskPicker } from './purchase-desk-picker';
 import { stripColour } from './purchase-desk-format';
 import { messageOf } from '../../core/api/errors';
+import { STATUS_LABEL } from '../sales/quote-status';
 
 type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
 
@@ -755,6 +756,23 @@ type DeskRow =
                         <p class="desk-dossier__empty">Niets gemeld: ontvangen zoals besteld. Schade of tekort meld je op de productpagina, gekoppeld aan deze container.</p>
                       }
                     </section>
+                    @if (partnerDocs().length) {
+                      <section>
+                        <header class="desk-dossier__head"><strong>Partnercontainer <small>{{ partnerDocs()[0].order.partnerSharePct | num }} % winstdeling</small></strong></header>
+                        <p class="desk-partner__lead"><b>{{ partnerCompany() || 'De partner' }}</b> betaalt onze volledige gelande kost en verkoopt de goederen zelf door. Na de veiling volgt de slotfactuur met ons deel van de winst.</p>
+                        <ul class="desk-partner-docs">
+                          @for (deal of partnerDocs(); track deal.order.id) {
+                            <li>
+                              <a class="desk-partner-docs__what" [routerLink]="['/sales', deal.order.id, 'edit']">
+                                <b>{{ deal.order.number }}</b>
+                                <small>{{ partnerKind(deal.order) }} · {{ statusLabel$[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}</small>
+                              </a>
+                              <span class="desk-partner-docs__amount">{{ deal.priced.totals.total | eur }}</span>
+                            </li>
+                          }
+                        </ul>
+                      </section>
+                    }
                     <section>
                       <header class="desk-dossier__head"><strong>Documenten <small>{{ (documents() ?? []).length }}</small></strong>
                         <button class="btn btn--sm" type="button" (click)="openDocument()">+ Document</button></header>
@@ -1277,6 +1295,7 @@ type DeskRow =
     .desk-mix__goods{background:var(--rose-dark)}.desk-mix__transport{background:var(--gold)}.desk-mix__duty{background:var(--warn)}.desk-mix__destination{background:var(--blue)}.desk-mix__extra{background:var(--muted)}
     .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
     .desk-reports{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-reports li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:6px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-reports__row--later{border-color:var(--rose-line);background:var(--rose-soft)}.desk-reports__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.desk-reports__row--later .desk-reports__tag{background:var(--rose);color:#fff}.desk-reports__what{display:grid;min-width:0}.desk-reports__what b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-reports__what small{color:var(--muted);font-size:11px}.desk-reports__count{color:var(--danger);font-size:12px;font-weight:650;white-space:nowrap}.desk-reports__count b{font-size:14px}.desk-reports__note{grid-column:2/-1;color:var(--ink-2);font-size:12px}.desk-dossier__hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
+    .desk-partner__lead{margin:0 0 8px;color:var(--ink-2);font-size:12.5px;line-height:1.45}.desk-partner-docs{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-partner-docs li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-partner-docs__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.desk-partner-docs__what b{font-size:13px}.desk-partner-docs__what small{color:var(--muted);font-size:11px}.desk-partner-docs__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}
     .desk-dossier__diary{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.desk-dossier__empty{margin:0;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);font-size:12px}
     .desk-drop{display:grid;width:100%;gap:2px;margin-bottom:8px;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font:inherit;text-align:center;cursor:pointer}.desk-drop b{font-size:12.5px}.desk-drop small{color:var(--muted);font-size:11px}.desk-drop:hover{border-color:var(--rose);background:var(--rose-soft)}
     .desk-docs{margin:0;padding:0;list-style:none}.desk-docs li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
@@ -1291,6 +1310,7 @@ type DeskRow =
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {
+  readonly statusLabel$ = STATUS_LABEL;
   /** How the route opened us; the desk itself decides when editing ends. */
   readonly mode = input<'view' | 'edit'>('view');
   /** Reading is the default; Bewerken switches the inputs on. */

@@ -92,6 +92,13 @@ export class SalesApi {
       { customerId, countryCode, incoterm, docType }));
   }
 
+  /** The partner deal's closing invoice: our share of the auction profit as one line. */
+  createSettlement(sourceId: number, body: {
+    proceedsEur: number; sharePct: number; reference: string | null; note: string | null;
+  }): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${sourceId}/settlement`), body));
+  }
+
   /** Freezes the quote's content into a new invoice; the quote stays. */
   createInvoiceFrom(quoteId: number): Promise<SalesOrderView> {
     return firstValueFrom(
