@@ -31,7 +31,8 @@ import {
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { STATUS_LABEL } from '../sales/quote-status';
-import { partnerDocumentKind } from '../sales/partner-settlement';
+import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
+import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
@@ -54,7 +55,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -709,7 +710,7 @@ type PurchaseWorkspaceSectionId =
               <span class="section-kicker">Partnercontainer</span>
               @if (partnerDocs().length) {
                 <h2 id="purchase-partner-title">{{ partnerCompany() || 'Partner' }} · {{ partnerDocs()[0].order.partnerSharePct | num }} % winstdeling</h2>
-                <p class="partner-list__lead">De partner betaalt onze volledige gelande kost en verkoopt de goederen zelf door. Na de veiling volgt de slotfactuur met ons deel van de winst.</p>
+                <p class="partner-list__lead">De partner bestelt deze container mee en verkoopt de goederen op de veiling. Na de veiling volgt de veilingafrekening: de kost die wij financierden terug en ons deel van de winst.</p>
                 <ul class="partner-list">
                   @for (deal of partnerDocs(); track deal.order.id) {
                     <li>
@@ -726,7 +727,10 @@ type PurchaseWorkspaceSectionId =
                 <h2 id="purchase-partner-title">Op ons eigen geld</h2>
                 <p class="partner-list__lead">Ging er toch een offerte of factuur naar een partner die de goederen overneemt? Koppel ze hier, dan telt de container in de analyses als partnergeld.</p>
               }
-              <button class="btn btn--block" type="button" (click)="partnerSheetOpen.set(true)">Verkoopdocument koppelen</button>
+              <div class="partner-list__buttons">
+                @if (auctionLines().length) { <button class="btn btn--primary btn--block" type="button" (click)="auctionOpen.set(true)">Veilingafrekening maken</button> }
+                <button class="btn btn--block" type="button" (click)="partnerSheetOpen.set(true)">Verkoopdocument koppelen</button>
+              </div>
             </section>
 
             @if (documents(); as docs) {
@@ -776,6 +780,12 @@ type PurchaseWorkspaceSectionId =
             }
             @if (partnerSheetOpen()) {
               <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerDocs()[0]?.order?.partnerSharePct ?? null" (closed)="partnerSheetOpen.set(false)" (linked)="reloadPartnerDocs()" />
+            }
+            @if (auctionOpen()) {
+              <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? null" [customerName]="partnerCompany()"
+                                            [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                            [costSharePct]="auctionCostShare()" [profitSharePct]="auctionProfitShare()"
+                                            (closed)="auctionOpen.set(false)" />
             }
           </main>
 
@@ -977,7 +987,7 @@ type PurchaseWorkspaceSectionId =
 
     @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.line-facts--purchase{grid-template-columns:repeat(5,minmax(0,1fr))}.line-facts--purchase>.line-fact--total{grid-column:auto}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
     .report-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.report-list li{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.report-list__later{border-color:var(--rose-line);background:var(--rose-soft)}.report-list__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.report-list__later .report-list__tag{background:var(--rose);color:#fff}.report-list__what{display:grid;min-width:0}.report-list__what b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.report-list__what small{color:var(--muted);font-size:11px}.report-list__count{grid-column:2;color:var(--danger);font-size:12px;font-weight:650}.report-list__count b{font-size:14px}.report-list__note{grid-column:2;color:var(--ink-2);font-size:12px}.report-list__hint{margin:8px 0 0;color:var(--muted);font-size:11.5px}
-    .partner-list__lead{margin:6px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.45}.partner-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.partner-list li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.partner-list__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.partner-list__what b{font-size:13px}.partner-list__what small{color:var(--muted);font-size:11px}.partner-list__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}.partner-list__unlink{flex:none;width:28px;height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:16px;line-height:1}.payments-card .btn--block{margin-top:12px}
+    .partner-list__lead{margin:6px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.45}.partner-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.partner-list li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.partner-list__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.partner-list__what b{font-size:13px}.partner-list__what small{color:var(--muted);font-size:11px}.partner-list__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}.partner-list__unlink{flex:none;width:28px;height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:16px;line-height:1}.partner-list__buttons{display:grid;gap:8px;margin-top:12px}
     @media(min-width:680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}.purchase-payment-streams{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}.purchase-payment-streams .pay-stream{margin-top:0}.purchase-payment-streams .pay-ours{grid-column:1/-1;margin-top:0}.purchase-dossier{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}.purchase-dossier app-purchase-activity{margin:0}.purchase-final-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:24px}.purchase-final-action .action-card__buttons{grid-column:2;grid-row:1/span 3;min-width:250px;margin-top:0}}
     @media(min-width:1024px){#purchase-overview,#purchase-products-section,#purchase-costs-section,#purchase-payments-section,#purchase-files-section,#purchase-actions-section{scroll-margin-top:calc(var(--appbar-h) + 90px)}.purchase-section-nav.erp-workspace__nav{display:grid;width:100%;max-width:none;grid-template-columns:repeat(6,minmax(0,1fr));margin:14px 0;overflow:visible}.purchase-section-nav .erp-workspace__nav-item{width:100%;min-width:0;border-radius:13px;justify-content:flex-start}.purchase-section-nav .erp-workspace__nav-item--action:not(.erp-workspace__nav-item--active){background:rgb(255 255 255 / 82%);color:var(--muted)}.purchase-section-nav .erp-workspace__nav-item>span:last-child,.purchase-section-nav .erp-workspace__nav-item small{overflow:hidden;text-overflow:ellipsis}.view-layout{grid-template-columns:minmax(0,1fr) 292px;gap:18px;align-items:start}.purchase-control-rail.erp-workspace__rail{display:grid;position:sticky;top:calc(var(--appbar-h) + 88px);max-height:none;overflow:visible;overscroll-behavior:auto;padding-bottom:0;scrollbar-width:auto}.cost-card__body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:0}.cost-card__body>.cost-hero{grid-column:1/-1;margin:0;padding:18px;border-width:0 0 1px;border-radius:0}.cost-card__body>.cost-stage{padding:18px}.cost-card__body>.cost-stage+.cost-stage{border-top:0;border-left:1px solid var(--line)}}
   `],
@@ -1126,15 +1136,27 @@ export class PurchaseView {
   /** The partner behind those documents, by company name. */
   readonly partnerCompany = signal('');
   readonly partnerSheetOpen = signal(false);
+  readonly auctionOpen = signal(false);
+  readonly partnerCustomer = signal<Customer | null>(null);
+  /** The container's products as they appear on the partner's auction statement. */
+  readonly auctionLines = computed<AuctionSheetLine[]>(() => (this.view()?.costing.lines ?? []).map((line) => ({
+    productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur,
+  })));
+  readonly auctionSourceId = computed(() => this.partnerDocs().find((doc) => !isSettlementInvoice(doc.order))?.order.id ?? null);
+  readonly auctionCostShare = computed(() => this.auctionSourceId() === null
+    ? 100 : Math.min(100, Math.max(0, 100 - (this.partnerCustomer()?.partnerCostPct ?? 100))));
+  readonly auctionProfitShare = computed(() => this.partnerDocs()[0]?.order.partnerSharePct ?? this.partnerCustomer()?.partnerSharePct ?? 50);
 
   private async loadPartnerDocs(id: number): Promise<void> {
     try {
       const deals = (await this.sales.orders()).filter((view) => view.order.partnerPurchaseOrderId === id);
       this.partnerDocs.set(deals);
       const customerId = deals[0]?.order.customerId;
-      if (!customerId) { this.partnerCompany.set(''); return; }
+      if (!customerId) { this.partnerCompany.set(''); this.partnerCustomer.set(null); return; }
       const customers = await this.sales.customers().catch(() => [] as Customer[]);
-      this.partnerCompany.set(customers.find((row) => row.id === customerId)?.company ?? '');
+      const customer = customers.find((row) => row.id === customerId) ?? null;
+      this.partnerCustomer.set(customer);
+      this.partnerCompany.set(customer?.company ?? '');
     } catch {
       this.partnerDocs.set([]);
     }

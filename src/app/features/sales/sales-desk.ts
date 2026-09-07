@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, signal, effect, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
-import { PricedLine, SalesOrder, SalesOrderView } from '../../core/api/models';
+import { PricedLine, SalesOrder, SalesOrderView, PurchaseOrderView,
+} from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -15,7 +16,8 @@ import {
 import { ShippingPlanner } from './shipping-planner';
 import { SalesPdfSheet } from './sales-pdf-sheet';
 import { SalesEditor } from './sales-editor';
-import { PartnerSettlementSheet } from './partner-settlement-sheet';
+import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
+import { SourcingApi } from '../../core/api/sourcing-api';
 import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice } from './partner-settlement';
 import { salesDocumentLabel } from './sales-list-swipe';
@@ -46,7 +48,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PartnerSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -64,11 +66,6 @@ interface JourneyStep {
           </button>
         }
         <button class="btn btn--sm" type="button" (click)="openPdfSheet()">PDF</button>
-        @if (canCancel()) {
-          <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="openCancel()">
-            {{ websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : 'Annuleren' }}
-          </button>
-        }
         @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="reopen()">Heropenen</button>
         } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
@@ -654,12 +651,12 @@ interface JourneyStep {
                       <section class="desk-partner" aria-label="Partnercontainer">
                         <p class="desk-form__group">Partnercontainer</p>
                         @if (isSettlement(data.order)) {
-                          <p class="desk-partner__copy">Dit is de slotfactuur van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: ons deel van <b>{{ data.order.partnerSharePct | num }} %</b> op de winst die de partner op de veiling maakte. De berekening staat in de notities.</p>
+                          <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                         } @else {
-                          <p class="desk-partner__copy">De klant sponsort <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> tegen onze volledige gelande kost en verkoopt de goederen door. Na de veiling delen we de winst: <b>{{ data.order.partnerSharePct | num }} %</b> voor ons.</p>
-                          <div class="desk-partner__facts"><span>Kostbasis, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
+                          <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
+                          <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
                           <div class="desk-partner__actions">
-                            <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Slotfactuur maken</button>
+                            <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>
                             <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
                             <button class="linklike" type="button" [disabled]="busy()" (click)="unlinkPartner(data)">Ontkoppelen</button>
                           </div>
@@ -879,7 +876,10 @@ interface JourneyStep {
 
       @if (settlementOpen()) {
         @if (view(); as data) {
-          <app-partner-settlement-sheet [order]="data.order" [costBasis]="costBasis(data)" (closed)="settlementOpen.set(false)" />
+          <app-auction-settlement-sheet [lines]="auctionLines(data)" [customerId]="data.order.customerId" [customerName]="customerName()"
+                                        [purchaseOrderId]="data.order.partnerPurchaseOrderId ?? null" [reference]="partnerReference()" [sourceId]="data.order.id"
+                                        [costSharePct]="settlementCostShare(data)" [profitSharePct]="data.order.partnerSharePct ?? 50"
+                                        (closed)="settlementOpen.set(false)" />
         }
       }
       @if (partnerLinkOpen()) {
@@ -1002,8 +1002,8 @@ interface JourneyStep {
   styles: [`
     :host{display:block;min-width:0}
     .desk-row--extra td{background:var(--surface-2)}.desk-extra{display:flex;align-items:center;gap:10px}.desk-extra__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose);font-weight:800}.desk-extra__what{flex:1;min-width:0;text-align:left}.desk-empty .btn+.btn{margin-left:8px}
-    .desk-status__step--stop{color:#f6a3a3;border-color:rgb(246 163 163/.4);background:rgb(246 163 163/.12)}.desk-status__step--stop i{background:#c0392b;color:#fff}
-    .desk-status__step--wait{color:#f4cf9a;border-color:rgb(244 207 154/.4);background:rgb(244 207 154/.12)}.desk-status__step--wait i{background:#f4cf9a;color:#3a2a10}
+    .desk-status__step--stop{color:#f6a3a3}.desk-status__step--stop i{background:#e05a4a;box-shadow:0 0 0 2px rgb(224 90 74/.3)}
+    .desk-status__step--wait{color:#f4cf9a}.desk-status__step--wait i{background:#f4cf9a;box-shadow:0 0 0 2px rgb(244 207 154/.3)}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
@@ -1060,6 +1060,10 @@ interface JourneyStep {
       .desk-row--variant td.c-product{padding-left:0;box-shadow:none}
       .desk-row td.c-disc:has(> .muted){display:none}
       .desk-table tr.desk-row td.c-disc{display:none}
+      .desk-table tr.desk-row td.c-qty,.desk-table tr.desk-row td.c-price,.desk-table tr.desk-row td.c-money,.desk-table tr.desk-row td.c-delivery,.desk-table tr.desk-group td.c-qty,.desk-table tr.desk-group td.c-money{display:flex;flex-direction:column;align-items:center;text-align:center}
+      .desk-table tr.desk-row td.c-qty::before,.desk-table tr.desk-row td.c-price::before,.desk-table tr.desk-row td.c-money::before,.desk-table tr.desk-row td.c-delivery::before{text-align:center}
+      .desk-table tr.desk-row td .desk-cell,.desk-table tr.desk-row td.c-price .desk-price{width:100%}.desk-table tr.desk-row td .desk-cell{text-align:center}
+      .desk-table tr.desk-row td.c-money b,.desk-table tr.desk-row td.c-qty b,.desk-table tr.desk-row td.c-price>b{line-height:1.3}
       .desk-table .desk-price{display:flex;align-items:center;gap:6px}.desk-table .desk-price .desk-cell{flex:1;min-width:0}
       .desk-table .desk-disc-pill{display:inline-flex;align-items:center;flex:none;min-height:34px;padding:0 10px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;white-space:nowrap;cursor:pointer}
       .desk-disc-pill.is-on{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
@@ -1106,6 +1110,38 @@ interface JourneyStep {
 export class SalesDesk extends SalesEditor {
   /** The partner deal's closing invoice starts from this desk. */
   readonly settlementOpen = signal(false);
+  private readonly sourcingApi = inject(SourcingApi);
+  /** The partner container itself: its number for the settlement text, its costing for the cost per piece. */
+  readonly partnerContainer = signal<PurchaseOrderView | null>(null);
+  readonly partnerReference = computed(() => this.partnerContainer()?.order.number ?? null);
+
+  private readonly partnerContainerLoader = effect(() => {
+    const id = this.view()?.order.partnerPurchaseOrderId ?? null;
+    this.partnerContainer.set(null);
+    if (id == null) return;
+    this.sourcingApi.purchaseOrder(id)
+      .then((view) => this.partnerContainer.set(view))
+      .catch(() => this.partnerContainer.set(null));
+  });
+
+  /**
+   * The products of this document as they appear on the partner's auction
+   * statement. The cost per piece is what this container cost us landed;
+   * only without the container does the product card's landed cost step in.
+   */
+  auctionLines(data: SalesOrderView): AuctionSheetLine[] {
+    const containerCost = new Map((this.partnerContainer()?.costing.lines ?? []).map((line) => [line.productId, line.landedUnitEur] as const));
+    return data.priced.lines.map((line) => ({
+      productId: line.productId, name: line.description, quantity: line.quantity,
+      landedUnitEur: containerCost.get(line.productId) ?? line.landedUnitCost ?? 0,
+    }));
+  }
+
+  /** What we still recover of the landed cost: whatever the partner did not pay up front. */
+  settlementCostShare(data: SalesOrderView): number {
+    const customer = this.customers().find((row) => row.id === data.order.customerId);
+    return Math.min(100, Math.max(0, 100 - (customer?.partnerCostPct ?? 100)));
+  }
   readonly isSettlement = isSettlementInvoice;
   readonly partnerLinkOpen = signal(false);
   /** Which line shows its extra-discount field on a narrow screen. */

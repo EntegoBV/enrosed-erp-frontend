@@ -16,7 +16,8 @@ import {
   containerLabel,
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
-import { partnerDocumentKind } from '../sales/partner-settlement';
+import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
+import { AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
   PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
@@ -2188,13 +2189,30 @@ export class PurchaseEditor {
       const deals = (await this.sales.orders()).filter((view) => view.order.partnerPurchaseOrderId === orderId);
       this.partnerDocs.set(deals);
       const customerId = deals[0]?.order.customerId;
-      if (!customerId) { this.partnerCompany.set(''); return; }
+      if (!customerId) { this.partnerCompany.set(''); this.partnerCustomer.set(null); return; }
       const customers = await this.sales.customers().catch(() => [] as Customer[]);
-      this.partnerCompany.set(customers.find((row) => row.id === customerId)?.company ?? '');
+      const customer = customers.find((row) => row.id === customerId) ?? null;
+      this.partnerCustomer.set(customer);
+      this.partnerCompany.set(customer?.company ?? '');
     } catch {
       this.partnerDocs.set([]);
     }
   }
+
+  /* ---- auction settlement ---------------------------------------------- */
+  readonly partnerCustomer = signal<Customer | null>(null);
+  readonly auctionOpen = signal(false);
+  /** The container's products as they appear on the partner's auction statement. */
+  readonly auctionLines = computed<AuctionSheetLine[]>(() => (this.view()?.costing.lines ?? []).map((line) => ({
+    productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur,
+  })));
+  /** The cost document the partner paid, when there is one. */
+  readonly auctionSourceId = computed(() => this.partnerDocs().find((doc) => !isSettlementInvoice(doc.order))?.order.id ?? null);
+  /** Without a cost document we financed the whole container; with one, what the partner did not pay up front. */
+  readonly auctionCostShare = computed(() => this.auctionSourceId() === null
+    ? 100 : Math.min(100, Math.max(0, 100 - (this.partnerCustomer()?.partnerCostPct ?? 100))));
+  readonly auctionProfitShare = computed(() => this.partnerDocs()[0]?.order.partnerSharePct ?? this.partnerCustomer()?.partnerSharePct ?? 50);
+  readonly auctionCustomerId = computed(() => this.partnerDocs()[0]?.order.customerId ?? null);
 
   readonly partnerKind = partnerDocumentKind;
 

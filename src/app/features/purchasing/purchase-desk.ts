@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
+import { AuctionSettlementSheet } from '../sales/auction-settlement-sheet';
 import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -44,7 +45,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -118,7 +119,7 @@ type DeskRow =
             <div class="desk-kpi desk-kpi--total">
               <small>Totaal geland</small>
               <strong>{{ data.costing.totals.totalEur | eur: 0 }}</strong>
-              <span>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</span>
+              <span>@if (hasSeparateCosts(data.order) && data.costing.totals.totalWithSeparateCostsEur) { + {{ data.costing.totals.totalWithSeparateCostsEur - data.costing.totals.totalEur | eur: 0 }} apart = {{ data.costing.totals.totalWithSeparateCostsEur | eur: 0 }} } @else { {{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk }</span>
             </div>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('pay')" [class.is-warn]="openAll() > 0">
               <small>Te betalen</small>
@@ -759,9 +760,12 @@ type DeskRow =
                     </section>
                     <section>
                       <header class="desk-dossier__head"><strong>Partnercontainer @if (partnerDocs().length) { <small>{{ partnerShare() | num }} % winstdeling</small> }</strong>
-                        <button class="btn btn--sm" type="button" (click)="partnerSheetOpen.set(true)">+ Document koppelen</button></header>
+                        <span class="desk-dossier__head-actions">
+                          @if (auctionLines().length) { <button class="btn btn--primary btn--sm" type="button" (click)="auctionOpen.set(true)">Veilingafrekening</button> }
+                          <button class="btn btn--sm" type="button" (click)="partnerSheetOpen.set(true)">+ Document koppelen</button>
+                        </span></header>
                       @if (partnerDocs().length) {
-                        <p class="desk-partner__lead"><b>{{ partnerCompany() || 'De partner' }}</b> betaalt onze volledige gelande kost en verkoopt de goederen zelf door. Na de veiling volgt de slotfactuur met ons deel van de winst.</p>
+                        <p class="desk-partner__lead"><b>{{ partnerCompany() || 'De partner' }}</b> bestelt deze container mee en verkoopt de goederen op de veiling. Na de veiling volgt de veilingafrekening: de kost die wij financierden terug en ons deel van de winst.</p>
                         <ul class="desk-partner-docs">
                           @for (deal of partnerDocs(); track deal.order.id) {
                             <li>
@@ -876,6 +880,14 @@ type DeskRow =
       @if (partnerSheetOpen()) {
         @if (view(); as data) {
           <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerShare()" (closed)="partnerSheetOpen.set(false)" (linked)="onPartnerLinked()" />
+        }
+      }
+      @if (auctionOpen()) {
+        @if (view(); as data) {
+          <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
+                                        [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                        [costSharePct]="auctionCostShare()" [profitSharePct]="auctionProfitShare()"
+                                        (closed)="auctionOpen.set(false)" />
         }
       }
 
@@ -1265,8 +1277,8 @@ type DeskRow =
       .desk-table tbody,.desk-table tfoot{display:block}
       .desk-table tr.desk-section__row,.desk-table tr.desk-detail{display:block}.desk-section__row th{display:block;padding:12px 14px 4px}
       .desk-table tr.desk-detail>td{display:block;width:auto;padding:0 14px 12px}
-      .desk-table tr.desk-row,.desk-table tr.desk-group{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:'product product product' 'qty cartons price' 'goods landed landed';gap:8px 10px;padding:12px 14px;border-bottom:1px solid var(--line)}
-      .desk-table tr.desk-group{grid-template-areas:'product product product' 'qty cartons landed'}
+      .desk-table tr.desk-row,.desk-table tr.desk-group{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-areas:'product product product product product' 'qty cartons price goods landed';gap:8px 8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+      .desk-table tr.desk-group{grid-template-areas:'product product product product product' 'qty cartons cartons landed landed'}
       .desk-table td,.desk-table--editing td.c-qty,.desk-table--editing td.c-price{display:block;width:auto;min-width:0;padding:0;border:0;text-align:left;background:transparent}
       .desk-table td:empty{display:none}
       .desk-row td.c-product,.desk-group td.c-product{grid-area:product;padding-right:34px}
@@ -1276,14 +1288,19 @@ type DeskRow =
       .desk-group td.c-money:not(.c-money--total){grid-area:cartons}
       .desk-table td.c-act{position:absolute;top:8px;right:8px;display:block;width:auto}
       .desk-table td.c-qty::before,.desk-table td.c-cartons::before,.desk-table td.c-price::before,.desk-table td.c-money::before{display:block;margin-bottom:3px;color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
+      .desk-table tr.desk-row td.c-qty,.desk-table tr.desk-row td.c-cartons,.desk-table tr.desk-row td.c-price,.desk-table tr.desk-row td.c-money,.desk-table tr.desk-group td.c-qty,.desk-table tr.desk-group td.c-cartons,.desk-table tr.desk-group td.c-money{display:flex;flex-direction:column;align-items:center;text-align:center}
+      .desk-table tr.desk-row td::before,.desk-table tr.desk-group td::before{text-align:center}
+      .desk-table tr.desk-row td b,.desk-table tr.desk-group td b{line-height:1.3;white-space:nowrap}.desk-table tr.desk-row td small{white-space:nowrap}
+      .desk-table tr.desk-row td.c-money--total .desk-total{justify-items:center;text-align:center}
+      .desk-table--editing tr.desk-row td.c-price .desk-price{width:100%}
       .desk-table td.c-qty::before{content:'Aantal'}.desk-table td.c-cartons::before{content:'Dozen'}.desk-table td.c-price::before{content:'Prijs / stuk'}
       .desk-table td.c-money:not(.c-money--total)::before{content:'Goederen'}.desk-table td.c-money--total::before{content:'Geland'}
       .desk-cell{width:100%}.desk-table--editing td.c-price .desk-cell{padding-right:8px}
       .desk-row:hover td{background:transparent}
-      .desk-table tfoot tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;padding:12px 14px;border-top:2px solid var(--line-strong);background:var(--surface-2)}
-      .desk-table tfoot th{display:block;padding:0;border:0;text-align:left;white-space:normal}
+      .desk-table tfoot tr{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 22px;padding:12px 14px;border-top:2px solid var(--line-strong);background:var(--surface-2)}
+      .desk-table tfoot th{display:block;padding:0;border:0;text-align:center;white-space:nowrap}
       .desk-table tfoot th:empty{display:none}
-      .desk-table tfoot th.c-product{grid-column:1/-1}
+      .desk-table tfoot th.c-product{flex-basis:100%;text-align:center}
       .desk-table tfoot th::before{color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
       .desk-table tfoot th.c-qty::before{content:'Stuks · '}.desk-table tfoot th.c-cartons::before{content:'Dozen · '}
       .desk-table tfoot th.c-money:not(.c-money--total)::before{content:'Goederen · '}.desk-table tfoot th.c-money--total::before{content:'Geland · '}
@@ -1303,7 +1320,7 @@ type DeskRow =
     .desk-mix{display:flex;height:12px;border-radius:99px;background:var(--line);overflow:hidden}.desk-mix i{display:block;height:100%}
     .desk-mix__legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0 12px;padding:0;list-style:none;color:var(--muted);font-size:11px}.desk-mix__legend li{display:inline-flex;align-items:center;gap:5px}.desk-mix__legend i{width:9px;height:9px;border-radius:2px}.desk-mix__legend b{color:var(--ink-2)}
     .desk-mix__goods{background:var(--rose-dark)}.desk-mix__transport{background:var(--gold)}.desk-mix__duty{background:var(--warn)}.desk-mix__destination{background:var(--blue)}.desk-mix__extra{background:var(--muted)}
-    .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
+    .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head-actions{display:inline-flex;gap:6px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
     .desk-reports{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-reports li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:6px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-reports__row--later{border-color:var(--rose-line);background:var(--rose-soft)}.desk-reports__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.desk-reports__row--later .desk-reports__tag{background:var(--rose);color:#fff}.desk-reports__what{display:grid;min-width:0}.desk-reports__what b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-reports__what small{color:var(--muted);font-size:11px}.desk-reports__count{color:var(--danger);font-size:12px;font-weight:650;white-space:nowrap}.desk-reports__count b{font-size:14px}.desk-reports__note{grid-column:2/-1;color:var(--ink-2);font-size:12px}.desk-dossier__hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
     .desk-partner__lead{margin:0 0 8px;color:var(--ink-2);font-size:12.5px;line-height:1.45}.desk-partner-docs{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-partner-docs li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-partner-docs__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.desk-partner-docs__what b{font-size:13px}.desk-partner-docs__what small{color:var(--muted);font-size:11px}.desk-partner-docs__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}.desk-partner-docs__unlink{flex:none;width:26px;height:26px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:15px;line-height:1;cursor:pointer}.desk-partner-docs__unlink:hover{border-color:var(--danger);color:var(--danger)}
     .desk-dossier__diary{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.desk-dossier__empty{margin:0;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);font-size:12px}

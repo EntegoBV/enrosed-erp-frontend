@@ -14,6 +14,7 @@ function blank(countryCode: string): Customer {
     id: null, company: '', contact: '', email: '', phone: '', vatNumber: '',
     countryCode, language: 'NL', address: '', postalCode: '', city: '',
     incoterm: 'DAP', paymentTerms: 'Vooruitbetaling', notes: '',
+    partner: false, partnerSharePct: null, partnerCostPct: null,
   };
 }
 
@@ -140,6 +141,24 @@ function blank(countryCode: string): Customer {
               <span class="hint">
                 Voorwaarden uit de lijst worden op offertes automatisch vertaald.
               </span></div>
+            <div class="field span-2 partner-field">
+              <label class="partner-toggle">
+                <input type="checkbox" [checked]="draft().partner ?? false" (change)="patch({ partner: $any($event.target).checked })" />
+                <span><b>Partnercontainers</b><small>Bestelt containers met ons mee aan onze gelande kost en verkoopt de goederen op de veiling. Bij een offerte vanuit een inkooporder staat deze klant vooraan en rekenen we aan kostprijs.</small></span>
+              </label>
+              @if (draft().partner) {
+                <div class="partner-grid">
+                  <div class="field"><label for="c-partner-share">Ons deel van de winst</label>
+                    <span class="partner-pct"><input class="input num right" id="c-partner-share" type="number" min="0" max="100" step="0.5" inputmode="decimal"
+                           [ngModel]="draft().partnerSharePct ?? 50" (ngModelChange)="patch({ partnerSharePct: $event === '' || $event === null ? null : +$event })" /><i>%</i></span>
+                    <span class="hint">Na de veiling, op de winst boven onze gelande kost.</span></div>
+                  <div class="field"><label for="c-partner-cost">Kost die de partner vooraf betaalt</label>
+                    <span class="partner-pct"><input class="input num right" id="c-partner-cost" type="number" min="0" max="100" step="5" inputmode="decimal"
+                           [ngModel]="draft().partnerCostPct ?? 100" (ngModelChange)="patch({ partnerCostPct: $event === '' || $event === null ? null : +$event })" /><i>%</i></span>
+                    <span class="hint">100 % = de partner betaalt de container vooraf; 0 % = wij financieren alles en rekenen af na de veiling.</span></div>
+                </div>
+              }
+            </div>
             <div class="field span-2"><label for="c-notes">Notities <span class="opt"></span></label>
               <textarea class="textarea" id="c-notes" [ngModel]="draft().notes"
                         (ngModelChange)="patch({ notes: $event })"></textarea></div>
@@ -161,6 +180,15 @@ function blank(countryCode: string): Customer {
   styles: `
     .customer-open { align-self: stretch; min-width: 0; border: 0; background: transparent;
       padding: 0; text-align: left; cursor: pointer; border-radius: 8px; }
+    .partner-field { display: grid; gap: 10px; padding: 10px 12px; border: 1px solid var(--rose-line); border-radius: 12px; background: var(--rose-soft); }
+    .partner-toggle { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 10px; cursor: pointer; }
+    .partner-toggle input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--rose); }
+    .partner-toggle span { display: grid; gap: 2px; font-size: 13px; }
+    .partner-toggle small { color: var(--ink-2); font-size: 12px; line-height: 1.4; }
+    .partner-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+    .partner-pct { display: inline-flex; align-items: center; gap: 6px; }
+    .partner-pct .input { width: 96px; }
+    .partner-pct i { color: var(--muted); font-style: normal; }
   `,
 })
 export class CustomerList {

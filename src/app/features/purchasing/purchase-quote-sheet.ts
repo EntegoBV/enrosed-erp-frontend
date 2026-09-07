@@ -37,7 +37,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
     <app-sheet title="Verkoopofferte maken" (closed)="closed.emit()">
       <div body class="pq">
         <p class="pq__intro">Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen.
-          Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen.</p>
+          @if (partnersOnly()) { Een partner rekent aan onze kostprijs van deze container; een andere klant krijgt zijn eigen prijzen. } @else { Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
         <div class="pq__pick">
           <label class="pq__search">
             <span class="sr-only">Klant zoeken</span>
@@ -48,6 +48,12 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
                    (input)="query.set($any($event.target).value)"
                    (keydown.enter)="$event.preventDefault(); chooseFirst()" />
           </label>
+          @if (partnerCustomers().length) {
+            <div class="pq__scope" role="group" aria-label="Welke klanten">
+              <button type="button" [class.on]="!showAll()" (click)="showAll.set(false)">Partners <small>{{ partnerCustomers().length }}</small></button>
+              <button type="button" [class.on]="showAll()" (click)="showAll.set(true)">Alle klanten <small>{{ customers().length }}</small></button>
+            </div>
+          }
           @if (loadError(); as error) {
             <p class="pq__error">{{ error }} <button class="linklike" type="button" (click)="load()">Opnieuw</button></p>
           } @else {
@@ -56,13 +62,13 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
                 <button class="pq__customer" type="button" role="option"
                         [class.pq__customer--on]="chosen() === customer.id"
                         [attr.aria-selected]="chosen() === customer.id"
-                        (click)="chosen.set(customer.id)">
+                        (click)="choose(customer)">
                   <span class="pq__flag" aria-hidden="true">{{ flag(customer.countryCode) }}</span>
-                  <span class="pq__who"><b>{{ customer.company }}</b><small>{{ where(customer) }}</small></span>
+                  <span class="pq__who"><b>{{ customer.company }}@if (customer.partner) { <em class="pq__partner-tag">partner</em> }</b><small>{{ where(customer) }}</small></span>
                   <i aria-hidden="true">{{ chosen() === customer.id ? '✓' : '' }}</i>
                 </button>
               } @empty {
-                <p class="pq__empty-list">{{ loading() ? 'Klanten laden…' : query() ? 'Geen klant gevonden voor "' + query() + '"' : 'Nog geen klanten' }}</p>
+                <p class="pq__empty-list">{{ loading() ? 'Klanten laden…' : query() ? 'Geen klant gevonden voor "' + query() + '"' : partnersOnly() ? 'Nog geen partnerklanten' : 'Nog geen klanten' }}</p>
               }
               @if (hidden() > 0) {
                 <p class="pq__more">Nog {{ hidden() }} klanten · zoek verder om ze te zien</p>
@@ -79,7 +85,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <button type="button" [class.on]="pricing() === 'COST'" [disabled]="!costKnown()" (click)="pricing.set('COST')">Kostprijs van deze container</button>
           </div>
           @if (pricing() === 'COST') {
-            <p class="pq__hint">Elke regel op de volledige gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling. Inspectie en andere kosten gaan als aparte regels mee. De vracht op de offerte staat op nul, want die zit al in de kost.</p>
+            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling, tot op de cent zoals op de inkooporder. Inspectie en andere kosten gaan als aparte regels mee. De vracht op de offerte staat op nul, want die zit al in de kost.</p>
             <div class="pq__markup">
               <label for="pq-markup">Opslag op de kostprijs</label>
               <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" step="0.5" inputmode="decimal"
@@ -92,10 +98,22 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
               </label>
               @if (partner()) {
                 <div class="pq__markup">
-                  <label for="pq-share">Ons deel van de winst</label>
-                  <span class="pq__markup-field"><input class="input num right" id="pq-share" type="number" min="1" max="100" step="0.5" inputmode="decimal"
+                  <label for="pq-share">Ons deel van de winst na de veiling</label>
+                  <span class="pq__markup-field"><input class="input num right" id="pq-share" type="number" min="0" max="100" step="0.5" inputmode="decimal"
                          [value]="sharePct()" (input)="setShare($any($event.target).value)" /><i>%</i></span>
                 </div>
+                <div class="pq__markup">
+                  <label for="pq-cost">Deel van de kost dat de partner nu betaalt</label>
+                  <span class="pq__markup-field">
+                    <span class="pq__quick" role="group" aria-label="Snel kiezen">
+                      <button type="button" [class.on]="costPct() === 100" (click)="setCost('100')">100</button>
+                      <button type="button" [class.on]="costPct() === 50" (click)="setCost('50')">50</button>
+                      <button type="button" [class.on]="costPct() === 0" (click)="setCost('0')">0</button>
+                    </span>
+                    <input class="input num right" id="pq-cost" type="number" min="0" max="100" step="5" inputmode="decimal"
+                           [value]="costPct()" (input)="setCost($any($event.target).value)" /><i>%</i></span>
+                </div>
+                <p class="pq__hint">@if (costPct() === 0) { Wij financieren de container; de kost en onze winst rekenen we na de veiling af. } @else if (costPct() < 100) { De rest van de kost en onze winst volgen in de veilingafrekening. } @else { De partner betaalt de container vooraf; na de veiling volgt enkel onze winstdeling. }</p>
               }
             </div>
             @if (costs().length) {
@@ -116,14 +134,14 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
           @for (line of lines(); track line.productId) {
             <li>
               <span>{{ line.name }}</span>
-              <b>{{ line.quantity | num }} st.@if (pricing() === 'COST' && line.landedUnitEur !== null) { · {{ unitPrice(line) | eur }} / st }</b>
+              <b>{{ line.quantity | num }} st.@if (pricing() === 'COST' && line.landedUnitEur !== null) { · {{ unitPrice(line) | eur: 4 }} / st }</b>
             </li>
           } @empty {
             <li class="pq__empty">Deze container heeft nog geen productregels.</li>
           }
           @if (pricing() === 'COST') {
             @for (cost of chosenCosts(); track cost.key) {
-              <li class="pq__extra"><span>{{ cost.description }}</span><b>{{ cost.amountEur | eur }}</b></li>
+              <li class="pq__extra"><span>{{ cost.description }}</span><b>{{ costAmount(cost) | eur }}</b></li>
             }
             <li class="pq__total"><span>Goederen en aparte kosten, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
           }
@@ -171,6 +189,14 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
     .pq__markup-field { display: inline-flex; align-items: center; gap: 6px; }
     .pq__markup-field .input { width: 84px; min-height: 40px; }
     .pq__markup-field i { color: var(--muted); font-style: normal; }
+    .pq__scope { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); }
+    .pq__scope button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+    .pq__scope button.on { background: var(--surface); color: var(--ink); box-shadow: var(--sh-1); }
+    .pq__scope small { padding: 0 6px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); font-size: 10.5px; font-weight: 750; }
+    .pq__partner-tag { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); font-size: 10px; font-style: normal; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; vertical-align: middle; }
+    .pq__quick { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+    .pq__quick button { min-width: 34px; padding: 4px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .pq__quick button.on { background: var(--rose); color: #fff; }
     .pq__partner { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--rose-line); border-radius: 12px; background: var(--rose-soft); }
     .pq__partner-toggle { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 10px; cursor: pointer; }
     .pq__partner-toggle input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--rose); }
@@ -204,8 +230,14 @@ export class PurchaseQuoteSheet {
   readonly pricing = signal<PurchaseQuotePricing>('CUSTOMER');
   readonly markupPct = signal(0);
   /** A partner deal: the customer sponsors the container and shares the auction profit with us. */
-  readonly partner = signal(true);
+  readonly partner = signal(false);
   readonly sharePct = signal(50);
+  /** The part of the landed cost the partner pays on this quote; the rest is settled after the auction. */
+  readonly costPct = signal(100);
+  /** Whether the list shows every customer or only the partners. */
+  readonly showAll = signal(false);
+  readonly partnerCustomers = computed(() => this.customers().filter((customer) => customer.partner));
+  readonly partnersOnly = computed(() => this.partnerCustomers().length > 0 && !this.showAll());
 
   /** Cost pricing needs a landed cost on every line; a half-calculated container cannot be passed on. */
   readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => line.landedUnitEur !== null));
@@ -226,13 +258,14 @@ export class PurchaseQuoteSheet {
   readonly includedCosts = linkedSignal<ReadonlySet<string>>(() => new Set(this.costs().map((cost) => cost.key)));
   readonly chosenCosts = computed(() => this.costs().filter((cost) => this.includedCosts().has(cost.key)));
   readonly previewTotal = computed(() => this.lines().reduce((sum, line) => sum + this.unitPrice(line) * line.quantity, 0)
-    + this.chosenCosts().reduce((sum, cost) => sum + cost.amountEur, 0));
+    + this.chosenCosts().reduce((sum, cost) => sum + this.costAmount(cost), 0));
 
   /** Every customer the search matches, the chosen one always among them. */
   readonly matches = computed(() => {
     const needle = normalise(this.query());
     const chosen = this.chosen();
-    return this.customers().filter((customer) => customer.id === chosen || !needle
+    const pool = this.partnersOnly() ? this.partnerCustomers() : this.customers();
+    return pool.filter((customer) => customer.id === chosen || !needle
       || normalise([customer.company, customer.city, customer.countryCode, this.countryName(customer.countryCode),
         customer.vatNumber, customer.contact, customer.email].filter(Boolean).join(' ')).includes(needle));
   });
@@ -243,6 +276,32 @@ export class PurchaseQuoteSheet {
 
   constructor() {
     void this.load();
+  }
+
+  /** A customer is chosen: a partner switches the sheet to cost pricing with their own agreement. */
+  choose(customer: Customer): void {
+    if (customer.id === null) return;
+    this.chosen.set(customer.id);
+    if (customer.partner) {
+      this.partner.set(true);
+      this.sharePct.set(customer.partnerSharePct ?? 50);
+      this.costPct.set(customer.partnerCostPct ?? 100);
+      if (this.costKnown()) this.pricing.set('COST');
+    } else {
+      this.partner.set(false);
+      this.pricing.set('CUSTOMER');
+    }
+  }
+
+  setCost(raw: string): void {
+    const value = Number(String(raw).replace(',', '.'));
+    this.costPct.set(Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 100);
+  }
+
+  /** The partner's part of a separate cost, on this quote. */
+  costAmount(cost: PurchaseQuoteCost): number {
+    const share = this.partner() ? this.costPct() / 100 : 1;
+    return Math.round(cost.amountEur * share * 100) / 100;
   }
 
   setShare(raw: string): void {
@@ -264,10 +323,15 @@ export class PurchaseQuoteSheet {
     });
   }
 
-  /** The line's price at cost: the container's landed cost per piece plus the chosen markup. */
+  /**
+   * The line's price at cost: the container's landed cost per piece plus the
+   * chosen markup, times the part a partner pays now. Four decimals, so the
+   * quote adds up to the cent of the purchase order.
+   */
   unitPrice(line: PurchaseQuoteLine): number {
     if (line.landedUnitEur === null) return 0;
-    return Math.round(line.landedUnitEur * (1 + this.markupPct() / 100) * 100) / 100;
+    const share = this.partner() ? this.costPct() / 100 : 1;
+    return Math.round(line.landedUnitEur * (1 + this.markupPct() / 100) * share * 10000) / 10000;
   }
 
   async load(): Promise<void> {
@@ -286,7 +350,7 @@ export class PurchaseQuoteSheet {
   /** Enter in the search box takes the first match: one hit, one key. */
   chooseFirst(): void {
     const first = this.visible()[0];
-    if (first && first.id !== null) this.chosen.set(first.id);
+    if (first) this.choose(first);
   }
 
   where(customer: Customer): string {
@@ -311,7 +375,7 @@ export class PurchaseQuoteSheet {
     try {
       const created = await this.sales.createOrder(customer.id, customer.countryCode, customer.incoterm || 'DAP', 'OFFERTE');
       const atCost = this.pricing() === 'COST' && this.costKnown();
-      const extraLines = atCost ? this.chosenCosts().map((cost) => ({ description: cost.description, quantity: 1, unitPriceEur: cost.amountEur })) : [];
+      const extraLines = atCost ? this.chosenCosts().map((cost) => ({ description: cost.description, quantity: 1, unitPriceEur: this.costAmount(cost) })) : [];
       const partnerDeal = atCost && this.partner() && this.sharePct() > 0;
       let filled = await this.sales.updateOrder(created.order.id, {
         ...created.order,
@@ -322,9 +386,9 @@ export class PurchaseQuoteSheet {
         extraLines,
         partnerPurchaseOrderId: partnerDeal ? this.order().id : null,
         partnerSharePct: partnerDeal ? this.sharePct() : null,
-        notes: partnerDeal
-          ? `Partnercontainer ${this.order().number}: goederen aan onze gelande kostprijs (fabriek, zeevracht, invoerrechten en afhandeling). Na de verkoop volgt een slotfactuur voor ${this.sharePct()} % van de gerealiseerde winst.`
-          : created.order.notes,
+        internalNotes: partnerDeal
+          ? `Partnercontainer ${this.order().number}: goederen aan ${this.costPct()} % van onze gelande kostprijs (fabriek, zeevracht, invoerrechten en afhandeling). Na de veiling volgt de veilingafrekening: ${100 - this.costPct()} % van de kost terug en ${this.sharePct()} % van de winst.`
+          : created.order.internalNotes,
       });
       if (atCost) {
         /* The container's freight is already inside the landed cost; the quote adds none of its own. */

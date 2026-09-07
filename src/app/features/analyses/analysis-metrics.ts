@@ -645,6 +645,8 @@ export interface PartnerFinancingRow {
   settlementEur: number;
   /** Invoiced plus settlement minus landed: what the container earns us. */
   resultEur: number;
+  /** Received, but the auction has not been settled yet: the statement is still to come. */
+  awaitingSettlement: boolean;
   documents: { id: number; number: string; docType: 'OFFERTE' | 'FACTUUR'; settlement: boolean }[];
 }
 
@@ -654,6 +656,8 @@ export interface PartnerFinancingAnalysis {
   invoicedEur: number;
   settlementEur: number;
   resultEur: number;
+  /** Partner containers received without an auction settlement so far. */
+  awaitingSettlement: number;
   rows: PartnerFinancingRow[];
 }
 
@@ -682,15 +686,14 @@ export function partnerFinancingAnalysis(
   let ownLanded = 0;
   for (const purchase of purchases) {
     const docs = byContainer.get(purchase.order.id) ?? [];
-    const landedEur = finiteNonNegative(purchase.costing?.totals?.totalEur);
+    /* The partner pays inspection and the other separate costs too: the landed figure includes them. */
+    const landedEur = finiteNonNegative(purchase.costing?.totals?.totalWithSeparateCostsEur ?? purchase.costing?.totals?.totalEur);
     if (!docs.length) {
       ownCount += 1;
       ownLanded += landedEur;
       continue;
     }
-    const settlement = (view: SalesOrderView): boolean =>
-      view.order.docType === 'FACTUUR' && (view.priced.lines ?? []).length === 0
-      && (view.order.extraLines ?? []).some((line) => (line.description ?? '').startsWith('Winstdeling'));
+    const settlement = (view: SalesOrderView): boolean => isSettlementDocument(view);
     const goodsInvoices = docs.filter((view) => view.order.docType === 'FACTUUR' && !settlement(view));
     const settlements = docs.filter(settlement);
     const quotes = docs.filter((view) => view.order.docType !== 'FACTUUR');
@@ -713,6 +716,7 @@ export function partnerFinancingAnalysis(
       invoicesPaid: goodsInvoices.length > 0 && goodsInvoices.every((view) => view.order.status === 'BETAALD'),
       settlementEur,
       resultEur: round2(goodsEur + settlementEur - landedEur),
+      awaitingSettlement: purchase.order.status === 'ONTVANGEN' && settlements.length === 0,
       documents: docs
         .slice()
         .sort((left, right) => left.order.id - right.order.id)
@@ -726,12 +730,26 @@ export function partnerFinancingAnalysis(
     invoicedEur: round2(rows.reduce((sum, row) => sum + (row.quotedOnly ? 0 : row.invoicedEur), 0)),
     settlementEur: round2(rows.reduce((sum, row) => sum + row.settlementEur, 0)),
     resultEur: round2(rows.reduce((sum, row) => sum + row.resultEur, 0)),
+    awaitingSettlement: rows.filter((row) => row.awaitingSettlement).length,
     rows,
   };
 }
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * A partner-deal settlement: flagged by the server, or an older one-line
+ * settlement that only carried a profit-share line. Kept local so this
+ * module stays free of runtime imports and testable on its own.
+ */
+function isSettlementDocument(view: SalesOrderView): boolean {
+  const order = view.order;
+  if (order.docType !== 'FACTUUR' || !order.partnerPurchaseOrderId) return false;
+  if (order.partnerSettlement) return true;
+  if ((view.priced.lines ?? []).length > 0) return false;
+  return (order.extraLines ?? []).some((line) => (line.description ?? '').startsWith('Winstdeling'));
 }
 
 function piecesSoldByProduct(

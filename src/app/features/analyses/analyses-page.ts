@@ -517,21 +517,22 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
         <header class="section-copy section-copy--sub">
           <span class="eyebrow">Financiering</span>
           <h2>Eigen geld of partnergeld</h2>
-          <p>Wij betalen de leverancier, de vracht en de douane rechtstreeks. Een partner die de container meebestelt betaalt ons de gelande kost terug en deelt na de veiling de winst; die containers staan hier apart.</p>
+          <p>Wij betalen de leverancier, de vracht en de douane rechtstreeks. Een partner die de container meebestelt betaalt de gelande kost vooraf of na de veiling terug en deelt de winst; die containers staan hier apart.</p>
         </header>
         <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark"><span class="metric-card__label">Op eigen geld</span><strong>{{ financing().own.landedEur | eur: 0 }}</strong><p>{{ financing().own.count }} container{{ financing().own.count === 1 ? '' : 's' }} volledig door ons betaald</p></article>
           <article class="card metric-card"><span class="metric-card__label">Partnercontainers</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} container{{ financing().partner.count === 1 ? '' : 's' }} gelande kost, door een partner overgenomen</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Gefactureerd aan partners</span><strong>{{ financing().invoicedEur | eur: 0 }}</strong><p>goederen aan kostprijs, zonder slotfacturen</p></article>
-          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Winstdeling</span><strong>{{ financing().settlementEur | eur: 0 }}</strong><p>ons deel op de slotfacturen</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Gefactureerd aan partners</span><strong>{{ financing().invoicedEur | eur: 0 }}</strong><p>goederen aan kostprijs, vooraf betaald</p></article>
+          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Veilingafrekeningen</span><strong>{{ financing().settlementEur | eur: 0 }}</strong><p>kost terug plus ons deel van de winst</p></article>
           <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Resultaat partnercontainers</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>gefactureerd plus winstdeling, min gelande kost</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="financing().awaitingSettlement > 0"><span class="metric-card__label">Afrekening open</span><strong>{{ financing().awaitingSettlement }}</strong><p>ontvangen partnercontainers zonder veilingafrekening</p></article>
         </div>
         <article class="card analysis-list scorecard-card">
           <header><div><span>Partners</span><h3>Per partnercontainer</h3></div><small>{{ financing().rows.length }} container{{ financing().rows.length === 1 ? '' : 's' }}</small></header>
           @if (financing().rows.length) {
             <div class="scorecard-scroll">
               <table class="scorecard">
-                <thead><tr><th>Container</th><th>Partner</th><th>Gelande kost</th><th>Gefactureerd</th><th>Winstdeling</th><th>Resultaat</th><th>Documenten</th></tr></thead>
+                <thead><tr><th>Container</th><th>Partner</th><th>Gelande kost</th><th>Vooraf gefactureerd</th><th>Veilingafrekening</th><th>Resultaat</th><th>Documenten</th></tr></thead>
                 <tbody>
                   @for (row of financing().rows; track row.purchaseOrderId) {
                     <tr>
@@ -539,7 +540,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
                       <td>{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
                       <td>{{ row.landedEur | eur: 0 }}</td>
                       <td [class.scorecard__warn]="row.quotedOnly">{{ row.invoicedEur | eur: 0 }}<small class="muted"> {{ row.quotedOnly ? 'offerte' : row.invoicesPaid ? 'betaald' : 'open' }}</small></td>
-                      <td>{{ row.settlementEur ? (row.settlementEur | eur: 0) : '—' }}</td>
+                      <td [class.scorecard__warn]="row.awaitingSettlement">{{ row.settlementEur ? (row.settlementEur | eur: 0) : row.awaitingSettlement ? 'open' : '—' }}</td>
                       <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
                       <td>@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a>{{ last ? '' : ' · ' }}}</td>
                     </tr>

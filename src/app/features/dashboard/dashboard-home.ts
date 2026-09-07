@@ -10,6 +10,7 @@ import {
   SalesOrderView,
   Supplier,
 } from '../../core/api/models';
+import { partnerFinancingAnalysis } from '../analyses/analysis-metrics';
 import { PlannerStore } from '../../core/api/planner-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -113,6 +114,18 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
                     <small>Ontbrekende gegevens en afwijkingen nalopen.</small>
                   </span>
                   <strong class="work-row__number">{{ purchaseAttentionOrders().length }}</strong>
+                  <span class="work-row__chev" aria-hidden="true">›</span>
+                </a>
+              }
+
+              @if (financing().awaitingSettlement) {
+                <a class="work-row" routerLink="/analyses/purchasing">
+                  <span class="work-row__icon"><app-icon name="sales" [size]="18" /></span>
+                  <span class="work-row__copy">
+                    <b>Veilingafrekening maken</b>
+                    <small>Partnercontainers zijn ontvangen; het veilingoverzicht van de partner wacht op afrekening.</small>
+                  </span>
+                  <strong class="work-row__number">{{ financing().awaitingSettlement }}</strong>
                   <span class="work-row__chev" aria-hidden="true">›</span>
                 </a>
               }
@@ -236,6 +249,21 @@ import { PlannerCards, PlannerMilestone } from './planner-cards';
               <span class="home-kpi__chev" aria-hidden="true">›</span>
             </a>
           </div>
+
+          <a class="home-kpi" routerLink="/analyses/purchasing" [class.home-kpi--dark]="financing().partner.count > 0">
+            <span class="home-kpi__icon"><app-icon name="purchase" [size]="17" /></span>
+            <span class="home-kpi__label">Partnercontainers</span>
+            @if (salesReady() && purchasesReady()) {
+              <strong>{{ financing().resultEur | eur: 0 }}</strong>
+              <small>{{ financing().partner.count }} {{ financing().partner.count === 1 ? 'container' : 'containers' }} · {{ financing().own.landedEur | eur: 0 }} op eigen geld</small>
+              @if (financing().awaitingSettlement) {
+                <em>{{ financing().awaitingSettlement }} {{ financing().awaitingSettlement === 1 ? 'afrekening' : 'afrekeningen' }} nog te maken</em>
+              }
+            } @else {
+              <strong>—</strong><small>Nog niet beschikbaar</small>
+            }
+            <span class="home-kpi__chev" aria-hidden="true">›</span>
+          </a>
 
           <a class="home-market-link" routerLink="/analyses/market">
             <span class="home-market-link__icon"><app-icon name="analytics" [size]="17" /></span>
@@ -436,12 +464,13 @@ export class DashboardHome {
 
   readonly purchaseAttentionOrders = computed(() => this.purchases()
     .filter((row) => (row.attention?.length ?? 0) > 0));
+  readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders()));
   readonly zeroStockCount = computed(() => this.products().filter((product) =>
     product.active && !product.demo && product.inventoryKnown === true && product.stockQuantity <= 0).length);
   readonly workGroupCount = computed(() =>
     Number(this.salesActionCount() > 0)
     + Number(this.purchaseAttentionOrders().length > 0)
-    + Number(this.zeroStockCount() > 0)
+    + Number(this.zeroStockCount() > 0) + Number(this.financing().awaitingSettlement > 0)
     + Number(this.catalogAttention() > 0));
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()
     && this.purchasesReady() && this.productsReady() && this.catalogReady());

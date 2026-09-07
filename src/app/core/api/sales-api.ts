@@ -5,7 +5,7 @@ import { API_BASE, api } from './api.config';
 import {
   CompanyProfile, Country, Customer, CustomerPortalLink, DiscountTier, FreightPricingStrategy, LanguageCode,
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
-  SalesOrderView, Carrier, CarrierShipQuote, DocumentType,
+  SalesOrderView, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest,
 } from './models';
 import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
@@ -97,11 +97,9 @@ export class SalesApi {
     return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/partner-deal`), body));
   }
 
-  /** The partner deal's closing invoice: our share of the auction profit as one line. */
-  createSettlement(sourceId: number, body: {
-    proceedsEur: number; sharePct: number; reference: string | null; note: string | null;
-  }): Promise<SalesOrderView> {
-    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${sourceId}/settlement`), body));
+  /** The auction settlement of a partner container: our financed cost and profit share, per product. */
+  createAuctionSettlement(body: AuctionSettlementRequest): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api('/api/sales-orders/auction-settlement'), body));
   }
 
   /** Freezes the quote's content into a new invoice; the quote stays. */

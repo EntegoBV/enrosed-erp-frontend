@@ -745,6 +745,12 @@ export interface Customer {
   paymentTerms: string;
   notes: string;
   createdAt?: string;
+  /** A partner who co-orders containers at our landed cost and sells the goods at auction. */
+  partner?: boolean;
+  /** Our default share of that partner's auction profit, in percent. */
+  partnerSharePct?: number | null;
+  /** The part of the landed cost the partner pays up front, in percent; the rest is settled after the auction. */
+  partnerCostPct?: number | null;
 }
 
 export interface Country {
@@ -1235,6 +1241,8 @@ export interface SalesOrder {
   partnerPurchaseOrderId?: number | null;
   /** Our share of the partner's profit on that container, in percent. */
   partnerSharePct?: number | null;
+  /** The auction settlement invoice of a partner deal: financed cost and profit share, per product. */
+  partnerSettlement?: boolean;
   invoiceDueDate?: string | null;
   paidAt?: string | null;
   sourceQuoteId?: number | null;
@@ -1554,4 +1562,28 @@ export interface CarrierShipQuote {
   tierLabel: string;
   postcodeMatched: boolean;
   surchargeNote: string | null;
+}
+
+/** One product on the partner's auction statement. */
+export interface AuctionLine {
+  productId: number;
+  quantity: number;
+  /** What the product fetched at auction in total, excluding VAT. */
+  proceedsEur: number;
+  /** What one piece cost us landed. */
+  landedUnitCostEur: number;
+}
+
+/** The auction settlement: who, which container, what we recover and share, and the statement lines. */
+export interface AuctionSettlementRequest {
+  customerId: number | null;
+  purchaseOrderId: number | null;
+  reference: string | null;
+  sourceId: number | null;
+  /** The part of the landed cost we financed and now recover, in percent. */
+  costSharePct: number;
+  /** Our share of the profit above the landed cost, in percent. */
+  profitSharePct: number;
+  lines: AuctionLine[];
+  note: string | null;
 }
