@@ -1227,6 +1227,39 @@ type DeskRow =
     .desk-detail__line--total{border-top:2px solid var(--line-strong);font-weight:750}.desk-detail__line--total span:last-child{color:var(--rose-dark)}
     .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .desk-table tfoot th.c-product{text-align:left;padding-left:16px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+    /* A narrow desk (an unfolded Fold, a small tablet): every line becomes a
+       card, product on top, the numbers in a labelled grid under it. */
+    @media(max-width:899px){
+      .desk-table-bar{flex-wrap:wrap;gap:10px}.desk-table-bar>div{flex-basis:100%}
+      .desk-table-wrap{overflow:visible}
+      .desk-table,.desk-table--editing{min-width:0;display:block}
+      .desk-table thead{display:none}
+      .desk-table tbody,.desk-table tfoot{display:block}
+      .desk-table tr.desk-section__row,.desk-table tr.desk-detail{display:block}.desk-section__row th{display:block;padding:12px 14px 4px}
+      .desk-table tr.desk-detail>td{display:block;width:auto;padding:0 14px 12px}
+      .desk-table tr.desk-row,.desk-table tr.desk-group{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:'product product product' 'qty cartons price' 'goods landed landed';gap:8px 10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+      .desk-table tr.desk-group{grid-template-areas:'product product product' 'qty cartons landed'}
+      .desk-table td,.desk-table--editing td.c-qty,.desk-table--editing td.c-price{display:block;width:auto;min-width:0;padding:0;border:0;text-align:left;background:transparent}
+      .desk-table td:empty{display:none}
+      .desk-row td.c-product,.desk-group td.c-product{grid-area:product;padding-right:34px}
+      .desk-row--variant td.c-product{padding-left:0}
+      .desk-table td.c-qty{grid-area:qty}.desk-table td.c-cartons{grid-area:cartons}.desk-table td.c-price{grid-area:price}
+      .desk-table td.c-money:not(.c-money--total){grid-area:goods}.desk-table td.c-money--total{grid-area:landed}
+      .desk-group td.c-money:not(.c-money--total){grid-area:cartons}
+      .desk-table td.c-act{position:absolute;top:8px;right:8px;display:block;width:auto}
+      .desk-table td.c-qty::before,.desk-table td.c-cartons::before,.desk-table td.c-price::before,.desk-table td.c-money::before{display:block;margin-bottom:3px;color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
+      .desk-table td.c-qty::before{content:'Aantal'}.desk-table td.c-cartons::before{content:'Dozen'}.desk-table td.c-price::before{content:'Prijs / stuk'}
+      .desk-table td.c-money:not(.c-money--total)::before{content:'Goederen'}.desk-table td.c-money--total::before{content:'Geland'}
+      .desk-cell{width:100%}.desk-table--editing td.c-price .desk-cell{padding-right:8px}
+      .desk-row:hover td{background:transparent}
+      .desk-table tfoot tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;padding:12px 14px;border-top:2px solid var(--line-strong);background:var(--surface-2)}
+      .desk-table tfoot th{display:block;padding:0;border:0;text-align:left;white-space:normal}
+      .desk-table tfoot th:empty{display:none}
+      .desk-table tfoot th.c-product{grid-column:1/-1}
+      .desk-table tfoot th::before{color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+      .desk-table tfoot th.c-qty::before{content:'Stuks · '}.desk-table tfoot th.c-cartons::before{content:'Dozen · '}
+      .desk-table tfoot th.c-money:not(.c-money--total)::before{content:'Goederen · '}.desk-table tfoot th.c-money--total::before{content:'Geland · '}
+    }
 
     .desk-supplier{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .desk-supplier__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose);color:#fff;font-weight:800}.desk-supplier__copy{display:grid;min-width:0;flex:1;line-height:1.25}.desk-supplier strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-supplier__cur{align-self:flex-start;padding:2px 7px;border-radius:999px;background:var(--surface);color:var(--muted);font-size:10.5px;font-weight:700}
