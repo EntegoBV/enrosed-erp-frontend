@@ -838,9 +838,10 @@ interface JourneyStep {
       }
 
       @if (picking()) {
-        <app-product-picker heading="Product toevoegen" [products]="available()" [categories]="categories()"
+        <app-product-picker heading="Producten toevoegen" [products]="available()" [categories]="categories()"
                             [families]="families()" [groupByFamily]="true" [preserveSourceOrder]="true"
-                            [priceOf]="priceOf" (picked)="addLine($event)" (cancelled)="picking.set(false)" />
+                            [priceOf]="priceOf" mode="multi" (picked)="addLine($event)"
+                            (pickedMany)="addLines($event)" (cancelled)="picking.set(false)" />
       }
 
       @if (cancelSheet()) {

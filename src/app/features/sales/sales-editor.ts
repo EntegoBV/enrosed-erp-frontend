@@ -1316,14 +1316,16 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
     @if (picking()) {
         <app-product-picker
-          heading="Product toevoegen"
+          heading="Producten toevoegen"
           [products]="available()"
           [categories]="categories()"
           [families]="families()"
           [groupByFamily]="true"
           [preserveSourceOrder]="true"
           [priceOf]="priceOf"
+          mode="multi"
           (picked)="addLine($event)"
+          (pickedMany)="addLines($event)"
           (cancelled)="picking.set(false)"
         />
       }
@@ -2784,12 +2786,18 @@ export class SalesEditor {
   }
 
   addLine(choice: { product: Product; quantity: number }): void {
+    this.addLines([choice]);
+  }
+
+  /** Several products at once, ticked first and given their numbers afterwards, as on a purchase order. */
+  addLines(choices: { product: Product; quantity: number }[]): void {
     this.picking.set(false);
+    if (!choices.length) return;
     this.enqueue((order) => ({
       ...order,
-      lines: [...order.lines,
-              { id: null, productId: choice.product.id!, quantity: choice.quantity,
-                unitPriceEur: null, manualDiscountPct: null, deliveryWeek: null }],
+      lines: [...order.lines, ...choices.map((choice) => ({
+        id: null, productId: choice.product.id!, quantity: choice.quantity,
+        unitPriceEur: null, manualDiscountPct: null, deliveryWeek: null }))],
     }));
   }
 
