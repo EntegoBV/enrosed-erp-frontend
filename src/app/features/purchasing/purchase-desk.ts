@@ -6,6 +6,7 @@ import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { AuctionSettlementSheet } from '../sales/auction-settlement-sheet';
+import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { Diary } from './diary';
@@ -47,7 +48,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -582,7 +583,7 @@ type DeskRow =
                           <input class="input num right" id="dk-extra" type="number" step="100" min="0" inputmode="decimal" [ngModel]="data.order.extraRevenueEur" (ngModelChange)="patch({ extraRevenueEur: +$event })" />
                           <span class="input-affix__suffix">EUR</span>
                         </div>
-                        <span class="hint">In de stukprijs.</span>
+                        <span class="hint">In de stukprijs · {{ data.order.allocExtra === 'MANUAL' ? 'zelf verdeeld per product' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }} · <button class="linklike" type="button" (click)="openManualSplit()">{{ data.order.allocExtra === 'MANUAL' ? 'verdeling aanpassen' : 'zelf verdelen per product' }}</button></span>
                       </div>
                       <div class="field">
                         <label for="dk-inspection">Inspectiekost <span class="opt"></span></label>
@@ -620,6 +621,7 @@ type DeskRow =
                           <label [attr.for]="'dk-a-' + key.field">{{ key.label }}</label>
                           <select class="select" [id]="'dk-a-' + key.field" [ngModel]="allocationOf(data.order, key.field)" (ngModelChange)="setAllocation(key.field, $event)">
                             <option value="CBM">Naar volume (m³)</option><option value="VALUE">Naar goederenwaarde</option><option value="PIECES">Naar aantal stuks</option>
+                            @if (key.field === 'allocExtra') { <option value="MANUAL">Zelf per product</option> }
                           </select>
                         </div>
                       }
@@ -855,6 +857,9 @@ type DeskRow =
         @if (view(); as data) {
           <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
+      }
+      @if (extraSplitOpen()) {
+        <app-purchase-extra-split [order]="data.order" [costing]="data.costing" (changed)="patch({ lines: $event })" (automatic)="endManualSplit()" (closed)="extraSplitOpen.set(false)" />
       }
       @if (partnerSheetOpen()) {
         @if (view(); as data) {

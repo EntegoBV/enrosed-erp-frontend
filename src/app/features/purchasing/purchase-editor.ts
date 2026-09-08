@@ -18,6 +18,7 @@ import {
 import { messageOf } from '../../core/api/errors';
 import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
+import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
@@ -90,7 +91,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -830,7 +831,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                    (ngModelChange)="patch({ extraRevenueEur: +$event })" />
                             <span class="input-affix__suffix">EUR</span>
                           </div>
-                          <span class="hint">In de stukprijs · start op € 2.000 per container.</span>
+                          <span class="hint">In de stukprijs · {{ data.order.allocExtra === 'MANUAL' ? 'zelf verdeeld per product' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }} ·
+                            <button class="linklike" type="button" (click)="openManualSplit()">{{ data.order.allocExtra === 'MANUAL' ? 'verdeling aanpassen' : 'zelf verdelen per product' }}</button></span>
                         </div>
                         <div class="field">
                           <label for="c-inspection">Inspectiekost <span class="opt"></span></label>
@@ -899,6 +901,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                             <option value="CBM">Naar volume (m³)</option>
                             <option value="VALUE">Naar goederenwaarde</option>
                             <option value="PIECES">Naar aantal stuks</option>
+                            @if (key.field === 'allocExtra') { <option value="MANUAL">Zelf per product</option> }
                           </select>
                           @if (key.route) {
                             <span class="hint">{{ key.route }}</span>
@@ -1375,6 +1378,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
       @if (partnerSheetOpen()) {
         <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerShare()" (closed)="partnerSheetOpen.set(false)" (linked)="onPartnerLinked()" />
+      }
+      @if (extraSplitOpen()) {
+        <app-purchase-extra-split [order]="data.order" [costing]="data.costing" (changed)="patch({ lines: $event })" (automatic)="endManualSplit()" (closed)="extraSplitOpen.set(false)" />
       }
       @if (auctionOpen()) {
         <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
@@ -2610,6 +2616,35 @@ export class PurchaseEditor {
   protected readonly media = inject(MediaApi);
 
   readonly id = input<string>('');
+
+  /* ---- the Enrosed kost by hand ------------------------------------------ */
+  readonly extraSplitOpen = signal(false);
+
+  allocationLabel(allocation: Allocation | null | undefined): string {
+    return allocation === 'CBM' ? 'naar volume' : allocation === 'VALUE' ? 'naar goederenwaarde' : allocation === 'MANUAL' ? 'zelf per product' : 'naar aantal stuks';
+  }
+
+  /** Switches the Enrosed kost to a hand-made split, starting from what the key gave each line, and opens the sheet. */
+  openManualSplit(): void {
+    const data = this.view();
+    if (!data) return;
+    if (data.order.allocExtra !== 'MANUAL') {
+      const lines = data.order.lines.map((line) => {
+        const costed = data.costing.lines.find((row) => row.productId === line.productId);
+        return { ...line, extraShareEur: Math.round((costed?.extraRevenueEur ?? 0) * 100) / 100 };
+      });
+      this.patch({ allocExtra: 'MANUAL', lines });
+    }
+    this.extraSplitOpen.set(true);
+  }
+
+  /** Back to a key: the shares go, the pieces count spreads the Enrosed kost again. */
+  endManualSplit(): void {
+    const data = this.view();
+    if (!data) return;
+    this.patch({ allocExtra: 'PIECES', lines: data.order.lines.map((line) => ({ ...line, extraShareEur: null })) });
+    this.extraSplitOpen.set(false);
+  }
 
   readonly allocationKeys = computed(() => {
     const labels = this.costLabels();

@@ -7,7 +7,8 @@
 
 export type Currency = 'EUR' | 'USD' | 'CNY';
 export type MarkupMode = 'PRODUCT' | 'ORDER';
-export type Allocation = 'CBM' | 'VALUE' | 'PIECES';
+/** How a container-level cost is shared out; MANUAL is the buyer's own split per line, for the Enrosed kost only. */
+export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
@@ -823,6 +824,8 @@ export interface PurchaseOrderLine {
   receiptUnitValueEur?: number | null;
   /** What was wrong on arrival, in our own words; printed on the next supplier order. */
   issueNote?: string | null;
+  /** The Enrosed kost this line carries when the buyer spreads it by hand (allocExtra MANUAL). */
+  extraShareEur?: number | null;
 }
 
 /** An earlier container on which a product arrived short or damaged. */
