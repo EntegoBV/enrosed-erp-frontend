@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { instalmentsOf, paymentPlanLabel, splitInstalments, splitTotal } from '../src/app/features/purchasing/payment-plan.ts';
+import { PAYMENT_TOLERANCE_EUR, instalmentsOf, paymentPlanLabel, splitInstalments, splitTotal, withinTolerance } from '../src/app/features/purchasing/payment-plan.ts';
 
 test('a split of one\'s own skips the moments with nothing to pay and reads as words', () => {
   const steps = splitInstalments(40, 0, 60);
@@ -27,4 +27,12 @@ test('an order pays by its own split under CUSTOM and by the preset otherwise', 
   assert.equal(paymentPlanLabel({ paymentTerms: 'CUSTOM', payPctOrdered: 30, payPctArrived: 70 }, presets), '30% bij bestelling, 70% bij aankomst');
   assert.equal(paymentPlanLabel({ paymentTerms: 'CUSTOM' }, presets), 'Anders: eigen verdeling');
   assert.equal(paymentPlanLabel({ paymentTerms: 'THIRDS' }, presets), '1/3 · 1/3 · 1/3');
+});
+
+test('the small change of paying counts as exact up to ten euro', () => {
+  assert.equal(PAYMENT_TOLERANCE_EUR, 10);
+  assert.equal(withinTolerance(-9.46), true);
+  assert.equal(withinTolerance(10), true);
+  assert.equal(withinTolerance(10.01), false);
+  assert.equal(withinTolerance(-25), false);
 });

@@ -3,6 +3,18 @@ import type { Instalment, PaymentTerms, PurchaseOrder } from '../../core/api/mod
 /** A preset plan as the models list them: its code, its name and its instalments. */
 export interface PaymentPlanPreset { value: PaymentTerms; label: string; instalments: Instalment[] }
 
+/**
+ * Small differences between what was agreed and what was paid are the cost
+ * of paying: bank charges, rounding, a rate that moved. Up to this amount a
+ * stream counts as paid exactly.
+ */
+export const PAYMENT_TOLERANCE_EUR = 10;
+
+/** True when paid and agreed are the same but for the small change of paying. */
+export function withinTolerance(differenceEur: number): boolean {
+  return Math.abs(differenceEur) <= PAYMENT_TOLERANCE_EUR + 0.005;
+}
+
 type PlanFields = Pick<PurchaseOrder, 'paymentTerms' | 'payPctOrdered' | 'payPctShipped' | 'payPctArrived'>;
 
 /** The order's own split as percentages; zero and missing shares are left out. */

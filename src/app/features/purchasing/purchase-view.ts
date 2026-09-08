@@ -33,7 +33,7 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { isSettlementInvoice, partnerDocumentKind, separateCostPerPiece } from '../sales/partner-settlement';
-import { instalmentsOf } from './payment-plan';
+import { PAYMENT_TOLERANCE_EUR, instalmentsOf, withinTolerance } from './payment-plan';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
@@ -685,7 +685,7 @@ type PurchaseWorkspaceSectionId =
                   }
                 }
                 @if (settledFor('SUPPLIER')) {
-                  <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' : (differenceFor('SUPPLIER') > 0 ? ' · ' + (differenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-differenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
+                  <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
                 }
                 @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
                   <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
@@ -1224,7 +1224,7 @@ export class PurchaseView {
       SHIPPED: data.order.status === 'ONDERWEG' || data.order.status === 'ONTVANGEN',
       ARRIVED: data.order.status === 'ONTVANGEN',
     };
-    const paid = this.settledFor('SUPPLIER') ? goods : this.paidTo('SUPPLIER');
+    const paid = this.settledFor('SUPPLIER') || this.openFor('SUPPLIER') === 0 && this.paidTo('SUPPLIER') > 0 ? goods : this.paidTo('SUPPLIER');
     let remainingPaid = paid;
     let stillOpen = Math.max(0, goods - paid);
     return instalments.map((step) => {
@@ -1258,10 +1258,23 @@ export class PurchaseView {
   openFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
     if (this.settledFor(payee)) return 0;
     const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
-    return Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
+    const open = Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
+    return this.paidTo(payee) > 0 && open <= PAYMENT_TOLERANCE_EUR ? 0 : open;
   }
 
-  readonly paymentDifference = computed(() => Math.round((this.differenceFor('SUPPLIER') + this.differenceFor('LOGISTICS')) * 100) / 100);
+  /** The difference worth mentioning: beyond the small change of paying. */
+  notableDifferenceFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
+    const difference = this.differenceFor(payee);
+    return withinTolerance(difference) ? 0 : difference;
+  }
+
+  smallChangeFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
+    const difference = this.differenceFor(payee);
+    return withinTolerance(difference) ? difference : 0;
+  }
+
+  readonly tolerance = PAYMENT_TOLERANCE_EUR;
+  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS')) * 100) / 100);
   readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS'));
   paymentsTo(payee: 'SUPPLIER' | 'LOGISTICS'): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);

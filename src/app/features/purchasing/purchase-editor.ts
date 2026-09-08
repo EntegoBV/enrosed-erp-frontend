@@ -38,7 +38,7 @@ import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
-import { instalmentsOf, paymentPlanLabel, splitTotal } from './payment-plan';
+import { PAYMENT_TOLERANCE_EUR, instalmentsOf, paymentPlanLabel, splitTotal, withinTolerance } from './payment-plan';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe, ceilTo } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
@@ -1181,9 +1181,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
                 }
                 @if (settledFor('SUPPLIER')) {
-                  <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' : (differenceFor('SUPPLIER') > 0 ? ' · ' + (differenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-differenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
+                  <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
                 } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) {
-                  <p class="pay-stream__done">✓ Volledig betaald</p>
+                  <p class="pay-stream__done">✓ Volledig betaald{{ paidTo('SUPPLIER') < supplierOwed() - 0.005 ? ' · ' + ((supplierOwed() - paidTo('SUPPLIER')) | eur) + ' minder, binnen de marge van ' + (tolerance | eur: 0) : '' }}</p>
                 }
                 <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
               </div>
@@ -1209,7 +1209,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     </div>
                   }
                   @if (settledFor('LOGISTICS')) {
-                    <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('LOGISTICS') === 0 ? '' : (differenceFor('LOGISTICS') > 0 ? ' · ' + (differenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-differenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
+                    <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('LOGISTICS') === 0 ? '' : (notableDifferenceFor('LOGISTICS') > 0 ? ' · ' + (notableDifferenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
                   } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) {
                     <p class="pay-stream__done">✓ Volledig betaald</p>
                   }
@@ -2092,8 +2092,22 @@ export class PurchaseEditor {
     return Math.round((this.paidTo(payee) - owed) * 100) / 100;
   }
 
+  /** The difference worth mentioning: beyond the small change of paying. */
+  notableDifferenceFor(payee: Payee): number {
+    const difference = this.differenceFor(payee);
+    return withinTolerance(difference) ? 0 : difference;
+  }
+
+  /** The small change a settled stream came out under or over, when it stayed within the margin. */
+  smallChangeFor(payee: Payee): number {
+    const difference = this.differenceFor(payee);
+    return withinTolerance(difference) ? difference : 0;
+  }
+
+  readonly tolerance = PAYMENT_TOLERANCE_EUR;
+
   /** The differences of every settled stream together: what the order cost more or less than agreed. */
-  readonly paymentDifference = computed(() => Math.round((this.differenceFor('SUPPLIER') + this.differenceFor('LOGISTICS')) * 100) / 100);
+  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS')) * 100) / 100);
 
   /** The plan in words, for the hint under a split of one's own. */
   planLabel(order: PurchaseOrder): string { return paymentPlanLabel(order, PAYMENT_TERMS); }
@@ -2134,7 +2148,7 @@ export class PurchaseEditor {
   }
   /* The supplier stream, as the plan and the balance see it. */
   readonly paidTotalEur = computed(() => this.paidTo('SUPPLIER'));
-  readonly remainingEur = computed(() => this.settledFor('SUPPLIER') ? 0 : this.supplierOwed() - this.paidTotalEur());
+  readonly remainingEur = computed(() => this.openFor('SUPPLIER'));
   /** Fractions of the goods that still fit in what is open: after 2/3 only the rest remains. */
   /**
    * One tap fills in what the plan asks: every open instalment of the agreed
@@ -2161,7 +2175,9 @@ export class PurchaseEditor {
   openFor(payee: Payee): number {
     if (this.settledFor(payee)) return 0;
     const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
-    return Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
+    const open = Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
+    /* Short by the small change of paying counts as paid; nothing is asked for it. */
+    return this.paidTo(payee) > 0 && open <= PAYMENT_TOLERANCE_EUR ? 0 : open;
   }
 
   /** A payment beyond what is open is a mistake; the sheet says so before the server does. */
@@ -2221,8 +2237,8 @@ export class PurchaseEditor {
     /* Ticked off against the running total, a few cents of slack: 2/3 noted
        as € 232,39 must still cover two instalments of € 116,20, and "the
        rest" closes the last one even when the thirds did not add up exactly. */
-    /* A settled stream is paid in full, whatever the amounts said. */
-    const paid = this.settledFor('SUPPLIER') ? goods : this.paidTotalEur();
+    /* A settled stream is paid in full, whatever the amounts said; so is one short by only the small change of paying. */
+    const paid = this.settledFor('SUPPLIER') || this.openFor('SUPPLIER') === 0 && this.paidTotalEur() > 0 ? goods : this.paidTotalEur();
     /* The money paid so far fills the steps in order: a step is paid once it is
        covered, a partly covered step asks the rest. A few cents of slack, so
        thirds that do not add up exactly still close. An unpaid step never asks

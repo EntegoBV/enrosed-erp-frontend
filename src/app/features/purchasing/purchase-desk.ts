@@ -749,8 +749,8 @@ type DeskRow =
                       </div>
                     }
                     @if (settledFor('SUPPLIER')) {
-                      <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' : (differenceFor('SUPPLIER') > 0 ? ' · ' + (differenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-differenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
-                    } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
+                      <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
+                    } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald{{ paidTo('SUPPLIER') < supplierOwed() - 0.005 ? ' · ' + ((supplierOwed() - paidTo('SUPPLIER')) | eur) + ' minder, binnen de marge van ' + (tolerance | eur: 0) : '' }}</p> }
                     <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
                   </div>
                   @if (!isDdp()) {
@@ -774,7 +774,7 @@ type DeskRow =
                         </div>
                       }
                       @if (settledFor('LOGISTICS')) {
-                        <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('LOGISTICS') === 0 ? '' : (differenceFor('LOGISTICS') > 0 ? ' · ' + (differenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-differenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
+                        <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('LOGISTICS') === 0 ? '' : (notableDifferenceFor('LOGISTICS') > 0 ? ' · ' + (notableDifferenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
                       } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
                       <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
                     </div>
