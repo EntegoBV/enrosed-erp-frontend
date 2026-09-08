@@ -2,6 +2,9 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
+import { MediaApi } from '../../core/api/media-api';
+import { MediaAssetSummary } from '../../core/api/media-models';
+import { FilePicker } from '../../shared/file-picker';
 import { AuthImage } from '../../core/api/auth-image';
 import { messageOf } from '../../core/api/errors';
 import { Category, CategoryPhoto, Product } from '../../core/api/models';
@@ -25,7 +28,7 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
 @Component({
   selector: 'app-categories-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, FormsModule, AuthImage, PageHeader, Skeleton, Sheet],
+  imports: [RouterLink, FormsModule, AuthImage, PageHeader, Skeleton, Sheet, FilePicker],
   template: `
     <app-page-header title="Categorieën"
                      [subtitle]="loading() ? 'Laden…' : categories().length + ' categorieën · foto’s voor website en catalogus'"
@@ -96,6 +99,7 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
                     <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" [disabled]="busyId() !== null"
                            (change)="upload(category, $event)" />
                   </label>
+                  <button class="btn btn--sm" type="button" [disabled]="busyId() !== null" (click)="libraryFor.set(category)">Uit bibliotheek</button>
                   @if (websitePhoto(category); as suggestion) {
                     <button class="btn btn--sm" type="button" [disabled]="busyId() !== null"
                             [title]="suggestion.url" (click)="importFromWebsite(category, suggestion.url)">Van enrosed.com</button>
@@ -133,6 +137,10 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
         </div>
       </app-sheet>
     }
+    @if (libraryFor(); as category) {
+      <app-file-picker kind="IMAGE" [multiple]="true" [title]="'Foto’s uit de bibliotheek voor ' + category.name"
+                       (picked)="addFromLibrary(category, $event)" (closed)="libraryFor.set(null)" />
+    }
   `,
   styles: [`
     :host{display:block}
@@ -167,6 +175,7 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
 })
 export class CategoriesPage {
   private readonly catalog = inject(CatalogApi);
+  private readonly media = inject(MediaApi);
   private readonly ui = inject(Ui);
 
   readonly categories = signal<Category[]>([]);
@@ -225,6 +234,26 @@ export class CategoriesPage {
     if (!hit) return null;
     const already = (category.photos ?? []).some((photo) => photo.originalFilename.includes(hit.label));
     return already ? null : { url: hit.url, label: hit.label };
+  }
+
+  /** Which category is choosing from the media library right now. */
+  readonly libraryFor = signal<Category | null>(null);
+
+  /** Pictures that already live in the media library become this category's photos too. */
+  async addFromLibrary(category: Category, assets: MediaAssetSummary[]): Promise<void> {
+    this.libraryFor.set(null);
+    if (!assets.length || category.id === null) return;
+    await this.run(category, async () => {
+      let updated: Category = category;
+      for (const asset of assets) {
+        const blob = await this.media.download(asset.id);
+        const file = new File([blob], asset.originalFilename || asset.name, { type: asset.contentType || blob.type });
+        updated = await this.catalog.uploadCategoryPhoto(category.id!, file);
+      }
+      return updated;
+    }, assets.length === 1 ? `Foto uit de bibliotheek toegevoegd aan ${category.name}`
+      : `${assets.length} foto’s uit de bibliotheek toegevoegd aan ${category.name}`,
+    'Foto uit de bibliotheek toevoegen mislukt');
   }
 
   async upload(category: Category, event: Event): Promise<void> {
