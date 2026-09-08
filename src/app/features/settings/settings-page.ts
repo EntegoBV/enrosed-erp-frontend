@@ -209,6 +209,17 @@ const normalizeCategoryCode = (value: string): string => value
                 <input class="input mono" id="co-bic" [ngModel]="profile.bic"
                        (ngModelChange)="patchCompany({ bic: $event })" />
               </div>
+              <div class="field">
+                <label for="co-rep">Beperkt fiscaal vertegenwoordiger (NL) <span class="opt"></span></label>
+                <input class="input" id="co-rep" [ngModel]="profile.fiscalRepresentativeName ?? ''"
+                       (ngModelChange)="patchCompany({ fiscalRepresentativeName: $event })" placeholder="24/7 Customs BV" />
+                <span class="hint">Komt op documenten van klanten die via deze vertegenwoordiger inklaren.</span>
+              </div>
+              <div class="field">
+                <label for="co-rep-vat">Btw-nummer vertegenwoordiger <span class="opt"></span></label>
+                <input class="input mono" id="co-rep-vat" [ngModel]="profile.fiscalRepresentativeVat ?? ''"
+                       (ngModelChange)="patchCompany({ fiscalRepresentativeVat: $event })" placeholder="NL858617262B02" />
+              </div>
               <div class="field span-2">
                 <label for="co-foot">Voettekst op documenten (NL) <span class="opt"></span></label>
                 <textarea class="textarea" id="co-foot" [ngModel]="profile.documentFooter"

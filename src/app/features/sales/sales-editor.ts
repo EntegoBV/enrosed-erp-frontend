@@ -2899,6 +2899,7 @@ export class SalesEditor {
   vatLabel(treatment: string): string {
     switch (treatment) {
       case 'INTRACOMMUNAUTAIR': return 'intracommunautaire levering';
+      case 'VERLEGD_FISCAAL_VERTEGENWOORDIGER': return 'btw verlegd via fiscaal vertegenwoordiger (NL)';
       case 'UITVOER': return 'uitvoer';
       case 'EU_ZONDER_BTW_NUMMER': return 'EU zonder BTW-nummer';
       default: return 'binnenland';

@@ -752,6 +752,10 @@ export interface Customer {
   partnerSharePct?: number | null;
   /** The part of the landed cost the partner pays up front, in percent; the rest is settled after the auction. */
   partnerCostPct?: number | null;
+  /** Goods cleared in the Netherlands through our limited fiscal representative: VAT shifts to the customer (art. 12.3 Wet OB). */
+  fiscalRepresentative?: boolean;
+  /** A sentence of our own on every quote and invoice for this customer. */
+  invoiceNote?: string | null;
 }
 
 export interface Country {
@@ -1449,6 +1453,9 @@ export interface CompanyProfile {
   termsAndConditionsEn: string | null;
   privacyPolicy: string | null;
   privacyPolicyEn: string | null;
+  /** Our limited fiscal representative in the Netherlands, named on documents for customers cleared through it. */
+  fiscalRepresentativeName?: string | null;
+  fiscalRepresentativeVat?: string | null;
 }
 
 /** One step in the life of a quote. */

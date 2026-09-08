@@ -15,6 +15,7 @@ function blank(countryCode: string): Customer {
     countryCode, language: 'NL', address: '', postalCode: '', city: '',
     incoterm: 'DAP', paymentTerms: 'Vooruitbetaling', notes: '',
     partner: false, partnerSharePct: null, partnerCostPct: null,
+    fiscalRepresentative: false, invoiceNote: '',
   };
 }
 
@@ -159,6 +160,15 @@ function blank(countryCode: string): Customer {
                 </div>
               }
             </div>
+            <div class="field span-2 partner-field">
+              <label class="partner-toggle">
+                <input type="checkbox" [checked]="draft().fiscalRepresentative ?? false" (change)="patch({ fiscalRepresentative: $any($event.target).checked })" />
+                <span><b>Inklaring in Nederland via onze fiscaal vertegenwoordiger</b><small>De btw verschuift naar deze klant (art. 12.3 Wet OB). Offerte en voorschotfactuur vermelden onze beperkt fiscaal vertegenwoordiger, de verlegging en het btw-nummer van de klant; de slotfactuur enkel de verlegging. Vraagt een btw-nummer.</small></span>
+              </label>
+            </div>
+            <div class="field span-2"><label for="c-invoice-note">Extra vermelding op documenten <span class="opt"></span></label>
+              <textarea class="textarea" id="c-invoice-note" [ngModel]="draft().invoiceNote ?? ''"
+                        (ngModelChange)="patch({ invoiceNote: $event })" placeholder="Komt op elke offerte en factuur voor deze klant."></textarea></div>
             <div class="field span-2"><label for="c-notes">Notities <span class="opt"></span></label>
               <textarea class="textarea" id="c-notes" [ngModel]="draft().notes"
                         (ngModelChange)="patch({ notes: $event })"></textarea></div>
