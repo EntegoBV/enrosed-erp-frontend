@@ -32,7 +32,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
-        + Nieuw
+        {{ businessScope() === 'PARTNER' ? 'Container kiezen' : '+ Nieuw' }}
       </button>
     </app-page-header>
 
@@ -280,7 +280,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       </div>
     </div>
 
-    <button class="fab" type="button" (click)="startNew()">+ Order</button>
+    <button class="fab" type="button" (click)="startNew()">{{ businessScope() === 'PARTNER' ? 'Container kiezen' : '+ Order' }}</button>
 
     @if (rowMenu(); as menuRow) {
       <app-sheet [title]="documentLabel(menuRow.order) + ' ' + menuRow.order.number" (closed)="rowMenu.set(null)">
@@ -1230,6 +1230,10 @@ export class SalesList {
   };
 
   startNew(): void {
+    if (this.businessScope() === 'PARTNER') {
+      void this.router.navigate(['/purchasing']);
+      return;
+    }
     this.newDocType.set(this.docTab() === 'FACTUUR' ? 'FACTUUR' : 'OFFERTE');
     this.picking.set(true);
     /* While the data is still loading the sheet shows a skeleton; load()

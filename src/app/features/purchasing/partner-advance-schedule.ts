@@ -14,7 +14,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
   imports: [RouterLink, DateField, DateNlPipe, EurPipe, NumPipe],
   template: `
     <section class="advance-plan" aria-label="Afzonderlijke voorschotfacturen">
-      <header><h3><span class="step">2</span> Voorschotfacturen</h3>
+      <header><h4><span class="step">2</span> Voorschotfacturen</h4>
         @if (schedule()?.rows?.length && !editing()) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="edit()">Aanpassen</button> }
       </header>
       @if (error()) { <p class="plan-error" role="alert">{{ error() }}</p> }
@@ -55,13 +55,14 @@ import { STATUS_LABEL } from '../sales/quote-status';
     </section>
   `,
   styles: `
-    :host{display:block;min-width:0}.advance-plan{container:advance-plan / inline-size;padding:18px;border-block:1px solid var(--line);background:var(--surface)}header{display:flex;justify-content:space-between;align-items:center;gap:12px}h3{display:flex;align-items:center;gap:9px;font-size:15px;margin:0;font-weight:700}.step{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--rose-soft);color:var(--rose-dark);font-size:12px}
+    :host{display:block;min-width:0}.advance-plan{container:advance-plan / inline-size;padding:18px;border-block:1px solid var(--line);background:var(--surface)}header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}h4{display:flex;align-items:center;gap:9px;font-size:15px;margin:0;font-weight:700}.step{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--rose-soft);color:var(--rose-dark);font-size:12px}
     .plan-copy{font-size:12px;line-height:1.6;color:var(--muted);margin:12px 0}.plan-copy b{color:var(--ink-2)}.plan-label{font-size:12px;font-weight:650;color:var(--ink-2);margin:16px 0 6px}.plan-presets{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 16px}.btn{min-height:44px;white-space:normal}.plan-presets>.btn{flex:1 1 auto}
     .plan-empty{padding:16px;margin-top:14px;border-radius:12px;background:var(--surface-2)}.plan-empty>b{font-size:14px}.plan-empty p{font-size:13px;line-height:1.6;color:var(--muted);margin:8px 0 14px}.plan-empty .btn{width:100%}
     .plan-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:15px;border:1px solid var(--line);border-radius:12px;margin:12px 0;background:var(--surface)}.plan-editor__head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding-bottom:11px;border-bottom:1px solid var(--line);font-size:13px}.plan-editor__head span{font-size:11px;color:var(--muted)}.plan-name,.plan-row-result{grid-column:1/-1}.field{min-width:0}.field>span{font-size:12px;font-weight:650}.input,.select{min-width:0;min-height:44px;font-size:14px}.plan-row-result,.plan-total{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:13px}.plan-row-result{padding-top:8px}.plan-row-result>b{font-size:17px}.plan-row-result small{font-size:11px;color:var(--muted);font-weight:400}.plan-row-result .linklike{min-height:44px;font-size:12px}
     .plan-row{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;padding:15px;border:1px solid var(--line);border-radius:12px;margin:12px 0}.plan-row>div{display:grid;gap:7px;min-width:0}.plan-row b{font-size:14px;overflow-wrap:anywhere}.plan-row small{font-size:12px;color:var(--muted);line-height:1.5}.plan-row .plan-label{margin:0;color:var(--rose-dark);font-size:10px;letter-spacing:.04em}.plan-row a{font-size:13px;color:var(--rose-dark);overflow-wrap:anywhere}.plan-actions{display:flex!important;flex-wrap:wrap;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px;gap:10px}.plan-actions>b{font-size:18px;font-variant-numeric:tabular-nums}.plan-actions .btn{font-size:12px}
     .plan-error{color:var(--danger);font-size:13px;line-height:1.6}.plan-total{padding:13px;border-radius:10px;background:var(--rose-soft);line-height:1.5}.plan-total>span{color:var(--muted);font-size:12px}
     @container advance-plan (max-width:360px){.plan-editor{grid-template-columns:1fr;padding:12px;gap:12px}.input,.select{font-size:16px}.plan-presets>.btn{flex-basis:40%}.plan-actions .btn{width:100%}}
+    @container advance-plan (min-width:600px){.plan-empty{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:24px;align-items:center}.plan-empty>b{grid-column:1}.plan-empty p{grid-column:1;margin-bottom:0}.plan-empty .btn{grid-column:2;grid-row:1/3;width:auto}}
     @media(max-width:420px){.advance-plan{padding:14px}}
   `,
 })

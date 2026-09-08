@@ -36,22 +36,23 @@ import { STATUS_LABEL } from '../sales/quote-status';
             <div class="partner-money__kpis">
               <div class="received"><small>Voorschotten ontvangen</small><b>{{ summary.receivedAdvanceEur | eur }}</b></div>
               <div><small>Voorschotten nog open</small><b>{{ summary.openAdvanceEur | eur }}</b></div>
-              <div><small>Veilingafrekeningen open</small><b>{{ summary.openSettlementEur | eur }}</b></div>
+              <div><small>Veiling&shy;afrekeningen open</small><b>{{ summary.openSettlementEur | eur }}</b></div>
               <div><small>Eigen geld ingelegd</small><b>{{ summary.ownExposureEur | eur }}</b></div>
             </div>
             <p class="partner-money__hint">Bedragen incl. btw. Eigen geld = betaalde containerkosten min netto partnerontvangsten.</p>
             @if (summary.creditEur > 0) { <p class="partner-money__warning"><b>{{ summary.creditEur | eur }} terug te betalen of te verrekenen.</b> Open de betreffende factuur om een uitgevoerde terugbetaling te noteren.</p> }
             @if (invoices().length) {
-              <label class="invoice-picker"><span>Betaling bij een factuur noteren</span><select class="select" [disabled]="opening()" [value]="selected()?.order?.id || ''" (change)="selectInvoice($any($event.target).value)"><option value="">Kies een factuur…</option>@for (doc of invoices(); track doc.id) { <option [value]="doc.id">{{ doc.number }} · {{ statusLabel[doc.status] }} · {{ doc.invoiceTotalEur | eur }}</option> }</select></label>
+              <label class="invoice-picker"><span>Betaling bij een factuur noteren</span><select class="select" [disabled]="opening()" [value]="invoiceSelection() || ''" (change)="selectInvoice($any($event.target).value)"><option value="">Kies een factuur…</option>@for (doc of invoices(); track doc.id) { <option [value]="doc.id">{{ doc.number }} · {{ statusLabel[doc.status] }} · {{ doc.invoiceTotalEur | eur }}</option> }</select></label>
               <p class="partner-money__hint">Noteer het ontvangen bedrag met datum en tijdstip. De factuur moet daarvoor uitgegeven zijn.</p>
             } @else { <p class="money-empty">Er zijn nog geen facturen om betalingen bij te noteren. Maak eerst een voorschotfactuur bij een termijn hierboven.</p> }
-            @if (selected(); as selectedDoc) { <div class="partner-money__selected" #selectedInvoice tabindex="-1"><header><div><small>Betalingen bij factuur</small><b>{{ selectedDoc.order.number }}</b></div><button class="btn btn--sm" type="button" (click)="selected.set(null)">Sluiten</button></header><app-sales-receipts [view]="selectedDoc" (changed)="received($event)" /></div> }
+            @if (opening()) { <p class="partner-money__hint" role="status">Factuurbetalingen laden…</p> }
+            @if (selected(); as selectedDoc) { <div class="partner-money__selected" #selectedInvoice tabindex="-1"><header><div><small>Betalingen bij factuur</small><b>{{ selectedDoc.order.number }}</b></div><button class="btn btn--sm" type="button" (click)="closeInvoice()">Sluiten</button></header><app-sales-receipts [view]="selectedDoc" (changed)="received($event)" /></div> }
           </section>
 
           <div class="partner-money__details">
             <details><summary>Alle offertes &amp; facturen <span>{{ summary.documents.length }}</span></summary>
               <div class="partner-money__docs">@for (doc of summary.documents; track doc.id) {
-                <article><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>{{ doc.purpose === 'PARTNER_SETTLEMENT' ? 'Veilingafrekening' : doc.docType === 'FACTUUR' ? 'Voorschotfactuur' : 'Voorschotofferte' }} · {{ statusLabel[doc.status] }}</small><b>{{ doc.invoiceTotalEur | eur }} <small>incl. btw</small></b>@if (doc.creditEur > 0) { <small>{{ doc.creditEur | eur }} credit</small> }</div>@if (doc.docType === 'FACTUUR') { <button class="btn btn--sm" type="button" [disabled]="opening()" (click)="open(doc.id)">Betalingen bekijken</button> }</article>
+                <article><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>{{ doc.purpose === 'PARTNER_SETTLEMENT' ? 'Veilingafrekening' : doc.docType === 'FACTUUR' ? 'Voorschotfactuur' : 'Voorschotofferte' }} · {{ statusLabel[doc.status] }}</small><b>{{ doc.invoiceTotalEur | eur }} <small>incl. btw</small></b>@if (doc.docType === 'FACTUUR') { <small>{{ doc.receivedEur | eur }} netto ontvangen · {{ doc.remainingEur | eur }} open</small> }@if (doc.creditEur > 0) { <small>{{ doc.creditEur | eur }} credit</small> }</div>@if (doc.docType === 'FACTUUR') { <button class="btn btn--sm" type="button" [disabled]="opening()" (click)="open(doc.id)">Betalingen bekijken</button> }</article>
               } @empty { <p class="partner-money__hint">Nog geen partnerdocumenten gekoppeld.</p> }</div>
             </details>
             @if (summary.payments.length) {
@@ -75,7 +76,8 @@ import { STATUS_LABEL } from '../sales/quote-status';
     .partner-money__docs article{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:13px 0;border-top:1px solid var(--line)}.partner-money__docs article:first-child{border-top:0}.partner-money__docs article>div{display:grid;gap:6px;min-width:0}.partner-money__docs a{font-size:14px;font-weight:650;overflow-wrap:anywhere;color:var(--rose-dark)}.partner-money__docs small{font-size:12px;color:var(--muted);font-weight:400}.partner-money__docs b{font-size:14px}
     .partner-money__warning,.partner-money__error{padding:12px;margin:14px 0;border-radius:10px;background:var(--warn-soft);font-size:13px;line-height:1.6}.partner-money__error{color:var(--danger)}.partner-money__trail{display:grid;gap:14px;padding-bottom:14px}.partner-money__trail a{display:grid;gap:5px;color:inherit;text-decoration:none;font-size:13px}.partner-money__trail span,.partner-money__trail small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}.partner-money__selected{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}.partner-money__selected header>div{display:grid;gap:5px}.partner-money__selected header small{font-size:12px;color:var(--muted)}.partner-money__selected header b{font-size:15px;overflow-wrap:anywhere}
     .btn{min-height:44px;white-space:normal}select:focus-visible,summary:focus-visible{outline:2px solid var(--rose-dark);outline-offset:3px}
-    @media(max-width:420px){.partner-money__head,.money-section{padding:14px}.agreement-grid{grid-template-columns:1fr}.partner-money__kpis{gap:8px}.partner-money__kpis b{font-size:15px}.partner-money__kpis>div{padding:10px}.invoice-picker select{font-size:16px}.partner-money__details{padding:0 14px 6px}.partner-money__costs dl>div{flex-wrap:wrap;gap:3px}.partner-money__costs dd{margin-left:auto}}
+    @media(max-width:359px){.partner-money__kpis{grid-template-columns:1fr}.partner-money__kpis>div{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.partner-money__kpis b{white-space:nowrap}}
+    @media(max-width:420px){.partner-money__head,.money-section{padding:14px}.agreement-grid{grid-template-columns:1fr}.agreement-grid>div{grid-template-columns:minmax(0,1fr) auto;column-gap:12px}.agreement-grid small,.agreement-grid b{grid-column:1}.agreement-grid strong{grid-column:2;grid-row:1/3;align-self:center}.agreement-grid span{grid-column:1/-1}.partner-money__kpis{gap:8px}.partner-money__kpis b{font-size:15px}.partner-money__kpis>div{padding:10px}.invoice-picker select{font-size:16px}.partner-money__details{padding:0 14px 6px}.partner-money__costs dl>div{flex-wrap:wrap;gap:3px}.partner-money__costs dd{margin-left:auto}}
   `,
 })
 export class PurchasePartnerPayments {
@@ -87,6 +89,7 @@ export class PurchasePartnerPayments {
   readonly invoices = computed(() => this.summary()?.documents.filter(doc => doc.docType === 'FACTUUR') ?? []);
   readonly statusLabel = STATUS_LABEL;
   readonly selected = signal<SalesOrderView | null>(null);
+  readonly invoiceSelection = signal<number | null>(null);
   readonly loading = signal(false);
   readonly opening = signal(false);
   readonly error = signal('');
@@ -101,14 +104,17 @@ export class PurchasePartnerPayments {
     catch (failure: unknown) { if (version === this.version) this.error.set(messageOf(failure, 'Partnerfinanciering laden mislukt')); }
     finally { if (version === this.version) this.loading.set(false); }
   }
-  selectInvoice(value: string): void { if (value) void this.open(Number(value)); else this.selected.set(null); }
+  selectInvoice(value: string): void { if (value) void this.open(Number(value)); else this.closeInvoice(); }
+  closeInvoice(): void { this.selected.set(null); this.invoiceSelection.set(null); }
   async open(id: number): Promise<void> {
+    if (this.opening()) return;
+    this.invoiceSelection.set(id); this.selected.set(null);
     this.opening.set(true); this.error.set('');
     try { this.selected.set(await this.sales.order(id)); this.focusSelected(); }
-    catch (failure: unknown) { this.error.set(messageOf(failure, 'Factuurbetalingen laden mislukt')); }
+    catch (failure: unknown) { this.invoiceSelection.set(null); this.error.set(messageOf(failure, 'Factuurbetalingen laden mislukt')); }
     finally { this.opening.set(false); }
   }
-  received(view: SalesOrderView): void { this.selected.set(view); void this.load(); this.changed.emit(); }
+  received(view: SalesOrderView): void { this.invoiceSelection.set(view.order.id); this.selected.set(view); void this.load(); this.changed.emit(); }
   created(view: SalesOrderView): void { this.received(view); this.focusSelected(); }
   private focusSelected(): void { requestAnimationFrame(() => { const target = this.selectedInvoice()?.nativeElement; target?.scrollIntoView({ behavior: 'smooth', block: 'start' }); target?.focus({ preventScroll: true }); }); }
   refresh(): void { void this.load(); this.changed.emit(); }
