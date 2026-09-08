@@ -229,39 +229,43 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         <!-- The four-stop rail walks a phone through the document; a desk
              shows every section at once and needs no such bar. -->
         @if (!desktop.active()) {
-        <nav class="sales-section-nav erp-workspace__section-nav" aria-label="Onderdelen van het verkoopdocument">
+        <nav class="sales-section-nav workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van het verkoopdocument">
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-products'"
+                  [class.workflow-nav__active]="activeDetailSection() === 'sales-products'"
                   [class.active]="activeDetailSection() === 'sales-products'"
                   [attr.aria-current]="activeDetailSection() === 'sales-products' ? 'true' : null"
                   (click)="scrollToSection('sales-products')">
-            <span class="erp-workspace__section-mark" aria-hidden="true">1</span>
-            <span class="erp-workspace__section-copy"><b>Producten</b>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">1</span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Producten</b>
               <small>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-delivery'"
+                  [class.workflow-nav__active]="activeDetailSection() === 'sales-delivery'"
                   [class.active]="activeDetailSection() === 'sales-delivery'"
                   [attr.aria-current]="activeDetailSection() === 'sales-delivery' ? 'true' : null"
                   (click)="scrollToSection('sales-delivery')">
-            <span class="erp-workspace__section-mark" aria-hidden="true">2</span>
-            <span class="erp-workspace__section-copy"><b>Levering</b><small>{{ deliveryState(data) }}</small></span>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">2</span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Levering</b><small>{{ deliveryState(data) }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-control'"
+                  [class.workflow-nav__active]="activeDetailSection() === 'sales-control'"
                   [class.active]="activeDetailSection() === 'sales-control'"
                   [attr.aria-current]="activeDetailSection() === 'sales-control' ? 'true' : null"
                   (click)="scrollToSection('sales-control')">
-            <span class="erp-workspace__section-mark" aria-hidden="true">3</span>
-            <span class="erp-workspace__section-copy"><b>Controle</b><small>{{ data.priced.totals.total | eur: 0 }}</small></span>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">3</span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Controle</b><small>{{ data.priced.totals.total | eur: 0 }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-status'"
+                  [class.workflow-nav__active]="activeDetailSection() === 'sales-status'"
                   [class.active]="activeDetailSection() === 'sales-status'"
                   [attr.aria-current]="activeDetailSection() === 'sales-status' ? 'true' : null"
                   (click)="scrollToSection('sales-status')">
-            <span class="erp-workspace__section-mark" aria-hidden="true">4</span>
-            <span class="erp-workspace__section-copy"><b>Status</b><small>{{ label(data.order.status) }}</small></span>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">4</span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Status</b><small>{{ label(data.order.status) }}</small></span>
           </button>
         </nav>
         }

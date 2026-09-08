@@ -467,7 +467,7 @@ interface JourneyStep {
                     <th class="c-qty">{{ data.priced.totals.pieces | num }}</th>
                     <th class="c-price"></th>
                     <th class="c-disc">@if (data.priced.totals.lineDiscountTotal) { −{{ data.priced.totals.lineDiscountTotal | eur: 0 }} }</th>
-                    <th class="c-money">{{ data.priced.totals.subtotal | eur }}</th>
+                    <th class="c-money">{{ data.priced.totals.subtotal + (data.priced.totals.extraLinesTotal ?? 0) | eur }}@if (data.priced.totals.extraLinesTotal) { <small>goederen {{ data.priced.totals.subtotal | eur }} + andere regels</small> }</th>
                     <th class="c-money" [class.is-bad]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 0 }}</th>
                     <th class="c-delivery"></th>
                     @if (canEdit()) { <th class="c-act"></th> }
@@ -1047,6 +1047,7 @@ interface JourneyStep {
     .desk-delivery{display:grid;gap:1px;font-size:11.5px}.desk-delivery b{color:var(--warn);font-weight:650}.desk-delivery--ok b{color:var(--ok)}.desk-delivery--bad b{color:var(--danger)}.desk-delivery small{color:var(--muted);font-size:10.5px}
     .desk-week{margin-top:6px}
     .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .desk-table tfoot th.c-money small{display:block;margin-top:2px;color:var(--muted);font-size:10px;font-weight:500;letter-spacing:0;text-transform:none}
     .desk-table tfoot th.c-product{text-align:left;padding-left:16px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.desk-table tfoot th.is-bad{color:var(--danger)}
     /* A narrow desk (an unfolded Fold, a small tablet): the table gives up
        its columns and every line becomes a card, product on top, the numbers
