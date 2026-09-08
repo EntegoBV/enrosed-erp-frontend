@@ -60,6 +60,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
               <span class="xs__qty num">{{ row.quantity | num }}</span>
               <span class="xs__base num">{{ row.baseUnit | eurUp: 3 }}</span>
               <span class="xs__money">
+                <span class="xs__lbl">Enrosed kost</span>
                 <label>
                   <i>€</i><input class="input num right" type="number" step="10" inputmode="decimal" [attr.aria-label]="'Enrosed kost voor ' + row.name"
                          [value]="draftOf('s' + row.productId, shareText(row))"
@@ -68,6 +69,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
                 <small>{{ row.extraUnit | eurUp: 3 }} per stuk</small>
               </span>
               <span class="xs__money">
+                <span class="xs__lbl">Kostprijs / stuk</span>
                 <label>
                   <i>€</i><input class="input num right" type="number" min="0" step="0.01" inputmode="decimal" [attr.aria-label]="'Kostprijs per stuk voor ' + row.name + ', de Enrosed kost volgt'"
                          [value]="draftOf('t' + row.productId, fixed3(row.landedUnit))"
@@ -88,41 +90,47 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
   `,
   styles: `
     :host { display: contents; }
-    .xs { display: grid; gap: 14px; }
+    .xs { display: grid; gap: 14px; container-type: inline-size; }
     .xs__bar { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: center; gap: 10px 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
     .xs__sum p { margin: 0 0 6px; font-size: 13px; }
     .xs__sum b { font-variant-numeric: tabular-nums; }
     .xs__sum em { color: var(--warn); font-style: normal; font-weight: 650; }
     .xs--over .xs__sum em { color: var(--ink-2); font-weight: 600; }
     .xs__warn { margin: 6px 0 0; color: var(--danger, #b3261e); font-size: 12px; font-weight: 650; }
-    .xs__row--negative { border-color: var(--danger, #b3261e); background: var(--danger-soft, #fdecea); }
     .xs--done .xs__sum em { color: var(--ok); }
     .xs__sum .payments-meter { margin: 0; }
     .xs__fill { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .xs__fill > span { color: var(--muted); font-size: 11.5px; }
     .xs__table { display: grid; gap: 4px; }
-    .xs__head, .xs__row { display: grid; grid-template-columns: minmax(0, 1.5fr) 64px 130px 170px 170px; align-items: center; gap: 12px; }
+    .xs__head, .xs__row { display: grid; grid-template-columns: minmax(140px, 1.6fr) 56px 120px minmax(150px, 1fr) minmax(150px, 1fr); align-items: center; gap: 12px; }
     .xs__head { padding: 0 12px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
     .xs__head .num { text-align: right; }
     .xs__row { padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .xs__row--negative { border-color: var(--danger, #b3261e); background: var(--danger-soft, #fdecea); }
     .xs__name { display: grid; min-width: 0; }
     .xs__name b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
     .xs__name small { display: none; color: var(--muted); font-size: 11px; }
     .xs__qty, .xs__base { text-align: right; font-variant-numeric: tabular-nums; }
     .xs__base { color: var(--ink-2); }
-    .xs__money { display: grid; gap: 2px; }
-    .xs__money label { display: inline-flex; align-items: center; gap: 4px; }
+    .xs__money { display: grid; gap: 2px; min-width: 0; }
+    .xs__lbl { display: none; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+    .xs__money label { display: flex; align-items: center; gap: 4px; min-width: 0; }
     .xs__money i { color: var(--muted); font-style: normal; }
-    .xs__money .input { width: 100%; min-height: 36px; }
-    .xs__money small { color: var(--muted); font-size: 10.5px; white-space: nowrap; }
-    @media (max-width: 679px) {
+    .xs__money .input { width: 100%; min-width: 0; min-height: 36px; }
+    .xs__money small { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+    /* A window narrower than the five columns stacks each product: name, then the two fields with their own labels. */
+    @container (max-width: 700px) {
       .xs__bar { grid-template-columns: 1fr; }
       .xs__head { display: none; }
       .xs__row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
       .xs__name { grid-column: 1 / -1; }
       .xs__name small { display: block; }
       .xs__qty, .xs__base { display: none; }
+      .xs__lbl { display: block; }
       .xs__money small { white-space: normal; line-height: 1.2; }
+    }
+    @container (max-width: 380px) {
+      .xs__row { grid-template-columns: 1fr; }
     }
   `,
 })
