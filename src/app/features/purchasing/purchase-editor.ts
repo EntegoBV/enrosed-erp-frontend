@@ -1381,7 +1381,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         }
       }
       @if (extraSplitOpen()) {
-        <app-purchase-extra-split [order]="data.order" [costing]="data.costing"
+        <app-purchase-extra-split [order]="data.order" [costing]="data.costing" [sequence]="lineOrder()"
                                   (shareChange)="setExtraShare($event.productId, $event.raw)" (targetChange)="setTargetUnitFor($event.productId, $event.raw)"
                                   (fill)="fillExtraSplit($event)" (rest)="extraSplitRestToLast()"
                                   (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="closeExtraSplit()" />
@@ -2774,6 +2774,9 @@ export class PurchaseEditor {
     this.families(), null));
   private readonly unfilteredPurchaseLines = computed(() => this.lineSections()
     .flatMap((section) => section.lines));
+  /** Product ids as the product list shows them, section by section and family by family. */
+  readonly lineOrder = computed(() => this.lineSections()
+    .flatMap((section) => section.families.flatMap((family) => family.lines.map((line) => line.productId))));
   readonly freightRates = signal<FreightRate[]>([]);
   /** The order's supplier; drives the header and the origin-cost label. */
   readonly supplier = signal<Supplier | null>(null);

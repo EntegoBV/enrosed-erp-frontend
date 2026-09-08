@@ -136,6 +136,8 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 export class PurchaseExtraSplit {
   readonly order = input.required<PurchaseOrder>();
   readonly costing = input<LandedCost | null>(null);
+  /** Product ids in the order the product list shows them; the window keeps that order. */
+  readonly sequence = input<number[]>([]);
   readonly shareChange = output<{ productId: number; raw: unknown }>();
   readonly targetChange = output<{ productId: number; raw: unknown }>();
   readonly fill = output<SplitFill>();
@@ -144,7 +146,7 @@ export class PurchaseExtraSplit {
   readonly closed = output<void>();
 
   readonly target = computed(() => this.order().extraRevenueEur || 0);
-  readonly rows = computed<SplitRow[]>(() => this.order().lines.map((line) => {
+  readonly rows = computed<SplitRow[]>(() => this.orderedLines().map((line) => {
     const costed = this.costing()?.lines.find((row) => row.productId === line.productId);
     const quantity = line.quantity;
     const extra = costed?.extraRevenueEur ?? 0;
@@ -158,6 +160,12 @@ export class PurchaseExtraSplit {
       shareEur: line.extraShareEur ?? 0,
     };
   }));
+  /* The list above sorts by section and family; a product the list does not know keeps its place at the end. */
+  private readonly orderedLines = computed(() => {
+    const rank = new Map(this.sequence().map((productId, index) => [productId, index] as const));
+    const place = (productId: number) => rank.get(productId) ?? Number.MAX_SAFE_INTEGER;
+    return [...this.order().lines].sort((a, b) => place(a.productId) - place(b.productId));
+  });
   readonly spread = computed(() => round2(this.rows().reduce((sum, row) => sum + row.shareEur, 0)));
   readonly remainder = computed(() => round2(this.target() - this.spread()));
   readonly pct = computed(() => (this.target() > 0 ? Math.min(100, Math.max(0, this.spread()) / this.target() * 100) : 0));

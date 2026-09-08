@@ -882,7 +882,7 @@ type DeskRow =
         }
       }
       @if (extraSplitOpen()) {
-        <app-purchase-extra-split [order]="data.order" [costing]="data.costing"
+        <app-purchase-extra-split [order]="data.order" [costing]="data.costing" [sequence]="lineOrder()"
                                   (shareChange)="setExtraShare($event.productId, $event.raw)" (targetChange)="setTargetUnitFor($event.productId, $event.raw)"
                                   (fill)="fillExtraSplit($event)" (rest)="extraSplitRestToLast()"
                                   (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="closeExtraSplit()" />
