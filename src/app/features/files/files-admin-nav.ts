@@ -25,35 +25,35 @@ import { COLLECTIONS } from './files-page';
 
       <nav class="files-sidebar__nav" aria-label="Onderdelen van Documenten en media">
         <span class="files-sidebar__label">Bibliotheek</span>
-        <a routerLink="/files" [queryParams]="{}" [class.active]="is('folders')">
+        <a routerLink="/files" [queryParams]="{}" [class.active]="is('folders')" [attr.aria-current]="is('folders') ? 'page' : null">
           <app-icon name="media" [size]="19" />
           <span><b>Mappen</b><small>Bestanden per map</small></span>
         </a>
-        <a routerLink="/files" [queryParams]="{ view: 'all' }" [class.active]="is('all')">
+        <a routerLink="/files" [queryParams]="{ view: 'all' }" [class.active]="is('all')" [attr.aria-current]="is('all') ? 'page' : null">
           <app-icon name="more" [size]="19" />
-          <span><b>Alle bestanden</b><small>Plat, ongeacht de map</small></span>
+          <span><b>Alle bestanden</b><small>Overzicht van alle mappen</small></span>
         </a>
-        <a routerLink="/files" [queryParams]="{ view: 'all', kind: 'IMAGE' }" [class.active]="is('images')">
+        <a routerLink="/files" [queryParams]="{ view: 'all', kind: 'IMAGE' }" [class.active]="is('images')" [attr.aria-current]="is('images') ? 'page' : null">
           <app-icon name="products" [size]="19" />
           <span><b>Foto’s</b><small>Alle afbeeldingen</small></span>
         </a>
-        <a routerLink="/files" [queryParams]="{ view: 'all', kind: 'DOCUMENT' }" [class.active]="is('documents')">
+        <a routerLink="/files" [queryParams]="{ view: 'all', kind: 'DOCUMENT' }" [class.active]="is('documents')" [attr.aria-current]="is('documents') ? 'page' : null">
           <app-icon name="sales" [size]="19" />
           <span><b>Documenten</b><small>PDF, Office en tekst</small></span>
         </a>
 
         <span class="files-sidebar__label files-sidebar__label--spaced">Op gebruik</span>
         @for (collection of collections; track collection.key) {
-          <a routerLink="/files" [queryParams]="{ view: collection.key }" [class.active]="is(collection.key)">
+          <a routerLink="/files" [queryParams]="{ view: collection.key }" [class.active]="is(collection.key)" [attr.aria-current]="is(collection.key) ? 'page' : null">
             <i class="files-sidebar__glyph" aria-hidden="true">{{ collection.icon }}</i>
             <span><b>{{ collection.label }}</b><small>{{ collection.hint }}</small></span>
           </a>
         }
 
         <span class="files-sidebar__label files-sidebar__label--spaced">Beheer</span>
-        <a routerLink="/files" [queryParams]="{ view: 'all', archief: 1 }" [class.active]="is('archive')">
+        <a routerLink="/files" [queryParams]="{ view: 'all', archief: 1 }" [class.active]="is('archive')" [attr.aria-current]="is('archive') ? 'page' : null">
           <app-icon name="activity" [size]="19" />
-          <span><b>Archief</b><small>Weggezet, niet weg</small></span>
+          <span><b>Archief</b><small>Gearchiveerde bestanden</small></span>
         </a>
       </nav>
 
@@ -81,6 +81,7 @@ import { COLLECTIONS } from './files-page';
     .files-sidebar__nav b { color: inherit; font-size: 13px; line-height: 1.25; }
     .files-sidebar__nav small { overflow: hidden; color: rgb(255 255 255 / 42%); font-size: 10.5px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
     .files-sidebar__glyph { display: grid; place-items: center; width: 24px; font-size: 16px; font-style: normal; }
+    .files-sidebar__nav > a:focus-visible, .files-sidebar__back:focus-visible { outline: 2px solid #f5d894; outline-offset: 2px; }
     .files-sidebar__nav > a:hover { background: rgb(255 255 255 / 7%); color: #fff; }
     .files-sidebar__nav > a.active { border-color: rgb(215 184 118 / 28%); background: rgb(215 184 118 / 14%); color: #f5d894; }
     .files-sidebar__nav > a.active small { color: rgb(245 216 148 / 62%); }
@@ -95,7 +96,7 @@ import { COLLECTIONS } from './files-page';
       .files-sidebar__nav { grid-auto-flow: row; grid-auto-columns: auto; flex: 1; min-height: 0; gap: 4px; padding: 8px 6px; overflow-y: auto; overflow-x: hidden; align-content: start; scrollbar-width: none; }
       .files-sidebar__nav > a { grid-template-columns: 1fr; justify-items: center; min-height: 58px; padding: 8px 4px 6px; gap: 5px; text-align: center; }
       .files-sidebar__nav > a > span { justify-items: center; }
-      .files-sidebar__nav b { overflow: hidden; max-width: 76px; font-size: 10px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+      .files-sidebar__nav b { overflow: hidden; max-width: 76px; font-size: 10px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
       .files-sidebar__nav small { display: none; }
       .files-sidebar__label { display: block; margin: 8px 0 2px; color: rgb(255 255 255 / 30%); font-size: 8.5px; font-weight: 850; letter-spacing: .1em; text-align: center; text-transform: uppercase; }
       .files-sidebar__footer { display: grid; padding: 8px 6px 12px; border-top: 1px solid rgb(255 255 255 / 10%); }

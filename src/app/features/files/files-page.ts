@@ -19,6 +19,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { PageHeader } from '../../shared/page-header';
 import { DateTimeNlPipe } from '../../shared/pipes';
 import { Ui, Sheet } from '../../shared/ui';
+import { isCurrentMediaDetailAction, type MediaDetailActionIdentity } from '../settings/media-action-identity';
 
 interface FolderNode extends MediaFolder { depth: number; }
 interface TargetOption { id: number; label: string; meta: string | null; }
@@ -66,48 +67,30 @@ export const COLLECTIONS: readonly Collection[] = [
  */
 @Component({
   selector: 'app-files-page',
+  host: { class: 'files-workspace', id: 'files-workspace' },
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MenuTrigger, FormsModule, NgTemplateOutlet, AuthImage, PageHeader, Sheet, DateTimeNlPipe],
   template: `
+    @if (!wide() && selected(); as asset) { <app-sheet [title]="asset.name" (closed)="close()"><div body class="fm-sheet"><ng-container *ngTemplateOutlet="detailBody; context: { $implicit: asset }" /></div></app-sheet> }
     @if (phone()) {
       <!-- ============================ phone: a file browser, one screen at a time -->
       <div class="content fm">
         <header class="fm__bar">
-          @if (folder() !== 'root' || collection()) {
-            <button class="fm__back" type="button" (click)="goUp()">‹ {{ parentTitle() }}</button>
-          } @else { <span></span> }
-          <span class="fm__tools">
-            <button class="fm__iconbtn" type="button" [class.on]="searchOpen() || query()" aria-label="Zoeken" (click)="toggleSearch()">⌕</button>
-            <button class="fm__iconbtn" type="button" aria-label="Meer acties" (click)="menuOpen.set(true)">⋯</button>
-          </span>
+          @if (folder() !== 'root' || collection()) { <button class="fm__back" type="button" (click)="goUp()">‹ {{ parentTitle() }}</button> }
+          @else { <span class="fm__eyebrow">Documenten &amp; media</span> }
+          <button class="fm__iconbtn" type="button" aria-label="Meer bibliotheekacties" (click)="menuOpen.set(true)">⋯</button>
         </header>
         <h1 class="fm__title">{{ phoneTitle() }}</h1>
-        @if (searchOpen() || query()) {
-          <input class="input fm__search" id="fm-search" type="search" autocomplete="off" placeholder="Zoeken in alle mappen" aria-label="Zoeken"
-                 [ngModel]="query()" (ngModelChange)="changeQuery($event)" />
-        }
-        <div class="fm__chips" aria-label="Filter">
-          <span class="fm__kinds" role="group" aria-label="Soort">
-            <button type="button" [class.on]="kind() === null" (click)="setKind(null)">Alles</button>
-            <button type="button" [class.on]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button>
-            <button type="button" [class.on]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Docs</button>
-          </span>
-          <span class="fm__kinds fm__kinds--view" role="group" aria-label="Weergave">
-            <button type="button" [class.on]="view() === 'list'" (click)="setView('list')" aria-label="Lijst">☰</button>
-            <button type="button" [class.on]="view() === 'grid'" (click)="setView('grid')" aria-label="Tegels">▦</button>
-          </span>
-          @if (folder() === 'root' && !collection() && !query().trim()) {
-            <i class="fm__sep" aria-hidden="true"></i>
-            <button class="fm__chip" type="button" (click)="openFolder(null)"><i aria-hidden="true">▦</i>Alle bestanden</button>
-            @for (item of collections; track item.key) {
-              <button class="fm__chip" type="button" (click)="openCollection(item)"><i aria-hidden="true">{{ item.icon }}</i>{{ item.label }}</button>
-            }
-          }
-        </div>
+        <label class="fm__browse"><span>Bibliotheek</span><select class="select" [ngModel]="browseValue()" (ngModelChange)="browse($event)">
+          <option value="folders">Mappen</option><option value="all">Alle bestanden</option>
+          @for (item of collections; track item.key) { <option [value]="item.key">{{ item.label }}</option> }
+          <option value="archive">Archief</option>
+        </select></label>
+        <ng-container *ngTemplateOutlet="libraryTools" />
 
         @if (selectedIds().size) {
           <div class="fm__selection" role="status">
-            <b>{{ selectedIds().size }}</b>
+            <b>{{ selectedIds().size }} geselecteerd</b>
             <button class="btn btn--sm btn--primary" type="button" [disabled]="zipping()" (click)="downloadSelection('original')">{{ zipping() ? 'Bezig…' : '⤓ Downloaden' }}</button>
             <select class="select fm__move" [ngModel]="''" (ngModelChange)="moveSelection($event === 'root' ? null : +$event)" aria-label="Verplaats naar">
               <option value="" disabled>Verplaats…</option>
@@ -121,32 +104,32 @@ export const COLLECTIONS: readonly Collection[] = [
         }
 
         @if (loading()) {
-          <p class="fm__state">Laden…</p>
-        } @else {
+          <p class="fm__state" role="status">Bestanden laden…</p>
+        } @else if (loadError()) { <div class="files-empty" role="alert"><b>Bestanden niet geladen</b><p>{{ loadError() }}</p><button class="btn" type="button" (click)="reload()">Opnieuw proberen</button></div> } @else {
           @if (showFolders()) {
             <h2 class="fm__h">Mappen</h2>
             <ul class="fm__list">
               @for (node of childFolders(); track node.id) {
-                <li><button class="fm__row" type="button" appMenuTrigger (menuTrigger)="folderMenu.set(node)" (click)="openFolder(node.id)">
+                <li class="fm__folderline"><button class="fm__row" type="button" appMenuTrigger (menuTrigger)="folderMenu.set(node)" (click)="openFolder(node.id)">
                   <i class="fm__icon fm__icon--folder" aria-hidden="true">▰</i>
                   <span class="fm__copy"><b>{{ node.name }}</b><small>{{ node.assetCount }} bestand{{ node.assetCount === 1 ? '' : 'en' }}{{ childCount(node) ? ' · ' + childCount(node) + (childCount(node) === 1 ? ' map' : ' mappen') : '' }}</small></span>
                   <i class="fm__chev" aria-hidden="true">›</i>
-                </button></li>
+                </button><button class="fm__folder-actions" type="button" [attr.aria-label]="'Mapacties voor ' + node.name" (click)="folderMenu.set(node)">⋯</button></li>
               }
             </ul>
           }
-          <h2 class="fm__h">{{ collection() ? collection()!.label : query().trim() ? 'Gevonden' : folder() === null ? 'Alle bestanden' : 'Bestanden' }} <small>{{ assets().length }}</small></h2>
+          <h2 class="fm__h">{{ collection() ? collection()!.label : query().trim() ? 'Gevonden' : folder() === null ? 'Alle bestanden' : 'Bestanden' }} <small>{{ assets().length }}{{ hasMore() ? '+' : '' }}</small></h2>
           @if (!assets().length) {
-            <p class="fm__state">Nog geen bestanden hier. Tik op + om er toe te voegen.</p>
+            <ng-container *ngTemplateOutlet="emptyLibrary" />
           } @else {
             @if (view() === 'grid') {
             <ul class="fm__grid" aria-label="Bestanden als tegels">
               @for (asset of sorted(); track asset.id) {
                 <li>
-                  <button class="fm__tile" type="button" [class.fm__tile--picked]="selectedIds().has(asset.id)" (click)="rowClick(asset, $event)" (contextmenu)="$event.preventDefault(); actionsFor.set({ asset })">
+                  <button class="fm__tile" type="button" [class.fm__tile--picked]="selectedIds().has(asset.id)" [attr.aria-pressed]="picking() ? selectedIds().has(asset.id) : null" (click)="rowClick(asset, $event)" (contextmenu)="$event.preventDefault(); actionsFor.set({ asset })">
                     @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" draggable="false" /> } @else { <i aria-hidden="true">{{ extension(asset) }}</i> }
                     @if (picking()) { <em class="fm__tick" [class.on]="selectedIds().has(asset.id)" aria-hidden="true">{{ selectedIds().has(asset.id) ? '✓' : '' }}</em> }
-                    <span>{{ asset.name }}</span>
+                    <span>{{ asset.name }}</span><small class="fm__tile-meta">{{ usageLabel(asset) || size(asset.sizeBytes) }}</small>
                   </button>
                 </li>
               }
@@ -156,31 +139,26 @@ export const COLLECTIONS: readonly Collection[] = [
               @for (asset of sorted(); track asset.id) {
                 <li class="fm__swipe" [class.fm__swipe--open]="swipe()?.id === asset.id && swipe()?.open">
                   <button class="fm__swipe-del" type="button" tabindex="-1" [disabled]="asset.links.length > 0" (click)="removeAsset(asset)">{{ asset.links.length ? 'In gebruik' : 'Verwijderen' }}</button>
-                  <button class="fm__row" type="button" [class.fm__row--picked]="selectedIds().has(asset.id)" [class.fm__row--sliding]="swipe()?.id === asset.id && !swipe()?.settled"
+                  <button class="fm__row" type="button" [class.fm__row--picked]="selectedIds().has(asset.id)" [attr.aria-pressed]="picking() ? selectedIds().has(asset.id) : null" [class.fm__row--sliding]="swipe()?.id === asset.id && !swipe()?.settled"
                           [style.transform]="swipe()?.id === asset.id ? 'translateX(' + swipe()!.dx + 'px)' : null"
                           (pointerdown)="touchStart($event, asset)" (pointermove)="touchMove($event)" (pointerup)="touchEnd($event, asset)" (pointercancel)="touchEnd($event, asset)"
                           (contextmenu)="$event.preventDefault()" (click)="rowClick(asset, $event)">
                     @if (picking()) { <i class="fm__tick" [class.on]="selectedIds().has(asset.id)" aria-hidden="true">{{ selectedIds().has(asset.id) ? '✓' : '' }}</i> }
                     @if (asset.kind === 'IMAGE') { <img class="fm__thumb" [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" draggable="false" /> } @else { <i class="fm__icon" aria-hidden="true">{{ extension(asset) }}</i> }
-                    <span class="fm__copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}{{ asset.createdByName ? ' · ' + asset.createdByName : '' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</small></span>
+                    <span class="fm__copy"><b>{{ asset.name }}</b>@if (usageLabel(asset)) { <span class="file-usage">{{ usageLabel(asset) }}</span> }<small>{{ size(asset.sizeBytes) }} · {{ asset.updatedAt | dateTimeNl }}{{ asset.createdByName ? ' · ' + asset.createdByName : '' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</small></span>
                     <i class="fm__chev" aria-hidden="true">›</i>
                   </button>
                 </li>
               }
             </ul>
             }
-            @if (hasMore()) { <button class="btn fm__more-btn" type="button" [disabled]="loadingMore()" (click)="loadMore()">{{ loadingMore() ? 'Laden…' : 'Meer laden' }}</button> }
+            @if (hasMore()) { <p class="files-loaded-note">{{ assets().length }} bestanden geladen. Sorteren en downloaden gelden voor deze bestanden.</p><button class="btn fm__more-btn" type="button" [disabled]="loadingMore()" (click)="loadMore()">{{ loadingMore() ? 'Laden…' : 'Meer laden' }}</button> }
           }
         }
 
-        <button class="fm__fab" type="button" [class.fm__fab--busy]="uploading()" [attr.aria-label]="uploading() ? uploadProgress() : 'Bestanden toevoegen'" (click)="addMenu.set(true)">{{ uploading() ? '…' : '+' }}</button>
+        <button class="fm__fab" type="button" [class.fm__fab--busy]="uploading()" [attr.aria-label]="uploading() ? uploadProgress() : 'Bestanden toevoegen'" (click)="addMenu.set(true)"><span aria-hidden="true">+</span>{{ uploading() ? 'Uploaden…' : 'Toevoegen' }}</button>
       </div>
 
-      @if (selected(); as asset) {
-        <app-sheet [title]="asset.name" (closed)="close()">
-          <div body class="fm-sheet"><ng-container *ngTemplateOutlet="detailBody; context: { $implicit: asset }" /></div>
-        </app-sheet>
-      }
       @if (actionsFor(); as target) {
         <app-sheet [title]="target.asset.name" (closed)="actionsFor.set(null)">
           <div body class="fm__menu">
@@ -250,19 +228,17 @@ export const COLLECTIONS: readonly Collection[] = [
         </app-sheet>
       }
     } @else {
-    <app-page-header title="Bestanden" subtitle="Documenten en media, in mappen en met publieke links" [showBack]="false" [showBell]="false">
-      <label class="btn btn--primary btn--sm fx__uploadbtn" title="Kies meerdere bestanden tegelijk; slepen of plakken kan ook">
-        {{ uploading() ? uploadProgress() : '+ Uploaden' }}
-        <input type="file" multiple hidden [disabled]="uploading()" (change)="chooseFiles($event)" />
-      </label>
+    <app-page-header title="Documenten & media" subtitle="Vind, orden en deel je bestanden" [showBack]="false" [showBell]="false">
+      <button class="btn btn--primary fx__uploadbtn" type="button" [disabled]="uploading()" (click)="uploadInput.click()">{{ uploading() ? uploadProgress() : '+ Bestanden toevoegen' }}</button>
     </app-page-header>
 
-    <div class="content fx" [class.fx--detail]="!!selected()" [class.fx--resizing]="resizing()" [style.gridTemplateColumns]="gridColumns()"
+    <div class="content fx" [class.fx--detail]="!!selected() && wide()" [class.fx--resizing]="resizing()" [style.gridTemplateColumns]="gridColumns()"
          (dragenter)="dragEnter($event)" (dragover)="dragOver($event)" (dragleave)="dragLeave($event)" (drop)="dropFiles($event)">
       <!-- ============================ folders -->
-      <aside class="fx__rail" aria-label="Mappen">
+      @if (showFolderRail()) {
+      <aside class="fx__rail" aria-label="Mappen" id="files-folder-tree">
         <div class="fx__resizer" role="separator" aria-orientation="vertical" aria-label="Breedte van de mappenkolom" title="Sleep om de mappenkolom breder of smaller te maken; dubbelklik zet ze terug"
-             [attr.aria-valuenow]="railWidth()" [attr.aria-valuemin]="200" [attr.aria-valuemax]="560" tabindex="0"
+             [attr.aria-valuenow]="railWidth()" [attr.aria-valuemin]="200" [attr.aria-valuemax]="320" tabindex="0"
              (pointerdown)="startResize($event)" (dblclick)="setRailWidth(232)"
              (keydown.arrowleft)="setRailWidth(railWidth() - 16)" (keydown.arrowright)="setRailWidth(railWidth() + 16)"></div>
         <div class="fx__rail-head"><b>Mappen</b><button class="linklike" type="button" (click)="startFolder(null)">+ Nieuwe map</button></div>
@@ -309,10 +285,11 @@ export const COLLECTIONS: readonly Collection[] = [
 
         <!-- The sections by use live in the workspace navigation on the left; the rail keeps to the folders. -->
       </aside>
+      }
 
       <!-- ============================ files -->
       <main class="fx__main" aria-live="polite">
-        <div class="fx__bar">
+        <div class="fx__bar"><button class="btn btn--sm files-folder-toggle" type="button" [attr.aria-expanded]="showFolderRail()" aria-controls="files-folder-tree" (click)="toggleFolders()">{{ showFolderRail() ? 'Mappen verbergen' : 'Mappen tonen' }}</button>
           <nav class="fx__crumbs" aria-label="Pad">
             @for (crumb of crumbs(); track crumb.id ?? 'top'; let last = $last) {
               <button type="button" [class.on]="last" [class.fx__node--target]="crumb.id !== null && dragOverFolder() === crumb.id" (click)="openFolder(crumb.id)"
@@ -320,28 +297,11 @@ export const COLLECTIONS: readonly Collection[] = [
                       (drop)="crumb.id !== null && !collection() ? dropOnFolder($event, crumb.id === 'root' ? null : crumb.id) : null">{{ crumb.name }}</button>@if (!last) { <i aria-hidden="true">›</i> }
             }
           </nav>
-          <input class="input fx__search" type="search" autocomplete="off" placeholder="Zoeken op naam of bestandsnaam…" aria-label="Zoeken"
-                 [ngModel]="query()" (ngModelChange)="changeQuery($event)" />
-          <span class="per-toggle" role="group" aria-label="Soort">
-            <button type="button" [class.on]="kind() === null" (click)="setKind(null)">Alles</button>
-            <button type="button" [class.on]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button>
-            <button type="button" [class.on]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Documenten</button>
-          </span>
-          <label class="fx__check"><input type="checkbox" [ngModel]="archived()" (ngModelChange)="setArchived($event)" /> Archief</label>
-          @if (!collection()) {
-            <button class="btn btn--sm" type="button" (click)="startFolder(currentFolderId())" [title]="currentFolderId() === null ? 'Nieuwe map bovenaan' : 'Nieuwe submap in ' + folderName()">
-              + {{ currentFolderId() === null ? 'Map' : 'Submap' }}
-            </button>
-          }
-          @if (assets().length) {
-            <button class="btn btn--sm" type="button" [disabled]="zipping()" (click)="downloadAll()" [title]="'Alle ' + assets().length + ' getoonde bestanden als zip'">
-              {{ zipping() ? 'Bezig…' : '⤓ Alles (' + assets().length + ')' }}
-            </button>
-          }
-          <span class="per-toggle" role="group" aria-label="Weergave">
-            <button type="button" [class.on]="view() === 'list'" (click)="setView('list')" title="Lijst">☰</button>
-            <button type="button" [class.on]="view() === 'grid'" (click)="setView('grid')" title="Tegels">▦</button>
-          </span>
+          @if (!collection()) { <button class="btn btn--sm" type="button" (click)="startFolder(currentFolderId())">+ Nieuwe map</button> }
+        </div>
+        <ng-container *ngTemplateOutlet="libraryTools" />
+        <div class="files-results"><h2>{{ query().trim() ? 'Zoekresultaten' : collection()?.label || 'Bestanden' }} <span>{{ assets().length }}{{ hasMore() ? '+' : '' }}</span></h2>
+          @if (assets().length) { <button class="linklike" type="button" [disabled]="zipping()" (click)="downloadAll()">{{ zipping() ? 'Download voorbereiden…' : 'Getoonde bestanden downloaden' }}</button> }
         </div>
 
         @if (selectedIds().size) {
@@ -381,22 +341,20 @@ export const COLLECTIONS: readonly Collection[] = [
         } @else if (loadError()) {
           <p class="fx__state">{{ loadError() }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
         } @else if (!assets().length) {
-          <p class="fx__state" [class.fx__state--quiet]="showFolders()">
-            @if (query().trim()) { Niets gevonden voor “{{ query() }}”. } @else if (showFolders()) { Geen losse bestanden hier; ze zitten in de mappen hierboven. } @else { Nog geen bestanden hier. Sleep ze hierheen of klik op Uploaden. }
-          </p>
+          <ng-container *ngTemplateOutlet="emptyLibrary" />
         } @else if (view() === 'grid' && groups(); as groups) {
           @for (group of groups; track group.label) {
             <div class="fx__group">
               <h3 class="fx__group-title">{{ group.label }} <small>{{ group.assets.length }}</small></h3>
               <div class="fx__grid">
                 @for (asset of group.assets; track asset.id) {
-                  <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
+                  <article class="fx__card" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
                           draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
-                          (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" (contextmenu)="openContext($event, asset)" [title]="asset.originalFilename">
-                    <span class="fx__pick" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
+                           (contextmenu)="openContext($event, asset)" [title]="asset.originalFilename">
+                    <input class="fx__pick" type="checkbox" [checked]="selectedIds().has(asset.id)" [attr.aria-label]="'Selecteer ' + asset.name" (click)="togglePick(asset, $event)" /><button class="fx__card-open" type="button" (click)="clickAsset(asset, $event)" [attr.aria-label]="'Open ' + asset.name">
                     @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
                     <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }}</small></span>
-                  </button>
+                  </button></article>
                 }
               </div>
             </div>
@@ -404,10 +362,10 @@ export const COLLECTIONS: readonly Collection[] = [
         } @else if (view() === 'grid') {
           <div class="fx__grid">
             @for (asset of sorted(); track asset.id) {
-              <button class="fx__card" type="button" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
+              <article class="fx__card" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
                       draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
-                      (click)="clickAsset(asset, $event)" (dblclick)="download(asset)" (contextmenu)="openContext($event, asset)" [title]="asset.originalFilename">
-                <span class="fx__pick" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
+                       (contextmenu)="openContext($event, asset)" [title]="asset.originalFilename">
+                <input class="fx__pick" type="checkbox" [checked]="selectedIds().has(asset.id)" [attr.aria-label]="'Selecteer ' + asset.name" (click)="togglePick(asset, $event)" /><button class="fx__card-open" type="button" (click)="clickAsset(asset, $event)" [attr.aria-label]="'Open ' + asset.name">
                 @if (asset.kind === 'IMAGE') {
                   <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" />
                 } @else {
@@ -419,18 +377,18 @@ export const COLLECTIONS: readonly Collection[] = [
                   @if (asset.links.length) { <em [title]="asset.links.length + ' koppelingen'">{{ asset.links.length }}×</em> }
                   @if (asset.archived) { <em>archief</em> }
                 </span>
-              </button>
+              </button></article>
             }
           </div>
         } @else {
           <table class="fx__table">
             <thead><tr>
               <th><button type="button" (click)="sortBy('name')" [class.on]="sort().key === 'name'">Naam <i>{{ arrow('name') }}</i></button></th>
-              <th><button type="button" (click)="sortBy('kind')" [class.on]="sort().key === 'kind'">Soort <i>{{ arrow('kind') }}</i></button></th>
+              <th class="files-col-kind"><button type="button" (click)="sortBy('kind')" [class.on]="sort().key === 'kind'">Soort <i>{{ arrow('kind') }}</i></button></th>
               <th class="r"><button type="button" (click)="sortBy('size')" [class.on]="sort().key === 'size'">Grootte <i>{{ arrow('size') }}</i></button></th>
               <th><button type="button" (click)="sortBy('updated')" [class.on]="sort().key === 'updated'">Gewijzigd <i>{{ arrow('updated') }}</i></button></th>
-              <th><button type="button" (click)="sortBy('by')" [class.on]="sort().key === 'by'">Door <i>{{ arrow('by') }}</i></button></th>
-              <th><button type="button" (click)="sortBy('links')" [class.on]="sort().key === 'links'">Gebruik <i>{{ arrow('links') }}</i></button></th>
+              <th class="files-col-by"><button type="button" (click)="sortBy('by')" [class.on]="sort().key === 'by'">Door <i>{{ arrow('by') }}</i></button></th>
+              <th class="files-col-links"><button type="button" (click)="sortBy('links')" [class.on]="sort().key === 'links'">Gebruik <i>{{ arrow('links') }}</i></button></th>
             </tr></thead>
             <tbody>
               @for (group of groups() ?? [{ label: '', assets: sorted() }]; track group.label) {
@@ -438,15 +396,15 @@ export const COLLECTIONS: readonly Collection[] = [
                 @for (asset of group.assets; track asset.id) {
                   <tr [class.on]="selected()?.id === asset.id" [class.fx__row--picked]="selectedIds().has(asset.id)" draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()" (click)="clickAsset(asset, $event)" (contextmenu)="openContext($event, asset)">
                     <td class="fx__name">
-                      <span class="fx__pick fx__pick--row" role="checkbox" [attr.aria-checked]="selectedIds().has(asset.id)" (click)="togglePick(asset, $event)" title="Selecteren">{{ selectedIds().has(asset.id) ? '✓' : '' }}</span>
+                      <input class="fx__pick fx__pick--row" type="checkbox" [checked]="selectedIds().has(asset.id)" [attr.aria-label]="'Selecteer ' + asset.name" (click)="togglePick(asset, $event)" />
                       @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
-                      <span><b>{{ asset.name }}</b><small>{{ asset.originalFilename }}{{ folderLabel(asset) ? ' · ' + folderLabel(asset) : '' }}</small></span>
+                      <button class="fx__file-open" type="button" (click)="$event.stopPropagation(); clickAsset(asset, $event)"><b>{{ asset.name }}</b><small>{{ usageLabel(asset) || asset.originalFilename }}</small></button>
                     </td>
-                    <td>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</td>
+                    <td class="files-col-kind">{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</td>
                     <td class="r">{{ size(asset.sizeBytes) }}{{ asset.web && asset.web.sizeBytes !== asset.sizeBytes ? ' · web ' + size(asset.web.sizeBytes) : '' }}</td>
                     <td>{{ asset.updatedAt | dateTimeNl }}</td>
-                    <td>{{ asset.createdByName || '—' }}</td>
-                    <td>{{ asset.links.length ? asset.links.length + '× gekoppeld' : '—' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</td>
+                    <td class="files-col-by">{{ asset.createdByName || '—' }}</td>
+                    <td class="files-col-links">{{ asset.links.length ? asset.links.length + '× gekoppeld' : '—' }}{{ asset.share ? ' · publiek' : '' }}{{ asset.archived ? ' · archief' : '' }}</td>
                   </tr>
                 }
               }
@@ -454,6 +412,7 @@ export const COLLECTIONS: readonly Collection[] = [
           </table>
         }
         @if (hasMore()) {
+          <p class="files-loaded-note">{{ assets().length }} bestanden geladen. Sorteren en downloaden gelden voor deze bestanden.</p>
           <button class="btn fx__more" type="button" [disabled]="loadingMore()" (click)="loadMore()">{{ loadingMore() ? 'Laden…' : 'Meer laden' }}</button>
         }
       </main>
@@ -478,13 +437,32 @@ export const COLLECTIONS: readonly Collection[] = [
       }
 
       <!-- ============================ the chosen file -->
-      @if (selected(); as asset) {
+      @if (wide() && selected(); as asset) {
         <aside class="fx__detail" aria-label="Bestand">
           <ng-container *ngTemplateOutlet="detailBody; context: { $implicit: asset }" />
         </aside>
       }
     </div>
     }
+
+    <input #uploadInput type="file" multiple hidden [disabled]="uploading()" (change)="chooseFiles($event)" />
+    <input id="files-replace-version" type="file" hidden [disabled]="busy()" (change)="replaceVersion($event)" />
+
+    <ng-template #libraryTools>
+      <div class="files-tools" aria-label="Bestanden zoeken en filteren">
+        <label class="files-search"><span>Zoeken{{ collection() ? ' in ' + collection()!.label : ' in alle mappen' }}</span><input class="input" type="search" autocomplete="off" placeholder="Bestandsnaam of omschrijving…" [ngModel]="query()" (ngModelChange)="changeQuery($event)" /></label>
+        <div class="files-tools__row">
+          <div class="files-kinds" role="group" aria-label="Bestandstype"><button type="button" [attr.aria-pressed]="kind() === null" (click)="setKind(null)">Alles</button><button type="button" [attr.aria-pressed]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button><button type="button" [attr.aria-pressed]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Documenten</button></div>
+          <div class="files-view" role="group" aria-label="Weergave"><button type="button" [attr.aria-pressed]="view() === 'grid'" (click)="setView('grid')" aria-label="Tegels">▦</button><button type="button" [attr.aria-pressed]="view() === 'list'" (click)="setView('list')" aria-label="Lijst">☰</button></div>
+          <label class="files-sort"><span>Sorteren</span><select class="select" [ngModel]="sort().key + ':' + sort().dir" (ngModelChange)="chooseSort($event)"><option value="updated:-1">Laatst gewijzigd</option><option value="updated:1">Oudste eerst</option><option value="name:1">Naam A–Z</option><option value="name:-1">Naam Z–A</option><option value="size:-1">Grootste eerst</option><option value="size:1">Kleinste eerst</option><option value="kind:1">Soort A–Z</option><option value="kind:-1">Soort Z–A</option><option value="links:-1">Meeste koppelingen</option><option value="links:1">Minste koppelingen</option><option value="by:1">Toegevoegd door A–Z</option><option value="by:-1">Toegevoegd door Z–A</option></select></label>
+          <button class="btn files-pick" type="button" [disabled]="!assets().length" [attr.aria-pressed]="picking()" (click)="togglePicking()">{{ picking() ? 'Selectie sluiten' : 'Selecteren' }}</button>
+        </div>
+        @if (hasFilters()) { <div class="files-filter-note"><span>{{ archived() ? 'Archief' : '' }}{{ query().trim() ? (archived() ? ' · ' : '') + 'Zoeken: ' + query() : '' }}{{ kind() ? (archived() || query().trim() ? ' · ' : '') + (kind() === 'IMAGE' ? 'Foto’s' : 'Documenten') : '' }}</span><button class="linklike" type="button" (click)="resetFilters()">Filters wissen</button></div> }
+      </div>
+    </ng-template>
+    <ng-template #emptyLibrary>
+      <div class="files-empty"><b>{{ query().trim() || kind() ? 'Geen bestanden gevonden' : archived() ? 'Het archief is leeg' : showFolders() ? 'Kies een map hierboven' : 'Hier staan nog geen bestanden' }}</b><p>{{ query().trim() || kind() ? 'Probeer een andere zoekterm of wis de filters.' : archived() ? 'Gearchiveerde bestanden vind je hier terug.' : showFolders() ? 'De mappen bevatten de bijbehorende bestanden.' : collection() ? 'Bestanden verschijnen hier zodra ze aan deze categorie gekoppeld zijn.' : 'Voeg foto’s, documenten of andere bestanden toe.' }}</p>@if (hasFilters()) { <button class="btn" type="button" (click)="resetFilters()">Filters wissen</button> } @else if (!collection() && !showFolders()) { <button class="btn btn--primary" type="button" (click)="phone() ? addMenu.set(true) : uploadInput.click()">Bestanden toevoegen</button> }</div>
+    </ng-template>
 
     @if (tray(); as tray) {
       <app-sheet [title]="tray.done ? 'Toegevoegd' : (tray.items.length + ' bestand' + (tray.items.length === 1 ? '' : 'en') + ' toevoegen')" [wide]="!phone()" (closed)="closeTray()">
@@ -544,7 +522,7 @@ export const COLLECTIONS: readonly Collection[] = [
     }
 
     <ng-template #detailBody let-asset>
-          @if (!phone()) {
+          @if (wide()) {
             <div class="fx__detail-head">
               <b>{{ asset.kind === 'IMAGE' ? 'Foto' : 'Document' }}</b>
               <button class="fx__close" type="button" aria-label="Sluiten" (click)="close()">×</button>
@@ -558,11 +536,11 @@ export const COLLECTIONS: readonly Collection[] = [
               <button type="button" (click)="actionsFor.set({ asset })"><i aria-hidden="true">⋯</i>Meer</button>
             </div>
           }
-          <div class="fx__preview" (click)="download(asset)" title="Downloaden">
+          <button class="fx__preview" type="button" (click)="download(asset)" [disabled]="downloading()" [attr.aria-label]="'Download ' + asset.name">
             @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.fileUrl(asset.id)" [alt]="asset.name" /> }
             @else { <i class="fx__ext fx__ext--big" aria-hidden="true">{{ extension(asset) }}</i> }
-            <span class="fx__preview-open">{{ asset.kind === 'IMAGE' && asset.widthPx ? asset.widthPx + ' × ' + asset.heightPx + ' · ' : '' }}{{ size(asset.sizeBytes) }}</span>
-          </div>
+            <span class="fx__preview-open">{{ asset.kind === 'IMAGE' && asset.widthPx ? asset.widthPx + ' × ' + asset.heightPx + ' · ' : '' }}{{ size(asset.sizeBytes) }} · Downloaden</span>
+          </button>
           <label class="fx__field">
             <span>Naam</span>
             <span class="fx__inline">
@@ -646,7 +624,7 @@ export const COLLECTIONS: readonly Collection[] = [
           @if (!phone()) {
           <div class="fx__actions">
             <button class="btn btn--sm" type="button" [disabled]="downloading()" (click)="download(asset)">{{ downloading() ? 'Bezig…' : 'Downloaden' }}</button>
-            <label class="btn btn--sm">{{ busy() ? 'Bezig…' : 'Nieuwe versie' }}<input type="file" hidden [disabled]="busy()" (change)="replaceVersion($event)" /></label>
+            <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="chooseVersion()">Nieuwe versie</button>
             @if (asset.archived) {
               <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="restore()">Terughalen</button>
             } @else {
@@ -885,8 +863,10 @@ export class FilesPage implements OnDestroy {
     try { return FilesPage.clampRail(Number(localStorage.getItem(FilesPage.RAIL_KEY)) || 232); } catch { return 232; }
   })());
   readonly resizing = signal(false);
-  /** Below 1180px the detail drops under the grid; the stylesheet's own columns apply there. */
-  private readonly wide = signal(typeof window === 'undefined' ? true : window.innerWidth > 1180);
+  /** Use a sheet until the workspace has room for a readable detail column. */
+  readonly wide = signal(typeof window === 'undefined' ? true : window.innerWidth >= 1440);
+  readonly foldersVisible = signal(false);
+  readonly showFolderRail = computed(() => this.foldersVisible() && !this.selected());
   /** Under 820px the page is a phone file browser: one folder per screen, the file in a sheet. */
   readonly phone = signal(typeof window === 'undefined' ? false : window.innerWidth < 820);
   readonly picking = signal(false);
@@ -906,6 +886,20 @@ export class FilesPage implements OnDestroy {
   readonly swipe = signal<{ id: number; dx: number; open: boolean; settled: boolean } | null>(null);
   private touch: { id: number; x: number; y: number; dx: number; moved: boolean; timer: ReturnType<typeof setTimeout> | null } | null = null;
   private suppressClick = false;
+
+  readonly browseValue = computed(() => this.archived() ? 'archive' : this.collection()?.key ?? (this.folder() === null ? 'all' : 'folders'));
+  readonly hasFilters = computed(() => !!this.query().trim() || !!this.kind() || this.archived());
+  browse(value: string): void {
+    if (value === 'folders') this.openFolder('root');
+    else if (value === 'all' || value === 'archive') { this.query.set(''); this.kind.set(null); this.collection.set(null); this.folder.set(null); this.archived.set(value === 'archive'); this.close(); this.picking.set(false); this.syncUrl(); void this.reload(); }
+    else { const collection = COLLECTIONS.find(item => item.key === value); if (collection) this.openCollection(collection); }
+  }
+  resetFilters(): void { this.query.set(''); this.kind.set(null); this.archived.set(false); this.syncUrl(); void this.reload(); }
+  togglePicking(): void { this.picking.set(!this.picking()); if (!this.picking()) this.clearSelection(); }
+  toggleFolders(): void { const show = !this.showFolderRail(); if (this.selected()) this.close(); this.foldersVisible.set(show); }
+  chooseSort(value: string): void { const [key, dir] = value.split(':'); if (['name', 'kind', 'size', 'updated', 'links', 'by'].includes(key) && ['1', '-1'].includes(dir)) this.sort.set({key: key as ReturnType<typeof this.sort>['key'], dir: Number(dir) as 1 | -1}); }
+  usageLabel(asset: MediaAssetSummary): string { return asset.links.find(link => link.targetLabel)?.targetLabel ?? this.folderLabel(asset) ?? '';  }
+  chooseVersion(): void { if (!this.busy()) document.getElementById('files-replace-version')?.click(); }
 
   toggleSearch(): void {
     const open = !this.searchOpen();
@@ -1001,15 +995,14 @@ export class FilesPage implements OnDestroy {
       case 'open': await this.open(asset); return;
       case 'download': await this.download(asset); return;
       case 'download-web': await this.download(asset, 'web'); return;
-      case 'rename': await this.open(asset); this.focusName(); return;
+      case 'rename': await this.open(asset); if (this.selected()?.id === asset.id) this.focusName(); return;
       case 'share':
         if (asset.share) { await this.copyLink(asset.share.token); return; }
-        await this.open(asset); await this.share();
-        if (this.selected()?.share) await this.copyLink(this.selected()!.share!.token, 'Publieke link gemaakt en gekopieerd');
+        await this.open(asset); if (this.selected()?.id === asset.id) await this.share();
         return;
-      case 'version': await this.open(asset); setTimeout(() => (document.querySelector('.fx__detail input[type=file], .fm-sheet input[type=file]') as HTMLInputElement | null)?.click(), 250); return;
-      case 'archive': await this.open(asset); await this.archive(); return;
-      case 'restore': await this.open(asset); await this.restore(); return;
+      case 'version': await this.open(asset); if (this.selected()?.id === asset.id) this.chooseVersion(); return;
+      case 'archive': await this.open(asset); if (this.selected()?.id === asset.id) await this.archive(); return;
+      case 'restore': await this.open(asset); if (this.selected()?.id === asset.id) await this.restore(); return;
       case 'delete': await this.removeAsset(asset); return;
     }
   }
@@ -1078,15 +1071,12 @@ export class FilesPage implements OnDestroy {
     const folder = id === null ? null : this.folders().find((item) => item.id === id);
     if (folder) this.folderDraft.set({ id: folder.id, name: folder.name, parentId: folder.parentId });
   }
-  readonly gridColumns = computed(() => {
-    if (!this.wide()) return null;
-    return `${this.railWidth()}px minmax(0, 1fr)${this.selected() ? ' var(--fx-detail, 420px)' : ''}`;
-  });
-  private readonly onResize = () => { this.wide.set(window.innerWidth > 1180); this.phone.set(window.innerWidth < 820); };
+  readonly gridColumns = computed(() => `${this.showFolderRail() ? this.railWidth() + 'px ' : ''}minmax(0, 1fr)${this.wide() && this.selected() ? ' 360px' : ''}`);
+  private readonly onResize = () => { this.wide.set(window.innerWidth >= 1440); this.phone.set(window.innerWidth < 820); };
   private resizeStart: { x: number; width: number } | null = null;
 
   private static clampRail(width: number): number {
-    return Math.min(560, Math.max(200, Math.round(width)));
+    return Math.min(320, Math.max(200, Math.round(width)));
   }
 
   setRailWidth(width: number): void {
@@ -1266,6 +1256,8 @@ export class FilesPage implements OnDestroy {
 
   /* ---- the chosen file */
   readonly selected = signal<MediaAssetDetail | null>(null);
+  private detailRequestId = 0;
+  private detailLoadIdentity: MediaDetailActionIdentity | null = null;
   readonly nameDraft = signal('');
   readonly busy = signal(false);
   readonly downloading = signal(false);
@@ -1300,6 +1292,7 @@ export class FilesPage implements OnDestroy {
     const kind = params.get('kind');
     const map = Number(params.get('map'));
     const collection = view ? COLLECTIONS.find((item) => item.key === view) ?? null : null;
+    this.query.set(''); this.close(); this.picking.set(false);
     this.collection.set(collection);
     this.folder.set(collection ? null : view === 'all' ? null : Number.isInteger(map) && map > 0 ? map : 'root');
     this.kind.set(kind === 'IMAGE' || kind === 'DOCUMENT' ? kind : collection?.filters.kind ?? null);
@@ -1338,6 +1331,7 @@ export class FilesPage implements OnDestroy {
   }
 
   openFolder(folder: number | 'root' | null): void {
+    this.query.set(''); this.kind.set(null); this.archived.set(false); this.close(); this.picking.set(false);
     this.collection.set(null);
     this.folder.set(folder);
     this.syncUrl();
@@ -1345,14 +1339,16 @@ export class FilesPage implements OnDestroy {
   }
 
   openCollection(collection: Collection): void {
+    this.query.set(''); this.archived.set(false); this.close(); this.picking.set(false);
     this.folder.set(null);
     this.collection.set(collection);
-    if (collection.filters.kind) this.kind.set(collection.filters.kind);
+    this.kind.set(collection.filters.kind ?? null);
     this.syncUrl();
     void this.reload();
   }
 
   startFolder(parentId: number | null): void {
+    this.close(); this.foldersVisible.set(true);
     this.folderDraft.set({ id: null, parentId, name: '' });
   }
 
@@ -1391,7 +1387,7 @@ export class FilesPage implements OnDestroy {
   /* ---- selecting files: a pick box on every card or row, the selection moves as one */
   togglePick(asset: MediaAssetSummary, event: Event): void {
     event.stopPropagation();
-    event.preventDefault();
+    if (!(event.target instanceof HTMLInputElement) || event.target.type !== 'checkbox') event.preventDefault();
     this.selectedIds.update((ids) => {
       const next = new Set(ids);
       if (next.has(asset.id)) next.delete(asset.id); else next.add(asset.id);
@@ -1401,7 +1397,7 @@ export class FilesPage implements OnDestroy {
 
   /** A plain click opens the file; with Cmd/Ctrl or Shift it selects instead. */
   clickAsset(asset: MediaAssetSummary, event: MouseEvent): void {
-    if (event.metaKey || event.ctrlKey || event.shiftKey) { this.togglePick(asset, event); return; }
+    if (this.picking() || event.metaKey || event.ctrlKey || event.shiftKey) { this.togglePick(asset, event); return; }
     void this.open(asset);
   }
 
@@ -1526,6 +1522,7 @@ export class FilesPage implements OnDestroy {
     this.clearSelection();
     const requestId = ++this.requestId;
     this.loading.set(true);
+    this.loadingMore.set(false);
     this.loadError.set('');
     try {
       const result = await this.media.assets(this.filters(0));
@@ -1728,18 +1725,35 @@ export class FilesPage implements OnDestroy {
 
   /* ================================================================ the chosen file */
   async open(asset: MediaAssetSummary): Promise<void> {
+    const identity: MediaDetailActionIdentity = {
+      assetId: asset.id, detailRequestId: ++this.detailRequestId, actionId: 0,
+    };
+    this.detailLoadIdentity = identity;
     if (this.historyFor !== asset.id) { this.history.set(null); this.historyFor = null; }
     this.nameDraft.set(asset.name);
     this.selected.set({ ...asset, versions: [] });
     try {
-      this.applyDetail(await this.media.asset(asset.id));
+      const detail = await this.media.asset(asset.id);
+      if (!this.isCurrentDetailLoad(identity)) return;
+      this.applyDetail(detail);
     } catch (failure) {
+      if (!this.isCurrentDetailLoad(identity)) return;
       this.ui.toast(messageOf(failure, 'De bestandsdetails konden niet worden geladen.'), 'err');
     }
     void this.loadTargets(this.linkType());
   }
 
-  close(): void { this.selected.set(null); this.history.set(null); this.historyFor = null; }
+  close(): void {
+    this.detailLoadIdentity = null;
+    this.selected.set(null);
+    this.history.set(null);
+    this.historyFor = null;
+  }
+
+  private isCurrentDetailLoad(identity: MediaDetailActionIdentity): boolean {
+    return this.selected()?.id === identity.assetId
+      && isCurrentMediaDetailAction(identity, this.detailLoadIdentity);
+  }
 
   private applyDetail(detail: MediaAssetDetail): void {
     this.selected.set(detail);
@@ -1750,9 +1764,13 @@ export class FilesPage implements OnDestroy {
   private async act(label: string, action: (id: number) => Promise<MediaAssetDetail>): Promise<boolean> {
     const asset = this.selected();
     if (!asset || this.busy()) return false;
+    const requestId = ++this.detailRequestId;
+    this.detailLoadIdentity = null;
     this.busy.set(true);
     try {
-      this.applyDetail(await action(asset.id));
+      const detail = await action(asset.id);
+      this.assets.update(items => items.map(item => item.id === detail.id ? detail : item));
+      if (this.selected()?.id === asset.id && requestId === this.detailRequestId) this.applyDetail(detail);
       return true;
     } catch (failure) {
       this.ui.toast(messageOf(failure, label), 'err');
@@ -1776,8 +1794,9 @@ export class FilesPage implements OnDestroy {
   }
 
   async share(): Promise<void> {
+    const assetId = this.selected()?.id;
     if (await this.act('De publieke link kon niet worden gemaakt', (id) => this.media.share(id))) {
-      const token = this.selected()?.share?.token;
+      const token = this.selected()?.id === assetId ? this.selected()?.share?.token : null;
       if (token) await this.copyLink(token, 'Publieke link gemaakt en gekopieerd');
     }
   }
