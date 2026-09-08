@@ -187,48 +187,54 @@ type PurchaseWorkspaceSectionId =
           </div>
         </section>
 
-        <nav class="purchase-section-nav erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
-          <button class="erp-workspace__nav-item" type="button"
+        <nav class="purchase-section-nav workflow-nav workflow-nav--wide erp-workspace__nav" aria-label="Onderdelen van deze inkooporder">
+          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-overview'"
+                  [class.workflow-nav__active]="workspaceSection() === 'purchase-overview'"
                   [attr.aria-current]="workspaceSection() === 'purchase-overview' ? 'location' : null"
                   (click)="jumpToSection('purchase-overview')">
-            <span class="erp-workspace__nav-index" aria-hidden="true">1</span>
-            <span><strong>Order</strong><small>{{ statusLabel(data.order.status) }}</small></span>
+            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">1</span>
+            <span class="workflow-nav__copy"><b>Order</b><small>{{ statusLabel(data.order.status) }}</small></span>
           </button>
-          <button class="erp-workspace__nav-item" type="button"
+          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-products-section'"
+                  [class.workflow-nav__active]="workspaceSection() === 'purchase-products-section'"
                   [attr.aria-current]="workspaceSection() === 'purchase-products-section' ? 'location' : null"
                   (click)="jumpToSection('purchase-products-section')">
-            <span class="erp-workspace__nav-index" aria-hidden="true">2</span>
-            <span><strong>Producten</strong><small>{{ data.costing.lines.length }} regels</small></span>
+            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">2</span>
+            <span class="workflow-nav__copy"><b>Producten</b><small>{{ data.costing.lines.length }} regels</small></span>
           </button>
-          <button class="erp-workspace__nav-item" type="button"
+          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-costs-section'"
+                  [class.workflow-nav__active]="workspaceSection() === 'purchase-costs-section'"
                   [attr.aria-current]="workspaceSection() === 'purchase-costs-section' ? 'location' : null"
                   (click)="jumpToSection('purchase-costs-section')">
-            <span class="erp-workspace__nav-index" aria-hidden="true">3</span>
-            <span><strong>Kosten</strong><small>{{ data.costing.totals.totalEur | eur }}</small></span>
+            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">3</span>
+            <span class="workflow-nav__copy"><b>Kosten</b><small>{{ data.costing.totals.totalEur | eur }}</small></span>
           </button>
-          <button class="erp-workspace__nav-item" type="button"
+          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-payments-section'"
+                  [class.workflow-nav__active]="workspaceSection() === 'purchase-payments-section'"
                   [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
                   (click)="jumpToSection('purchase-payments-section')">
-            <span class="erp-workspace__nav-index" aria-hidden="true">4</span>
-            <span><strong>Betalingen</strong><small>{{ openAll() | eur }} open</small></span>
+            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">4</span>
+            <span class="workflow-nav__copy"><b>Betalingen</b><small>{{ openAll() | eur }} open</small></span>
           </button>
-          <button class="erp-workspace__nav-item" type="button"
+          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
+                  [class.workflow-nav__active]="workspaceSection() === 'purchase-files-section'"
                   [attr.aria-current]="workspaceSection() === 'purchase-files-section' ? 'location' : null"
                   (click)="jumpToSection('purchase-files-section')">
-            <span class="erp-workspace__nav-index" aria-hidden="true">5</span>
-            <span><strong>Dossier</strong><small>{{ (documents() ?? []).length }} bestanden</small></span>
+            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">5</span>
+            <span class="workflow-nav__copy"><b>Dossier</b><small>{{ (documents() ?? []).length }} bestanden</small></span>
           </button>
-          <button class="erp-workspace__nav-item erp-workspace__nav-item--action" type="button"
+          <button class="erp-workspace__nav-item erp-workspace__nav-item--action workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-actions-section'"
+                  [class.workflow-nav__active]="workspaceSection() === 'purchase-actions-section'"
                   [attr.aria-current]="workspaceSection() === 'purchase-actions-section' ? 'location' : null"
                   (click)="jumpToSection('purchase-actions-section')">
-            <span class="erp-workspace__nav-index" aria-hidden="true">6</span>
-            <span><strong>Volgende stap</strong><small>{{ actionTitle(data.order.status, data.costing.lines.length) }}</small></span>
+            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">6</span>
+            <span class="workflow-nav__copy"><b>Volgende stap</b><small>{{ actionTitle(data.order.status, data.costing.lines.length) }}</small></span>
           </button>
         </nav>
 

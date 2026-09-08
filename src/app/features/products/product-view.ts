@@ -303,14 +303,15 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             </section>
           }
 
-          <nav class="subnav product-detail-nav erp-workspace__nav" aria-label="Productonderdelen">
-            <div class="subnav__rail erp-workspace__nav-rail">
+          <nav class="subnav product-detail-nav workflow-nav workflow-nav--wide erp-workspace__nav" aria-label="Productonderdelen">
+            <div class="subnav__rail erp-workspace__nav-rail workflow-nav__rail">
               @for (item of visibleDetailSections(); track item.id) {
-                <a class="erp-workspace__nav-item" [class.active]="activeDetailSection() === item.id"
+                <a class="erp-workspace__nav-item workflow-nav__item" [class.active]="activeDetailSection() === item.id"
+                   [class.workflow-nav__active]="activeDetailSection() === item.id"
                    [attr.aria-current]="activeDetailSection() === item.id ? 'location' : null"
                    [href]="'#' + item.id" (click)="scrollToDetailSection(item.id, $event)">
-                  <span class="erp-workspace__nav-index">{{ $index + 1 }}</span>
-                  <span>{{ item.label }}</span>
+                  <span class="workflow-nav__mark erp-workspace__nav-index">{{ $index + 1 }}</span>
+                  <span class="workflow-nav__copy"><b>{{ item.label }}</b></span>
                 </a>
               }
             </div>

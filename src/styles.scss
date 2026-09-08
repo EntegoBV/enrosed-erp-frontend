@@ -3820,11 +3820,13 @@ a.desk-kpi{text-decoration:none}
 
 
 /* The section pill of a sales document on a phone: the editor and the read view share it. */
-.workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;margin:12px 0;padding:4px;overflow:visible;border:1px solid rgb(255 255 255/.7);border-radius:20px;background:color-mix(in srgb,var(--surface) 76%,transparent);box-shadow:0 10px 28px rgb(26 22 20/.08),inset 0 0 0 1px rgb(26 22 20/.05);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);mask-image:none;-webkit-mask-image:none }
+.workflow-nav { position:sticky;top:calc(var(--appbar-h) + 8px);z-index:30;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;margin:12px 0;padding:4px;overflow:visible;border:1px solid rgb(255 255 255/.7);border-radius:20px;background:color-mix(in srgb,var(--surface) 76%,transparent);box-shadow:0 10px 28px rgb(26 22 20/.08),inset 0 0 0 1px rgb(26 22 20/.05);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);mask-image:none;-webkit-mask-image:none }
 .workflow-nav button { position:static;min-width:0;min-height:58px;display:flex;flex:1 1 0;flex-direction:column;align-items:center;justify-content:center;gap:3px;margin:0;padding:6px 3px 5px;border:0;border-radius:16px;background:transparent;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.01em;line-height:1;white-space:nowrap;box-shadow:none;cursor:pointer;transition:background .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease }
 .workflow-nav button:hover { border-color:transparent }
 .workflow-nav button:active { transform:scale(.97) }
-@media (min-width:680px) { .workflow-nav { grid-template-columns:repeat(5,minmax(0,1fr)) } }
+@media (min-width:680px) { .workflow-nav { grid-auto-columns:minmax(0,1fr) } }
+.workflow-nav--wide { grid-auto-columns:minmax(64px,1fr);overflow-x:auto;scrollbar-width:none }
+.workflow-nav--wide::-webkit-scrollbar { display:none }
 .workflow-nav button>.workflow-nav__mark { width:22px;height:22px;display:grid;flex:none;place-items:center;margin:0;border:1.5px solid var(--line-strong);border-radius:50%;background:transparent;color:var(--muted);font-size:10px;font-weight:800;line-height:1 }
 .workflow-nav__copy { min-width:0;display:grid;gap:0;justify-items:center;text-align:center;line-height:1 }
 .workflow-nav__copy b { overflow:hidden;font-size:inherit;font-weight:700;line-height:1;text-overflow:ellipsis;white-space:nowrap }
@@ -3836,3 +3838,14 @@ a.desk-kpi{text-decoration:none}
 .workflow-nav .erp-workspace__section-link--attention>.workflow-nav__mark { border-color:var(--warn);background:var(--warn-soft);color:var(--warn) }
 @media (prefers-reduced-motion:reduce) { .workflow-nav button { transition:none } .workflow-nav button:active { transform:none } }
 .workflow-nav .workflow-nav__active .workflow-nav__copy small { color:var(--rose-dark) }
+
+.workflow-nav__rail { display:contents }
+.workflow-nav .workflow-nav__item { position:static;min-width:0;min-height:58px;display:flex;flex:1 1 0;flex-direction:column;align-items:center;justify-content:center;gap:3px;margin:0;padding:6px 3px 5px;border:0;border-radius:16px;background:transparent;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.01em;line-height:1;white-space:nowrap;box-shadow:none;text-decoration:none;cursor:pointer }
+.workflow-nav .workflow-nav__item.workflow-nav__active { background:var(--surface);color:var(--rose-dark);box-shadow:0 2px 8px rgb(26 22 20/.14) }
+/* The product pages keep their `.subnav` shell for scroll anchoring; inside the
+   pill that shell is only a scrolling grid, with the rail flattened away. */
+.subnav.erp-workspace__nav.workflow-nav { display:grid;grid-auto-flow:column;grid-auto-columns:minmax(64px,1fr);padding:4px;overflow-x:auto;border:1px solid rgb(255 255 255/.7);border-radius:20px;background:color-mix(in srgb,var(--surface) 76%,transparent);box-shadow:0 10px 28px rgb(26 22 20/.08),inset 0 0 0 1px rgb(26 22 20/.05);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4) }
+.subnav.erp-workspace__nav.workflow-nav .erp-workspace__nav-rail { display:contents }
+.workflow-nav .workflow-nav__item { overflow:hidden }
+.workflow-nav .workflow-nav__item .workflow-nav__copy { max-width:100% }
+.workflow-nav .workflow-nav__item > .workflow-nav__copy { display:grid;min-width:0;justify-items:center;text-align:center }
