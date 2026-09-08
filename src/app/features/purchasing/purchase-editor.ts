@@ -18,6 +18,7 @@ import {
 import { messageOf } from '../../core/api/errors';
 import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
+import { Fx } from '../../core/api/fx';
 import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
@@ -52,7 +53,7 @@ import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
-import { latestOwnFreightQuote } from './purchase-price-context';
+import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from './purchase-price-context';
 import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 
@@ -718,6 +719,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                step="0.0001" inputmode="decimal"
                                [ngModel]="data.order.cnyToUsd"
                                (ngModelChange)="patch({ cnyToUsd: +$event })" />
+                        @if (marketRates(); as market) {
+                          <span class="hint hint--market">ECB {{ marketReference()!.cnyToUsd | num: 4 }} · met {{ market.marginPct }} % marge {{ market.cnyToUsd | num: 4 }}@if (data.order.cnyToUsd !== market.cnyToUsd) { · <button class="linklike" type="button" (click)="patch({ cnyToUsd: market.cnyToUsd })">overnemen</button> }</span>
+                        }
                       </div>
                       <div class="field">
                         <label for="r-usd">USD naar EUR</label>
@@ -725,6 +729,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                step="0.0001" inputmode="decimal"
                                [ngModel]="usdToEurRate()"
                                (ngModelChange)="setUsdToEur(+$event)" />
+                        @if (marketRates(); as market) {
+                          <span class="hint hint--market">ECB {{ marketReference()!.usdToEur | num: 4 }} · met {{ market.marginPct }} % marge {{ market.usdToEur | num: 4 }}@if (usdToEurRate() !== market.usdToEur) { · <button class="linklike" type="button" (click)="setUsdToEur(market.usdToEur)">overnemen</button> }</span>
+                        }
                         <span class="hint">Geldt voor goederen én transport.</span>
                       </div>
                     </div>
@@ -2615,6 +2622,12 @@ export class PurchaseEditor {
   protected readonly media = inject(MediaApi);
 
   readonly id = input<string>('');
+
+  /* ---- today's market rates, next to the rates the order was calculated with ---- */
+  private readonly fx = inject(Fx);
+  readonly marketReference = computed(() => purchaseFxReference(this.fx.series()));
+  readonly marketRates = computed(() => purchaseFxDefaults(this.marketReference()));
+  private readonly marketLoaded = (() => { if (!this.fx.series()) void this.fx.load(); return true; })();
 
   /* ---- the Enrosed kost by hand ------------------------------------------ */
   readonly extraSplitOpen = signal(false);

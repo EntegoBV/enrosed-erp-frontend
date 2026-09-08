@@ -516,8 +516,8 @@ type DeskRow =
                   @if (!editing()) {
                     <div class="desk-panel__head"><strong>Kosten &amp; koersen</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
                     <div class="desk-rates">
-                      <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd }}</b></div>
-                      <div><small>USD → EUR</small><b>{{ usdToEurRate() }}</b></div>
+                      <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd }}</b>@if (marketReference(); as market) { <i>ECB {{ market.cnyToUsd | num: 4 }}</i> }</div>
+                      <div><small>USD → EUR</small><b>{{ usdToEurRate() }}</b>@if (marketReference(); as market) { <i>ECB {{ market.usdToEur | num: 4 }}</i> }</div>
                       <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : 'EXW' }}</b></div>
                     </div>
                     @if (!isDdp()) {
@@ -535,9 +535,15 @@ type DeskRow =
                     <p class="desk-form__group">Wisselkoersen</p>
                     <div class="desk-form__duo">
                       <div class="field"><label for="dk-cny">RMB → USD</label>
-                        <input class="input num right" id="dk-cny" type="number" step="0.0001" inputmode="decimal" [ngModel]="data.order.cnyToUsd" (ngModelChange)="patch({ cnyToUsd: +$event })" /></div>
+                        <input class="input num right" id="dk-cny" type="number" step="0.0001" inputmode="decimal" [ngModel]="data.order.cnyToUsd" (ngModelChange)="patch({ cnyToUsd: +$event })" />
+                        @if (marketRates(); as market) {
+                          <span class="hint hint--market">ECB {{ marketReference()!.cnyToUsd | num: 4 }} · met {{ market.marginPct }} % marge {{ market.cnyToUsd | num: 4 }}@if (data.order.cnyToUsd !== market.cnyToUsd) { · <button class="linklike" type="button" (click)="patch({ cnyToUsd: market.cnyToUsd })">overnemen</button> }</span>
+                        }</div>
                       <div class="field"><label for="dk-usd">USD → EUR</label>
-                        <input class="input num right" id="dk-usd" type="number" step="0.0001" inputmode="decimal" [ngModel]="usdToEurRate()" (ngModelChange)="setUsdToEur(+$event)" /></div>
+                        <input class="input num right" id="dk-usd" type="number" step="0.0001" inputmode="decimal" [ngModel]="usdToEurRate()" (ngModelChange)="setUsdToEur(+$event)" />
+                        @if (marketRates(); as market) {
+                          <span class="hint hint--market">ECB {{ marketReference()!.usdToEur | num: 4 }} · met {{ market.marginPct }} % marge {{ market.usdToEur | num: 4 }}@if (usdToEurRate() !== market.usdToEur) { · <button class="linklike" type="button" (click)="setUsdToEur(market.usdToEur)">overnemen</button> }</span>
+                        }</div>
                     </div>
                     <p class="desk-form__group">{{ isDdp() ? 'Geleverd incl. rechten' : 'Van fabriek tot magazijn' }}</p>
                     @if (isDdp()) {
@@ -1323,7 +1329,7 @@ type DeskRow =
     .desk-done{display:grid;gap:12px}
     .desk-done__attention{margin:0;padding:8px 12px 8px 26px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
     .desk-rates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}
-    .desk-rates>div{display:grid;gap:1px;padding:9px 12px;background:var(--surface-2)}.desk-rates small{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.desk-rates b{font-size:14px;font-variant-numeric:tabular-nums}
+    .desk-rates>div{display:grid;gap:1px;padding:9px 12px;background:var(--surface-2)}.desk-rates small{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.desk-rates b{font-size:14px;font-variant-numeric:tabular-nums}.desk-rates i{color:var(--muted);font-size:10px;font-style:normal;font-variant-numeric:tabular-nums}
     .desk-mix{display:flex;height:12px;border-radius:99px;background:var(--line);overflow:hidden}.desk-mix i{display:block;height:100%}
     .desk-mix__legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0 12px;padding:0;list-style:none;color:var(--muted);font-size:11px}.desk-mix__legend li{display:inline-flex;align-items:center;gap:5px}.desk-mix__legend i{width:9px;height:9px;border-radius:2px}.desk-mix__legend b{color:var(--ink-2)}
     .desk-mix__goods{background:var(--rose-dark)}.desk-mix__transport{background:var(--gold)}.desk-mix__duty{background:var(--warn)}.desk-mix__destination{background:var(--blue)}.desk-mix__extra{background:var(--muted)}

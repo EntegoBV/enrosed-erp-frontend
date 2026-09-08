@@ -4141,3 +4141,4 @@ button.fin-kpi:hover, a.fin-kpi:hover { transform: translateY(-1px); box-shadow:
 .po-split--line { grid-column: 1 / -1; flex-basis: 100%; display: grid; gap: 3px; margin-top: 0; padding: 7px 10px; }
 .po-split--line .po-split__sum { font-size: 12px; line-height: 1.3; }
 .po-split__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; font-size: 12px; }
+.hint--market { font-variant-numeric: tabular-nums; }
