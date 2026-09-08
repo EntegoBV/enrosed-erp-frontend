@@ -186,7 +186,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                          (ngModelChange)="patchPortraitOptions({ showSeparateCosts: $event })" />
                   <span>
                     <b>Inspectie en andere kosten</b>
-                    <small>Als aparte lijntjes onder de totale kost, niet in de stukprijs. Hoort bij de totale kost per regel.</small>
+                    <small>Als lijntjes onder de totale kost; in de stukprijs zitten ze al verdeeld. Hoort bij de totale kost per regel.</small>
                   </span>
                 </label>
               }

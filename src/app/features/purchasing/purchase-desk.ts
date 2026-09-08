@@ -311,7 +311,12 @@ type DeskRow =
                                        [attr.aria-label]="'Enrosed kost voor ' + line.productName"
                                        [ngModel]="orderLine(line.productId)?.extraShareEur" (ngModelChange)="setExtraShare(line.productId, $event)" />
                               </div>
-                              <small>{{ extraPerPiece(line) | eur: 4 }} /st</small>
+                              <div class="desk-price desk-price--extra desk-price--target" [title]="'Kostprijs per stuk; zonder Enrosed kost ' + (basePerPiece(line) | eur: 4)">
+                                <span class="desk-price__sym desk-price__sym--wide" aria-hidden="true">kost/st</span>
+                                <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
+                                       [attr.aria-label]="'Kostprijs per stuk voor ' + line.productName + ', de Enrosed kost volgt'"
+                                       [value]="fixed4(line.landedUnitEur)" (change)="setTargetUnit(line.productId, line, $any($event.target).value)" />
+                              </div>
                             } @else {
                               <b>{{ perPiece() ? (extraPerPiece(line) | eur: 4) : (line.extraRevenueEur | eur) }}</b>
                             }
@@ -604,16 +609,26 @@ type DeskRow =
                         </div>
                         <span class="hint">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product, in de tabel' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="startManualSplit()">zelf verdelen per product</button> }</span>
                         @if (manualExtra()) {
-                            <div class="po-split">
-                              <span class="po-split__sum" [class.po-split__sum--short]="extraSplitRemainder() > 0.004" [class.po-split__sum--over]="extraSplitRemainder() < -0.004"><b>{{ extraSplitSpread() | eur }}</b> verdeeld van {{ data.order.extraRevenueEur | eur }}@if (extraSplitRemainder() > 0.004) { · nog {{ extraSplitRemainder() | eur }} te verdelen } @else if (extraSplitRemainder() < -0.004) { · {{ -extraSplitRemainder() | eur }} meer dan de Enrosed kost } @else { · ✓ alles verdeeld }</span>
-                              <span class="fin-chips">
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('PIECES')">Naar stuks</button>
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('VALUE')">Naar waarde</button>
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('CBM')">Naar volume</button>
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('EVEN')">Gelijk</button>
-                                @if (extraSplitRemainder() > 0.004) { <button type="button" class="fin-chip" (click)="extraSplitRestToLast()">Rest op laatste</button> }
-                                <button type="button" class="linklike" (click)="endManualSplit()">weer automatisch</button>
-                              </span>
+                            <div class="po-split" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
+                              <div class="po-split__head">
+                                <span class="po-split__title">Zelf verdeeld over de producten</span>
+                                <button class="linklike" type="button" (click)="endManualSplit()">Weer automatisch</button>
+                              </div>
+                              <div class="payments-meter po-split__meter"><div class="payments-meter__fill" [style.width.%]="extraSplitPct()"></div></div>
+                              <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }}
+                                @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }} te verdelen</em> }
+                                @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} meer dan de Enrosed kost</em> }
+                                @else { <em>· alles verdeeld</em> }</p>
+                              <div class="po-split__fill">
+                                <span>Vul in</span>
+                                <span class="fin-chips">
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('PIECES')">naar stuks</button>
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('VALUE')">naar waarde</button>
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('CBM')">naar volume</button>
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('EVEN')">gelijk</button>
+                                  @if (extraSplitRemainder() > 0.004) { <button type="button" class="fin-chip fin-chip--warn" (click)="extraSplitRestToLast()">rest op de laatste</button> }
+                                </span>
+                              </div>
                             </div>
                           }
                       </div>
@@ -623,7 +638,7 @@ type DeskRow =
                           <input class="input num right" id="dk-inspection" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.inspectionCostEur" (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
                           <span class="input-affix__suffix">EUR</span>
                         </div>
-                        <span class="hint">Apart, niet in de stukprijs.</span>
+                        <span class="hint">In de stukprijs, verdeeld naar goederenwaarde.</span>
                       </div>
                     </div>
                     <div class="other-costs" aria-label="Andere kosten">
@@ -638,7 +653,7 @@ type DeskRow =
                         </div>
                       }
                       <button class="other-costs__add" type="button" (click)="addOtherCost()">
-                        <span aria-hidden="true">+</span><b>Andere kost</b><small>certificaat, labo, staal … apart, niet in de stukprijs</small>
+                        <span aria-hidden="true">+</span><b>Andere kost</b><small>certificaat, labo, staal … in de stukprijs verdeeld</small>
                       </button>
                     </div>
 
@@ -1233,6 +1248,7 @@ type DeskRow =
     .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
     .c-price__basis{margin-left:3px;color:var(--muted);font-weight:600;opacity:.75}
     .desk-table--editing td.c-qty .desk-cell{padding-inline:6px;text-align:center}
+    .desk-price--target{margin-top:4px}.desk-price__sym--wide{padding:0 5px;font-size:9.5px;letter-spacing:.02em;text-transform:uppercase}.desk-table--editing.desk-table--extra{min-width:1000px}
     .desk-table--editing td.c-price .desk-price{width:auto;max-width:128px;margin-left:auto}.desk-table--editing td.c-extra .desk-price{width:auto;max-width:132px;margin-left:auto}.desk-table td.c-extra small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}

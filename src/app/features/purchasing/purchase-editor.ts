@@ -591,6 +591,15 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           </div>
                           <span class="hint">Kostprijs nu {{ line.landedUnitEur | eur: 4 }} per stuk, waarvan {{ extraPerPiece(line) | eur: 4 }} Enrosed kost.</span>
                         </div>
+                        <div class="field">
+                          <label [attr.for]="'target-' + line.productId">Of de kostprijs per stuk, de Enrosed kost volgt</label>
+                          <div class="input-affix input-affix--prefixed">
+                            <span class="input-affix__prefix" aria-hidden="true">€</span>
+                            <input class="input num right" [id]="'target-' + line.productId" type="number" min="0" step="0.01" inputmode="decimal"
+                                   [value]="fixed4(line.landedUnitEur)" (change)="setTargetUnit(line.productId, line, $any($event.target).value)" />
+                          </div>
+                          <span class="hint">Zonder Enrosed kost kost dit product {{ basePerPiece(line) | eur: 4 }} per stuk.</span>
+                        </div>
                       }
                     </div>
 
@@ -826,16 +835,26 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           </div>
                           <span class="hint">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product, bij de productregels' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="startManualSplit()">zelf verdelen per product</button> }</span>
                           @if (manualExtra()) {
-                            <div class="po-split">
-                              <span class="po-split__sum" [class.po-split__sum--short]="extraSplitRemainder() > 0.004" [class.po-split__sum--over]="extraSplitRemainder() < -0.004"><b>{{ extraSplitSpread() | eur }}</b> verdeeld van {{ data.order.extraRevenueEur | eur }}@if (extraSplitRemainder() > 0.004) { · nog {{ extraSplitRemainder() | eur }} te verdelen } @else if (extraSplitRemainder() < -0.004) { · {{ -extraSplitRemainder() | eur }} meer dan de Enrosed kost } @else { · ✓ alles verdeeld }</span>
-                              <span class="fin-chips">
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('PIECES')">Naar stuks</button>
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('VALUE')">Naar waarde</button>
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('CBM')">Naar volume</button>
-                                <button type="button" class="fin-chip" (click)="fillExtraSplit('EVEN')">Gelijk</button>
-                                @if (extraSplitRemainder() > 0.004) { <button type="button" class="fin-chip" (click)="extraSplitRestToLast()">Rest op laatste</button> }
-                                <button type="button" class="linklike" (click)="endManualSplit()">weer automatisch</button>
-                              </span>
+                            <div class="po-split" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
+                              <div class="po-split__head">
+                                <span class="po-split__title">Zelf verdeeld over de producten</span>
+                                <button class="linklike" type="button" (click)="endManualSplit()">Weer automatisch</button>
+                              </div>
+                              <div class="payments-meter po-split__meter"><div class="payments-meter__fill" [style.width.%]="extraSplitPct()"></div></div>
+                              <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }}
+                                @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }} te verdelen</em> }
+                                @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} meer dan de Enrosed kost</em> }
+                                @else { <em>· alles verdeeld</em> }</p>
+                              <div class="po-split__fill">
+                                <span>Vul in</span>
+                                <span class="fin-chips">
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('PIECES')">naar stuks</button>
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('VALUE')">naar waarde</button>
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('CBM')">naar volume</button>
+                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('EVEN')">gelijk</button>
+                                  @if (extraSplitRemainder() > 0.004) { <button type="button" class="fin-chip fin-chip--warn" (click)="extraSplitRestToLast()">rest op de laatste</button> }
+                                </span>
+                              </div>
                             </div>
                           }
                         </div>
@@ -848,7 +867,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                    (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
                             <span class="input-affix__suffix">EUR</span>
                           </div>
-                          <span class="hint">Apart lijntje, niet in de stukprijs.</span>
+                          <span class="hint">In de stukprijs, verdeeld naar goederenwaarde.</span>
                         </div>
                       </div>
                       <div class="other-costs span-2" aria-label="Andere kosten">
@@ -875,7 +894,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         <button class="other-costs__add" type="button" (click)="addOtherCost()">
                           <span aria-hidden="true">+</span>
                           <b>Andere kost</b>
-                          <small>certificaat, labo, staal … apart, niet in de stukprijs</small>
+                          <small>certificaat, labo, staal … in de stukprijs verdeeld</small>
                         </button>
                       </div>
                     </div>
@@ -2624,6 +2643,7 @@ export class PurchaseEditor {
   readonly manualExtra = computed(() => this.view()?.order.allocExtra === 'MANUAL');
   readonly extraSplitSpread = computed(() => round2((this.view()?.order.lines ?? []).reduce((sum, line) => sum + (line.extraShareEur ?? 0), 0)));
   readonly extraSplitRemainder = computed(() => round2((this.view()?.order.extraRevenueEur || 0) - this.extraSplitSpread()));
+  readonly extraSplitPct = computed(() => { const target = this.view()?.order.extraRevenueEur || 0; return target > 0 ? Math.min(100, this.extraSplitSpread() / target * 100) : 0; });
 
   allocationLabel(allocation: Allocation | null | undefined): string {
     return allocation === 'CBM' ? 'naar volume' : allocation === 'VALUE' ? 'naar goederenwaarde' : allocation === 'MANUAL' ? 'zelf per product' : 'naar aantal stuks';
@@ -2655,6 +2675,22 @@ export class PurchaseEditor {
   /** The Enrosed kost inside one piece of a costed line. */
   extraPerPiece(line: { quantity: number; extraRevenueEur: number }): number {
     return line.quantity > 0 ? line.extraRevenueEur / line.quantity : 0;
+  }
+
+  /** The landed piece price without any Enrosed kost: what a target price is measured against. */
+  basePerPiece(line: { quantity: number; totalEur: number; extraRevenueEur: number }): number {
+    return line.quantity > 0 ? (line.totalEur - line.extraRevenueEur) / line.quantity : 0;
+  }
+
+  /** The other way round: a target landed price per piece, and the line's Enrosed kost follows from it. */
+  setTargetUnit(productId: number, line: { quantity: number; totalEur: number; extraRevenueEur: number }, raw: unknown): void {
+    const target = Number(String(raw ?? '').replace(',', '.'));
+    if (!Number.isFinite(target)) return;
+    this.setLine(productId, { extraShareEur: round2(Math.max(0, (target - this.basePerPiece(line)) * line.quantity)) });
+  }
+
+  fixed4(value: number | null | undefined): string {
+    return Number.isFinite(value as number) ? (value as number).toFixed(4) : '';
   }
 
   /** Spreads the whole Enrosed kost by a key, cents landing on the last line, as a start to adjust by hand. */
