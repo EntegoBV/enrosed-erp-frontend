@@ -36,6 +36,7 @@ import { Diary } from './diary';
 import { ProductDraft } from '../../shared/product-picker';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
+import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe, ceilTo } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
@@ -92,7 +93,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1715,11 +1716,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     } @else {
       <app-page-header title="Inkoop" subtitle="Inkooporder laden…"
                        [showBack]="true" [showBell]="false" />
-      <div class="content po-page">
-        <div class="loading-card" role="status" aria-live="polite">
-          <span class="loading-card__mark" aria-hidden="true"></span>
-          <span>Inkooporder laden…</span>
-        </div>
+      <div class="content po-page" role="status" aria-live="polite" aria-label="Inkooporder laden">
+        <app-skeleton kind="card" [rows]="1" />
+        <app-skeleton kind="stats" [rows]="3" />
+        <app-skeleton kind="list" [rows]="4" />
       </div>
     }
   `,

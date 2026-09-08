@@ -32,9 +32,20 @@ export function autoPiecesPerCarton(product: Product): number | null {
   return per > 0 ? per : null;
 }
 
-/** Pieces times the piece's own weight; null while either is unknown. */
+/**
+ * Pieces times the weight of one packed piece; null while either is unknown.
+ * A gift box or display weighs with the product inside, so once there is
+ * packaging its weight is the one that goes in the carton.
+ */
 export function autoCartonWeightKg(product: Product, pieces: number | null): number | null {
-  const unitWeight = product.dimensions?.weightKg;
+  const unitWeight = packedPieceWeightKg(product);
   if (!unitWeight || !pieces || pieces <= 0) return null;
   return Math.round(unitWeight * pieces * 100) / 100;
+}
+
+/** What one piece weighs as it ships: in its gift box or display when it has one, bare otherwise. */
+export function packedPieceWeightKg(product: Product): number | null {
+  const packaging = product.packaging;
+  if (packaging && packaging.kind !== 'NONE' && packaging.dimensions?.weightKg) return packaging.dimensions.weightKg;
+  return product.dimensions?.weightKg ?? null;
 }

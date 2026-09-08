@@ -17,6 +17,7 @@ import {
   productVariantOptionLabel,
 } from './product-variant-navigation';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
+import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
@@ -53,7 +54,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
+  imports: [Skeleton, ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -824,6 +825,13 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
         </app-sheet>
       }
 
+    } @else {
+      <app-page-header title="Product" subtitle="Laden…" [showBack]="true" [showBell]="false" />
+      <div class="content" role="status" aria-live="polite" aria-label="Product laden">
+        <app-skeleton kind="card" [rows]="1" />
+        <app-skeleton kind="stats" [rows]="3" />
+        <app-skeleton kind="lines" [rows]="6" />
+      </div>
     }
   `,
   styles: `

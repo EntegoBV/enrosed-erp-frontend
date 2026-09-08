@@ -12,6 +12,7 @@ import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
+import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
@@ -48,7 +49,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1212,7 +1213,11 @@ type DeskRow =
       }
     } @else {
       <app-page-header title="Inkoop" subtitle="Inkooporder laden…" [showBack]="true" [showBell]="false" />
-      <div class="content"><div class="desk-loading" role="status" aria-live="polite">Inkooporder laden…</div></div>
+      <div class="content desk-skeleton" role="status" aria-live="polite" aria-label="Inkooporder laden">
+        <app-skeleton kind="card" [rows]="1" />
+        <app-skeleton kind="stats" [rows]="4" />
+        <app-skeleton kind="list" [rows]="5" />
+      </div>
     }
   `,
   styles: [`

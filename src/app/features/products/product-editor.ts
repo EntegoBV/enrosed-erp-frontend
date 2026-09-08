@@ -421,7 +421,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   </span>
                 </label>
                 <label class="measure-field">
-                  <span>Gewicht</span>
+                  <span>Gewicht incl. product</span>
                   <span class="measure-field__control">
                     <input class="input num right" appDecimal
                            [ngModel]="draft().packaging.dimensions.weightKg"
@@ -430,7 +430,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   </span>
                 </label>
               </div>
-              <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat.</p>
+              <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat. Het gewicht is dat van de {{ draft().packaging.kind === 'DISPLAY' ? 'gevulde display' : 'geschenkverpakking mét het product erin' }}; daarmee rekent de omdoos.</p>
               @if (draft().packaging.kind === 'DISPLAY') {
                 <div class="field mt-8">
                   <label class="req" for="p-packaging-pieces">Stuks in de display</label>
@@ -580,7 +580,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <span class="input-affix__suffix">kg</span>
               </div>
               @if (autoCartonWeight() !== null) {
-                <span class="hint">Leeg = stuks per karton × gewicht per stuk.</span>
+                <span class="hint">Leeg = stuks per karton × gewicht per stuk{{ draft().packaging.kind !== 'NONE' ? ' in zijn verpakking' : '' }}.</span>
               }
             </div>
             <div class="field">
