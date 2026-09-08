@@ -722,7 +722,13 @@ type DeskRow =
                             <li [class.instalments__item--paid]="step.state === 'paid'" [class.instalments__item--due]="step.state === 'due'">
                               <i aria-hidden="true">{{ step.state === 'paid' ? '✓' : (step.state === 'due' ? '!' : '·') }}</i>
                               <span class="instalments__what"><b>{{ step.label }}</b>
-                                <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small></span>
+                                @if (step.state === 'paid') {
+                                  <small><s>{{ step.full | eur }}</s> · betaald</small>
+                                } @else if (step.covered > 0) {
+                                  <small><s>{{ step.full | eur }}</s> nog {{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : ' · later' }}</small>
+                                } @else {
+                                  <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
+                                }</span>
                               @if (step.state === 'due') { <button class="btn btn--sm" type="button" (click)="openPayment(step.amount, step.label, 'SUPPLIER')">Noteren</button> }
                             </li>
                           }
@@ -734,7 +740,12 @@ type DeskRow =
                         <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
                           <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
                         <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
-                        <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Betaling verwijderen" (click)="removePayment(payment)">×</button>
+                        <span class="pay-line__actions">
+                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
+                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
+                          <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Betaling verwijderen" (click)="removePayment(payment)">×</button>
+                        </span>
                       </div>
                     }
                     @if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
@@ -752,7 +763,12 @@ type DeskRow =
                           <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
                             <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
                           <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                          <span class="pay-line__actions">
+                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
+                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
                           <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Betaling verwijderen" (click)="removePayment(payment)">×</button>
+                        </span>
                         </div>
                       }
                       @if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
@@ -1063,7 +1079,7 @@ type DeskRow =
       }
 
       @if (paying(); as pay) {
-        <app-sheet [title]="pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier'" (closed)="paying.set(null)">
+        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + (pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier')" (closed)="paying.set(null)">
           <div body>
             <!-- Deposits are fractions of the goods: one tap fills them in. -->
             <div class="pay-chips" role="group" aria-label="Snel invullen">
@@ -1104,12 +1120,17 @@ type DeskRow =
                 <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
                        [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
               </div>
+              <div class="field span-2">
+                <label for="pay-proof">Bankafschrift <span class="opt"></span></label>
+                <input class="input" id="pay-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" (change)="paying.set({ ...pay, files: pickProofFiles($event) })" />
+                <span class="hint">{{ pay.files.length ? pay.files.length + ' bestand(en) gekozen · ' : '' }}Tot 5 bestanden; ze komen bij Dossier als betaalbewijs bij deze betaling.</span>
+              </div>
             </div>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
             <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
-              {{ payingBusy() ? 'Bezig…' : 'Betaling bewaren' }}
+              {{ payingBusy() ? 'Bezig…' : (pay.id ? 'Aanpassen' : 'Betaling bewaren') }}
             </button>
           </div>
         </app-sheet>
@@ -1233,6 +1254,8 @@ type DeskRow =
     }
   `,
   styles: [`
+    .instalments__item--paid .instalments__what b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
+    .pay-line__actions{display:inline-flex;align-items:center;gap:2px}.pay-line__btn{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;cursor:pointer}.pay-line__btn:hover{background:var(--surface-3)}.pay-line__proof{color:var(--muted);font-size:11px;margin-right:2px}
     .pay-split__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pay-split__grid label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
     /* Sheets shared with the editor: note a payment, report damage, first instalment. */
     .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
