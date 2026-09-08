@@ -608,7 +608,7 @@ type DeskRow =
                             @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }}</em> }
                             @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} erboven</em> }
                             @else { <em>· alles verdeeld</em> }</p>
-                          @if (negativeExtra()) { <p class="po-split__warn">Een product staat onder nul: eerst rechtzetten, dan bewaren.</p> }
+                          @if (negativeExtra()) { <p class="po-split__warn">Totaal onder nul: eerst rechtzetten, dan bewaren.</p> }
                           <span class="po-split__actions">
                             <button class="linklike" type="button" (click)="extraSplitOpen.set(true)">Verdeling aanpassen ›</button>
                             <button class="linklike" type="button" (click)="endManualSplit()">weer automatisch</button>

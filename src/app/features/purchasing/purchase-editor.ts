@@ -841,7 +841,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                               @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }}</em> }
                               @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} erboven</em> }
                               @else { <em>· alles verdeeld</em> }</p>
-                            @if (negativeExtra()) { <p class="po-split__warn">Een product staat onder nul: eerst rechtzetten, dan bewaren.</p> }
+                            @if (negativeExtra()) { <p class="po-split__warn">Totaal onder nul: eerst rechtzetten, dan bewaren.</p> }
                             <span class="po-split__actions">
                               <button class="linklike" type="button" (click)="extraSplitOpen.set(true)">Verdeling aanpassen ›</button>
                               <button class="linklike" type="button" (click)="endManualSplit()">weer automatisch</button>
@@ -2634,8 +2634,8 @@ export class PurchaseEditor {
   readonly extraSplitOpen = signal(false);
   readonly manualExtra = computed(() => this.view()?.order.allocExtra === 'MANUAL');
   readonly extraSplitSpread = computed(() => round2((this.view()?.order.lines ?? []).reduce((sum, line) => sum + (line.extraShareEur ?? 0), 0)));
-  /** A line below zero: the order cannot be saved until it is put right. */
-  readonly negativeExtra = computed(() => (this.view()?.order.lines ?? []).some((line) => (line.extraShareEur ?? 0) < 0));
+  /** The container's Enrosed kost below zero: the order cannot be saved until it is put right. */
+  readonly negativeExtra = computed(() => this.manualExtra() && this.extraSplitSpread() < 0);
   readonly extraSplitRemainder = computed(() => round2((this.view()?.order.extraRevenueEur || 0) - this.extraSplitSpread()));
   readonly extraSplitPct = computed(() => { const target = this.view()?.order.extraRevenueEur || 0; return target > 0 ? Math.min(100, this.extraSplitSpread() / target * 100) : 0; });
 
@@ -2903,7 +2903,7 @@ export class PurchaseEditor {
     const data = this.view();
     if (!data || this.saving()) return null;
     if (this.negativeExtra()) {
-      this.ui.toast('Een product staat onder nul bij de Enrosed kost; zet dat eerst recht', 'err');
+      this.ui.toast('De Enrosed kost van de container staat in totaal onder nul; zet dat eerst recht', 'err');
       return null;
     }
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }

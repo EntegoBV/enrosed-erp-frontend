@@ -37,7 +37,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
               @if (remainder() > 0.004) { <em>· nog {{ remainder() | eur: 0 }}</em> }
               @else if (remainder() < -0.004) { <em>· {{ -remainder() | eur: 0 }} boven de Enrosed kost, dat mag</em> }
               @else { <em>· alles verdeeld</em> }</p>
-            @if (negative()) { <p class="xs__warn">Een product staat onder nul: de kostprijs ligt onder wat het zonder Enrosed kost al kost. Zet dat recht, anders kan de order niet bewaard worden.</p> }
+            @if (negative()) { <p class="xs__warn">Totaal onder nul</p> }
             <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct()"></div></div>
           </div>
           <div class="xs__fill">
@@ -55,7 +55,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
             <span>Product</span><span class="num">Stuks</span><span class="num">Zonder Enrosed kost</span><span>Enrosed kost</span><span>Kostprijs / stuk</span>
           </div>
           @for (row of rows(); track row.productId) {
-            <div class="xs__row" role="row" [class.xs__row--negative]="row.shareEur < 0">
+            <div class="xs__row" role="row">
               <span class="xs__name"><b>{{ row.name }}</b><small>{{ row.quantity | num }} stuks · zonder Enrosed kost {{ row.baseUnit | eurUp: 3 }}</small></span>
               <span class="xs__qty num">{{ row.quantity | num }}</span>
               <span class="xs__base num">{{ row.baseUnit | eurUp: 3 }}</span>
@@ -84,7 +84,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
       <div foot style="display:contents">
         <button class="btn btn--danger" type="button" (click)="automatic.emit()">Weer automatisch</button>
         <span class="spacer"></span>
-        <button class="btn btn--primary" type="button" (click)="closed.emit()">Klaar</button>
+        <button class="btn btn--primary" type="button" [disabled]="negative()" [title]="negative() ? 'De Enrosed kost van de container kan in totaal niet onder nul liggen' : ''" (click)="closed.emit()">Klaar</button>
       </div>
     </app-sheet>
   `,
@@ -106,7 +106,6 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
     .xs__head { padding: 0 12px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
     .xs__head .num { text-align: right; }
     .xs__row { padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-    .xs__row--negative { border-color: var(--danger, #b3261e); background: var(--danger-soft, #fdecea); }
     .xs__name { display: grid; min-width: 0; }
     .xs__name b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
     .xs__name small { display: none; color: var(--muted); font-size: 11px; }
@@ -162,7 +161,8 @@ export class PurchaseExtraSplit {
   readonly spread = computed(() => round2(this.rows().reduce((sum, row) => sum + row.shareEur, 0)));
   readonly remainder = computed(() => round2(this.target() - this.spread()));
   readonly pct = computed(() => (this.target() > 0 ? Math.min(100, Math.max(0, this.spread()) / this.target() * 100) : 0));
-  readonly negative = computed(() => this.rows().some((row) => row.shareEur < 0));
+  /** One product may carry less than nothing when another carries more; the container as a whole may not. */
+  readonly negative = computed(() => this.spread() < 0);
 
   shareText(row: SplitRow): string {
     return row.shareEur ? String(row.shareEur) : '';
