@@ -420,6 +420,13 @@ a { color: var(--rose); }
   .appbar { padding: var(--safe-t) 20px 0; }
 }
 
+/* A Fold shows only the four doors in its rail: home, sales, purchasing and products;
+   everything else waits under Meer, as on a phone. */
+@media (min-width: 680px) and (max-width: 899.98px) {
+  .sidebar .sidebar__link:not([data-rail-main]):not(.sidebar__link--rail) { display: none; }
+  .sidebar .sidebar__link--rail { margin-top: 6px; border-top: 1px solid var(--line); border-radius: 0; padding-top: 12px; }
+}
+
 @media (min-width: 1024px) {
   :root { --appbar-h: calc(62px + var(--safe-t)); }
   .shell { flex-direction: row; }

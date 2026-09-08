@@ -42,7 +42,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               <button class="sidebar__expand" type="button" title="Menu uitklappen"
                       aria-label="Menu uitklappen" data-expand>»</button>
             }
-            <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active">
+            <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active" data-rail-main>
               <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
             </a>
             <button class="sidebar__group" type="button" (click)="toggleGroup('verkoop')"
@@ -60,7 +60,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
             </button>
             <div class="sidebar__sub" id="sidebar-verkoop"
                  [class.sidebar__sub--closed]="!groupOpen('verkoop')">
-              <a class="sidebar__link" routerLink="/sales" routerLinkActive="active">
+              <a class="sidebar__link" routerLink="/sales" routerLinkActive="active" data-rail-main>
                 <app-icon class="sidebar__icon" name="sales" [size]="18" />
                 <span class="sidebar__text sidebar__text--full">Verkooporders</span>
                 <span class="sidebar__text sidebar__text--rail">Verkoop</span>
@@ -93,8 +93,10 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
             </button>
             <div class="sidebar__sub" id="sidebar-inkoop"
                  [class.sidebar__sub--closed]="!groupOpen('inkoop')">
-              <a class="sidebar__link" routerLink="/purchasing" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkooporders
+              <a class="sidebar__link" routerLink="/purchasing" routerLinkActive="active" data-rail-main>
+                <app-icon class="sidebar__icon" name="purchase" [size]="18" />
+                <span class="sidebar__text sidebar__text--full">Inkooporders</span>
+                <span class="sidebar__text sidebar__text--rail">Inkoop</span>
               </a>
               <a class="sidebar__link" routerLink="/suppliers" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="suppliers" [size]="18" /> Leveranciers
@@ -117,7 +119,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
             </button>
             <div class="sidebar__sub" id="sidebar-producten"
                  [class.sidebar__sub--closed]="!groupOpen('producten')">
-              <a class="sidebar__link" routerLink="/products" routerLinkActive="active">
+              <a class="sidebar__link" routerLink="/products" routerLinkActive="active" data-rail-main>
                 <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
               </a>
               <a class="sidebar__link" routerLink="/stock" routerLinkActive="active">
