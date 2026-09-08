@@ -35,10 +35,7 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
 
   if (path.startsWith('/analyses')) return 'analyses';
 
-  if (
-    path.startsWith('/activity') || path.startsWith('/costs')
-    || section === 'company'
-  ) return 'bedrijf';
+  if (path.startsWith('/activity') || section === 'company') return 'bedrijf';
 
   return null;
 }

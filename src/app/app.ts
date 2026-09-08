@@ -195,9 +195,6 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
             </button>
             <div class="sidebar__sub" id="sidebar-bedrijf"
                  [class.sidebar__sub--closed]="!groupOpen('bedrijf')">
-              <a class="sidebar__link sidebar__link--wide" routerLink="/costs" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Kosten &amp; bank
-              </a>
               <a class="sidebar__link sidebar__link--wide" routerLink="/activity" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="activity" [size]="18" /> Logboek
               </a>
@@ -210,12 +207,17 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
               </a>
             </div>
 
-            <!-- The two workspaces everyone opens daily stand on their own,
-                 above the company group: the document and photo library first. -->
+            <!-- The workspaces everyone opens daily stand on their own, above
+                 the company group: the library, the money, the website. -->
             <a class="sidebar__link sidebar__link--workspace" routerLink="/files" routerLinkActive="active" data-rail>
               <app-icon class="sidebar__icon" name="media" [size]="18" />
               <span class="sidebar__text sidebar__text--full">Documenten &amp; media</span>
               <span class="sidebar__text sidebar__text--rail">Media</span>
+            </a>
+            <a class="sidebar__link sidebar__link--workspace" routerLink="/costs" routerLinkActive="active" data-rail>
+              <app-icon class="sidebar__icon" name="exchange" [size]="18" />
+              <span class="sidebar__text sidebar__text--full">Kosten &amp; bank</span>
+              <span class="sidebar__text sidebar__text--rail">Kosten</span>
             </a>
             <a class="sidebar__link sidebar__link--workspace" routerLink="/website" routerLinkActive="active">
               <app-icon class="sidebar__icon" name="countries" [size]="18" />

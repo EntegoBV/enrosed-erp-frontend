@@ -13,11 +13,17 @@ import { THEMES, Theme } from '../../core/platform/theme';
     <app-page-header title="Meer" [subtitle]="'Aangemeld als ' + (auth.username() ?? '')" />
 
     <div class="content">
-      <!-- The library everyone reaches for daily stands on top, not inside a group. -->
+      <!-- The workspaces everyone reaches for daily stand on top, not inside a group. -->
       <a class="list-item card more-shortcut" routerLink="/files">
         <span class="thumb thumb--placeholder"><app-icon name="media" /></span>
         <div class="list-item__body"><div class="list-item__title">Documenten &amp; media</div>
           <div class="list-item__meta">Foto’s, PDF’s en bestanden beheren en delen</div></div>
+        <span class="list-item__chev">›</span>
+      </a>
+      <a class="list-item card more-shortcut" routerLink="/costs">
+        <span class="thumb thumb--placeholder"><app-icon name="exchange" /></span>
+        <div class="list-item__body"><div class="list-item__title">Kosten &amp; bank</div>
+          <div class="list-item__meta">Kosten, vaste kosten, banksaldo en analyse</div></div>
         <span class="list-item__chev">›</span>
       </a>
 
@@ -180,16 +186,10 @@ import { THEMES, Theme } from '../../core/platform/theme';
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="settings" /></span>
           <span class="more-group__copy"><strong>Bedrijf</strong>
-            <small>Kosten &amp; bank · Logboek · Bedrijfsgegevens · Voorwaarden &amp; privacy</small></span>
+            <small>Logboek · Bedrijfsgegevens · Voorwaarden &amp; privacy</small></span>
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
-          <a class="list-item" routerLink="/costs">
-            <span class="thumb thumb--placeholder"><app-icon name="activity" /></span>
-            <div class="list-item__body"><div class="list-item__title">Kosten &amp; bank</div>
-              <div class="list-item__meta">Kosten, vaste kosten die vanzelf geboekt worden, banksaldo</div></div>
-            <span class="list-item__chev">›</span>
-          </a>
           <a class="list-item" routerLink="/activity">
             <span class="thumb thumb--placeholder"><app-icon name="activity" /></span>
             <div class="list-item__body"><div class="list-item__title">Logboek</div>
