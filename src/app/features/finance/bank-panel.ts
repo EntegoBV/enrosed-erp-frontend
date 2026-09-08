@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { MovementKind } from './finance-metrics';
@@ -10,7 +11,7 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
 @Component({
   selector: 'app-bank-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EurPipe, DateNlPipe, TrendChart],
+  imports: [RouterLink, EurPipe, DateNlPipe, TrendChart],
   template: `
     <section class="fin-kpis fin-kpis--4" aria-label="Bank samengevat">
       <article class="card fin-kpi fin-kpi--dark"><small>Op de bank nu</small><strong>{{ state.currentBankEur() | eur: 0 }}</strong>
@@ -60,11 +61,15 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
           <span><small>Nu</small><b>{{ moves().currentEur | eur }}</b></span>
         </div>
         <div class="fin-list">
-          @for (row of moves().rows; track row.kind + row.date + row.label + row.amountEur) {
+          @for (row of moves().rows; track row.key ?? $index) {
             <div class="fin-move">
               <span class="fin-move__date">{{ row.date | dateNl }}</span>
               <span class="fin-move__kind" [attr.data-kind]="row.kind">{{ kindLabel(row.kind) }}</span>
-              <span class="fin-move__body"><b>{{ row.label }}</b><small>{{ row.detail }}</small></span>
+              <span class="fin-move__body">
+                @if (row.purchaseOrderId) { <a class="linklike" [routerLink]="['/purchasing', row.purchaseOrderId]"><b>{{ row.label }} ›</b></a> }
+                @else { <b>{{ row.label }}</b> }
+                <small>{{ row.detail }}</small>
+              </span>
               <strong [class.fin-up]="row.amountEur > 0" [class.fin-down]="row.amountEur < 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</strong>
             </div>
           }

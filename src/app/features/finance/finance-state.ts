@@ -10,6 +10,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { Ui } from '../../shared/ui';
 import { PaidInvoice, addDays, bankOverview, cashOutlook, inclOf, movementsSince, upcomingRecurring } from './finance-metrics';
 import { TODAY, blankBalance, blankCost, blankRecurring } from './finance-sections';
+import { costLedger } from './cost-ledger';
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const eur = (value: number): string => value.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,6 +35,8 @@ export class FinanceState {
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly customers = signal<Customer[]>([]);
   readonly payments = signal<PurchasePaymentRow[]>([]);
+  /** The common costs list; container rows always follow their original payment. */
+  readonly ledger = computed(() => costLedger(this.costs(), this.payments()));
   /** Every file linked to a cost: the invoices, receipts and contracts. */
   readonly attachments = signal<MediaAssetSummary[]>([]);
   readonly uploading = signal(false);
@@ -94,6 +97,7 @@ export class FinanceState {
       if (orders.status === 'fulfilled') this.salesOrders.set(orders.value);
       if (customers.status === 'fulfilled') this.customers.set(customers.value);
       if (payments.status === 'fulfilled') this.payments.set(payments.value);
+      else this.ui.toast(messageOf(payments.reason, 'Containerbetalingen laden mislukt; kosten en banksaldo kunnen onvolledig zijn'), 'err');
       if (attachments.status === 'fulfilled') this.attachments.set(attachments.value);
     } finally {
       this.loading.set(false);

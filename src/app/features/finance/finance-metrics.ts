@@ -1,4 +1,4 @@
-import type { BankBalance, CompanyCost, RecurringCost, RecurringInterval } from '../../core/api/models';
+import type { BankBalance, CompanyCost, Payee, RecurringCost, RecurringInterval } from '../../core/api/models';
 
 /*
  * Pure arithmetic for the Kosten & bank workspace: the rhythm of a recurring
@@ -257,6 +257,8 @@ export type MovementKind = 'COST' | 'PURCHASE' | 'INVOICE';
 
 /** One thing the ERP saw move on the bank after the last reading: out is negative, in is positive. */
 export interface BankMovement {
+  key?: string;
+  purchaseOrderId?: number;
   date: string;
   kind: MovementKind;
   label: string;
@@ -274,7 +276,7 @@ export interface BankMovements {
   currentEur: number;
 }
 
-export interface PurchasePaymentLike { paidOn: string; amountEur: number; orderNumber: string | null; orderAlias?: string | null; label: string | null }
+export interface PurchasePaymentLike { id?: number; orderId?: number; paidOn: string; amountEur: number; orderNumber: string | null; orderAlias?: string | null; label: string | null; payee?: Payee | null }
 export interface PaidInvoice { date: string; number: string; customer: string | null; amountEur: number }
 
 /**
@@ -291,12 +293,18 @@ export function movementsSince(since: string | null, bankEur: number, costs: rea
       rows.push({ date: cost.paidOn, kind: 'COST', label: cost.description, detail: cost.party ? `${cost.party} · kost` : 'kost', amountEur: -inclOf(cost) });
     }
   }
+  const seenPaymentIds = new Set<number>();
   for (const payment of payments) {
+    if (payment.id !== undefined && seenPaymentIds.has(payment.id)) continue;
+    if (payment.id !== undefined) seenPaymentIds.add(payment.id);
     if (payment.paidOn > since) {
+      const payee = payment.payee === 'LOGISTICS' ? 'Logistiek / douane' : payment.payee === 'SEPARATE' ? 'Aparte kosten'
+        : payment.payee === 'OTHER' ? 'Overige ontvanger' : payment.payee === 'SUPPLIER' ? 'Leverancier' : null;
       rows.push({
         date: payment.paidOn, kind: 'PURCHASE',
+        key: payment.id !== undefined ? `payment:${payment.id}` : undefined, purchaseOrderId: payment.orderId,
         label: payment.orderNumber ? `Inkoop ${payment.orderNumber}` : 'Inkoopbetaling',
-        detail: [payment.orderAlias, payment.label].filter((part): part is string => !!part).join(' · ') || 'inkoop',
+        detail: [payment.orderAlias, payee, payment.label].filter((part): part is string => !!part).join(' · ') || 'inkoop',
         amountEur: -finite(payment.amountEur),
       });
     }

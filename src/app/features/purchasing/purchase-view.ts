@@ -13,6 +13,7 @@ import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
+import { PurchaseReconciliation } from './purchase-reconciliation';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
@@ -57,7 +58,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -654,8 +655,9 @@ type PurchaseWorkspaceSectionId =
               <h2 id="purchase-payments-title">
                 @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
               </h2>
-              <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paidTo('OTHER') > 0) { · {{ paidTo('OTHER') | eur }} andere betalingen }@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</p>
+              <p>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</p>
               <div class="purchase-payment-streams">
+              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" />
               <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
               <div class="pay-stream">
                 <div class="pay-stream__head">
@@ -691,7 +693,7 @@ type PurchaseWorkspaceSectionId =
                   <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                 }
               </div>
-              @if ((data.payable?.logisticsEur ?? 0) > 0 || paymentsTo('LOGISTICS').length) {
+              @if (logisticsOwed() > 0 || paymentsTo('LOGISTICS').length) {
                 <div class="pay-stream">
                   <div class="pay-stream__head">
                     <span><b>Douane &amp; transport tot lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</b><small>invoerrechten, transport, aankomst · na aankomst</small></span>
@@ -1228,7 +1230,7 @@ export class PurchaseView {
     });
   }
   readonly statusLabel$ = STATUS_LABEL;
-  readonly supplierOwed = computed(() => this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
+  readonly supplierOwed = computed(() => this.reconciliationStream('SUPPLIER')?.plannedEur ?? this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
 
   /**
    * The plan's instalments against what was paid, as the editor shows them:
@@ -1263,16 +1265,21 @@ export class PurchaseView {
       return { label: step.label, amount: ask, full, covered, state: (reached[step.due] ? 'due' : 'later') as 'due' | 'later' };
     });
   });
-  readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
+  readonly logisticsOwed = computed(() => this.reconciliationStream('LOGISTICS')?.plannedEur ?? this.view()?.payable?.logisticsEur ?? 0);
   readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed() + this.separateOwed());
-  readonly paidAll = computed(() => (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
+  readonly paidAll = computed(() => this.view()?.reconciliation?.totals.paidEur ?? (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
   /** A stream is settled once a payment on it says so: nothing stays open, the difference is ours. */
+  reconciliationStream(payee: Payee) {
+    return this.view()?.reconciliation?.streams.find((stream) => stream.payee === payee);
+  }
+
   settledFor(payee: Payee): boolean {
-    return this.paymentsTo(payee).some((payment) => !!payment.settles);
+    return this.reconciliationStream(payee)?.explicitlySettled
+      ?? this.paymentsTo(payee).some((payment) => !!payment.settles);
   }
 
   /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */
-  readonly separateOwed = computed(() => this.view()?.costing.totals.separateCostsEur ?? 0);
+  readonly separateOwed = computed(() => this.reconciliationStream('SEPARATE')?.plannedEur ?? this.view()?.costing.totals.separateCostsEur ?? 0);
 
   owedFor(payee: Payee): number {
     switch (payee) {
@@ -1289,6 +1296,8 @@ export class PurchaseView {
   }
 
   openFor(payee: Payee): number {
+    const stream = this.reconciliationStream(payee);
+    if (stream) return stream.remainingEur;
     if (this.settledFor(payee) || payee === 'OTHER') return 0;
     const owed = this.owedFor(payee);
     const open = Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
@@ -1298,12 +1307,12 @@ export class PurchaseView {
   /** The difference worth mentioning: beyond the small change of paying. */
   notableDifferenceFor(payee: Payee): number {
     const difference = this.differenceFor(payee);
-    return withinTolerance(difference) ? 0 : difference;
+    return this.reconciliationStream(payee) ? difference : withinTolerance(difference) ? 0 : difference;
   }
 
   smallChangeFor(payee: Payee): number {
     const difference = this.differenceFor(payee);
-    return withinTolerance(difference) ? difference : 0;
+    return this.reconciliationStream(payee) ? 0 : withinTolerance(difference) ? difference : 0;
   }
 
   readonly tolerance = PAYMENT_TOLERANCE_EUR;
@@ -1313,7 +1322,7 @@ export class PurchaseView {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
   }
   paidTo(payee: Payee): number {
-    return this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
+    return this.reconciliationStream(payee)?.paidEur ?? this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
   }
   pct(paid: number, owed: number): number {
     return owed > 0 ? Math.min(100, Math.round((paid / owed) * 100)) : 0;

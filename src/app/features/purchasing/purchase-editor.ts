@@ -22,6 +22,7 @@ import { Fx } from '../../core/api/fx';
 import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
+import { PurchaseReconciliation } from './purchase-reconciliation';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
@@ -94,7 +95,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1132,9 +1133,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <h2 id="purchase-payments-title">
                   @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
                 </h2>
-                <p>Te betalen: {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paidTo('OTHER') > 0) { · {{ paidTo('OTHER') | eur }} andere betalingen }@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</p>
+                <p>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</p>
               </div>
 
+              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
               <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
 
               <div class="pay-stream">
@@ -1181,7 +1183,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 }
                 @if (settledFor('SUPPLIER')) {
                   <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
-                } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) {
+                } @else if (reconciliationStream('SUPPLIER')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('SUPPLIER')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) {
                   <p class="pay-stream__done">✓ Volledig betaald{{ paidTo('SUPPLIER') < supplierOwed() - 0.005 ? ' · ' + ((supplierOwed() - paidTo('SUPPLIER')) | eur) + ' minder, binnen de marge van ' + (tolerance | eur: 0) : '' }}</p>
                 }
                 <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
@@ -1208,7 +1210,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   }
                   @if (settledFor('LOGISTICS')) {
                     <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('LOGISTICS') === 0 ? '' : (notableDifferenceFor('LOGISTICS') > 0 ? ' · ' + (notableDifferenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
-                  } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) {
+                  } @else if (reconciliationStream('LOGISTICS')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('LOGISTICS')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) {
                     <p class="pay-stream__done">✓ Volledig betaald</p>
                   }
                   <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
@@ -1235,7 +1237,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 }
                 @if (settledFor('SEPARATE')) {
                   <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SEPARATE') === 0 ? '' : (notableDifferenceFor('SEPARATE') > 0 ? ' · ' + (notableDifferenceFor('SEPARATE') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('SEPARATE') | eur) + ' minder betaald') }}</p>
-                } @else if (!(openFor('SEPARATE') > 0) && separateOwed() > 0) {
+                } @else if (reconciliationStream('SEPARATE')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('SEPARATE')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('SEPARATE') > 0) && separateOwed() > 0) {
                   <p class="pay-stream__done">✓ Volledig betaald</p>
                 }
                 <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SEPARATE')">+ Betaling inspectie of andere kost</button>
@@ -1881,7 +1883,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .pay-stream__head{flex-wrap:wrap}.pay-stream__head>span:last-child{text-align:right;margin-left:auto}
     .po-line__link{display:flex;flex:1;min-width:0;align-items:center;gap:inherit;color:inherit;text-decoration:none}.po-line__link:hover strong{color:var(--rose-dark);text-decoration:underline}
     .line-issue{display:block;padding:4px 0 0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;text-align:left;cursor:pointer}.line-issue:hover{color:var(--rose-dark)}.issue-kind{margin-top:2px}
-    .payments-card .action-card__head,.files-card .action-card__head,.note-card .action-card__head{padding:14px 18px 10px}.note-card__field{display:block;width:100%;padding:0 18px 14px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box}.note-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.note-card__head .linklike{flex:none;margin-top:2px}.note-card__diary{padding:0 18px 12px}.note-card__empty{margin:0;padding:0 18px 14px;color:var(--muted);font-size:12px}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.payments-card .action-card__head h2{font-size:16px}.field .hint--warn{color:var(--danger);font-weight:650}.pay-stream__done{margin:8px 0 2px;color:var(--ok,#2e7d4f);font-size:12.5px;font-weight:650}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
+    .payments-card .action-card__head,.files-card .action-card__head,.note-card .action-card__head{padding:14px 18px 10px}.note-card__field{display:block;width:100%;padding:0 18px 14px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box}.note-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.note-card__head .linklike{flex:none;margin-top:2px}.note-card__diary{padding:0 18px 12px}.note-card__empty{margin:0;padding:0 18px 14px;color:var(--muted);font-size:12px}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.payments-card .action-card__head h2{font-size:16px}.field .hint--warn{color:var(--danger);font-weight:650}.pay-stream__review{margin:8px 0 2px;color:var(--warn);font-size:12px;line-height:1.4}.pay-stream__done{margin:8px 0 2px;color:var(--ok,#2e7d4f);font-size:12.5px;font-weight:650}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
     .instalments{list-style:none;margin:0 18px 6px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
     .instalments__item--paid .instalments__what b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
     .pay-line__actions{display:inline-flex;align-items:center;gap:2px}.pay-line__btn{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;cursor:pointer}.pay-line__btn:hover{background:var(--surface-3)}.pay-line__proof{color:var(--muted);font-size:11px;margin-right:2px}
@@ -2127,8 +2129,13 @@ export class PurchaseEditor {
   readonly paying = signal<{ id?: number | null; amount: number; currency: Currency; paidOn: string; label: string; payee: Payee; files: File[]; settles: boolean } | null>(null);
 
   /** A stream is settled once a payment on it says so: nothing stays open, the difference is ours. */
+  reconciliationStream(payee: Payee) {
+    return this.view()?.reconciliation?.streams.find((stream) => stream.payee === payee);
+  }
+
   settledFor(payee: Payee): boolean {
-    return this.paymentsTo(payee).some((payment) => !!payment.settles);
+    return this.reconciliationStream(payee)?.explicitlySettled
+      ?? this.paymentsTo(payee).some((payment) => !!payment.settles);
   }
 
   /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */
@@ -2140,13 +2147,13 @@ export class PurchaseEditor {
   /** The difference worth mentioning: beyond the small change of paying. */
   notableDifferenceFor(payee: Payee): number {
     const difference = this.differenceFor(payee);
-    return withinTolerance(difference) ? 0 : difference;
+    return this.reconciliationStream(payee) ? difference : withinTolerance(difference) ? 0 : difference;
   }
 
   /** The small change a settled stream came out under or over, when it stayed within the margin. */
   smallChangeFor(payee: Payee): number {
     const difference = this.differenceFor(payee);
-    return withinTolerance(difference) ? difference : 0;
+    return this.reconciliationStream(payee) ? 0 : withinTolerance(difference) ? difference : 0;
   }
 
   readonly tolerance = PAYMENT_TOLERANCE_EUR;
@@ -2155,7 +2162,7 @@ export class PurchaseEditor {
   readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS') + this.notableDifferenceFor('SEPARATE')) * 100) / 100);
 
   /** The inspection and the other named costs on the order: paid apart, to whoever did the work. */
-  readonly separateOwed = computed(() => this.view()?.costing.totals.separateCostsEur ?? 0);
+  readonly separateOwed = computed(() => this.reconciliationStream('SEPARATE')?.plannedEur ?? this.view()?.costing.totals.separateCostsEur ?? 0);
 
   /** What was agreed on a stream; the other payments have no agreement, only what they cost. */
   owedFor(payee: Payee): number {
@@ -2199,16 +2206,16 @@ export class PurchaseEditor {
   readonly payingBusy = signal(false);
 
   /** What the supplier is owed: goods, plus the sea freight when it is in the price. */
-  readonly supplierOwed = computed(() => this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
-  readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
+  readonly supplierOwed = computed(() => this.reconciliationStream('SUPPLIER')?.plannedEur ?? this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
+  readonly logisticsOwed = computed(() => this.reconciliationStream('LOGISTICS')?.plannedEur ?? this.view()?.payable?.logisticsEur ?? 0);
   readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed() + this.separateOwed());
   paymentsTo(payee: Payee): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
   }
   paidTo(payee: Payee): number {
-    return this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
+    return this.reconciliationStream(payee)?.paidEur ?? this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
   }
-  readonly paidAll = computed(() => (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
+  readonly paidAll = computed(() => this.view()?.reconciliation?.totals.paidEur ?? (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
   readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS') + this.openFor('SEPARATE'));
   pct(paid: number, owed: number): number {
     return owed > 0 ? Math.min(100, Math.round((paid / owed) * 100)) : 0;
@@ -2240,6 +2247,8 @@ export class PurchaseEditor {
 
   /** What is still open on the stream a payment goes to. */
   openFor(payee: Payee): number {
+    const stream = this.reconciliationStream(payee);
+    if (stream) return stream.remainingEur;
     if (this.settledFor(payee) || payee === 'OTHER') return 0;
     const owed = this.owedFor(payee);
     const open = Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
@@ -2266,7 +2275,10 @@ export class PurchaseEditor {
   }
 
   private async loadPayments(orderId: number): Promise<void> {
-    try { this.payments.set(await this.sourcing.payments(orderId)); } catch { this.payments.set([]); }
+    try { this.payments.set(await this.sourcing.payments(orderId)); }
+    catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Betalingen laden mislukt; vernieuw de order'), 'err');
+    }
   }
 
   openPayment(amount?: number, label?: string, payee: Payee = 'SUPPLIER'): void {
@@ -2577,7 +2589,11 @@ export class PurchaseEditor {
   /** The server wrote a line in the notes; pick it up without disturbing the draft. */
   private async reloadOrderQuietly(): Promise<void> {
     const data = this.view();
-    if (!data || this.dirty()) return;
+    if (!data) return;
+    if (this.dirty()) {
+      await this.preview();
+      return;
+    }
     try {
       const fresh = await this.sourcing.purchaseOrder(data.order.id);
       ++this.previewVersion;

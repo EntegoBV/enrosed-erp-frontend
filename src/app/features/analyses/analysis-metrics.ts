@@ -1111,7 +1111,7 @@ export interface ResultAnalysis {
   unpaidCostsEur: number;
   /** Margin on the goods minus the company costs. */
   resultEur: number;
-  /** What the containers received in the period cost us landed: money out, not yet a cost of goods sold. */
+  /** External paid cost plus open commitments for received containers; excludes internal markup. */
   purchasedEur: number;
   receivedContainers: number;
   byChannel: ResultChannelRow[];
@@ -1212,7 +1212,9 @@ export function resultAnalysis(
     costsEur,
     unpaidCostsEur: round2(unpaidCostsEur),
     resultEur: round2(marginEur - costsEur),
-    purchasedEur: round2(received.reduce((sum, row) => sum + finiteNonNegative(row.costing?.totals?.totalWithSeparateCostsEur ?? row.costing?.totals?.totalEur), 0)),
+    purchasedEur: round2(received.reduce((sum, row) => sum + finiteNonNegative(row.reconciliation?.totals.forecastExternalEur
+      ?? Math.max(0, finiteNonNegative(row.costing?.totals?.totalWithSeparateCostsEur ?? row.costing?.totals?.totalEur)
+        - finiteNonNegative(row.costing?.totals?.extraRevenueEur))), 0)),
     receivedContainers: received.length,
     byChannel,
     byCategory,

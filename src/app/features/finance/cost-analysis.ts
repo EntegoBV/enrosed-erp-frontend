@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { DateNlPipe, EurPipe, PctPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { channelLabel } from '../sales/sales-channels';
@@ -7,6 +8,7 @@ import { costSummary } from './cost-metrics';
 import { inclOf, largestCosts, monthlyCostSeries, topParties, vatByQuarter, yearComparison } from './finance-metrics';
 import { TODAY, YEAR } from './finance-sections';
 import { FinanceState } from './finance-state';
+import { CONTAINER_PAYMENT_CATEGORIES, costLedgerTotals } from './cost-ledger';
 
 const MONTHS = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 const round2 = (value: number): number => Math.round(value * 100) / 100;
@@ -15,7 +17,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 @Component({
   selector: 'app-cost-analysis',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EurPipe, PctPipe, DateNlPipe, TrendChart],
+  imports: [RouterLink, EurPipe, PctPipe, DateNlPipe, TrendChart],
   template: `
     <div class="fin-filters" role="group" aria-label="Periode">
       <div class="fin-seg">
@@ -30,11 +32,25 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
     </div>
 
     <section class="fin-kpis fin-kpis--4" aria-label="Samenvatting">
-      <article class="card fin-kpi fin-kpi--dark"><small>Kosten excl. btw</small><strong>{{ summary().exclEur | eur: 0 }}</strong><span>{{ summary().inclEur | eur: 0 }} incl. · {{ summary().vatEur | eur: 0 }} btw</span></article>
+      <article class="card fin-kpi fin-kpi--dark"><small>Bedrijfskosten excl. btw</small><strong>{{ summary().exclEur | eur: 0 }}</strong><span>{{ summary().inclEur | eur: 0 }} incl. · {{ summary().vatEur | eur: 0 }} btw</span></article>
       <article class="card fin-kpi"><small>Vast tegenover eenmalig</small><strong>{{ split().recurringPct | pct: 0 }} vast</strong><span>{{ split().recurringEur | eur: 0 }} vast · {{ split().onceEur | eur: 0 }} eenmalig</span></article>
       <article class="card fin-kpi" [class.fin-kpi--warn]="summary().unpaidCount > 0"><small>Betaald tegenover open</small><strong>{{ paidEur() | eur: 0 }}</strong><span>{{ summary().unpaidEur | eur: 0 }} nog open, incl. btw</span></article>
       <article class="card fin-kpi"><small>Gemiddeld per maand</small><strong>{{ perMonth() | eur: 0 }}</strong><span>{{ monthsCounted() }} {{ monthsCounted() === 1 ? 'maand' : 'maanden' }} met kosten</span></article>
     </section>
+
+    @if (containerTotals().containerCount) {
+      <section class="card fin-panel">
+        <header class="fin-panel__head"><div><span class="section-kicker">Containerbetalingen · {{ periodLabel() }}</span><h2>{{ containerTotals().containerPaidEur | eur }} betaald</h2></div>
+          <a class="linklike" routerLink="/analyses/purchasing">Kostprijs & verschillen ›</a>
+        </header>
+        <ul class="fin-top">
+          @for (row of containerStreams(); track row.code) {
+            <li><span class="fin-top__date">{{ row.count }} {{ row.count === 1 ? 'betaling' : 'betalingen' }}</span><span class="fin-top__body"><b>{{ row.label }}</b><small>automatisch gekoppeld</small></span><strong>{{ row.paidEur | eur }}</strong></li>
+          }
+        </ul>
+        <p class="fin-panel__hint">Deze bankuitgaven zijn automatisch gekoppeld aan de container. De bedrijfskosten en btw-totalen hieronder omvatten de afzonderlijk geboekte kosten; containerbetalingen boeken de goederenwaarde niet nogmaals als bedrijfskost.</p>
+      </section>
+    }
 
     <section class="card fin-panel">
       <header class="fin-panel__head"><div><span class="section-kicker">Verloop</span><h2>Laatste twaalf maanden</h2></div></header>
@@ -158,8 +174,8 @@ export class CostAnalysis {
   /** Years with costs beyond this year and last, newest first. */
   readonly otherYears = computed(() => {
     const seen = new Set<number>();
-    for (const cost of this.state.costs()) {
-      const year = Number(cost.date.slice(0, 4));
+    for (const row of this.state.ledger()) {
+      const year = Number(row.date.slice(0, 4));
       if (year && year !== YEAR && year !== YEAR - 1) seen.add(year);
     }
     return [...seen].sort((left, right) => right - left);
@@ -167,6 +183,13 @@ export class CostAnalysis {
   readonly periodLabel = computed(() => (this.year() === 0 ? 'Alle jaren' : this.year() === YEAR ? `${YEAR}, tot vandaag` : String(this.year())));
   readonly rows = computed(() => (this.year() === 0 ? this.state.costs() : this.state.costs().filter((cost) => cost.date.startsWith(String(this.year())))));
   readonly summary = computed(() => costSummary(this.rows()));
+  readonly containerRows = computed(() => this.state.ledger().filter((row) => row.source === 'container'
+    && (this.year() === 0 || row.date.startsWith(`${this.year()}-`))));
+  readonly containerTotals = computed(() => costLedgerTotals(this.containerRows()));
+  readonly containerStreams = computed(() => CONTAINER_PAYMENT_CATEGORIES.map((category) => {
+    const rows = this.containerRows().filter((row) => row.category === category.code);
+    return { ...category, count: rows.length, paidEur: round2(rows.reduce((sum, row) => sum + row.amountEur, 0)) };
+  }).filter((row) => row.count));
   readonly split = computed(() => {
     const recurringEur = round2(this.rows().filter((cost) => cost.recurringCostId).reduce((sum, cost) => sum + (cost.amountExclEur || 0), 0));
     const onceEur = round2(this.summary().exclEur - recurringEur);

@@ -5,7 +5,7 @@ import { api } from './api.config';
 import {
   FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
-  PurchaseDocument, DocumentKind, PurchasePaymentRow,
+  PurchaseDocument, DocumentKind, PurchasePaymentRow, PurchaseReconciliation,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -129,6 +129,14 @@ export class SourcingApi {
 
   payments(orderId: number): Promise<PurchasePayment[]> {
     return firstValueFrom(this.http.get<PurchasePayment[]>(api(`/api/purchase-orders/${orderId}/payments`)));
+  }
+
+  purchaseReconciliation(orderId: number): Promise<PurchaseReconciliation> {
+    return firstValueFrom(this.http.get<PurchaseReconciliation>(api(`/api/purchase-orders/${orderId}/reconciliation`)));
+  }
+
+  purchasePaymentsPdf(orderId: number): Promise<Blob> {
+    return firstValueFrom(this.http.get(api(`/api/purchase-orders/${orderId}/payments/pdf`), { responseType: 'blob' }));
   }
 
   addPayment(orderId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee; settles?: boolean }): Promise<PurchasePayment> {

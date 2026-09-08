@@ -26,6 +26,8 @@ import { FinanceApi } from '../../core/api/finance-api';
 import { channelLabel } from '../sales/sales-channels';
 import { categoryLabel } from '../finance/cost-categories';
 import { MarketAnalysis } from './market-analysis';
+import { ContainerCostAnalysis } from './container-cost-analysis';
+import { purchaseExternalCost } from '../purchasing/purchase-reconciliation-metrics';
 import { WebsiteAnalytics } from './website-analytics';
 import { averageLeadDays, inDateRange, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
@@ -104,7 +106,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
     EurPipe,
     NumPipe,
     PctPipe,
-    MarketAnalysis, WebsiteAnalytics,
+    MarketAnalysis, WebsiteAnalytics, ContainerCostAnalysis,
   ],
   template: `
     <app-page-header title="Analyses" [subtitle]="sectionSubtitle()">
@@ -499,7 +501,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
           <article class="card metric-card metric-card--quality"><span class="metric-card__label">Marge op goederen</span><strong>{{ result().marginEur | eur: 0 }}</strong><p>{{ result().marginPct === null ? 'kost van de goederen ' + (result().goodsCostEur | eur: 0) : (result().marginPct | pct: 1) + ' · goederen kostten ' + (result().goodsCostEur | eur: 0) }}@if (result().missingCostLines) { · {{ result().missingCostLines }} regel(s) zonder kost }</p></article>
           <article class="card metric-card"><span class="metric-card__label">Eigen kosten</span><strong>{{ result().costsEur | eur: 0 }}</strong><p>@if (result().unpaidCostsEur) { {{ result().unpaidCostsEur | eur: 0 }} nog te betalen incl. btw } @else { alles betaald }</p></article>
           <article class="card metric-card" [class.metric-card--danger]="result().resultEur < 0"><span class="metric-card__label">Resultaat</span><strong>{{ result().resultEur | eur: 0 }}</strong><p>marge min eigen kosten</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Ingekocht</span><strong>{{ result().purchasedEur | eur: 0 }}</strong><p>{{ result().receivedContainers }} container(s) ontvangen, gelande kost incl. aparte kosten</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Ingekocht</span><strong>{{ result().purchasedEur | eur: 0 }}</strong><p>{{ result().receivedContainers }} container(s) ontvangen, externe kost volgens actuele afrekening</p></article>
         </div>
         <div class="analysis-columns">
           <article class="card analysis-list scorecard-card">
@@ -569,6 +571,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
       }
 
       @if (section() === 'purchasing') {
+      <app-container-cost-analysis [purchases]="purchases()" [loading]="loading()" />
       <section class="analysis-section purchase-summary" aria-labelledby="purchase-summary-title">
         <header class="section-copy">
           <span class="eyebrow">Inkoopanalyse</span>
@@ -839,7 +842,7 @@ export class AnalysesPage {
     result: 'Wat we overhouden: marge op de goederen min onze eigen kosten',
     sales: 'Pijplijn, conversie en facturen',
     inventory: 'Kapitaal, dekking en aankomende voorraad',
-    purchasing: 'Ontvangstkwaliteit en inkoopimpact',
+    purchasing: 'Containerafrekening, werkelijke kosten en ontvangstkwaliteit',
     market: 'Wisselkoersen met verloop, koopkracht en containervracht',
     website: 'Wie de website bezoekt, vanwaar, wanneer en waar ze naartoe gaan',
   })[this.section()]);
@@ -885,7 +888,7 @@ export class AnalysesPage {
   readonly incomingOrders = computed(() => this.purchases()
     .filter((row) => row.order.status === 'BESTELD' || row.order.status === 'ONDERWEG'));
   readonly incomingValue = computed(() => this.incomingOrders()
-    .reduce((sum, row) => sum + row.costing.totals.totalEur, 0));
+    .reduce((sum, row) => sum + purchaseExternalCost(row), 0));
   readonly incomingPieces = computed(() => this.incomingOrders()
     .reduce((sum, row) => sum + row.costing.totals.pieces, 0));
   readonly orderedCount = computed(() => this.incomingOrders()
@@ -985,7 +988,7 @@ export class AnalysesPage {
     receivedOn: row.order.receivedOn,
     expectedArrival: row.order.expectedArrival,
     lines: row.order.lines,
-    totalEur: row.costing.totals.totalEur,
+    totalEur: purchaseExternalCost(row),
   }))));
   readonly leadDays = computed(() => averageLeadDays(this.receivedForPerformance().map((row) => row.order)));
   private readonly regionNames = new Intl.DisplayNames(['nl'], { type: 'region' });

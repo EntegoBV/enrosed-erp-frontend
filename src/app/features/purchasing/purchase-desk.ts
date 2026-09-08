@@ -9,6 +9,7 @@ import { AuctionSettlementSheet } from '../sales/auction-settlement-sheet';
 import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
+import { PurchaseReconciliation } from './purchase-reconciliation';
 import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -50,7 +51,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -706,8 +707,9 @@ type DeskRow =
                 @case ('pay') {
                   <div class="desk-pay-head">
                     <strong>@if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }</strong>
-                    <small>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paidTo('OTHER') > 0) { · {{ paidTo('OTHER') | eur }} andere betalingen }@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</small>
+                    <small>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</small>
                   </div>
+                  <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
                   <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
                   <div class="pay-stream">
                     <div class="pay-stream__head">
@@ -749,7 +751,7 @@ type DeskRow =
                     }
                     @if (settledFor('SUPPLIER')) {
                       <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
-                    } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald{{ paidTo('SUPPLIER') < supplierOwed() - 0.005 ? ' · ' + ((supplierOwed() - paidTo('SUPPLIER')) | eur) + ' minder, binnen de marge van ' + (tolerance | eur: 0) : '' }}</p> }
+                    } @else if (reconciliationStream('SUPPLIER')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('SUPPLIER')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald{{ paidTo('SUPPLIER') < supplierOwed() - 0.005 ? ' · ' + ((supplierOwed() - paidTo('SUPPLIER')) | eur) + ' minder, binnen de marge van ' + (tolerance | eur: 0) : '' }}</p> }
                     <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
                   </div>
                   @if (!isDdp()) {
@@ -773,7 +775,7 @@ type DeskRow =
                       }
                       @if (settledFor('LOGISTICS')) {
                         <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('LOGISTICS') === 0 ? '' : (notableDifferenceFor('LOGISTICS') > 0 ? ' · ' + (notableDifferenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
-                      } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
+                      } @else if (reconciliationStream('LOGISTICS')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('LOGISTICS')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
                       <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
                     </div>
                   }
@@ -797,7 +799,7 @@ type DeskRow =
                     }
                     @if (settledFor('SEPARATE')) {
                       <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SEPARATE') === 0 ? '' : (notableDifferenceFor('SEPARATE') > 0 ? ' · ' + (notableDifferenceFor('SEPARATE') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('SEPARATE') | eur) + ' minder betaald') }}</p>
-                    } @else if (!(openFor('SEPARATE') > 0) && separateOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
+                    } @else if (reconciliationStream('SEPARATE')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('SEPARATE')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('SEPARATE') > 0) && separateOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
                     <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SEPARATE')">+ Betaling inspectie of andere kost</button>
                   </div>
                   <div class="pay-stream">

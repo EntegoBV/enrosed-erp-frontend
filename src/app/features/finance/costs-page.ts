@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
-import { map } from 'rxjs';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { PageHeader } from '../../shared/page-header';
 import { BankPanel } from './bank-panel';
@@ -14,6 +13,7 @@ import { FINANCE_SECTIONS, FinanceView, financeSection, financeView } from './fi
 import { FinanceState } from './finance-state';
 import { RecurringPanel } from './recurring-panel';
 import { RecurringSheet } from './recurring-sheet';
+import { containerFilterId } from './cost-ledger';
 
 /**
  * Kosten & bank: its own workspace, the way Documenten & media is one. On a
@@ -24,7 +24,7 @@ import { RecurringSheet } from './recurring-sheet';
   selector: 'app-costs-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [FinanceState],
-  imports: [PageHeader, FinanceOverview, CostList, RecurringPanel, BankPanel, CostAnalysis, CostSheet, RecurringSheet, BankSheet],
+  imports: [RouterLink, PageHeader, FinanceOverview, CostList, RecurringPanel, BankPanel, CostAnalysis, CostSheet, RecurringSheet, BankSheet],
   template: `
     @if (phone()) {
       <app-page-header [showBack]="true" backTo="/more" title="Kosten & bank" [subtitle]="section().hint" />
@@ -48,9 +48,15 @@ import { RecurringSheet } from './recurring-sheet';
     }
 
     <div class="content fin" [class.fin--phone]="phone()">
+      @if (containerId()) {
+        <p class="fin-note">Betalingen van {{ containerLabel() }} · alle datums
+          <a class="linklike" [routerLink]="['/purchasing', containerId()]">Container bekijken ›</a>
+          <button class="linklike" type="button" (click)="clearContainer()">Alle kosten tonen</button>
+        </p>
+      }
       @switch (view()) {
-        @case ('costs') { <app-cost-list mode="all" /> }
-        @case ('open') { <app-cost-list mode="open" /> }
+        @case ('costs') { <app-cost-list mode="all" [containerId]="containerId()" /> }
+        @case ('open') { <app-cost-list mode="open" [containerId]="containerId()" /> }
         @case ('recurring') { <app-recurring-panel /> }
         @case ('bank') { <app-bank-panel /> }
         @case ('analysis') { <app-cost-analysis /> }
@@ -74,7 +80,10 @@ export class CostsPage {
   readonly sections = FINANCE_SECTIONS;
 
   readonly phone = computed(() => !this.desktop.active());
-  readonly view = toSignal(this.route.queryParamMap.pipe(map((params) => financeView(params.get('view')))), { initialValue: financeView(this.route.snapshot.queryParamMap.get('view')) });
+  private readonly params = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  readonly containerId = computed(() => containerFilterId(this.params().get('container')));
+  readonly containerLabel = computed(() => this.state.payments().find((payment) => payment.orderId === this.containerId())?.orderNumber ?? `container #${this.containerId()}`);
+  readonly view = computed(() => this.containerId() ? 'costs' : financeView(this.params().get('view')));
   readonly section = computed(() => financeSection(this.view()));
   readonly fabLabel = computed(() => (this.view() === 'recurring' ? '+ Vaste kost' : this.view() === 'bank' ? '+ Saldo' : '+ Kost'));
 
@@ -88,6 +97,10 @@ export class CostsPage {
       queryParams: view === 'overview' ? {} : { view },
       replaceUrl: !this.phone(),
     });
+  }
+
+  clearContainer(): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { view: 'costs' }, replaceUrl: true });
   }
 
   fab(): void {

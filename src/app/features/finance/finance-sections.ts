@@ -14,7 +14,7 @@ export interface FinanceSection {
 
 export const FINANCE_SECTIONS: readonly FinanceSection[] = [
   { id: 'overview', label: 'Overzicht', short: 'Overzicht', hint: 'Bank, open, komend en het resultaat', icon: 'home' },
-  { id: 'costs', label: 'Kosten', short: 'Kosten', hint: 'Alles wat we zelf uitgeven, per maand', icon: 'exchange' },
+  { id: 'costs', label: 'Kosten', short: 'Kosten', hint: 'Bedrijfskosten en gekoppelde containerbetalingen, per maand', icon: 'exchange' },
   { id: 'open', label: 'Openstaand', short: 'Open', hint: 'Nog te betalen, oudste eerst', icon: 'bell' },
   { id: 'recurring', label: 'Vaste kosten', short: 'Vast', hint: 'Huur, boekhouder, software: automatisch geboekt', icon: 'activity' },
   { id: 'bank', label: 'Banksaldo', short: 'Bank', hint: 'Wat op de rekeningen staat en waar dat heen gaat', icon: 'stock' },

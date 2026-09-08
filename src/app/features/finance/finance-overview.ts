@@ -7,12 +7,13 @@ import { CostRow } from './cost-row';
 import { addDays, intervalLabel, monthlyCostSeries, upcomingRecurring } from './finance-metrics';
 import { FinanceView, MONTH_START, TODAY, YEAR } from './finance-sections';
 import { FinanceState } from './finance-state';
+import { PurchasePaymentCostRow } from './purchase-payment-cost-row';
 
 /** The money at a glance: the bank, what has to go out, what comes in, and how the months run. */
 @Component({
   selector: 'app-finance-overview',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, DateNlPipe, TrendChart, CostRow],
+  imports: [RouterLink, EurPipe, DateNlPipe, TrendChart, CostRow, PurchasePaymentCostRow],
   template: `
     <section class="fin-kpis" aria-label="Kerncijfers">
       <button type="button" class="card fin-kpi fin-kpi--dark" (click)="navigate.emit('bank')">
@@ -43,10 +44,11 @@ import { FinanceState } from './finance-state';
 
     <section class="card fin-panel">
       <header class="fin-panel__head">
-        <div><span class="section-kicker">Kosten per maand</span><h2>{{ monthEur() | eur: 0 }} deze maand · {{ yearEur() | eur: 0 }} dit jaar</h2></div>
+        <div><span class="section-kicker">Bedrijfskosten per maand</span><h2>{{ monthEur() | eur: 0 }} deze maand · {{ yearEur() | eur: 0 }} dit jaar</h2></div>
         <button class="linklike" type="button" (click)="navigate.emit('analysis')">Analyse ›</button>
       </header>
       <app-trend-chart [series]="series()" prefix="€ " [decimals]="0" [height]="150" ariaLabel="Kosten per maand, de laatste twaalf maanden" emptyText="Nog geen kosten geboekt" />
+      @if (containerPaymentsEur()) { <p class="fin-panel__hint">Daarnaast {{ containerPaymentsEur() | eur }} aan containerbetalingen dit jaar, automatisch gekoppeld in Kosten en Bank. De goederenwaarde telt in de verkoopmarge mee.</p> }
     </section>
 
     <div class="fin-cols">
@@ -107,7 +109,10 @@ import { FinanceState } from './finance-state';
         <p class="fin-empty">Nog geen kosten geboekt. Boek de beurs, de boekhouder of de huur met + Kost.</p>
       } @else {
         <div class="fin-list">
-          @for (cost of recent(); track cost.id) { <app-cost-row [cost]="cost" /> }
+          @for (row of recent(); track row.key) {
+            @if (row.cost; as cost) { <app-cost-row [cost]="cost" /> }
+            @else { <app-purchase-payment-cost-row [row]="row" /> }
+          }
         </div>
       }
     </section>
@@ -127,8 +132,10 @@ export class FinanceOverview {
   });
   readonly ahead = computed(() => upcomingRecurring(this.state.recurring(), TODAY, addDays(TODAY, 60)).slice(0, 8));
   readonly openSoon = computed(() => this.state.openCosts().slice(0, 6));
-  readonly recent = computed(() => [...this.state.costs()]
-    .sort((left, right) => right.date.localeCompare(left.date) || (right.id ?? 0) - (left.id ?? 0)).slice(0, 6));
+  readonly recent = computed(() => this.state.ledger().slice(0, 6));
+  readonly containerPaymentsEur = computed(() => Math.round(this.state.ledger()
+    .filter((row) => row.source === 'container' && row.date >= `${YEAR}-01-01` && row.date <= TODAY)
+    .reduce((total, row) => total + row.amountEur, 0) * 100) / 100);
   readonly result = computed(() => resultAnalysis(this.state.salesOrders(), [], this.state.costs(), { from: `${YEAR}-01-01`, to: TODAY }));
 }
 

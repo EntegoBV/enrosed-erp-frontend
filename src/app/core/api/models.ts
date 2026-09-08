@@ -1193,6 +1193,77 @@ export interface PurchaseOrderView {
   attention?: string[];
   /** Damage and shortages on this container: at receipt and reported afterwards. */
   receiptReports?: ReceiptReport[];
+  /** Recorded container outflows against the agreed budget; read-only, never changes product prices. */
+  reconciliation?: PurchaseReconciliation | null;
+}
+
+export type ReconciliationStatus = 'PLANNED' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID' | 'SETTLED_LOWER' | 'NOT_APPLICABLE' | 'ADDITIONAL';
+export type UnitCostBasis = 'ORDERED' | 'USABLE_RECEIVED';
+
+export interface PurchaseReconciliationStream {
+  payee: Payee;
+  label: string;
+  status: ReconciliationStatus;
+  plannedEur: number;
+  paidEur: number;
+  remainingEur: number;
+  forecastEur: number;
+  varianceEur: number;
+  overpaidEur: number;
+  settledSavingEur: number;
+  explicitlySettled: boolean;
+  finalized: boolean;
+  paymentCount: number;
+}
+
+export interface PurchaseReconciliationTotals {
+  plannedExternalEur: number;
+  paidEur: number;
+  remainingEur: number;
+  forecastExternalEur: number;
+  varianceEur: number;
+  internalMarkupEur: number;
+  plannedPricingEur: number;
+  forecastPricingEur: number;
+  finalized: boolean;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  damagedQuantity: number;
+  usableQuantity: number;
+  unitCostQuantity: number;
+  unitCostBasis: UnitCostBasis;
+  forecastExternalUnitEur: number | null;
+  forecastPricingUnitEur: number | null;
+  receiptRecorded: boolean;
+  legacyPaidTotalEur: number | null;
+}
+
+export interface PurchaseReconciliationLine {
+  productId: number | null;
+  productName: string;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  damagedQuantity: number;
+  usableQuantity: number;
+  unitCostQuantity: number;
+  unitCostBasis: UnitCostBasis;
+  plannedExternalEur: number;
+  paidEur: number;
+  remainingEur: number;
+  forecastExternalEur: number;
+  varianceEur: number;
+  internalMarkupEur: number;
+  forecastPricingEur: number;
+  forecastExternalUnitEur: number | null;
+  forecastPricingUnitEur: number | null;
+  allocationBasis: string;
+}
+
+export interface PurchaseReconciliation {
+  streams: PurchaseReconciliationStream[];
+  totals: PurchaseReconciliationTotals;
+  lines: PurchaseReconciliationLine[];
+  notes: string[];
 }
 
 /* ----------------------------------------------------------------- sales */
