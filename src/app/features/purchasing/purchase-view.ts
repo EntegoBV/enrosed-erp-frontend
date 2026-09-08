@@ -11,6 +11,8 @@ import { PageHeader } from '../../shared/page-header';
 import { quoteLinesOf } from './purchase-editor';
 import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
+import { PurchasePartnerPanel } from './purchase-partner-panel';
+import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
@@ -55,7 +57,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -330,6 +332,7 @@ type PurchaseWorkspaceSectionId =
 
         <div class="view-layout erp-workspace__layout">
           <main class="view-main erp-workspace__main">
+            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
             <section class="card products-card erp-workspace__section"
                      id="purchase-products-section" tabindex="-1"
                      aria-labelledby="purchase-products-title">
@@ -653,6 +656,7 @@ type PurchaseWorkspaceSectionId =
               </h2>
               <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
               <div class="purchase-payment-streams">
+              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" />
               <div class="pay-stream">
                 <div class="pay-stream__head">
                   <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht' : 'de goederen' }}</small></span>
@@ -711,33 +715,6 @@ type PurchaseWorkspaceSectionId =
               </section>
             }
 
-            <section class="card payments-card erp-workspace__section erp-workspace__support-card"
-                     aria-labelledby="purchase-partner-title">
-              <span class="section-kicker">Partnercontainer</span>
-              @if (partnerDocs().length) {
-                <h2 id="purchase-partner-title">{{ partnerCompany() || 'Partner' }} · {{ partnerDocs()[0].order.partnerSharePct | num }} % winstdeling</h2>
-                <p class="partner-list__lead">De partner bestelt deze container mee en verkoopt de goederen op de veiling. Na de veiling volgt de veilingafrekening: de kost die wij financierden terug en ons deel van de winst.</p>
-                <ul class="partner-list">
-                  @for (deal of partnerDocs(); track deal.order.id) {
-                    <li>
-                      <a class="partner-list__what" [routerLink]="['/sales', deal.order.id, 'edit']">
-                        <b>{{ deal.order.number }}</b>
-                        <small>{{ partnerKind(deal.order) }} · {{ statusLabel$[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}</small>
-                      </a>
-                      <span class="partner-list__amount">{{ deal.priced.totals.total | eur }}</span>
-                      <button class="partner-list__unlink" type="button" [attr.aria-label]="'Koppeling van ' + deal.order.number + ' verwijderen'" (click)="unlinkPartnerDoc(deal)">×</button>
-                    </li>
-                  }
-                </ul>
-              } @else {
-                <h2 id="purchase-partner-title">Geen partner</h2>
-                <p class="partner-list__lead">Deze container betalen we volledig zelf. Neemt een partner de goederen over voor de veiling? Maak dan een verkoopofferte voor hem, of koppel zijn bestaande offerte of factuur; de container telt dan als partnercontainer.</p>
-              }
-              <div class="partner-list__buttons">
-                @if (auctionLines().length) { <button class="btn btn--primary btn--block" type="button" (click)="auctionOpen.set(true)">Veilingafrekening maken</button> }
-                <button class="btn btn--block" type="button" (click)="partnerSheetOpen.set(true)">Verkoopdocument koppelen</button>
-              </div>
-            </section>
 
             @if (documents(); as docs) {
               @if (docs.length) {
@@ -782,13 +759,13 @@ type PurchaseWorkspaceSectionId =
               </div>
             </section>
             @if (quoteOpen()) {
-              <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLinesOf(data)" (closed)="quoteOpen.set(false)" />
+              <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLinesOf(data)" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
             }
             @if (partnerSheetOpen()) {
               <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerDocs()[0]?.order?.partnerSharePct ?? null" (closed)="partnerSheetOpen.set(false)" (linked)="reloadPartnerDocs()" />
             }
             @if (auctionOpen()) {
-              <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? null" [customerName]="partnerCompany()"
+              <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
                                             [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                             [costSharePct]="auctionCostShare()" [profitSharePct]="auctionProfitShare()"
                                             (closed)="auctionOpen.set(false)" />
@@ -1151,7 +1128,7 @@ export class PurchaseView {
   readonly auctionSourceId = computed(() => this.partnerDocs().find((doc) => !isSettlementInvoice(doc.order))?.order.id ?? null);
   readonly auctionCostShare = computed(() => this.auctionSourceId() === null
     ? 100 : Math.min(100, Math.max(0, 100 - (this.partnerCustomer()?.partnerCostPct ?? 100))));
-  readonly auctionProfitShare = computed(() => this.partnerDocs()[0]?.order.partnerSharePct ?? this.partnerCustomer()?.partnerSharePct ?? 50);
+  readonly auctionProfitShare = computed(() => this.partnerDocs()[0]?.order.partnerSharePct ?? this.view()?.order.partnerSharePct ?? this.partnerCustomer()?.partnerSharePct ?? 50);
 
   private async loadPartnerDocs(id: number): Promise<void> {
     try {
@@ -1170,7 +1147,18 @@ export class PurchaseView {
 
   reloadPartnerDocs(): void {
     const id = this.view()?.order.id;
-    if (id != null) void this.loadPartnerDocs(id);
+    if (id == null) return;
+    void this.loadPartnerDocs(id);
+    /* A linked document may have given the container its partner. */
+    void this.sourcing.purchaseOrder(id).then((fresh) => this.view.update((current) => current ? { ...current, order: { ...current.order,
+      partnerCustomerId: fresh.order.partnerCustomerId ?? null, partnerCostPct: fresh.order.partnerCostPct ?? null, partnerSharePct: fresh.order.partnerSharePct ?? null } } : current))
+      .catch(() => undefined);
+  }
+
+  /** The panel saved the partner: the fresh view replaces the old one, the documents follow. */
+  onPartnerSaved(fresh: PurchaseOrderView): void {
+    this.view.update((current) => current ? { ...current, order: fresh.order, costing: fresh.costing } : fresh);
+    void this.loadPartnerDocs(fresh.order.id);
   }
 
   unlinkPartnerDoc(doc: SalesOrderView): void {

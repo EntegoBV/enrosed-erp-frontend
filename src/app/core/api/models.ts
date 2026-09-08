@@ -1050,6 +1050,12 @@ export interface PurchaseOrder {
   otherCosts?: OtherCost[];
   /** Put away in the archive tab; null while on the working list. Server-owned. */
   archivedAt?: string | null;
+  /** The partner who co-orders this container; null = we pay it ourselves. Server-owned: set through the partner flow. */
+  partnerCustomerId?: number | null;
+  /** The part of the landed cost the partner pays up front, in percent. */
+  partnerCostPct?: number | null;
+  /** Our share of the auction profit, in percent. */
+  partnerSharePct?: number | null;
   allocFreight: Allocation;
   allocOrigin: Allocation;
   allocDestination: Allocation;

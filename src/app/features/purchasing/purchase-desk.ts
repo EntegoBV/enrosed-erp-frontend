@@ -6,6 +6,8 @@ import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { AuctionSettlementSheet } from '../sales/auction-settlement-sheet';
+import { PurchasePartnerPanel } from './purchase-partner-panel';
+import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -45,7 +47,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -504,6 +506,7 @@ type DeskRow =
                     </div>
                   </div>
                   }
+                  <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
                 }
 
                 @case ('costs') {
@@ -667,6 +670,7 @@ type DeskRow =
                     <strong>@if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }</strong>
                     <small>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</small>
                   </div>
+                  <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" />
                   <div class="pay-stream">
                     <div class="pay-stream__head">
                       <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht (in de prijs)' : 'de goederen' }}</small></span>
@@ -755,30 +759,6 @@ type DeskRow =
                         <p class="desk-dossier__hint">Staat als waarschuwing op de volgende leveranciersorder van deze producten.</p>
                       } @else {
                         <p class="desk-dossier__empty">Niets gemeld: ontvangen zoals besteld. Schade of tekort meld je op de productpagina, gekoppeld aan deze container.</p>
-                      }
-                    </section>
-                    <section>
-                      <header class="desk-dossier__head"><strong>Partnercontainer @if (partnerDocs().length) { <small>{{ partnerShare() | num }} % winstdeling</small> }</strong>
-                        <span class="desk-dossier__head-actions">
-                          @if (auctionLines().length) { <button class="btn btn--primary btn--sm" type="button" (click)="auctionOpen.set(true)">Veilingafrekening</button> }
-                          <button class="btn btn--sm" type="button" (click)="partnerSheetOpen.set(true)">+ Document koppelen</button>
-                        </span></header>
-                      @if (partnerDocs().length) {
-                        <p class="desk-partner__lead"><b>{{ partnerCompany() || 'De partner' }}</b> bestelt deze container mee en verkoopt de goederen op de veiling. Na de veiling volgt de veilingafrekening: de kost die wij financierden terug en ons deel van de winst.</p>
-                        <ul class="desk-partner-docs">
-                          @for (deal of partnerDocs(); track deal.order.id) {
-                            <li>
-                              <a class="desk-partner-docs__what" [routerLink]="['/sales', deal.order.id, 'edit']">
-                                <b>{{ deal.order.number }}</b>
-                                <small>{{ partnerKind(deal.order) }} · {{ statusLabel$[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}</small>
-                              </a>
-                              <span class="desk-partner-docs__amount">{{ deal.priced.totals.total | eur }}</span>
-                              <button class="desk-partner-docs__unlink" type="button" [attr.aria-label]="'Koppeling van ' + deal.order.number + ' verwijderen'" title="Koppeling verwijderen" (click)="unlinkPartnerDoc(deal)">×</button>
-                            </li>
-                          }
-                        </ul>
-                      } @else {
-                        <p class="desk-dossier__empty">Geen partner: deze container betalen we volledig zelf. Neemt een partner de goederen over voor de veiling? Maak een verkoopofferte voor hem onder Afronden, of koppel hier zijn bestaande offerte of factuur.</p>
                       }
                     </section>
                     <section>
@@ -873,7 +853,7 @@ type DeskRow =
 
       @if (quoteOpen()) {
         @if (view(); as data) {
-          <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" (closed)="quoteOpen.set(false)" />
+          <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
       }
       @if (partnerSheetOpen()) {

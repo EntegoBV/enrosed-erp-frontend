@@ -17,7 +17,10 @@ import {
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
-import { AuctionSheetLine } from '../sales/auction-settlement-sheet';
+import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
+import { PurchasePartnerPanel } from './purchase-partner-panel';
+import { PurchasePartnerPayments } from './purchase-partner-payments';
+import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
   PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
@@ -87,7 +90,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -420,6 +423,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
                 </div>
               }
+              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
             </section>
 
             <section class="card flow-card products-card erp-workspace__section"
@@ -1111,6 +1115,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <p>Te betalen: {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
               </div>
 
+              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" />
+
               <div class="pay-stream">
                 <div class="pay-stream__head">
                   <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht (in de prijs)' : 'de goederen' }}</small></span>
@@ -1364,8 +1370,17 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
       @if (quoteOpen()) {
         @if (view(); as data) {
-          <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" (closed)="quoteOpen.set(false)" />
+          <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
+      }
+      @if (partnerSheetOpen()) {
+        <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerShare()" (closed)="partnerSheetOpen.set(false)" (linked)="onPartnerLinked()" />
+      }
+      @if (auctionOpen()) {
+        <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
+                                      [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                      [costSharePct]="auctionCostShare()" [profitSharePct]="auctionProfitShare()"
+                                      (closed)="auctionOpen.set(false)" />
       }
 
       @if (picking()) {
@@ -2171,7 +2186,23 @@ export class PurchaseEditor {
 
   onPartnerLinked(): void {
     const id = this.view()?.order.id;
-    if (id != null) void this.loadPartnerDocs(id);
+    if (id == null) return;
+    void this.loadPartnerDocs(id);
+    /* A linked document may have given the container its partner; pick that up without touching the draft. */
+    void this.sourcing.purchaseOrder(id).then((fresh) => this.carryPartner(fresh)).catch(() => undefined);
+  }
+
+  /** The container took, changed or lost its partner in the panel: only those three fields move into the draft. */
+  onPartnerSaved(fresh: PurchaseOrderView): void {
+    this.carryPartner(fresh);
+    void this.loadPartnerDocs(fresh.order.id);
+  }
+
+  private carryPartner(fresh: PurchaseOrderView): void {
+    this.view.update((current) => current ? { ...current, order: { ...current.order,
+      partnerCustomerId: fresh.order.partnerCustomerId ?? null,
+      partnerCostPct: fresh.order.partnerCostPct ?? null,
+      partnerSharePct: fresh.order.partnerSharePct ?? null } } : current);
   }
 
   unlinkPartnerDoc(doc: SalesOrderView): void {
@@ -2217,8 +2248,8 @@ export class PurchaseEditor {
   /** Without a cost document we financed the whole container; with one, what the partner did not pay up front. */
   readonly auctionCostShare = computed(() => this.auctionSourceId() === null
     ? 100 : Math.min(100, Math.max(0, 100 - (this.partnerCustomer()?.partnerCostPct ?? 100))));
-  readonly auctionProfitShare = computed(() => this.partnerDocs()[0]?.order.partnerSharePct ?? this.partnerCustomer()?.partnerSharePct ?? 50);
-  readonly auctionCustomerId = computed(() => this.partnerDocs()[0]?.order.customerId ?? null);
+  readonly auctionProfitShare = computed(() => this.partnerDocs()[0]?.order.partnerSharePct ?? this.view()?.order.partnerSharePct ?? this.partnerCustomer()?.partnerSharePct ?? 50);
+  readonly auctionCustomerId = computed(() => this.partnerDocs()[0]?.order.customerId ?? this.view()?.order.partnerCustomerId ?? null);
 
   readonly partnerKind = partnerDocumentKind;
 

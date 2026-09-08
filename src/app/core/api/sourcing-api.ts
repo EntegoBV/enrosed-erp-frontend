@@ -58,6 +58,11 @@ export class SourcingApi {
       this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${id}/preview`), order));
   }
 
+  /** A partner comes in, the deal changes, or the partner leaves; a null customer ends the deal. */
+  setPartner(id: number, request: { customerId: number | null; costPct: number | null; sharePct: number | null }): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}/partner`), request));
+  }
+
   updatePurchaseOrder(id: number, order: PurchaseOrder): Promise<PurchaseOrderView> {
     return firstValueFrom(
       this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}`), order));

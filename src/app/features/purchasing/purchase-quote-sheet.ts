@@ -85,7 +85,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <button type="button" [class.on]="pricing() === 'COST'" [disabled]="!costKnown()" (click)="pricing.set('COST')">Kostprijs van deze container</button>
           </div>
           @if (pricing() === 'COST') {
-            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling, tot op de cent zoals op de inkooporder. Inspectie en andere kosten gaan als aparte regels mee. De vracht op de offerte staat op nul, want die zit al in de kost.</p>
+            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling, tot op de cent zoals op de inkooporder. Inspectie en andere kosten zitten in die stukprijs. De vracht op de offerte staat op nul, want die zit al in de kost.</p>
             <div class="pq__markup">
               <label for="pq-markup">Opslag op de kostprijs</label>
               <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" step="0.5" inputmode="decimal"
@@ -211,6 +211,10 @@ export class PurchaseQuoteSheet {
 
   readonly order = input.required<PurchaseOrder>();
   readonly lines = input<PurchaseQuoteLine[]>([]);
+  /** The container's own partner and deal: chosen the moment the sheet opens, so nobody has to search. */
+  readonly presetCustomerId = input<number | null>(null);
+  readonly presetCostPct = input<number | null>(null);
+  readonly presetSharePct = input<number | null>(null);
   readonly closed = output<void>();
 
   readonly customers = signal<Customer[]>([]);
@@ -327,6 +331,15 @@ export class PurchaseQuoteSheet {
     try {
       const customers = await this.sales.customers();
       this.customers.set([...customers].sort((left, right) => left.company.localeCompare(right.company, 'nl')));
+      const preset = this.presetCustomerId();
+      const partner = preset == null ? null : this.customers().find((row) => row.id === preset);
+      if (partner) {
+        this.choose(partner);
+        this.partner.set(true);
+        if (this.costKnown()) this.pricing.set('COST');
+        if (this.presetCostPct() != null) this.costPct.set(this.presetCostPct()!);
+        if (this.presetSharePct() != null) this.sharePct.set(this.presetSharePct()!);
+      }
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'Klanten laden mislukt'));
     } finally {
