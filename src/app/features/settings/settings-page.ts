@@ -220,6 +220,18 @@ const normalizeCategoryCode = (value: string): string => value
                 <input class="input mono" id="co-rep-vat" [ngModel]="profile.fiscalRepresentativeVat ?? ''"
                        (ngModelChange)="patchCompany({ fiscalRepresentativeVat: $event })" placeholder="NL858617262B02" />
               </div>
+              <div class="field">
+                <label for="co-quote-prefix">Nummering offertes <span class="opt"></span></label>
+                <input class="input mono" id="co-quote-prefix" maxlength="12" [ngModel]="profile.quoteNumberPrefix ?? ''"
+                       (ngModelChange)="patchCompany({ quoteNumberPrefix: $event })" placeholder="ENR" />
+                <span class="hint">Letters vóór het nummer: ENR geeft ENR-{{ year }}-0001. Verander je ze, dan telt de reeks gewoon door.</span>
+              </div>
+              <div class="field">
+                <label for="co-invoice-prefix">Nummering facturen <span class="opt"></span></label>
+                <input class="input mono" id="co-invoice-prefix" maxlength="12" [ngModel]="profile.invoiceNumberPrefix ?? ''"
+                       (ngModelChange)="patchCompany({ invoiceNumberPrefix: $event })" placeholder="F" />
+                <span class="hint">F geeft F-{{ year }}-0001; slotfacturen en voorschotfacturen tellen in dezelfde reeks.</span>
+              </div>
               <div class="field span-2">
                 <label for="co-foot">Voettekst op documenten (NL) <span class="opt"></span></label>
                 <textarea class="textarea" id="co-foot" [ngModel]="profile.documentFooter"
@@ -1131,6 +1143,8 @@ const normalizeCategoryCode = (value: string): string => value
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
+  /** This year, for the numbering examples. */
+  readonly year = new Date().getFullYear();
   readonly push = inject(PushSetup);
   readonly pushActionError = signal<string | null>(null);
   private lastPushAction: 'enable' | 'disable' | 'test' = 'enable';

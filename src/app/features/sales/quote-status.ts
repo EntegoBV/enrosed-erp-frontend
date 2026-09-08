@@ -102,6 +102,16 @@ export const STATUS_LABEL: Record<QuoteStatus, string> = {
   BETAALD: 'Betaald',
 };
 
+/**
+ * What a document's status reads as on screen. A quote that already has an
+ * invoice is past its own statuses: it reads "Gefactureerd", whatever the
+ * quote status still says.
+ */
+export function statusOf(view: { order: Pick<SalesOrder, 'status' | 'docType'>; invoicedAs?: string | null }): { label: string; cls: string } {
+  if (view.invoicedAs && view.order.docType !== 'FACTUUR') return { label: 'Gefactureerd', cls: 'ok' };
+  return { label: STATUS_LABEL[view.order.status], cls: statusClass(view.order.status) };
+}
+
 export function statusClass(status: QuoteStatus): string {
   switch (status) {
     case 'GEACCEPTEERD': return 'ok';

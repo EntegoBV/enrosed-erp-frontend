@@ -10,7 +10,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { channelCode, channelLabel } from './sales-channels';
 import {
-  STATUS_LABEL, actionNeeded, isWebsiteQuoteRequest, statusClass,
+  STATUS_LABEL, actionNeeded, isWebsiteQuoteRequest, statusClass, statusOf,
 } from './quote-status';
 import { messageOf } from '../../core/api/errors';
 import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
@@ -219,8 +219,8 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
                   <span class="so-source-mini">Websiteaanvraag</span>
                 }
                 <div class="strong num">{{ row.priced.totals.total | eur: 0 }}</div>
-                <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + cls(row.order.status)">
-                  <i aria-hidden="true"></i>{{ label(row.order.status) }}
+                <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
+                  <i aria-hidden="true"></i>{{ statusOf(row).label }}
                 </span>
                 @if (row.order.goodsShippedAt) {
                   <span class="so-status-mini so-status-mini--ok">
@@ -1162,6 +1162,7 @@ export class SalesList {
   }
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];
+  statusOf = statusOf;
   readonly channelCode = channelCode;
   readonly channelLabel = channelLabel;
   cls = statusClass;

@@ -18,7 +18,7 @@ import { WorkQueue } from '../../core/api/work-queue';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
-import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status';
+import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass, statusOf } from './quote-status';
 import {
   isLocallyDeletableSalesDocument,
 } from './sales-list-swipe';
@@ -147,8 +147,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <span aria-hidden="true">↗</span> Websiteaanvraag
                 </span>
               }
-              <span class="status-pill" [class]="'status-pill status-pill--' + cls(data.order.status)">
-                <span aria-hidden="true"></span>{{ label(data.order.status) }}
+              <span class="status-pill" [class]="'status-pill status-pill--' + statusOf(data).cls">
+                <span aria-hidden="true"></span>{{ statusOf(data).label }}
               </span>
             </div>
           </div>
@@ -266,7 +266,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   [attr.aria-current]="activeDetailSection() === 'sales-status' ? 'true' : null"
                   (click)="scrollToSection('sales-status')">
             <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">4</span>
-            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Status</b><small>{{ label(data.order.status) }}</small></span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Status</b><small>{{ statusOf(data).label }}</small></span>
           </button>
         </nav>
         }
@@ -651,7 +651,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <section class="section-card history-card erp-workspace__section" id="sales-status" aria-labelledby="quote-history-title">
               <header class="section-card__head">
                 <div><span class="section-kicker">Status</span><h2 id="quote-history-title">Geschiedenis</h2></div>
-                <span class="badge" [class]="'badge badge--' + cls(data.order.status)">{{ label(data.order.status) }}</span>
+                <span class="badge" [class]="'badge badge--' + statusOf(data).cls">{{ statusOf(data).label }}</span>
               </header>
               <div class="timeline">
                 @for (event of history(); track event.id) {
@@ -1588,6 +1588,7 @@ export class SalesView {
   }
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];
+  statusOf = statusOf;
   cls = statusClass;
   readonly websiteRequest = isWebsiteQuoteRequest;
 

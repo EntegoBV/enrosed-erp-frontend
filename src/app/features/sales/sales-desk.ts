@@ -172,7 +172,7 @@ interface JourneyStep {
             } @else {
               <div class="desk-kpi desk-kpi--total">
                 <small>Status</small>
-                <strong>{{ label(data.order.status) }}</strong>
+                <strong>{{ statusOf(data).label }}</strong>
                 <span>{{ data.order.decidedAt ? (data.order.decidedAt | dateTimeNl) : '' }}</span>
               </div>
             }
@@ -1187,6 +1187,14 @@ export class SalesDesk extends SalesEditor {
         { label: 'Concept', state: 'done' }, { label: 'Verzonden', state: 'done' },
         { label: 'Bekeken', state: 'done' }, { label: 'Wijziging gevraagd', state: 'wait' },
         { label: 'Geaccepteerd', state: 'todo' },
+      ];
+    }
+    /* An invoice made from the quote closes its journey: every step done, the invoice last. */
+    if (this.view()?.invoicedAs) {
+      return [
+        { label: 'Concept', state: 'done' }, { label: 'Verzonden', state: 'done' },
+        { label: 'Bekeken', state: 'done' }, { label: 'Geaccepteerd', state: 'done' },
+        { label: 'Gefactureerd', state: 'done' },
       ];
     }
     const reached = order.status === 'GEACCEPTEERD' ? 4 : viewed ? 3 : sent ? 2 : 1;

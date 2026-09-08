@@ -1377,6 +1377,8 @@ export interface SalesOrderView {
   priced: PricedOrder;
   /** An adopted customer proposal that has not been resent: the customer waits. */
   awaitingResend: boolean;
+  /** The invoice made from this quote, by number; absent while there is none. */
+  invoicedAs?: string | null;
 }
 
 /**
@@ -1473,6 +1475,9 @@ export interface CompanyProfile {
   /** Our limited fiscal representative in the Netherlands, named on documents for customers cleared through it. */
   fiscalRepresentativeName?: string | null;
   fiscalRepresentativeVat?: string | null;
+  /** The letters in front of document numbers: ENR-2026-0001, F-2026-0001. */
+  quoteNumberPrefix?: string | null;
+  invoiceNumberPrefix?: string | null;
 }
 
 /** One step in the life of a quote. */

@@ -26,10 +26,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
-import {
-  STATUS_LABEL, internalNotesForDisplay, isWebsiteQuoteRequest,
-  replaceInternalNotesForDisplay, statusClass, websiteCartonRequests,
-} from './quote-status';
+import { STATUS_LABEL, internalNotesForDisplay, isWebsiteQuoteRequest, replaceInternalNotesForDisplay, statusClass, websiteCartonRequests, statusOf } from './quote-status';
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
@@ -121,8 +118,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
             <button class="history-button" type="button" (click)="toggleHistory()"
                     [attr.aria-expanded]="historyOpen()" aria-controls="quote-history">
-              <span class="badge" [class]="'badge--' + cls(data.order.status)">
-                {{ label(data.order.status) }}
+              <span class="badge" [class]="'badge--' + statusOf(data).cls">
+                {{ statusOf(data).label }}
               </span>
               <span aria-hidden="true" class="history-button__chev"
                     [class.history-button__chev--open]="historyOpen()">⌄</span>
@@ -2567,6 +2564,7 @@ export class SalesEditor {
   });
 
   label = (status: SalesOrder['status']) => STATUS_LABEL[status];
+  statusOf = statusOf;
   cls = statusClass;
   readonly websiteRequest = isWebsiteQuoteRequest;
   readonly websiteCartons = websiteCartonRequests;
