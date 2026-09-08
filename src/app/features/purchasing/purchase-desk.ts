@@ -14,6 +14,7 @@ import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
+import { paymentPlanLabel } from './payment-plan';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
@@ -452,6 +453,17 @@ type DeskRow =
                         @for (terms of paymentTermOptions; track terms.value) { <option [value]="terms.value">{{ terms.label }}</option> }
                       </select>
                     </div>
+                    @if ((data.order.paymentTerms ?? 'THIRDS') === 'CUSTOM') {
+                      <div class="field pay-split">
+                        <label>Eigen verdeling</label>
+                        <div class="pay-split__grid">
+                          <label><span>Bestelling</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctOrdered ?? ''" (ngModelChange)="patch({ payPctOrdered: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
+                          <label><span>Vertrek</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctShipped ?? ''" (ngModelChange)="patch({ payPctShipped: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
+                          <label><span>Aankomst</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctArrived ?? ''" (ngModelChange)="patch({ payPctArrived: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
+                        </div>
+                        <span class="hint" [class.hint--warn]="splitTotalOf(data.order) !== 100">Samen {{ splitTotalOf(data.order) | num }} %{{ splitTotalOf(data.order) === 100 ? '' : ' · moet 100 % zijn' }}.</span>
+                      </div>
+                    }
                     @if (data.order.status !== 'CONCEPT') {
                       <div class="field">
                         <label for="dk-tracking">Track &amp; trace <span class="opt"></span></label>
@@ -1221,6 +1233,7 @@ type DeskRow =
     }
   `,
   styles: [`
+    .pay-split__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pay-split__grid label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
     /* Sheets shared with the editor: note a payment, report damage, first instalment. */
     .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
     .issue-kind{margin-top:2px}.line-currency{min-width:74px;border-radius:0}.field .hint--warn{color:var(--danger);font-weight:650}
@@ -1503,6 +1516,8 @@ export class PurchaseDesk extends PurchaseEditor {
   }
 
   paymentTermsLabel(value: string | null | undefined): string {
+    const order = this.view()?.order;
+    if (order && (order.paymentTerms ?? 'THIRDS') === 'CUSTOM') return paymentPlanLabel(order, this.paymentTermOptions);
     return this.paymentTermOptions.find((option) => option.value === (value ?? 'THIRDS'))?.label ?? '—';
   }
 

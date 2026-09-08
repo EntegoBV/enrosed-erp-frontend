@@ -38,6 +38,7 @@ import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
+import { instalmentsOf, paymentPlanLabel, splitTotal } from './payment-plan';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe, ceilTo } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
@@ -346,6 +347,17 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       </select>
                       <span class="hint">De betalingen rechts volgen dit plan: per termijn zie je wat open staat.</span>
                     </div>
+                    @if ((data.order.paymentTerms ?? 'THIRDS') === 'CUSTOM') {
+                      <div class="field span-2 pay-split">
+                        <label>Eigen verdeling</label>
+                        <div class="pay-split__grid">
+                          <label><span>Bij bestelling</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctOrdered ?? ''" (ngModelChange)="patch({ payPctOrdered: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
+                          <label><span>Bij vertrek</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctShipped ?? ''" (ngModelChange)="patch({ payPctShipped: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
+                          <label><span>Bij aankomst</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctArrived ?? ''" (ngModelChange)="patch({ payPctArrived: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
+                        </div>
+                        <span class="hint" [class.hint--warn]="splitTotalOf(data.order) !== 100">Samen {{ splitTotalOf(data.order) | num }} %{{ splitTotalOf(data.order) === 100 ? '' : ' · moet 100 % zijn' }}. {{ planLabel(data.order) }}</span>
+                      </div>
+                    }
                     @if (data.order.status !== 'CONCEPT') {
                       <div class="field">
                         <label for="po-tracking">Track &amp; trace <span class="opt"></span></label>
@@ -1139,7 +1151,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           <i aria-hidden="true">{{ step.state === 'paid' ? '✓' : (step.state === 'due' ? '!' : '·') }}</i>
                           <span class="instalments__what">
                             <b>{{ step.label }}</b>
-                            <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
+                            @if (step.state === 'paid') {
+                              <small><s>{{ step.full | eur }}</s> · betaald</small>
+                            } @else if (step.covered > 0) {
+                              <small><s>{{ step.full | eur }}</s> nog {{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : ' · later' }}</small>
+                            } @else {
+                              <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
+                            }
                           </span>
                           @if (step.state === 'due') {
                             <button class="btn btn--sm" type="button" (click)="openPayment(step.amount, step.label, 'SUPPLIER')">Noteren</button>
@@ -1154,7 +1172,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
                       <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
                     <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
-                    <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
+                    <span class="pay-line__actions">
+                      @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                      <button class="pay-line__btn" type="button" title="Aanpassen" [attr.aria-label]="'Betaling aanpassen'" (click)="editPayment(payment)">✎</button>
+                      <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" [attr.aria-label]="'Bankafschrift toevoegen'" (click)="attachProof(payment)">📎</button>
+                      <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
+                    </span>
                   </div>
                 }
                 @if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) {
@@ -1175,7 +1198,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
                         <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
                       <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                      <span class="pay-line__actions">
+                      @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                      <button class="pay-line__btn" type="button" title="Aanpassen" [attr.aria-label]="'Betaling aanpassen'" (click)="editPayment(payment)">✎</button>
+                      <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" [attr.aria-label]="'Bankafschrift toevoegen'" (click)="attachProof(payment)">📎</button>
                       <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
+                    </span>
                     </div>
                   }
                   @if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) {
@@ -1461,7 +1489,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
 
       @if (paying(); as pay) {
-        <app-sheet [title]="pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier'" (closed)="paying.set(null)">
+        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + (pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier')" (closed)="paying.set(null)">
           <div body>
             <!-- Deposits are fractions of the goods: one tap fills them in. -->
             <div class="pay-chips" role="group" aria-label="Snel invullen">
@@ -1502,12 +1530,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
                        [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
               </div>
+              <div class="field span-2">
+                <label for="pay-proof">Bankafschrift <span class="opt"></span></label>
+                <input class="input" id="pay-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+                       (change)="paying.set({ ...pay, files: pickProofFiles($event) })" />
+                <span class="hint">{{ pay.files.length ? pay.files.length + ' bestand(en) gekozen · ' : '' }}Tot 5 bestanden; ze komen bij Dossier als betaalbewijs bij deze betaling.</span>
+              </div>
             </div>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
             <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
-              {{ payingBusy() ? 'Bezig…' : 'Betaling bewaren' }}
+              {{ payingBusy() ? 'Bezig…' : (pay.id ? 'Aanpassen' : 'Betaling bewaren') }}
             </button>
           </div>
         </app-sheet>
@@ -1791,6 +1825,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .line-issue{display:block;padding:4px 0 0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;text-align:left;cursor:pointer}.line-issue:hover{color:var(--rose-dark)}.issue-kind{margin-top:2px}
     .payments-card .action-card__head,.files-card .action-card__head,.note-card .action-card__head{padding:14px 18px 10px}.note-card__field{display:block;width:100%;padding:0 18px 14px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box}.note-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.note-card__head .linklike{flex:none;margin-top:2px}.note-card__diary{padding:0 18px 12px}.note-card__empty{margin:0;padding:0 18px 14px;color:var(--muted);font-size:12px}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.payments-card .action-card__head h2{font-size:16px}.field .hint--warn{color:var(--danger);font-weight:650}.pay-stream__done{margin:8px 0 2px;color:var(--ok,#2e7d4f);font-size:12.5px;font-weight:650}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
     .instalments{list-style:none;margin:0 18px 6px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}
+    .instalments__item--paid .instalments__what b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
+    .pay-line__actions{display:inline-flex;align-items:center;gap:2px}.pay-line__btn{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;cursor:pointer}.pay-line__btn:hover{background:var(--surface-3)}.pay-line__proof{color:var(--muted);font-size:11px;margin-right:2px}
+    .pay-split__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pay-split__grid label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
     .pay-stream{margin:0 18px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-stream .instalments{margin:0}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-ours{margin:0 18px 14px;color:var(--muted);font-size:11.5px}
     .files-list__actions{display:flex;align-items:center;gap:6px}
     .files-list{list-style:none;margin:0 18px 4px;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-card__hint{padding:6px 18px 14px}.files-list__rename{flex:1;min-width:0}.files-list__pencil{display:inline-grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}.files-list__pencil:hover{background:var(--surface-2);color:var(--ink)}.files-list__pencil svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -2026,7 +2063,28 @@ export class PurchaseEditor {
 
   /* ---- payments --------------------------------------------------- */
   readonly payments = signal<PurchasePayment[] | null>(null);
-  readonly paying = signal<{ amount: number; currency: Currency; paidOn: string; label: string; payee: Payee } | null>(null);
+  readonly paying = signal<{ id?: number | null; amount: number; currency: Currency; paidOn: string; label: string; payee: Payee; files: File[] } | null>(null);
+
+  /** The plan in words, for the hint under a split of one's own. */
+  planLabel(order: PurchaseOrder): string { return paymentPlanLabel(order, PAYMENT_TERMS); }
+  splitTotalOf(order: PurchaseOrder): number { return splitTotal(order.payPctOrdered, order.payPctShipped, order.payPctArrived); }
+
+  /** Opens the noted payment for correction: the day, the amount, the words, who got it. */
+  editPayment(payment: PurchasePayment): void {
+    this.paying.set({ id: payment.id, amount: payment.amount, currency: payment.currency, paidOn: payment.paidOn,
+      label: payment.label ?? '', payee: payment.payee ?? 'SUPPLIER', files: [] });
+  }
+
+  /** Attaches the bank statement to a payment that was noted without one. */
+  attachProof(payment: PurchasePayment): void {
+    this.addingDocument.set({ kind: 'PAYMENT_PROOF', label: payment.label ?? 'Betaling ' + payment.paidOn, paymentId: payment.id, file: null });
+  }
+
+  /** The files picked for the bank statement, five at most. */
+  pickProofFiles(event: Event): File[] {
+    const files = (event.target as HTMLInputElement | null)?.files;
+    return files ? Array.from(files).slice(0, 5) : [];
+  }
   readonly payingBusy = signal(false);
 
   /** What the supplier is owed: goods, plus the sea freight when it is in the price. */
@@ -2098,6 +2156,7 @@ export class PurchaseEditor {
       paidOn: new Date().toISOString().slice(0, 10),
       label: label ?? (payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '') : 'Douane & transport'),
       payee,
+      files: [],
     });
   }
 
@@ -2109,8 +2168,8 @@ export class PurchaseEditor {
   readonly plannedInstalments = computed(() => {
     const data = this.view();
     if (!data) return [];
-    const terms = PAYMENT_TERMS.find((item) => item.value === (data.order.paymentTerms ?? 'THIRDS'));
-    if (!terms || !terms.instalments.length) return [];
+    const instalments = instalmentsOf(data.order, PAYMENT_TERMS);
+    if (!instalments.length) return [];
     const goods = this.supplierOwed();
     if (!(goods > 0)) return [];
     const reached: Record<'ORDERED' | 'SHIPPED' | 'ARRIVED', boolean> = {
@@ -2127,18 +2186,20 @@ export class PurchaseEditor {
     /* An unpaid step never asks more than what is genuinely open, or the
        note sheet would refuse its own suggestion. */
     let stillOpen = Math.max(0, goods - paid);
-    return terms.instalments.map((step) => {
+    return instalments.map((step) => {
       const amount = Math.round(goods * step.share * 100) / 100;
       cumulative += amount;
       let state: 'paid' | 'due' | 'later';
       if (!earlierOpen && paid >= Math.min(cumulative, goods) - 0.05) {
         state = 'paid';
-        return { label: step.label, amount, state };
+        return { label: step.label, amount, full: amount, covered: amount, state };
       }
       state = reached[step.due] ? 'due' : 'later'; earlierOpen = true;
+      /* What the payments so far already put towards this step: the part of it that is struck through. */
+      const covered = Math.round(Math.max(0, amount - stillOpen) * 100) / 100;
       const ask = Math.round(Math.min(amount, stillOpen) * 100) / 100;
       stillOpen = Math.max(0, stillOpen - ask);
-      return { label: step.label, amount: ask, state };
+      return { label: step.label, amount: ask, full: amount, covered, state };
     });
   });
 
@@ -2148,12 +2209,17 @@ export class PurchaseEditor {
     if (!data || !pay || this.payingBusy()) return;
     this.payingBusy.set(true);
     try {
-      await this.sourcing.addPayment(data.order.id, {
-        paidOn: pay.paidOn, amount: pay.amount, currency: pay.currency, label: pay.label || null, payee: pay.payee });
-      await this.loadPayments(data.order.id);
+      const body = { paidOn: pay.paidOn, amount: pay.amount, currency: pay.currency, label: pay.label || null, payee: pay.payee };
+      const saved = pay.id
+        ? await this.sourcing.updatePayment(data.order.id, pay.id, body)
+        : await this.sourcing.addPayment(data.order.id, body);
+      for (const file of pay.files.slice(0, 5)) {
+        await this.sourcing.addDocument(data.order.id, file, 'PAYMENT_PROOF', pay.label || null, saved.id);
+      }
+      await Promise.all([this.loadPayments(data.order.id), pay.files.length ? this.loadDocuments(data.order.id) : Promise.resolve()]);
       await this.reloadOrderQuietly();
       this.paying.set(null);
-      this.ui.toast('Betaling bewaard', 'ok');
+      this.ui.toast(pay.id ? 'Betaling aangepast' : (pay.files.length ? 'Betaling en bewijs bewaard' : 'Betaling bewaard'), 'ok');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Betaling bewaren mislukt'), 'err');
     } finally {

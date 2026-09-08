@@ -135,6 +135,10 @@ export class SourcingApi {
     return firstValueFrom(this.http.post<PurchasePayment>(api(`/api/purchase-orders/${orderId}/payments`), payment));
   }
 
+  updatePayment(orderId: number, paymentId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee }): Promise<PurchasePayment> {
+    return firstValueFrom(this.http.put<PurchasePayment>(api(`/api/purchase-orders/${orderId}/payments/${paymentId}`), payment));
+  }
+
   deletePayment(orderId: number, paymentId: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/purchase-orders/${orderId}/payments/${paymentId}`)));
   }
