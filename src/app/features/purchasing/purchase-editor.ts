@@ -18,6 +18,7 @@ import {
 import { messageOf } from '../../core/api/errors';
 import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
+import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
@@ -90,7 +91,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -581,26 +582,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                  (ngModelChange)="setExwPrice(line.productId, $event)" />
                         </div>
                       </div>
-                      @if (manualExtra()) {
-                        <div class="field">
-                          <label [attr.for]="'extra-' + line.productId">Enrosed kost voor deze regel</label>
-                          <div class="input-affix input-affix--prefixed">
-                            <span class="input-affix__prefix" aria-hidden="true">€</span>
-                            <input class="input num right" [id]="'extra-' + line.productId" type="number" min="0" step="10" inputmode="decimal"
-                                   [ngModel]="orderLine(line.productId)?.extraShareEur" (ngModelChange)="setExtraShare(line.productId, $event)" />
-                          </div>
-                          <span class="hint">Kostprijs nu {{ line.landedUnitEur | eurUp: 3 }} per stuk, waarvan {{ extraPerPiece(line) | eurUp: 3 }} Enrosed kost.</span>
-                        </div>
-                        <div class="field">
-                          <label [attr.for]="'target-' + line.productId">Of de kostprijs per stuk, de Enrosed kost volgt</label>
-                          <div class="input-affix input-affix--prefixed">
-                            <span class="input-affix__prefix" aria-hidden="true">€</span>
-                            <input class="input num right" [id]="'target-' + line.productId" type="number" min="0" step="0.01" inputmode="decimal"
-                                   [value]="fixed3(line.landedUnitEur)" (change)="setTargetUnit(line.productId, line, $any($event.target).value)" />
-                          </div>
-                          <span class="hint">Zonder Enrosed kost kost dit product {{ basePerPiece(line) | eurUp: 3 }} per stuk.</span>
-                        </div>
-                      }
                     </div>
 
                     <details class="line-breakdown">
@@ -833,30 +814,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                    (ngModelChange)="patch({ extraRevenueEur: +$event })" />
                             <span class="input-affix__suffix">EUR</span>
                           </div>
-                          <span class="hint">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product, bij de productregels' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="startManualSplit()">zelf verdelen per product</button> }</span>
-                          @if (manualExtra()) {
-                            <div class="po-split" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
-                              <div class="po-split__head">
-                                <span class="po-split__title">Zelf verdeeld over de producten</span>
-                                <button class="linklike" type="button" (click)="endManualSplit()">Weer automatisch</button>
-                              </div>
-                              <div class="payments-meter po-split__meter"><div class="payments-meter__fill" [style.width.%]="extraSplitPct()"></div></div>
-                              <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }}
-                                @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }} te verdelen</em> }
-                                @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} meer dan de Enrosed kost</em> }
-                                @else { <em>· alles verdeeld</em> }</p>
-                              <div class="po-split__fill">
-                                <span>Vul in</span>
-                                <span class="fin-chips">
-                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('PIECES')">naar stuks</button>
-                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('VALUE')">naar waarde</button>
-                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('CBM')">naar volume</button>
-                                  <button type="button" class="fin-chip" (click)="fillExtraSplit('EVEN')">gelijk</button>
-                                  @if (extraSplitRemainder() > 0.004) { <button type="button" class="fin-chip fin-chip--warn" (click)="extraSplitRestToLast()">rest op de laatste</button> }
-                                </span>
-                              </div>
-                            </div>
-                          }
+                          <span class="hint">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="openManualSplit()">zelf verdelen per product</button> }</span>
+                          
                         </div>
                         <div class="field">
                           <label for="c-inspection">Inspectiekost <span class="opt"></span></label>
@@ -869,6 +828,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           </div>
                           <span class="hint">In de stukprijs, verdeeld naar goederenwaarde.</span>
                         </div>
+                        @if (manualExtra()) {
+                          <div class="po-split po-split--line" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
+                            <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }} verdeeld
+                              @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }}</em> }
+                              @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} te veel</em> }
+                              @else { <em>· alles verdeeld</em> }</p>
+                            <span class="po-split__actions">
+                              <button class="linklike" type="button" (click)="extraSplitOpen.set(true)">Verdeling aanpassen ›</button>
+                              <button class="linklike" type="button" (click)="endManualSplit()">weer automatisch</button>
+                            </span>
+                          </div>
+                        }
                       </div>
                       <div class="other-costs span-2" aria-label="Andere kosten">
                         @for (cost of data.order.otherCosts ?? []; track $index; let i = $index) {
@@ -1399,6 +1370,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         @if (view(); as data) {
           <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
+      }
+      @if (extraSplitOpen()) {
+        <app-purchase-extra-split [order]="data.order" [costing]="data.costing"
+                                  (shareChange)="setExtraShare($event.productId, $event.raw)" (targetChange)="setTargetUnitFor($event.productId, $event.raw)"
+                                  (fill)="fillExtraSplit($event)" (rest)="extraSplitRestToLast()"
+                                  (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="extraSplitOpen.set(false)" />
       }
       @if (partnerSheetOpen()) {
         <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerShare()" (closed)="partnerSheetOpen.set(false)" (linked)="onPartnerLinked()" />
@@ -2640,6 +2617,7 @@ export class PurchaseEditor {
   readonly id = input<string>('');
 
   /* ---- the Enrosed kost by hand ------------------------------------------ */
+  readonly extraSplitOpen = signal(false);
   readonly manualExtra = computed(() => this.view()?.order.allocExtra === 'MANUAL');
   readonly extraSplitSpread = computed(() => round2((this.view()?.order.lines ?? []).reduce((sum, line) => sum + (line.extraShareEur ?? 0), 0)));
   readonly extraSplitRemainder = computed(() => round2((this.view()?.order.extraRevenueEur || 0) - this.extraSplitSpread()));
@@ -2665,6 +2643,18 @@ export class PurchaseEditor {
     const data = this.view();
     if (!data) return;
     this.patch({ allocExtra: 'PIECES', lines: data.order.lines.map((line) => ({ ...line, extraShareEur: null })) });
+  }
+
+  /** The split window: the key goes to by hand when it was not yet, the amounts start from the key's split. */
+  openManualSplit(): void {
+    this.startManualSplit();
+    this.extraSplitOpen.set(true);
+  }
+
+  /** The window names the product; the costed line it is measured against comes from the draft. */
+  setTargetUnitFor(productId: number, raw: unknown): void {
+    const line = this.view()?.costing.lines.find((row) => row.productId === productId);
+    if (line) this.setTargetUnit(productId, line, raw);
   }
 
   setExtraShare(productId: number, raw: unknown): void {
@@ -3021,7 +3011,7 @@ export class PurchaseEditor {
 
   setAllocation(field: keyof PurchaseOrder, value: Allocation): void {
     /* Choosing the hand-made split is the same as opening it: nobody should pick it and see nothing. */
-    if (field === 'allocExtra' && value === 'MANUAL') { this.startManualSplit(); return; }
+    if (field === 'allocExtra' && value === 'MANUAL') { this.openManualSplit(); return; }
     this.patch({ [field]: value } as Partial<PurchaseOrder>);
   }
 
