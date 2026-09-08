@@ -2106,15 +2106,24 @@ export class PurchaseEditor {
   readonly paidTotalEur = computed(() => this.paidTo('SUPPLIER'));
   readonly remainingEur = computed(() => this.supplierOwed() - this.paidTotalEur());
   /** Fractions of the goods that still fit in what is open: after 2/3 only the rest remains. */
+  /**
+   * One tap fills in what the plan asks: every open instalment of the agreed
+   * plan, then the rest. Without a plan the classic fractions stand in.
+   */
   readonly payChips = computed(() => {
     const goods = this.supplierOwed();
     const rest = Math.max(0, this.remainingEur());
-    const chips = [
+    const planned = this.plannedInstalments()
+      .filter((step) => step.state !== 'paid' && step.amount > 0)
+      .map((step) => ({ label: step.label, amount: step.amount }));
+    const chips = (planned.length ? planned : [
       { label: '1/3', amount: Math.round((goods / 3) * 100) / 100 },
       { label: '1/2', amount: Math.round((goods / 2) * 100) / 100 },
       { label: '2/3', amount: Math.round((goods * 2 / 3) * 100) / 100 },
-    ].filter((chip) => chip.amount > 0 && chip.amount <= rest + 0.005);
-    if (rest > 0.005) chips.push({ label: 'Rest', amount: Math.round(rest * 100) / 100 });
+    ]).filter((chip) => chip.amount > 0 && chip.amount <= rest + 0.005);
+    if (rest > 0.005 && !chips.some((chip) => Math.abs(chip.amount - rest) < 0.005)) {
+      chips.push({ label: 'Rest', amount: Math.round(rest * 100) / 100 });
+    }
     return chips;
   });
 

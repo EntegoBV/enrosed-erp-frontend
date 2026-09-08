@@ -20,8 +20,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
 import {
-  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation,
-  PurchasePayment, PurchaseDocument, SalesOrderView, Customer,
+  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -34,6 +33,7 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { isSettlementInvoice, partnerDocumentKind, separateCostPerPiece } from '../sales/partner-settlement';
+import { instalmentsOf } from './payment-plan';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
@@ -663,6 +663,27 @@ type PurchaseWorkspaceSectionId =
                   <span class="num"><b>{{ paidTo('SUPPLIER') | eur }}</b><small>van {{ supplierOwed() | eur }}</small></span>
                 </div>
                 <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SUPPLIER'), supplierOwed())"></div></div>
+                @if (plannedInstalments(); as plan) {
+                  @if (plan.length) {
+                    <ol class="instalments" aria-label="Betaalafspraak met de leverancier">
+                      @for (step of plan; track step.label) {
+                        <li [class.instalments__item--paid]="step.state === 'paid'" [class.instalments__item--due]="step.state === 'due'">
+                          <i aria-hidden="true">{{ step.state === 'paid' ? '✓' : (step.state === 'due' ? '!' : '·') }}</i>
+                          <span class="instalments__what">
+                            <b>{{ step.label }}</b>
+                            @if (step.state === 'paid') {
+                              <small><s>{{ step.full | eur }}</s> · betaald</small>
+                            } @else if (step.covered > 0) {
+                              <small><s>{{ step.full | eur }}</s> nog {{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : ' · later' }}</small>
+                            } @else {
+                              <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
+                            }
+                          </span>
+                        </li>
+                      }
+                    </ol>
+                  }
+                }
                 @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
                   <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                 }
@@ -880,6 +901,7 @@ type PurchaseWorkspaceSectionId =
     }
   `,
   styles: [`
+    .instalments{list-style:none;margin:8px 0 4px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}.instalments__what s{opacity:.6}
     .purchase-line__issue{display:inline-block;margin-top:6px;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}.purchase-line__issue:active{color:var(--rose-dark)}
     :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}.privacy-notice{margin-bottom:12px}
 
@@ -1180,6 +1202,40 @@ export class PurchaseView {
   }
   readonly statusLabel$ = STATUS_LABEL;
   readonly supplierOwed = computed(() => this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
+
+  /**
+   * The plan's instalments against what was paid, as the editor shows them:
+   * the money paid so far fills the steps in order, a partly covered step
+   * asks the rest, the first unpaid step whose moment has come is due.
+   */
+  readonly plannedInstalments = computed(() => {
+    const data = this.view();
+    if (!data) return [];
+    const instalments = instalmentsOf(data.order, PAYMENT_TERMS);
+    if (!instalments.length) return [];
+    const goods = this.supplierOwed();
+    if (!(goods > 0)) return [];
+    const reached: Record<'ORDERED' | 'SHIPPED' | 'ARRIVED', boolean> = {
+      ORDERED: data.order.status !== 'CONCEPT',
+      SHIPPED: data.order.status === 'ONDERWEG' || data.order.status === 'ONTVANGEN',
+      ARRIVED: data.order.status === 'ONTVANGEN',
+    };
+    const paid = this.paidTo('SUPPLIER');
+    let remainingPaid = paid;
+    let stillOpen = Math.max(0, goods - paid);
+    return instalments.map((step) => {
+      const full = Math.round(goods * step.share * 100) / 100;
+      const covered = Math.round(Math.min(full, Math.max(0, remainingPaid)) * 100) / 100;
+      remainingPaid = Math.max(0, remainingPaid - covered);
+      const open = Math.round((full - covered) * 100) / 100;
+      if (open <= 0.05 || stillOpen <= 0.005) {
+        return { label: step.label, amount: full, full, covered: full, state: 'paid' as const };
+      }
+      const ask = Math.round(Math.min(open, stillOpen) * 100) / 100;
+      stillOpen = Math.max(0, stillOpen - ask);
+      return { label: step.label, amount: ask, full, covered, state: (reached[step.due] ? 'due' : 'later') as 'due' | 'later' };
+    });
+  });
   readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
   readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed());
   readonly paidAll = computed(() => (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
