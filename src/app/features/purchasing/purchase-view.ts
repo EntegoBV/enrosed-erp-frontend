@@ -1265,22 +1265,22 @@ export class PurchaseView {
     void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
     void this.sourcing.documents(id).then((list) => this.documents.set(list)).catch(() => this.documents.set([]));
     void this.loadPartnerDocs(id);
-    /* Family metadata enriches the product groups, but a slow or older API
-       must never hold the operational order screen hostage. */
-    void this.catalog.productFamilies()
-      .then((families) => this.families.set(families))
-      .catch(() => this.families.set([]));
-    const [view, products, categories, suppliers] = await Promise.all([
+    /* The families decide how the product list groups and sorts, so they arrive
+       with the order: the list must not paint and then jump into its groups. A
+       failing catalogue endpoint still never blocks the screen. */
+    const [view, products, categories, suppliers, families] = await Promise.all([
       this.sourcing.purchaseOrder(id),
       this.catalog.products(),
       this.catalog.categories().catch(() => [] as Category[]),
       this.sourcing.suppliers(),
+      this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
     ]);
     this.catalog.stockLocations().then((locations) => this.stockLocations.set(locations)).catch(() => undefined);
-    this.view.set(view);
+    this.families.set(families);
     this.products.set(products);
     this.categories.set(categories);
     this.suppliers.set(suppliers);
+    this.view.set(view);
   }
 
   amt(value: number, line: { quantity: number }): number {

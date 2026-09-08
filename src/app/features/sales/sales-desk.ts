@@ -1015,13 +1015,15 @@ interface JourneyStep {
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
-    .desk-table{width:100%;min-width:760px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:860px}
+    .desk-table{width:100%;min-width:740px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:800px}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product,.desk-table thead th.c-delivery{text-align:left}.desk-table thead th.c-product{padding-left:16px}
     .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:30%;min-width:210px}.c-qty{width:76px;text-align:right}.c-price{width:104px;text-align:right}.c-disc{width:84px;text-align:right}.c-money{width:112px;text-align:right;font-variant-numeric:tabular-nums}.c-delivery{width:150px;text-align:left}.c-act{width:34px}
-    .desk-table--editing .c-qty{width:86px}.desk-table--editing .c-price{width:112px}.desk-table--editing .c-disc{width:96px}
+    .c-product{width:30%;min-width:210px}.c-qty{width:76px;text-align:right}.c-price{width:104px;text-align:right}.c-disc{width:78px;text-align:right}.c-money{width:104px;text-align:right;font-variant-numeric:tabular-nums}.c-delivery{width:136px;text-align:left}.c-act{width:40px}
+    .desk-table--editing .c-qty{width:80px}.desk-table--editing .c-price{width:108px}.desk-table--editing .c-disc{width:78px}
+    /* The remove cross keeps clear of the row's edge: no left padding, a little on the right. */
+    .desk-table td.c-act{padding-left:0;padding-right:8px;text-align:right}
     .c-money--total b{color:var(--rose-dark);font-weight:750}
     .c-money small,.c-price small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
     .c-qty b,.c-price>b,.c-disc>b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}

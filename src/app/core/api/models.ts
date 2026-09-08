@@ -1688,6 +1688,8 @@ export interface FromPurchaseOrderRequest {
   includeInspection: boolean;
   otherCostIndexes: number[];
   salesChannel: string | null;
+  /** The week every line promises ("2026-W36"); empty takes the container's expected arrival. */
+  deliveryWeek?: string | null;
 }
 
 /** One landed cost a product carried, from which container and since when. */

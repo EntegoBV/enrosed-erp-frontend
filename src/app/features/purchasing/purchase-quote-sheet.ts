@@ -4,7 +4,7 @@ import { messageOf } from '../../core/api/errors';
 import { Customer, PurchaseOrder } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { EurPipe, NumPipe, EurUpPipe, NumUpPipe, WeekNlPipe } from '../../shared/pipes';
-import { isoWeekOf } from '../../shared/week-field';
+import { WeekField, isoWeekOf } from '../../shared/week-field';
 import { Sheet, Ui } from '../../shared/ui';
 
 /** One product line of the container as it will land on the quote. */
@@ -33,7 +33,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
 @Component({
   selector: 'app-purchase-quote-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, NumPipe, EurPipe, EurUpPipe, NumUpPipe, WeekNlPipe],
+  imports: [Sheet, NumPipe, EurPipe, EurUpPipe, NumUpPipe, WeekNlPipe, WeekField],
   template: `
     <app-sheet title="Verkoopofferte maken" (closed)="closed.emit()">
       <div body class="pq">
@@ -145,9 +145,11 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <li class="pq__total"><span>Goederen aan gelande kostprijs, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
           }
         </ul>
-        @if (arrivalWeek(); as week) {
-          <p class="pq__hint">Leverweek op elke regel: {{ week | weekNl }}, de verwachte aankomst van de container.</p>
-        }
+        <div class="pq__markup pq__week">
+          <label for="pq-week">Leverweek op elke regel</label>
+          <app-week-field fieldId="pq-week" [value]="deliveryWeek()" (valueChange)="deliveryWeek.set($event)" />
+          <p class="pq__hint">@if (arrivalWeek(); as week) { Standaard de verwachte aankomst van de container: {{ week | weekNl }}. } @else { De container heeft nog geen verwachte aankomst; kies hier een week of laat het open. }</p>
+        </div>
       </div>
       <div foot style="display:contents">
         @if (createError(); as error) { <p class="pq__error pq__error--foot" role="alert">{{ error }}</p> }
@@ -234,6 +236,8 @@ export class PurchaseQuoteSheet {
     const [year, month, day] = order.expectedArrival.split('-').map(Number);
     return year && month && day ? isoWeekOf(new Date(Date.UTC(year, month - 1, day))) : null;
   });
+  /** The week that goes on every line; starts at the container's arrival and follows a change of container. */
+  readonly deliveryWeek = linkedSignal(() => this.arrivalWeek() ?? '');
   readonly closed = output<void>();
 
   readonly customers = signal<Customer[]>([]);
@@ -417,6 +421,7 @@ export class PurchaseQuoteSheet {
         includeInspection: atCost && included.includes('inspection'),
         otherCostIndexes: atCost ? included.filter((key) => key.startsWith('other-')).map((key) => Number(key.slice('other-'.length))) : [],
         salesChannel: partnerDeal ? 'PARTNER' : null,
+        deliveryWeek: this.deliveryWeek().trim() || null,
       });
       const count = view.order.lines.length + (view.order.extraLines ?? []).length;
       this.ui.toast(`Offerte ${view.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${partnerDeal ? ' als partnercontainer' : atCost ? ' aan kostprijs' : ''}`, 'ok');

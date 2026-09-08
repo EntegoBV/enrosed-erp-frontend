@@ -2811,12 +2811,14 @@ export class PurchaseEditor {
 
   protected async load(orderId: number): Promise<void> {
     this.families.set([]);
-    /* Family metadata enriches the cards and picker, but an unavailable
-       catalogue endpoint must never hold up opening or editing an order. */
-    void this.catalog.productFamilies()
-      .then((families) => this.families.set(families))
-      .catch(() => this.families.set([]));
-    const view = await this.sourcing.purchaseOrder(orderId);
+    /* The families decide how the product list groups and sorts, so they load
+       with the order: the list must not paint and then jump into its groups. An
+       unavailable catalogue endpoint still never holds up opening the order. */
+    const [view, families] = await Promise.all([
+      this.sourcing.purchaseOrder(orderId),
+      this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
+    ]);
+    this.families.set(families);
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
     void this.loadPartnerDocs(orderId);
