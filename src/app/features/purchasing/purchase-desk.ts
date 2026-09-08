@@ -6,7 +6,6 @@ import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { AuctionSettlementSheet } from '../sales/auction-settlement-sheet';
-import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { Diary } from './diary';
@@ -48,7 +47,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -180,14 +179,15 @@ type DeskRow =
 
             @if (data.costing.lines.length) {
               <div class="desk-table-wrap">
-              <table class="desk-table" [class.desk-table--editing]="editing()">
+              <table class="desk-table" [class.desk-table--editing]="editing()" [class.desk-table--extra]="manualExtra()">
                 <thead>
                   <tr>
                     <th class="c-product">Product</th>
                     <th class="c-qty">Aantal</th>
                     <th class="c-cartons">Dozen</th>
-                    <th class="c-price">Prijs / stuk</th>
+                    <th class="c-price">Prijs / stuk <span class="c-price__basis">{{ isDdp() ? 'DDP' : 'EXW' }}</span></th>
                     <th class="c-money">Goederen{{ perPiece() ? ' / stuk' : '' }}</th>
+                    @if (manualExtra()) { <th class="c-money c-extra">Enrosed kost{{ perPiece() ? ' / stuk' : '' }}</th> }
                     <th class="c-money">{{ perPiece() ? 'Geland / stuk' : 'Totaal geland' }}</th>
                     @if (editing()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
                   </tr>
@@ -196,7 +196,7 @@ type DeskRow =
                 @for (row of tableRows(); track row.key) {
                   @switch (row.kind) {
                     @case ('section') {
-                      <tr class="desk-section__row"><th [attr.colspan]="editing() ? 7 : 6">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
+                      <tr class="desk-section__row"><th [attr.colspan]="(editing() ? 7 : 6) + (manualExtra() ? 1 : 0)">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
                     }
                     @case ('group') {
                       <tr class="desk-group" [class.desk-group--folded]="familyFolded(row.groupKey)">
@@ -219,6 +219,7 @@ type DeskRow =
                         <td class="c-cartons num"><b>{{ row.cartons | num }}</b></td>
                         <td class="c-price"></td>
                         <td class="c-money num">{{ (perPiece() && row.pieces > 0 ? row.goodsEur / row.pieces : row.goodsEur) | eur: decimals() }}</td>
+                        @if (manualExtra()) { <td class="c-money c-extra"></td> }
                         <td class="c-money num c-money--total">{{ perPiece() ? (row.averageUnitEur | eur: 4) : (row.totalEur | eur) }}</td>
                         @if (editing()) { <td class="c-act"></td> }
                       </tr>
@@ -301,6 +302,21 @@ type DeskRow =
                           }
                         </td>
                         <td class="c-money num">{{ amt(line.goodsEur, line) | eur: decimals() }}</td>
+                        @if (manualExtra()) {
+                          <td class="c-money num c-extra">
+                            @if (editing()) {
+                              <div class="desk-price desk-price--extra">
+                                <span class="desk-price__sym" aria-hidden="true">€</span>
+                                <input class="input num right desk-cell" type="number" min="0" step="10" inputmode="decimal"
+                                       [attr.aria-label]="'Enrosed kost voor ' + line.productName"
+                                       [ngModel]="orderLine(line.productId)?.extraShareEur" (ngModelChange)="setExtraShare(line.productId, $event)" />
+                              </div>
+                              <small>{{ extraPerPiece(line) | eur: 4 }} /st</small>
+                            } @else {
+                              <b>{{ perPiece() ? (extraPerPiece(line) | eur: 4) : (line.extraRevenueEur | eur) }}</b>
+                            }
+                          </td>
+                        }
                         <td class="c-money num c-money--total">
                           <button class="desk-total" type="button" (click)="toggleLine(line.productId)"
                                   [attr.aria-expanded]="lineOpen(line.productId)" [title]="'Kostopbouw van ' + line.productName">
@@ -351,6 +367,7 @@ type DeskRow =
                     <th class="c-cartons num">{{ data.costing.totals.cartons | num }}</th>
                     <th class="c-price"></th>
                     <th class="c-money num">{{ data.costing.totals.goodsEur | eur }}</th>
+                    @if (manualExtra()) { <th class="c-money num c-extra">{{ data.costing.totals.extraRevenueEur | eur }}</th> }
                     <th class="c-money num c-money--total">{{ data.costing.totals.totalEur | eur }}</th>
                     @if (editing()) { <th class="c-act"></th> }
                   </tr>
@@ -585,7 +602,20 @@ type DeskRow =
                           <input class="input num right" id="dk-extra" type="number" step="100" min="0" inputmode="decimal" [ngModel]="data.order.extraRevenueEur" (ngModelChange)="patch({ extraRevenueEur: +$event })" />
                           <span class="input-affix__suffix">EUR</span>
                         </div>
-                        <span class="hint">In de stukprijs · {{ data.order.allocExtra === 'MANUAL' ? 'zelf verdeeld per product' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }} · <button class="linklike" type="button" (click)="openManualSplit()">{{ data.order.allocExtra === 'MANUAL' ? 'verdeling aanpassen' : 'zelf verdelen per product' }}</button></span>
+                        <span class="hint">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product, in de tabel' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="startManualSplit()">zelf verdelen per product</button> }</span>
+                        @if (manualExtra()) {
+                            <div class="po-split">
+                              <span class="po-split__sum" [class.po-split__sum--short]="extraSplitRemainder() > 0.004" [class.po-split__sum--over]="extraSplitRemainder() < -0.004"><b>{{ extraSplitSpread() | eur }}</b> verdeeld van {{ data.order.extraRevenueEur | eur }}@if (extraSplitRemainder() > 0.004) { · nog {{ extraSplitRemainder() | eur }} te verdelen } @else if (extraSplitRemainder() < -0.004) { · {{ -extraSplitRemainder() | eur }} meer dan de Enrosed kost } @else { · ✓ alles verdeeld }</span>
+                              <span class="fin-chips">
+                                <button type="button" class="fin-chip" (click)="fillExtraSplit('PIECES')">Naar stuks</button>
+                                <button type="button" class="fin-chip" (click)="fillExtraSplit('VALUE')">Naar waarde</button>
+                                <button type="button" class="fin-chip" (click)="fillExtraSplit('CBM')">Naar volume</button>
+                                <button type="button" class="fin-chip" (click)="fillExtraSplit('EVEN')">Gelijk</button>
+                                @if (extraSplitRemainder() > 0.004) { <button type="button" class="fin-chip" (click)="extraSplitRestToLast()">Rest op laatste</button> }
+                                <button type="button" class="linklike" (click)="endManualSplit()">weer automatisch</button>
+                              </span>
+                            </div>
+                          }
                       </div>
                       <div class="field">
                         <label for="dk-inspection">Inspectiekost <span class="opt"></span></label>
@@ -648,7 +678,7 @@ type DeskRow =
                         <div class="desk-chain__row"><i>+</i><span>Invoerrechten <small>gemiddeld {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small></span><b>{{ data.costing.totals.dutyEur | eur }}</b></div>
                         <div class="desk-chain__row"><i>+</i><span>{{ costLabels().destinationCostsLabel }}</span><b>{{ data.costing.totals.destinationEur | eur }}</b></div>
                       }
-                      @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>{{ data.order.allocExtra === 'MANUAL' ? 'zelf verdeeld' : 'eigen opslag' }} · <button class="linklike" type="button" (click)="openManualSplit()">{{ data.order.allocExtra === 'MANUAL' ? 'aanpassen' : 'zelf verdelen' }}</button></small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
+                      @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>{{ data.order.allocExtra === 'MANUAL' ? 'zelf verdeeld' : 'eigen opslag' }} · <button class="linklike" type="button" (click)="startManualSplit()">{{ data.order.allocExtra === 'MANUAL' ? 'aanpassen' : 'zelf verdelen' }}</button></small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
                       @if (data.costing.totals.separateCostsEur) {
                         @if (data.costing.totals.inspectionEur) {
                           <div class="desk-chain__row"><i>+</i><span>Inspectie <small>in de stukprijs verdeeld</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
@@ -859,9 +889,6 @@ type DeskRow =
         @if (view(); as data) {
           <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
-      }
-      @if (extraSplitOpen()) {
-        <app-purchase-extra-split [order]="data.order" [costing]="data.costing" (changed)="patch({ lines: $event })" (automatic)="endManualSplit()" (closed)="extraSplitOpen.set(false)" />
       }
       @if (partnerSheetOpen()) {
         @if (view(); as data) {
@@ -1203,7 +1230,9 @@ type DeskRow =
     .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
-    .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}
+    .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
+    .c-price__basis{margin-left:3px;color:var(--muted);font-weight:600;opacity:.75}
+    .desk-table--editing td.c-price .desk-price{width:auto;max-width:128px;margin-left:auto}.desk-table--editing td.c-extra .desk-price{width:auto;max-width:132px;margin-left:auto}.desk-table td.c-extra small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
     .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;line-height:1.25}
@@ -1290,6 +1319,7 @@ type DeskRow =
       .desk-table tfoot th::before{color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
       .desk-table tfoot th.c-qty::before{content:'Stuks · '}.desk-table tfoot th.c-cartons::before{content:'Dozen · '}
       .desk-table tfoot th.c-money:not(.c-money--total)::before{content:'Goederen · '}.desk-table tfoot th.c-money--total::before{content:'Geland · '}
+      .desk-table td.c-money.c-extra::before{content:'Enrosed kost'}.desk-table tfoot th.c-money.c-extra::before{content:'Enrosed kost · '}
     }
 
     .desk-supplier{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
@@ -1323,10 +1353,10 @@ type DeskRow =
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {
-  /** From the reading view too: the split works on the draft, so editing starts first. */
-  override openManualSplit(): void {
+  /** From the reading view too: the amounts sit in the table, which only takes them while editing. */
+  override startManualSplit(): void {
     if (!this.editing()) this.startEdit();
-    super.openManualSplit();
+    super.startManualSplit();
   }
 
   readonly statusLabel$ = STATUS_LABEL;
