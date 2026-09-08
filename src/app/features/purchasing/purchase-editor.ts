@@ -580,14 +580,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                    ? (line.goodsUsd / line.quantity | num: 4) : ''"
                                  (ngModelChange)="setExwPrice(line.productId, $event)" />
                         </div>
-                        @if (productCardPrice(line.productId); as currentPrice) {
-                          <span class="hint">
-                            Productkaart nu: {{ currentPrice.amount | cur: currentPrice.currency }} per stuk
-                            @if (orderLine(line.productId)?.exwPrice == null) {
-                              · wordt gebruikt zolang dit veld leeg blijft
-                            }
-                          </span>
-                        }
                       </div>
                       @if (manualExtra()) {
                         <div class="field">
@@ -606,31 +598,28 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <summary>
                         <span class="line-breakdown__label">
                           <span>Kostopbouw</span>
-                        </span>
-                        <span class="per-toggle line-breakdown__toggle"
-                              role="group" aria-label="Kostopbouw tonen als"
-                              (click)="$event.stopPropagation()">
-                          <button type="button" [class.on]="!perPiece()"
-                                  [attr.aria-pressed]="!perPiece()"
-                                  (click)="perPiece.set(false)">Totaal</button>
-                          <button type="button" [class.on]="perPiece()"
-                                  [attr.aria-pressed]="perPiece()"
-                                  (click)="perPiece.set(true)">Per stuk</button>
+                          <small>{{ perPiece() ? 'geland per stuk' : 'geland totaal' }}</small>
                         </span>
                         <span class="line-breakdown__value">
+                          <strong class="line-breakdown__total">
+                            {{ perPiece() ? (line.landedUnitEur | eur: 4)
+                              : (line.totalEur | eur) }}
+                          </strong>
                           <svg class="line-breakdown__chevron" viewBox="0 0 20 20"
                                width="18" height="18" aria-hidden="true">
                             <path d="m6.5 8 3.5 3.5L13.5 8" fill="none"
                                   stroke="currentColor" stroke-width="1.8"
                                   stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
-                          <strong class="line-breakdown__total">
-                            {{ perPiece() ? (line.landedUnitEur | eur: 4)
-                              : (line.totalEur | eur) }}
-                          </strong>
                         </span>
                       </summary>
                       <div class="line-breakdown__body">
+                        <div class="line-breakdown__mode">
+                          <span class="per-toggle line-breakdown__toggle" role="group" aria-label="Kostopbouw tonen als">
+                            <button type="button" [class.on]="!perPiece()" [attr.aria-pressed]="!perPiece()" (click)="perPiece.set(false)">Totaal</button>
+                            <button type="button" [class.on]="perPiece()" [attr.aria-pressed]="perPiece()" (click)="perPiece.set(true)">Per stuk</button>
+                          </span>
+                        </div>
                         <div class="stat-row stat-row--muted">
                           <span>Goederen</span>
                           <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span>
@@ -1824,6 +1813,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .purchase-summary{margin-top:12px}.summary-body{padding:14px}.fill-overview{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:7px;color:var(--muted);font-size:11px}.fill-overview>div{display:flex;align-items:baseline;gap:6px}.fill-overview strong{color:var(--ink);font-size:21px}.fill-meter{height:11px}.capacity-alert{margin-top:10px}
     .cost-summary__group+.cost-summary__group{border-top:1px solid var(--line)}.cost-summary .stat-row{padding:4px 0;font-size:12px}.safe-summary{display:flex;gap:8px;margin-top:14px;padding:10px;border-radius:12px;background:var(--ok-soft);color:var(--ok);font-size:12px}
     .action-card{padding:14px}.action-card__head h2{font-size:16px}.action-card__head p{color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:12px}.danger-zone{margin-top:7px;border-top:1px solid var(--line)}.danger-zone summary{padding:11px;color:var(--muted);font-size:11px;text-align:center}.danger-zone p{color:var(--muted);font-size:10px;text-align:center}
+    .line-breakdown summary{display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:6px 10px}.line-breakdown__label{display:flex;flex:1;min-width:0;flex-direction:row;align-items:baseline;gap:6px;font-size:12px}.line-breakdown__label small{overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}.line-breakdown__value{display:inline-flex;flex:none;align-items:center;gap:6px;white-space:nowrap}.line-breakdown__mode{display:flex;justify-content:flex-end;padding:8px 0 2px}
     .loading-card{display:flex;min-height:160px;align-items:center;justify-content:center;color:var(--muted)}.loading-card__mark{display:none}
 
     @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(3,1fr)}.line-breakdown summary{display:flex}.line-breakdown__value{padding-top:0}}

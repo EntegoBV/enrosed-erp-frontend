@@ -1232,6 +1232,7 @@ type DeskRow =
     .desk-table-wrap{overflow-x:auto}
     .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
     .c-price__basis{margin-left:3px;color:var(--muted);font-weight:600;opacity:.75}
+    .desk-table--editing td.c-qty .desk-cell{padding-inline:6px;text-align:center}
     .desk-table--editing td.c-price .desk-price{width:auto;max-width:128px;margin-left:auto}.desk-table--editing td.c-extra .desk-price{width:auto;max-width:132px;margin-left:auto}.desk-table td.c-extra small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
