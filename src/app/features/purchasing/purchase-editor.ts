@@ -1578,12 +1578,14 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
                        [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
               </div>
+              @if (pay.payee !== 'OTHER') {
               <div class="field span-2">
                 <label class="pay-settle">
                   <input type="checkbox" [checked]="pay.settles" (change)="paying.set({ ...pay, settles: $any($event.target).checked })" />
                   <span><b>Slotbetaling: hiermee is alles vereffend</b><small>Ook als het bedrag afwijkt van de afspraak. Het verschil staat daarna op de order als te veel of te weinig betaald.</small></span>
                 </label>
               </div>
+              }
               <div class="field span-2">
                 <label for="pay-proof">Bankafschrift <span class="opt"></span></label>
                 <input class="input" id="pay-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
