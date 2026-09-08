@@ -1,3 +1,4 @@
+import { ProductCostHistory } from './product-cost-history';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -52,8 +53,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
+  imports: [ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -714,8 +714,18 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
       <!-- Phone: the build-up and the stock book come up as sheets, not
            somewhere further down the page. -->
       @if ((priceOpen() && !desktop.active()) || priceInfoOpen()) {
-        <app-sheet title="Prijsopbouw" (closed)="closePriceInfo()">
-          <div body><ng-container *ngTemplateOutlet="priceBuildTpl" /></div>
+        <app-sheet [title]="priceTab() === 'history' ? 'Kostprijshistoriek' : 'Prijsopbouw'" (closed)="closePriceInfo()">
+          <div body>
+            <div class="per-toggle price-tabs" role="group" aria-label="Prijsdetail">
+              <button type="button" [class.on]="priceTab() === 'build'" (click)="priceTab.set('build')">Opbouw</button>
+              <button type="button" [class.on]="priceTab() === 'history'" (click)="priceTab.set('history')">Historiek</button>
+            </div>
+            @if (priceTab() === 'history') {
+              @if (product.id; as id) { <app-product-cost-history [productId]="id" /> }
+            } @else {
+              <ng-container *ngTemplateOutlet="priceBuildTpl" />
+            }
+          </div>
           <div foot style="display:contents">
             <span class="spacer"></span>
             <button class="btn" type="button" (click)="closePriceInfo()">Sluiten</button>
@@ -1107,6 +1117,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
       .phero__facts--photo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .phero__gallery { grid-column: 1 / -1; height: 160px; min-height: 0; }
     }
+    .price-tabs{margin-bottom:12px}
   `,
 })
 export class ProductView {
@@ -1239,6 +1250,8 @@ export class ProductView {
   readonly sourceOrderId = signal<number | null>(null);
   /** The card tiles open the build-up as a sheet on every screen size. */
   readonly priceInfoOpen = signal(false);
+
+  readonly priceTab = signal<'build' | 'history'>('build');
 
   openPriceInfo(product: Product): void {
     this.priceInfoOpen.set(true);

@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
   CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSharedFieldsApplyRequest, ProductSharedFieldsApplyResult, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
-  PhotoRole,
+  PhotoRole, ProductCostHistoryEntry,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -59,6 +59,11 @@ export class CatalogApi {
   products(supplierId?: number): Promise<Product[]> {
     const query = supplierId ? `?supplierId=${supplierId}` : '';
     return firstValueFrom(this.http.get<Product[]>(api('/api/products' + query)));
+  }
+
+  /** The line of landed costs a product carried, newest first. */
+  productCostHistory(id: number): Promise<ProductCostHistoryEntry[]> {
+    return firstValueFrom(this.http.get<ProductCostHistoryEntry[]>(api(`/api/products/${id}/cost-history`)));
   }
 
   product(id: number): Promise<Product> {

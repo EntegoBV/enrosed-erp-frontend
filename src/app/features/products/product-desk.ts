@@ -1,3 +1,4 @@
+import { ProductCostHistory } from './product-cost-history';
 import { ChangeDetectionStrategy, Component, computed, effect, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -34,8 +35,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
 @Component({
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, ProductMediaCard, PageHeader,
+  imports: [ProductCostHistory, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, ProductMediaCard, PageHeader,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -312,6 +312,15 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             </div>
           </div>
           @if (priceOpen()) {
+            <div class="pd-price__tabs per-toggle" role="group" aria-label="Prijsdetail">
+              <button type="button" [class.on]="priceTab() === 'build'" (click)="priceTab.set('build')">Opbouw</button>
+              <button type="button" [class.on]="priceTab() === 'history'" (click)="priceTab.set('history')">Historiek</button>
+            </div>
+            @if (priceTab() === 'history') {
+              <div class="pd-price__history">
+                <app-product-cost-history [productId]="product.id!" />
+              </div>
+            } @else {
             <div class="pd-price__detail">
               @if (priceBuild(); as build) {
                 @if (build.rows.length) {
@@ -355,6 +364,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 </div>
               </div>
             </div>
+            }
           }
         </section>
 
@@ -675,6 +685,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-flow__step--price b{color:var(--rose-dark)}
     .pd-flow__step--margin{border-color:color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--surface))}.pd-flow__step--margin b{color:var(--ok)}
     .pd-flow__step--margin.is-bad{border-color:color-mix(in srgb,var(--danger) 45%,transparent);background:var(--danger-soft)}.pd-flow__step--margin.is-bad b{color:var(--danger)}
+    .pd-price__tabs{margin-top:12px}.pd-price__history{margin-top:12px;padding-top:14px;border-top:1px solid var(--line)}
     .pd-price__detail{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,1fr);gap:20px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
     .pd-aside{margin:8px 0 0;color:var(--muted);font-size:11.5px}.pd-aside b{color:var(--ink-2);font-variant-numeric:tabular-nums}
 

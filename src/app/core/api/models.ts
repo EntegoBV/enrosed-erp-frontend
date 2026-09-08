@@ -1623,3 +1623,19 @@ export interface FromPurchaseOrderRequest {
   otherCostIndexes: number[];
   salesChannel: string | null;
 }
+
+/** One landed cost a product carried, from which container and since when. */
+export interface ProductCostHistoryEntry {
+  id: number;
+  appliedAt: string;
+  landedUnitEur: number;
+  previousLandedUnitEur: number | null;
+  deltaEur: number | null;
+  deltaPct: number | null;
+  source: string | null;
+  purchaseOrderId: number | null;
+  quantity: number | null;
+  exwPrice: number | null;
+  exwCurrency: string | null;
+  appliedBy: string | null;
+}
