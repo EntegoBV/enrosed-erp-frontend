@@ -342,23 +342,6 @@ export const COLLECTIONS: readonly Collection[] = [
           <p class="fx__state">{{ loadError() }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
         } @else if (!assets().length) {
           <ng-container *ngTemplateOutlet="emptyLibrary" />
-        } @else if (view() === 'grid' && groups(); as groups) {
-          @for (group of groups; track group.label) {
-            <div class="fx__group">
-              <h3 class="fx__group-title">{{ group.label }} <small>{{ group.assets.length }}</small></h3>
-              <div class="fx__grid">
-                @for (asset of group.assets; track asset.id) {
-                  <article class="fx__card" [class.on]="selected()?.id === asset.id" [class.fx__card--picked]="selectedIds().has(asset.id)" [class.fx__card--archived]="asset.archived"
-                          draggable="true" (dragstart)="dragAsset($event, asset)" (dragend)="endDrag()"
-                           (contextmenu)="openContext($event, asset)" [title]="asset.originalFilename">
-                    <input class="fx__pick" type="checkbox" [checked]="selectedIds().has(asset.id)" [attr.aria-label]="'Selecteer ' + asset.name" (click)="togglePick(asset, $event)" /><button class="fx__card-open" type="button" (click)="clickAsset(asset, $event)" [attr.aria-label]="'Open ' + asset.name">
-                    @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="media.thumbnailUrl(asset.id)" alt="" loading="lazy" /> } @else { <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i> }
-                    <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }}</small></span>
-                  </button></article>
-                }
-              </div>
-            </div>
-          }
         } @else if (view() === 'grid') {
           <div class="fx__grid">
             @for (asset of sorted(); track asset.id) {
@@ -371,7 +354,7 @@ export const COLLECTIONS: readonly Collection[] = [
                 } @else {
                   <i class="fx__ext" aria-hidden="true">{{ extension(asset) }}</i>
                 }
-                <span class="fx__card-copy"><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }} · {{ asset.updatedAt | dateTimeNl }}</small></span>
+                <span class="fx__card-copy"><b>{{ asset.name }}</b>@if (usageLabel(asset)) { <span class="file-usage">{{ usageLabel(asset) }}</span> }<small>{{ size(asset.sizeBytes) }}{{ asset.web ? ' · web ' + size(asset.web.sizeBytes) : '' }} · {{ asset.updatedAt | dateTimeNl }}</small></span>
                 <span class="fx__badges">
                   @if (asset.share) { <em title="Publieke link">🔗</em> }
                   @if (asset.links.length) { <em [title]="asset.links.length + ' koppelingen'">{{ asset.links.length }}×</em> }
@@ -888,13 +871,13 @@ export class FilesPage implements OnDestroy {
   private suppressClick = false;
 
   readonly browseValue = computed(() => this.archived() ? 'archive' : this.collection()?.key ?? (this.folder() === null ? 'all' : 'folders'));
-  readonly hasFilters = computed(() => !!this.query().trim() || !!this.kind() || this.archived());
+  readonly hasFilters = computed(() => !!this.query().trim() || this.kind() !== (this.collection()?.filters.kind ?? null) || this.archived());
   browse(value: string): void {
     if (value === 'folders') this.openFolder('root');
     else if (value === 'all' || value === 'archive') { this.query.set(''); this.kind.set(null); this.collection.set(null); this.folder.set(null); this.archived.set(value === 'archive'); this.close(); this.picking.set(false); this.syncUrl(); void this.reload(); }
     else { const collection = COLLECTIONS.find(item => item.key === value); if (collection) this.openCollection(collection); }
   }
-  resetFilters(): void { this.query.set(''); this.kind.set(null); this.archived.set(false); this.syncUrl(); void this.reload(); }
+  resetFilters(): void { this.query.set(''); this.kind.set(this.collection()?.filters.kind ?? null); this.archived.set(false); this.syncUrl(); void this.reload(); }
   togglePicking(): void { this.picking.set(!this.picking()); if (!this.picking()) this.clearSelection(); }
   toggleFolders(): void { const show = !this.showFolderRail(); if (this.selected()) this.close(); this.foldersVisible.set(show); }
   chooseSort(value: string): void { const [key, dir] = value.split(':'); if (['name', 'kind', 'size', 'updated', 'links', 'by'].includes(key) && ['1', '-1'].includes(dir)) this.sort.set({key: key as ReturnType<typeof this.sort>['key'], dir: Number(dir) as 1 | -1}); }
