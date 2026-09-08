@@ -60,7 +60,7 @@ type DeskRow =
                        (titleChange)="patch({ number: $event })">
         @if (editing()) {
           <button class="btn btn--sm" type="button" [disabled]="saving()" (click)="cancelEdit()">Annuleren</button>
-          <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || !dirty()" (click)="saveAndClose()">
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || !dirty() || negativeExtra()" (click)="saveAndClose()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
         } @else {
@@ -606,8 +606,9 @@ type DeskRow =
                         <div class="po-split po-split--line" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
                           <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }} verdeeld
                             @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }}</em> }
-                            @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} te veel</em> }
+                            @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} erboven</em> }
                             @else { <em>· alles verdeeld</em> }</p>
+                          @if (negativeExtra()) { <p class="po-split__warn">Een product staat onder nul: eerst rechtzetten, dan bewaren.</p> }
                           <span class="po-split__actions">
                             <button class="linklike" type="button" (click)="extraSplitOpen.set(true)">Verdeling aanpassen ›</button>
                             <button class="linklike" type="button" (click)="endManualSplit()">weer automatisch</button>
@@ -883,7 +884,7 @@ type DeskRow =
         <app-purchase-extra-split [order]="data.order" [costing]="data.costing"
                                   (shareChange)="setExtraShare($event.productId, $event.raw)" (targetChange)="setTargetUnitFor($event.productId, $event.raw)"
                                   (fill)="fillExtraSplit($event)" (rest)="extraSplitRestToLast()"
-                                  (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="extraSplitOpen.set(false)" />
+                                  (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="closeExtraSplit()" />
       }
       @if (partnerSheetOpen()) {
         @if (view(); as data) {

@@ -108,7 +108,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         </button>
         @if (dirty()) {
           <button class="btn btn--primary btn--sm" type="button"
-                  [disabled]="saving()" (click)="save()">
+                  [disabled]="saving() || negativeExtra()" (click)="save()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
         } @else if (nextStep(); as step) {
@@ -839,8 +839,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           <div class="po-split po-split--line" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
                             <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }} verdeeld
                               @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }}</em> }
-                              @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} te veel</em> }
+                              @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} erboven</em> }
                               @else { <em>· alles verdeeld</em> }</p>
+                            @if (negativeExtra()) { <p class="po-split__warn">Een product staat onder nul: eerst rechtzetten, dan bewaren.</p> }
                             <span class="po-split__actions">
                               <button class="linklike" type="button" (click)="extraSplitOpen.set(true)">Verdeling aanpassen ›</button>
                               <button class="linklike" type="button" (click)="endManualSplit()">weer automatisch</button>
@@ -1357,7 +1358,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           </button>
           <button class="btn purchase-mobile-dock__save" type="button"
                   [class.btn--primary]="dirty()"
-                  [disabled]="saving() || !dirty()" (click)="save()">
+                  [disabled]="saving() || !dirty() || negativeExtra()" (click)="save()">
             {{ saving() ? 'Opslaan…' : 'Opslaan' }}
           </button>
           @if (phoneStep() < phoneStepLabels.length - 1) {
@@ -1382,7 +1383,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-purchase-extra-split [order]="data.order" [costing]="data.costing"
                                   (shareChange)="setExtraShare($event.productId, $event.raw)" (targetChange)="setTargetUnitFor($event.productId, $event.raw)"
                                   (fill)="fillExtraSplit($event)" (rest)="extraSplitRestToLast()"
-                                  (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="extraSplitOpen.set(false)" />
+                                  (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="closeExtraSplit()" />
       }
       @if (partnerSheetOpen()) {
         <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerShare()" (closed)="partnerSheetOpen.set(false)" (linked)="onPartnerLinked()" />
@@ -2633,6 +2634,8 @@ export class PurchaseEditor {
   readonly extraSplitOpen = signal(false);
   readonly manualExtra = computed(() => this.view()?.order.allocExtra === 'MANUAL');
   readonly extraSplitSpread = computed(() => round2((this.view()?.order.lines ?? []).reduce((sum, line) => sum + (line.extraShareEur ?? 0), 0)));
+  /** A line below zero: the order cannot be saved until it is put right. */
+  readonly negativeExtra = computed(() => (this.view()?.order.lines ?? []).some((line) => (line.extraShareEur ?? 0) < 0));
   readonly extraSplitRemainder = computed(() => round2((this.view()?.order.extraRevenueEur || 0) - this.extraSplitSpread()));
   readonly extraSplitPct = computed(() => { const target = this.view()?.order.extraRevenueEur || 0; return target > 0 ? Math.min(100, this.extraSplitSpread() / target * 100) : 0; });
 
@@ -2664,6 +2667,12 @@ export class PurchaseEditor {
     this.extraSplitOpen.set(true);
   }
 
+  /** Klaar: what was spread above the Enrosed kost becomes the Enrosed kost; below it the target stays, for the rest to follow. */
+  closeExtraSplit(): void {
+    if (this.manualExtra() && this.extraSplitRemainder() < -0.004) this.patch({ extraRevenueEur: this.extraSplitSpread() });
+    this.extraSplitOpen.set(false);
+  }
+
   /** The window names the product; the costed line it is measured against comes from the draft. */
   setTargetUnitFor(productId: number, raw: unknown): void {
     const line = this.view()?.costing.lines.find((row) => row.productId === productId);
@@ -2672,7 +2681,7 @@ export class PurchaseEditor {
 
   setExtraShare(productId: number, raw: unknown): void {
     const value = Number(String(raw ?? '').replace(',', '.'));
-    this.setLine(productId, { extraShareEur: Number.isFinite(value) && value > 0 ? round2(value) : 0 });
+    this.setLine(productId, { extraShareEur: Number.isFinite(value) ? round2(value) : 0 });
   }
 
   /** The Enrosed kost inside one piece of a costed line. */
@@ -2689,7 +2698,8 @@ export class PurchaseEditor {
   setTargetUnit(productId: number, line: { quantity: number; totalEur: number; extraRevenueEur: number }, raw: unknown): void {
     const target = Number(String(raw ?? '').replace(',', '.'));
     if (!Number.isFinite(target)) return;
-    this.setLine(productId, { extraShareEur: round2(Math.max(0, (target - this.basePerPiece(line)) * line.quantity)) });
+    /* Below the bare cost the share goes negative on purpose: it shows, and it blocks saving. */
+    this.setLine(productId, { extraShareEur: round2((target - this.basePerPiece(line)) * line.quantity) });
   }
 
   /** Three decimals, rounded up: the way every piece amount on the order reads. */
@@ -2892,6 +2902,10 @@ export class PurchaseEditor {
   async save(): Promise<PurchaseOrderView | null> {
     const data = this.view();
     if (!data || this.saving()) return null;
+    if (this.negativeExtra()) {
+      this.ui.toast('Een product staat onder nul bij de Enrosed kost; zet dat eerst recht', 'err');
+      return null;
+    }
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
     try {

@@ -1,5 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { LandedCost, PurchaseOrder } from '../../core/api/models';
 import { EurPipe, EurUpPipe, NumPipe, ceilTo } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
@@ -28,7 +27,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 @Component({
   selector: 'app-purchase-extra-split',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, EurPipe, EurUpPipe, NumPipe],
+  imports: [Sheet, EurPipe, EurUpPipe, NumPipe],
   template: `
     <app-sheet title="Enrosed kost per product" [wide]="true" (closed)="closed.emit()">
       <div body class="xs" [class.xs--over]="remainder() < -0.004" [class.xs--done]="remainder() >= -0.004 && remainder() <= 0.004">
@@ -36,8 +35,9 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
           <div class="xs__sum">
             <p><b>{{ spread() | eur: 0 }}</b> van {{ target() | eur: 0 }} verdeeld
               @if (remainder() > 0.004) { <em>· nog {{ remainder() | eur: 0 }}</em> }
-              @else if (remainder() < -0.004) { <em>· {{ -remainder() | eur: 0 }} te veel</em> }
+              @else if (remainder() < -0.004) { <em>· {{ -remainder() | eur: 0 }} boven de Enrosed kost, dat mag</em> }
               @else { <em>· alles verdeeld</em> }</p>
+            @if (negative()) { <p class="xs__warn">Een product staat onder nul: de kostprijs ligt onder wat het zonder Enrosed kost al kost. Zet dat recht, anders kan de order niet bewaard worden.</p> }
             <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct()"></div></div>
           </div>
           <div class="xs__fill">
@@ -55,23 +55,25 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
             <span>Product</span><span class="num">Stuks</span><span class="num">Zonder Enrosed kost</span><span>Enrosed kost</span><span>Kostprijs / stuk</span>
           </div>
           @for (row of rows(); track row.productId) {
-            <div class="xs__row" role="row">
+            <div class="xs__row" role="row" [class.xs__row--negative]="row.shareEur < 0">
               <span class="xs__name"><b>{{ row.name }}</b><small>{{ row.quantity | num }} stuks · zonder Enrosed kost {{ row.baseUnit | eurUp: 3 }}</small></span>
               <span class="xs__qty num">{{ row.quantity | num }}</span>
               <span class="xs__base num">{{ row.baseUnit | eurUp: 3 }}</span>
               <span class="xs__money">
                 <label>
-                  <i>€</i><input class="input num right" type="number" min="0" step="10" inputmode="decimal" [attr.aria-label]="'Enrosed kost voor ' + row.name"
-                         [ngModel]="row.shareEur || null" (ngModelChange)="shareChange.emit({ productId: row.productId, raw: $event })" />
+                  <i>€</i><input class="input num right" type="number" step="10" inputmode="decimal" [attr.aria-label]="'Enrosed kost voor ' + row.name"
+                         [value]="draftOf('s' + row.productId, shareText(row))"
+                         (input)="onShareInput(row.productId, $any($event.target).value)" (blur)="settle('s' + row.productId)" />
                 </label>
                 <small>{{ row.extraUnit | eurUp: 3 }} per stuk</small>
               </span>
               <span class="xs__money">
                 <label>
                   <i>€</i><input class="input num right" type="number" min="0" step="0.01" inputmode="decimal" [attr.aria-label]="'Kostprijs per stuk voor ' + row.name + ', de Enrosed kost volgt'"
-                         [value]="fixed3(row.landedUnit)" (change)="targetChange.emit({ productId: row.productId, raw: $any($event.target).value })" />
+                         [value]="draftOf('t' + row.productId, fixed3(row.landedUnit))"
+                         (input)="onTargetInput(row.productId, $any($event.target).value)" (blur)="settle('t' + row.productId)" />
                 </label>
-                <small>typ de kostprijs, de Enrosed kost volgt</small>
+                <small>typ de kostprijs, de Enrosed kost ernaast volgt</small>
               </span>
             </div>
           }
@@ -91,8 +93,9 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
     .xs__sum p { margin: 0 0 6px; font-size: 13px; }
     .xs__sum b { font-variant-numeric: tabular-nums; }
     .xs__sum em { color: var(--warn); font-style: normal; font-weight: 650; }
-    .xs--over .xs__sum em { color: var(--danger, #b3261e); }
-    .xs--over .payments-meter__fill { background: var(--danger, #b3261e); }
+    .xs--over .xs__sum em { color: var(--ink-2); font-weight: 600; }
+    .xs__warn { margin: 6px 0 0; color: var(--danger, #b3261e); font-size: 12px; font-weight: 650; }
+    .xs__row--negative { border-color: var(--danger, #b3261e); background: var(--danger-soft, #fdecea); }
     .xs--done .xs__sum em { color: var(--ok); }
     .xs__sum .payments-meter { margin: 0; }
     .xs__fill { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -150,9 +153,39 @@ export class PurchaseExtraSplit {
   }));
   readonly spread = computed(() => round2(this.rows().reduce((sum, row) => sum + row.shareEur, 0)));
   readonly remainder = computed(() => round2(this.target() - this.spread()));
-  readonly pct = computed(() => (this.target() > 0 ? Math.min(100, this.spread() / this.target() * 100) : 0));
+  readonly pct = computed(() => (this.target() > 0 ? Math.min(100, Math.max(0, this.spread()) / this.target() * 100) : 0));
+  readonly negative = computed(() => this.rows().some((row) => row.shareEur < 0));
+
+  shareText(row: SplitRow): string {
+    return row.shareEur ? String(row.shareEur) : '';
+  }
 
   fixed3(value: number): string {
     return ceilTo(value, 3).toFixed(3);
+  }
+
+  /* What is being typed stays as typed until the field is left; only then the recalculated value shows. */
+  private readonly drafts = signal<Record<string, string>>({});
+
+  draftOf(key: string, fallback: string): string {
+    return this.drafts()[key] ?? fallback;
+  }
+
+  onShareInput(productId: number, raw: string): void {
+    this.drafts.update((drafts) => ({ ...drafts, ['s' + productId]: raw }));
+    this.shareChange.emit({ productId, raw });
+  }
+
+  onTargetInput(productId: number, raw: string): void {
+    this.drafts.update((drafts) => ({ ...drafts, ['t' + productId]: raw }));
+    this.targetChange.emit({ productId, raw });
+  }
+
+  settle(key: string): void {
+    this.drafts.update((drafts) => {
+      const rest = { ...drafts };
+      delete rest[key];
+      return rest;
+    });
   }
 }
