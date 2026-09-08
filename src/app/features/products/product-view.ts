@@ -22,7 +22,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
-import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, KgPipe } from '../../shared/pipes';
 import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-state';
@@ -54,7 +54,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
+  imports: [KgPipe, Skeleton, ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -363,7 +363,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               <div class="tiles">
                 <div class="tile"><span>Afmeting B × D × H</span><b class="num">{{ size(product.dimensions) }}</b></div>
                 <div class="tile"><span>Gewicht per stuk</span>
-                  <b class="num">{{ product.dimensions.weightKg ? (product.dimensions.weightKg | num) + ' kg' : '—' }}</b></div>
+                  <b class="num">{{ product.dimensions.weightKg ? (product.dimensions.weightKg | kg) : '—' }}</b></div>
                 @if (product.packaging.kind !== 'NONE') {
                   <div class="tile"><span>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} B × D × H</span>
                     <b class="num">{{ size(product.packaging.dimensions) }}</b></div>
@@ -372,7 +372,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                       <b class="num">{{ product.packaging.piecesPerUnit | num }}</b></div>
                   }
                   <div class="tile"><span>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
-                    <b class="num">{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | num) + ' kg' : '—' }}</b></div>
+                    <b class="num">{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | kg) : '—' }}</b></div>
                   @if (product.packaging.barcode; as code) {
                     <div class="tile"><span>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
                       <b class="mono">
@@ -527,7 +527,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 <div class="tile"><span>Gewicht</span><b class="num">
                   @if (product.carton.weightKg) {
                     @if (cartonWeightAuto(product)) { <small class="muted">auto</small> }
-                    {{ product.carton.weightKg | num }} kg
+                    {{ product.carton.weightKg | kg }}
                   } @else { — }
                 </b></div>
                 <div class="tile"><span>Volume</span><b class="num">

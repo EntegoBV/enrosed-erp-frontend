@@ -65,6 +65,15 @@ export class NumPipe implements PipeTransform {
   }
 }
 
+/** A weight as entered: "10 kg", "6,2 kg", "0,125 kg"; never rounded away, never padded. */
+@Pipe({ name: 'kg' })
+export class KgPipe implements PipeTransform {
+  transform(value: number | null | undefined, locale = LOCALE): string {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+    return new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(Number(value)) + ' kg';
+  }
+}
+
 @Pipe({ name: 'pct' })
 export class PctPipe implements PipeTransform {
   transform(value: number | null | undefined, decimals = 1, locale = LOCALE): string {

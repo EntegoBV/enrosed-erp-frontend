@@ -22,7 +22,7 @@ import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
-import { CbmPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { CbmPipe, DateTimeNlPipe, EurPipe, NumPipe, KgPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
@@ -73,7 +73,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 @Component({
   selector: 'app-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
+  imports: [KgPipe, 
     FormsModule, PageHeader, PhotoManager, ProductFamilyGallery, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage,
@@ -1191,7 +1191,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <dl class="desk-facts">
             <div><dt>Inhoud</dt><dd>{{ (draft().carton.piecesPerCarton || autoCartonPieces()) ? ((draft().carton.piecesPerCarton || autoCartonPieces()) | num) + ' stuks' : '—' }}@if (!draft().carton.piecesPerCarton && autoCartonPieces()) { <small>automatisch uit de maten</small> }</dd></div>
             <div><dt>Maat</dt><dd>{{ draft().carton.lengthCm && draft().carton.widthCm && draft().carton.heightCm ? (draft().carton.lengthCm | num) + ' × ' + (draft().carton.widthCm | num) + ' × ' + (draft().carton.heightCm | num) + ' cm' : '—' }}<small>{{ cartonCbm() | cbm }} per doos · {{ pieceCbm() | cbm }} per stuk</small></dd></div>
-            <div><dt>Gewicht</dt><dd>{{ draft().carton.weightKg ? (draft().carton.weightKg | num: 1) + ' kg' : (autoCartonWeight() ? (autoCartonWeight() | num: 1) + ' kg' : '—') }}@if (!draft().carton.weightKg && autoCartonWeight()) { <small>uit het stukgewicht</small> }</dd></div>
+            <div><dt>Gewicht</dt><dd>{{ draft().carton.weightKg ? (draft().carton.weightKg | kg) : (autoCartonWeight() ? (autoCartonWeight() | kg) : '—') }}@if (!draft().carton.weightKg && autoCartonWeight()) { <small>uit het stukgewicht</small> }</dd></div>
             <div><dt>40' HC</dt><dd>{{ (draft().carton.hcCapacity || autoHcCapacity()) ? ((draft().carton.hcCapacity || autoHcCapacity()) | num) + ' dozen' : '—' }}</dd></div>
           </dl>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('packaging')">Omdoos aanpassen ›</button>
@@ -1395,15 +1395,18 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .editor-rail { display: none; }
     @media (min-width: 1024px) {
       .product-editor-lead__content { padding-bottom: 0; }
-      .product-editor-page { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; }
-      .product-editor-page > .subnav.erp-workspace__nav { position: sticky; top: calc(var(--appbar-h) + 14px); z-index: 5; grid-area: 1 / 1; width: 100%; max-width: none; margin: 0;
-        padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
-      .product-editor-page > .editor-canvas { grid-area: 1 / 2; max-width: none; margin: 0; }
+      /* Desk: the steps run as one bar across the top, the form below takes the
+         width a desk has; on a wide desk the summary rail stands to the right. */
+      .product-editor-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 16px; align-items: start; }
+      .product-editor-page > .subnav.erp-workspace__nav { position: sticky; top: calc(var(--appbar-h) + 8px); z-index: 30; grid-column: 1 / -1; grid-row: 1; width: 100%; max-width: none; margin: 0;
+        padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--sh-1); }
+      .product-editor-page > .editor-canvas { grid-column: 1; grid-row: 2; max-width: none; margin: 0; }
       .product-editor-page > :not(.subnav):not(.editor-canvas):not(.editor-rail) { grid-column: 1 / -1; }
+      .editor-section, .editor-desktop-only { scroll-margin-top: calc(var(--appbar-h) + 82px); }
     }
     @media (min-width: 1360px) {
-      .product-editor-page { grid-template-columns: 200px minmax(0, 1fr) 292px; }
-      .editor-rail { position: sticky; top: calc(var(--appbar-h) + 14px); display: grid; grid-area: 1 / 3; gap: 10px; max-height: calc(100dvh - var(--appbar-h) - 28px); overflow-y: auto; }
+      .product-editor-page { grid-template-columns: minmax(0, 1fr) 292px; }
+      .editor-rail { position: sticky; top: calc(var(--appbar-h) + 80px); display: grid; grid-column: 2; grid-row: 2; gap: 10px; max-height: calc(100dvh - var(--appbar-h) - 94px); overflow-y: auto; }
     }
     .editor-rail__card { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
     .editor-rail__card--warn { border-color: #eddcb9; background: var(--warn-soft); }
@@ -1420,20 +1423,18 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .editor-rail .desk-chain__row b { font-variant-numeric: tabular-nums; }
     .editor-rail .desk-facts > div { grid-template-columns: 78px minmax(0, 1fr); }
     @media (min-width: 1024px) {
-      .subnav.erp-workspace__nav .erp-workspace__nav-rail { flex-direction: column; gap: 0; padding: 0; overflow: visible; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item { position: relative; width: 100%; justify-content: flex-start; gap: 10px;
-        min-height: 44px; padding: 6px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); box-shadow: none; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item::before { content: ''; position: absolute; left: 21px; top: 36px; bottom: -8px; width: 2px; background: var(--line); }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item:last-child::before { display: none; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-done::before { background: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+      .subnav.erp-workspace__nav .erp-workspace__nav-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 0; overflow: visible; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item { position: relative; width: 100%; min-width: 0; justify-content: center; gap: 8px;
+        min-height: 46px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); box-shadow: none; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item::before { display: none; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item:hover { background: var(--surface-2); }
       .subnav.erp-workspace__nav .erp-workspace__nav-item.active { background: var(--rose-soft); color: var(--rose-dark); }
       .subnav.erp-workspace__nav .erp-workspace__nav-index { position: relative; z-index: 1; width: 24px; height: 24px; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 800; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item.is-done .erp-workspace__nav-index { border-color: var(--ok); background: var(--ok); color: #fff; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item.is-warn .erp-workspace__nav-index { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
       .subnav.erp-workspace__nav .erp-workspace__nav-item.active .erp-workspace__nav-index { border-color: var(--rose); background: var(--rose); color: #fff; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child { display: grid; gap: 1px; min-width: 0; font-size: 12.5px; font-weight: 650; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child small { color: var(--muted); font-size: 10.5px; font-weight: 500; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child { display: grid; gap: 1px; min-width: 0; font-size: 12.5px; font-weight: 650; text-align: left; }
+      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child small { overflow: hidden; color: var(--muted); font-size: 10.5px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
       .subnav.erp-workspace__nav .erp-workspace__nav-item.is-warn > span:last-child small { color: var(--warn); font-weight: 650; }
     }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }

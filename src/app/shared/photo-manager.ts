@@ -403,6 +403,10 @@ export interface PendingPhotoUploadResult {
       list-style: none; scroll-padding-inline: 2px; scroll-snap-type: inline proximity;
       scrollbar-width: thin;
     }
+    /* A desk has room: the photos wrap into rows instead of scrolling sideways, so every card and its buttons stay in view. */
+    @media (min-width: 1024px) {
+      .photo-strip { flex-wrap: wrap; overflow: visible; scroll-snap-type: none; padding-bottom: 2px; }
+    }
     .photo-card {
       position: relative; flex: 0 0 clamp(132px, 42vw, 158px); min-width: 0; overflow: hidden;
       border: 1px solid var(--line); border-radius: var(--r-sm);
