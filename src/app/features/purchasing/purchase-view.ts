@@ -20,7 +20,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
 import {
-  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
+  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS, Payee,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -654,7 +654,7 @@ type PurchaseWorkspaceSectionId =
               <h2 id="purchase-payments-title">
                 @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
               </h2>
-              <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</p>
+              <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paidTo('OTHER') > 0) { · {{ paidTo('OTHER') | eur }} andere betalingen }@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</p>
               <div class="purchase-payment-streams">
               <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
               <div class="pay-stream">
@@ -700,6 +700,29 @@ type PurchaseWorkspaceSectionId =
                   <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
                   @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
                     <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                  }
+                </div>
+              }
+              @if (separateOwed() > 0 || paymentsTo('SEPARATE').length) {
+                <div class="pay-stream">
+                  <div class="pay-stream__head">
+                    <span><b>Inspectie &amp; andere kosten</b><small>apart betaald</small></span>
+                    <span class="num"><b>{{ paidTo('SEPARATE') | eur }}</b><small>van {{ separateOwed() | eur }}</small></span>
+                  </div>
+                  <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SEPARATE'), separateOwed())"></div></div>
+                  @for (payment of paymentsTo('SEPARATE'); track payment.id) {
+                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                  }
+                </div>
+              }
+              @if (paymentsTo('OTHER').length) {
+                <div class="pay-stream">
+                  <div class="pay-stream__head">
+                    <span><b>Andere betalingen</b><small>bankkosten, koerier, wat de container verder kostte</small></span>
+                    <span class="num"><b>{{ paidTo('OTHER') | eur }}</b><small>extra</small></span>
+                  </div>
+                  @for (payment of paymentsTo('OTHER'); track payment.id) {
+                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                   }
                 </div>
               }
@@ -1241,45 +1264,55 @@ export class PurchaseView {
     });
   });
   readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
-  readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed());
+  readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed() + this.separateOwed());
   readonly paidAll = computed(() => (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
   /** A stream is settled once a payment on it says so: nothing stays open, the difference is ours. */
-  settledFor(payee: 'SUPPLIER' | 'LOGISTICS'): boolean {
+  settledFor(payee: Payee): boolean {
     return this.paymentsTo(payee).some((payment) => !!payment.settles);
   }
 
   /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */
-  differenceFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
-    if (!this.settledFor(payee)) return 0;
-    const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
-    return Math.round((this.paidTo(payee) - owed) * 100) / 100;
+  readonly separateOwed = computed(() => this.view()?.costing.totals.separateCostsEur ?? 0);
+
+  owedFor(payee: Payee): number {
+    switch (payee) {
+      case 'SUPPLIER': return this.supplierOwed();
+      case 'LOGISTICS': return this.logisticsOwed();
+      case 'SEPARATE': return this.separateOwed();
+      default: return 0;
+    }
   }
 
-  openFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
-    if (this.settledFor(payee)) return 0;
-    const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
+  differenceFor(payee: Payee): number {
+    if (!this.settledFor(payee) || payee === 'OTHER') return 0;
+    return Math.round((this.paidTo(payee) - this.owedFor(payee)) * 100) / 100;
+  }
+
+  openFor(payee: Payee): number {
+    if (this.settledFor(payee) || payee === 'OTHER') return 0;
+    const owed = this.owedFor(payee);
     const open = Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
     return this.paidTo(payee) > 0 && open <= PAYMENT_TOLERANCE_EUR ? 0 : open;
   }
 
   /** The difference worth mentioning: beyond the small change of paying. */
-  notableDifferenceFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
+  notableDifferenceFor(payee: Payee): number {
     const difference = this.differenceFor(payee);
     return withinTolerance(difference) ? 0 : difference;
   }
 
-  smallChangeFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
+  smallChangeFor(payee: Payee): number {
     const difference = this.differenceFor(payee);
     return withinTolerance(difference) ? difference : 0;
   }
 
   readonly tolerance = PAYMENT_TOLERANCE_EUR;
-  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS')) * 100) / 100);
-  readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS'));
-  paymentsTo(payee: 'SUPPLIER' | 'LOGISTICS'): PurchasePayment[] {
+  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS') + this.notableDifferenceFor('SEPARATE')) * 100) / 100);
+  readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS') + this.openFor('SEPARATE'));
+  paymentsTo(payee: Payee): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
   }
-  paidTo(payee: 'SUPPLIER' | 'LOGISTICS'): number {
+  paidTo(payee: Payee): number {
     return this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
   }
   pct(paid: number, owed: number): number {

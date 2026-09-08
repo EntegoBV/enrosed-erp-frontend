@@ -1132,7 +1132,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <h2 id="purchase-payments-title">
                   @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
                 </h2>
-                <p>Te betalen: {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</p>
+                <p>Te betalen: {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paidTo('OTHER') > 0) { · {{ paidTo('OTHER') | eur }} andere betalingen }@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</p>
               </div>
 
               <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
@@ -1176,7 +1176,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
                       <button class="pay-line__btn" type="button" title="Aanpassen" [attr.aria-label]="'Betaling aanpassen'" (click)="editPayment(payment)">✎</button>
                       <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" [attr.aria-label]="'Bankafschrift toevoegen'" (click)="attachProof(payment)">📎</button>
-                      <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                     </span>
                   </div>
                 }
@@ -1204,7 +1203,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
                       <button class="pay-line__btn" type="button" title="Aanpassen" [attr.aria-label]="'Betaling aanpassen'" (click)="editPayment(payment)">✎</button>
                       <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" [attr.aria-label]="'Bankafschrift toevoegen'" (click)="attachProof(payment)">📎</button>
-                      <button class="pay-line__remove" type="button" title="Verwijderen" [attr.aria-label]="'Betaling verwijderen'" (click)="removePayment(payment)">×</button>
                     </span>
                     </div>
                   }
@@ -1216,6 +1214,52 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
                 </div>
               }
+
+              <div class="pay-stream">
+                <div class="pay-stream__head">
+                  <span><b>Inspectie &amp; andere kosten</b><small>{{ separateOwed() > 0 ? 'inspectie en de kosten op de order, apart betaald' : 'geen inspectie of andere kosten op de order' }}</small></span>
+                  <span class="num"><b>{{ paidTo('SEPARATE') | eur }}</b><small>van {{ separateOwed() | eur }}</small></span>
+                </div>
+                @if (separateOwed() > 0) { <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SEPARATE'), separateOwed())"></div></div> }
+                @for (payment of paymentsTo('SEPARATE'); track payment.id) {
+                    <div class="pay-line">
+                      <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
+                        <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                      <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                      <span class="pay-line__actions">
+                      @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                      <button class="pay-line__btn" type="button" title="Aanpassen" [attr.aria-label]="'Betaling aanpassen'" (click)="editPayment(payment)">✎</button>
+                      <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" [attr.aria-label]="'Bankafschrift toevoegen'" (click)="attachProof(payment)">📎</button>
+                    </span>
+                    </div>
+                }
+                @if (settledFor('SEPARATE')) {
+                  <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SEPARATE') === 0 ? '' : (notableDifferenceFor('SEPARATE') > 0 ? ' · ' + (notableDifferenceFor('SEPARATE') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('SEPARATE') | eur) + ' minder betaald') }}</p>
+                } @else if (!(openFor('SEPARATE') > 0) && separateOwed() > 0) {
+                  <p class="pay-stream__done">✓ Volledig betaald</p>
+                }
+                <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SEPARATE')">+ Betaling inspectie of andere kost</button>
+              </div>
+
+              <div class="pay-stream">
+                <div class="pay-stream__head">
+                  <span><b>Andere betalingen</b><small>bankkosten, koerier, wat de container verder kostte · niet afgesproken, wel geteld</small></span>
+                  <span class="num"><b>{{ paidTo('OTHER') | eur }}</b><small>extra</small></span>
+                </div>
+                @for (payment of paymentsTo('OTHER'); track payment.id) {
+                    <div class="pay-line">
+                      <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
+                        <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                      <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                      <span class="pay-line__actions">
+                      @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                      <button class="pay-line__btn" type="button" title="Aanpassen" [attr.aria-label]="'Betaling aanpassen'" (click)="editPayment(payment)">✎</button>
+                      <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" [attr.aria-label]="'Bankafschrift toevoegen'" (click)="attachProof(payment)">📎</button>
+                    </span>
+                    </div>
+                }
+                <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'OTHER')">+ Andere betaling</button>
+              </div>
 
               @if (data.costing.totals.extraRevenueEur) {
                 <p class="pay-ours">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p>
@@ -1493,7 +1537,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
 
       @if (paying(); as pay) {
-        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + (pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier')" (closed)="paying.set(null)">
+        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + paymentTitle(pay.payee)" (closed)="paying.set(null)">
           <div body>
             <!-- Deposits are fractions of the goods: one tap fills them in. -->
             <div class="pay-chips" role="group" aria-label="Snel invullen">
@@ -1577,7 +1621,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <input class="input" id="doc-label" placeholder="bijv. KBC 23/08, factuur 2e helft"
                        [ngModel]="doc.label" (ngModelChange)="addingDocument.set({ ...doc, label: $event })" />
               </div>
-              @if (doc.kind === 'PAYMENT_PROOF' && paymentsTo('SUPPLIER').length + paymentsTo('LOGISTICS').length) {
+              @if (doc.kind === 'PAYMENT_PROOF' && (payments() ?? []).length) {
                 <div class="field span-2">
                   <label for="doc-payment">Hoort bij betaling <span class="opt"></span></label>
                   <select class="select" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
@@ -2087,9 +2131,8 @@ export class PurchaseEditor {
 
   /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */
   differenceFor(payee: Payee): number {
-    if (!this.settledFor(payee)) return 0;
-    const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
-    return Math.round((this.paidTo(payee) - owed) * 100) / 100;
+    if (!this.settledFor(payee) || payee === 'OTHER') return 0;
+    return Math.round((this.paidTo(payee) - this.owedFor(payee)) * 100) / 100;
   }
 
   /** The difference worth mentioning: beyond the small change of paying. */
@@ -2107,7 +2150,29 @@ export class PurchaseEditor {
   readonly tolerance = PAYMENT_TOLERANCE_EUR;
 
   /** The differences of every settled stream together: what the order cost more or less than agreed. */
-  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS')) * 100) / 100);
+  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS') + this.notableDifferenceFor('SEPARATE')) * 100) / 100);
+
+  /** The inspection and the other named costs on the order: paid apart, to whoever did the work. */
+  readonly separateOwed = computed(() => this.view()?.costing.totals.separateCostsEur ?? 0);
+
+  /** What was agreed on a stream; the other payments have no agreement, only what they cost. */
+  owedFor(payee: Payee): number {
+    switch (payee) {
+      case 'SUPPLIER': return this.supplierOwed();
+      case 'LOGISTICS': return this.logisticsOwed();
+      case 'SEPARATE': return this.separateOwed();
+      default: return 0;
+    }
+  }
+
+  paymentTitle(payee: Payee): string {
+    switch (payee) {
+      case 'LOGISTICS': return 'Betaling douane & transport';
+      case 'SEPARATE': return 'Betaling inspectie & andere kosten';
+      case 'OTHER': return 'Andere betaling · bankkosten, koerier, …';
+      default: return 'Betaling aan de leverancier';
+    }
+  }
 
   /** The plan in words, for the hint under a split of one's own. */
   planLabel(order: PurchaseOrder): string { return paymentPlanLabel(order, PAYMENT_TERMS); }
@@ -2134,7 +2199,7 @@ export class PurchaseEditor {
   /** What the supplier is owed: goods, plus the sea freight when it is in the price. */
   readonly supplierOwed = computed(() => this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
   readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
-  readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed());
+  readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed() + this.separateOwed());
   paymentsTo(payee: Payee): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
   }
@@ -2142,7 +2207,7 @@ export class PurchaseEditor {
     return this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
   }
   readonly paidAll = computed(() => (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
-  readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS'));
+  readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS') + this.openFor('SEPARATE'));
   pct(paid: number, owed: number): number {
     return owed > 0 ? Math.min(100, Math.round((paid / owed) * 100)) : 0;
   }
@@ -2173,8 +2238,8 @@ export class PurchaseEditor {
 
   /** What is still open on the stream a payment goes to. */
   openFor(payee: Payee): number {
-    if (this.settledFor(payee)) return 0;
-    const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
+    if (this.settledFor(payee) || payee === 'OTHER') return 0;
+    const owed = this.owedFor(payee);
     const open = Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
     /* Short by the small change of paying counts as paid; nothing is asked for it. */
     return this.paidTo(payee) > 0 && open <= PAYMENT_TOLERANCE_EUR ? 0 : open;
@@ -2184,7 +2249,8 @@ export class PurchaseEditor {
   readonly payingOverage = computed(() => {
     const pay = this.paying();
     if (!pay || !(pay.amount > 0)) return 0;
-    const owed = pay.payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
+    if (pay.payee === 'OTHER') return 0;
+    const owed = this.owedFor(pay.payee);
     if (!(owed > 0)) return 0;
     return Math.max(0, Math.round((this.eurOf(pay.amount, pay.currency) - this.openFor(pay.payee)) * 100) / 100);
   });
@@ -2202,7 +2268,7 @@ export class PurchaseEditor {
   }
 
   openPayment(amount?: number, label?: string, payee: Payee = 'SUPPLIER'): void {
-    const rest = payee === 'SUPPLIER' ? Math.max(0, this.remainingEur()) : Math.max(0, this.logisticsOwed() - this.paidTo('LOGISTICS'));
+    const rest = Math.max(0, this.openFor(payee));
     /* An instalment can ask more than what is still open when earlier
        payments did not line up exactly; never prefill beyond the rest. */
     const capped = rest > 0.005 ? Math.min(amount ?? rest, rest) : (amount ?? rest);
@@ -2210,7 +2276,8 @@ export class PurchaseEditor {
       amount: Math.round(capped * 100) / 100,
       currency: 'EUR',
       paidOn: new Date().toISOString().slice(0, 10),
-      label: label ?? (payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '') : 'Douane & transport'),
+      label: label ?? (payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '')
+        : payee === 'LOGISTICS' ? 'Douane & transport' : payee === 'SEPARATE' ? 'Inspectie' : ''),
       payee,
       files: [],
       settles: false,

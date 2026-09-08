@@ -706,7 +706,7 @@ type DeskRow =
                 @case ('pay') {
                   <div class="desk-pay-head">
                     <strong>@if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }</strong>
-                    <small>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</small>
+                    <small>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paidTo('OTHER') > 0) { · {{ paidTo('OTHER') | eur }} andere betalingen }@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</small>
                   </div>
                   <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
                   <div class="pay-stream">
@@ -744,7 +744,6 @@ type DeskRow =
                           @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
                           <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
                           <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
-                          <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Betaling verwijderen" (click)="removePayment(payment)">×</button>
                         </span>
                       </div>
                     }
@@ -769,7 +768,6 @@ type DeskRow =
                           @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
                           <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
                           <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
-                          <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Betaling verwijderen" (click)="removePayment(payment)">×</button>
                         </span>
                         </div>
                       }
@@ -779,6 +777,48 @@ type DeskRow =
                       <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
                     </div>
                   }
+                  <div class="pay-stream">
+                    <div class="pay-stream__head">
+                      <span><b>Inspectie &amp; andere kosten</b><small>{{ separateOwed() > 0 ? 'inspectie en de kosten op de order, apart betaald' : 'geen inspectie of andere kosten op de order' }}</small></span>
+                      <span class="num"><b>{{ paidTo('SEPARATE') | eur }}</b><small>van {{ separateOwed() | eur }}</small></span>
+                    </div>
+                    @if (separateOwed() > 0) { <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SEPARATE'), separateOwed())"></div></div> }
+                    @for (payment of paymentsTo('SEPARATE'); track payment.id) {
+                        <div class="pay-line">
+                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
+                            <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                          <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                          <span class="pay-line__actions">
+                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
+                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
+                        </span>
+                        </div>
+                    }
+                    @if (settledFor('SEPARATE')) {
+                      <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SEPARATE') === 0 ? '' : (notableDifferenceFor('SEPARATE') > 0 ? ' · ' + (notableDifferenceFor('SEPARATE') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('SEPARATE') | eur) + ' minder betaald') }}</p>
+                    } @else if (!(openFor('SEPARATE') > 0) && separateOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
+                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SEPARATE')">+ Betaling inspectie of andere kost</button>
+                  </div>
+                  <div class="pay-stream">
+                    <div class="pay-stream__head">
+                      <span><b>Andere betalingen</b><small>bankkosten, koerier, wat de container verder kostte · niet afgesproken, wel geteld</small></span>
+                      <span class="num"><b>{{ paidTo('OTHER') | eur }}</b><small>extra</small></span>
+                    </div>
+                    @for (payment of paymentsTo('OTHER'); track payment.id) {
+                        <div class="pay-line">
+                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
+                            <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                          <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
+                          <span class="pay-line__actions">
+                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
+                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
+                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
+                        </span>
+                        </div>
+                    }
+                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'OTHER')">+ Andere betaling</button>
+                  </div>
                   @if (data.costing.totals.extraRevenueEur) {
                     <div class="pay-note">
                       <span><b>Enrosed kost</b><small>eigen opslag · geen betaling</small></span>
@@ -1083,7 +1123,7 @@ type DeskRow =
       }
 
       @if (paying(); as pay) {
-        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + (pay.payee === 'LOGISTICS' ? 'Betaling douane & transport' : 'Betaling aan de leverancier')" (closed)="paying.set(null)">
+        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + paymentTitle(pay.payee)" (closed)="paying.set(null)">
           <div body>
             <!-- Deposits are fractions of the goods: one tap fills them in. -->
             <div class="pay-chips" role="group" aria-label="Snel invullen">

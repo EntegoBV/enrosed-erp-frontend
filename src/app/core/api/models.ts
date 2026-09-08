@@ -975,7 +975,8 @@ export const PAYMENT_TERMS: { value: PaymentTerms; label: string; instalments: I
 ];
 
 /** Who got the money: the factory, or the forwarder and customs. */
-export type Payee = 'SUPPLIER' | 'LOGISTICS';
+/** Who got the money: the factory, the forwarder and customs, the inspection and other named costs, or whatever else it cost to pay. */
+export type Payee = 'SUPPLIER' | 'LOGISTICS' | 'SEPARATE' | 'OTHER';
 
 /** One amount paid on a purchase order, kept as it left the bank. */
 export interface PurchasePayment {
