@@ -670,6 +670,13 @@ a { color: var(--rose); }
   .shell.shell--website { flex-direction: row; }
 }
 
+/* The library workspace: a rail from a Fold upwards, a full sidebar on a wide desk. */
+.shell.shell--files { flex-direction: column; background: #f4f1ed; }
+.shell--files .main { background: #f7f5f2; }
+@media (min-width: 680px) {
+  .shell.shell--files { flex-direction: row; }
+}
+
 /* ================================================================= cards */
 
 .card {

@@ -85,6 +85,26 @@ import { COLLECTIONS } from './files-page';
     .files-sidebar__nav > a.active { border-color: rgb(215 184 118 / 28%); background: rgb(215 184 118 / 14%); color: #f5d894; }
     .files-sidebar__nav > a.active small { color: rgb(245 216 148 / 62%); }
     .files-sidebar__footer { display: none; }
+    /* A Fold or a narrow desk: a rail of icons with a word under each, the folders and files beside it. */
+    @media (min-width: 680px) and (max-width: 899px) {
+      :host { width: 88px; min-height: 100dvh; }
+      .files-sidebar { position: sticky; top: 0; height: 100dvh; }
+      .files-sidebar__brand { min-height: 0; justify-content: center; padding: 14px 8px 10px; }
+      .files-sidebar__brand app-brand-mark { display: none; }
+      .files-sidebar__brand::before { content: 'E'; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: #d7b876; color: #171311; font-size: 16px; font-weight: 900; }
+      .files-sidebar__nav { grid-auto-flow: row; grid-auto-columns: auto; flex: 1; min-height: 0; gap: 4px; padding: 8px 6px; overflow-y: auto; overflow-x: hidden; align-content: start; scrollbar-width: none; }
+      .files-sidebar__nav > a { grid-template-columns: 1fr; justify-items: center; min-height: 58px; padding: 8px 4px 6px; gap: 5px; text-align: center; }
+      .files-sidebar__nav > a > span { justify-items: center; }
+      .files-sidebar__nav b { overflow: hidden; max-width: 76px; font-size: 10px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+      .files-sidebar__nav small { display: none; }
+      .files-sidebar__label { display: block; margin: 8px 0 2px; color: rgb(255 255 255 / 30%); font-size: 8.5px; font-weight: 850; letter-spacing: .1em; text-align: center; text-transform: uppercase; }
+      .files-sidebar__footer { display: grid; padding: 8px 6px 12px; border-top: 1px solid rgb(255 255 255 / 10%); }
+      .files-sidebar__back { display: grid; justify-items: center; gap: 2px; padding: 8px 4px; border-radius: 10px; color: rgb(255 255 255 / 75%); text-decoration: none; }
+      .files-sidebar__back > span:last-child { display: grid; justify-items: center; }
+      .files-sidebar__back b { font-size: 9.5px; }
+      .files-sidebar__back small { display: none; }
+      .files-sidebar__account { display: none; }
+    }
     @media (min-width: 900px) {
       :host { width: 248px; min-height: 100dvh; }
       .files-sidebar { position: sticky; top: 0; height: 100dvh; }

@@ -27,7 +27,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav],
   template: `
-    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace() || filesWorkspace()">
+    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()">
       @if (websiteWorkspace()) {
         <app-website-admin-nav />
       } @else if (filesWorkspace()) {
