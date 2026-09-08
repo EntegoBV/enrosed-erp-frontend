@@ -654,7 +654,7 @@ type PurchaseWorkspaceSectionId =
               <h2 id="purchase-payments-title">
                 @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
               </h2>
-              <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
+              <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</p>
               <div class="purchase-payment-streams">
               <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
               <div class="pay-stream">
@@ -684,8 +684,11 @@ type PurchaseWorkspaceSectionId =
                     </ol>
                   }
                 }
+                @if (settledFor('SUPPLIER')) {
+                  <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' : (differenceFor('SUPPLIER') > 0 ? ' · ' + (differenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-differenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
+                }
                 @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
-                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                 }
               </div>
               @if ((data.payable?.logisticsEur ?? 0) > 0 || paymentsTo('LOGISTICS').length) {
@@ -901,6 +904,7 @@ type PurchaseWorkspaceSectionId =
     }
   `,
   styles: [`
+    .pay-line__settles{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10px;font-style:normal;font-weight:700;vertical-align:middle}.pay-stream__done{margin:6px 0 0;color:var(--ok);font-size:12px;font-weight:650}.pay-diff--over{color:var(--danger)}.pay-diff--under{color:var(--ok)}
     .instalments{list-style:none;margin:8px 0 4px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}.instalments__what s{opacity:.6}
     .purchase-line__issue{display:inline-block;margin-top:6px;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}.purchase-line__issue:active{color:var(--rose-dark)}
     :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}.privacy-notice{margin-bottom:12px}
@@ -1220,7 +1224,7 @@ export class PurchaseView {
       SHIPPED: data.order.status === 'ONDERWEG' || data.order.status === 'ONTVANGEN',
       ARRIVED: data.order.status === 'ONTVANGEN',
     };
-    const paid = this.paidTo('SUPPLIER');
+    const paid = this.settledFor('SUPPLIER') ? goods : this.paidTo('SUPPLIER');
     let remainingPaid = paid;
     let stillOpen = Math.max(0, goods - paid);
     return instalments.map((step) => {
@@ -1239,7 +1243,26 @@ export class PurchaseView {
   readonly logisticsOwed = computed(() => this.view()?.payable?.logisticsEur ?? 0);
   readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed());
   readonly paidAll = computed(() => (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
-  readonly openAll = computed(() => Math.max(0, this.owedAll() - this.paidAll()));
+  /** A stream is settled once a payment on it says so: nothing stays open, the difference is ours. */
+  settledFor(payee: 'SUPPLIER' | 'LOGISTICS'): boolean {
+    return this.paymentsTo(payee).some((payment) => !!payment.settles);
+  }
+
+  /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */
+  differenceFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
+    if (!this.settledFor(payee)) return 0;
+    const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
+    return Math.round((this.paidTo(payee) - owed) * 100) / 100;
+  }
+
+  openFor(payee: 'SUPPLIER' | 'LOGISTICS'): number {
+    if (this.settledFor(payee)) return 0;
+    const owed = payee === 'SUPPLIER' ? this.supplierOwed() : this.logisticsOwed();
+    return Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
+  }
+
+  readonly paymentDifference = computed(() => Math.round((this.differenceFor('SUPPLIER') + this.differenceFor('LOGISTICS')) * 100) / 100);
+  readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS'));
   paymentsTo(payee: 'SUPPLIER' | 'LOGISTICS'): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
   }

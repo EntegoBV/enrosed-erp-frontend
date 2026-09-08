@@ -989,6 +989,8 @@ export interface PurchasePayment {
   actor: string | null;
   recordedAt: string;
   payee?: Payee | null;
+  /** The payment that settles its stream, whatever the amount. */
+  settles?: boolean;
 }
 
 /** One payment on a container as the bank saw it, with the container it went to. */

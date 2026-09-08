@@ -706,7 +706,7 @@ type DeskRow =
                 @case ('pay') {
                   <div class="desk-pay-head">
                     <strong>@if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }</strong>
-                    <small>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</small>
+                    <small>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}@if (paymentDifference() !== 0) { · <b [class.pay-diff--over]="paymentDifference() > 0" [class.pay-diff--under]="paymentDifference() < 0">{{ (paymentDifference() > 0 ? paymentDifference() : -paymentDifference()) | eur }} {{ paymentDifference() > 0 ? 'te veel' : 'te weinig' }} betaald</b> }</small>
                   </div>
                   <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
                   <div class="pay-stream">
@@ -737,7 +737,7 @@ type DeskRow =
                     }
                     @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
                       <div class="pay-line">
-                        <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
+                        <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
                           <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
                         <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                         <span class="pay-line__actions">
@@ -748,7 +748,9 @@ type DeskRow =
                         </span>
                       </div>
                     }
-                    @if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
+                    @if (settledFor('SUPPLIER')) {
+                      <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' : (differenceFor('SUPPLIER') > 0 ? ' · ' + (differenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-differenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
+                    } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
                     <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
                   </div>
                   @if (!isDdp()) {
@@ -760,7 +762,7 @@ type DeskRow =
                       <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
                       @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
                         <div class="pay-line">
-                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b>
+                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
                             <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
                           <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                           <span class="pay-line__actions">
@@ -771,7 +773,9 @@ type DeskRow =
                         </span>
                         </div>
                       }
-                      @if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
+                      @if (settledFor('LOGISTICS')) {
+                        <p class="pay-stream__done">✓ Afgerekend{{ differenceFor('LOGISTICS') === 0 ? '' : (differenceFor('LOGISTICS') > 0 ? ' · ' + (differenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-differenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
+                      } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
                       <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
                     </div>
                   }
@@ -1121,6 +1125,12 @@ type DeskRow =
                        [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
               </div>
               <div class="field span-2">
+                <label class="pay-settle">
+                  <input type="checkbox" [checked]="pay.settles" (change)="paying.set({ ...pay, settles: $any($event.target).checked })" />
+                  <span><b>Slotbetaling: hiermee is alles vereffend</b><small>Ook als het bedrag afwijkt van de afspraak. Het verschil staat daarna op de order als te veel of te weinig betaald.</small></span>
+                </label>
+              </div>
+              <div class="field span-2">
                 <label for="pay-proof">Bankafschrift <span class="opt"></span></label>
                 <input class="input" id="pay-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" (change)="paying.set({ ...pay, files: pickProofFiles($event) })" />
                 <span class="hint">{{ pay.files.length ? pay.files.length + ' bestand(en) gekozen · ' : '' }}Tot 5 bestanden; ze komen bij Dossier als betaalbewijs bij deze betaling.</span>
@@ -1128,6 +1138,8 @@ type DeskRow =
             </div>
           </div>
           <div foot style="display:contents">
+            @if (pay.id) { <button class="btn btn--danger" type="button" [disabled]="payingBusy()" (click)="removeEditing(pay.id)">Verwijderen</button> }
+            <span class="spacer"></span>
             <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
             <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
               {{ payingBusy() ? 'Bezig…' : (pay.id ? 'Aanpassen' : 'Betaling bewaren') }}
@@ -1254,6 +1266,7 @@ type DeskRow =
     }
   `,
   styles: [`
+    .pay-line__settles{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10px;font-style:normal;font-weight:700;vertical-align:middle}.pay-settle{display:flex;align-items:flex-start;gap:10px;font-size:12.5px}.pay-settle input{margin-top:3px}.pay-settle span{display:grid;gap:2px}.pay-settle small{color:var(--muted);font-size:11px}.pay-diff--over{color:var(--danger)}.pay-diff--under{color:var(--ok)}
     .instalments__item--paid .instalments__what b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
     .pay-line__actions{display:inline-flex;align-items:center;gap:2px}.pay-line__btn{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;cursor:pointer}.pay-line__btn:hover{background:var(--surface-3)}.pay-line__proof{color:var(--muted);font-size:11px;margin-right:2px}
     .pay-split__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pay-split__grid label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
