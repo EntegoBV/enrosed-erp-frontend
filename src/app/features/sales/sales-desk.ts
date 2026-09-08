@@ -19,9 +19,8 @@ import { SalesEditor } from './sales-editor';
 import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PartnerLinkSheet } from './partner-link-sheet';
-import { isSettlementInvoice } from './partner-settlement';
+import { isSettlementInvoice, salesDocumentKind } from './partner-settlement';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
-import { salesDocumentLabel } from './sales-list-swipe';
 
 type RailTab = 'order' | 'delivery' | 'check' | 'status';
 
@@ -87,7 +86,7 @@ interface JourneyStep {
         <header class="desk-hero">
           <div class="desk-hero__top">
             <div class="desk-hero__who">
-              <span class="desk-hero__eyebrow">{{ isInvoiceDoc() ? 'Verkoopfactuur' : 'Verkoopofferte' }}@if (websiteRequest(data.order)) { · websiteaanvraag }</span>
+              <span class="desk-hero__eyebrow">{{ documentLabel(data.order) }}@if (websiteRequest(data.order)) { · websiteaanvraag }</span>
               <h1>{{ customerName() }}</h1>
               <p>{{ orderCountryName() || 'Nog geen leverland' }} · {{ data.order.incoterm || 'geen incoterm' }}
                 · {{ paymentChoice() ? data.order.paymentTerms : 'betaalvoorwaarden van de klant' }}</p>
@@ -1313,6 +1312,6 @@ export class SalesDesk extends SalesEditor {
   }
 
   documentLabel(order: SalesOrder): string {
-    return salesDocumentLabel(order.docType);
+    return salesDocumentKind(order);
   }
 }

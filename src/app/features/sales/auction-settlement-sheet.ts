@@ -31,7 +31,7 @@ export interface AuctionSheetLine {
     <app-sheet title="Veilingafrekening maken" (closed)="closed.emit()">
       <div body class="as">
         <p class="as__intro">Vul per product in wat het op de veiling opbracht, uit het overzicht van {{ customerName() || 'de partner' }}@if (reference()) { voor container {{ reference() }} }.
-          Per product rekenen we het deel van de gelande kost dat wij financierden terug en nemen we ons deel van de winst; de factuur draagt de producten zelf, zodat de voorraad en de marge kloppen.</p>
+          De slotfactuur zet elk product aan zijn volledige waarde (gelande kost plus ons deel van de winst) en verrekent het voorschot dat de partner al betaalde als aparte regel, zodat de boekhouding een verkoop en een verrekend voorschot ziet en geen losse marge.</p>
         @if (customerId() === null) {
           <div class="field">
             <label class="req" for="as-customer">Partner</label>

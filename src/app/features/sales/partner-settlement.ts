@@ -68,8 +68,21 @@ export function isSettlementInvoice(order: {
 
 /** What a linked sales document is in the partner's story: the quote, the invoice or the settlement. */
 export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice>[0]): string {
-  if (order.docType !== 'FACTUUR') return 'Offerte aan kostprijs';
-  return isSettlementInvoice(order) ? 'Veilingafrekening' : 'Factuur aan kostprijs';
+  if (order.docType !== 'FACTUUR') return 'Voorschotofferte';
+  return isSettlementInvoice(order) ? 'Slotfactuur' : 'Voorschotfactuur';
+}
+
+/**
+ * What a sales document is called on screen. A partner's cost document is
+ * an advance on the container, whatever share the partner pays up front;
+ * the auction settlement is the final invoice. Everything else is plain.
+ */
+export function salesDocumentKind(
+  order: Parameters<typeof isSettlementInvoice>[0],
+): 'Offerte' | 'Verkoopfactuur' | 'Voorschotofferte' | 'Voorschotfactuur' | 'Slotfactuur' {
+  if (!order.partnerPurchaseOrderId) return order.docType === 'FACTUUR' ? 'Verkoopfactuur' : 'Offerte';
+  if (order.docType !== 'FACTUUR') return 'Voorschotofferte';
+  return isSettlementInvoice(order) ? 'Slotfactuur' : 'Voorschotfactuur';
 }
 
 /**

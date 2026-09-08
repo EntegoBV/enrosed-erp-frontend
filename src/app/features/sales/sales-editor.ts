@@ -5,7 +5,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
 import { PartnerLinkSheet } from './partner-link-sheet';
-import { isSettlementInvoice, separateCostPerPiece } from './partner-settlement';
+import { isSettlementInvoice, separateCostPerPiece, salesDocumentKind } from './partner-settlement';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
@@ -105,7 +105,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <div>
               <div class="quote-hero__label-row">
                 <div class="quote-hero__eyebrow" id="quote-overview-title">
-                  {{ isInvoiceDoc() ? 'Factuur' : 'Verkoopofferte' }}
+                  {{ documentKind() }}
                 </div>
                 @if (websiteRequest(data.order)) {
                   <span class="website-request-pill">
@@ -2246,6 +2246,13 @@ export class SalesEditor {
   readonly carriers = signal<Carrier[]>([]);
 
   readonly isInvoiceDoc = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
+  /** "Verkoopofferte", "Voorschotfactuur", "Slotfactuur": what this document is. */
+  readonly documentKind = computed(() => {
+    const order = this.view()?.order;
+    if (!order) return 'Verkoopofferte';
+    const kind = salesDocumentKind(order);
+    return kind === 'Offerte' ? 'Verkoopofferte' : kind === 'Verkoopfactuur' ? 'Factuur' : kind;
+  });
 
   /* --- the order discount at check time, in percent or euro --- */
   readonly orderDiscountOpen = signal(false);
@@ -3280,7 +3287,7 @@ export class SalesEditor {
 
   private async deleteAndLeave(
     data: SalesOrderView,
-    label: 'Offerte' | 'Verkoopfactuur',
+    label: string,
   ): Promise<void> {
     if (this.deleting()) return;
     this.deleting.set(true);

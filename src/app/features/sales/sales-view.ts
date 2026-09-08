@@ -20,8 +20,9 @@ import {
 } from '../../shared/pipes';
 import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass } from './quote-status';
 import {
-  isLocallyDeletableSalesDocument, salesDocumentLabel,
+  isLocallyDeletableSalesDocument,
 } from './sales-list-swipe';
+import { salesDocumentKind } from './partner-settlement';
 import { salesLineSections } from './sales-product-line-groups';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 import { SalesPdfChoice, SalesPdfSheet } from './sales-pdf-sheet';
@@ -130,7 +131,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           }
           <div class="sales-hero__top">
             <div class="sales-hero__identity">
-              <span class="eyebrow">{{ isInvoice() ? 'Factuur' : 'Verkoopofferte' }}</span>
+              <span class="eyebrow">{{ documentKind() }}</span>
               <h1 id="sales-overview-title">
                 <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">{{ customerName() }}</a>
               </h1>
@@ -1113,6 +1114,13 @@ export class SalesView {
   }
 
   readonly isInvoice = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
+  /** "Verkoopofferte", "Voorschotfactuur", "Slotfactuur": what this document is. */
+  readonly documentKind = computed(() => {
+    const order = this.view()?.order;
+    if (!order) return 'Verkoopofferte';
+    const kind = salesDocumentKind(order);
+    return kind === 'Offerte' ? 'Verkoopofferte' : kind === 'Verkoopfactuur' ? 'Factuur' : kind;
+  });
 
   /* Cancelling from the read view: the place a website request is first
      seen, so a request sent by mistake is closed and the customer told
@@ -1305,7 +1313,7 @@ export class SalesView {
 
   remove(data: SalesOrderView): void {
     if (!this.canDelete() || this.deleting() || this.ui.confirmRequest() !== null) return;
-    const label = salesDocumentLabel(data.order.docType);
+    const label = salesDocumentKind(data.order);
     const customer = this.customerName();
     this.ui.confirm(
       {
@@ -1323,7 +1331,7 @@ export class SalesView {
 
   private async deleteAndLeave(
     data: SalesOrderView,
-    label: 'Offerte' | 'Verkoopfactuur',
+    label: string,
   ): Promise<void> {
     if (this.deleting()) return;
     this.deleting.set(true);

@@ -13,7 +13,8 @@ import {
   STATUS_LABEL, actionNeeded, isWebsiteQuoteRequest, statusClass,
 } from './quote-status';
 import { messageOf } from '../../core/api/errors';
-import { isSwipeDeletableSalesDocument, salesDocumentLabel } from './sales-list-swipe';
+import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
+import { salesDocumentKind } from './partner-settlement';
 import {
   ROW_LONG_PRESS_MS, ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
@@ -931,8 +932,8 @@ export class SalesList {
     return isSwipeDeletableSalesDocument(order);
   }
 
-  documentLabel(order: SalesOrder): 'Offerte' | 'Verkoopfactuur' {
-    return salesDocumentLabel(order.docType);
+  documentLabel(order: SalesOrder): string {
+    return salesDocumentKind(order);
   }
 
   startSwipe(event: PointerEvent, row: SalesOrderView): void {
