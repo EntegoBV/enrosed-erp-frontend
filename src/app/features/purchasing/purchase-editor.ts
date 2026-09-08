@@ -2181,25 +2181,24 @@ export class PurchaseEditor {
        as € 232,39 must still cover two instalments of € 116,20, and "the
        rest" closes the last one even when the thirds did not add up exactly. */
     const paid = this.paidTotalEur();
-    let cumulative = 0;
-    let earlierOpen = false;
-    /* An unpaid step never asks more than what is genuinely open, or the
-       note sheet would refuse its own suggestion. */
+    /* The money paid so far fills the steps in order: a step is paid once it is
+       covered, a partly covered step asks the rest. A few cents of slack, so
+       thirds that do not add up exactly still close. An unpaid step never asks
+       more than what is genuinely open, or the note sheet would refuse its own
+       suggestion. */
+    let remainingPaid = paid;
     let stillOpen = Math.max(0, goods - paid);
     return instalments.map((step) => {
-      const amount = Math.round(goods * step.share * 100) / 100;
-      cumulative += amount;
-      let state: 'paid' | 'due' | 'later';
-      if (!earlierOpen && paid >= Math.min(cumulative, goods) - 0.05) {
-        state = 'paid';
-        return { label: step.label, amount, full: amount, covered: amount, state };
+      const full = Math.round(goods * step.share * 100) / 100;
+      const covered = Math.round(Math.min(full, Math.max(0, remainingPaid)) * 100) / 100;
+      remainingPaid = Math.max(0, remainingPaid - covered);
+      const open = Math.round((full - covered) * 100) / 100;
+      if (open <= 0.05 || stillOpen <= 0.005) {
+        return { label: step.label, amount: full, full, covered: full, state: 'paid' as const };
       }
-      state = reached[step.due] ? 'due' : 'later'; earlierOpen = true;
-      /* What the payments so far already put towards this step: the part of it that is struck through. */
-      const covered = Math.round(Math.max(0, amount - stillOpen) * 100) / 100;
-      const ask = Math.round(Math.min(amount, stillOpen) * 100) / 100;
+      const ask = Math.round(Math.min(open, stillOpen) * 100) / 100;
       stillOpen = Math.max(0, stillOpen - ask);
-      return { label: step.label, amount: ask, full: amount, covered, state };
+      return { label: step.label, amount: ask, full, covered, state: (reached[step.due] ? 'due' : 'later') as 'due' | 'later' };
     });
   });
 
