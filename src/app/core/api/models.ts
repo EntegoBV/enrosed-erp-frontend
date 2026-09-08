@@ -1379,6 +1379,11 @@ export interface SalesOrderView {
   awaitingResend: boolean;
   /** The invoice made from this quote, by number; absent while there is none. */
   invoicedAs?: string | null;
+  /** That invoice's id, and its status: a draft is not yet an invoice sent. */
+  invoicedAsId?: number | null;
+  invoiceStatus?: QuoteStatus | null;
+  /** For an invoice: the number of the quote it was made from. */
+  sourceQuoteNumber?: string | null;
 }
 
 /**

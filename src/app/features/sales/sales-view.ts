@@ -139,6 +139,12 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 {{ data.order.orderDate | dateNl }}
                 <span aria-hidden="true"> · </span>
                 {{ countryName() }}
+                @if (data.order.sourceQuoteId && data.sourceQuoteNumber) {
+                  <span aria-hidden="true"> · </span>uit offerte <a class="sales-hero__link" [routerLink]="['/sales', data.order.sourceQuoteId]">{{ data.sourceQuoteNumber }}</a>
+                }
+                @if (data.invoicedAs && data.invoicedAsId) {
+                  <span aria-hidden="true"> · </span>{{ data.invoiceStatus === 'CONCEPT' ? 'factuur in concept' : 'factuur' }} <a class="sales-hero__link" [routerLink]="['/sales', data.invoicedAsId]">{{ data.invoicedAs }}</a>
+                }
               </p>
             </div>
             <div class="sales-hero__badges">
@@ -790,6 +796,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     }
   `,
   styles: [`
+    .sales-hero__link { color: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
     .sales-view-page { max-width:1180px;margin-inline:auto;padding-bottom:96px;background:transparent }
     .sales-view-page>*+* { margin-top:12px }
     .sales-hero { overflow:hidden;padding:18px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2) }

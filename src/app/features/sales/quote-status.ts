@@ -107,8 +107,11 @@ export const STATUS_LABEL: Record<QuoteStatus, string> = {
  * invoice is past its own statuses: it reads "Gefactureerd", whatever the
  * quote status still says.
  */
-export function statusOf(view: { order: Pick<SalesOrder, 'status' | 'docType'>; invoicedAs?: string | null }): { label: string; cls: string } {
-  if (view.invoicedAs && view.order.docType !== 'FACTUUR') return { label: 'Gefactureerd', cls: 'ok' };
+export function statusOf(view: { order: Pick<SalesOrder, 'status' | 'docType'>; invoicedAs?: string | null; invoiceStatus?: QuoteStatus | null }): { label: string; cls: string } {
+  if (view.invoicedAs && view.order.docType !== 'FACTUUR') {
+    /* A draft invoice is not an invoice yet: the quote waits for it to go out. */
+    return view.invoiceStatus === 'CONCEPT' ? { label: 'Factuur in concept', cls: 'gold' } : { label: 'Gefactureerd', cls: 'ok' };
+  }
   return { label: STATUS_LABEL[view.order.status], cls: statusClass(view.order.status) };
 }
 

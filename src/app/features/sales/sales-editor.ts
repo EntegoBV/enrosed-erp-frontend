@@ -121,6 +121,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <span class="badge" [class]="'badge--' + statusOf(data).cls">
                 {{ statusOf(data).label }}
               </span>
+              @if (data.order.sourceQuoteId && data.sourceQuoteNumber) {
+                <a class="quote-hero__link" [routerLink]="['/sales', data.order.sourceQuoteId]" (click)="$event.stopPropagation()">uit {{ data.sourceQuoteNumber }}</a>
+              } @else if (data.invoicedAs && data.invoicedAsId) {
+                <a class="quote-hero__link" [routerLink]="['/sales', data.invoicedAsId]" (click)="$event.stopPropagation()">{{ data.invoicedAs }}</a>
+              }
               <span aria-hidden="true" class="history-button__chev"
                     [class.history-button__chev--open]="historyOpen()">⌄</span>
               <span class="sr-only">Geschiedenis tonen</span>
@@ -1464,6 +1469,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     }
   `,
   styles: [`
+    .quote-hero__link { margin-left: 6px; color: inherit; font-size: 12px; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
     :host { display:block }
     .sales-page { max-width:1120px;padding-bottom:96px }
     .sales-page>*+* { margin-top:12px }

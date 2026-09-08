@@ -94,6 +94,12 @@ interface JourneyStep {
                 @if (isInvoiceDoc()) { · vervalt {{ data.order.invoiceDueDate ? (data.order.invoiceDueDate | dateNl) : '—' }} }
                 @else { · geldig tot {{ data.order.validUntil | dateNl }} }
                 @if (lastEvent(); as event) { · {{ event.summary }} ({{ event.at | dateTimeNl }}) }</p>
+              @if (data.order.sourceQuoteId && data.sourceQuoteNumber) {
+                <p class="desk-hero__meta"><a class="desk-hero__link" [routerLink]="['/sales', data.order.sourceQuoteId]">Uit offerte {{ data.sourceQuoteNumber }} ›</a></p>
+              }
+              @if (data.invoicedAs && data.invoicedAsId) {
+                <p class="desk-hero__meta"><a class="desk-hero__link" [routerLink]="['/sales', data.invoicedAsId]">{{ data.invoiceStatus === 'CONCEPT' ? 'Factuur in concept' : 'Factuur' }} {{ data.invoicedAs }} ›</a></p>
+              }
             </div>
             <div class="desk-status" role="group" aria-label="Voortgang van het document">
               @for (step of journey(); track step.label; let last = $last) {
@@ -1007,6 +1013,7 @@ interface JourneyStep {
     }
   `,
   styles: [`
+    .desk-hero__link{color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:2px}.desk-hero__link:hover{opacity:.85}
     :host{display:block;min-width:0}
     .desk-row--extra td{background:var(--surface-2)}.desk-extra{display:flex;align-items:center;gap:10px}.desk-extra__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose);font-weight:800}.desk-extra__what{flex:1;min-width:0;text-align:left}.desk-empty .btn+.btn{margin-left:8px}
     .desk-status__step--stop{color:#f6a3a3}.desk-status__step--stop i{background:#e05a4a;box-shadow:0 0 0 2px rgb(224 90 74/.3)}
@@ -1189,12 +1196,14 @@ export class SalesDesk extends SalesEditor {
         { label: 'Geaccepteerd', state: 'todo' },
       ];
     }
-    /* An invoice made from the quote closes its journey: every step done, the invoice last. */
+    /* An invoice made from the quote closes its journey: every step done, the invoice last;
+       while that invoice is still a draft the last step waits. */
     if (this.view()?.invoicedAs) {
+      const draft = this.view()?.invoiceStatus === 'CONCEPT';
       return [
         { label: 'Concept', state: 'done' }, { label: 'Verzonden', state: 'done' },
         { label: 'Bekeken', state: 'done' }, { label: 'Geaccepteerd', state: 'done' },
-        { label: 'Gefactureerd', state: 'done' },
+        draft ? { label: 'Factuur in concept', state: 'now' } : { label: 'Gefactureerd', state: 'done' },
       ];
     }
     const reached = order.status === 'GEACCEPTEERD' ? 4 : viewed ? 3 : sent ? 2 : 1;

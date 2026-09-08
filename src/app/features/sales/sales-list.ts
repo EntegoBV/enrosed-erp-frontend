@@ -193,6 +193,12 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
                 <div class="list-item__meta list-item__meta--wrap">
                   @if (docTab() === 'ARCHIEF') { {{ documentLabel(row.order) }} · }
                   {{ row.order.number }} · {{ row.order.orderDate | dateNl }}
+                  @if (row.order.sourceQuoteId && row.sourceQuoteNumber) {
+                    · uit <a class="so-link" [routerLink]="['/sales', row.order.sourceQuoteId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Offerte ' + row.sourceQuoteNumber + ' openen'">{{ row.sourceQuoteNumber }}</a>
+                  }
+                  @if (row.invoicedAs && row.invoicedAsId) {
+                    · factuur <a class="so-link" [routerLink]="['/sales', row.invoicedAsId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.invoicedAs + ' openen'">{{ row.invoicedAs }}</a>
+                  }
                   @if (channelCode(row.order.salesChannel) !== 'DIRECT') { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
                   @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate) {
                     · vervalt {{ row.order.invoiceDueDate | dateNl }}
@@ -418,6 +424,7 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
     }
   `,
   styles: `
+    .so-link { color: var(--rose-dark); font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
     .swipe--dragging { user-select:none }
     .swipe--dragging .swipe__row { transform:translateX(var(--swipe-offset, 0px));transition:none }
     .swipe__row { touch-action:pan-y }
