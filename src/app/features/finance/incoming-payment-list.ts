@@ -25,10 +25,10 @@ import { IncomingMoneyRow, incomingPurposeLabel, paymentMomentLabel, uniqueIncom
           @if (row.purchaseOrderId) { <a [routerLink]="['/purchasing', row.purchaseOrderId]">Gekoppelde container ›</a> }
           @if (row.legacy) { <small>Overgenomen uit eerdere betaaldregistratie</small> }
         </span>
-        <b class="receipt__amount">+ {{ row.amountEur | eur }}</b>
+        <b class="receipt__amount">{{ row.amountEur > 0 ? '+' : '' }} {{ row.amountEur | eur }} {{ row.amountEur < 0 ? 'terugbetaald' : '' }}</b>
       </div>
     }
-    @if (!expanded() && rows().length > limit()) { <button class="linklike" type="button" (click)="expanded.set(true)">Alle {{ rows().length }} ontvangsten bekijken ›</button> }
+    @if (!expanded() && rows().length > limit()) { <button class="linklike" type="button" (click)="expanded.set(true)">Alle {{ rows().length }} bankboekingen bekijken ›</button> }
   `,
 })
 export class IncomingPaymentList {

@@ -70,9 +70,9 @@ export function isSettlementInvoice(order: {
 }
 
 /** What a linked sales document is in the partner's story: the quote, the invoice or the settlement. */
-export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice>[0]): string {
+export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice>[0], finalSettlement?: boolean): string {
   if (order.docType !== 'FACTUUR') return 'Voorschotofferte';
-  return isSettlementInvoice(order) ? 'Slotfactuur' : 'Voorschotfactuur';
+  return isSettlementInvoice(order) ? finalSettlement === false ? 'Deelfactuur veiling' : 'Slotfactuur' : 'Voorschotfactuur';
 }
 
 /**
@@ -82,10 +82,11 @@ export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice
  */
 export function salesDocumentKind(
   order: Parameters<typeof isSettlementInvoice>[0],
-): 'Offerte' | 'Verkoopfactuur' | 'Voorschotofferte' | 'Voorschotfactuur' | 'Slotfactuur' {
+  finalSettlement?: boolean,
+): 'Offerte' | 'Verkoopfactuur' | 'Voorschotofferte' | 'Voorschotfactuur' | 'Slotfactuur' | 'Deelfactuur veiling' {
   if (order.purpose === 'STANDARD' || (!order.partnerPurchaseOrderId && !order.purpose?.startsWith('PARTNER_'))) return order.docType === 'FACTUUR' ? 'Verkoopfactuur' : 'Offerte';
   if (order.docType !== 'FACTUUR') return 'Voorschotofferte';
-  return isSettlementInvoice(order) ? 'Slotfactuur' : 'Voorschotfactuur';
+  return isSettlementInvoice(order) ? finalSettlement === false ? 'Deelfactuur veiling' : 'Slotfactuur' : 'Voorschotfactuur';
 }
 
 /**

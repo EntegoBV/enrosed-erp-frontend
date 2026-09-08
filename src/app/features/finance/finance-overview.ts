@@ -19,7 +19,7 @@ import { incomingMoneyTotals } from './incoming-money';
     <section class="fin-kpis" aria-label="Kerncijfers">
       <button type="button" class="card fin-kpi fin-kpi--dark" (click)="navigate.emit('bank')">
         <small>Op de bank</small><strong>{{ state.currentBankEur() | eur: 0 }}</strong>
-        <span>{{ state.bank().asOf ? (state.movements().rows.length ? 'saldo van ' + (state.bank().asOf | dateNl) + ' + ' + state.movements().rows.length + ' bewegingen' : 'saldo van ' + (state.bank().asOf | dateNl)) : 'nog geen saldo ingegeven' }}</span>
+        <span>{{ state.bankLedger().accounts.length }} rekeningen · eigen saldo + eigen bankbewegingen</span>
       </button>
       <button type="button" class="card fin-kpi" [class.fin-kpi--warn]="state.openCosts().length" (click)="navigate.emit('open')">
         <small>Nog te betalen</small><strong>{{ state.openCostsInclEur() | eur: 0 }}</strong>

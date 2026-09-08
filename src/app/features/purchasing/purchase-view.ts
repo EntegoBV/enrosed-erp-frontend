@@ -334,7 +334,7 @@ type PurchaseWorkspaceSectionId =
 
         <div class="view-layout erp-workspace__layout">
           <main class="view-main erp-workspace__main">
-            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
+            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-payments-section')" (unlink)="unlinkPartnerDoc($event)" />
             <section class="card products-card erp-workspace__section"
                      id="purchase-products-section" tabindex="-1"
                      aria-labelledby="purchase-products-title">
@@ -819,7 +819,7 @@ type PurchaseWorkspaceSectionId =
               <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
                                             [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                             [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
-                                            (closed)="auctionOpen.set(false)" />
+                                            (funding)="jumpToSection('purchase-payments-section')" (closed)="auctionOpen.set(false)" />
             }
           </main>
 

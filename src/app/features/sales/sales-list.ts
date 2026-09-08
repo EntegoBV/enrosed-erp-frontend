@@ -981,7 +981,7 @@ export class SalesList {
   }
 
   documentLabel(order: SalesOrder): string {
-    return salesDocumentKind(order);
+    return salesDocumentKind(order, this.all().find((row) => row.order.id === order.id)?.settlement?.finalSettlement);
   }
 
   startSwipe(event: PointerEvent, row: SalesOrderView): void {

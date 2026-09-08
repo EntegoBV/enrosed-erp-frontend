@@ -17,7 +17,7 @@ test('two scheduled thirds are exact independent receipts, not two invoice value
   const first = payment();
   const second = payment({ id: 2, amountEur: 2000, receivedAt: '2026-10-02T12:17:00Z', reference: 'Na productie' });
   const final = payment({ id: 3, salesOrderId: 13, amountEur: 300, purpose: 'PARTNER_SETTLEMENT', receivedAt: '2026-11-03T11:42:00Z' });
-  assert.deepEqual(incomingMoneyTotals([first, first, second, final]), { count: 3, receivedEur: 3300, standardEur: 0, partnerAdvanceEur: 3000, partnerSettlementEur: 300 });
+  assert.deepEqual(incomingMoneyTotals([first, first, second, final]), { count: 3, receivedEur: 3300, grossReceivedEur: 3300, refundedEur: 0, standardEur: 0, partnerAdvanceEur: 3000, partnerSettlementEur: 300 });
   assert.equal(incomingMoneyTotals([first, second, final], '2026-09-01', '2026-09-30').receivedEur, 1000);
   assert.equal(uniqueIncomingPayments([first, second, final])[0].id, 3);
 });
@@ -80,4 +80,14 @@ test('same-day bank snapshots follow their actual checkpoint, not record ID orde
   ];
   assert.equal(bankOverview(balances).totalEur, 1100);
   assert.equal(bankOverview(balances).asOfAt, '2026-09-08T10:00:00Z');
+});
+
+
+test('refunds reduce net cash while gross receipts and refunded cash stay visible', () => {
+  const totals = incomingMoneyTotals([payment({ amountEur: 150 }), payment({ id: 2, amountEur: -29 })]);
+  assert.equal(totals.receivedEur, 121);
+  assert.equal(totals.grossReceivedEur, 150);
+  assert.equal(totals.refundedEur, 29);
+  assert.equal(totals.partnerAdvanceEur, 121);
+  assert.equal(uniqueIncomingPayments([payment({ amountEur: -29 })]).length, 1);
 });

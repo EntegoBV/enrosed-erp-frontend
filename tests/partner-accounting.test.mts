@@ -81,3 +81,38 @@ test('partner cash, open claims, financing exposure and result use authoritative
   assert.equal(result.awaitingSettlement, 0);
   assert.equal(result.rows[0].documents[0].number, 'PARTNER-2');
 });
+
+test('partial settlement result is recognized while the remaining container stays actionable', () => {
+  const partial = document(2, 'PARTNER_SETTLEMENT', 400, 1600, 1200);
+  partial.settlement = { revenueEur: 1600, costEur: 1200, advanceEur: 1200, finalSettlement: false };
+  const summary = { purchaseOrderId: 1, partnerCustomerId: 7, settlementComplete: false, settledQuantity: 40, remainingQuantity: 60,
+    recognizedProfitEur: 400, documents: [{ id: 2, number: 'PARTNER-2', purpose: 'PARTNER_SETTLEMENT', docType: 'FACTUUR', status: 'VERZONDEN' }], payments: [],
+  } as unknown as PartnerFinancing;
+  const result = partnerFinancingAnalysis([purchase], [partial], [], [summary]);
+  assert.equal(result.rows[0].settled, false);
+  assert.equal(result.rows[0].remainingQuantity, 60);
+  assert.equal(result.resultEur, 400);
+  assert.equal(result.awaitingSettlement, 1);
+});
+
+test('refunds on a credit settlement reduce net collected money without changing recognized result', () => {
+  const credit = document(2, 'PARTNER_SETTLEMENT', -300, 2700, 3000, -300);
+  assert.equal(salesAnalysis([credit], []).invoices.paidValueEur, -300);
+  assert.equal(resultAnalysis([credit], [], []).resultEur, -300);
+});
+
+test('saved funding terms are separate from invoice receivables and prioritize reached due dates', () => {
+  const purchases = [1, 2, 3].map((id) => ({ ...purchase, order: { ...purchase.order, id } }));
+  const summaries = [
+    { purchaseOrderId: 1, unbilledAdvanceEur: 4200, unbilledAdvanceCount: 1, overdueUnbilledAdvanceEur: 0, nextAdvanceDueDate: '2026-10-01', documents: [] },
+    { purchaseOrderId: 2, unbilledAdvanceEur: 1800, unbilledAdvanceCount: 1, overdueUnbilledAdvanceEur: 1800, nextAdvanceDueDate: '2026-09-08', documents: [] },
+    { purchaseOrderId: 3, unbilledAdvanceEur: 500, unbilledAdvanceCount: 2, overdueUnbilledAdvanceEur: 0, nextAdvanceDueDate: null, documents: [] },
+  ] as unknown as PartnerFinancing[];
+  const result = partnerFinancingAnalysis(purchases, [], [], summaries);
+  assert.equal(result.unbilledAdvanceEur, 6500);
+  assert.equal(result.unbilledAdvanceCount, 4);
+  assert.equal(result.overdueUnbilledAdvanceEur, 1800);
+  assert.deepEqual(result.unbilledAdvances.map((row) => row.purchaseOrderId), [2, 1, 3]);
+  assert.equal(result.openEur, 0, 'planned terms are not yet invoice receivables');
+  assert.equal(result.resultEur, 0, 'planned funding is not recognized profit');
+});

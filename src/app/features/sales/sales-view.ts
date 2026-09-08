@@ -498,7 +498,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                           <span class="num">{{ profitNet(line) | eur: 2 }}</span></div>
                         <div class="stat-row"><span>Kostprijs</span>
                           <span class="num">− {{ profitCost(line) | eur: 2 }}</span></div>
-                        @if (isAdvance(data.order)) { <p class="muted">Voorschot voor de containerfinanciering. Het resultaat volgt bij de slotafrekening.</p> }
+                        @if (isAdvance(data.order)) { <p class="muted">Voorschot voor de containerfinanciering. Het resultaat volgt bij elke uitgegeven veilingafrekening.</p> }
                         @else { <div class="stat-row line-breakdown__result"
                              [class.line-breakdown__result--negative]="line.marginEur < 0">
                           <span>{{ line.marginEur < 0 ? 'Verlies' : 'Winst' }}</span>
@@ -552,7 +552,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               </dl>
               <div class="totals-profit">
                 <div><b>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</b><strong [class.negative]="displayedProfit(data) < 0">{{ displayedProfit(data) | eur: 2 }}</strong></div>
-                <small>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Resultaat na slotafrekening' : 'Goederenwinst vóór vrachtkosten' }}</small>
+                <small>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Resultaat bij uitgegeven afrekening' : 'Goederenwinst vóór vrachtkosten' }}</small>
               </div>
 
               <section class="next-step-card" aria-labelledby="sales-next-step-title">
@@ -1137,7 +1137,7 @@ export class SalesView {
   readonly documentKind = computed(() => {
     const order = this.view()?.order;
     if (!order) return 'Verkoopofferte';
-    const kind = salesDocumentKind(order);
+    const kind = salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
     return kind === 'Offerte' ? 'Verkoopofferte' : kind === 'Verkoopfactuur' ? 'Factuur' : kind;
   });
 
@@ -1329,7 +1329,7 @@ export class SalesView {
 
   remove(data: SalesOrderView): void {
     if (!this.canDelete() || this.deleting() || this.ui.confirmRequest() !== null) return;
-    const label = salesDocumentKind(data.order);
+    const label = salesDocumentKind(data.order, data.settlement?.finalSettlement);
     const customer = this.customerName();
     this.ui.confirm(
       {

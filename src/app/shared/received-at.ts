@@ -33,6 +33,8 @@ export function receiptInstant(day: string, time: string, timeZone: string): str
 
 
 export interface ReceiptDraft {
+  direction?: 'RECEIPT' | 'REFUND';
+  bankAccount?: string;
   id?: number;
   amount: number;
   day: string;
@@ -46,5 +48,5 @@ export function receiptRequest(draft: ReceiptDraft, now = Date.now()): SalesPaym
   if (Math.abs(draft.amount * 100 - Math.round(draft.amount * 100)) > 0.00001) throw new Error('Gebruik maximaal twee decimalen voor het ontvangen bedrag.');
   const receivedAt = receiptInstant(draft.day, draft.time, draft.timeZone.trim());
   if (Date.parse(receivedAt) > now + 300_000) throw new Error('Een ontvangen betaling kan niet in de toekomst liggen.');
-  return { amountEur: Math.round(draft.amount * 100) / 100, receivedAt, timeZone: draft.timeZone.trim(), reference: draft.reference.trim() || null };
+  return { ...(draft.direction ? { direction: draft.direction } : {}), ...(draft.bankAccount !== undefined ? { bankAccount: draft.bankAccount.trim() || null } : {}), amountEur: Math.round(draft.amount * 100) / 100, receivedAt, timeZone: draft.timeZone.trim(), reference: draft.reference.trim() || null };
 }

@@ -74,7 +74,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
             <div><dt>Financiert in totaal</dt><dd>{{ order().partnerCostPct ?? 100 | num }} % van de kost{{ landedTotalEur() ? ' · ' + (landedTotalEur() * (order().partnerCostPct ?? 100) / 100 | eur: 0) : '' }}</dd></div>
             <div><dt>Ons deel van het veilingresultaat</dt><dd>{{ order().partnerSharePct ?? 50 | num }} %</dd></div>
           </dl>
-          <p class="po-partner__lead">Het betaalplan staat los van het financieringspercentage: standaard 1/3 bij start productie en 2/3 na productie. Na de veiling volgt de veilingafrekening: de kost die wij voorschoten terug, plus ons deel van de winst.</p>
+          <p class="po-partner__lead">Verdeel het partnerbedrag in factuurtermijnen, bijvoorbeeld 30% bij productiestart en 70% na productie. Elke termijn krijgt een eigen voorschotfactuur. Per veiling reken je de verkochte aantallen en het resultaat af; de slotfactuur sluit de resterende stuks af.</p>
 
         @if (docs().length) {
           <ul class="po-partner__docs">
@@ -82,7 +82,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
               <li>
                 <a class="po-partner__doc" [routerLink]="['/sales', deal.order.id, 'edit']">
                   <b>{{ deal.order.number }}</b>
-                  <small>{{ kind(deal.order) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ deal.order.docType === 'FACTUUR' ? (deal.order.paidAt ? ' · betaald' : ' · nog niet betaald') : '' }}</small>
+                  <small>{{ kind(deal.order, deal.settlement?.finalSettlement) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ deal.order.docType === 'FACTUUR' ? (deal.order.paidAt ? ' · betaald' : ' · nog niet betaald') : '' }}</small>
                 </a>
                 <span class="po-partner__amount">{{ deal.priced.totals.total | eur }}</span>
                 <button class="po-partner__unlink" type="button" [attr.aria-label]="'Koppeling van ' + deal.order.number + ' verwijderen'" title="Koppeling verwijderen" (click)="unlink.emit(deal)">×</button>
@@ -92,11 +92,11 @@ import { STATUS_LABEL } from '../sales/quote-status';
         }
 
         <div class="po-partner__buttons">
+          <button class="btn btn--primary btn--sm" type="button" (click)="schedule.emit()">Voorschotfacturen per termijn</button>
           @if (!costDocument()) {
-            <button class="btn btn--primary btn--sm" type="button" [disabled]="!canQuote()" (click)="quote.emit()">Voorschotofferte voor {{ partnerName() || 'de partner' }}</button>
-          } @else if (canAuction()) {
-            <button class="btn btn--primary btn--sm" type="button" (click)="auction.emit()">Veilingafrekening</button>
+            <button class="btn btn--sm" type="button" [disabled]="!canQuote()" (click)="quote.emit()">Offerte volledige financiering</button>
           }
+          @if (canAuction()) { <button class="btn btn--sm" type="button" (click)="auction.emit()">Deelveiling / slot afrekenen</button> }
           <button class="btn btn--sm" type="button" (click)="link.emit()">Offerte of factuur koppelen</button>
         </div>
         @if (!costDocument() && !canQuote()) { <p class="hint">Reken de container eerst door; de offerte neemt de gelande kost over.</p> }
@@ -122,6 +122,7 @@ export class PurchasePartnerPanel {
   readonly quote = output<void>();
   readonly link = output<void>();
   readonly auction = output<void>();
+  readonly schedule = output<void>();
   readonly unlink = output<SalesOrderView>();
 
   readonly statusLabel = STATUS_LABEL;

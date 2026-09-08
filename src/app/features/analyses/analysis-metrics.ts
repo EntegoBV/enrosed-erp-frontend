@@ -685,11 +685,17 @@ export interface PartnerFinancingRow {
   /** Recognized profit from issued final invoices; advances and cash movements do not create profit. */
   resultEur: number;
   committedAdvanceEur: number;
+  unbilledAdvanceEur: number;
+  unbilledAdvanceCount: number;
+  overdueUnbilledAdvanceEur: number;
+  nextAdvanceDueDate: string | null;
   receivedEur: number;
   openEur: number;
   creditEur: number;
   ownExposureEur: number;
   settled: boolean;
+  settledQuantity: number;
+  remainingQuantity: number;
   costFinalized: boolean;
   /** Received, but the auction has not been settled yet: the statement is still to come. */
   awaitingSettlement: boolean;
@@ -707,6 +713,11 @@ export interface PartnerFinancingAnalysis {
   creditEur: number;
   ownExposureEur: number;
   committedAdvanceEur: number;
+  unbilledAdvanceEur: number;
+  unbilledAdvanceCount: number;
+  overdueUnbilledAdvanceEur: number;
+  /** Saved funding terms awaiting their own invoice, due terms first. */
+  unbilledAdvances: PartnerFinancingRow[];
   /** Partner containers received without an auction settlement so far. */
   awaitingSettlement: number;
   rows: PartnerFinancingRow[];
@@ -755,7 +766,8 @@ export function partnerFinancingAnalysis(
     const quotedOnly = goodsInvoices.length === 0;
     const first = docs.slice().sort((left, right) => left.order.id - right.order.id)[0];
     const receivedEur = summary?.totalReceivedEur ?? docs.filter(isIssuedInvoice).reduce((sum, row) => sum + invoiceReceived(row), 0);
-    const settled = settlements.length > 0 || !!summary?.documents.some((row) => row.purpose === 'PARTNER_SETTLEMENT' && row.docType === 'FACTUUR' && row.status !== 'CONCEPT' && !DEAD_SALES_STATUSES.has(row.status));
+    const settled = summary?.settlementComplete ?? (settlements.some((row) => row.settlement?.finalSettlement !== false)
+      || !!summary?.documents.some((row) => row.purpose === 'PARTNER_SETTLEMENT' && row.docType === 'FACTUUR' && row.status !== 'CONCEPT' && !DEAD_SALES_STATUSES.has(row.status)));
     rows.push({
       purchaseOrderId: purchase.order.id,
       number: purchase.order.number,
@@ -770,10 +782,16 @@ export function partnerFinancingAnalysis(
       settlementEur: summary?.settlementEur ?? settlementEur,
       resultEur: summary?.recognizedProfitEur ?? round2(settlements.reduce((sum, view) => sum + documentAccounting(view).recognizedProfitEur, 0)),
       committedAdvanceEur: summary?.committedAdvanceEur ?? round2(landedEur * (purchase.order.partnerCostPct ?? 100) / 100),
+      unbilledAdvanceEur: finiteNonNegative(summary?.unbilledAdvanceEur),
+      unbilledAdvanceCount: finiteNonNegative(summary?.unbilledAdvanceCount),
+      overdueUnbilledAdvanceEur: finiteNonNegative(summary?.overdueUnbilledAdvanceEur),
+      nextAdvanceDueDate: summary?.nextAdvanceDueDate ?? null,
       receivedEur, openEur: summary?.totalOpenEur ?? round2(docs.filter(isIssuedInvoice).reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
       creditEur: summary?.creditEur ?? 0,
       ownExposureEur: summary?.ownExposureEur ?? Math.max(0, finite(purchase.reconciliation?.totals.paidEur) - receivedEur),
       settled,
+      settledQuantity: summary?.settledQuantity ?? settlements.reduce((total, row) => total + finite(row.priced.totals.pieces), 0),
+      remainingQuantity: summary?.remainingQuantity ?? 0,
       costFinalized: summary?.costFinalized ?? false,
       awaitingSettlement: purchase.order.status === 'ONTVANGEN' && !settled,
       documents: summary ? summary.documents.map((doc) => ({ id: doc.id, number: doc.number, docType: doc.docType === 'FACTUUR' ? 'FACTUUR' : 'OFFERTE', settlement: doc.purpose === 'PARTNER_SETTLEMENT', status: doc.status })) : docs
@@ -794,6 +812,13 @@ export function partnerFinancingAnalysis(
     creditEur: round2(rows.reduce((sum, row) => sum + row.creditEur, 0)),
     ownExposureEur: round2(rows.reduce((sum, row) => sum + row.ownExposureEur, 0)),
     committedAdvanceEur: round2(rows.reduce((sum, row) => sum + row.committedAdvanceEur, 0)),
+    unbilledAdvanceEur: round2(rows.reduce((sum, row) => sum + row.unbilledAdvanceEur, 0)),
+    unbilledAdvanceCount: rows.reduce((sum, row) => sum + row.unbilledAdvanceCount, 0),
+    overdueUnbilledAdvanceEur: round2(rows.reduce((sum, row) => sum + row.overdueUnbilledAdvanceEur, 0)),
+    unbilledAdvances: rows.filter((row) => row.unbilledAdvanceCount > 0).sort((left, right) =>
+      Number(right.overdueUnbilledAdvanceEur > 0) - Number(left.overdueUnbilledAdvanceEur > 0)
+      || (left.nextAdvanceDueDate ?? '9999-12-31').localeCompare(right.nextAdvanceDueDate ?? '9999-12-31')
+      || left.purchaseOrderId - right.purchaseOrderId),
     awaitingSettlement: rows.filter((row) => row.awaitingSettlement).length,
     rows,
   };
@@ -1037,7 +1062,7 @@ function invoiceClaim(row: SalesOrderView): number {
 }
 
 function invoiceReceived(row: SalesOrderView): number {
-  return row.paymentSummary ? finiteNonNegative(row.paymentSummary.receivedEur)
+  return row.paymentSummary ? finite(row.paymentSummary.receivedEur)
     : row.order.status === 'BETAALD' || row.order.paidAt ? invoiceClaim(row) : 0;
 }
 

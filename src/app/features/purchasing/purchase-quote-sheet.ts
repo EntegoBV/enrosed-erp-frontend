@@ -38,7 +38,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
     <app-sheet [title]="partner() ? 'Voorschotofferte partnercontainer' : 'Reguliere verkoopofferte'" (closed)="closed.emit()">
       <div body class="pq">
         <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="setPurpose(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="setPurpose(true)">Partnercontainer</button></div>
-        <p class="pq__hint">{{ partner() ? 'Samen inkopen: de partner financiert de afgesproken containerkosten. Standaard 1/3 bij start productie en 2/3 na productie; na de veiling volgt de slotafrekening. Geen minimumorder.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
+        <p class="pq__hint">{{ partner() ? 'Offerte voor het volledige afgesproken partnerbedrag. Afzonderlijke voorschotfacturen per termijn maak je bij Betalingen op de container. Per veiling volgt een deel- of slotafrekening. Geen minimumorder.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
         <p class="pq__intro">Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen.
           @if (partnersOnly()) { Een partner rekent aan onze kostprijs van deze container; een andere klant krijgt zijn eigen prijzen. } @else { Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
         <div class="pq__pick">

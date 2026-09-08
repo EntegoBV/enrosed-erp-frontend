@@ -1460,6 +1460,7 @@ export interface SalesAccounting {
 }
 
 export interface SalesPayment {
+  bankAccount?: string | null;
   legacy?: boolean;
   id: number;
   salesOrderId: number;
@@ -1471,6 +1472,8 @@ export interface SalesPayment {
   actor: string | null;
 }
 export interface SalesPaymentRequest {
+  direction?: 'RECEIPT' | 'REFUND';
+  bankAccount?: string | null;
   amountEur: number;
   receivedAt: string;
   timeZone: string;
@@ -1491,6 +1494,9 @@ export interface SalesPaymentInstalment {
   remainingEur: number;
 }
 export interface SalesPaymentSummary {
+  grossReceivedEur?: number;
+  refundedEur?: number;
+  refundableEur?: number;
   invoiceTotalEur: number;
   receivedEur: number;
   remainingEur: number;
@@ -1512,7 +1518,59 @@ export interface PartnerFinancingDocument {
   remainingEur: number;
   creditEur: number;
 }
+export interface PartnerAdvanceScheduleRow {
+  id: number;
+  label: string;
+  percentage: number | null;
+  amountEur: number;
+  dueDate: string | null;
+  invoiceId: number | null;
+  invoiceNumber: string | null;
+  invoiceStatus: QuoteStatus | null;
+  receivedEur: number;
+  remainingEur: number;
+}
+export interface PartnerAdvanceSchedule {
+  invoicingBlocked?: boolean;
+  invoicingBlockedReason?: string | null;
+  purchaseOrderId: number;
+  partnerCustomerId: number | null;
+  agreedAmountEur: number;
+  financingPct: number;
+  externalCostEur: number;
+  allocatedEur: number;
+  unallocatedEur: number;
+  reservedOutsideScheduleEur: number;
+  rows: PartnerAdvanceScheduleRow[];
+}
+export interface PartnerAdvanceScheduleRequest {
+  recalculateAgreement?: boolean;
+  rows: { id?: number; label: string; percentage?: number; amountEur?: number; dueDate?: string | null }[];
+}
+export interface PartnerSettlementAvailability {
+  purchaseOrderId: number;
+  partnerCustomerId: number | null;
+  externalCostEur: number;
+  issuedAdvanceEur: number;
+  creditedAdvanceEur: number;
+  remainingAdvanceEur: number;
+  lines: {
+    productId: number; productName: string; totalQuantity: number; settledQuantity: number;
+    remainingQuantity: number; totalCostEur: number; settledCostEur: number; remainingCostEur: number;
+  }[];
+  settlements: {
+    invoiceId: number; number: string; status: QuoteStatus; finalSettlement: boolean;
+    quantity: number; revenueEur: number; costEur: number; advanceEur: number; invoiceTotalEur: number;
+  }[];
+}
 export interface PartnerFinancing {
+  unbilledAdvanceEur?: number;
+  unbilledAdvanceCount?: number;
+  overdueUnbilledAdvanceEur?: number;
+  nextAdvanceDueDate?: string | null;
+  settlementComplete?: boolean;
+  settledQuantity?: number;
+  remainingQuantity?: number;
   purchaseOrderId: number;
   partnerCustomerId: number | null;
   partnerName: string | null;
@@ -1543,6 +1601,7 @@ export interface PartnerFinancing {
 }
 
 export interface SalesOrderView {
+  settlement?: { revenueEur: number; costEur: number; advanceEur: number; finalSettlement: boolean } | null;
   paymentSummary?: SalesPaymentSummary | null;
   accounting?: SalesAccounting | null;
   order: SalesOrder;
@@ -1817,6 +1876,7 @@ export interface AuctionLine {
 
 /** The auction settlement: who, which container, what we recover and share, and the statement lines. */
 export interface AuctionSettlementRequest {
+  finalSettlement?: boolean;
   customerId: number | null;
   purchaseOrderId: number | null;
   reference: string | null;

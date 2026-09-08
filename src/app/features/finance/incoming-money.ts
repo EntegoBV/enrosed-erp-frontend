@@ -44,7 +44,7 @@ export function uniqueIncomingPayments(rows: readonly IncomingMoneyRow[]): Incom
   return rows.filter((row) => {
     if (seen.has(row.id)) return false;
     seen.add(row.id);
-    return Number.isFinite(row.amountEur) && row.amountEur > 0;
+    return Number.isFinite(row.amountEur) && row.amountEur !== 0;
   }).sort((left, right) => Date.parse(right.receivedAt) - Date.parse(left.receivedAt) || right.id - left.id);
 }
 
@@ -54,7 +54,10 @@ export function incomingMoneyTotals(rows: readonly IncomingMoneyRow[], from?: st
     return !!day && (!from || day >= from) && (!to || day <= to);
   });
   const sum = (purpose?: IncomingMoneyRow['purpose']) => round2(selected.filter((row) => !purpose || row.purpose === purpose).reduce((total, row) => total + row.amountEur, 0));
-  return { count: selected.length, receivedEur: sum(), standardEur: sum('STANDARD'), partnerAdvanceEur: sum('PARTNER_ADVANCE'), partnerSettlementEur: sum('PARTNER_SETTLEMENT') };
+  return { count: selected.length, receivedEur: sum(),
+    grossReceivedEur: round2(selected.filter(row => row.amountEur > 0).reduce((total, row) => total + row.amountEur, 0)),
+    refundedEur: round2(selected.filter(row => row.amountEur < 0).reduce((total, row) => total + Math.abs(row.amountEur), 0)),
+    standardEur: sum('STANDARD'), partnerAdvanceEur: sum('PARTNER_ADVANCE'), partnerSettlementEur: sum('PARTNER_SETTLEMENT') };
 }
 
 /** Summary wins over the old paid marker; partial cash never implies a completely paid invoice. */

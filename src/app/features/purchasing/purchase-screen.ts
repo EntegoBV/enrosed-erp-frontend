@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, input, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, input, untracked, viewChild } from '@angular/core';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { PurchaseDesk } from './purchase-desk';
 import { PurchaseEditor } from './purchase-editor';
@@ -27,9 +27,35 @@ export class PurchaseScreen {
   readonly desktop = inject(DesktopViewport);
   readonly id = input<string>('');
   readonly mode = input<'view' | 'edit'>('view');
+  /** Bound from the route query so a pending term opens its financing schedule. */
+  readonly section = input<string>();
 
   private readonly desk = viewChild(PurchaseDesk);
   private readonly editor = viewChild(PurchaseEditor);
+  private readonly viewer = viewChild(PurchaseView);
+  private openedPaymentsFor: object | null = null;
+  private openedPaymentsId = '';
+
+  constructor() {
+    effect(() => {
+      const section = this.section();
+      const id = this.id();
+      const desk = this.desk();
+      const screen = desk ?? this.editor() ?? this.viewer();
+      if (section !== 'payments') {
+        this.openedPaymentsFor = null;
+        return;
+      }
+      if (!screen || screen.view()?.order.id !== Number(id)
+        || (this.openedPaymentsFor === screen && this.openedPaymentsId === id)) return;
+      this.openedPaymentsFor = screen;
+      this.openedPaymentsId = id;
+      untracked(() => {
+        if (desk) desk.railTab.set('pay');
+        else screen.jumpToSection('purchase-payments-section');
+      });
+    });
+  }
 
   /** The open editor owns the unsaved-changes verdict; a plain view has none. */
   canDeactivate(): boolean | Promise<boolean> {

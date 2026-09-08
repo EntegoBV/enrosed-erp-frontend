@@ -124,6 +124,20 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
                 </a>
               }
 
+              @if (financing().unbilledAdvances[0]; as advance) {
+                <a class="work-row" [routerLink]="['/purchasing', advance.purchaseOrderId]" [queryParams]="{ section: 'payments' }">
+                  <span class="work-row__icon"><app-icon name="sales" [size]="18" /></span>
+                  <span class="work-row__copy">
+                    <b>Voorschotfacturen maken</b>
+                    <small>{{ financing().unbilledAdvanceEur | eur }} gepland, nog niet gefactureerd · excl. btw</small>
+                    @if (financing().overdueUnbilledAdvanceEur > 0) { <small>{{ financing().overdueUnbilledAdvanceEur | eur }} met vervaldatum bereikt</small> }
+                    <small>Eerst {{ advance.alias || advance.number }}@if (advance.nextAdvanceDueDate) { · {{ advance.nextAdvanceDueDate | dateNl }} }</small>
+                  </span>
+                  <strong class="work-row__number">{{ financing().unbilledAdvanceCount }}</strong>
+                  <span class="work-row__chev" aria-hidden="true">›</span>
+                </a>
+              }
+
               @if (financing().awaitingSettlement) {
                 <a class="work-row" routerLink="/analyses/purchasing">
                   <span class="work-row__icon"><app-icon name="sales" [size]="18" /></span>
@@ -275,7 +289,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
             <span class="home-kpi__chev" aria-hidden="true">›</span>
           </a>
 
-          <a class="home-kpi" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="home-kpi__icon"><app-icon name="sales" [size]="17" /></span><span class="home-kpi__label">Ontvangen deze maand</span><strong>{{ incomingReady() ? (incomingMonth().receivedEur | eur: 0) : '—' }}</strong><small>{{ incomingMonth().partnerAdvanceEur | eur: 0 }} partnervoorschotten · kas incl. btw</small><span class="home-kpi__chev">›</span></a>
+          <a class="home-kpi" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="home-kpi__icon"><app-icon name="sales" [size]="17" /></span><span class="home-kpi__label">Netto ontvangen deze maand</span><strong>{{ incomingReady() ? (incomingMonth().receivedEur | eur: 0) : '—' }}</strong><small>{{ incomingMonth().grossReceivedEur | eur: 0 }} ontvangen · {{ incomingMonth().refundedEur | eur: 0 }} terugbetaald</small><small>{{ incomingMonth().partnerAdvanceEur | eur: 0 }} netto partnervoorschotten · incl. btw</small><span class="home-kpi__chev">›</span></a>
           <a class="home-kpi" routerLink="/analyses/purchasing"><span class="home-kpi__icon"><app-icon name="purchase" [size]="17" /></span><span class="home-kpi__label">Eigen kasinleg</span><strong>{{ partnersReady() ? (financing().ownExposureEur | eur: 0) : '—' }}</strong><small>betaald min ontvangsten · {{ financing().openEur | eur: 0 }} nog te ontvangen</small><span class="home-kpi__chev">›</span></a>
 
           <a class="home-kpi" routerLink="/analyses/result" [class.home-kpi--dark]="yearResult().resultEur < 0">
@@ -507,6 +521,7 @@ export class DashboardHome {
   readonly workGroupCount = computed(() =>
     Number(this.salesActionCount() > 0)
     + Number(this.purchaseAttentionOrders().length > 0)
+    + Number(this.financing().unbilledAdvanceCount > 0)
     + Number(this.zeroStockCount() > 0) + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0)
     + Number(this.catalogAttention() > 0));
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()

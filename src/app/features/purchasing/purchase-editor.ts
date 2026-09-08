@@ -452,7 +452,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
                 </div>
               }
-              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
+              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-payments-section')" (unlink)="unlinkPartnerDoc($event)" />
             </section>
 
             <section class="card flow-card products-card erp-workspace__section"
@@ -1474,7 +1474,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
                                       [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                       [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
-                                      (closed)="auctionOpen.set(false)" />
+                                      (funding)="jumpToSection('purchase-payments-section')" (closed)="auctionOpen.set(false)" />
       }
 
       @if (picking()) {

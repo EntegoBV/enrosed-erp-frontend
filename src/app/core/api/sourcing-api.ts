@@ -6,6 +6,7 @@ import {
   FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
+  PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerSettlementAvailability, SalesOrderView,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -46,6 +47,22 @@ export class SourcingApi {
 
   partnerFinancing(id: number): Promise<PartnerFinancing> {
     return firstValueFrom(this.http.get<PartnerFinancing>(api(`/api/purchase-orders/${id}/partner-financing`)));
+  }
+
+  partnerAdvanceSchedule(id: number): Promise<PartnerAdvanceSchedule> {
+    return firstValueFrom(this.http.get<PartnerAdvanceSchedule>(api(`/api/purchase-orders/${id}/partner-advance-schedule`)));
+  }
+
+  savePartnerAdvanceSchedule(id: number, body: PartnerAdvanceScheduleRequest): Promise<PartnerAdvanceSchedule> {
+    return firstValueFrom(this.http.put<PartnerAdvanceSchedule>(api(`/api/purchase-orders/${id}/partner-advance-schedule`), body));
+  }
+
+  invoicePartnerAdvance(id: number, rowId: number): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/purchase-orders/${id}/partner-advance-schedule/${rowId}/invoice`), {}));
+  }
+
+  partnerSettlementAvailability(id: number): Promise<PartnerSettlementAvailability> {
+    return firstValueFrom(this.http.get<PartnerSettlementAvailability>(api(`/api/purchase-orders/${id}/partner-settlement-availability`)));
   }
 
   purchaseOrder(id: number): Promise<PurchaseOrderView> {

@@ -719,7 +719,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 </div>
 
                 @if (isAdvance(data.order)) {
-                  <p class="line-internal__note">Voorschot voor de containerfinanciering. Het resultaat wordt berekend bij de slotafrekening.</p>
+                  <p class="line-internal__note">Voorschot voor de containerfinanciering. Het resultaat wordt berekend bij elke uitgegeven veilingafrekening.</p>
                 } @else { <details class="line-internal">
                   <summary class="line-internal__summary">
                     <span class="line-internal__title">
@@ -981,8 +981,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
             @if (data.order.partnerPurchaseOrderId) {
               <section class="desk-partner" aria-label="Partnercontainer">
-                <p class="desk-form__group">Partnercontainer · {{ data.order.purpose === 'PARTNER_SETTLEMENT' ? 'slotafrekening' : 'voorschot' }}</p>
-                @if (!isSettlement(data.order)) { <label class="field"><span>Betaalplan van de partner</span><select class="select" [disabled]="!canEdit()" [ngModel]="data.order.paymentPlan || 'THIRD_TWO_THIRDS_PRODUCTION'" (ngModelChange)="patch({ paymentPlan: $event, paymentTerms: $event === 'THIRD_TWO_THIRDS_PRODUCTION' ? '1/3 bij start productie, 2/3 na productie' : 'Volledige betaling' })"><option value="THIRD_TWO_THIRDS_PRODUCTION">1/3 start productie · 2/3 na productie</option><option value="FULL">Volledige betaling</option></select></label> }
+                <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
+                @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
                 @if (isSettlement(data.order)) {
                   <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                 } @else {
@@ -2281,7 +2281,7 @@ export class SalesEditor {
   readonly documentKind = computed(() => {
     const order = this.view()?.order;
     if (!order) return 'Verkoopofferte';
-    const kind = salesDocumentKind(order);
+    const kind = salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
     return kind === 'Offerte' ? 'Verkoopofferte' : kind === 'Verkoopfactuur' ? 'Factuur' : kind;
   });
 

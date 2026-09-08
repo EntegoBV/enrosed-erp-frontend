@@ -1,6 +1,9 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
+import { BankingApi, BankStatementLine } from '../../core/api/banking-api';
+import { reconciledBank, bankAccountKey } from './bank-reconciliation';
+import { receiptLocalParts } from '../../shared/received-at';
 import { FinanceApi } from '../../core/api/finance-api';
 import { MediaApi } from '../../core/api/media-api';
 import { MediaAssetSummary } from '../../core/api/media-models';
@@ -24,6 +27,7 @@ const eur = (value: number): string => value.toLocaleString('nl-BE', { minimumFr
 @Injectable()
 export class FinanceState {
   private readonly finance = inject(FinanceApi);
+  private readonly banking = inject(BankingApi);
   private readonly sales = inject(SalesApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly media = inject(MediaApi);
@@ -33,6 +37,8 @@ export class FinanceState {
   readonly costs = signal<CompanyCost[]>([]);
   readonly recurring = signal<RecurringCost[]>([]);
   readonly balances = signal<BankBalance[]>([]);
+  readonly bankStatements = signal<BankStatementLine[]>([]);
+  readonly bankLedger = computed(() => reconciledBank(this.balances(), this.bankStatements(), this.incomingPayments()));
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly customers = signal<Customer[]>([]);
   readonly payments = signal<PurchasePaymentRow[]>([]);
@@ -40,6 +46,9 @@ export class FinanceState {
   readonly incomingTotals = computed(() => incomingMoneyTotals(this.incomingPayments()));
   /** The common costs list; container rows always follow their original payment. */
   readonly ledger = computed(() => costLedger(this.costs(), this.payments()));
+  /** Existing cost/purchase APIs have no bank-account identity; keep these visible without guessing an account. */
+  readonly outgoingsWithoutAccount = computed(() => this.ledger().filter(row => !!row.paidOn));
+  readonly outgoingsWithoutAccountEur = computed(() => round2(this.outgoingsWithoutAccount().reduce((sum, row) => sum + row.amountEur, 0)));
   /** Every file linked to a cost: the invoices, receipts and contracts. */
   readonly attachments = signal<MediaAssetSummary[]>([]);
   readonly uploading = signal(false);
@@ -69,7 +78,7 @@ export class FinanceState {
   })));
   /** The bank rolled forward: the last reading plus what the ERP saw move after it. */
   readonly movements = computed(() => movementsSince(this.bank().asOf, this.bank().totalEur, this.costs(), this.payments(), this.paidInvoices(), this.bank().asOfAt, this.bank().timeZone || 'Europe/Brussels'));
-  readonly currentBankEur = computed(() => this.movements().currentEur);
+  readonly currentBankEur = computed(() => this.bankLedger().totalEur);
   readonly outlook = computed(() => cashOutlook(this.currentBankEur(), this.openCostsInclEur(), this.upcomingInclEur(), this.openInvoices().totalEur));
   /** Files per cost id. */
   readonly attachmentsByCost = computed(() => {
@@ -88,10 +97,10 @@ export class FinanceState {
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const [costs, recurring, balances, orders, customers, payments, attachments, incoming] = await Promise.allSettled([
+      const [costs, recurring, balances, orders, customers, payments, attachments, incoming, statements] = await Promise.allSettled([
         this.finance.costs(), this.finance.recurringCosts(), this.finance.bankBalances(), this.sales.orders(),
         this.sales.customers(), this.sourcing.purchasePayments(), this.media.assets({ targetType: 'COMPANY_COST', limit: 500 }),
-        this.sales.incomingPayments(),
+        this.sales.incomingPayments(), this.banking.list(),
       ]);
       if (costs.status === 'fulfilled') this.costs.set(costs.value); else this.ui.toast(messageOf(costs.reason, 'Kosten laden mislukt'), 'err');
       if (recurring.status === 'fulfilled') this.recurring.set(recurring.value);
@@ -101,6 +110,8 @@ export class FinanceState {
       if (payments.status === 'fulfilled') this.payments.set(payments.value);
       else this.ui.toast(messageOf(payments.reason, 'Containerbetalingen laden mislukt; kosten en banksaldo kunnen onvolledig zijn'), 'err');
       if (attachments.status === 'fulfilled') this.attachments.set(attachments.value);
+      if (statements.status === 'fulfilled') this.bankStatements.set(statements.value);
+      else this.ui.toast(messageOf(statements.reason, 'Bankbewegingen laden mislukt; het saldo kan onvolledig zijn'), 'err');
       if (incoming.status === 'fulfilled') this.incomingPayments.set(incoming.value);
       else this.ui.toast(messageOf(incoming.reason, 'Ontvangsten laden mislukt; het banksaldo kan onvolledig zijn'), 'err');
     } finally {
@@ -311,26 +322,20 @@ export class FinanceState {
    * Writes the rolled-forward balance down as today's reading of the account
    * that was read last, so the bank line in the ERP catches up with the movements.
    */
-  async rollForward(): Promise<void> {
-    const moves = this.movements();
-    const latest = latestBankReading(this.balances());
-    if (!latest || !moves.rows.length || this.saving()) return;
-    const account = this.bank().accounts.find((row) => row.account === latest.account);
-    if (!account) return;
-    const value = Math.round((account.balanceEur + moves.netEur) * 100) / 100;
+  async rollForward(accountName: string): Promise<void> {
+    const account = this.bankLedger().accounts.find(row => row.account === bankAccountKey(accountName));
+    if (!account?.reading || account.currentEur === null || !account.movements.length || this.saving()) return;
     this.saving.set(true);
     try {
-      const saved = await this.finance.createBankBalance({
-        id: null, account: latest.account, date: this.today, asOfAt: new Date().toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Brussels', balanceEur: value,
-        notes: `Doorgetrokken vanuit het saldo van ${moves.since}: € ${eur(moves.inEur)} erin, € ${eur(moves.outEur)} eruit (${moves.rows.length} ${moves.rows.length === 1 ? 'beweging' : 'bewegingen'}).`,
+      const timeZone = 'Europe/Brussels', asOfAt = new Date().toISOString();
+      const saved = await this.finance.createBankBalance({ id: null, account: account.reading.account,
+        date: receiptLocalParts(asOfAt, timeZone).day, asOfAt, timeZone, balanceEur: account.currentEur,
+        notes: `Doorgerekend vanaf ${account.reading.date}: ${account.movements.length} rekeninggebonden bankbewegingen.`,
       });
-      this.balances.update((rows) => [saved, ...rows]);
-      this.ui.toast(`Saldo doorgetrokken naar € ${eur(value)}`, 'ok');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Doortrekken mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
+      this.balances.update(rows => [saved, ...rows]);
+      this.ui.toast('Saldo van deze rekening doorgetrokken', 'ok');
+    } catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Doortrekken mislukt'), 'err'); }
+    finally { this.saving.set(false); }
   }
 
   deleteBank(balance: BankBalance): void {

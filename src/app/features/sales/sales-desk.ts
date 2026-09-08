@@ -147,7 +147,7 @@ interface JourneyStep {
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('check')">
               <small>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</small>
               <strong>{{ displayedProfit(data) | eur: 0 }}</strong>
-              <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Na slotafrekening' : (data.priced.totals.marginPct | pct: 0) + ' van de goederen' }}</span>
+              <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Bij uitgegeven afrekening' : (data.priced.totals.marginPct | pct: 0) + ' van de goederen' }}</span>
             </button>
             <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" (click)="railTab.set('check')">
               <small>{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</small>
@@ -667,8 +667,8 @@ interface JourneyStep {
                   <div class="desk-form">
                     @if (data.order.partnerPurchaseOrderId) {
                       <section class="desk-partner" aria-label="Partnercontainer">
-                        <p class="desk-form__group">Partnercontainer · {{ data.order.purpose === 'PARTNER_SETTLEMENT' ? 'slotafrekening' : 'voorschot' }}</p>
-                @if (!isSettlement(data.order)) { <label class="field"><span>Betaalplan van de partner</span><select class="select" [disabled]="!canEdit()" [ngModel]="data.order.paymentPlan || 'THIRD_TWO_THIRDS_PRODUCTION'" (ngModelChange)="patch({ paymentPlan: $event, paymentTerms: $event === 'THIRD_TWO_THIRDS_PRODUCTION' ? '1/3 bij start productie, 2/3 na productie' : 'Volledige betaling' })"><option value="THIRD_TWO_THIRDS_PRODUCTION">1/3 start productie · 2/3 na productie</option><option value="FULL">Volledige betaling</option></select></label> }
+                        <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
+                @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
                         @if (isSettlement(data.order)) {
                           <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                         } @else {
@@ -782,7 +782,7 @@ interface JourneyStep {
                       @if (isInvoiceDoc()) {
                         @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
                           <button class="desk-action" type="button" [disabled]="sending() || dirty()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Factuur e-mailen</b><small>PDF en betaalgegevens naar de klant</small></span></button>
-                          <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de factuur buiten het ERP bezorgde</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de factuur buiten het ERP bezorgde</small></span></button>
                         }
                         @if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
                           <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="openShipSheet(data)"><i aria-hidden="true">▤</i><span><b>Bestelling verzonden</b><small>Punt de voorraad af</small></span></button>
@@ -1268,7 +1268,7 @@ export class SalesDesk extends SalesEditor {
   }
 
   async markSent(data: SalesOrderView): Promise<void> {
-    if (this.invoiceBusy()) return;
+    if (this.invoiceBusy() || this.dirty() || this.saving()) return;
     this.invoiceBusy.set(true);
     try {
       this.view.set(await this.sales.markInvoiceSent(data.order.id));
@@ -1332,6 +1332,6 @@ export class SalesDesk extends SalesEditor {
   }
 
   documentLabel(order: SalesOrder): string {
-    return salesDocumentKind(order);
+    return salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
   }
 }

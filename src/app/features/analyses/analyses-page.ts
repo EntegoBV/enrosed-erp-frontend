@@ -619,15 +619,16 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
         <header class="section-copy section-copy--sub">
           <span class="eyebrow">Partnercontainers</span>
           <h2>Zelf betaald of met een partner</h2>
-          <p>De partner financiert de afgesproken kosten vooraf of samen met ons. Ontvangen voorschotten zijn financiering. Het resultaat volgt uit de uitgegeven slotafrekening: volledige verkoopwaarde en werkelijke containerkost, ieder één keer.</p>
+          <p>De partner financiert de afgesproken kosten vooraf of samen met ons. Elke termijn krijgt een eigen voorschotfactuur. Het resultaat volgt uit uitgegeven deel- en slotafrekeningen, naar de werkelijk afgerekende hoeveelheden.</p>
         </header>
         <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark"><span class="metric-card__label">Kosten partnercontainers</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} containers · werkelijke kosten en nog open verplichtingen</p></article>
           <article class="card metric-card"><span class="metric-card__label">Afgesproken voorfinanciering</span><strong>{{ financing().committedAdvanceEur | eur: 0 }}</strong><p>{{ financing().invoicedEur | eur: 0 }} voorschot gefactureerd · excl. btw</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Van partners ontvangen</span><strong>{{ financing().receivedEur | eur: 0 }}</strong><p>echte betalingen · voorschotten en slotafrekeningen incl. btw</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="financing().overdueUnbilledAdvanceEur > 0"><span class="metric-card__label">Voorschotten nog factureren</span><strong>{{ financing().unbilledAdvanceEur | eur: 0 }}</strong><p>{{ financing().unbilledAdvanceCount }} geplande termijnen · excl. btw@if (financing().overdueUnbilledAdvanceEur > 0) { · {{ financing().overdueUnbilledAdvanceEur | eur: 0 }} met vervaldatum bereikt }</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Netto van partners ontvangen</span><strong>{{ financing().receivedEur | eur: 0 }}</strong><p>ontvangsten min terugbetalingen · incl. btw</p></article>
           <article class="card metric-card"><span class="metric-card__label">Nog te ontvangen</span><strong>{{ financing().openEur | eur: 0 }}</strong><p>resterende uitgegeven facturen, na deelbetalingen · incl. btw</p></article>
           <article class="card metric-card"><span class="metric-card__label">Eigen kasinleg</span><strong>{{ financing().ownExposureEur | eur: 0 }}</strong><p>betaalde containerkosten min ontvangen partnergeld, minimaal nul</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Gerealiseerd partnerresultaat</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>uitgegeven slotafrekeningen · voorschotten tellen niet als winst</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Gerealiseerd partnerresultaat</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>uitgegeven deel- en slotafrekeningen · voorschotten tellen niet als winst</p></article>
           <article class="card metric-card"><span class="metric-card__label">Credit voor partners</span><strong>{{ financing().creditEur | eur: 0 }}</strong><p>te verrekenen of terug te betalen volgens afrekening</p></article>
           <article class="card metric-card" [class.metric-card--danger]="financing().awaitingSettlement > 0"><span class="metric-card__label">Nog af te rekenen</span><strong>{{ financing().awaitingSettlement }}</strong><p>partnercontainer{{ financing().awaitingSettlement === 1 ? '' : 's' }} ontvangen, veilingoverzicht nog niet afgerekend</p></article>
         </div>
@@ -643,10 +644,10 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
                       <td><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ row.alias || row.number }}</a>@if (row.alias) { <small class="muted"> {{ row.number }}</small> }</td>
                       <td>{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
                       <td>{{ row.landedEur | eur: 0 }}<small class="muted"> {{ row.costFinalized ? 'definitief' : 'verwacht' }}</small></td>
-                      <td>{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small></td>
+                      <td>{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small>@if (row.unbilledAdvanceCount) { <a [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }">{{ row.unbilledAdvanceCount }} termijnen factureren · {{ row.unbilledAdvanceEur | eur: 0 }}</a>@if (row.nextAdvanceDueDate) { <small class="muted">volgende vervaldatum {{ row.nextAdvanceDueDate | dateNl }}</small> } }</td>
                       <td [class.scorecard__warn]="row.openEur > 0">{{ row.openEur | eur: 0 }} open<small class="muted"> {{ row.ownExposureEur | eur: 0 }} eigen kasinleg</small></td>
-                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.settled ? (row.resultEur | eur: 0) : 'Nog af te rekenen' }}@if (row.creditEur) { <small class="muted"> {{ row.creditEur | eur: 0 }} credit</small> }</td>
-                      <td>@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'slot' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
+                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}<small class="muted"> {{ row.settled ? 'volledig afgerekend' : row.remainingQuantity > 0 ? (row.remainingQuantity | num) + ' stuks resteren' : 'afrekening nog uitgeven' }}</small>@if (row.creditEur) { <small class="muted"> {{ row.creditEur | eur: 0 }} credit</small> }</td>
+                      <td>@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'afrekening' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
                     </tr>
                   }
                 </tbody>
