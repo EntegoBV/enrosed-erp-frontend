@@ -161,7 +161,8 @@ function mondayOf(value: string | null | undefined): Date | null {
 }
 
 /** The ISO week a day falls in, as 2026-W42. */
-function isoWeekOf(date: Date): string {
+/** ISO week notation ("2026-W36") of a UTC date, as logistics writes it. */
+export function isoWeekOf(date: Date): string {
   /* To that week's Thursday: that Thursday's year is the week year. */
   const thursday = new Date(date);
   thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));

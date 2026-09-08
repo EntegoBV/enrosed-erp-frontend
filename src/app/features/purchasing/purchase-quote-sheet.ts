@@ -3,7 +3,8 @@ import { Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
 import { Customer, PurchaseOrder } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
-import { EurPipe, NumPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe, EurUpPipe, NumUpPipe, WeekNlPipe } from '../../shared/pipes';
+import { isoWeekOf } from '../../shared/week-field';
 import { Sheet, Ui } from '../../shared/ui';
 
 /** One product line of the container as it will land on the quote. */
@@ -32,7 +33,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
 @Component({
   selector: 'app-purchase-quote-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, NumPipe, EurPipe, EurUpPipe, NumUpPipe],
+  imports: [Sheet, NumPipe, EurPipe, EurUpPipe, NumUpPipe, WeekNlPipe],
   template: `
     <app-sheet title="Verkoopofferte maken" (closed)="closed.emit()">
       <div body class="pq">
@@ -144,6 +145,9 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <li class="pq__total"><span>Goederen aan gelande kostprijs, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
           }
         </ul>
+        @if (arrivalWeek(); as week) {
+          <p class="pq__hint">Leverweek op elke regel: {{ week | weekNl }}, de verwachte aankomst van de container.</p>
+        }
       </div>
       <div foot style="display:contents">
         @if (createError(); as error) { <p class="pq__error pq__error--foot" role="alert">{{ error }}</p> }
@@ -223,6 +227,13 @@ export class PurchaseQuoteSheet {
   readonly presetCustomerId = input<number | null>(null);
   readonly presetCostPct = input<number | null>(null);
   readonly presetSharePct = input<number | null>(null);
+  /** The week the quote promises on every line: the container's expected arrival, unless it is in already. */
+  readonly arrivalWeek = computed(() => {
+    const order = this.order();
+    if (!order.expectedArrival || order.receivedOn) return null;
+    const [year, month, day] = order.expectedArrival.split('-').map(Number);
+    return year && month && day ? isoWeekOf(new Date(Date.UTC(year, month - 1, day))) : null;
+  });
   readonly closed = output<void>();
 
   readonly customers = signal<Customer[]>([]);
