@@ -2350,8 +2350,11 @@ export class SalesEditor {
   });
   readonly history = signal<QuoteEvent[]>([]);
 
+  /** The pick-lists and the catalogue, loaded once; an order waits for them before it shows. */
+  private referenceLoad: Promise<void> = Promise.resolve();
+
   constructor() {
-    void this.loadReference();
+    this.referenceLoad = this.loadReference();
     effect(() => {
       const rawId = this.id();
       const routeId = Number(rawId);
@@ -2402,13 +2405,18 @@ export class SalesEditor {
     this.view.set(null);
     this.customerPortalLink.set(null);
     try {
+      /* Everything the screen shows arrives together: the customers and the
+         catalogue decide the customer panel and how the lines group, the diary
+         and the portal link fill their own panels. Painting before any of it
+         is in would let the page jump into place a moment later. */
       const [view, revisions] = await Promise.all([
         this.sales.order(orderId), this.sales.revisionsFor(orderId),
+        this.referenceLoad,
+        this.loadHistory(orderId).catch(() => undefined),
+        this.loadCustomerPortalLink(orderId),
       ]);
       this.adopt(view);
       this.revisions.set(revisions);
-      void this.loadHistory(orderId);
-      void this.loadCustomerPortalLink(orderId);
     } catch (failure: unknown) {
       this.view.set(null);
       this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
@@ -2426,7 +2434,7 @@ export class SalesEditor {
   }
 
   retryReference(): void {
-    void this.loadReference();
+    this.referenceLoad = this.loadReference();
   }
 
   retryLoad(): void {
