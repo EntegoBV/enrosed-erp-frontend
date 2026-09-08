@@ -711,10 +711,14 @@ export class ProductList {
   }
 
   private async load(): Promise<void> {
-    const familyRequest = this.loadFamilies();
+    /* The rows paint as soon as the products are set, and the families name
+       and group them; so the products wait for the families and the list
+       shows once, with the right names. A failed family request still lets
+       the list through, with the retry beside it. */
     const [products, categories] = await Promise.all([
       this.catalog.products(),
       this.catalog.categories(),
+      this.loadFamilies(),
     ]);
     this.products.set(products);
     this.categories.set(categories);
@@ -729,10 +733,6 @@ export class ProductList {
     void this.sourcing.expectedStock()
       .then((expected) => this.expected.set(new Map(expected.map((item) => [item.productId, item]))))
       .catch(() => undefined);
-    /* The families name and group the rows; the list waits for them so no
-       name changes a moment after the first paint. A failed request still
-       shows the list, with the retry beside it. */
-    await familyRequest;
     this.loading.set(false);
   }
 
