@@ -12,7 +12,7 @@ import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Sheet } from '../../shared/ui';
-import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
@@ -49,7 +49,7 @@ type DeskRow =
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
-            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
+            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -121,7 +121,7 @@ type DeskRow =
             <div class="desk-kpi desk-kpi--total">
               <small>Totaal geland</small>
               <strong>{{ data.costing.totals.totalEur | eur: 0 }}</strong>
-              <span>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk@if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) { · waarvan {{ data.costing.totals.separateCostsEur | eur: 0 }} inspectie &amp; andere }</span>
+              <span>{{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk@if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) { · waarvan {{ data.costing.totals.separateCostsEur | eur: 0 }} inspectie &amp; andere }</span>
             </div>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('pay')" [class.is-warn]="openAll() > 0">
               <small>Te betalen</small>
@@ -218,9 +218,9 @@ type DeskRow =
                         <td class="c-qty num"><b>{{ row.pieces | num }}</b></td>
                         <td class="c-cartons num"><b>{{ row.cartons | num }}</b></td>
                         <td class="c-price"></td>
-                        <td class="c-money num">{{ (perPiece() && row.pieces > 0 ? row.goodsEur / row.pieces : row.goodsEur) | eur: decimals() }}</td>
+                        <td class="c-money num">{{ (perPiece() && row.pieces > 0 ? row.goodsEur / row.pieces : row.goodsEur) | eurUp: decimals() }}</td>
                         @if (manualExtra()) { <td class="c-money c-extra"></td> }
-                        <td class="c-money num c-money--total">{{ perPiece() ? (row.averageUnitEur | eur: 4) : (row.totalEur | eur) }}</td>
+                        <td class="c-money num c-money--total">{{ perPiece() ? (row.averageUnitEur | eurUp: 3) : (row.totalEur | eur) }}</td>
                         @if (editing()) { <td class="c-act"></td> }
                       </tr>
                     }
@@ -294,14 +294,14 @@ type DeskRow =
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
                                      [attr.aria-label]="'Prijs per stuk ' + line.productName + ' in ' + effectiveExwCurrency(line.productId)"
                                      [ngModel]="orderLine(line.productId)?.exwPrice"
-                                     [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | num: 4) : ''"
+                                     [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | numUp: 3) : ''"
                                      (ngModelChange)="setExwPrice(line.productId, $event)" />
                             </div>
                           } @else {
                             <b class="num">{{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ unitPriceOf(line) | num: 2 }}</b>
                           }
                         </td>
-                        <td class="c-money num">{{ amt(line.goodsEur, line) | eur: decimals() }}</td>
+                        <td class="c-money num">{{ amt(line.goodsEur, line) | eurUp: decimals() }}</td>
                         @if (manualExtra()) {
                           <td class="c-money num c-extra">
                             @if (editing()) {
@@ -311,21 +311,21 @@ type DeskRow =
                                        [attr.aria-label]="'Enrosed kost voor ' + line.productName"
                                        [ngModel]="orderLine(line.productId)?.extraShareEur" (ngModelChange)="setExtraShare(line.productId, $event)" />
                               </div>
-                              <div class="desk-price desk-price--extra desk-price--target" [title]="'Kostprijs per stuk; zonder Enrosed kost ' + (basePerPiece(line) | eur: 4)">
+                              <div class="desk-price desk-price--extra desk-price--target" [title]="'Kostprijs per stuk; zonder Enrosed kost ' + (basePerPiece(line) | eurUp: 3)">
                                 <span class="desk-price__sym desk-price__sym--wide" aria-hidden="true">kost/st</span>
                                 <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
                                        [attr.aria-label]="'Kostprijs per stuk voor ' + line.productName + ', de Enrosed kost volgt'"
-                                       [value]="fixed4(line.landedUnitEur)" (change)="setTargetUnit(line.productId, line, $any($event.target).value)" />
+                                       [value]="fixed3(line.landedUnitEur)" (change)="setTargetUnit(line.productId, line, $any($event.target).value)" />
                               </div>
                             } @else {
-                              <b>{{ perPiece() ? (extraPerPiece(line) | eur: 4) : (line.extraRevenueEur | eur) }}</b>
+                              <b>{{ perPiece() ? (extraPerPiece(line) | eurUp: 3) : (line.extraRevenueEur | eur) }}</b>
                             }
                           </td>
                         }
                         <td class="c-money num c-money--total">
                           <button class="desk-total" type="button" (click)="toggleLine(line.productId)"
                                   [attr.aria-expanded]="lineOpen(line.productId)" [title]="'Kostopbouw van ' + line.productName">
-                            <b>{{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}</b>
+                            <b>{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</b>
                             <small>detail <i aria-hidden="true">›</i></small>
                           </button>
                         </td>
@@ -341,22 +341,22 @@ type DeskRow =
                           <td [attr.colspan]="editing() ? 7 : 6">
                             <div class="desk-detail__grid">
                               <div class="desk-detail__head"><span>Kostopbouw</span><span>{{ perPiece() ? 'per stuk' : 'hele regel · ' + (line.quantity | num) + ' st' }}</span></div>
-                              <div class="desk-detail__line"><span>Goederen <small>{{ line.goodsUsd | cur: 'USD' }}</small></span><span>{{ amt(line.goodsEur, line) | eur: decimals() }}</span></div>
+                              <div class="desk-detail__line"><span>Goederen <small>{{ line.goodsUsd | cur: 'USD' }}</small></span><span>{{ amt(line.goodsEur, line) | eurUp: decimals() }}</span></div>
                               @if (line.originEur) {
-                                <div class="desk-detail__line"><span>{{ costLabels().originCostsLabel }} <small>{{ costLabels().originRoute }}</small></span><span>{{ amt(line.originEur, line) | eur: decimals() }}</span></div>
+                                <div class="desk-detail__line"><span>{{ costLabels().originCostsLabel }} <small>{{ costLabels().originRoute }}</small></span><span>{{ amt(line.originEur, line) | eurUp: decimals() }}</span></div>
                               }
                               @if (line.freightEur) {
-                                <div class="desk-detail__line"><span>{{ costLabels().seaFreightLabel }} <small>{{ costLabels().seaFreightRoute }}</small></span><span>{{ amt(line.freightEur, line) | eur: decimals() }}</span></div>
+                                <div class="desk-detail__line"><span>{{ costLabels().seaFreightLabel }} <small>{{ costLabels().seaFreightRoute }}</small></span><span>{{ amt(line.freightEur, line) | eurUp: decimals() }}</span></div>
                               }
-                              <div class="desk-detail__line desk-detail__line--sub"><span>Douanewaarde</span><span>{{ amt(line.customsValueEur, line) | eur: decimals() }}</span></div>
-                              <div class="desk-detail__line"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }} <small>{{ line.dutySource }}</small></span><span>{{ amt(line.dutyEur, line) | eur: decimals() }}</span></div>
+                              <div class="desk-detail__line desk-detail__line--sub"><span>Douanewaarde</span><span>{{ amt(line.customsValueEur, line) | eurUp: decimals() }}</span></div>
+                              <div class="desk-detail__line"><span>Invoerrecht {{ line.dutyRatePct | pct: 1 }} <small>{{ line.dutySource }}</small></span><span>{{ amt(line.dutyEur, line) | eurUp: decimals() }}</span></div>
                               @if (line.destinationEur) {
-                                <div class="desk-detail__line"><span>{{ costLabels().destinationCostsLabel }}</span><span>{{ amt(line.destinationEur, line) | eur: decimals() }}</span></div>
+                                <div class="desk-detail__line"><span>{{ costLabels().destinationCostsLabel }}</span><span>{{ amt(line.destinationEur, line) | eurUp: decimals() }}</span></div>
                               }
                               @if (line.extraRevenueEur) {
-                                <div class="desk-detail__line"><span>Enrosed kost</span><span>{{ amt(line.extraRevenueEur, line) | eur: decimals() }}</span></div>
+                                <div class="desk-detail__line"><span>Enrosed kost</span><span>{{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}</span></div>
                               }
-                              <div class="desk-detail__line desk-detail__line--total"><span>Geland</span><span>{{ perPiece() ? (line.landedUnitEur | eur: 4) : (line.totalEur | eur) }}</span></div>
+                              <div class="desk-detail__line desk-detail__line--total"><span>Geland</span><span>{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</span></div>
                             </div>
                           </td>
                         </tr>
@@ -702,7 +702,7 @@ type DeskRow =
                           <div class="desk-chain__row"><i>+</i><span>{{ cost.label }} <small>in de stukprijs verdeeld</small></span><b>{{ cost.amountEur | eur }}</b></div>
                         }
                       }
-                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ data.costing.totals.separateCostsEur ? separateCostsTotalLabel(data.costing.totals) : 'Totaal geland' }} <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
+                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ data.costing.totals.separateCostsEur ? separateCostsTotalLabel(data.costing.totals) : 'Totaal geland' }} <small>{{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
                     </div>
                     @if (!isDdp() && data.costing.totals.goodsEur > 0) {
                       <div class="desk-overhead">
@@ -962,7 +962,7 @@ type DeskRow =
               <dl class="desk-facts mt-12">
                 <div><dt>Producten</dt><dd>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen</dd></div>
                 <div><dt>Goederen</dt><dd>{{ data.costing.totals.goodsEur | eur }} <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small></dd></div>
-                <div><dt>Totaal geland</dt><dd>{{ data.costing.totals.totalEur | eur }} <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></dd></div>
+                <div><dt>Totaal geland</dt><dd>{{ data.costing.totals.totalEur | eur }} <small>{{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk</small></dd></div>
                 <div><dt>Betaalafspraak</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
               </dl>
               @if (dirty()) { <p class="hint mt-8">Je openstaande wijzigingen worden hierbij mee opgeslagen.</p> }

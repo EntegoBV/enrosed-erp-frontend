@@ -21,6 +21,27 @@ export class EurPipe implements PipeTransform {
   }
 }
 
+/** Rounds up at the given decimal, with a hair of tolerance so a stored 2-decimal amount never climbs a cent. */
+export function ceilTo(value: number | null | undefined, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.ceil((Number(value) || 0) * factor - 1e-7) / factor;
+}
+
+/** Stukbedragen op de inkooporder: maximaal drie decimalen, naar boven afgerond. */
+@Pipe({ name: 'eurUp' })
+export class EurUpPipe implements PipeTransform {
+  transform(value: number | null | undefined, decimals = 3, locale = LOCALE): string {
+    return money(ceilTo(value, decimals), 'EUR', decimals, locale);
+  }
+}
+
+@Pipe({ name: 'numUp' })
+export class NumUpPipe implements PipeTransform {
+  transform(value: number | null | undefined, decimals = 3, locale = LOCALE): string {
+    return new Intl.NumberFormat(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(ceilTo(value, decimals));
+  }
+}
+
 /** Bedragen in willekeurige munt — inkoopprijzen staan in USD of CNY. */
 @Pipe({ name: 'cur' })
 export class CurPipe implements PipeTransform {

@@ -35,7 +35,7 @@ import { ProductDraft } from '../../shared/product-picker';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Sheet, Ui } from '../../shared/ui';
-import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe, ceilTo } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
 import {
@@ -92,7 +92,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseQuoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
-            PurchasePdfSheet, PurchaseActivity, EurPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
+            PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number"
@@ -494,7 +494,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
                         </small>
                         <b>{{ perPiece()
-                          ? (familyGroup.averageUnitEur | eur: 4)
+                          ? (familyGroup.averageUnitEur | eurUp: 3)
                           : (familyGroup.totalEur | eur) }}</b>
                       </span>
                     </header>
@@ -577,7 +577,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                  [attr.aria-label]="'Prijs per stuk in ' + effectiveExwCurrency(line.productId)"
                                  [ngModel]="orderLine(line.productId)?.exwPrice"
                                  [placeholder]="line.quantity
-                                   ? (line.goodsUsd / line.quantity | num: 4) : ''"
+                                   ? (line.goodsUsd / line.quantity | numUp: 3) : ''"
                                  (ngModelChange)="setExwPrice(line.productId, $event)" />
                         </div>
                       </div>
@@ -589,16 +589,16 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                             <input class="input num right" [id]="'extra-' + line.productId" type="number" min="0" step="10" inputmode="decimal"
                                    [ngModel]="orderLine(line.productId)?.extraShareEur" (ngModelChange)="setExtraShare(line.productId, $event)" />
                           </div>
-                          <span class="hint">Kostprijs nu {{ line.landedUnitEur | eur: 4 }} per stuk, waarvan {{ extraPerPiece(line) | eur: 4 }} Enrosed kost.</span>
+                          <span class="hint">Kostprijs nu {{ line.landedUnitEur | eurUp: 3 }} per stuk, waarvan {{ extraPerPiece(line) | eurUp: 3 }} Enrosed kost.</span>
                         </div>
                         <div class="field">
                           <label [attr.for]="'target-' + line.productId">Of de kostprijs per stuk, de Enrosed kost volgt</label>
                           <div class="input-affix input-affix--prefixed">
                             <span class="input-affix__prefix" aria-hidden="true">€</span>
                             <input class="input num right" [id]="'target-' + line.productId" type="number" min="0" step="0.01" inputmode="decimal"
-                                   [value]="fixed4(line.landedUnitEur)" (change)="setTargetUnit(line.productId, line, $any($event.target).value)" />
+                                   [value]="fixed3(line.landedUnitEur)" (change)="setTargetUnit(line.productId, line, $any($event.target).value)" />
                           </div>
-                          <span class="hint">Zonder Enrosed kost kost dit product {{ basePerPiece(line) | eur: 4 }} per stuk.</span>
+                          <span class="hint">Zonder Enrosed kost kost dit product {{ basePerPiece(line) | eurUp: 3 }} per stuk.</span>
                         </div>
                       }
                     </div>
@@ -611,7 +611,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         </span>
                         <span class="line-breakdown__value">
                           <strong class="line-breakdown__total">
-                            {{ perPiece() ? (line.landedUnitEur | eur: 4)
+                            {{ perPiece() ? (line.landedUnitEur | eurUp: 3)
                               : (line.totalEur | eur) }}
                           </strong>
                           <svg class="line-breakdown__chevron" viewBox="0 0 20 20"
@@ -631,35 +631,35 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         </div>
                         <div class="stat-row stat-row--muted">
                           <span>Goederen</span>
-                          <span class="num">{{ amt(line.goodsEur, line) | eur: decimals() }}</span>
+                          <span class="num">{{ amt(line.goodsEur, line) | eurUp: decimals() }}</span>
                         </div>
                         @if (line.originEur) {
                           <div class="stat-row stat-row--muted">
                             <span>{{ costLabels().originCostsLabel }}
                               <small>{{ costLabels().originRoute }}</small>
                             </span>
-                            <span class="num">{{ amt(line.originEur, line) | eur: decimals() }}</span>
+                            <span class="num">{{ amt(line.originEur, line) | eurUp: decimals() }}</span>
                           </div>
                         }
                         <div class="stat-row stat-row--muted">
                           <span>{{ costLabels().seaFreightLabel }}
                             <small>{{ costLabels().seaFreightRoute }}</small>
                           </span>
-                          <span class="num">{{ amt(line.freightEur, line) | eur: decimals() }}</span>
+                          <span class="num">{{ amt(line.freightEur, line) | eurUp: decimals() }}</span>
                         </div>
                         <div class="stat-row stat-row--muted line-divider">
                           <span>Douanewaarde</span>
-                          <span class="num">{{ amt(line.customsValueEur, line) | eur: decimals() }}</span>
+                          <span class="num">{{ amt(line.customsValueEur, line) | eurUp: decimals() }}</span>
                         </div>
                         <div class="stat-row stat-row--muted">
                           <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
                             <span class="tiny">({{ line.dutySource }})</span>
                           </span>
-                          <span class="num">{{ amt(line.dutyEur, line) | eur: decimals() }}</span>
+                          <span class="num">{{ amt(line.dutyEur, line) | eurUp: decimals() }}</span>
                         </div>
                         <div class="stat-row stat-row--muted">
                           <span>{{ costLabels().destinationCostsLabel }}</span>
-                          <span class="num">{{ amt(line.destinationEur, line) | eur: decimals() }}</span>
+                          <span class="num">{{ amt(line.destinationEur, line) | eurUp: decimals() }}</span>
                         </div>
                         @if (line.extraRevenueEur) {
                           <div class="stat-row stat-row--muted">
@@ -668,7 +668,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                               <small>{{ perPiece() ? 'per stuk' : 'hele regel' }}</small>
                             </span>
                             <span class="num">
-                              {{ amt(line.extraRevenueEur, line) | eur: decimals() }}
+                              {{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}
                             </span>
                           </div>
                         }
@@ -1859,7 +1859,7 @@ export class PurchaseEditor {
 
   /** Every line amount through one gate, so the toggle cannot miss one. */
   /** Two decimals for totals, four for per-piece - tiny numbers need them. */
-  readonly decimals = computed(() => this.perPiece() ? 4 : 2);
+  readonly decimals = computed(() => this.perPiece() ? 3 : 2);
 
   amt(value: number, line: { quantity: number }): number {
     return this.perPiece() && line.quantity > 0 ? value / line.quantity : value;
@@ -2689,8 +2689,9 @@ export class PurchaseEditor {
     this.setLine(productId, { extraShareEur: round2(Math.max(0, (target - this.basePerPiece(line)) * line.quantity)) });
   }
 
-  fixed4(value: number | null | undefined): string {
-    return Number.isFinite(value as number) ? (value as number).toFixed(4) : '';
+  /** Three decimals, rounded up: the way every piece amount on the order reads. */
+  fixed3(value: number | null | undefined): string {
+    return Number.isFinite(value as number) ? ceilTo(value, 3).toFixed(3) : '';
   }
 
   /** Spreads the whole Enrosed kost by a key, cents landing on the last line, as a start to adjust by hand. */

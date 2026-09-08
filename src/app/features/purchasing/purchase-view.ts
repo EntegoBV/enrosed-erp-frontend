@@ -18,7 +18,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
 import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
-import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
 import {
   Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation,
   PurchasePayment, PurchaseDocument, SalesOrderView, Customer,
@@ -58,7 +58,7 @@ type PurchaseWorkspaceSectionId =
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            EurPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
+            EurPipe, EurUpPipe, NumUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
       @if (desktop.active()) {
@@ -406,7 +406,7 @@ type PurchaseWorkspaceSectionId =
                               {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
                             </small>
                             <b>{{ perPiece()
-                              ? (group.totals.averageUnitEur | eur: 4)
+                              ? (group.totals.averageUnitEur | eurUp: 3)
                               : (group.totals.totalEur | eur) }}</b>
                           </span>
                           <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
@@ -483,7 +483,7 @@ type PurchaseWorkspaceSectionId =
                       <span><small>Aantal</small><strong>{{ entry.line.quantity | num }} st</strong></span>
                       <span><small>Dozen</small><strong>{{ entry.line.cartons | num }}</strong></span>
                       <span><small>Volume</small><strong>{{ entry.line.cbm | cbm }}</strong></span>
-                      <span><small>Geland / stuk</small><strong>{{ entry.line.landedUnitEur | eur: 4 }}</strong></span>
+                      <span><small>Geland / stuk</small><strong>{{ entry.line.landedUnitEur | eurUp: 3 }}</strong></span>
                       <span class="line-fact--total"><small>Regeltotaal</small><strong>{{ entry.line.totalEur | eur }}</strong></span>
                     </div>
                     @if (data.order.status === 'ONTVANGEN') {
@@ -505,7 +505,7 @@ type PurchaseWorkspaceSectionId =
                         <strong>{{ perPiece() ? 'Per stuk bekijken' : 'Hele regel bekijken' }}</strong>
                       </span>
                       <span class="line-breakdown-toggle__total">
-                        {{ perPiece() ? (entry.line.landedUnitEur | eur: 4) : (entry.line.totalEur | eur) }}
+                        {{ perPiece() ? (entry.line.landedUnitEur | eurUp: 3) : (entry.line.totalEur | eur) }}
                       </span>
                       <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
                            [class.chevron-open]="openLine() === entry.line.productId">
@@ -517,27 +517,27 @@ type PurchaseWorkspaceSectionId =
                     @if (openLine() === entry.line.productId) {
                       <div class="line-breakdown" [id]="linePanelId(entry.line.productId)">
                         <div class="stat-row"><span>Goederen</span>
-                          <span class="num">{{ amt(entry.line.goodsEur, entry.line) | eur: decimals() }}</span></div>
+                          <span class="num">{{ amt(entry.line.goodsEur, entry.line) | eurUp: decimals() }}</span></div>
                         @if (entry.line.originEur) {
                           <div class="stat-row"><span>{{ costLabels().originCostsLabel }}
                             <small>{{ costLabels().originRoute }}</small>
                           </span>
-                            <span class="num">{{ amt(entry.line.originEur, entry.line) | eur: decimals() }}</span></div>
+                            <span class="num">{{ amt(entry.line.originEur, entry.line) | eurUp: decimals() }}</span></div>
                         }
                         <div class="stat-row"><span>{{ costLabels().seaFreightLabel }}
                           <small>{{ costLabels().seaFreightRoute }}</small>
                         </span>
-                          <span class="num">{{ amt(entry.line.freightEur, entry.line) | eur: decimals() }}</span></div>
+                          <span class="num">{{ amt(entry.line.freightEur, entry.line) | eurUp: decimals() }}</span></div>
                         <div class="stat-row line-breakdown__subtotal"><span>Douanewaarde</span>
-                          <span class="num">{{ amt(entry.line.customsValueEur, entry.line) | eur: decimals() }}</span></div>
+                          <span class="num">{{ amt(entry.line.customsValueEur, entry.line) | eurUp: decimals() }}</span></div>
                         <div class="stat-row"><span>Invoerrecht {{ entry.line.dutyRatePct | pct: 1 }}
                           @if (entry.line.dutySource) { <small>({{ entry.line.dutySource }})</small> }
-                        </span><span class="num">{{ amt(entry.line.dutyEur, entry.line) | eur: decimals() }}</span></div>
+                        </span><span class="num">{{ amt(entry.line.dutyEur, entry.line) | eurUp: decimals() }}</span></div>
                         <div class="stat-row"><span>{{ costLabels().destinationCostsLabel }}</span>
-                          <span class="num">{{ amt(entry.line.destinationEur, entry.line) | eur: decimals() }}</span></div>
+                          <span class="num">{{ amt(entry.line.destinationEur, entry.line) | eurUp: decimals() }}</span></div>
                         @if (entry.line.extraRevenueEur) {
                           <div class="stat-row"><span>Enrosed kost</span>
-                            <span class="num">{{ amt(entry.line.extraRevenueEur, entry.line) | eur: decimals() }}</span></div>
+                            <span class="num">{{ amt(entry.line.extraRevenueEur, entry.line) | eurUp: decimals() }}</span></div>
                         }
                       </div>
                     }
@@ -1234,7 +1234,7 @@ export class PurchaseView {
   readonly perPiece = signal(true);
 
   /** Two decimals for totals, four for per-piece - tiny numbers need them. */
-  readonly decimals = computed(() => this.perPiece() ? 4 : 2);
+  readonly decimals = computed(() => this.perPiece() ? 3 : 2);
 
   /** Which product line shows its cost build-up; null is all folded. */
   readonly openLine = signal<number | null>(null);

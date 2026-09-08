@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
 import { Customer, PurchaseOrder } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
-import { EurPipe, NumPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 
 /** One product line of the container as it will land on the quote. */
@@ -32,7 +32,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
 @Component({
   selector: 'app-purchase-quote-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, NumPipe, EurPipe],
+  imports: [Sheet, NumPipe, EurPipe, EurUpPipe, NumUpPipe],
   template: `
     <app-sheet title="Verkoopofferte maken" (closed)="closed.emit()">
       <div body class="pq">
@@ -127,7 +127,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
           @for (line of lines(); track line.productId) {
             <li>
               <span>{{ line.name }}</span>
-              <b>{{ line.quantity | num }} st.@if (pricing() === 'COST' && line.landedUnitEur !== null) { · {{ unitPrice(line) | eur: 4 }} / st }</b>
+              <b>{{ line.quantity | num }} st.@if (pricing() === 'COST' && line.landedUnitEur !== null) { · {{ unitPrice(line) | eurUp: 3 }} / st }</b>
             </li>
           } @empty {
             <li class="pq__empty">Deze container heeft nog geen productregels.</li>
