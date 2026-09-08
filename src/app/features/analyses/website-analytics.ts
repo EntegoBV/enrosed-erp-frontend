@@ -246,7 +246,7 @@ const RANGES: readonly Range[] = [
         <p>
           Cookieloos gemeten: geen adressen, bezoekers tellen per dag uniek.
           Niet meegeteld: robots, bezoeken vanuit het ERP en previews,
-          @if (r.excludedCities.length) { eigen bezoeken uit {{ r.excludedCities.join(', ') }}, }
+          @if (r.excludedCities.length) { eigen bezoeken uit {{ r.excludedCities.join(', ') }}, bezoeken die in een AI-assistent begonnen (ChatGPT, Claude, Gemini, Copilot, Perplexity), }
           en toestellen die zich hebben uitgesloten. Bijgewerkt om {{ timeLabel(r.generatedAt) }}.
         </p>
         <button class="btn btn--sm" type="button" (click)="excludeThisDevice()">Dit toestel uitsluiten</button>

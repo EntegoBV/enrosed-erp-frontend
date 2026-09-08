@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { MenuTrigger } from '../../shared/menu-trigger';
 import { AuthImage } from '../../core/api/auth-image';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { saveBlob } from '../../core/api/download';
@@ -65,7 +66,7 @@ export const COLLECTIONS: readonly Collection[] = [
 @Component({
   selector: 'app-files-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgTemplateOutlet, AuthImage, PageHeader, Sheet, DateTimeNlPipe],
+  imports: [MenuTrigger, FormsModule, NgTemplateOutlet, AuthImage, PageHeader, Sheet, DateTimeNlPipe],
   template: `
     @if (phone()) {
       <!-- ============================ phone: a file browser, one screen at a time -->
@@ -125,9 +126,9 @@ export const COLLECTIONS: readonly Collection[] = [
             <h2 class="fm__h">Mappen</h2>
             <ul class="fm__list">
               @for (node of childFolders(); track node.id) {
-                <li><button class="fm__row" type="button" (click)="openFolder(node.id)">
+                <li><button class="fm__row" type="button" appMenuTrigger (menuTrigger)="folderMenu.set(node)" (click)="openFolder(node.id)">
                   <i class="fm__icon fm__icon--folder" aria-hidden="true">▰</i>
-                  <span class="fm__copy"><b>{{ node.name }}</b><small>{{ node.assetCount }} bestand{{ node.assetCount === 1 ? '' : 'en' }}</small></span>
+                  <span class="fm__copy"><b>{{ node.name }}</b><small>{{ node.assetCount }} bestand{{ node.assetCount === 1 ? '' : 'en' }}{{ childCount(node) ? ' · ' + childCount(node) + (childCount(node) === 1 ? ' map' : ' mappen') : '' }}</small></span>
                   <i class="fm__chev" aria-hidden="true">›</i>
                 </button></li>
               }
@@ -195,6 +196,16 @@ export const COLLECTIONS: readonly Collection[] = [
                 @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
               </select>
             </div>
+          </div>
+        </app-sheet>
+      }
+      @if (folderMenu(); as node) {
+        <app-sheet [title]="node.name" (closed)="folderMenu.set(null)">
+          <div body class="fm__menu">
+            <button class="fm__menu-item" type="button" (click)="folderMenu.set(null); openFolder(node.id)"><i aria-hidden="true">▰</i>Openen<small>{{ node.assetCount }} bestand{{ node.assetCount === 1 ? '' : 'en' }}</small></button>
+            <button class="fm__menu-item" type="button" (click)="folderMenu.set(null); startFolder(node.id)"><i aria-hidden="true">+</i>Nieuwe submap</button>
+            <button class="fm__menu-item" type="button" (click)="folderMenu.set(null); renameFolder(node)"><i aria-hidden="true">✎</i>Hernoemen of verplaatsen</button>
+            <button class="fm__menu-item fm__menu-item--danger" type="button" (click)="folderMenu.set(null); removeFolder(node)"><i aria-hidden="true">×</i>Map verwijderen<small>bestanden gaan naar de bovenliggende map</small></button>
           </div>
         </app-sheet>
       }
@@ -883,6 +894,12 @@ export class FilesPage implements OnDestroy {
   readonly linkFormOpen = signal(false);
   /** The file whose actions are open: a sheet on the phone, a menu at the cursor on desktop. */
   readonly actionsFor = signal<{ asset: MediaAssetSummary } | null>(null);
+  /** The folder a long press on a phone opened the actions for. */
+  readonly folderMenu = signal<FolderNode | null>(null);
+
+  childCount(node: FolderNode): number {
+    return this.tree().filter((item) => item.parentId === node.id).length;
+  }
   readonly context = signal<{ asset: MediaAssetSummary; x: number; y: number } | null>(null);
   /** A row being swiped: how far, whether it settled open on the delete button. */
   readonly swipe = signal<{ id: number; dx: number; open: boolean; settled: boolean } | null>(null);
@@ -1280,9 +1297,10 @@ export class FilesPage implements OnDestroy {
     if (this.syncingUrl) return;
     const view = params.get('view');
     const kind = params.get('kind');
+    const map = Number(params.get('map'));
     const collection = view ? COLLECTIONS.find((item) => item.key === view) ?? null : null;
     this.collection.set(collection);
-    this.folder.set(collection ? null : view === 'all' ? null : this.folder() === null ? 'root' : this.folder());
+    this.folder.set(collection ? null : view === 'all' ? null : Number.isInteger(map) && map > 0 ? map : 'root');
     this.kind.set(kind === 'IMAGE' || kind === 'DOCUMENT' ? kind : collection?.filters.kind ?? null);
     this.archived.set(params.get('archief') === '1');
     void this.reload();
@@ -1292,12 +1310,15 @@ export class FilesPage implements OnDestroy {
   private syncUrl(): void {
     const queryParams: Record<string, string> = {};
     const collection = this.collection();
+    const folder = this.folder();
     if (collection) queryParams['view'] = collection.key;
-    else if (this.folder() === null) queryParams['view'] = 'all';
+    else if (folder === null) queryParams['view'] = 'all';
+    else if (typeof folder === 'number') queryParams['map'] = String(folder);
     if (this.kind()) queryParams['kind'] = this.kind()!;
     if (this.archived()) queryParams['archief'] = '1';
     this.syncingUrl = true;
-    void this.router.navigate([], { relativeTo: this.route, queryParams, replaceUrl: true })
+    /* A phone walks folders like screens: every step is a history entry, so Back climbs out again. */
+    void this.router.navigate([], { relativeTo: this.route, queryParams, replaceUrl: !this.phone() })
       .finally(() => { this.syncingUrl = false; });
   }
 
