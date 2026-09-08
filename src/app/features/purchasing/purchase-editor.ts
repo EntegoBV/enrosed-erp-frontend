@@ -421,6 +421,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         }
                       </select>
                     </div>
+                    <div class="field">
+                      <span class="label">Prijsbasis en munt van de leverancier</span>
+                      <div class="fin-chips po-basis" role="group" aria-label="Prijsbasis en munt">
+                        <button type="button" class="fin-chip" [class.on]="!isDdp()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="isDdp()" (click)="setOrderBasis('DDP')">DDP</button>
+                        <span class="po-basis__sep" aria-hidden="true"></span>
+                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'USD'" (click)="setOrderCurrency('USD')">$ USD</button>
+                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'CNY'" (click)="setOrderCurrency('CNY')">¥ CNY</button>
+                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'EUR'" (click)="setOrderCurrency('EUR')">€ EUR</button>
+                      </div>
+                      <span class="hint">{{ isDdp() ? 'Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij.' : 'Af fabriek: wij regelen zeevracht, invoerrechten en transport.' }} De stukprijzen staan in {{ orderCurrency() }}.</span>
+                    </div>
                   </div>
                 </div>
               }
@@ -559,30 +571,15 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
                       <div class="field">
                         <label [attr.for]="'exw-' + line.productId">Afgesproken prijs per stuk</label>
-                        <div class="input-affix">
+                        <div class="input-affix input-affix--prefixed">
+                          <span class="input-affix__prefix" aria-hidden="true">{{ currencySymbol(effectiveExwCurrency(line.productId)) }}</span>
                           <input class="input num right" [id]="'exw-' + line.productId"
                                  type="number" min="0" step="0.01" inputmode="decimal"
+                                 [attr.aria-label]="'Prijs per stuk in ' + effectiveExwCurrency(line.productId)"
                                  [ngModel]="orderLine(line.productId)?.exwPrice"
                                  [placeholder]="line.quantity
                                    ? (line.goodsUsd / line.quantity | num: 4) : ''"
                                  (ngModelChange)="setExwPrice(line.productId, $event)" />
-                          <select class="input-affix__suffix line-currency"
-                                  aria-label="Munt van de prijs"
-                                  [disabled]="isReceived() || orderLine(line.productId)?.exwPrice == null"
-                                  [ngModel]="effectiveExwCurrency(line.productId)"
-                                  (ngModelChange)="setExwCurrency(line.productId, $event)">
-                            <option value="USD">USD</option>
-                            <option value="CNY">CNY</option>
-                            <option value="EUR">EUR</option>
-                          </select>
-                          <!-- What the price covers decides what the calculation adds. -->
-                          <select class="input-affix__suffix line-basis"
-                                  aria-label="Wat de prijs dekt"
-                                  [ngModel]="orderLine(line.productId)?.priceBasis ?? 'EXW'"
-                                  (ngModelChange)="setPriceBasis(line.productId, $event)">
-                            <option value="EXW">EXW</option>
-                            <option value="DDP">DDP</option>
-                          </select>
                         </div>
                         @if (productCardPrice(line.productId); as currentPrice) {
                           <span class="hint">
@@ -591,9 +588,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                               · wordt gebruikt zolang dit veld leeg blijft
                             }
                           </span>
-                        }
-                        @if ((orderLine(line.productId)?.priceBasis ?? 'EXW') === 'DDP') {
-                          <span class="hint">Geleverd incl. rechten, voor de hele container.</span>
                         }
                       </div>
                     </div>
@@ -2948,6 +2942,8 @@ export class PurchaseEditor {
   }
 
   setAllocation(field: keyof PurchaseOrder, value: Allocation): void {
+    /* Choosing the hand-made split is the same as opening it: nobody should pick it and see nothing. */
+    if (field === 'allocExtra' && value === 'MANUAL') { this.openManualSplit(); return; }
     this.patch({ [field]: value } as Partial<PurchaseOrder>);
   }
 
@@ -3008,11 +3004,9 @@ export class PurchaseEditor {
   setExwPrice(productId: number, raw: unknown): void {
     const empty = raw === null || raw === undefined || raw === '';
     const line = this.orderLine(productId);
-    const inheritedCurrency = this.products()
-      .find((product) => product.id === productId)?.exwCurrency ?? 'USD';
     this.setLine(productId, empty
       ? { exwPrice: null, exwCurrency: null }
-      : { exwPrice: +String(raw), exwCurrency: line?.exwCurrency ?? inheritedCurrency });
+      : { exwPrice: +String(raw), exwCurrency: line?.exwCurrency ?? this.orderCurrency() });
   }
 
   setExwCurrency(productId: number, currency: Currency): void {
@@ -3024,6 +3018,30 @@ export class PurchaseEditor {
     return this.orderLine(productId)?.exwCurrency
       ?? this.products().find((product) => product.id === productId)?.exwCurrency
       ?? 'USD';
+  }
+
+  /** The sign in front of a purchase price, instead of a currency picker on every line. */
+  currencySymbol(currency: Currency | null | undefined): string {
+    return currency === 'CNY' ? '¥' : currency === 'EUR' ? '€' : '$';
+  }
+
+  /** The currency the container's prices are in: the first priced line, else the supplier's. */
+  readonly orderCurrency = computed<Currency>(() => {
+    const priced = (this.view()?.order.lines ?? []).find((line) => line.exwPrice != null && line.exwCurrency);
+    return priced?.exwCurrency ?? this.supplier()?.currency ?? 'USD';
+  });
+
+  /** One currency for the whole container: every line with its own price follows. */
+  setOrderCurrency(currency: Currency): void {
+    this.enqueue((order) => ({
+      ...order,
+      lines: order.lines.map((line) => (line.exwPrice == null ? line : { ...line, exwCurrency: currency })),
+    }));
+  }
+
+  /** EXW or DDP is how the supplier quotes the whole container, never one line. */
+  setOrderBasis(basis: 'EXW' | 'DDP'): void {
+    this.enqueue((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line, priceBasis: basis })) }));
   }
 
   /** Current product-card price; this is a master-data reference, not payment history. */

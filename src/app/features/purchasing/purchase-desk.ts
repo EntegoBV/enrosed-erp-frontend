@@ -289,26 +289,15 @@ type DeskRow =
                         <td class="c-price">
                           @if (editing()) {
                             <div class="desk-price">
+                              <span class="desk-price__sym" aria-hidden="true">{{ currencySymbol(effectiveExwCurrency(line.productId)) }}</span>
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
-                                     [attr.aria-label]="'Prijs per stuk ' + line.productName"
+                                     [attr.aria-label]="'Prijs per stuk ' + line.productName + ' in ' + effectiveExwCurrency(line.productId)"
                                      [ngModel]="orderLine(line.productId)?.exwPrice"
                                      [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | num: 4) : ''"
                                      (ngModelChange)="setExwPrice(line.productId, $event)" />
-                              <select class="desk-mini" aria-label="Munt van de prijs"
-                                      [disabled]="isReceived() || orderLine(line.productId)?.exwPrice == null"
-                                      [ngModel]="effectiveExwCurrency(line.productId)"
-                                      (ngModelChange)="setExwCurrency(line.productId, $event)">
-                                <option value="USD">USD</option><option value="CNY">CNY</option><option value="EUR">EUR</option>
-                              </select>
-                              <select class="desk-mini desk-mini--last" aria-label="Wat de prijs dekt"
-                                      [ngModel]="orderLine(line.productId)?.priceBasis ?? 'EXW'"
-                                      (ngModelChange)="setPriceBasis(line.productId, $event)">
-                                <option value="EXW">EXW</option><option value="DDP">DDP</option>
-                              </select>
                             </div>
                           } @else {
-                            <b class="num">{{ unitPriceOf(line) | cur: effectiveExwCurrency(line.productId) }}</b>
-                            <small>{{ orderLine(line.productId)?.priceBasis ?? 'EXW' }}</small>
+                            <b class="num">{{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ unitPriceOf(line) | num: 2 }}</b>
                           }
                         </td>
                         <td class="c-money num">{{ amt(line.goodsEur, line) | eur: decimals() }}</td>
@@ -434,6 +423,7 @@ type DeskRow =
                       <div><dt>Container</dt><dd>{{ containerLabel(data.order.containerType) }}</dd></div>
                       <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
                       <div><dt>Lossen op</dt><dd>{{ receivingLocationName(data.order.receivingLocationId) }}</dd></div>
+                      <div><dt>Prijsbasis</dt><dd>{{ isDdp() ? 'DDP, geleverd incl. rechten' : 'EXW, af fabriek' }}<small>stukprijzen in {{ orderCurrency() }}</small></dd></div>
                     </dl>
                   } @else {
                   <div class="desk-form">
@@ -504,6 +494,18 @@ type DeskRow =
                       <select class="select" id="dk-receiving" [ngModel]="data.order.receivingLocationId ?? mainLocationId()" (ngModelChange)="patch({ receivingLocationId: +$event })">
                         @for (location of stockLocations(); track location.id) { <option [value]="location.id">{{ location.name }}</option> }
                       </select>
+                    </div>
+                    <div class="field">
+                      <span class="label">Prijsbasis en munt van de leverancier</span>
+                      <div class="fin-chips po-basis" role="group" aria-label="Prijsbasis en munt">
+                        <button type="button" class="fin-chip" [class.on]="!isDdp()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="isDdp()" (click)="setOrderBasis('DDP')">DDP</button>
+                        <span class="po-basis__sep" aria-hidden="true"></span>
+                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'USD'" (click)="setOrderCurrency('USD')">$ USD</button>
+                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'CNY'" (click)="setOrderCurrency('CNY')">¥ CNY</button>
+                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'EUR'" (click)="setOrderCurrency('EUR')">€ EUR</button>
+                      </div>
+                      <span class="hint">{{ isDdp() ? 'Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij.' : 'Af fabriek: wij regelen zeevracht, invoerrechten en transport.' }} De stukprijzen staan in {{ orderCurrency() }}.</span>
                     </div>
                   </div>
                   }
@@ -646,7 +648,7 @@ type DeskRow =
                         <div class="desk-chain__row"><i>+</i><span>Invoerrechten <small>gemiddeld {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small></span><b>{{ data.costing.totals.dutyEur | eur }}</b></div>
                         <div class="desk-chain__row"><i>+</i><span>{{ costLabels().destinationCostsLabel }}</span><b>{{ data.costing.totals.destinationEur | eur }}</b></div>
                       }
-                      @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>eigen opslag</small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
+                      @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>{{ data.order.allocExtra === 'MANUAL' ? 'zelf verdeeld' : 'eigen opslag' }} · <button class="linklike" type="button" (click)="openManualSplit()">{{ data.order.allocExtra === 'MANUAL' ? 'aanpassen' : 'zelf verdelen' }}</button></small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
                       @if (data.costing.totals.separateCostsEur) {
                         @if (data.costing.totals.inspectionEur) {
                           <div class="desk-chain__row"><i>+</i><span>Inspectie <small>in de stukprijs verdeeld</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
@@ -1232,7 +1234,7 @@ type DeskRow =
 
     .c-qty b,.c-cartons b,.c-price>b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}.c-cartons small,.c-price>small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}.c-cartons small{white-space:normal;line-height:1.2}
     .c-price{text-align:right}
-    .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}
+    .desk-price{display:flex}.desk-price .desk-cell{flex:1;min-width:0;border-radius:0 var(--r-sm) var(--r-sm) 0}.desk-price__sym{display:inline-flex;align-items:center;padding:0 7px;border:1px solid var(--line-strong);border-right:0;border-radius:var(--r-sm) 0 0 var(--r-sm);background:var(--surface-2);color:var(--muted);font-size:12px;font-weight:700}
     .desk-mini{width:44px;min-width:0;min-height:34px;padding:0;border:1px solid var(--line-strong);text-align:center;border-left:0;background:var(--surface);color:var(--ink);font:inherit;font-size:11px}
     .desk-mini--last{border-radius:0 var(--r-sm) var(--r-sm) 0}
     .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
@@ -1321,6 +1323,12 @@ type DeskRow =
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {
+  /** From the reading view too: the split works on the draft, so editing starts first. */
+  override openManualSplit(): void {
+    if (!this.editing()) this.startEdit();
+    super.openManualSplit();
+  }
+
   readonly statusLabel$ = STATUS_LABEL;
   /** How the route opened us; the desk itself decides when editing ends. */
   readonly mode = input<'view' | 'edit'>('view');
