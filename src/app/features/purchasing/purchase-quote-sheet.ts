@@ -85,7 +85,15 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <button type="button" [class.on]="pricing() === 'COST'" [disabled]="!costKnown()" (click)="pricing.set('COST')">Kostprijs van deze container</button>
           </div>
           @if (pricing() === 'COST') {
-            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling, tot op de cent zoals op de inkooporder. Inspectie en andere kosten zitten in die stukprijs. De vracht op de offerte staat op nul, want die zit al in de kost.</p>
+            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling, tot op de cent zoals op de inkooporder. {{ costs().length ? 'Inspectie en andere kosten gaan als aparte regels mee.' : 'Inspectie en andere kosten zitten in die stukprijs.' }} De vracht op de offerte staat op nul, want die zit al in de kost.</p>
+            @if (costs().length) {
+              <ul class="pq__costs" aria-label="Aparte kosten die meegaan">
+                @for (cost of costs(); track cost.key) {
+                  <li><label class="pq__cost"><input type="checkbox" [checked]="includedCosts().has(cost.key)" (change)="toggleCost(cost.key)" />
+                    <span>{{ cost.description }}</span><b>{{ costAmount(cost) | eur }}</b></label></li>
+                }
+              </ul>
+            }
             <div class="pq__markup">
               <label for="pq-markup">Opslag op de kostprijs</label>
               <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" step="0.5" inputmode="decimal"
@@ -239,8 +247,18 @@ export class PurchaseQuoteSheet {
 
   /** Cost pricing needs a landed cost on every line; a half-calculated container cannot be passed on. */
   readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => line.landedUnitEur !== null));
-  /** The inspection and the named other costs; since they sit inside every landed piece price, nothing travels as a line of its own. */
-  readonly costs = computed<PurchaseQuoteCost[]>(() => []);
+  /** The inspection and the named other costs, as lines of their own while they sit apart from the piece price; spread by a key they are already inside it. */
+  readonly costs = computed<PurchaseQuoteCost[]>(() => {
+    const order = this.order();
+    if ((order.allocSeparate ?? 'SEPARATE') !== 'SEPARATE') return [];
+    const suffix = ` · ${order.number}`;
+    const costs: PurchaseQuoteCost[] = [];
+    if ((order.inspectionCostEur ?? 0) > 0) costs.push({ key: 'inspection', description: `Inspectie${suffix}`, amountEur: order.inspectionCostEur! });
+    (order.otherCosts ?? []).forEach((cost, index) => {
+      if (cost.label && (cost.amountEur ?? 0) > 0) costs.push({ key: `other-${index}`, description: `${cost.label}${suffix}`, amountEur: cost.amountEur! });
+    });
+    return costs;
+  });
   readonly separateCostsEur = computed(() => {
     const order = this.order();
     return (order.inspectionCostEur ?? 0) + (order.otherCosts ?? []).reduce((sum, cost) => sum + (cost.amountEur ?? 0), 0);
@@ -385,8 +403,8 @@ export class PurchaseQuoteSheet {
         partner: partnerDeal,
         sharePct: partnerDeal ? this.sharePct() : null,
         costPct: partnerDeal ? this.costPct() : null,
-        includeInspection: false,
-        otherCostIndexes: [],
+        includeInspection: atCost && included.includes('inspection'),
+        otherCostIndexes: atCost ? included.filter((key) => key.startsWith('other-')).map((key) => Number(key.slice('other-'.length))) : [],
         salesChannel: partnerDeal ? 'PARTNER' : null,
       });
       const count = view.order.lines.length + (view.order.extraLines ?? []).length;

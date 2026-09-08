@@ -53,7 +53,9 @@ export function hasSeparateCosts(order: PurchaseOrder | null | undefined): boole
 /** The landed total's label when an inspection or other named cost sits inside it. */
 export function separateCostsTotalLabel(totals: {
   otherCosts?: { amountEur: number | null }[];
+  separateCostsInPiecePrice?: boolean;
 }): string {
+  if (!totals.separateCostsInPiecePrice) return 'Totaal incl. aparte kosten';
   const others = (totals.otherCosts ?? []).some((cost) => (cost.amountEur ?? 0) > 0);
   return others ? 'Totaal geland incl. inspectie en andere kosten' : 'Totaal geland incl. inspectie';
 }

@@ -8,7 +8,7 @@
 export type Currency = 'EUR' | 'USD' | 'CNY';
 export type MarkupMode = 'PRODUCT' | 'ORDER';
 /** How a container-level cost is shared out; MANUAL is the buyer's own split per line, for the Enrosed kost only. */
-export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL';
+export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL' | 'SEPARATE';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
@@ -1059,6 +1059,8 @@ export interface PurchaseOrder {
   partnerCostPct?: number | null;
   /** Our share of the auction profit, in percent. */
   partnerSharePct?: number | null;
+  /** How the inspection and other named costs travel; null = SEPARATE, apart from the piece price. */
+  allocSeparate?: Allocation | null;
   allocFreight: Allocation;
   allocOrigin: Allocation;
   allocDestination: Allocation;
@@ -1120,6 +1122,8 @@ export interface LandedCost {
     /** Inspection and other named costs kept apart from the landed total, and the total with them. */
     inspectionEur?: number; otherCosts?: OtherCost[]; otherCostsEur?: number;
     separateCostsEur?: number; totalWithSeparateCostsEur?: number;
+    /** True when a key spread the inspection and other costs into the piece prices. */
+    separateCostsInPiecePrice?: boolean;
   };
   containerFill: {
     containerCode: string; capacityCbm: number; usedCbm: number;

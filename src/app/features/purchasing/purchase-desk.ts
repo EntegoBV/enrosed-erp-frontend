@@ -600,7 +600,7 @@ type DeskRow =
                           <input class="input num right" id="dk-inspection" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.inspectionCostEur" (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
                           <span class="input-affix__suffix">EUR</span>
                         </div>
-                        <span class="hint">In de stukprijs, verdeeld naar goederenwaarde.</span>
+                        <span class="hint">{{ separateCaption() }}</span>
                       </div>
                       @if (manualExtra()) {
                         <div class="po-split po-split--line" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
@@ -628,7 +628,7 @@ type DeskRow =
                         </div>
                       }
                       <button class="other-costs__add" type="button" (click)="addOtherCost()">
-                        <span aria-hidden="true">+</span><b>Andere kost</b><small>certificaat, labo, staal … in de stukprijs verdeeld</small>
+                        <span aria-hidden="true">+</span><b>Andere kost</b><small>certificaat, labo, staal … {{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart, achteraf' }}</small>
                       </button>
                     </div>
 
@@ -642,6 +642,7 @@ type DeskRow =
                         <div class="field">
                           <label [attr.for]="'dk-a-' + key.field">{{ key.label }}</label>
                           <select class="select" [id]="'dk-a-' + key.field" [ngModel]="allocationOf(data.order, key.field)" (ngModelChange)="setAllocation(key.field, $event)">
+                            @if (key.field === 'allocSeparate') { <option value="SEPARATE">Achteraf, apart van de stukprijs</option> }
                             <option value="CBM">Naar volume (m³)</option><option value="VALUE">Naar goederenwaarde</option><option value="PIECES">Naar aantal stuks</option>
                             @if (key.field === 'allocExtra') { <option value="MANUAL">Zelf per product</option> }
                           </select>
@@ -671,13 +672,13 @@ type DeskRow =
                       @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>{{ data.order.allocExtra === 'MANUAL' ? 'zelf verdeeld' : 'eigen opslag' }} · <button class="linklike" type="button" (click)="openManualSplit()">{{ data.order.allocExtra === 'MANUAL' ? 'aanpassen' : 'zelf verdelen' }}</button></small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
                       @if (data.costing.totals.separateCostsEur) {
                         @if (data.costing.totals.inspectionEur) {
-                          <div class="desk-chain__row"><i>+</i><span>Inspectie <small>in de stukprijs verdeeld</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
+                          <div class="desk-chain__row"><i>+</i><span>Inspectie <small>{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
                         }
                         @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
-                          <div class="desk-chain__row"><i>+</i><span>{{ cost.label }} <small>in de stukprijs verdeeld</small></span><b>{{ cost.amountEur | eur }}</b></div>
+                          <div class="desk-chain__row"><i>+</i><span>{{ cost.label }} <small>{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</small></span><b>{{ cost.amountEur | eur }}</b></div>
                         }
                       }
-                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ data.costing.totals.separateCostsEur ? separateCostsTotalLabel(data.costing.totals) : 'Totaal geland' }} <small>{{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
+                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ data.costing.totals.separateCostsEur ? separateCostsTotalLabel(data.costing.totals) : 'Totaal geland' }} <small>{{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk</small></span><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></div>
                     </div>
                     @if (!isDdp() && data.costing.totals.goodsEur > 0) {
                       <div class="desk-overhead">

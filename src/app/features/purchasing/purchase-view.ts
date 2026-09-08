@@ -623,15 +623,15 @@ type PurchaseWorkspaceSectionId =
                   }
                   @if (data.costing.totals.separateCostsEur) {
                     @if (data.costing.totals.inspectionEur) {
-                      <div class="stat-row"><span>Inspectie <small>in de stukprijs verdeeld</small></span>
+                      <div class="stat-row"><span>Inspectie <small>{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</small></span>
                         <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span></div>
                     }
                     @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
-                      <div class="stat-row"><span>{{ cost.label }} <small>in de stukprijs verdeeld</small></span>
+                      <div class="stat-row"><span>{{ cost.label }} <small>{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</small></span>
                         <span class="num">{{ cost.amountEur | eur }}</span></div>
                     }
                     <div class="stat-row"><span><b>{{ separateCostsTotalLabel(data.costing.totals) }}</b></span>
-                      <span class="num"><b>{{ data.costing.totals.totalEur | eur }}</b></span></div>
+                      <span class="num"><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></span></div>
                   }
                 </div>
 
@@ -1329,9 +1329,11 @@ export class PurchaseView {
     return hasSeparateCosts(order);
   }
 
-  separateCostsTotalLabel(totals: { otherCosts?: OtherCost[] }): string {
+  separateCostsTotalLabel(totals: { otherCosts?: OtherCost[]; separateCostsInPiecePrice?: boolean }): string {
     return separateCostsTotalLabel(totals);
   }
+
+  readonly separateInPiece = computed(() => (this.view()?.order.allocSeparate ?? 'SEPARATE') !== 'SEPARATE');
 
   usdToEurRate(): number {
     return effectiveUsdToEur(this.view()?.order);

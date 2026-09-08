@@ -833,7 +833,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                    (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
                             <span class="input-affix__suffix">EUR</span>
                           </div>
-                          <span class="hint">In de stukprijs, verdeeld naar goederenwaarde.</span>
+                          <span class="hint">{{ separateCaption() }}</span>
                         </div>
                         @if (manualExtra()) {
                           <div class="po-split po-split--line" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
@@ -873,7 +873,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         <button class="other-costs__add" type="button" (click)="addOtherCost()">
                           <span aria-hidden="true">+</span>
                           <b>Andere kost</b>
-                          <small>certificaat, labo, staal … in de stukprijs verdeeld</small>
+                          <small>certificaat, labo, staal … {{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart, achteraf' }}</small>
                         </button>
                       </div>
                     </div>
@@ -901,6 +901,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           <select class="select" [id]="'a-' + key.field"
                                   [ngModel]="allocationOf(data.order, key.field)"
                                   (ngModelChange)="setAllocation(key.field, $event)">
+                            @if (key.field === 'allocSeparate') { <option value="SEPARATE">Achteraf, apart van de stukprijs</option> }
                             <option value="CBM">Naar volume (m³)</option>
                             <option value="VALUE">Naar goederenwaarde</option>
                             <option value="PIECES">Naar aantal stuks</option>
@@ -1090,7 +1091,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       }
                       <div class="stat-row cost-summary__subtotal">
                         <span>{{ separateCostsTotalLabel(data.costing.totals) }}</span>
-                        <span class="num">{{ data.costing.totals.totalEur | eur }}</span>
+                        <span class="num">{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</span>
                       </div>
                     </div>
                   }
@@ -2681,7 +2682,15 @@ export class PurchaseEditor {
 
   setExtraShare(productId: number, raw: unknown): void {
     const value = Number(String(raw ?? '').replace(',', '.'));
-    this.setLine(productId, { extraShareEur: Number.isFinite(value) ? round2(value) : 0 });
+    this.patchShare(productId, Number.isFinite(value) ? round2(value) : 0);
+  }
+
+  /** One line's share changes, and the container's Enrosed kost becomes the sum of all of them. */
+  private patchShare(productId: number, extraShareEur: number): void {
+    const data = this.view();
+    if (!data) return;
+    const lines = data.order.lines.map((line) => (line.productId === productId ? { ...line, extraShareEur } : line));
+    this.patch({ lines, extraRevenueEur: round2(lines.reduce((sum, line) => sum + (line.extraShareEur ?? 0), 0)) });
   }
 
   /** The Enrosed kost inside one piece of a costed line. */
@@ -2698,8 +2707,8 @@ export class PurchaseEditor {
   setTargetUnit(productId: number, line: { quantity: number; totalEur: number; extraRevenueEur: number }, raw: unknown): void {
     const target = Number(String(raw ?? '').replace(',', '.'));
     if (!Number.isFinite(target)) return;
-    /* Below the bare cost the share goes negative on purpose: it shows, and it blocks saving. */
-    this.setLine(productId, { extraShareEur: round2((target - this.basePerPiece(line)) * line.quantity) });
+    /* Below the bare cost the share goes negative on purpose: it shows, and the total decides. */
+    this.patchShare(productId, round2((target - this.basePerPiece(line)) * line.quantity));
   }
 
   /** Three decimals, rounded up: the way every piece amount on the order reads. */
@@ -2728,14 +2737,17 @@ export class PurchaseEditor {
     if (!data || !data.order.lines.length) return;
     const last = data.order.lines.length - 1;
     const rest = this.extraSplitRemainder();
-    this.patch({ lines: data.order.lines.map((line, at) => (at === last ? { ...line, extraShareEur: round2((line.extraShareEur ?? 0) + rest) } : line)) });
+    const lines = data.order.lines.map((line, at) => (at === last ? { ...line, extraShareEur: round2((line.extraShareEur ?? 0) + rest) } : line));
+    this.patch({ lines, extraRevenueEur: round2(lines.reduce((sum, line) => sum + (line.extraShareEur ?? 0), 0)) });
   }
 
   readonly allocationKeys = computed(() => {
     const labels = this.costLabels();
     const extra = { field: 'allocExtra' as const, label: 'Enrosed kost',
       route: 'Commerciële opslag per verdeelsleutel' };
-    if (this.isDdp()) return [extra];
+    const separate = { field: 'allocSeparate' as const, label: 'Inspectie & andere kosten',
+      route: 'Standaard achteraf: apart van de stukprijs, wel in het totaal' };
+    if (this.isDdp()) return [extra, separate];
     return [
       { field: 'allocFreight' as const, label: labels.seaFreightLabel,
         route: labels.seaFreightRoute },
@@ -2744,6 +2756,7 @@ export class PurchaseEditor {
       { field: 'allocDestination' as const, label: labels.destinationCostsLabel,
         route: '' },
       extra,
+      separate,
     ];
   });
 
@@ -2843,8 +2856,15 @@ export class PurchaseEditor {
   readonly isReceived = computed(() => this.view()?.order.status === 'ONTVANGEN');
 
   allocationOf(order: PurchaseOrder, field: keyof PurchaseOrder): Allocation {
+    if (field === 'allocSeparate') return order.allocSeparate ?? 'SEPARATE';
     return order[field] as Allocation;
   }
+
+  /** Whether a key spreads the inspection and other named costs into the piece prices. */
+  readonly separateInPiece = computed(() => (this.view()?.order.allocSeparate ?? 'SEPARATE') !== 'SEPARATE');
+  readonly separateCaption = computed(() => this.separateInPiece()
+    ? 'In de stukprijs, verdeeld ' + this.allocationLabel(this.view()?.order.allocSeparate) + '.'
+    : 'Achteraf: apart van de stukprijs, wel in het totaal.');
 
   /* ---- draft, preview, save ---------------------------------------- */
 
@@ -3013,7 +3033,7 @@ export class PurchaseEditor {
     return hasSeparateCosts(order);
   }
 
-  separateCostsTotalLabel(totals: { otherCosts?: OtherCost[] }): string {
+  separateCostsTotalLabel(totals: { otherCosts?: OtherCost[]; separateCostsInPiecePrice?: boolean }): string {
     return separateCostsTotalLabel(totals);
   }
 
