@@ -33,7 +33,7 @@ import {
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { STATUS_LABEL } from '../sales/quote-status';
-import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
+import { isSettlementInvoice, partnerDocumentKind, separateCostPerPiece } from '../sales/partner-settlement';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
@@ -332,7 +332,7 @@ type PurchaseWorkspaceSectionId =
 
         <div class="view-layout erp-workspace__layout">
           <main class="view-main erp-workspace__main">
-            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
+            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
             <section class="card products-card erp-workspace__section"
                      id="purchase-products-section" tabindex="-1"
                      aria-labelledby="purchase-products-title">
@@ -656,7 +656,7 @@ type PurchaseWorkspaceSectionId =
               </h2>
               <p>Te betalen {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
               <div class="purchase-payment-streams">
-              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" />
+              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
               <div class="pay-stream">
                 <div class="pay-stream__head">
                   <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht' : 'de goederen' }}</small></span>
@@ -767,7 +767,7 @@ type PurchaseWorkspaceSectionId =
             @if (auctionOpen()) {
               <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
                                             [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
-                                            [costSharePct]="auctionCostShare()" [profitSharePct]="auctionProfitShare()"
+                                            [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                             (closed)="auctionOpen.set(false)" />
             }
           </main>
@@ -1122,6 +1122,8 @@ export class PurchaseView {
   readonly auctionOpen = signal(false);
   readonly partnerCustomer = signal<Customer | null>(null);
   /** The container's products as they appear on the partner's auction statement. */
+  /** Inspection and other costs kept apart from the piece price, per piece, for the settlement preview. */
+  readonly separateUnitEur = computed(() => separateCostPerPiece(this.view()?.costing.totals));
   readonly auctionLines = computed<AuctionSheetLine[]>(() => (this.view()?.costing.lines ?? []).map((line) => ({
     productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur,
   })));

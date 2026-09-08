@@ -16,7 +16,7 @@ import {
   containerLabel,
 } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
-import { isSettlementInvoice, partnerDocumentKind } from '../sales/partner-settlement';
+import { isSettlementInvoice, partnerDocumentKind, separateCostPerPiece } from '../sales/partner-settlement';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { Fx } from '../../core/api/fx';
 import { PurchaseExtraSplit } from './purchase-extra-split';
@@ -437,7 +437,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
                 </div>
               }
-              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
+              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
             </section>
 
             <section class="card flow-card products-card erp-workspace__section"
@@ -1122,7 +1122,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <p>Te betalen: {{ owedAll() | eur }} · open {{ openAll() | eur }}</p>
               </div>
 
-              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalEur" />
+              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
 
               <div class="pay-stream">
                 <div class="pay-stream__head">
@@ -1392,7 +1392,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       @if (auctionOpen()) {
         <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
                                       [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
-                                      [costSharePct]="auctionCostShare()" [profitSharePct]="auctionProfitShare()"
+                                      [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                       (closed)="auctionOpen.set(false)" />
       }
 
@@ -2254,6 +2254,8 @@ export class PurchaseEditor {
   readonly partnerCustomer = signal<Customer | null>(null);
   readonly auctionOpen = signal(false);
   /** The container's products as they appear on the partner's auction statement. */
+  /** Inspection and other costs kept apart from the piece price, per piece, for the settlement preview. */
+  readonly separateUnitEur = computed(() => separateCostPerPiece(this.view()?.costing.totals));
   readonly auctionLines = computed<AuctionSheetLine[]>(() => (this.view()?.costing.lines ?? []).map((line) => ({
     productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur,
   })));

@@ -1,3 +1,5 @@
+import type { LandedCost } from '../../core/api/models';
+
 /**
  * The sums behind a partner container's auction settlement: per product,
  * what the partner made at auction above what the goods cost us landed,
@@ -68,4 +70,17 @@ export function isSettlementInvoice(order: {
 export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice>[0]): string {
   if (order.docType !== 'FACTUUR') return 'Offerte aan kostprijs';
   return isSettlementInvoice(order) ? 'Veilingafrekening' : 'Factuur aan kostprijs';
+}
+
+/**
+ * Inspection and other costs a key did not spread into the piece prices still cost us
+ * money: the settlement counts them per piece over the whole container, as the backend
+ * does. Spread by a key they already sit in every landed unit and count nothing here.
+ */
+export function separateCostPerPiece(totals: LandedCost['totals'] | null | undefined): number {
+  if (!totals || totals.separateCostsInPiecePrice) return 0;
+  const separate = totals.separateCostsEur ?? 0;
+  const pieces = totals.pieces ?? 0;
+  if (!(separate > 0) || !(pieces > 0)) return 0;
+  return Math.round((separate / pieces) * 10000) / 10000;
 }

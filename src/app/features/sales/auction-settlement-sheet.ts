@@ -58,6 +58,9 @@ export interface AuctionSheetLine {
             <span class="hint">Op de winst boven de volledige gelande kost.</span>
           </div>
         </div>
+        @if (separateUnitEur() > 0) {
+          <p class="hint">Inspectie en andere kosten staan apart op de container: {{ separateUnitEur() | eur: 4 }} per stuk telt mee in de kost.</p>
+        }
         <div class="as__table-wrap">
           <table class="as__table">
             <thead><tr><th>Product</th><th class="num">Verkocht</th><th class="num">Opbrengst</th><th class="num">Kost</th><th class="num">Winst</th><th class="num">Ons deel</th></tr></thead>
@@ -65,7 +68,7 @@ export interface AuctionSheetLine {
               @for (line of lines(); track line.productId) {
                 @let split = splitOf(line);
                 <tr>
-                  <td class="as__product"><b>{{ line.name }}</b><small>{{ line.landedUnitEur | eur: 4 }} / st geland</small></td>
+                  <td class="as__product"><b>{{ line.name }}</b><small>{{ unitCostOf(line) | eur: 4 }} / st geland</small></td>
                   <td class="num" data-label="Verkocht"><input class="input num right" type="number" min="0" step="1" inputmode="numeric" [attr.aria-label]="'Verkocht ' + line.name"
                                          [value]="soldOf(line)" (input)="setSold(line.productId, $any($event.target).value)" /></td>
                   <td class="num" data-label="Opbrengst"><span class="as__money"><i>€</i><input class="input num right" type="number" min="0" step="0.01" inputmode="decimal" [attr.aria-label]="'Opbrengst ' + line.name"
@@ -162,6 +165,8 @@ export class AuctionSettlementSheet {
   readonly sourceId = input<number | null>(null);
   readonly costSharePct = input(100);
   readonly profitSharePct = input(50);
+  /** Inspection and other costs the container keeps apart from the piece price, per piece; the backend counts them the same way. */
+  readonly separateUnitEur = input(0);
   readonly closed = output<void>();
 
   readonly costShare = signal(100);
@@ -217,8 +222,13 @@ export class AuctionSettlementSheet {
     return this.proceeds()[productId] ?? 0;
   }
 
+  /** What one piece cost us: landed, plus the inspection and other costs kept apart. */
+  unitCostOf(line: AuctionSheetLine): number {
+    return line.landedUnitEur + this.separateUnitEur();
+  }
+
   splitOf(line: AuctionSheetLine) {
-    return auctionLineSplit(this.soldOf(line), this.proceedsOf(line.productId), line.landedUnitEur, this.costShare(), this.profitShare());
+    return auctionLineSplit(this.soldOf(line), this.proceedsOf(line.productId), this.unitCostOf(line), this.costShare(), this.profitShare());
   }
 
   setSold(productId: number, raw: string): void {
@@ -252,6 +262,7 @@ export class AuctionSettlementSheet {
         profitSharePct: this.profitShare(),
         lines: this.lines()
           .filter((line) => this.soldOf(line) > 0 && this.proceedsOf(line.productId) > 0)
+          /* The landed unit only: the backend adds the apart costs per piece itself. */
           .map((line) => ({ productId: line.productId, quantity: this.soldOf(line), proceedsEur: this.proceedsOf(line.productId), landedUnitCostEur: line.landedUnitEur })),
         note: this.note().trim() || null,
       });

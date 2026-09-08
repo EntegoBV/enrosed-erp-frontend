@@ -5,7 +5,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
 import { PartnerLinkSheet } from './partner-link-sheet';
-import { isSettlementInvoice } from './partner-settlement';
+import { isSettlementInvoice, separateCostPerPiece } from './partner-settlement';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
@@ -1348,7 +1348,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       @if (view(); as data) {
         <app-auction-settlement-sheet [lines]="auctionLines(data)" [customerId]="data.order.customerId" [customerName]="customerName()"
                                       [purchaseOrderId]="data.order.partnerPurchaseOrderId ?? null" [reference]="partnerReference()" [sourceId]="data.order.id"
-                                      [costSharePct]="settlementCostShare(data)" [profitSharePct]="data.order.partnerSharePct ?? 50"
+                                      [costSharePct]="settlementCostShare(data)" [separateUnitEur]="separateUnitEur()" [profitSharePct]="data.order.partnerSharePct ?? 50"
                                       (closed)="settlementOpen.set(false)" />
       }
     }
@@ -2046,6 +2046,8 @@ export class SalesEditor {
   /** The partner container itself: its number for the settlement text, its costing for the cost per piece. */
   readonly partnerContainer = signal<PurchaseOrderView | null>(null);
   readonly partnerReference = computed(() => this.partnerContainer()?.order.number ?? null);
+  /** Inspection and other costs the container keeps apart from the piece price, per piece, for the settlement preview. */
+  readonly separateUnitEur = computed(() => separateCostPerPiece(this.partnerContainer()?.costing.totals));
 
   private readonly partnerContainerLoader = effect(() => {
     const id = this.view()?.order.partnerPurchaseOrderId ?? null;

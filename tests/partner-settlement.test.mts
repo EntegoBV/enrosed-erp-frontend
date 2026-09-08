@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  auctionLineSplit, auctionTotals, isSettlementInvoice, partnerDocumentKind,
+  auctionLineSplit, auctionTotals, isSettlementInvoice, partnerDocumentKind, separateCostPerPiece,
 } from '../src/app/features/sales/partner-settlement.ts';
 
 test('an auction line recovers the financed cost and shares the profit above the full landed cost', () => {
@@ -39,4 +39,13 @@ test('a settlement invoice is recognised by its flag, or by the old single profi
   assert.equal(partnerDocumentKind({ ...legacy, lines: [{}] }), 'Factuur aan kostprijs');
   assert.equal(partnerDocumentKind({ docType: 'OFFERTE', partnerPurchaseOrderId: 13, lines: [{}], extraLines: [] }), 'Offerte aan kostprijs');
   assert.equal(isSettlementInvoice({ docType: 'FACTUUR', partnerPurchaseOrderId: null, partnerSettlement: true, lines: [], extraLines: [] }), false);
+});
+
+test('inspection and other costs kept apart count per piece over the whole container', () => {
+  assert.equal(separateCostPerPiece({ pieces: 40, separateCostsEur: 230, separateCostsInPiecePrice: false } as never), 5.75);
+  assert.equal(separateCostPerPiece({ pieces: 40, separateCostsEur: 230, separateCostsInPiecePrice: true } as never), 0,
+    'spread by a key they already sit in the landed unit');
+  assert.equal(separateCostPerPiece({ pieces: 0, separateCostsEur: 230 } as never), 0);
+  assert.equal(separateCostPerPiece({ pieces: 40 } as never), 0);
+  assert.equal(separateCostPerPiece(null), 0);
 });

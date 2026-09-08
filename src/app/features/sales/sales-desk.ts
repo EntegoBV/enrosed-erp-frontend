@@ -886,7 +886,7 @@ interface JourneyStep {
         @if (view(); as data) {
           <app-auction-settlement-sheet [lines]="auctionLines(data)" [customerId]="data.order.customerId" [customerName]="customerName()"
                                         [purchaseOrderId]="data.order.partnerPurchaseOrderId ?? null" [reference]="partnerReference()" [sourceId]="data.order.id"
-                                        [costSharePct]="settlementCostShare(data)" [profitSharePct]="data.order.partnerSharePct ?? 50"
+                                        [costSharePct]="settlementCostShare(data)" [separateUnitEur]="separateUnitEur()" [profitSharePct]="data.order.partnerSharePct ?? 50"
                                         (closed)="settlementOpen.set(false)" />
         }
       }
