@@ -1,5 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
-import { displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
+import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -1455,7 +1455,7 @@ export class SalesView {
 
   paymentTerms(): string {
     /* Mirrors the backend: without agreed terms the house standard applies. */
-    return this.view()?.order.paymentTerms || this.customer()?.paymentTerms || 'Vooruitbetaling';
+    return displayedPaymentTerms(this.view()?.order, this.customer()?.paymentTerms || 'Vooruitbetaling');
   }
 
   palletCount(data: SalesOrderView): number {

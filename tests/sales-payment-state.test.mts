@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SalesOrder, SalesOrderView } from '../src/app/core/api/models.ts';
 import { receiptInstant, receiptLocalParts, receiptRequest } from '../src/app/shared/received-at.ts';
-import { displayedSalesProfit, isPartnerDocument, salesPurpose, withPaymentState } from '../src/app/features/sales/sales-payment-state.ts';
+import { displayedPaymentTerms, displayedSalesProfit, isPartnerDocument, salesPurpose, withPaymentState } from '../src/app/features/sales/sales-payment-state.ts';
 
 test('receipt timestamps retain local date and time in summer and winter', () => {
   assert.equal(receiptInstant('2026-09-08', '16:45:21', 'Europe/Brussels'), '2026-09-08T14:45:21.000Z');
@@ -54,4 +54,13 @@ test('partner advance and draft settlement never display commercial margin as re
   assert.equal(displayedSalesProfit({ ...view, order: { ...view.order, purpose: 'PARTNER_SETTLEMENT' } }), 300);
   assert.equal(displayedSalesProfit({ ...view, order: { ...view.order, purpose: 'PARTNER_SETTLEMENT', status: 'CONCEPT' } }), 0);
   assert.equal(displayedSalesProfit({ ...view, order: { ...view.order, purpose: 'STANDARD' } }), -1500);
+});
+
+test('production payment plan overrides legacy terms while ordinary sale terms stay intact', () => {
+  const partner = { partnerPurchaseOrderId: 31, paymentPlan: 'THIRD_TWO_THIRDS_PRODUCTION', paymentTerms: null } as SalesOrder;
+  assert.equal(displayedPaymentTerms(partner, 'betaalvoorwaarden van de klant'), '1/3 bij start productie, 2/3 na productie');
+  assert.equal(displayedPaymentTerms({ ...partner, paymentTerms: '50% voorschot / 50% bij levering' }), '1/3 bij start productie, 2/3 na productie');
+  assert.equal(displayedPaymentTerms({ ...partner, paymentPlan: 'FULL' }), 'Volledige betaling');
+  assert.equal(displayedPaymentTerms({ ...partner, purpose: 'STANDARD', paymentPlan: 'FULL', paymentTerms: '30 dagen' }), '30 dagen');
+  assert.equal(displayedPaymentTerms({ ...partner, purpose: 'STANDARD', paymentPlan: 'FULL' }, '14 dagen'), '14 dagen');
 });

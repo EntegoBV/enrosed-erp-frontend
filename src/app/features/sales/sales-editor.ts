@@ -1,5 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
-import { displayedSalesProfit, isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
+import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -1944,6 +1944,7 @@ export class SalesEditor {
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
   readonly displayedProfit = displayedSalesProfit;
+  readonly paymentLabel = displayedPaymentTerms;
   readonly receiptOpenRequest = signal(0);
   paymentReceived(fresh: SalesOrderView): void {
     this.view.update((current) => current ? withPaymentState(current, fresh) : fresh);

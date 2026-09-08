@@ -92,7 +92,7 @@ interface JourneyStep {
               <span class="desk-hero__eyebrow">{{ documentLabel(data.order) }}@if (websiteRequest(data.order)) { · websiteaanvraag }</span>
               <h1>{{ customerName() }}</h1>
               <p>{{ orderCountryName() || 'Nog geen leverland' }} · {{ data.order.incoterm || 'geen incoterm' }}
-                · {{ paymentChoice() ? data.order.paymentTerms : 'betaalvoorwaarden van de klant' }}</p>
+                · {{ paymentLabel(data.order, 'betaalvoorwaarden van de klant') }}</p>
               <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }}
                 @if (isInvoiceDoc()) { · vervalt {{ data.order.invoiceDueDate ? (data.order.invoiceDueDate | dateNl) : '—' }} }
                 @else { · geldig tot {{ data.order.validUntil | dateNl }} }

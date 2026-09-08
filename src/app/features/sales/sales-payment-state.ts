@@ -12,6 +12,16 @@ export function isPartnerDocument(order: Pick<SalesOrder, 'purpose' | 'partnerPu
   return salesPurpose(order) !== 'STANDARD';
 }
 
+/** The agreed production plan takes precedence over older customer payment terms. */
+export function displayedPaymentTerms(
+  order: Pick<SalesOrder, 'purpose' | 'partnerPurchaseOrderId' | 'partnerSettlement' | 'paymentPlan' | 'paymentTerms'> | null | undefined,
+  fallback = 'Vooruitbetaling',
+): string {
+  if (order?.paymentPlan === 'THIRD_TWO_THIRDS_PRODUCTION') return '1/3 bij start productie, 2/3 na productie';
+  if (order?.paymentPlan === 'FULL' && isPartnerDocument(order)) return 'Volledige betaling';
+  return order?.paymentTerms || fallback;
+}
+
 /** Advances finance a container. Only the issued settlement can realize its result. */
 export function displayedSalesProfit(view: SalesOrderView): number {
   if (!isPartnerDocument(view.order)) return view.priced.totals.marginEur;
