@@ -8,6 +8,7 @@ import { addDays, intervalLabel, monthlyCostSeries, upcomingRecurring } from './
 import { FinanceView, MONTH_START, TODAY, YEAR } from './finance-sections';
 import { FinanceState } from './finance-state';
 import { PurchasePaymentCostRow } from './purchase-payment-cost-row';
+import { incomingMoneyTotals } from './incoming-money';
 
 /** The money at a glance: the bank, what has to go out, what comes in, and how the months run. */
 @Component({
@@ -30,8 +31,10 @@ import { PurchasePaymentCostRow } from './purchase-payment-cost-row';
       </button>
       <a class="card fin-kpi" routerLink="/sales">
         <small>Te ontvangen</small><strong>{{ state.openInvoices().totalEur | eur: 0 }}</strong>
-        <span>{{ state.openInvoices().count }} open {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }}, incl. btw</span>
+        <span>{{ state.openInvoices().count }} open · {{ state.openInvoices().partialCount }} deels betaald, incl. btw</span>
       </a>
+      <button type="button" class="card fin-kpi" (click)="navigate.emit('bank')"><small>Ontvangen deze maand</small><strong>{{ incomingMonth().receivedEur | eur }}</strong><span>{{ incomingMonth().count }} betalingen · kas, incl. btw</span></button>
+      <button type="button" class="card fin-kpi" (click)="navigate.emit('bank')"><small>Partnervoorschotten deze maand</small><strong>{{ incomingMonth().partnerAdvanceEur | eur }}</strong><span>ontvangen financiering</span></button>
       <article class="card fin-kpi fin-kpi--accent">
         <small>Verwacht saldo</small><strong>{{ state.outlook().expectedEur | eur: 0 }}</strong>
         <span>bank − open − komend + facturen</span>
@@ -123,6 +126,7 @@ export class FinanceOverview {
   readonly navigate = output<FinanceView>();
   readonly intervalLabel = intervalLabel;
   readonly year = YEAR;
+  readonly incomingMonth = computed(() => incomingMoneyTotals(this.state.incomingPayments(), MONTH_START, TODAY));
 
   readonly monthEur = computed(() => sum(this.state.costs().filter((cost) => cost.date >= MONTH_START && cost.date <= TODAY)));
   readonly yearEur = computed(() => sum(this.state.costs().filter((cost) => cost.date >= `${YEAR}-01-01` && cost.date <= TODAY)));

@@ -5,7 +5,7 @@ import { api } from './api.config';
 import {
   FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
-  PurchaseDocument, DocumentKind, PurchasePaymentRow, PurchaseReconciliation,
+  PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -38,6 +38,14 @@ export class SourcingApi {
 
   purchaseOrders(): Promise<PurchaseOrderView[]> {
     return firstValueFrom(this.http.get<PurchaseOrderView[]>(api('/api/purchase-orders')));
+  }
+
+  partnerFinancings(): Promise<PartnerFinancing[]> {
+    return firstValueFrom(this.http.get<PartnerFinancing[]>(api('/api/partner-financing')));
+  }
+
+  partnerFinancing(id: number): Promise<PartnerFinancing> {
+    return firstValueFrom(this.http.get<PartnerFinancing>(api(`/api/purchase-orders/${id}/partner-financing`)));
   }
 
   purchaseOrder(id: number): Promise<PurchaseOrderView> {

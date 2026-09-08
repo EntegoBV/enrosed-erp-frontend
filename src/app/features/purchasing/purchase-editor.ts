@@ -1,3 +1,4 @@
+import { PurchaseSalesLinks } from './purchase-sales-links';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -95,7 +96,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -451,7 +452,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
                 </div>
               }
-              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
+              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
             </section>
 
             <section class="card flow-card products-card erp-workspace__section"
@@ -1137,7 +1138,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
 
               <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
-              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
+              <app-purchase-sales-links [documents]="relatedSalesDocs()" />
+              <app-purchase-partner-payments (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" />
 
               <div class="pay-stream">
                 <div class="pay-stream__head">
@@ -1456,7 +1458,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
       @if (quoteOpen()) {
         @if (view(); as data) {
-          <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
+          <app-purchase-quote-sheet [reconciliation]="data.reconciliation" [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
       }
       @if (extraSplitOpen()) {
@@ -2404,6 +2406,7 @@ export class PurchaseEditor {
   /* ---- partner container --------------------------------------------- */
   /** Sales documents of a partner who co-orders this container at our landed cost: quote, invoice, settlement. */
   readonly partnerDocs = signal<SalesOrderView[]>([]);
+  readonly relatedSalesDocs = signal<SalesOrderView[]>([]);
   readonly partnerCompany = signal('');
   readonly partnerSheetOpen = signal(false);
   /** The share the container already runs on, from its first linked document. */
@@ -2448,7 +2451,9 @@ export class PurchaseEditor {
 
   protected async loadPartnerDocs(orderId: number): Promise<void> {
     try {
-      const deals = (await this.sales.orders()).filter((view) => view.order.partnerPurchaseOrderId === orderId);
+      const all = await this.sales.orders();
+      this.relatedSalesDocs.set(all.filter((view) => view.order.partnerPurchaseOrderId === orderId || view.order.sourcePurchaseOrderId === orderId));
+      const deals = all.filter((view) => view.order.partnerPurchaseOrderId === orderId && view.order.purpose !== 'STANDARD');
       this.partnerDocs.set(deals);
       const customerId = deals[0]?.order.customerId;
       if (!customerId) { this.partnerCompany.set(''); this.partnerCustomer.set(null); return; }
@@ -2466,10 +2471,15 @@ export class PurchaseEditor {
   readonly auctionOpen = signal(false);
   /** The container's products as they appear on the partner's auction statement. */
   /** Inspection and other costs kept apart from the piece price, per piece, for the settlement preview. */
-  readonly separateUnitEur = computed(() => separateCostPerPiece(this.view()?.costing.totals));
-  readonly auctionLines = computed<AuctionSheetLine[]>(() => (this.view()?.costing.lines ?? []).map((line) => ({
-    productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur,
-  })));
+  readonly separateUnitEur = computed(() => this.view()?.reconciliation ? 0 : separateCostPerPiece(this.view()?.costing.totals));
+  readonly auctionLines = computed<AuctionSheetLine[]>(() => {
+    const reconciliation = this.view()?.reconciliation;
+    if (reconciliation) return reconciliation.lines.filter((line) => line.productId != null && line.unitCostQuantity > 0).map((line) => ({
+      productId: line.productId!, name: line.productName, quantity: line.unitCostQuantity,
+      landedUnitEur: line.forecastExternalEur / line.unitCostQuantity,
+    }));
+    return (this.view()?.costing.lines ?? []).map((line) => ({ productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur }));
+  });
   /** The cost document the partner paid, when there is one. */
   readonly auctionSourceId = computed(() => this.partnerDocs().find((doc) => !isSettlementInvoice(doc.order))?.order.id ?? null);
   /** Without a cost document we financed the whole container; with one, what the partner did not pay up front. */

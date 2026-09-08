@@ -2,8 +2,10 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { RouterLink } from '@angular/router';
 import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
-import { MovementKind } from './finance-metrics';
+import { MovementKind, latestBankReading } from './finance-metrics';
 import { FinanceState } from './finance-state';
+import { IncomingPaymentList } from './incoming-payment-list';
+import { paymentMomentLabel } from './incoming-money';
 
 const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Inkoop', INVOICE: 'Factuur' };
 
@@ -11,7 +13,7 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
 @Component({
   selector: 'app-bank-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, DateNlPipe, TrendChart],
+  imports: [RouterLink, EurPipe, DateNlPipe, TrendChart, IncomingPaymentList],
   template: `
     <section class="fin-kpis fin-kpis--4" aria-label="Bank samengevat">
       <article class="card fin-kpi fin-kpi--dark"><small>Op de bank nu</small><strong>{{ state.currentBankEur() | eur: 0 }}</strong>
@@ -44,7 +46,7 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
 
     <section class="card fin-panel">
       <header class="fin-panel__head">
-        <div><span class="section-kicker">Sinds het laatste saldo</span><h2>{{ moves().since ? 'Bewogen na ' + (moves().since | dateNl) : 'Nog geen saldo om van te vertrekken' }}</h2></div>
+        <div><span class="section-kicker">Sinds het laatste saldo</span><h2>{{ moves().since ? 'Bewogen na ' + checkpointLabel() : 'Nog geen saldo om van te vertrekken' }}</h2></div>
         @if (moves().rows.length) {
           <button class="btn btn--sm" type="button" [disabled]="state.saving()" (click)="state.rollForward()" title="Schrijft het doorgerekende saldo als nieuw saldo van vandaag">{{ state.saving() ? 'Bezig…' : 'Saldo doortrekken' }}</button>
         }
@@ -66,9 +68,11 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
               <span class="fin-move__date">{{ row.date | dateNl }}</span>
               <span class="fin-move__kind" [attr.data-kind]="row.kind">{{ kindLabel(row.kind) }}</span>
               <span class="fin-move__body">
-                @if (row.purchaseOrderId) { <a class="linklike" [routerLink]="['/purchasing', row.purchaseOrderId]"><b>{{ row.label }} ›</b></a> }
+                @if (row.salesOrderId) { <a class="linklike" [routerLink]="['/sales', row.salesOrderId, 'edit']"><b>{{ row.label }} ›</b></a> }
+                @else if (row.purchaseOrderId) { <a class="linklike" [routerLink]="['/purchasing', row.purchaseOrderId]"><b>{{ row.label }} ›</b></a> }
                 @else { <b>{{ row.label }}</b> }
                 <small>{{ row.detail }}</small>
+                @if (row.receivedAt) { <small>{{ momentLabel({ receivedAt: row.receivedAt, timeZone: row.timeZone || 'Europe/Brussels' }) }}</small> }
               </span>
               <strong [class.fin-up]="row.amountEur > 0" [class.fin-down]="row.amountEur < 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</strong>
             </div>
@@ -76,6 +80,12 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
         </div>
         <p class="fin-panel__hint">Saldo doortrekken schrijft {{ moves().currentEur | eur }} als saldo van vandaag op {{ latestAccount() }}. Vergelijk met de bank en corrigeer wat het ERP niet zag: bankkosten, privé, btw.</p>
       }
+    </section>
+
+    <section class="card fin-panel">
+      <header class="fin-panel__head"><div><span class="section-kicker">Inkomende betalingen</span><h2>{{ state.incomingTotals().receivedEur | eur }} ontvangen</h2></div><a class="linklike" routerLink="/sales">Facturen beheren ›</a></header>
+      <p class="fin-panel__hint">{{ state.incomingTotals().standardEur | eur }} klanten · {{ state.incomingTotals().partnerAdvanceEur | eur }} partnervoorschotten · {{ state.incomingTotals().partnerSettlementEur | eur }} partnerafrekeningen. Geregistreerde kasontvangsten, inclusief eventuele btw; voorschotten zijn nog geen omzet.</p>
+      <app-incoming-payment-list [payments]="state.incomingPayments()" [customers]="state.customers()" />
     </section>
 
     @if (series().length) {
@@ -92,7 +102,7 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
           @for (row of state.balances(); track row.id) {
             <button class="fin-reading" type="button" (click)="state.openBank(row)">
               <span class="fin-reading__date">{{ row.date | dateNl }}</span>
-              <span class="fin-reading__body"><b>{{ row.account }}</b>@if (row.notes) { <small>{{ row.notes }}</small> }</span>
+              <span class="fin-reading__body"><b>{{ row.account }}</b><small>{{ row.asOfAt ? momentLabel({ receivedAt: row.asOfAt, timeZone: row.timeZone || 'Europe/Brussels' }) : 'Saldo aan het einde van deze dag' }}</small>@if (row.notes) { <small>{{ row.notes }}</small> }</span>
               <strong [class.fin-neg]="row.balanceEur < 0">{{ row.balanceEur | eur }}</strong>
             </button>
           }
@@ -103,10 +113,12 @@ const KIND_LABELS: Record<MovementKind, string> = { COST: 'Kost', PURCHASE: 'Ink
 })
 export class BankPanel {
   readonly state = inject(FinanceState);
+  readonly momentLabel = paymentMomentLabel;
   readonly moves = computed(() => this.state.movements());
-  readonly latestAccount = computed(() => {
-    const rows = this.state.balances();
-    return rows.length ? [...rows].sort((left, right) => right.date.localeCompare(left.date) || (right.id ?? 0) - (left.id ?? 0))[0].account : '';
+  readonly latestAccount = computed(() => latestBankReading(this.state.balances())?.account ?? '');
+  readonly checkpointLabel = computed(() => {
+    const bank = this.state.bank();
+    return bank.asOfAt ? paymentMomentLabel({ receivedAt: bank.asOfAt, timeZone: bank.timeZone || 'Europe/Brussels' }) : `${bank.asOf ?? ''} (einde dag)`;
   });
   readonly series = computed<TrendSeries[]>(() => {
     const total = this.state.bank().series;

@@ -1,3 +1,5 @@
+import { SalesReceipts } from './sales-receipts';
+import { isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, computed, signal, effect, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -22,7 +24,7 @@ import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice, salesDocumentKind } from './partner-settlement';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 
-type RailTab = 'order' | 'delivery' | 'check' | 'status';
+type RailTab = 'order' | 'delivery' | 'check' | 'status' | 'payments';
 
 type DeskRow =
   | { kind: 'section'; key: string; label: string; count: number }
@@ -48,7 +50,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -57,7 +59,8 @@ interface JourneyStep {
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="canEdit()"
                        (titleChange)="patch({ number: $event })">
-        @if (data.order.partnerPurchaseOrderId) {
+        @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
+            @if (data.order.partnerPurchaseOrderId) {
           <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" title="Partnercontainer openen">Partner {{ data.order.partnerSharePct | num }} %</a>
         }
         @if (canEdit() && (dirty() || saving())) {
@@ -142,9 +145,9 @@ interface JourneyStep {
               <span>{{ freightStrategyLabel(data) }}</span>
             </button>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('check')">
-              <small>Winst</small>
-              <strong [class.is-ok]="data.priced.totals.marginEur > 0" [class.is-bad]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 0 }}</strong>
-              <span>{{ data.priced.totals.marginPct | pct: 0 }} van de goederen</span>
+              <small>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</small>
+              <strong>{{ displayedProfit(data) | eur: 0 }}</strong>
+              <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Na slotafrekening' : (data.priced.totals.marginPct | pct: 0) + ' van de goederen' }}</span>
             </button>
             <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" (click)="railTab.set('check')">
               <small>{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</small>
@@ -155,7 +158,7 @@ interface JourneyStep {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="railTab.set('status')">
                 <small>Volgende stap</small>
                 <strong>{{ invoiceNextStep(data) }} ›</strong>
-                <span>{{ data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
+                <span>{{ isAdvance(data.order) ? 'Ontvangsten volgens het betaalplan' : data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
               </button>
             } @else if (data.order.status === 'GEACCEPTEERD') {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)">
@@ -383,9 +386,9 @@ interface JourneyStep {
                         </td>
                         <td class="c-money num">
                           <button class="desk-total desk-total--profit" type="button" (click)="openCostSheet(line)"
-                                  [class.is-bad]="(profitPerPiece() ? marginPerUnit(line) : line.marginEur) < 0"
+                                  [class.is-bad]="!isAdvance(data.order) && (profitPerPiece() ? marginPerUnit(line) : line.marginEur) < 0"
                                   [title]="'Gelande kost van ' + line.description">
-                            <b>{{ (profitPerPiece() ? marginPerUnit(line) : line.marginEur) | eur: profitPerPiece() ? 2 : 0 }}</b>
+                            <b>@if (isAdvance(data.order)) { Voorschot } @else { {{ (profitPerPiece() ? marginPerUnit(line) : line.marginEur) | eur: profitPerPiece() ? 2 : 0 }} }</b>
                             <small>kost {{ line.landedUnitCost | eur: 2 }} <i aria-hidden="true">›</i></small>
                           </button>
                         </td>
@@ -473,7 +476,7 @@ interface JourneyStep {
                     <th class="c-price"></th>
                     <th class="c-disc">@if (data.priced.totals.lineDiscountTotal) { −{{ data.priced.totals.lineDiscountTotal | eur: 0 }} }</th>
                     <th class="c-money">{{ data.priced.totals.subtotal + (data.priced.totals.extraLinesTotal ?? 0) | eur }}@if (data.priced.totals.extraLinesTotal) { <small>goederen {{ data.priced.totals.subtotal | eur }} + andere regels</small> }</th>
-                    <th class="c-money" [class.is-bad]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 0 }}</th>
+                    <th class="c-money" [class.is-bad]="displayedProfit(data) < 0">@if (isAdvance(data.order)) { Financiering } @else { {{ displayedProfit(data) | eur: 0 }} }</th>
                     <th class="c-delivery"></th>
                     @if (canEdit()) { <th class="c-act"></th> }
                   </tr>
@@ -499,8 +502,9 @@ interface JourneyStep {
                 Levering @if (data.order.freight === 'TE_BEPALEN' || (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
               <button type="button" role="tab" [class.on]="railTab() === 'check'" [attr.aria-selected]="railTab() === 'check'" (click)="railTab.set('check')">
-                Prijs @if (data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
+                Prijs @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
+              @if (isInvoiceDoc()) { <button type="button" role="tab" [class.on]="railTab() === 'payments'" [attr.aria-selected]="railTab() === 'payments'" (click)="railTab.set('payments')">Betalingen</button> }
               <button type="button" role="tab" [class.on]="railTab() === 'status'" [attr.aria-selected]="railTab() === 'status'" (click)="railTab.set('status')">
                 {{ isInvoiceDoc() ? 'Status' : 'Versturen' }} @if (pendingRevision() || (!isInvoiceDoc() && sendIssues().length && data.order.status === 'CONCEPT')) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
@@ -508,6 +512,7 @@ interface JourneyStep {
 
             <div class="desk-panel">
               @switch (railTab()) {
+                @case ('payments') { <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" /> }
                 @case ('order') {
                   <fieldset class="desk-form form-lock" [disabled]="!canEdit()">
                     <p class="desk-form__group">Klant &amp; document</p>
@@ -662,7 +667,8 @@ interface JourneyStep {
                   <div class="desk-form">
                     @if (data.order.partnerPurchaseOrderId) {
                       <section class="desk-partner" aria-label="Partnercontainer">
-                        <p class="desk-form__group">Partnercontainer</p>
+                        <p class="desk-form__group">Partnercontainer · {{ data.order.purpose === 'PARTNER_SETTLEMENT' ? 'slotafrekening' : 'voorschot' }}</p>
+                @if (!isSettlement(data.order)) { <label class="field"><span>Betaalplan van de partner</span><select class="select" [disabled]="!canEdit()" [ngModel]="data.order.paymentPlan || 'THIRD_TWO_THIRDS_PRODUCTION'" (ngModelChange)="patch({ paymentPlan: $event, paymentTerms: $event === 'THIRD_TWO_THIRDS_PRODUCTION' ? '1/3 bij start productie, 2/3 na productie' : 'Volledige betaling' })"><option value="THIRD_TWO_THIRDS_PRODUCTION">1/3 start productie · 2/3 na productie</option><option value="FULL">Volledige betaling</option></select></label> }
                         @if (isSettlement(data.order)) {
                           <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                         } @else {
@@ -677,7 +683,7 @@ interface JourneyStep {
                       </section>
                     } @else {
                       <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
-                        <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Aan partnercontainer koppelen</button></p>
+                        <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
                     }
                     <p class="desk-form__group">Prijsopbouw</p>
                     <div class="desk-chain">
@@ -699,10 +705,10 @@ interface JourneyStep {
                         <b>@if (data.order.freight === 'TE_BEPALEN') { <span class="danger-text">—</span> } @else { {{ data.priced.totals.freight + data.priced.totals.handling | eur }} }</b></div>
                       <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Totaal excl. btw</span><b>{{ data.priced.totals.total | eur }}</b></div>
                       <div class="desk-chain__row"><i>+</i><span>BTW <small>{{ data.priced.totals.vatLegalMention ? '0% · verlegd' : (data.priced.totals.vatRatePct | pct: 1) }}</small></span><b>{{ (data.priced.totals.vatLegalMention ? 0 : data.priced.totals.vatAmount) | eur }}</b></div>
-                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal <small>winst {{ data.priced.totals.marginEur >= 0 ? '+' : '' }}{{ data.priced.totals.marginEur | eur: 0 }} · {{ data.priced.totals.marginPct | pct: 0 }}</small></span><b>{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</b></div>
+                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal <small>@if (isAdvance(data.order)) { Voorschot = financiering } @else { {{ isPartnerDocument(data.order) ? 'gerealiseerd resultaat' : 'winst' }} {{ displayedProfit(data) >= 0 ? '+' : '' }}{{ displayedProfit(data) | eur: 0 }} }</small></span><b>{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</b></div>
                     </div>
 
-                    @if (data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+                    @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
                       <div class="desk-minimum" [class.desk-minimum--ok]="data.priced.validation.meetsMinimum" role="status">
                         <span>Minimumorder {{ data.priced.validation.minOrderValue | eur: 0 }}</span>
                         <b>@if (data.priced.validation.meetsMinimum) { ✓ bereikt } @else { nog − {{ data.priced.validation.shortfall | eur: 0 }} }</b>
@@ -774,14 +780,15 @@ interface JourneyStep {
                     <p class="desk-form__group">Acties</p>
                     <div class="desk-actions">
                       @if (isInvoiceDoc()) {
-                        @if (data.order.status === 'CONCEPT') {
+                        @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                          <button class="desk-action" type="button" [disabled]="sending() || dirty()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Factuur e-mailen</b><small>PDF en betaalgegevens naar de klant</small></span></button>
                           <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de factuur buiten het ERP bezorgde</small></span></button>
                         }
-                        @if (!data.order.goodsShippedAt) {
+                        @if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
                           <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="openShipSheet(data)"><i aria-hidden="true">▤</i><span><b>Bestelling verzonden</b><small>Punt de voorraad af</small></span></button>
                         }
                         @if (data.order.status !== 'BETAALD') {
-                          <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="markPaid(data)"><i aria-hidden="true">€</i><span><b>Betaling registreren</b><small>Zet de factuur op betaald</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="markPaid(data)"><i aria-hidden="true">€</i><span><b>Betaling registreren</b><small>Noteer bedrag, datum en tijdstip</small></span></button>
                         }
                         <button class="desk-action" type="button" (click)="openPdfSheet()"><i aria-hidden="true">⎙</i><span><b>PDF of pakbon</b><small>Factuur of pakbon instellen en downloaden</small></span></button>
                         @if (data.order.sourceQuoteId; as quoteId) {
@@ -947,10 +954,10 @@ interface JourneyStep {
       }
 
       @if (sendSheet()) {
-        <app-sheet title="Offerte versturen" (closed)="sendSheet.set(false)">
+        <app-sheet [title]="isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen'" (closed)="sendSheet.set(false)">
           <div body>
             <p class="small muted" style="margin-bottom:14px">
-              De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.
+              {{ isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.' }}
             </p>
             <div class="field">
               <label for="sd-send-message">Persoonlijk bericht</label>
@@ -1173,6 +1180,11 @@ export class SalesDesk extends SalesEditor {
     const order = this.view()?.order;
     if (!order) return [];
     if (this.isInvoiceDoc()) {
+      if (isAdvanceDocument(order)) {
+        const flags = [true, order.status !== 'CONCEPT', order.status === 'BETAALD'];
+        const now = flags.indexOf(false);
+        return ['Concept', 'Uitgereikt', 'Voorschot ontvangen'].map((label, index) => ({ label, state: flags[index] ? 'done' : index === now ? 'now' : 'todo' }));
+      }
       const flags = [true, order.status !== 'CONCEPT', !!order.goodsShippedAt, order.status === 'BETAALD'];
       const now = flags.indexOf(false);
       return ['Concept', 'Verstuurd', 'Bestelling verzonden', 'Betaald'].map((label, index) => ({
@@ -1214,7 +1226,7 @@ export class SalesDesk extends SalesEditor {
 
   invoiceNextStep(data: SalesOrderView): string {
     if (data.order.status === 'CONCEPT') return 'Factuur versturen';
-    if (!data.order.goodsShippedAt) return 'Bestelling verzenden';
+    if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bestelling verzenden';
     if (data.order.status !== 'BETAALD') return 'Betaling registreren';
     return 'Afgerond ✓';
   }
@@ -1315,17 +1327,8 @@ export class SalesDesk extends SalesEditor {
   }
 
   async markPaid(data: SalesOrderView): Promise<void> {
-    if (this.invoiceBusy()) return;
-    this.invoiceBusy.set(true);
-    try {
-      this.view.set(await this.sales.markInvoicePaid(data.order.id));
-      void this.loadHistory(data.order.id);
-      this.ui.toast('Factuur betaald — mooi zo');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
-    } finally {
-      this.invoiceBusy.set(false);
-    }
+    this.railTab.set('payments');
+    this.receiptOpenRequest.update((value) => value + 1);
   }
 
   documentLabel(order: SalesOrder): string {

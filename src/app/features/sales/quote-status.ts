@@ -93,6 +93,7 @@ export function websiteCartonRequests(
 export const STATUS_LABEL: Record<QuoteStatus, string> = {
   CONCEPT: 'Concept',
   VERZONDEN: 'Verzonden',
+  UITGEREIKT: 'Uitgereikt',
   BEKEKEN: 'Bekeken',
   WIJZIGING_GEVRAAGD: 'Wijziging gevraagd',
   GEACCEPTEERD: 'Geaccepteerd',
@@ -122,6 +123,7 @@ export function statusClass(status: QuoteStatus): string {
     case 'AFGEWEZEN': return 'danger';
     case 'WIJZIGING_GEVRAAGD': return 'gold';
     case 'VERZONDEN': return 'rose';
+    case 'UITGEREIKT': return 'rose';
     case 'BEKEKEN': return 'blue';
     default: return 'neutral';
   }

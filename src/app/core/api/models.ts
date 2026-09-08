@@ -66,7 +66,7 @@ export interface ActivityPage {
 }
 
 export type QuoteStatus =
-  | 'CONCEPT' | 'VERZONDEN' | 'BEKEKEN' | 'WIJZIGING_GEVRAAGD'
+  | 'CONCEPT' | 'VERZONDEN' | 'UITGEREIKT' | 'BEKEKEN' | 'WIJZIGING_GEVRAAGD'
   | 'GEACCEPTEERD' | 'AFGEWEZEN' | 'VERLOPEN' | 'GEANNULEERD' | 'BETAALD';
 
 export type RevisionStatus = 'IN_AFWACHTING' | 'GOEDGEKEURD' | 'AFGEWEZEN' | 'INGETROKKEN';
@@ -1306,7 +1306,13 @@ export interface OrderPallet {
   items: { productId: number; cartons: number }[];
 }
 
+export type SalesPurpose = 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT';
+export type SalesPaymentPlan = 'FULL' | 'THIRD_TWO_THIRDS_PRODUCTION';
+
 export interface SalesOrder {
+  purpose?: SalesPurpose | null;
+  sourcePurchaseOrderId?: number | null;
+  paymentPlan?: SalesPaymentPlan | null;
   id: number;
   number: string;
   customerId: number | null;
@@ -1446,7 +1452,99 @@ export interface PricedOrder {
   };
 }
 
+export interface SalesAccounting {
+  recognizedRevenueEur: number;
+  recognizedCostEur: number;
+  recognizedProfitEur: number;
+  recognizedQuantity: number;
+}
+
+export interface SalesPayment {
+  legacy?: boolean;
+  id: number;
+  salesOrderId: number;
+  amountEur: number;
+  receivedAt: string;
+  timeZone: string;
+  reference: string | null;
+  recordedAt: string;
+  actor: string | null;
+}
+export interface SalesPaymentRequest {
+  amountEur: number;
+  receivedAt: string;
+  timeZone: string;
+  reference: string | null;
+}
+export interface IncomingPaymentRow extends SalesPayment {
+  orderNumber: string;
+  customerId: number | null;
+  purchaseOrderId: number | null;
+  purpose: SalesPurpose;
+  legacy: boolean;
+}
+export interface SalesPaymentInstalment {
+  key: 'PRODUCTION_START' | 'PRODUCTION_COMPLETE';
+  label: string;
+  expectedEur: number;
+  paidEur: number;
+  remainingEur: number;
+}
+export interface SalesPaymentSummary {
+  invoiceTotalEur: number;
+  receivedEur: number;
+  remainingEur: number;
+  overpaidEur: number;
+  creditEur: number;
+  status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID' | 'CREDIT';
+  payments: SalesPayment[];
+  instalments: SalesPaymentInstalment[];
+  legacyPaidMarker: boolean;
+}
+export interface PartnerFinancingDocument {
+  id: number;
+  number: string;
+  purpose: SalesPurpose;
+  docType: DocumentType;
+  status: QuoteStatus;
+  invoiceTotalEur: number;
+  receivedEur: number;
+  remainingEur: number;
+  creditEur: number;
+}
+export interface PartnerFinancing {
+  purchaseOrderId: number;
+  partnerCustomerId: number | null;
+  partnerName: string | null;
+  costPct: number;
+  profitSharePct: number;
+  paymentPlan: SalesPaymentPlan;
+  plannedExternalEur: number;
+  forecastExternalEur: number;
+  costFinalized: boolean;
+  committedAdvanceEur: number;
+  invoicedAdvanceEur: number;
+  receivedAdvanceEur: number;
+  openAdvanceEur: number;
+  settlementInvoiceId: number | null;
+  settlementInvoiceNumber: string | null;
+  settlementEur: number;
+  receivedSettlementEur: number;
+  openSettlementEur: number;
+  creditEur: number;
+  totalReceivedEur: number;
+  totalOpenEur: number;
+  ownExposureEur: number;
+  recognizedRevenueEur: number;
+  recognizedCostEur: number;
+  recognizedProfitEur: number;
+  documents: PartnerFinancingDocument[];
+  payments: IncomingPaymentRow[];
+}
+
 export interface SalesOrderView {
+  paymentSummary?: SalesPaymentSummary | null;
+  accounting?: SalesAccounting | null;
   order: SalesOrder;
   priced: PricedOrder;
   /** An adopted customer proposal that has not been resent: the customer waits. */
@@ -1782,6 +1880,8 @@ export interface RecurringCost {
 
 /** What an account held on a day, typed over from the bank. */
 export interface BankBalance {
+  asOfAt?: string | null;
+  timeZone?: string | null;
   id: number | null;
   account: string;
   date: string;
@@ -1792,6 +1892,8 @@ export interface BankBalance {
 
 /** What the quote sheet asks for when a container becomes a quote. */
 export interface FromPurchaseOrderRequest {
+  purpose?: SalesPurpose | null;
+  paymentPlan?: SalesPaymentPlan | null;
   purchaseOrderId: number;
   customerId: number;
   pricing: 'CUSTOMER' | 'COST';

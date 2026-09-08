@@ -1,8 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
-import { Customer } from '../../core/api/models';
+import { Customer, PartnerFinancing } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
+import { SourcingApi } from '../../core/api/sourcing-api';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { auctionLineSplit, auctionTotals } from './partner-settlement';
@@ -30,8 +31,8 @@ export interface AuctionSheetLine {
   template: `
     <app-sheet title="Veilingafrekening maken" (closed)="closed.emit()">
       <div body class="as">
-        <p class="as__intro">Vul per product in wat het op de veiling opbracht, uit het overzicht van {{ customerName() || 'de partner' }}@if (reference()) { voor container {{ reference() }} }.
-          De slotfactuur zet elk product aan zijn volledige waarde (gelande kost plus ons deel van de winst) en verrekent het voorschot dat de partner al betaalde als aparte regel, zodat de boekhouding een verkoop en een verrekend voorschot ziet en geen losse marge.</p>
+        <p class="as__intro">Vul per product in wat het netto op de veiling opbracht, na veilingkosten, uit het overzicht van {{ customerName() || 'de partner' }}@if (reference()) { voor container {{ reference() }} }.
+          De slotfactuur zet elk product aan zijn volledige waarde (gelande kost plus ons deel van de winst) en verrekent de uitgereikte voorschotfacturen als aparte regel, zodat de boekhouding een verkoop en een verrekend voorschot ziet en geen losse marge.</p>
         @if (customerId() === null) {
           <div class="field">
             <label class="req" for="as-customer">Partner</label>
@@ -45,12 +46,12 @@ export interface AuctionSheetLine {
           </div>
         }
         <div class="desk-form__duo">
-          <div class="field">
+          @if (!purchaseOrderId()) { <div class="field">
             <label for="as-cost">Deel van de kost dat wij terugvragen</label>
             <span class="as__pct"><input class="input num right" id="as-cost" type="number" min="0" max="100" step="5" inputmode="decimal"
                    [value]="costShare()" (input)="setCostShare($any($event.target).value)" /><i>%</i></span>
-            <span class="hint">Wat de partner nog niet betaalde van de gelande kost.</span>
-          </div>
+            <span class="hint">Aandeel van de kost voor deze afrekening.</span>
+          </div> }
           <div class="field">
             <label for="as-profit">Ons deel van de winst</label>
             <span class="as__pct"><input class="input num right" id="as-profit" type="number" min="0" max="100" step="0.5" inputmode="decimal"
@@ -61,21 +62,24 @@ export interface AuctionSheetLine {
         @if (separateUnitEur() > 0) {
           <p class="hint">Inspectie en andere kosten staan apart op de container: {{ separateUnitEur() | eur: 4 }} per stuk telt mee in de kost.</p>
         }
+        @if (purchaseOrderId()) { <p class="hint">Eén slotafrekening voor alle {{ soldTotal() | num }} bruikbare stuks. Vul voor elk product de definitieve netto-opbrengst in; vul 0 in bij volledig verlies. Gedeeltelijke veilingresultaten horen pas in de slotafrekening zodra het volledige resultaat bekend is.</p> }
+        @if (financingError()) { <p class="hint is-bad" role="alert">{{ financingError() }}</p> }
+        @if (financing(); as finance) { @if (!finance.costFinalized) { <p class="hint is-bad">De externe containerkost is nog voorlopig. Deze conceptafrekening gebruikt de huidige verwachte kost.</p> } @if (finance.settlementInvoiceId) { <p class="hint is-bad">Er bestaat al een slotfactuur: {{ finance.settlementInvoiceNumber }}. Open die via de container; een tweede slotafrekening is niet toegestaan.</p> } }
         <div class="as__table-wrap">
           <table class="as__table">
-            <thead><tr><th>Product</th><th class="num">Verkocht</th><th class="num">Opbrengst</th><th class="num">Kost</th><th class="num">Winst</th><th class="num">Ons deel</th></tr></thead>
+            <thead><tr><th>Product</th><th class="num">Verkocht</th><th class="num">Netto opbrengst</th><th class="num">Kost</th><th class="num">Winst</th><th class="num">Ons deel</th></tr></thead>
             <tbody>
               @for (line of lines(); track line.productId) {
                 @let split = splitOf(line);
                 <tr>
                   <td class="as__product"><b>{{ line.name }}</b><small>{{ unitCostOf(line) | eur: 4 }} / st geland</small></td>
                   <td class="num" data-label="Verkocht"><input class="input num right" type="number" min="0" step="1" inputmode="numeric" [attr.aria-label]="'Verkocht ' + line.name"
-                                         [value]="soldOf(line)" (input)="setSold(line.productId, $any($event.target).value)" /></td>
-                  <td class="num" data-label="Opbrengst"><span class="as__money"><i>€</i><input class="input num right" type="number" min="0" step="0.01" inputmode="decimal" [attr.aria-label]="'Opbrengst ' + line.name"
-                                         [value]="proceedsOf(line.productId) || ''" (input)="setProceeds(line.productId, $any($event.target).value)" /></span></td>
+                                         [value]="soldOf(line)" [readOnly]="!!purchaseOrderId()" (input)="setSold(line.productId, $any($event.target).value)" /></td>
+                  <td class="num" data-label="Opbrengst"><span class="as__money"><i>€</i><input class="input num right" type="number" min="0" step="0.01" inputmode="decimal" [attr.aria-label]="'Netto opbrengst ' + line.name"
+                                         [value]="proceedsEntered(line.productId) ? proceedsOf(line.productId) : ''" (input)="setProceeds(line.productId, $any($event.target).value)" /></span></td>
                   <td class="num" data-label="Kost">{{ split.cost | eur }}</td>
-                  <td class="num" data-label="Winst" [class.is-bad]="split.profit < 0">{{ proceedsOf(line.productId) > 0 ? (split.profit | eur) : '—' }}</td>
-                  <td class="num as__ours" data-label="Ons deel">{{ proceedsOf(line.productId) > 0 ? (split.ours | eur) : '—' }}</td>
+                  <td class="num" data-label="Winst" [class.is-bad]="split.profit < 0">{{ proceedsEntered(line.productId) ? (split.profit | eur) : '—' }}</td>
+                  <td class="num as__ours" data-label="Ons deel">{{ proceedsEntered(line.productId) ? (split.ours | eur) : '—' }}</td>
                 </tr>
               }
             </tbody>
@@ -92,9 +96,10 @@ export interface AuctionSheetLine {
           </table>
         </div>
         <dl class="as__sums">
-          <div><dt>Kost terug · {{ costShare() }} %</dt><dd>{{ totals().proceeds > 0 ? (totals().costPart | eur) : '—' }}</dd></div>
-          <div><dt>Winstdeling · {{ profitShare() }} %</dt><dd>{{ totals().proceeds > 0 ? (totals().profitPart | eur) : '—' }}</dd></div>
-          <div class="as__sums-ours"><dt>Op de factuur, excl. btw</dt><dd>{{ totals().proceeds > 0 ? (totals().ours | eur) : '—' }}</dd></div>
+          <div><dt>Externe kost in de verkoopwaarde</dt><dd>{{ allProceedsEntered() ? (totals().costPart | eur) : '—' }}</dd></div>
+          <div><dt>Winstdeling · {{ profitShare() }} %</dt><dd>{{ allProceedsEntered() ? (totals().profitPart | eur) : '—' }}</dd></div>
+          @if (purchaseOrderId()) { <div><dt>Uitgereikte voorschotfacturen verrekenen</dt><dd>− {{ financing()?.invoicedAdvanceEur ?? 0 | eur }}</dd></div> }
+          <div class="as__sums-ours"><dt>{{ finalAmount() < 0 ? 'Credit voor de partner, excl. btw' : 'Op de slotfactuur, excl. btw' }}</dt><dd>{{ allProceedsEntered() ? (finalAmount() | eur) : '—' }}</dd></div>
         </dl>
         <div class="field">
           <label for="as-note">Interne notitie <span class="opt"></span></label>
@@ -153,6 +158,9 @@ export class AuctionSettlementSheet {
   private readonly sales = inject(SalesApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
+  private readonly sourcing = inject(SourcingApi);
+  readonly financing = signal<PartnerFinancing | null>(null);
+  readonly financingError = signal('');
 
   readonly lines = input.required<AuctionSheetLine[]>();
   /** The partner; null lets the sheet pick one from the partner customers. */
@@ -181,14 +189,17 @@ export class AuctionSettlementSheet {
 
   readonly totals = computed(() => auctionTotals(this.lines().map((line) => this.splitOf(line))));
   readonly soldTotal = computed(() => this.lines().reduce((sum, line) => sum + this.soldOf(line), 0));
-  readonly canCreate = computed(() => (this.customerId() !== null || this.chosenCustomer() !== null)
-    && this.lines().some((line) => this.soldOf(line) > 0 && this.proceedsOf(line.productId) > 0));
+  readonly allProceedsEntered = computed(() => this.lines().length > 0 && this.lines().every((line) => this.soldOf(line) > 0 && this.proceedsEntered(line.productId)));
+  readonly finalAmount = computed(() => Math.round((this.totals().ours - (this.purchaseOrderId() ? this.financing()?.invoicedAdvanceEur ?? 0 : 0)) * 100) / 100);
+  readonly canCreate = computed(() => (this.customerId() !== null || this.chosenCustomer() !== null) && this.allProceedsEntered()
+    && (!this.purchaseOrderId() || (!!this.financing() && !this.financing()?.settlementInvoiceId)));
 
   constructor() {
     queueMicrotask(() => {
       this.costShare.set(clampPct(this.costSharePct(), 100));
       this.profitShare.set(clampPct(this.profitSharePct(), 50));
       if (this.customerId() === null) void this.loadPartners();
+      if (this.purchaseOrderId()) void this.loadFinancing();
     });
   }
 
@@ -215,9 +226,16 @@ export class AuctionSettlementSheet {
   }
 
   soldOf(line: AuctionSheetLine): number {
+    if (this.purchaseOrderId()) return line.quantity;
     return this.sold()[line.productId] ?? line.quantity;
   }
 
+  async loadFinancing(): Promise<void> {
+    try { this.financing.set(await this.sourcing.partnerFinancing(this.purchaseOrderId()!)); }
+    catch (failure: unknown) { this.financingError.set(messageOf(failure, 'Financieringsafspraken laden mislukt. Sluit en open de afrekening opnieuw.')); }
+  }
+
+  proceedsEntered(productId: number): boolean { return Object.hasOwn(this.proceeds(), productId); }
   proceedsOf(productId: number): number {
     return this.proceeds()[productId] ?? 0;
   }
@@ -228,7 +246,7 @@ export class AuctionSettlementSheet {
   }
 
   splitOf(line: AuctionSheetLine) {
-    return auctionLineSplit(this.soldOf(line), this.proceedsOf(line.productId), this.unitCostOf(line), this.costShare(), this.profitShare());
+    return auctionLineSplit(this.soldOf(line), this.proceedsOf(line.productId), this.unitCostOf(line), this.purchaseOrderId() ? 100 : this.costShare(), this.profitShare());
   }
 
   setSold(productId: number, raw: string): void {
@@ -238,7 +256,12 @@ export class AuctionSettlementSheet {
 
   setProceeds(productId: number, raw: string): void {
     const value = Number(String(raw).replace(',', '.'));
-    this.proceeds.update((current) => ({ ...current, [productId]: Number.isFinite(value) && value > 0 ? value : 0 }));
+    this.proceeds.update((current) => {
+      const next = { ...current };
+      if (!String(raw).trim() || !Number.isFinite(value) || value < 0) delete next[productId];
+      else next[productId] = Math.round(value * 100) / 100;
+      return next;
+    });
   }
 
   setCostShare(raw: string): void {
@@ -258,15 +281,15 @@ export class AuctionSettlementSheet {
         purchaseOrderId: this.purchaseOrderId(),
         reference: this.reference(),
         sourceId: this.sourceId(),
-        costSharePct: this.costShare(),
+        costSharePct: this.purchaseOrderId() ? 100 : this.costShare(),
         profitSharePct: this.profitShare(),
         lines: this.lines()
-          .filter((line) => this.soldOf(line) > 0 && this.proceedsOf(line.productId) > 0)
+          .filter((line) => this.soldOf(line) > 0 && this.proceedsEntered(line.productId))
           /* The landed unit only: the backend adds the apart costs per piece itself. */
           .map((line) => ({ productId: line.productId, quantity: this.soldOf(line), proceedsEur: this.proceedsOf(line.productId), landedUnitCostEur: line.landedUnitEur })),
         note: this.note().trim() || null,
       });
-      this.ui.toast(`Veilingafrekening ${created.order.number} gemaakt: ${this.totals().ours.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })}`, 'ok');
+      this.ui.toast(`Veilingafrekening ${created.order.number} gemaakt: ${this.finalAmount().toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })}`, 'ok');
       this.closed.emit();
       await this.router.navigate(['/sales', created.order.id, 'edit']);
     } catch (failure: unknown) {

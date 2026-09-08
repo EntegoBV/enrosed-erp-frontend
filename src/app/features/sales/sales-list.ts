@@ -1,5 +1,7 @@
+import { isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
+import { invoiceReceivable } from '../finance/incoming-money';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrder, SalesOrderView } from '../../core/api/models';
@@ -77,6 +79,11 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
 
       <!-- Offerte or factuur: two piles of a different nature; the tab
            keeps each pile clean instead of mixing claim and proposal. -->
+      <div class="doc-tabs" role="group" aria-label="Soort verkoop">
+        <button type="button" [class.doc-tabs__active]="businessScope() === 'STANDARD'" (click)="businessScope.set('STANDARD')">Reguliere verkoop</button>
+        <button type="button" [class.doc-tabs__active]="businessScope() === 'PARTNER'" (click)="businessScope.set('PARTNER')">Partnercontainers</button>
+        <button type="button" [class.doc-tabs__active]="businessScope() === 'ALL'" (click)="businessScope.set('ALL')">Alles</button>
+      </div>
       <div class="doc-tabs" role="tablist" aria-label="Documenttype">
         <button type="button" role="tab" [attr.aria-selected]="docTab() === 'OFFERTE'"
                 [class.doc-tabs__active]="docTab() === 'OFFERTE'" (click)="switchTab('OFFERTE')">
@@ -92,6 +99,14 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
           Archief <b>{{ docCount('ARCHIEF') }}</b>
         </button>
       </div>
+
+      @if (docTab() === 'FACTUUR') {
+        <div class="doc-tabs" role="group" aria-label="Betalingsstatus">
+          <button type="button" [class.doc-tabs__active]="!outstandingOnly()" (click)="outstandingOnly.set(false)">Alle facturen</button>
+          <button type="button" [class.doc-tabs__active]="outstandingOnly()" (click)="outstandingOnly.set(true)">Nog te ontvangen</button>
+        </div>
+        @if (outstandingOnly()) { <p class="tiny muted">Open bedragen op uitgereikte facturen, inclusief gearchiveerde facturen.</p> }
+      }
 
       <!-- One quiet row: search grows, two pills open native pickers,
            the count sits at the end - no card, no grid of chips. -->
@@ -191,7 +206,7 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
                 <!-- No country chip: it repeats what the customer name already
                      implies and pushed the date into "18/0...". -->
                 <div class="list-item__meta list-item__meta--wrap">
-                  @if (docTab() === 'ARCHIEF') { {{ documentLabel(row.order) }} · }
+                  {{ documentLabel(row.order) }} ·
                   {{ row.order.number }} · {{ row.order.orderDate | dateNl }}
                   @if (row.order.sourceQuoteId && row.sourceQuoteNumber) {
                     · uit <a class="so-link" [routerLink]="['/sales', row.order.sourceQuoteId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Offerte ' + row.sourceQuoteNumber + ' openen'">{{ row.sourceQuoteNumber }}</a>
@@ -215,7 +230,7 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
                     {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
                         ? 'pallet' : 'pallets' }}
                   }
-                  @if (row.priced.totals.marginPct) {
+                  @if (!partner(row.order) && row.priced.totals.marginPct) {
                     · marge {{ row.priced.totals.marginPct | pct: 0 }}
                   }
                 </div>
@@ -225,6 +240,9 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
                   <span class="so-source-mini">Websiteaanvraag</span>
                 }
                 <div class="strong num">{{ row.priced.totals.total | eur: 0 }}</div>
+                @if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
+                  <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
+                }
                 <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
                   <i aria-hidden="true"></i>{{ statusOf(row).label }}
                 </span>
@@ -328,6 +346,8 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
           @if (loading()) {
             <app-skeleton kind="lines" [rows]="3" />
           } @else if (!addingCustomer()) {
+            <p class="tiny muted">Reguliere verkoop aan een klant. Samen inkopen met een partner start vanuit de container; zo blijven voorschot en slotfactuur correct gekoppeld.</p>
+            <a class="btn btn--sm" routerLink="/purchasing" (click)="picking.set(false)">Partnercontainer kiezen ›</a>
             <div class="per-toggle doc-choice" role="group" aria-label="Documenttype">
               <button type="button" [class.on]="newDocType() === 'OFFERTE'"
                       (click)="newDocType.set('OFFERTE')">Offerte</button>
@@ -695,6 +715,7 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
 export class SalesList {
   private readonly sales = inject(SalesApi);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
 
@@ -702,6 +723,7 @@ export class SalesList {
     { value: '', label: 'Alle orders' },
     { value: 'CONCEPT', label: 'Concept' },
     { value: 'VERZONDEN', label: 'Verzonden' },
+    { value: 'UITGEREIKT', label: 'Uitgereikt' },
     { value: 'BEKEKEN', label: 'Bekeken' },
     { value: 'WIJZIGING_GEVRAAGD', label: 'Wijziging gevraagd' },
     { value: 'GEACCEPTEERD', label: 'Geaccepteerd' },
@@ -713,6 +735,10 @@ export class SalesList {
 
   readonly filter = signal<QuoteStatus | ''>('');
   readonly docTab = signal<SalesTab>('OFFERTE');
+  readonly businessScope = signal<'ALL' | 'STANDARD' | 'PARTNER'>('STANDARD');
+  readonly outstandingOnly = signal(false);
+  readonly partner = isPartnerDocument;
+  readonly receivable = invoiceReceivable;
   readonly newDocType = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
   readonly websiteOnly = signal(false);
 
@@ -744,6 +770,7 @@ export class SalesList {
     /* Quote statuses and invoice statuses are different vocabularies. */
     this.filter.set('');
     this.websiteOnly.set(false);
+    this.outstandingOnly.set(false);
     this.openRow.set(null);
   }
 
@@ -753,13 +780,17 @@ export class SalesList {
 
   /** Rows of the active tab, before search and filters. */
   private inTab(): SalesOrderView[] {
+    if (this.docTab() === 'FACTUUR' && this.outstandingOnly()) {
+      const grouped = this.rowsByDocument();
+      return [...grouped.FACTUUR, ...grouped.ARCHIEF.filter((row) => row.order.docType === 'FACTUUR')];
+    }
     return this.rowsByDocument()[this.docTab()];
   }
 
   readonly visibleFilters = computed(() => this.docTab() === 'FACTUUR'
-    ? this.filters.filter((option) => ['', 'CONCEPT', 'VERZONDEN', 'BETAALD'].includes(option.value))
+    ? this.filters.filter((option) => ['', 'CONCEPT', 'UITGEREIKT', 'VERZONDEN', 'BETAALD'].includes(option.value))
     : this.docTab() === 'ARCHIEF' ? this.filters
-    : this.filters.filter((option) => option.value !== 'BETAALD'));
+    : this.filters.filter((option) => !['BETAALD', 'UITGEREIKT'].includes(option.value)));
 
   /** The amber under-row line, inkoop-style: everything still waiting on us. */
   attention = (row: SalesOrderView): string[] | null => {
@@ -773,7 +804,7 @@ export class SalesList {
 
   overdue(order: SalesOrder): boolean {
     return (order.docType ?? 'OFFERTE') === 'FACTUUR'
-      && order.status === 'VERZONDEN'
+      && (order.status === 'VERZONDEN' || order.status === 'UITGEREIKT')
       && !!order.invoiceDueDate
       && order.invoiceDueDate < new Date().toISOString().slice(0, 10);
   }
@@ -793,6 +824,8 @@ export class SalesList {
     const invoices: SalesOrderView[] = [];
     const archived: SalesOrderView[] = [];
     for (const row of this.all()) {
+      if (this.businessScope() === 'STANDARD' && isPartnerDocument(row.order)) continue;
+      if (this.businessScope() === 'PARTNER' && !isPartnerDocument(row.order)) continue;
       if (row.order.archivedAt) archived.push(row);
       else ((row.order.docType ?? 'OFFERTE') === 'FACTUUR' ? invoices : quotes).push(row);
     }
@@ -814,6 +847,12 @@ export class SalesList {
   readonly newCustomer = signal<Customer>(blankCustomer('BE'));
 
   constructor() {
+    const query = this.route.snapshot.queryParamMap;
+    const scope = query.get('scope');
+    if (scope === 'ALL' || scope === 'STANDARD' || scope === 'PARTNER') this.businessScope.set(scope);
+    const tab = query.get('tab');
+    if (tab === 'OFFERTE' || tab === 'FACTUUR' || tab === 'ARCHIEF') this.docTab.set(tab);
+    if (query.get('payment') === 'open') { this.docTab.set('FACTUUR'); this.outstandingOnly.set(true); }
     void this.work.refresh();
     void this.load();
   }
@@ -884,6 +923,7 @@ export class SalesList {
     const websiteOnly = this.websiteOnly();
     const needle = this.query().toLowerCase().trim();
     return this.inTab().filter((row) => {
+      if (this.outstandingOnly() && (['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status) || invoiceReceivable(row).remainingEur <= 0)) return false;
       if (status && row.order.status !== status) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
       if (websiteOnly && !isWebsiteQuoteRequest(row.order)) return false;
@@ -911,7 +951,7 @@ export class SalesList {
 
   readonly activeFilterCount = computed(() =>
     (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
-      + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0));
+      + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0) + (this.outstandingOnly() ? 1 : 0));
 
   readonly activeStatusLabel = computed(() =>
     this.filters.find((option) => option.value === this.filter())?.label ?? 'Alle orders');
@@ -925,6 +965,7 @@ export class SalesList {
     this.filter.set('');
     this.customerFilter.set('');
     this.websiteOnly.set(false);
+    this.outstandingOnly.set(false);
   }
 
   statusCount(status: QuoteStatus | ''): number {
@@ -1198,7 +1239,7 @@ export class SalesList {
     if ((order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (order.status === 'CONCEPT') return null;
       if (this.overdue(order)) return 'Betaling opvolgen';
-      if (!order.goodsShippedAt) return 'Bestelling nog te verzenden';
+      if (!isAdvanceDocument(order) && !order.goodsShippedAt) return 'Bestelling nog te verzenden';
       return null;
     }
     return actionNeeded(order, awaitingResend);

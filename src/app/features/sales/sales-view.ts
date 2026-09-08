@@ -1,3 +1,5 @@
+import { SalesReceipts } from './sales-receipts';
+import { displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -39,7 +41,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -226,9 +228,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           }
 
           <div class="profit-strip">
-            <span>Winst</span>
-            <strong [class.profit-strip__negative]="data.priced.totals.marginEur < 0">
-              {{ signedMoney(data.priced.totals.marginEur) }}
+            <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</span>
+            <strong [class.profit-strip__negative]="displayedProfit(data) < 0">
+              {{ signedMoney(displayedProfit(data)) }}
             </strong>
           </div>
         </section>
@@ -496,11 +498,12 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                           <span class="num">{{ profitNet(line) | eur: 2 }}</span></div>
                         <div class="stat-row"><span>Kostprijs</span>
                           <span class="num">− {{ profitCost(line) | eur: 2 }}</span></div>
-                        <div class="stat-row line-breakdown__result"
+                        @if (isAdvance(data.order)) { <p class="muted">Voorschot voor de containerfinanciering. Het resultaat volgt bij de slotafrekening.</p> }
+                        @else { <div class="stat-row line-breakdown__result"
                              [class.line-breakdown__result--negative]="line.marginEur < 0">
                           <span>{{ line.marginEur < 0 ? 'Verlies' : 'Winst' }}</span>
                           <span class="num">{{ profitPill(line) }}</span>
-                        </div>
+                        </div> }
                       </div>
                     }
                   </article>
@@ -548,8 +551,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <div class="totals-list__incl"><dt>Inclusief BTW</dt><dd>{{ data.priced.totals.totalInclVat | eur: 2 }}</dd></div>
               </dl>
               <div class="totals-profit">
-                <div><b>Winst</b><strong [class.negative]="data.priced.totals.marginEur < 0">{{ data.priced.totals.marginEur | eur: 2 }}</strong></div>
-                <small>Goederenwinst vóór vrachtkosten</small>
+                <div><b>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</b><strong [class.negative]="displayedProfit(data) < 0">{{ displayedProfit(data) | eur: 2 }}</strong></div>
+                <small>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Resultaat na slotafrekening' : 'Goederenwinst vóór vrachtkosten' }}</small>
               </div>
 
               <section class="next-step-card" aria-labelledby="sales-next-step-title">
@@ -564,7 +567,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   @if (data.order.status === 'CONCEPT') {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote()"
                             (click)="sendSheetOpen.set(true)">Factuur versturen…</button>
-                  } @else if (!data.order.goodsShippedAt) {
+                  } @else if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="openShipSheet(data)">Bestelling verzonden</button>
                   } @else if (data.order.status !== 'BETAALD') {
@@ -572,8 +575,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markPaid(data)">Betaling registreren</button>
                   } @else {
                     <button class="btn btn--primary btn--block" type="button"
-                            (click)="openPdfSheet('PACKING_SLIP')">
-                      Pakbon instellen
+                            (click)="openPdfSheet(isAdvance(data.order) ? 'DOCUMENT' : 'PACKING_SLIP')">
+                      {{ isAdvance(data.order) ? 'Factuur instellen' : 'Pakbon instellen' }}
                     </button>
                   }
                 } @else if (data.order.status === 'CONCEPT') {
@@ -602,19 +605,21 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 </a>
                 }
                 @if (isInvoice()) {
-                  @if (data.order.status === 'CONCEPT') {
+                  @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                    @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Factuur e-mailen…</button> }
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="markSent(data)">Markeer als verstuurd</button>
                     <p class="link-explainer">Gebruik dit alleen wanneer je de factuur buiten het ERP bezorgde.</p>
-                  } @else if (data.order.status !== 'BETAALD' && !data.order.goodsShippedAt) {
+                  }
+                  @if (data.order.status !== 'BETAALD' && (!isAdvance(data.order) && !data.order.goodsShippedAt)) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
-                            (click)="markPaid(data)">Markeer als betaald</button>
+                            (click)="markPaid(data)">Betaling registreren</button>
                   }
                   @if (data.order.goodsShippedAt) {
                     <p class="link-explainer">Bestelling verzonden op
                       {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
                   }
-                  @if (!(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
+                  @if (!isAdvance(data.order) && !(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
                   <button class="btn btn--block" type="button"
                           (click)="openPdfSheet('PACKING_SLIP')">
                     Pakbon instellen
@@ -655,6 +660,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </aside>
 
             <section class="section-card history-card erp-workspace__section" id="sales-status" aria-labelledby="quote-history-title">
+              <app-sales-receipts [view]="data" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" />
               <header class="section-card__head">
                 <div><span class="section-kicker">Status</span><h2 id="quote-history-title">Geschiedenis</h2></div>
                 <span class="badge" [class]="'badge badge--' + statusOf(data).cls">{{ statusOf(data).label }}</span>
@@ -979,6 +985,12 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   `],
 })
 export class SalesView {
+  readonly isPartnerDocument = isPartnerDocument;
+  readonly isAdvance = isAdvanceDocument;
+  readonly displayedProfit = displayedSalesProfit;
+  readonly receiptOpenRequest = signal(0);
+  paymentReceived(fresh: SalesOrderView): void { this.view.set(fresh); void this.sales.history(fresh.order.id).then((history) => this.history.set(history)).catch(() => undefined); }
+
   private readonly sales = inject(SalesApi);
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
@@ -1071,7 +1083,7 @@ export class SalesView {
   hasStatusAction(data: SalesOrderView): boolean {
     if (this.pendingRevision()) return true;
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
-      return data.order.status === 'CONCEPT' || !data.order.goodsShippedAt
+      return data.order.status === 'CONCEPT' || (!this.isAdvance(data.order) && !data.order.goodsShippedAt)
         || data.order.status !== 'BETAALD';
     }
     return data.order.status === 'CONCEPT' || data.order.status === 'GEACCEPTEERD';
@@ -1087,7 +1099,7 @@ export class SalesView {
     if (this.pendingRevision()) return 'Wijzigingsvoorstel beoordelen';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Factuur naar de klant';
-      if (!data.order.goodsShippedAt) return 'Bestelling verzenden';
+      if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bestelling verzenden';
       if (data.order.status !== 'BETAALD') return 'Betaling registreren';
       return 'Order afgerond';
     }
@@ -1108,7 +1120,7 @@ export class SalesView {
     if (this.pendingRevision()) return 'De klant wacht op jouw keuze. Open het voorstel en neem de wijzigingen gericht over.';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Mail de PDF vanuit het ERP, of markeer ze bij de extra acties als je ze zelf bezorgde.';
-      if (!data.order.goodsShippedAt) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
+      if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
       if (data.order.status !== 'BETAALD') return 'Leg de betaling vast zodra het bedrag ontvangen is.';
       return 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
     }
@@ -1203,6 +1215,11 @@ export class SalesView {
     if ((order.docType ?? 'OFFERTE') !== 'FACTUUR') return this.quoteJourney(order.status);
     /* Payment and shipment are separate facts, so each step carries its own
        flag; the first thing not yet done gets the "now" ring. */
+    if (isAdvanceDocument(order)) {
+      const flags = [true, order.status !== 'CONCEPT', order.status === 'BETAALD'];
+      const now = flags.indexOf(false);
+      return ['Concept', 'Uitgereikt', 'Voorschot ontvangen'].map((label, index) => ({ label, mark: flags[index] ? '✓' : `${index + 1}`, state: (flags[index] ? 'done' : index === now ? 'now' : 'todo') as 'done' | 'now' | 'todo', kind: undefined }));
+    }
     const flags = [true, order.status !== 'CONCEPT', !!order.goodsShippedAt,
                    order.status === 'BETAALD'];
     const now = flags.indexOf(false);
@@ -1306,16 +1323,8 @@ export class SalesView {
   }
 
   async markPaid(data: SalesOrderView): Promise<void> {
-    if (this.invoiceBusy()) return;
-    this.invoiceBusy.set(true);
-    try {
-      this.view.set(await this.sales.markInvoicePaid(data.order.id!));
-      this.ui.toast('Factuur betaald — mooi zo');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
-    } finally {
-      this.invoiceBusy.set(false);
-    }
+    this.scrollToSection('sales-status');
+    this.receiptOpenRequest.update((value) => value + 1);
   }
 
   remove(data: SalesOrderView): void {
@@ -1543,7 +1552,7 @@ export class SalesView {
     label: string; mark: string; state: 'done' | 'now' | 'todo';
     kind?: 'danger' | 'gold' | 'muted';
   }[] {
-    const reached: Record<QuoteStatus, number> = {
+    const reached: Record<QuoteStatus, number> = { UITGEREIKT: 1,
       CONCEPT: 0, VERZONDEN: 1, BEKEKEN: 2,
       WIJZIGING_GEVRAAGD: 3, GEACCEPTEERD: 3, AFGEWEZEN: 3, VERLOPEN: 3, GEANNULEERD: 3, BETAALD: 3,
     };

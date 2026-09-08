@@ -5,7 +5,7 @@ import { API_BASE, api } from './api.config';
 import {
   CompanyProfile, Country, Customer, CustomerPortalLink, DiscountTier, FreightPricingStrategy, LanguageCode,
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
-  SalesOrderView, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest, FromPurchaseOrderRequest,
+  SalesOrderView, SalesPayment, SalesPaymentRequest, IncomingPaymentRow, SalesPurpose, SalesPaymentPlan, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest, FromPurchaseOrderRequest,
 } from './models';
 import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
@@ -93,7 +93,7 @@ export class SalesApi {
   }
 
   /** Ties a document to the container a partner co-finances; a null container cuts the tie. */
-  setPartnerDeal(id: number, body: { purchaseOrderId: number | null; sharePct: number | null; reference: string | null }): Promise<SalesOrderView> {
+  setPartnerDeal(id: number, body: { purchaseOrderId: number | null; sharePct: number | null; reference: string | null; purpose?: SalesPurpose; paymentPlan?: SalesPaymentPlan }): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/partner-deal`), body));
   }
 
@@ -116,6 +116,27 @@ export class SalesApi {
   markInvoiceSent(id: number): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/mark-sent`), {}));
+  }
+
+  payments(id: number): Promise<SalesPayment[]> {
+    return firstValueFrom(this.http.get<SalesPayment[]>(api(`/api/sales-orders/${id}/payments`)));
+  }
+  addPayment(id: number, body: SalesPaymentRequest): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/payments`), body));
+  }
+  updatePayment(id: number, paymentId: number, body: SalesPaymentRequest): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/payments/${paymentId}`), body));
+  }
+  deletePayment(id: number, paymentId: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/sales-orders/${id}/payments/${paymentId}`)));
+  }
+  incomingPayments(from?: string): Promise<IncomingPaymentRow[]> {
+    const query = from ? `?from=${encodeURIComponent(from)}` : '';
+    return firstValueFrom(this.http.get<IncomingPaymentRow[]>(api(`/api/incoming-payments${query}`)));
+  }
+
+  issueInvoice(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/issue`), {}));
   }
 
   markInvoicePaid(id: number): Promise<SalesOrderView> {

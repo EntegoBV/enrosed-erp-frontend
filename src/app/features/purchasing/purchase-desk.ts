@@ -1,3 +1,4 @@
+import { PurchaseSalesLinks } from './purchase-sales-links';
 import { ChangeDetectionStrategy, Component, computed, input, linkedSignal, signal } from '@angular/core';
 import { LandedCostLine, Product } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
@@ -51,7 +52,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -523,7 +524,7 @@ type DeskRow =
                     </div>
                   </div>
                   }
-                  <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
+                  <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
                 }
 
                 @case ('costs') {
@@ -710,7 +711,8 @@ type DeskRow =
                     <small>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</small>
                   </div>
                   <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
-                  <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
+                  <app-purchase-sales-links [documents]="relatedSalesDocs()" />
+              <app-purchase-partner-payments (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" />
                   <div class="pay-stream">
                     <div class="pay-stream__head">
                       <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht (in de prijs)' : 'de goederen' }}</small></span>
@@ -953,7 +955,7 @@ type DeskRow =
 
       @if (quoteOpen()) {
         @if (view(); as data) {
-          <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
+          <app-purchase-quote-sheet [reconciliation]="data.reconciliation" [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
       }
       @if (extraSplitOpen()) {

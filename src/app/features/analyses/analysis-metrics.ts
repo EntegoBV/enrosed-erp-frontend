@@ -5,6 +5,8 @@ import type {
   SalesOrderView,
   PurchaseOrderView,
   CompanyCost,
+  PartnerFinancing,
+  SalesAccounting,
 } from '../../core/api/models';
 
 export interface AnalysisOptions {
@@ -292,7 +294,7 @@ export function salesAnalysis(
   const today = isoDayOrNull(options.today) ?? localIsoDay();
   const limit = positiveWhole(options.topLimit, 8);
   const selected = orders.filter((row) => inOrderDateRange(row.order.orderDate, from, to));
-  const quotes = selected.filter((row) => docType(row) === 'OFFERTE');
+  const quotes = selected.filter((row) => docType(row) === 'OFFERTE' && !isPartnerFundingDocument(row));
   const invoices = selected.filter((row) => docType(row) === 'FACTUUR');
 
   const pipelineRows = quotes.filter((row) => OPEN_QUOTE_STATUSES.has(row.order.status));
@@ -304,14 +306,14 @@ export function salesAnalysis(
   const expiredCount = quotes.filter((row) => row.order.status === 'VERLOPEN').length;
   const closedCount = quotes.filter((row) => CLOSED_QUOTE_STATUSES.has(row.order.status)).length;
 
-  const issuedInvoices = invoices.filter((row) => row.order.status !== 'CONCEPT');
-  const paidInvoices = issuedInvoices.filter((row) => row.order.status === 'BETAALD');
-  const outstandingInvoices = issuedInvoices.filter((row) => row.order.status !== 'BETAALD');
+  const issuedInvoices = invoices.filter(isIssuedInvoice);
+  const paidInvoices = issuedInvoices.filter((row) => invoiceOutstanding(row) === 0 && invoiceClaim(row) > 0);
+  const outstandingInvoices = issuedInvoices.filter((row) => invoiceOutstanding(row) > 0);
   const overdueInvoices = outstandingInvoices.filter((row) => isOverdue(row, today));
   const invoiceGoods = issuedInvoices.reduce(
-    (sum, row) => sum + finiteNonNegative(row.priced.totals.goodsTotal), 0);
+    (sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0);
   const invoiceMargin = issuedInvoices.reduce(
-    (sum, row) => sum + finite(row.priced.totals.marginEur), 0);
+    (sum, row) => sum + documentAccounting(row).recognizedProfitEur, 0);
   const customerNames = new Map(customers.map((customer) => [customer.id, customer.company]));
   const issuedValue = sumInvoiceClaims(issuedInvoices);
   const paymentDays = paidInvoices.flatMap((row) => {
@@ -340,21 +342,21 @@ export function salesAnalysis(
     accepted: commercialBucket(acceptedRows),
     invoices: {
       created: invoices.length,
-      draft: invoices.length - issuedInvoices.length,
+      draft: invoices.filter((row) => row.order.status === 'CONCEPT').length,
       issued: issuedInvoices.length,
       paid: paidInvoices.length,
       outstanding: outstandingInvoices.length,
       overdue: overdueInvoices.length,
       issuedValueEur: sumInvoiceClaims(issuedInvoices),
-      paidValueEur: sumInvoiceClaims(paidInvoices),
-      outstandingValueEur: sumInvoiceClaims(outstandingInvoices),
-      overdueValueEur: sumInvoiceClaims(overdueInvoices),
+      paidValueEur: round2(issuedInvoices.reduce((sum, row) => sum + invoiceReceived(row), 0)),
+      outstandingValueEur: round2(outstandingInvoices.reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
+      overdueValueEur: round2(overdueInvoices.reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
       averageClaimEur: issuedInvoices.length ? issuedValue / issuedInvoices.length : null,
       avgDaysToPaid: paymentDays.length
         ? Math.round(paymentDays.reduce((sum, days) => sum + days, 0) / paymentDays.length) : null,
       marginEur: invoiceMargin,
       marginPct: percentage(invoiceMargin, invoiceGoods),
-      missingCostLines: missingCostLines(issuedInvoices),
+      missingCostLines: missingCostLines(issuedInvoices.filter((row) => !isAdvanceDocument(row))),
     },
     topCustomers: topCustomers(issuedInvoices, customerNames, limit),
     topProducts: topProducts(issuedInvoices, limit),
@@ -376,10 +378,10 @@ function channelMetrics(rows: readonly SalesOrderView[]): SalesChannelMetric[] {
     const channel = channelOf(row.order);
     const bucket = buckets.get(channel) ?? { channel, invoiceCount: 0, revenueExclEur: 0, claimInclEur: 0, goodsValueEur: 0, marginEur: 0, sharePct: 0 };
     bucket.invoiceCount += 1;
-    bucket.revenueExclEur = round2(bucket.revenueExclEur + finite(row.priced.totals.total));
+    bucket.revenueExclEur = round2(bucket.revenueExclEur + documentAccounting(row).recognizedRevenueEur);
     bucket.claimInclEur = round2(bucket.claimInclEur + finite(row.priced.totals.totalInclVat));
-    bucket.goodsValueEur = round2(bucket.goodsValueEur + finite(row.priced.totals.goodsTotal));
-    bucket.marginEur = round2(bucket.marginEur + finite(row.priced.totals.marginEur));
+    bucket.goodsValueEur = round2(bucket.goodsValueEur + documentAccounting(row).recognizedRevenueEur);
+    bucket.marginEur = round2(bucket.marginEur + documentAccounting(row).recognizedProfitEur);
     buckets.set(channel, bucket);
   }
   const total = [...buckets.values()].reduce((sum, bucket) => sum + bucket.revenueExclEur, 0);
@@ -652,8 +654,7 @@ function partnerPiecesAwaitingShipment(sales: readonly SalesOrderView[]): Map<nu
   const pieces = new Map<number, number>();
   for (const view of sales) {
     const order = view.order;
-    if (order.docType !== 'FACTUUR' || !order.partnerPurchaseOrderId || order.goodsShippedAt) continue;
-    if (order.status === 'GEANNULEERD' || order.status === 'AFGEWEZEN' || order.status === 'VERLOPEN') continue;
+    if (!isIssuedInvoice(view) || !order.partnerPurchaseOrderId || order.goodsShippedAt || isAdvanceDocument(view)) continue;
     for (const line of view.priced.lines ?? []) {
       if (line.productId == null) continue;
       pieces.set(line.productId, (pieces.get(line.productId) ?? 0) + finiteNonNegative(line.quantity));
@@ -673,19 +674,26 @@ export interface PartnerFinancingRow {
   sharePct: number | null;
   /** What the container cost us, landed. */
   landedEur: number;
-  /** What the partner is invoiced for the goods, excluding the settlement. */
+  /** Issued advances, excluding VAT and the final settlement. */
   invoicedEur: number;
   /** Only a quote so far: the partner has not been invoiced yet. */
   quotedOnly: boolean;
   /** Whether every partner invoice for the goods is paid. */
   invoicesPaid: boolean;
-  /** Our profit share invoiced after the auction. */
+  /** Net claim of issued final invoices, after advance deductions, excluding VAT. */
   settlementEur: number;
-  /** Invoiced plus settlement minus landed: what the container earns us. */
+  /** Recognized profit from issued final invoices; advances and cash movements do not create profit. */
   resultEur: number;
+  committedAdvanceEur: number;
+  receivedEur: number;
+  openEur: number;
+  creditEur: number;
+  ownExposureEur: number;
+  settled: boolean;
+  costFinalized: boolean;
   /** Received, but the auction has not been settled yet: the statement is still to come. */
   awaitingSettlement: boolean;
-  documents: { id: number; number: string; docType: 'OFFERTE' | 'FACTUUR'; settlement: boolean }[];
+  documents: { id: number; number: string; docType: 'OFFERTE' | 'FACTUUR'; settlement: boolean; status: string }[];
 }
 
 export interface PartnerFinancingAnalysis {
@@ -694,6 +702,11 @@ export interface PartnerFinancingAnalysis {
   invoicedEur: number;
   settlementEur: number;
   resultEur: number;
+  receivedEur: number;
+  openEur: number;
+  creditEur: number;
+  ownExposureEur: number;
+  committedAdvanceEur: number;
   /** Partner containers received without an auction settlement so far. */
   awaitingSettlement: number;
   rows: PartnerFinancingRow[];
@@ -703,18 +716,19 @@ const DEAD_SALES_STATUSES = new Set<SalesOrderView['order']['status']>(['GEANNUL
 
 /**
  * Which containers run on our own money and which on a partner's, with
- * what each partner container earns us: the goods invoiced at landed cost,
- * plus our share of the auction profit, minus what the container cost.
+ * agreed funding, actual cash, remaining invoice claims and recognized profit.
+ * Server summaries include partner containers even before their first document.
  */
 export function partnerFinancingAnalysis(
   purchases: readonly PurchaseOrderView[],
   sales: readonly SalesOrderView[],
   customers: readonly Customer[] = [],
+  summaries: readonly PartnerFinancing[] = [],
 ): PartnerFinancingAnalysis {
   const byContainer = new Map<number, SalesOrderView[]>();
   for (const view of sales) {
     const id = view.order.partnerPurchaseOrderId;
-    if (id == null || DEAD_SALES_STATUSES.has(view.order.status)) continue;
+    if (id == null || !isPartnerFundingDocument(view) || DEAD_SALES_STATUSES.has(view.order.status)) continue;
     byContainer.set(id, [...(byContainer.get(id) ?? []), view]);
   }
   const customerName = (id: number | null | undefined): string =>
@@ -725,40 +739,47 @@ export function partnerFinancingAnalysis(
   for (const purchase of purchases) {
     const docs = byContainer.get(purchase.order.id) ?? [];
     /* The partner pays inspection and the other separate costs too: the landed figure includes them. */
-    const landedEur = finiteNonNegative(purchase.costing?.totals?.totalWithSeparateCostsEur ?? purchase.costing?.totals?.totalEur);
-    if (!docs.length) {
+    const summary = summaries.find((row) => row.purchaseOrderId === purchase.order.id);
+    const landedEur = summary?.forecastExternalEur ?? finiteNonNegative(purchase.reconciliation?.totals.forecastExternalEur
+      ?? purchase.costing?.totals?.totalWithSeparateCostsEur ?? purchase.costing?.totals?.totalEur);
+    if (!summary && !purchase.order.partnerCustomerId && !docs.length) {
       ownCount += 1;
       ownLanded += landedEur;
       continue;
     }
     const settlement = (view: SalesOrderView): boolean => isSettlementDocument(view);
-    const goodsInvoices = docs.filter((view) => view.order.docType === 'FACTUUR' && !settlement(view));
-    const settlements = docs.filter(settlement);
-    const quotes = docs.filter((view) => view.order.docType !== 'FACTUUR');
+    const goodsInvoices = docs.filter((view) => isIssuedInvoice(view) && !settlement(view));
+    const settlements = docs.filter((view) => isIssuedInvoice(view) && settlement(view));
     const invoicedEur = goodsInvoices.reduce((sum, view) => sum + finite(view.priced.totals.total), 0);
-    const quotedEur = quotes.reduce((sum, view) => sum + finite(view.priced.totals.total), 0);
     const settlementEur = settlements.reduce((sum, view) => sum + finite(view.priced.totals.total), 0);
     const quotedOnly = goodsInvoices.length === 0;
-    const goodsEur = quotedOnly ? quotedEur : invoicedEur;
     const first = docs.slice().sort((left, right) => left.order.id - right.order.id)[0];
+    const receivedEur = summary?.totalReceivedEur ?? docs.filter(isIssuedInvoice).reduce((sum, row) => sum + invoiceReceived(row), 0);
+    const settled = settlements.length > 0 || !!summary?.documents.some((row) => row.purpose === 'PARTNER_SETTLEMENT' && row.docType === 'FACTUUR' && row.status !== 'CONCEPT' && !DEAD_SALES_STATUSES.has(row.status));
     rows.push({
       purchaseOrderId: purchase.order.id,
       number: purchase.order.number,
       alias: purchase.order.alias ?? null,
       status: purchase.order.status,
-      partnerName: customerName(first.order.customerId),
-      sharePct: first.order.partnerSharePct ?? null,
+      partnerName: summary?.partnerName ?? customerName(purchase.order.partnerCustomerId ?? first?.order.customerId),
+      sharePct: summary?.profitSharePct ?? purchase.order.partnerSharePct ?? first?.order.partnerSharePct ?? null,
       landedEur,
-      invoicedEur: goodsEur,
+      invoicedEur: summary?.invoicedAdvanceEur ?? invoicedEur,
       quotedOnly,
-      invoicesPaid: goodsInvoices.length > 0 && goodsInvoices.every((view) => view.order.status === 'BETAALD'),
-      settlementEur,
-      resultEur: round2(goodsEur + settlementEur - landedEur),
-      awaitingSettlement: purchase.order.status === 'ONTVANGEN' && settlements.length === 0,
-      documents: docs
+      invoicesPaid: goodsInvoices.length > 0 && goodsInvoices.every((view) => invoiceOutstanding(view) === 0),
+      settlementEur: summary?.settlementEur ?? settlementEur,
+      resultEur: summary?.recognizedProfitEur ?? round2(settlements.reduce((sum, view) => sum + documentAccounting(view).recognizedProfitEur, 0)),
+      committedAdvanceEur: summary?.committedAdvanceEur ?? round2(landedEur * (purchase.order.partnerCostPct ?? 100) / 100),
+      receivedEur, openEur: summary?.totalOpenEur ?? round2(docs.filter(isIssuedInvoice).reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
+      creditEur: summary?.creditEur ?? 0,
+      ownExposureEur: summary?.ownExposureEur ?? Math.max(0, finite(purchase.reconciliation?.totals.paidEur) - receivedEur),
+      settled,
+      costFinalized: summary?.costFinalized ?? false,
+      awaitingSettlement: purchase.order.status === 'ONTVANGEN' && !settled,
+      documents: summary ? summary.documents.map((doc) => ({ id: doc.id, number: doc.number, docType: doc.docType === 'FACTUUR' ? 'FACTUUR' : 'OFFERTE', settlement: doc.purpose === 'PARTNER_SETTLEMENT', status: doc.status })) : docs
         .slice()
         .sort((left, right) => left.order.id - right.order.id)
-        .map((view) => ({ id: view.order.id, number: view.order.number, docType: view.order.docType === 'FACTUUR' ? 'FACTUUR' : 'OFFERTE', settlement: settlement(view) })),
+        .map((view) => ({ id: view.order.id, number: view.order.number, docType: view.order.docType === 'FACTUUR' ? 'FACTUUR' : 'OFFERTE', settlement: settlement(view), status: view.order.status })),
     });
   }
   rows.sort((left, right) => right.purchaseOrderId - left.purchaseOrderId);
@@ -768,6 +789,11 @@ export function partnerFinancingAnalysis(
     invoicedEur: round2(rows.reduce((sum, row) => sum + (row.quotedOnly ? 0 : row.invoicedEur), 0)),
     settlementEur: round2(rows.reduce((sum, row) => sum + row.settlementEur, 0)),
     resultEur: round2(rows.reduce((sum, row) => sum + row.resultEur, 0)),
+    receivedEur: round2(rows.reduce((sum, row) => sum + row.receivedEur, 0)),
+    openEur: round2(rows.reduce((sum, row) => sum + row.openEur, 0)),
+    creditEur: round2(rows.reduce((sum, row) => sum + row.creditEur, 0)),
+    ownExposureEur: round2(rows.reduce((sum, row) => sum + row.ownExposureEur, 0)),
+    committedAdvanceEur: round2(rows.reduce((sum, row) => sum + row.committedAdvanceEur, 0)),
     awaitingSettlement: rows.filter((row) => row.awaitingSettlement).length,
     rows,
   };
@@ -785,7 +811,7 @@ function round2(value: number): number {
 function isSettlementDocument(view: SalesOrderView): boolean {
   const order = view.order;
   if (order.docType !== 'FACTUUR' || !order.partnerPurchaseOrderId) return false;
-  if (order.partnerSettlement) return true;
+  if (order.purpose === 'PARTNER_SETTLEMENT' || order.partnerSettlement) return true;
   if ((view.priced.lines ?? []).length > 0) return false;
   return (order.extraLines ?? []).some((line) => (line.description ?? '').startsWith('Winstdeling'));
 }
@@ -798,7 +824,7 @@ function piecesSoldByProduct(
   const sold = new Map<number, number>();
   const start = shiftIsoDay(today, -(days - 1));
   for (const row of sales) {
-    if (docType(row) !== 'FACTUUR' || row.order.status === 'CONCEPT') continue;
+    if (!isIssuedInvoice(row) || isAdvanceDocument(row)) continue;
     if (!inOrderDateRange(row.order.orderDate, start, today)) continue;
     for (const line of row.priced.lines) {
       if (!Number.isInteger(line.productId)) continue;
@@ -839,7 +865,7 @@ function topCustomers(
       calculatedValueEur: 0,
     };
     current.orderCount++;
-    current.pieces += finiteNonNegative(row.priced.totals.pieces);
+    current.pieces += documentAccounting(row).recognizedQuantity;
     current.calculatedValueEur += invoiceClaim(row);
     grouped.set(customerId, current);
   }
@@ -852,6 +878,7 @@ function topCustomers(
 function topProducts(rows: readonly SalesOrderView[], limit: number): SalesProductMetric[] {
   const grouped = new Map<number, SalesProductMetric & { orderIds: Set<number> }>();
   for (const row of rows) {
+    if (isAdvanceDocument(row)) continue;
     const rawGoods = row.priced.lines.reduce((sum, line) => sum + finiteNonNegative(line.net), 0);
     const goodsFactor = rawGoods > 0
       ? finiteNonNegative(row.priced.totals.goodsTotal) / rawGoods : 0;
@@ -930,7 +957,7 @@ function attentionOrders(
       orderDate: row.order.orderDate,
       dueDate: row.order.invoiceDueDate ?? null,
       calculatedValueEur: docType(row) === 'FACTUUR'
-        ? invoiceClaim(row) : finiteNonNegative(row.priced.totals.total),
+        ? invoiceOutstanding(row) : finiteNonNegative(row.priced.totals.total),
       reasons,
       severity,
     }];
@@ -1006,7 +1033,38 @@ function docType(row: SalesOrderView): 'OFFERTE' | 'FACTUUR' {
 }
 
 function invoiceClaim(row: SalesOrderView): number {
-  return finiteNonNegative(row.priced.totals.totalInclVat);
+  return finiteNonNegative(row.paymentSummary?.invoiceTotalEur ?? row.priced.totals.totalInclVat);
+}
+
+function invoiceReceived(row: SalesOrderView): number {
+  return row.paymentSummary ? finiteNonNegative(row.paymentSummary.receivedEur)
+    : row.order.status === 'BETAALD' || row.order.paidAt ? invoiceClaim(row) : 0;
+}
+
+function invoiceOutstanding(row: SalesOrderView): number {
+  return row.paymentSummary ? finiteNonNegative(row.paymentSummary.remainingEur) : Math.max(0, invoiceClaim(row) - invoiceReceived(row));
+}
+
+function isIssuedInvoice(view: SalesOrderView): boolean {
+  return view.order.docType === 'FACTUUR' && view.order.status !== 'CONCEPT' && !DEAD_SALES_STATUSES.has(view.order.status);
+}
+
+function isAdvanceDocument(view: SalesOrderView): boolean {
+  return view.order.purpose === 'PARTNER_ADVANCE' || (!view.order.purpose && !!view.order.partnerPurchaseOrderId && !isSettlementDocument(view));
+}
+
+/** Partner funding belongs to container financing rather than the regular commercial quote funnel. */
+export function isPartnerFundingDocument(view: SalesOrderView): boolean {
+  return view.order.purpose === 'PARTNER_ADVANCE' || view.order.purpose === 'PARTNER_SETTLEMENT'
+    || (!view.order.purpose && !!view.order.partnerPurchaseOrderId);
+}
+
+/** Use the server's recognition, not the invoice claim after an advance deduction. */
+export function documentAccounting(view: SalesOrderView): SalesAccounting {
+  if (!isIssuedInvoice(view) || isAdvanceDocument(view)) return { recognizedRevenueEur: 0, recognizedCostEur: 0, recognizedProfitEur: 0, recognizedQuantity: 0 };
+  if (view.accounting) return view.accounting;
+  return { recognizedRevenueEur: finite(view.priced.totals.total), recognizedCostEur: finite(view.priced.totals.costTotal),
+    recognizedProfitEur: finite(view.priced.totals.marginEur), recognizedQuantity: finiteNonNegative(view.priced.totals.pieces) };
 }
 
 function sumInvoiceClaims(rows: readonly SalesOrderView[]): number {
@@ -1020,8 +1078,7 @@ function missingCostLines(rows: readonly SalesOrderView[]): number {
 
 function isOverdue(row: SalesOrderView, today: string): boolean {
   const due = isoDayOrNull(row.order.invoiceDueDate);
-  return docType(row) === 'FACTUUR' && row.order.status !== 'BETAALD'
-    && row.order.status !== 'CONCEPT' && due !== null && due < today;
+  return isIssuedInvoice(row) && invoiceOutstanding(row) > 0 && due !== null && due < today;
 }
 
 function inOrderDateRange(day: string, from: string | null, to: string | null): boolean {
@@ -1144,13 +1201,13 @@ export function resultAnalysis(
   const periodCosts = costs.filter((cost) => inPeriod(cost.date));
   const received = purchases.filter((row) => row.order.status === 'ONTVANGEN' && inPeriod(row.order.receivedOn ?? null));
 
-  const revenueEur = round2(invoices.reduce((sum, row) => sum + finite(row.priced.totals.total), 0));
-  const marginEur = round2(invoices.reduce((sum, row) => sum + finite(row.priced.totals.marginEur), 0));
-  const goodsCostEur = round2(invoices.reduce((sum, row) => sum + finite(row.priced.totals.costTotal), 0));
+  const revenueEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0));
+  const marginEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedProfitEur, 0));
+  const goodsCostEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedCostEur, 0));
   const costsEur = round2(periodCosts.reduce((sum, cost) => sum + finiteNonNegative(cost.amountExclEur), 0));
   const unpaidCostsEur = round2(periodCosts.filter((cost) => !cost.paidOn)
     .reduce((sum, cost) => sum + finiteNonNegative(cost.amountExclEur) * (1 + finiteNonNegative(cost.vatPct) / 100), 0));
-  const goodsTotal = invoices.reduce((sum, row) => sum + finite(row.priced.totals.goodsTotal), 0);
+  const goodsTotal = invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0);
 
   const channels = new Map<string, ResultChannelRow>();
   const channelRow = (channel: string): ResultChannelRow => {
@@ -1161,9 +1218,9 @@ export function resultAnalysis(
   for (const invoice of invoices) {
     const row = channelRow(channelOf(invoice.order));
     row.invoiceCount += 1;
-    row.revenueEur = round2(row.revenueEur + finite(invoice.priced.totals.total));
-    row.goodsCostEur = round2(row.goodsCostEur + finite(invoice.priced.totals.costTotal));
-    row.marginEur = round2(row.marginEur + finite(invoice.priced.totals.marginEur));
+    row.revenueEur = round2(row.revenueEur + documentAccounting(invoice).recognizedRevenueEur);
+    row.goodsCostEur = round2(row.goodsCostEur + documentAccounting(invoice).recognizedCostEur);
+    row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
   }
   for (const cost of periodCosts) {
     if (!cost.salesChannel) continue;
@@ -1191,8 +1248,8 @@ export function resultAnalysis(
   };
   for (const invoice of invoices) {
     const row = monthRow(invoice.order.orderDate.slice(0, 7));
-    row.revenueEur = round2(row.revenueEur + finite(invoice.priced.totals.total));
-    row.marginEur = round2(row.marginEur + finite(invoice.priced.totals.marginEur));
+    row.revenueEur = round2(row.revenueEur + documentAccounting(invoice).recognizedRevenueEur);
+    row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
   }
   for (const cost of periodCosts) {
     const row = monthRow(cost.date.slice(0, 7));

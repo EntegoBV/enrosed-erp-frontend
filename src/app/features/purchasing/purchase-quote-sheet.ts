@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
-import { Customer, PurchaseOrder } from '../../core/api/models';
+import { Customer, PurchaseOrder, PurchaseReconciliation } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { EurPipe, NumPipe, EurUpPipe, NumUpPipe, WeekNlPipe } from '../../shared/pipes';
 import { WeekField, isoWeekOf } from '../../shared/week-field';
@@ -35,8 +35,10 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, NumPipe, EurPipe, EurUpPipe, NumUpPipe, WeekNlPipe, WeekField],
   template: `
-    <app-sheet title="Verkoopofferte maken" (closed)="closed.emit()">
+    <app-sheet [title]="partner() ? 'Voorschotofferte partnercontainer' : 'Reguliere verkoopofferte'" (closed)="closed.emit()">
       <div body class="pq">
+        <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="setPurpose(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="setPurpose(true)">Partnercontainer</button></div>
+        <p class="pq__hint">{{ partner() ? 'Samen inkopen: de partner financiert de afgesproken containerkosten. Standaard 1/3 bij start productie en 2/3 na productie; na de veiling volgt de slotafrekening. Geen minimumorder.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
         <p class="pq__intro">Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen.
           @if (partnersOnly()) { Een partner rekent aan onze kostprijs van deze container; een andere klant krijgt zijn eigen prijzen. } @else { Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
         <div class="pq__pick">
@@ -82,7 +84,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
         </div>
         <div class="pq__pricing">
           <div class="per-toggle" role="group" aria-label="Prijzen op de offerte">
-            <button type="button" [class.on]="pricing() === 'CUSTOMER'" (click)="pricing.set('CUSTOMER')">Klantprijzen</button>
+            <button type="button" [class.on]="pricing() === 'CUSTOMER'" [disabled]="partner()" (click)="pricing.set('CUSTOMER')">Klantprijzen</button>
             <button type="button" [class.on]="pricing() === 'COST'" [disabled]="!costKnown()" (click)="pricing.set('COST')">Kostprijs van deze container</button>
           </div>
           @if (pricing() === 'COST') {
@@ -96,23 +98,23 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
               </ul>
             }
             <div class="pq__markup">
-              <label for="pq-markup">Opslag op de kostprijs</label>
+              <label for="pq-markup">Opslag op de kostprijs{{ partner() ? ' · partnerfinanciering zonder opslag' : '' }}</label>
               <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" step="0.5" inputmode="decimal"
-                     [value]="markupPct()" (input)="setMarkup($any($event.target).value)" /><i>%</i></span>
+                     [value]="partner() ? 0 : markupPct()" [disabled]="partner()" (input)="setMarkup($any($event.target).value)" /><i>%</i></span>
             </div>
             <div class="pq__partner">
               <label class="pq__partner-toggle">
-                <input type="checkbox" [checked]="partner()" (change)="partner.set($any($event.target).checked)" />
+                <input type="checkbox" [checked]="partner()" (change)="setPurpose($any($event.target).checked)" />
                 <span><b>Partnercontainer</b><small>De klant bestelt de container mee en verkoopt de goederen door; na de veiling maken we een slotfactuur voor ons deel van de winst.</small></span>
               </label>
               @if (partner()) {
                 <div class="pq__markup">
-                  <label for="pq-share">Ons deel van de winst na de veiling</label>
+                  <label for="pq-share">Ons deel van het veilingresultaat na de veiling</label>
                   <span class="pq__markup-field"><input class="input num right" id="pq-share" type="number" min="0" max="100" step="0.5" inputmode="decimal"
                          [value]="sharePct()" (input)="setShare($any($event.target).value)" /><i>%</i></span>
                 </div>
                 <div class="pq__markup">
-                  <label for="pq-cost">Deel van de kost dat de partner nu betaalt</label>
+                  <label for="pq-cost">Deel van de totale kost dat de partner financiert</label>
                   <span class="pq__markup-field">
                     <span class="pq__quick" role="group" aria-label="Snel kiezen">
                       <button type="button" [class.on]="costPct() === 100" (click)="setCost('100')">100</button>
@@ -225,6 +227,7 @@ export class PurchaseQuoteSheet {
 
   readonly order = input.required<PurchaseOrder>();
   readonly lines = input<PurchaseQuoteLine[]>([]);
+  readonly reconciliation = input<PurchaseReconciliation | null | undefined>(undefined);
   /** The container's own partner and deal: chosen the moment the sheet opens, so nobody has to search. */
   readonly presetCustomerId = input<number | null>(null);
   readonly presetCostPct = input<number | null>(null);
@@ -256,15 +259,16 @@ export class PurchaseQuoteSheet {
   /** The part of the landed cost the partner pays on this quote; the rest is settled after the auction. */
   readonly costPct = signal(100);
   /** Whether the list shows every customer or only the partners. */
-  readonly showAll = signal(false);
+  readonly showAll = signal(true);
   readonly partnerCustomers = computed(() => this.customers().filter((customer) => customer.partner));
   readonly partnersOnly = computed(() => this.partnerCustomers().length > 0 && !this.showAll());
 
   /** Cost pricing needs a landed cost on every line; a half-calculated container cannot be passed on. */
-  readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => line.landedUnitEur !== null));
+  readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => this.partner() ? this.reconciliation()?.lines.find((cost) => cost.productId === line.productId)?.forecastExternalUnitEur != null : line.landedUnitEur !== null));
   /** The inspection and the named other costs, as lines of their own while they sit apart from the piece price; spread by a key they are already inside it. */
   readonly costs = computed<PurchaseQuoteCost[]>(() => {
     const order = this.order();
+    if (this.partner()) return [];
     if ((order.allocSeparate ?? 'SEPARATE') !== 'SEPARATE') return [];
     const suffix = ` · ${order.number}`;
     const costs: PurchaseQuoteCost[] = [];
@@ -302,18 +306,25 @@ export class PurchaseQuoteSheet {
     void this.load();
   }
 
-  /** A customer is chosen: a partner switches the sheet to cost pricing with their own agreement. */
+  /** The document purpose is selected explicitly; the same customer can buy normally too. */
   choose(customer: Customer): void {
     if (customer.id === null) return;
     this.chosen.set(customer.id);
-    if (customer.partner) {
-      this.partner.set(true);
+    if (this.partner()) {
       this.sharePct.set(customer.partnerSharePct ?? 50);
       this.costPct.set(customer.partnerCostPct ?? 100);
       if (this.costKnown()) this.pricing.set('COST');
-    } else {
-      this.partner.set(false);
-      this.pricing.set('CUSTOMER');
+    }
+  }
+
+  setPurpose(partner: boolean): void {
+    this.partner.set(partner);
+    this.showAll.set(!partner);
+    this.pricing.set(partner && this.costKnown() ? 'COST' : 'CUSTOMER');
+    const customer = this.chosenCustomer();
+    if (partner && customer) {
+      this.costPct.set(customer.partnerCostPct ?? 100);
+      this.sharePct.set(customer.partnerSharePct ?? 50);
     }
   }
 
@@ -353,9 +364,10 @@ export class PurchaseQuoteSheet {
    * quote adds up to the cent of the purchase order.
    */
   unitPrice(line: PurchaseQuoteLine): number {
-    if (line.landedUnitEur === null) return 0;
+    const unit = this.partner() ? this.reconciliation()?.lines.find((cost) => cost.productId === line.productId)?.forecastExternalUnitEur : line.landedUnitEur;
+    if (unit == null) return 0;
     const share = this.partner() ? this.costPct() / 100 : 1;
-    return Math.round(line.landedUnitEur * (1 + this.markupPct() / 100) * share * 10000) / 10000;
+    return Math.round(unit * (this.partner() ? 1 : 1 + this.markupPct() / 100) * share * 10000) / 10000;
   }
 
   async load(): Promise<void> {
@@ -407,14 +419,17 @@ export class PurchaseQuoteSheet {
     this.busy.set(true);
     this.createError.set(null);
     try {
+      if (this.partner() && !this.costKnown()) throw new Error('De externe containerkost ontbreekt. Vernieuw de container voordat je de voorschotofferte maakt.');
       const atCost = this.pricing() === 'COST' && this.costKnown();
       const partnerDeal = atCost && this.partner();
       const included = this.chosenCosts().map((cost) => cost.key);
       const view = await this.sales.createFromPurchaseOrder({
+        purpose: partnerDeal ? 'PARTNER_ADVANCE' : 'STANDARD',
+        paymentPlan: partnerDeal ? 'THIRD_TWO_THIRDS_PRODUCTION' : 'FULL',
         purchaseOrderId: this.order().id,
         customerId: customer.id,
         pricing: atCost ? 'COST' : 'CUSTOMER',
-        markupPct: atCost ? this.markupPct() : 0,
+        markupPct: atCost && !this.partner() ? this.markupPct() : 0,
         partner: partnerDeal,
         sharePct: partnerDeal ? this.sharePct() : null,
         costPct: partnerDeal ? this.costPct() : null,

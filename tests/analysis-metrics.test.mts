@@ -143,7 +143,7 @@ test('sales analysis keeps a clear cohort funnel and current-calculation values'
     averageClaimEur: 907.5,
     avgDaysToPaid: null,
     marginEur: 450,
-    marginPct: (450 / 1_300) * 100,
+    marginPct: 30,
     missingCostLines: 0,
   });
   assert.deepEqual(result.topCustomers, [{
@@ -367,7 +367,7 @@ function partnerDoc(input: SalesFixture & { container: number; share?: number; s
   return row;
 }
 
-test('partner financing tells our containers from the partner ones and what each earns', () => {
+test('partner financing shows advances while draft settlements and quotes never count as earned profit', () => {
   const purchases = [container(1, 4000), container(2, 1000), container(3, 2500)];
   const customers = [{ id: 7, company: 'Frans Verhoeven' }] as unknown as Customer[];
   const sales = [
@@ -384,19 +384,19 @@ test('partner financing tells our containers from the partner ones and what each
   assert.deepEqual(result.own, { count: 1, landedEur: 1000 });
   assert.deepEqual(result.partner, { count: 2, landedEur: 6500 });
   assert.equal(result.invoicedEur, 4000, 'a quote alone is not invoiced money');
-  assert.equal(result.settlementEur, 900);
-  assert.equal(result.resultEur, 900 + 100);
+  assert.equal(result.settlementEur, 0, 'a draft settlement is not an issued claim');
+  assert.equal(result.resultEur, 0, 'neither a quote nor a draft settlement creates realized profit');
   const first = result.rows.find((row) => row.purchaseOrderId === 1)!;
   assert.equal(first.partnerName, 'Frans Verhoeven');
   assert.equal(first.invoicedEur, 4000);
   assert.equal(first.invoicesPaid, true);
-  assert.equal(first.settlementEur, 900);
-  assert.equal(first.resultEur, 900);
+  assert.equal(first.settlementEur, 0);
+  assert.equal(first.resultEur, 0);
   assert.deepEqual(first.documents.map((doc) => `${doc.number}${doc.settlement ? '*' : ''}`), ['OFF-10', 'INV-11', 'INV-12*']);
   const third = result.rows.find((row) => row.purchaseOrderId === 3)!;
   assert.equal(third.quotedOnly, true);
   assert.equal(third.sharePct, 40);
-  assert.equal(third.resultEur, 100);
+  assert.equal(third.resultEur, 0);
 });
 
 test('inventory value keeps the partner pieces that wait for shipment apart from our own money', () => {
@@ -409,13 +409,15 @@ test('inventory value keeps the partner pieces that wait for shipment apart from
     partnerDoc({ id: 2, docType: 'FACTUUR', status: 'BETAALD', total: 200, container: 1, shipped: true, lines: [{ productId: 1, quantity: 10 }] }),
     partnerDoc({ id: 3, docType: 'FACTUUR', status: 'CONCEPT', total: 100, container: 2, lines: [{ productId: 2, quantity: 25 }] }),
   ];
+  for (const row of sales) row.order.purpose = 'PARTNER_SETTLEMENT';
+  sales.push(partnerDoc({ id: 4, docType: 'FACTUUR', status: 'BETAALD', total: 600, container: 1, lines: [{ productId: 1, quantity: 30 }] }));
 
   const result = inventoryAnalysis(products, [], { sales });
 
   assert.equal(result.stock.costValueEur, 40 * 20 + 10 * 5);
-  assert.equal(result.stock.partnerPieces, 30 + 10, 'shipped goods are gone, and never more than the stock');
-  assert.equal(result.stock.partnerCostValueEur, 30 * 20 + 10 * 5);
-  assert.equal(result.stock.ownCostValueEur, 10 * 20);
+  assert.equal(result.stock.partnerPieces, 30, 'shipped goods, draft invoices and advances do not allocate stock');
+  assert.equal(result.stock.partnerCostValueEur, 30 * 20);
+  assert.equal(result.stock.ownCostValueEur, 10 * 20 + 10 * 5);
 });
 
 test('sales analysis splits the issued invoices per channel', () => {

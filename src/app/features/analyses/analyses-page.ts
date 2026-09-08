@@ -13,7 +13,7 @@ import {
   ReceiptVarianceReport,
   ReceiptVarianceRow,
   SalesOrderView,
-  Supplier, CompanyCost,
+  Supplier, CompanyCost, IncomingPaymentRow, PartnerFinancing,
 } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -31,6 +31,7 @@ import { purchaseExternalCost } from '../purchasing/purchase-reconciliation-metr
 import { WebsiteAnalytics } from './website-analytics';
 import { averageLeadDays, inDateRange, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
+import { incomingMoneyTotals } from '../finance/incoming-money';
 
 type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
@@ -247,7 +248,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             (valueChange)="salesFromDate.set($event)" /></label>
           <label><span>Tot en met</span><app-date-field fieldId="sales-analysis-to" [value]="salesToDate()"
             (valueChange)="salesToDate.set($event)" /></label>
-          <p>Bedragen zijn volgens de huidige orderberekening; oude documenten hebben nog geen bevroren historische prijs.</p>
+          <p>Facturen volgen hun documentdatum; ontvangsten hun echte betaaldatum. Voorschotten blijven financiering tot de slotafrekening. Oude documenten kunnen nog actuele productprijzen gebruiken.</p>
         </div>
 
         <div class="analysis-kpis analysis-kpis--flow">
@@ -265,7 +266,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
               : salesMetrics().invoices.marginPct === null ? 'op uitgegeven facturen' : (salesMetrics().invoices.marginPct | pct: 1) + ' op goederen' }}</p>
           </article>
           <article class="card metric-card">
-            <span class="metric-card__label">Open pijplijn</span>
+            <span class="metric-card__label">Reguliere verkooppijplijn</span>
             <strong>{{ salesMetrics().pipeline.calculatedValueEur | eur: 0 }}</strong>
             <p>{{ salesMetrics().pipeline.count }} offerte(s) · {{ salesMetrics().pipeline.pieces | num }} stuks</p>
           </article>
@@ -285,6 +286,8 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <strong>{{ salesMetrics().invoices.overdueValueEur | eur: 0 }}</strong>
             <p>{{ salesMetrics().invoices.overdue }} factuur/facturen na vervaldatum</p>
           </article>
+          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="metric-card__label">Ontvangen in deze periode</span><strong>{{ incoming().receivedEur | eur: 0 }}</strong><p>{{ incoming().count }} echte betalingen op ontvangstdatum · incl. btw</p></a>
+          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="metric-card__label">Partnervoorschotten ontvangen</span><strong>{{ incoming().partnerAdvanceEur | eur: 0 }}</strong><p>financiering · {{ incoming().partnerSettlementEur | eur: 0 }} daarnaast uit afrekeningen</p></a>
         </div>
 
         <article class="card funnel-card" aria-label="Offertefunnel">
@@ -328,7 +331,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
 
         <div class="analysis-columns analysis-columns--three">
           <article class="card analysis-list">
-            <header><div><span>Landen</span><h3>Omzet per land</h3></div><small>uitgegeven facturen · incl. btw</small></header>
+            <header><div><span>Landen</span><h3>Gefactureerd per land</h3></div><small>betalingsvorderingen · incl. btw</small></header>
             @for (country of salesMetrics().topCountries; track country.countryCode ?? 'none') {
               <div class="rank-row">
                 <span class="rank">{{ $index + 1 }}</span>
@@ -616,14 +619,16 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
         <header class="section-copy section-copy--sub">
           <span class="eyebrow">Partnercontainers</span>
           <h2>Zelf betaald of met een partner</h2>
-          <p>De meeste containers betalen we volledig zelf. Bij een partnercontainer bestelt een partner mee: hij betaalt onze gelande kost (vooraf, of na de veiling) en deelt de winst met ons. Hieronder staan beide soorten apart, zodat je ziet wat ons eigen geld is.</p>
+          <p>De partner financiert de afgesproken kosten vooraf of samen met ons. Ontvangen voorschotten zijn financiering. Het resultaat volgt uit de uitgegeven slotafrekening: volledige verkoopwaarde en werkelijke containerkost, ieder één keer.</p>
         </header>
         <div class="analysis-kpis analysis-kpis--flow">
-          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Zonder partner</span><strong>{{ financing().own.landedEur | eur: 0 }}</strong><p>{{ financing().own.count }} container{{ financing().own.count === 1 ? '' : 's' }} die we volledig zelf betalen</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Met partner</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} container{{ financing().partner.count === 1 ? '' : 's' }} · onze gelande kost, die de partner terugbetaalt</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Vooraf gefactureerd</span><strong>{{ financing().invoicedEur | eur: 0 }}</strong><p>goederen aan kostprijs, aan de partner gefactureerd vóór de veiling</p></article>
-          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Veilingafrekeningen</span><strong>{{ financing().settlementEur | eur: 0 }}</strong><p>na de veiling: onze kost terug plus ons deel van de winst</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Wat het ons opbrengt</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>alles wat de partner betaalt, min wat de containers ons kostten</p></article>
+          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Kosten partnercontainers</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} containers · werkelijke kosten en nog open verplichtingen</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Afgesproken voorfinanciering</span><strong>{{ financing().committedAdvanceEur | eur: 0 }}</strong><p>{{ financing().invoicedEur | eur: 0 }} voorschot gefactureerd · excl. btw</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Van partners ontvangen</span><strong>{{ financing().receivedEur | eur: 0 }}</strong><p>echte betalingen · voorschotten en slotafrekeningen incl. btw</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Nog te ontvangen</span><strong>{{ financing().openEur | eur: 0 }}</strong><p>resterende uitgegeven facturen, na deelbetalingen · incl. btw</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Eigen kasinleg</span><strong>{{ financing().ownExposureEur | eur: 0 }}</strong><p>betaalde containerkosten min ontvangen partnergeld, minimaal nul</p></article>
+          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Gerealiseerd partnerresultaat</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>uitgegeven slotafrekeningen · voorschotten tellen niet als winst</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Credit voor partners</span><strong>{{ financing().creditEur | eur: 0 }}</strong><p>te verrekenen of terug te betalen volgens afrekening</p></article>
           <article class="card metric-card" [class.metric-card--danger]="financing().awaitingSettlement > 0"><span class="metric-card__label">Nog af te rekenen</span><strong>{{ financing().awaitingSettlement }}</strong><p>partnercontainer{{ financing().awaitingSettlement === 1 ? '' : 's' }} ontvangen, veilingoverzicht nog niet afgerekend</p></article>
         </div>
         <article class="card analysis-list scorecard-card">
@@ -631,17 +636,17 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
           @if (financing().rows.length) {
             <div class="scorecard-scroll">
               <table class="scorecard">
-                <thead><tr><th>Container</th><th>Partner</th><th>Gelande kost</th><th>Vooraf gefactureerd</th><th>Veilingafrekening</th><th>Resultaat</th><th>Documenten</th></tr></thead>
+                <thead><tr><th>Container</th><th>Partner</th><th>Externe kost</th><th>Ontvangen</th><th>Open / eigen kas</th><th>Resultaat</th><th>Documenten</th></tr></thead>
                 <tbody>
                   @for (row of financing().rows; track row.purchaseOrderId) {
                     <tr>
                       <td><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ row.alias || row.number }}</a>@if (row.alias) { <small class="muted"> {{ row.number }}</small> }</td>
                       <td>{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
-                      <td>{{ row.landedEur | eur: 0 }}</td>
-                      <td [class.scorecard__warn]="row.quotedOnly">{{ row.invoicedEur | eur: 0 }}<small class="muted"> {{ row.quotedOnly ? 'offerte' : row.invoicesPaid ? 'betaald' : 'open' }}</small></td>
-                      <td [class.scorecard__warn]="row.awaitingSettlement">{{ row.settlementEur ? (row.settlementEur | eur: 0) : row.awaitingSettlement ? 'open' : '—' }}</td>
-                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
-                      <td>@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a>{{ last ? '' : ' · ' }}}</td>
+                      <td>{{ row.landedEur | eur: 0 }}<small class="muted"> {{ row.costFinalized ? 'definitief' : 'verwacht' }}</small></td>
+                      <td>{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small></td>
+                      <td [class.scorecard__warn]="row.openEur > 0">{{ row.openEur | eur: 0 }} open<small class="muted"> {{ row.ownExposureEur | eur: 0 }} eigen kasinleg</small></td>
+                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.settled ? (row.resultEur | eur: 0) : 'Nog af te rekenen' }}@if (row.creditEur) { <small class="muted"> {{ row.creditEur | eur: 0 }} credit</small> }</td>
+                      <td>@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'slot' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
                     </tr>
                   }
                 </tbody>
@@ -857,6 +862,8 @@ export class AnalysesPage {
   readonly suppliers = signal<Supplier[]>([]);
   readonly products = signal<Product[]>([]);
   readonly salesOrders = signal<SalesOrderView[]>([]);
+  readonly incomingPayments = signal<IncomingPaymentRow[]>([]);
+  readonly partnerSummaries = signal<PartnerFinancing[]>([]);
   readonly customers = signal<Customer[]>([]);
   readonly costs = signal<CompanyCost[]>([]);
   readonly expectedStock = signal<ExpectedStock[]>([]);
@@ -939,7 +946,8 @@ export class AnalysesPage {
     today: TODAY,
     topLimit: 8,
   }));
-  readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers()));
+  readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers(), this.partnerSummaries()));
+  readonly incoming = computed(() => incomingMoneyTotals(this.incomingPayments(), this.salesFromDate(), this.salesToDate()));
   readonly result = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
     from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined,
   }));
@@ -1042,7 +1050,7 @@ export class AnalysesPage {
     this.loading.set(true);
     this.receiptError.set('');
     try {
-      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs] = await Promise.allSettled([
+      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners] = await Promise.allSettled([
         this.sourcing.receiptVariances(this.filters()),
         this.sourcing.purchaseOrders(),
         this.sourcing.suppliers(),
@@ -1051,6 +1059,7 @@ export class AnalysesPage {
         this.sales.customers(),
         this.sourcing.expectedStock(),
         this.finance.costs(),
+        this.sales.incomingPayments(), this.sourcing.partnerFinancings(),
       ] as const);
       const warnings: string[] = [];
       if (report.status === 'fulfilled') this.acceptReport(report.value);
@@ -1062,6 +1071,8 @@ export class AnalysesPage {
       if (customers.status === 'fulfilled') this.customers.set(customers.value); else warnings.push('klanten');
       if (expectedStock.status === 'fulfilled') this.expectedStock.set(expectedStock.value); else warnings.push('verwachte voorraad');
       if (costs.status === 'fulfilled') this.costs.set(costs.value); else warnings.push('kosten');
+      if (incoming.status === 'fulfilled') this.incomingPayments.set(incoming.value); else warnings.push('inkomende betalingen');
+      if (partners.status === 'fulfilled') this.partnerSummaries.set(partners.value); else warnings.push('partnerfinanciering');
       this.dataWarnings.set(warnings);
     } finally {
       this.loading.set(false);

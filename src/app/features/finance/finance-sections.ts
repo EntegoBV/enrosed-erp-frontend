@@ -45,5 +45,5 @@ export function blankRecurring(): RecurringCost {
 }
 
 export function blankBalance(account = ''): BankBalance {
-  return { id: null, account, date: TODAY, balanceEur: 0, notes: '' };
+  return { id: null, account, date: TODAY, asOfAt: new Date().toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Brussels', balanceEur: 0, notes: '' };
 }

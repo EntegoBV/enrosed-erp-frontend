@@ -179,12 +179,23 @@ export interface BankOverview {
   totalEur: number;
   /** The newest reading date, or null without readings. */
   asOf: string | null;
+  asOfAt?: string | null;
+  timeZone?: string | null;
   /** The total over time: on every reading date, each account at its latest reading up to then. */
   series: { dates: string[]; values: number[] };
 }
 
+function orderedBankReadings(balances: readonly BankBalance[]): BankBalance[] {
+  const checkpoint = (row: BankBalance): number => row.asOfAt ? Date.parse(row.asOfAt) : new Date(`${row.date}T23:59:59.999`).getTime();
+  return [...balances].sort((left, right) => checkpoint(left) - checkpoint(right) || (left.id ?? 0) - (right.id ?? 0));
+}
+
+export function latestBankReading(balances: readonly BankBalance[]): BankBalance | null {
+  return orderedBankReadings(balances).at(-1) ?? null;
+}
+
 export function bankOverview(balances: readonly BankBalance[]): BankOverview {
-  const ordered = [...balances].sort((left, right) => left.date.localeCompare(right.date) || (left.id ?? 0) - (right.id ?? 0));
+  const ordered = orderedBankReadings(balances);
   const perAccount = new Map<string, BankBalance[]>();
   for (const row of ordered) perAccount.set(row.account, [...(perAccount.get(row.account) ?? []), row]);
   const accounts: AccountBalance[] = [...perAccount.entries()].map(([account, rows]) => {
@@ -214,6 +225,8 @@ export function bankOverview(balances: readonly BankBalance[]): BankOverview {
     accounts,
     totalEur: round2(accounts.reduce((sum, row) => sum + row.balanceEur, 0)),
     asOf: dates.length ? dates[dates.length - 1] : null,
+    ...(ordered.at(-1)?.asOfAt ? { asOfAt: ordered.at(-1)!.asOfAt } : {}),
+    ...(ordered.at(-1)?.timeZone ? { timeZone: ordered.at(-1)!.timeZone } : {}),
     series: { dates, values },
   };
 }
@@ -259,6 +272,9 @@ export type MovementKind = 'COST' | 'PURCHASE' | 'INVOICE';
 export interface BankMovement {
   key?: string;
   purchaseOrderId?: number;
+  salesOrderId?: number;
+  receivedAt?: string;
+  timeZone?: string;
   date: string;
   kind: MovementKind;
   label: string;
@@ -277,7 +293,7 @@ export interface BankMovements {
 }
 
 export interface PurchasePaymentLike { id?: number; orderId?: number; paidOn: string; amountEur: number; orderNumber: string | null; orderAlias?: string | null; label: string | null; payee?: Payee | null }
-export interface PaidInvoice { date: string; number: string; customer: string | null; amountEur: number }
+export interface PaidInvoice { date: string; number: string; customer: string | null; amountEur: number; id?: number; salesOrderId?: number; purchaseOrderId?: number | null; receivedAt?: string; timeZone?: string; purposeLabel?: string; reference?: string | null }
 
 /**
  * The bank rolled forward from its last reading: costs paid, containers paid
@@ -285,7 +301,8 @@ export interface PaidInvoice { date: string; number: string; customer: string | 
  * ERP cannot know what was on the account before it was told.
  */
 export function movementsSince(since: string | null, bankEur: number, costs: readonly CompanyCost[],
-                               payments: readonly PurchasePaymentLike[], invoices: readonly PaidInvoice[]): BankMovements {
+                               payments: readonly PurchasePaymentLike[], invoices: readonly PaidInvoice[], sinceAt?: string | null,
+                               sinceTimeZone = 'Europe/Brussels'): BankMovements {
   if (!since) return { since: null, rows: [], outEur: 0, inEur: 0, netEur: 0, currentEur: round2(finite(bankEur)) };
   const rows: BankMovement[] = [];
   for (const cost of costs) {
@@ -309,15 +326,31 @@ export function movementsSince(since: string | null, bankEur: number, costs: rea
       });
     }
   }
+  const seenReceiptIds = new Set<number>();
   for (const invoice of invoices) {
-    if (invoice.date > since) {
-      rows.push({ date: invoice.date, kind: 'INVOICE', label: `Factuur ${invoice.number}`, detail: invoice.customer ?? 'ontvangen', amountEur: finite(invoice.amountEur) });
+    if (invoice.id !== undefined && seenReceiptIds.has(invoice.id)) continue;
+    if (invoice.id !== undefined) seenReceiptIds.add(invoice.id);
+    const receiptDay = invoice.receivedAt ? calendarDay(invoice.receivedAt, sinceTimeZone || 'Europe/Brussels') : invoice.date;
+    const after = sinceAt && invoice.receivedAt ? Date.parse(invoice.receivedAt) > Date.parse(sinceAt) : receiptDay > since;
+    if (after) {
+      rows.push({ date: invoice.date, kind: 'INVOICE', label: `Factuur ${invoice.number}`,
+        detail: [invoice.customer, invoice.purposeLabel, invoice.reference].filter(Boolean).join(' · ') || 'ontvangen', amountEur: finite(invoice.amountEur),
+        key: invoice.id !== undefined ? `receipt:${invoice.id}` : undefined, salesOrderId: invoice.salesOrderId,
+        purchaseOrderId: invoice.purchaseOrderId ?? undefined, receivedAt: invoice.receivedAt, timeZone: invoice.timeZone });
     }
   }
-  rows.sort((left, right) => right.date.localeCompare(left.date) || left.label.localeCompare(right.label));
+  rows.sort((left, right) => right.date.localeCompare(left.date) || (right.receivedAt ?? '').localeCompare(left.receivedAt ?? '') || left.label.localeCompare(right.label));
   const outEur = round2(rows.filter((row) => row.amountEur < 0).reduce((sum, row) => sum - row.amountEur, 0));
   const inEur = round2(rows.filter((row) => row.amountEur > 0).reduce((sum, row) => sum + row.amountEur, 0));
   return { since, rows, outEur, inEur, netEur: round2(inEur - outEur), currentEur: round2(finite(bankEur) + inEur - outEur) };
+}
+
+/** Legacy balance readings mean end of their local calendar day, regardless of the receipt entry's zone. */
+function calendarDay(instant: string, timeZone: string): string {
+  if (!Number.isFinite(Date.parse(instant))) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(instant));
+  const part = (type: string) => parts.find((row) => row.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
 export interface PartyRow { party: string; count: number; exclEur: number; sharePct: number }

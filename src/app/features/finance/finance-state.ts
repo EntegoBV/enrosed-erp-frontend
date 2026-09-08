@@ -4,13 +4,14 @@ import { messageOf } from '../../core/api/errors';
 import { FinanceApi } from '../../core/api/finance-api';
 import { MediaApi } from '../../core/api/media-api';
 import { MediaAssetSummary } from '../../core/api/media-models';
-import { BankBalance, CompanyCost, Customer, PurchasePaymentRow, RecurringCost, SalesOrderView } from '../../core/api/models';
+import { BankBalance, CompanyCost, Customer, IncomingPaymentRow, PurchasePaymentRow, RecurringCost, SalesOrderView } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Ui } from '../../shared/ui';
-import { PaidInvoice, addDays, bankOverview, cashOutlook, inclOf, movementsSince, upcomingRecurring } from './finance-metrics';
+import { PaidInvoice, addDays, bankOverview, cashOutlook, inclOf, latestBankReading, movementsSince, upcomingRecurring } from './finance-metrics';
 import { TODAY, blankBalance, blankCost, blankRecurring } from './finance-sections';
 import { costLedger } from './cost-ledger';
+import { incomingMoneyTotals, incomingPurposeLabel, paymentLocalDay, receivableTotals, uniqueIncomingPayments } from './incoming-money';
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const eur = (value: number): string => value.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -35,6 +36,8 @@ export class FinanceState {
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly customers = signal<Customer[]>([]);
   readonly payments = signal<PurchasePaymentRow[]>([]);
+  readonly incomingPayments = signal<IncomingPaymentRow[]>([]);
+  readonly incomingTotals = computed(() => incomingMoneyTotals(this.incomingPayments()));
   /** The common costs list; container rows always follow their original payment. */
   readonly ledger = computed(() => costLedger(this.costs(), this.payments()));
   /** Every file linked to a cost: the invoices, receipts and contracts. */
@@ -56,18 +59,16 @@ export class FinanceState {
   readonly upcoming = computed(() => upcomingRecurring(this.recurring(), this.today, addDays(this.today, 30)));
   readonly upcomingInclEur = computed(() => round2(this.upcoming().reduce((sum, row) => sum + row.amountInclEur, 0)));
   /** Sent invoices the customer has not paid: money on its way in, including VAT. */
-  readonly openInvoices = computed(() => {
-    const rows = this.salesOrders().filter((row) => row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT'
-      && !row.order.paidAt && !row.order.archivedAt);
-    return { count: rows.length, totalEur: round2(rows.reduce((sum, row) => sum + (row.priced?.totals?.totalInclVat ?? 0), 0)) };
-  });
+  readonly openInvoices = computed(() => receivableTotals(this.salesOrders()));
   private readonly customerNames = computed(() => new Map(this.customers().map((customer) => [customer.id, customer.company])));
-  /** Invoices the customer paid: money that came in, on the day it was marked paid. */
-  readonly paidInvoices = computed<PaidInvoice[]>(() => this.salesOrders()
-    .filter((row) => row.order.docType === 'FACTUUR' && !!row.order.paidAt && !row.order.archivedAt)
-    .map((row) => ({ date: (row.order.paidAt as string).slice(0, 10), number: row.order.number, customer: this.customerNames().get(row.order.customerId) ?? null, amountEur: row.priced?.totals?.totalInclVat ?? 0 })));
+  /** Actual receipts survive document archival and use the entered payment moment and amount. */
+  readonly paidInvoices = computed<PaidInvoice[]>(() => uniqueIncomingPayments(this.incomingPayments()).map((row) => ({
+    id: row.id, salesOrderId: row.salesOrderId, purchaseOrderId: row.purchaseOrderId, receivedAt: row.receivedAt, timeZone: row.timeZone,
+    date: paymentLocalDay(row), number: row.orderNumber, customer: this.customerNames().get(row.customerId) ?? null,
+    amountEur: row.amountEur, reference: row.reference, purposeLabel: incomingPurposeLabel(row.purpose),
+  })));
   /** The bank rolled forward: the last reading plus what the ERP saw move after it. */
-  readonly movements = computed(() => movementsSince(this.bank().asOf, this.bank().totalEur, this.costs(), this.payments(), this.paidInvoices()));
+  readonly movements = computed(() => movementsSince(this.bank().asOf, this.bank().totalEur, this.costs(), this.payments(), this.paidInvoices(), this.bank().asOfAt, this.bank().timeZone || 'Europe/Brussels'));
   readonly currentBankEur = computed(() => this.movements().currentEur);
   readonly outlook = computed(() => cashOutlook(this.currentBankEur(), this.openCostsInclEur(), this.upcomingInclEur(), this.openInvoices().totalEur));
   /** Files per cost id. */
@@ -87,9 +88,10 @@ export class FinanceState {
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const [costs, recurring, balances, orders, customers, payments, attachments] = await Promise.allSettled([
+      const [costs, recurring, balances, orders, customers, payments, attachments, incoming] = await Promise.allSettled([
         this.finance.costs(), this.finance.recurringCosts(), this.finance.bankBalances(), this.sales.orders(),
         this.sales.customers(), this.sourcing.purchasePayments(), this.media.assets({ targetType: 'COMPANY_COST', limit: 500 }),
+        this.sales.incomingPayments(),
       ]);
       if (costs.status === 'fulfilled') this.costs.set(costs.value); else this.ui.toast(messageOf(costs.reason, 'Kosten laden mislukt'), 'err');
       if (recurring.status === 'fulfilled') this.recurring.set(recurring.value);
@@ -99,6 +101,8 @@ export class FinanceState {
       if (payments.status === 'fulfilled') this.payments.set(payments.value);
       else this.ui.toast(messageOf(payments.reason, 'Containerbetalingen laden mislukt; kosten en banksaldo kunnen onvolledig zijn'), 'err');
       if (attachments.status === 'fulfilled') this.attachments.set(attachments.value);
+      if (incoming.status === 'fulfilled') this.incomingPayments.set(incoming.value);
+      else this.ui.toast(messageOf(incoming.reason, 'Ontvangsten laden mislukt; het banksaldo kan onvolledig zijn'), 'err');
     } finally {
       this.loading.set(false);
     }
@@ -309,7 +313,7 @@ export class FinanceState {
    */
   async rollForward(): Promise<void> {
     const moves = this.movements();
-    const latest = this.balances().length ? [...this.balances()].sort((left, right) => right.date.localeCompare(left.date) || (right.id ?? 0) - (left.id ?? 0))[0] : null;
+    const latest = latestBankReading(this.balances());
     if (!latest || !moves.rows.length || this.saving()) return;
     const account = this.bank().accounts.find((row) => row.account === latest.account);
     if (!account) return;
@@ -317,7 +321,7 @@ export class FinanceState {
     this.saving.set(true);
     try {
       const saved = await this.finance.createBankBalance({
-        id: null, account: latest.account, date: this.today, balanceEur: value,
+        id: null, account: latest.account, date: this.today, asOfAt: new Date().toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Brussels', balanceEur: value,
         notes: `Doorgetrokken vanuit het saldo van ${moves.since}: € ${eur(moves.inEur)} erin, € ${eur(moves.outEur)} eruit (${moves.rows.length} ${moves.rows.length === 1 ? 'beweging' : 'bewegingen'}).`,
       });
       this.balances.update((rows) => [saved, ...rows]);

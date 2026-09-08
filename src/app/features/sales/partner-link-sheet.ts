@@ -1,3 +1,4 @@
+import { isPartnerDocument } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { messageOf } from '../../core/api/errors';
 import { PurchaseOrderView, SalesOrder, SalesOrderView, Supplier } from '../../core/api/models';
@@ -17,9 +18,10 @@ import { Sheet, Ui } from '../../shared/ui';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, EurPipe, DateNlPipe],
   template: `
-    <app-sheet title="Aan partnercontainer koppelen" (closed)="closed.emit()">
+    <app-sheet title="Container en soort verkoop" (closed)="closed.emit()">
       <div body class="pl">
-        <p class="pl__intro">Kies de container waarvan {{ order().number }} de goederen aan de partner factureert. Onze winstdeling na de veiling hoort erbij.</p>
+        <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="partner.set(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="partner.set(true)">Partnercontainer</button></div>
+        <p class="pl__intro">{{ partner() ? 'Voorschot voor samen inkopen. De container en winstdeling worden gekoppeld; er geldt geen minimumorder.' : 'Gewone verkoop, met deze container als herkomst. Dit document financiert geen partnercontainer.' }}</p>
         <div class="field">
           <label for="pl-search">Container zoeken</label>
           <input class="input" id="pl-search" type="search" placeholder="Zoek op nummer, naam of leverancier" autocomplete="off"
@@ -43,11 +45,11 @@ import { Sheet, Ui } from '../../shared/ui';
           </ul>
           @if (hidden() > 0) { <p class="muted">Nog {{ hidden() }} meer; zoek gerichter.</p> }
         }
-        <div class="field pl__share">
+        @if (partner()) { <div class="field pl__share">
           <label for="pl-share">Ons deel van de winst na de veiling</label>
           <span class="pl__pct"><input class="input num right" id="pl-share" type="number" min="0" max="100" step="0.5" inputmode="decimal"
                  [value]="sharePct()" (input)="setShare($any($event.target).value)" /><i>%</i></span>
-        </div>
+        </div> }
       </div>
       <div foot style="display:contents">
         <span class="spacer"></span>
@@ -87,6 +89,7 @@ export class PartnerLinkSheet {
   readonly query = signal('');
   readonly chosen = signal<number | null>(null);
   readonly sharePct = signal(50);
+  readonly partner = signal(true);
   private readonly containers = signal<PurchaseOrderView[]>([]);
   private readonly suppliers = signal<Supplier[]>([]);
 
@@ -102,7 +105,8 @@ export class PartnerLinkSheet {
   constructor() {
     queueMicrotask(() => {
       const current = this.order();
-      this.chosen.set(current.partnerPurchaseOrderId ?? null);
+      this.chosen.set(current.partnerPurchaseOrderId ?? current.sourcePurchaseOrderId ?? null);
+      this.partner.set(isPartnerDocument(current) || !current.sourcePurchaseOrderId);
       this.sharePct.set(current.partnerSharePct ?? 50);
       void this.load();
     });
@@ -135,7 +139,9 @@ export class PartnerLinkSheet {
     this.busy.set(true);
     try {
       const view = await this.sales.setPartnerDeal(this.order().id, {
-        purchaseOrderId: container.order.id, sharePct: this.sharePct(), reference: container.order.number,
+        purchaseOrderId: container.order.id, sharePct: this.partner() ? this.sharePct() : null, reference: container.order.number,
+        purpose: this.partner() ? 'PARTNER_ADVANCE' : 'STANDARD',
+        paymentPlan: this.partner() ? 'THIRD_TWO_THIRDS_PRODUCTION' : 'FULL',
       });
       this.ui.toast(`${view.order.number} gekoppeld aan ${container.order.alias || container.order.number}`, 'ok');
       this.linked.emit(view);

@@ -1,3 +1,5 @@
+import { SalesReceipts } from './sales-receipts';
+import { displayedSalesProfit, isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -46,7 +48,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -161,7 +163,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           </div>
 
-          @if (data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+          @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
             <!-- The country's minimum rides with the totals, in view the
                  whole time you build; green the moment it is met. -->
             <div class="hero-min" [class.hero-min--ok]="data.priced.validation.meetsMinimum" role="status">
@@ -716,7 +718,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   }
                 </div>
 
-                <details class="line-internal">
+                @if (isAdvance(data.order)) {
+                  <p class="line-internal__note">Voorschot voor de containerfinanciering. Het resultaat wordt berekend bij de slotafrekening.</p>
+                } @else { <details class="line-internal">
                   <summary class="line-internal__summary">
                     <span class="line-internal__title">
                       <strong>Rendabiliteit per stuk</strong>
@@ -756,7 +760,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                       Vóór orderkorting en vracht; de definitieve winst staat bij Controleren.
                     </p>
                   </div>
-                </details>
+                </details> }
 
               </article>
             }
@@ -970,9 +974,15 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           </div>
           <div class="card__body">
+            <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" />
+            @if (isInvoiceDoc() && !data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+              <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">Factuur e-mailen…</button>
+            }
+            @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
             @if (data.order.partnerPurchaseOrderId) {
               <section class="desk-partner" aria-label="Partnercontainer">
-                <p class="desk-form__group">Partnercontainer</p>
+                <p class="desk-form__group">Partnercontainer · {{ data.order.purpose === 'PARTNER_SETTLEMENT' ? 'slotafrekening' : 'voorschot' }}</p>
+                @if (!isSettlement(data.order)) { <label class="field"><span>Betaalplan van de partner</span><select class="select" [disabled]="!canEdit()" [ngModel]="data.order.paymentPlan || 'THIRD_TWO_THIRDS_PRODUCTION'" (ngModelChange)="patch({ paymentPlan: $event, paymentTerms: $event === 'THIRD_TWO_THIRDS_PRODUCTION' ? '1/3 bij start productie, 2/3 na productie' : 'Volledige betaling' })"><option value="THIRD_TWO_THIRDS_PRODUCTION">1/3 start productie · 2/3 na productie</option><option value="FULL">Volledige betaling</option></select></label> }
                 @if (isSettlement(data.order)) {
                   <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                 } @else {
@@ -987,7 +997,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               </section>
             } @else {
               <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
-                <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Aan partnercontainer koppelen</button></p>
+                <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
             }
             <!-- What is actually in the box, before any figure: the check
                  starts with the order as the customer will read it. -->
@@ -1043,7 +1053,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <span>Goederen</span>
                 <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span>
               </div>
-              @if (data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
+              @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
                 <!-- The minimum is a goods matter, so its line lives here. -->
                 <div class="receipt-min receipt-min--goods">
                   <div class="receipt-min__row">
@@ -1153,8 +1163,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
               <div class="receipt__row receipt__row--total">
                 <span>Totaal
-                  <span class="receipt__profit" [class.receipt__profit--negative]="data.priced.totals.marginEur < 0">
-                    winst {{ data.priced.totals.marginEur >= 0 ? '+' : '' }}{{ data.priced.totals.marginEur | eur: 0 }}
+                  <span class="receipt__profit" [class.receipt__profit--negative]="displayedProfit(data) < 0">
+                    @if (isAdvance(data.order)) { Voorschot = financiering }
+                    @else { {{ isPartnerDocument(data.order) ? 'gerealiseerd resultaat' : 'winst' }} {{ displayedProfit(data) >= 0 ? '+' : '' }}{{ displayedProfit(data) | eur: 0 }} }
                   </span>
                 </span>
                 <span class="num">{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</span>
@@ -1414,11 +1425,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       }
 
       @if (sendSheet()) {
-        <app-sheet title="Offerte versturen" (closed)="sendSheet.set(false)">
+        <app-sheet [title]="isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen'" (closed)="sendSheet.set(false)">
           <div body>
             <p class="small muted" style="margin-bottom:14px">
-              De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken,
-              te tekenen of een wijziging voor te stellen.
+              {{ isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.' }}
             </p>
             <div class="field">
               <label for="send-message">Persoonlijk bericht</label>
@@ -1931,6 +1941,17 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
   `],
 })
 export class SalesEditor {
+  readonly isPartnerDocument = isPartnerDocument;
+  readonly isAdvance = isAdvanceDocument;
+  readonly displayedProfit = displayedSalesProfit;
+  readonly receiptOpenRequest = signal(0);
+  paymentReceived(fresh: SalesOrderView): void {
+    this.view.update((current) => current ? withPaymentState(current, fresh) : fresh);
+    const current = this.view();
+    if (current) this.savedOrder.set(JSON.stringify(current.order));
+    void this.loadHistory(fresh.order.id);
+  }
+
   protected readonly sales = inject(SalesApi);
   protected readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
@@ -1985,8 +2006,9 @@ export class SalesEditor {
       }
       rows.push({ label: 'Gelande kost per stuk', hint: found ? undefined : 'incl. transport en rechten',
         eur: line.landedUnitCost, sum: true });
-      rows.push({ label: 'Netto verkoop', eur: line.netUnitPrice });
-      rows.push({ label: this.marginPerUnit(line) < 0 ? 'Verlies per stuk' : 'Winst per stuk',
+      const advance = this.view()?.order && isAdvanceDocument(this.view()!.order);
+      rows.push({ label: advance ? 'Voorschot per stuk' : 'Netto verkoop', eur: line.netUnitPrice });
+      if (!advance) rows.push({ label: this.marginPerUnit(line) < 0 ? 'Verlies per stuk' : 'Winst per stuk',
         eur: this.marginPerUnit(line), sum: true });
       this.costSheet.set({ title: line.description, source: source ?? null, rows });
     } catch {
@@ -2050,7 +2072,7 @@ export class SalesEditor {
   readonly partnerContainer = signal<PurchaseOrderView | null>(null);
   readonly partnerReference = computed(() => this.partnerContainer()?.order.number ?? null);
   /** Inspection and other costs the container keeps apart from the piece price, per piece, for the settlement preview. */
-  readonly separateUnitEur = computed(() => separateCostPerPiece(this.partnerContainer()?.costing.totals));
+  readonly separateUnitEur = computed(() => this.partnerContainer()?.reconciliation ? 0 : separateCostPerPiece(this.partnerContainer()?.costing.totals));
 
   private readonly partnerContainerLoader = effect(() => {
     const id = this.view()?.order.partnerPurchaseOrderId ?? null;
@@ -2067,6 +2089,11 @@ export class SalesEditor {
    * only without the container does the product card's landed cost step in.
    */
   auctionLines(data: SalesOrderView): AuctionSheetLine[] {
+    const reconciliation = this.partnerContainer()?.reconciliation;
+    if (reconciliation) return reconciliation.lines.filter((line) => line.productId != null && line.unitCostQuantity > 0).map((line) => ({
+      productId: line.productId!, name: line.productName, quantity: line.unitCostQuantity,
+      landedUnitEur: line.forecastExternalEur / line.unitCostQuantity,
+    }));
     const containerCost = new Map((this.partnerContainer()?.costing.lines ?? []).map((line) => [line.productId, line.landedUnitEur] as const));
     return data.priced.lines.map((line) => ({
       productId: line.productId, name: line.description, quantity: line.quantity,
@@ -2087,7 +2114,7 @@ export class SalesEditor {
     return SALES_CHANNELS.find((channel) => channel.code === channelCode(code))?.hint ?? 'Eigen kanaal';
   }
   applyPartner(view: SalesOrderView): void {
-    this.view.set(view);
+    this.adopt(view);
     void this.loadHistory(view.order.id);
   }
 
@@ -2496,12 +2523,15 @@ export class SalesEditor {
     const data = this.view();
     if (!data) return ['De offerte wordt nog geladen'];
     const issues: string[] = [];
-    if (!['CONCEPT', 'VERZONDEN', 'BEKEKEN'].includes(data.order.status)) {
+    const invoice = data.order.docType === 'FACTUUR';
+    if (!(invoice ? ['CONCEPT', 'UITGEREIKT', 'BETAALD'] : ['CONCEPT', 'VERZONDEN', 'BEKEKEN']).includes(data.order.status)) {
       issues.push(`Status ${this.label(data.order.status).toLowerCase()} laat versturen niet toe`);
     }
     const customer = this.customers().find((item) => item.id === data.order.customerId);
     if (!customer) issues.push('Kies een klant');
     else if (!customer.email?.trim()) issues.push(`${customer.company} heeft geen e-mailadres`);
+    // Issued invoices are immutable; the server validates draft issuance and the frozen document.
+    if (invoice) return issues;
     if (!data.order.countryCode) issues.push('Kies een land van levering');
     if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
     if (data.priced.lines.some((line) => line.quantity <= 0)) {
@@ -2563,7 +2593,7 @@ export class SalesEditor {
         && data.order.validUntil < data.order.orderDate) {
       issues.push('Geldig-totdatum ligt vóór de offertedatum');
     }
-    if (!data.priced.validation.meetsMinimum) {
+    if (!isPartnerDocument(data.order) && !data.priced.validation.meetsMinimum) {
       issues.push('De minimum orderwaarde is nog niet bereikt');
     }
     return issues;
@@ -2964,7 +2994,7 @@ export class SalesEditor {
       this.adopt(sent);
       this.sendSheet.set(false);
       void this.work.refresh(true);
-      this.ui.toast('Offerte verstuurd naar de klant');
+      this.ui.toast(`${data.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} verstuurd naar de klant`);
       await this.router.navigate(['/sales', sent.order.id]);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Versturen mislukt'), 'err');

@@ -8,9 +8,9 @@ import {
   PurchaseOrderView,
   QuoteRevision,
   SalesOrderView,
-  Supplier, CompanyCost,
+  Supplier, CompanyCost, IncomingPaymentRow, PartnerFinancing,
 } from '../../core/api/models';
-import { partnerFinancingAnalysis, resultAnalysis } from '../analyses/analysis-metrics';
+import { isPartnerFundingDocument, partnerFinancingAnalysis, resultAnalysis } from '../analyses/analysis-metrics';
 import { FinanceApi } from '../../core/api/finance-api';
 import { PlannerStore } from '../../core/api/planner-api';
 import { SalesApi } from '../../core/api/sales-api';
@@ -21,6 +21,7 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { isWebsiteQuoteRequest } from '../sales/quote-status';
 import { PlannerCards, PlannerMilestone } from './planner-cards';
+import { incomingMoneyTotals, receivableTotals } from '../finance/incoming-money';
 
 /**
  * The operational front door: what needs an answer, the key figures - sales
@@ -135,6 +136,10 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
                 </a>
               }
 
+              @if (receivables().count) {
+                <a class="work-row" routerLink="/sales" [queryParams]="{ scope: 'ALL', tab: 'FACTUUR', payment: 'open' }"><span class="work-row__icon"><app-icon name="sales" [size]="18" /></span><span class="work-row__copy"><b>Betalingen opvolgen</b><small>{{ receivables().totalEur | eur }} nog te ontvangen · {{ receivables().partialCount }} deels betaald</small></span><strong class="work-row__number">{{ receivables().count }}</strong><span class="work-row__chev" aria-hidden="true">›</span></a>
+              }
+
               @if (zeroStockCount()) {
                 <a class="work-row" routerLink="/stock">
                   <span class="work-row__icon"><app-icon name="stock" [size]="18" /></span>
@@ -220,7 +225,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
               <span class="home-kpi__label">Verkooppijplijn</span>
               @if (salesReady()) {
                 <strong>{{ pipelineValue() | eur: 0 }}</strong>
-                <small>{{ openSales().length }} open {{ openSales().length === 1 ? 'offerte' : 'offertes' }}</small>
+                <small>{{ openSales().length }} open reguliere {{ openSales().length === 1 ? 'offerte' : 'offertes' }}</small>
               } @else {
                 <strong>—</strong><small>Nog niet beschikbaar</small>
               }
@@ -257,10 +262,10 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
 
           <a class="home-kpi" routerLink="/analyses/purchasing" [class.home-kpi--dark]="financing().partner.count > 0">
             <span class="home-kpi__icon"><app-icon name="purchase" [size]="17" /></span>
-            <span class="home-kpi__label">Partnercontainers</span>
-            @if (salesReady() && purchasesReady()) {
+            <span class="home-kpi__label">Gerealiseerd partnerresultaat</span>
+            @if (salesReady() && purchasesReady() && partnersReady()) {
               <strong>{{ financing().resultEur | eur: 0 }}</strong>
-              <small>{{ financing().partner.count }} met partner · {{ financing().own.count }} zelf betaald · brengt ons dit op</small>
+              <small>{{ financing().partner.count }} partnercontainers · {{ financing().receivedEur | eur: 0 }} werkelijk ontvangen</small>
               @if (financing().awaitingSettlement) {
                 <em>{{ financing().awaitingSettlement }} {{ financing().awaitingSettlement === 1 ? 'afrekening' : 'afrekeningen' }} nog te maken</em>
               }
@@ -269,6 +274,9 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
             }
             <span class="home-kpi__chev" aria-hidden="true">›</span>
           </a>
+
+          <a class="home-kpi" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="home-kpi__icon"><app-icon name="sales" [size]="17" /></span><span class="home-kpi__label">Ontvangen deze maand</span><strong>{{ incomingReady() ? (incomingMonth().receivedEur | eur: 0) : '—' }}</strong><small>{{ incomingMonth().partnerAdvanceEur | eur: 0 }} partnervoorschotten · kas incl. btw</small><span class="home-kpi__chev">›</span></a>
+          <a class="home-kpi" routerLink="/analyses/purchasing"><span class="home-kpi__icon"><app-icon name="purchase" [size]="17" /></span><span class="home-kpi__label">Eigen kasinleg</span><strong>{{ partnersReady() ? (financing().ownExposureEur | eur: 0) : '—' }}</strong><small>betaald min ontvangsten · {{ financing().openEur | eur: 0 }} nog te ontvangen</small><span class="home-kpi__chev">›</span></a>
 
           <a class="home-kpi" routerLink="/analyses/result" [class.home-kpi--dark]="yearResult().resultEur < 0">
             <span class="home-kpi__icon"><app-icon name="analytics" [size]="17" /></span>
@@ -443,6 +451,10 @@ export class DashboardHome {
 
   readonly website = signal<WebsiteAnalyticsReport | null>(null);
   readonly salesOrders = signal<SalesOrderView[]>([]);
+  readonly incomingPayments = signal<IncomingPaymentRow[]>([]);
+  readonly partnerSummaries = signal<PartnerFinancing[]>([]);
+  readonly incomingReady = signal(false);
+  readonly partnersReady = signal(false);
   readonly purchases = signal<PurchaseOrderView[]>([]);
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly products = signal<Product[]>([]);
@@ -483,7 +495,9 @@ export class DashboardHome {
 
   readonly purchaseAttentionOrders = computed(() => this.purchases()
     .filter((row) => (row.attention?.length ?? 0) > 0));
-  readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders()));
+  readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), [], this.partnerSummaries()));
+  readonly incomingMonth = computed(() => incomingMoneyTotals(this.incomingPayments(), MONTH_START_ISO, TODAY_ISO));
+  readonly receivables = computed(() => receivableTotals(this.salesOrders()));
   readonly costs = signal<CompanyCost[]>([]);
   readonly costsReady = signal(false);
   readonly yearResult = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), { from: YEAR_START, to: TODAY_ISO }));
@@ -493,13 +507,14 @@ export class DashboardHome {
   readonly workGroupCount = computed(() =>
     Number(this.salesActionCount() > 0)
     + Number(this.purchaseAttentionOrders().length > 0)
-    + Number(this.zeroStockCount() > 0) + Number(this.financing().awaitingSettlement > 0)
+    + Number(this.zeroStockCount() > 0) + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0)
     + Number(this.catalogAttention() > 0));
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()
     && this.purchasesReady() && this.productsReady() && this.catalogReady());
 
   readonly openSales = computed(() => this.salesOrders().filter((row) =>
     (row.order.docType ?? 'OFFERTE') === 'OFFERTE'
+    && !isPartnerFundingDocument(row)
     && ['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAAGD'].includes(row.order.status)));
   readonly pipelineValue = computed(() => this.openSales()
     .reduce((sum, row) => sum + row.priced.totals.total, 0));
@@ -607,7 +622,7 @@ export class DashboardHome {
     else this.loading.set(true);
 
     try {
-      const [sales, purchases, revisions, products, families, suppliers, website, costs] = await Promise.allSettled([
+      const [sales, purchases, revisions, products, families, suppliers, website, costs, incoming, partners] = await Promise.allSettled([
         this.sales.orders(),
         this.sourcing.purchaseOrders(),
         this.sales.pendingRevisions(),
@@ -616,6 +631,7 @@ export class DashboardHome {
         this.sourcing.suppliers(),
         this.analytics.websiteReport(7),
         this.finance.costs(),
+        this.sales.incomingPayments(), this.sourcing.partnerFinancings(),
       ] as const);
 
       const warnings: string[] = [];
@@ -632,6 +648,8 @@ export class DashboardHome {
       noteFailure(families, 'websiteproducten');
       noteFailure(suppliers, 'leveranciers');
       noteFailure(website, 'websitebezoek');
+      noteFailure(incoming, 'inkomende betalingen');
+      noteFailure(partners, 'partnerfinanciering');
 
       if (sales.status === 'fulfilled') {
         this.salesOrders.set(sales.value);
@@ -652,6 +670,8 @@ export class DashboardHome {
       if (suppliers.status === 'fulfilled') this.suppliers.set(suppliers.value);
       if (website.status === 'fulfilled') this.website.set(website.value);
       if (costs.status === 'fulfilled') { this.costs.set(costs.value); this.costsReady.set(true); }
+      if (incoming.status === 'fulfilled') { this.incomingPayments.set(incoming.value); this.incomingReady.set(true); }
+      if (partners.status === 'fulfilled') { this.partnerSummaries.set(partners.value); this.partnersReady.set(true); }
 
       const currentProducts = products.status === 'fulfilled' ? products.value : this.products();
       if (families.status === 'fulfilled') {

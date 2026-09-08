@@ -15,11 +15,11 @@ test('an auction line recovers the financed cost and shares the profit above the
   assert.equal(auctionLineSplit(40, 5000, 75, 50, 50).ours, 1500 + 1000);
 });
 
-test('a loss at auction reduces our part and never turns the line negative', () => {
+test('a loss at auction stays negative so profitable products do not hide the loss', () => {
   const loss = auctionLineSplit(10, 400, 50, 0, 50);
   assert.equal(loss.profit, -100);
   assert.equal(loss.profitPart, -50);
-  assert.equal(loss.ours, 0);
+  assert.equal(loss.ours, -50);
   const financedLoss = auctionLineSplit(10, 400, 50, 100, 50);
   assert.equal(financedLoss.ours, 500 - 50, 'the financed cost comes back, minus our share of the loss');
   assert.deepEqual(auctionLineSplit(0, 100, 5, 100, 50), { cost: 0, proceeds: 100, profit: 100, costPart: 0, profitPart: 50, ours: 50 });
@@ -27,7 +27,7 @@ test('a loss at auction reduces our part and never turns the line negative', () 
 
 test('auction totals add the lines up', () => {
   const totals = auctionTotals([auctionLineSplit(40, 5000, 75, 0, 50), auctionLineSplit(10, 400, 50, 0, 50)]);
-  assert.deepEqual(totals, { cost: 3500, proceeds: 5400, profit: 1900, costPart: 0, profitPart: 950, ours: 1000 });
+  assert.deepEqual(totals, { cost: 3500, proceeds: 5400, profit: 1900, costPart: 0, profitPart: 950, ours: 950 });
 });
 
 test('a settlement invoice is recognised by its flag, or by the old single profit-share line', () => {

@@ -47,7 +47,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
             </div>
             <div class="field">
               <span class="label">Partner betaalt vooraf</span>
-              <div class="po-partner__chips" role="group" aria-label="Deel van de kost vooraf">
+              <div class="po-partner__chips" role="group" aria-label="Totaal gefinancierd deel">
                 <button type="button" class="fin-chip" [class.on]="draftCostPct() === 100" (click)="draftCostPct.set(100)">100 %</button>
                 <button type="button" class="fin-chip" [class.on]="draftCostPct() === 50" (click)="draftCostPct.set(50)">50 %</button>
                 <button type="button" class="fin-chip" [class.on]="draftCostPct() === 0" (click)="draftCostPct.set(0)">0 %</button>
@@ -57,7 +57,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
               <span class="hint">Van de gelande kost{{ landedTotalEur() ? ': ' + (landedTotalEur() * draftCostPct() / 100 | eur: 0) + ' vooraf, ' + (landedTotalEur() * (100 - draftCostPct()) / 100 | eur: 0) + ' eigen geld tot de veiling' : '' }}.</span>
             </div>
             <div class="field">
-              <label for="po-partner-share">Ons deel van de winst na de veiling</label>
+              <label for="po-partner-share">Ons deel van het veilingresultaat na de veiling</label>
               <span class="po-partner__pct"><input class="input num right" id="po-partner-share" type="number" min="0" max="100" step="0.5" inputmode="decimal"
                      [ngModel]="draftSharePct()" (ngModelChange)="draftSharePct.set(clamp($event))" /><i>%</i></span>
             </div>
@@ -71,10 +71,10 @@ import { STATUS_LABEL } from '../sales/quote-status';
       } @else {
           <dl class="po-partner__facts">
             <div><dt>Partner</dt><dd>{{ partnerName() || '—' }}</dd></div>
-            <div><dt>Betaalt vooraf</dt><dd>{{ order().partnerCostPct ?? 100 | num }} % van de kost{{ landedTotalEur() ? ' · ' + (landedTotalEur() * (order().partnerCostPct ?? 100) / 100 | eur: 0) : '' }}</dd></div>
-            <div><dt>Ons deel van de winst</dt><dd>{{ order().partnerSharePct ?? 50 | num }} %</dd></div>
+            <div><dt>Financiert in totaal</dt><dd>{{ order().partnerCostPct ?? 100 | num }} % van de kost{{ landedTotalEur() ? ' · ' + (landedTotalEur() * (order().partnerCostPct ?? 100) / 100 | eur: 0) : '' }}</dd></div>
+            <div><dt>Ons deel van het veilingresultaat</dt><dd>{{ order().partnerSharePct ?? 50 | num }} %</dd></div>
           </dl>
-          <p class="po-partner__lead">Na de veiling volgt de veilingafrekening: de kost die wij voorschoten terug, plus ons deel van de winst.</p>
+          <p class="po-partner__lead">Het betaalplan staat los van het financieringspercentage: standaard 1/3 bij start productie en 2/3 na productie. Na de veiling volgt de veilingafrekening: de kost die wij voorschoten terug, plus ons deel van de winst.</p>
 
         @if (docs().length) {
           <ul class="po-partner__docs">
@@ -93,7 +93,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
 
         <div class="po-partner__buttons">
           @if (!costDocument()) {
-            <button class="btn btn--primary btn--sm" type="button" [disabled]="!canQuote()" (click)="quote.emit()">Verkoopofferte voor {{ partnerName() || 'de partner' }}</button>
+            <button class="btn btn--primary btn--sm" type="button" [disabled]="!canQuote()" (click)="quote.emit()">Voorschotofferte voor {{ partnerName() || 'de partner' }}</button>
           } @else if (canAuction()) {
             <button class="btn btn--primary btn--sm" type="button" (click)="auction.emit()">Veilingafrekening</button>
           }

@@ -1,3 +1,4 @@
+import { PurchaseSalesLinks } from './purchase-sales-links';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -58,7 +59,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -333,7 +334,7 @@ type PurchaseWorkspaceSectionId =
 
         <div class="view-layout erp-workspace__layout">
           <main class="view-main erp-workspace__main">
-            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
+            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (unlink)="unlinkPartnerDoc($event)" />
             <section class="card products-card erp-workspace__section"
                      id="purchase-products-section" tabindex="-1"
                      aria-labelledby="purchase-products-title">
@@ -658,7 +659,8 @@ type PurchaseWorkspaceSectionId =
               <p>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</p>
               <div class="purchase-payment-streams">
               <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" />
-              <app-purchase-partner-payments [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur" />
+              <app-purchase-sales-links [documents]="relatedSalesDocs()" />
+              <app-purchase-partner-payments (changed)="reloadPartnerDocs()" [order]="data.order" [docs]="partnerDocs()" [landedTotalEur]="data.reconciliation?.totals.forecastExternalEur ?? ((data.costing.totals.totalWithSeparateCostsEur ?? data.costing.totals.totalEur) - (data.costing.totals.extraRevenueEur ?? 0))" />
               <div class="pay-stream">
                 <div class="pay-stream__head">
                   <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht' : 'de goederen' }}</small></span>
@@ -808,7 +810,7 @@ type PurchaseWorkspaceSectionId =
               </div>
             </section>
             @if (quoteOpen()) {
-              <app-purchase-quote-sheet [order]="data.order" [lines]="quoteLinesOf(data)" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
+              <app-purchase-quote-sheet [reconciliation]="data.reconciliation" [order]="data.order" [lines]="quoteLinesOf(data)" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
             }
             @if (partnerSheetOpen()) {
               <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerDocs()[0]?.order?.partnerSharePct ?? null" (closed)="partnerSheetOpen.set(false)" (linked)="reloadPartnerDocs()" />
@@ -1167,6 +1169,7 @@ export class PurchaseView {
   readonly documents = signal<PurchaseDocument[] | null>(null);
   /** Sales documents of a partner who co-orders this container at our landed cost. */
   readonly partnerDocs = signal<SalesOrderView[]>([]);
+  readonly relatedSalesDocs = signal<SalesOrderView[]>([]);
   /** The partner behind those documents, by company name. */
   readonly partnerCompany = signal('');
   readonly partnerSheetOpen = signal(false);
@@ -1174,10 +1177,15 @@ export class PurchaseView {
   readonly partnerCustomer = signal<Customer | null>(null);
   /** The container's products as they appear on the partner's auction statement. */
   /** Inspection and other costs kept apart from the piece price, per piece, for the settlement preview. */
-  readonly separateUnitEur = computed(() => separateCostPerPiece(this.view()?.costing.totals));
-  readonly auctionLines = computed<AuctionSheetLine[]>(() => (this.view()?.costing.lines ?? []).map((line) => ({
-    productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur,
-  })));
+  readonly separateUnitEur = computed(() => this.view()?.reconciliation ? 0 : separateCostPerPiece(this.view()?.costing.totals));
+  readonly auctionLines = computed<AuctionSheetLine[]>(() => {
+    const reconciliation = this.view()?.reconciliation;
+    if (reconciliation) return reconciliation.lines.filter((line) => line.productId != null && line.unitCostQuantity > 0).map((line) => ({
+      productId: line.productId!, name: line.productName, quantity: line.unitCostQuantity,
+      landedUnitEur: line.forecastExternalEur / line.unitCostQuantity,
+    }));
+    return (this.view()?.costing.lines ?? []).map((line) => ({ productId: line.productId, name: line.productName, quantity: line.quantity, landedUnitEur: line.landedUnitEur }));
+  });
   readonly auctionSourceId = computed(() => this.partnerDocs().find((doc) => !isSettlementInvoice(doc.order))?.order.id ?? null);
   readonly auctionCostShare = computed(() => this.auctionSourceId() === null
     ? 100 : Math.min(100, Math.max(0, 100 - (this.partnerCustomer()?.partnerCostPct ?? 100))));
@@ -1185,7 +1193,9 @@ export class PurchaseView {
 
   private async loadPartnerDocs(id: number): Promise<void> {
     try {
-      const deals = (await this.sales.orders()).filter((view) => view.order.partnerPurchaseOrderId === id);
+      const all = await this.sales.orders();
+      this.relatedSalesDocs.set(all.filter((view) => view.order.partnerPurchaseOrderId === id || view.order.sourcePurchaseOrderId === id));
+      const deals = all.filter((view) => view.order.partnerPurchaseOrderId === id && view.order.purpose !== 'STANDARD');
       this.partnerDocs.set(deals);
       const customerId = deals[0]?.order.customerId;
       if (!customerId) { this.partnerCompany.set(''); this.partnerCustomer.set(null); return; }

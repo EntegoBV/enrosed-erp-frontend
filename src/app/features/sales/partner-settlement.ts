@@ -1,4 +1,4 @@
-import type { LandedCost } from '../../core/api/models';
+import type { LandedCost, SalesPurpose } from '../../core/api/models';
 
 /**
  * The sums behind a partner container's auction settlement: per product,
@@ -14,7 +14,7 @@ export interface AuctionLineSplit {
   costPart: number;
   /** Our share of the profit; negative when the auction fell short. */
   profitPart: number;
-  /** What goes on the invoice for this product: never below zero. */
+  /** Net settlement contribution; a loss remains negative and offsets profitable products. */
   ours: number;
 }
 
@@ -34,7 +34,7 @@ export function auctionLineSplit(
   const profit = round2(proceeds - cost);
   const costPart = round2(cost * pct(costSharePct) / 100);
   const profitPart = round2(profit * pct(profitSharePct) / 100);
-  return { cost, proceeds: round2(proceeds), profit, costPart, profitPart, ours: Math.max(0, round2(costPart + profitPart)) };
+  return { cost, proceeds: round2(proceeds), profit, costPart, profitPart, ours: round2(costPart + profitPart) };
 }
 
 export function auctionTotals(splits: readonly AuctionLineSplit[]): AuctionLineSplit {
@@ -55,12 +55,15 @@ export const SETTLEMENT_LINE_PREFIX = 'Winstdeling';
 /** A document that is a partner-deal settlement: flagged by the server, or an older one-line settlement. */
 export function isSettlementInvoice(order: {
   docType?: string | null;
+  purpose?: SalesPurpose | null;
   partnerPurchaseOrderId?: number | null;
   partnerSettlement?: boolean | null;
   lines?: readonly unknown[] | null;
   extraLines?: readonly { description: string }[] | null;
 }): boolean {
-  if (order.docType !== 'FACTUUR' || !order.partnerPurchaseOrderId) return false;
+  if (order.docType !== 'FACTUUR') return false;
+  if (order.purpose === 'PARTNER_SETTLEMENT') return true;
+  if (order.purpose === 'STANDARD' || !order.partnerPurchaseOrderId) return false;
   if (order.partnerSettlement) return true;
   if ((order.lines ?? []).length > 0) return false;
   return (order.extraLines ?? []).some((line) => (line.description ?? '').startsWith(SETTLEMENT_LINE_PREFIX));
@@ -80,7 +83,7 @@ export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice
 export function salesDocumentKind(
   order: Parameters<typeof isSettlementInvoice>[0],
 ): 'Offerte' | 'Verkoopfactuur' | 'Voorschotofferte' | 'Voorschotfactuur' | 'Slotfactuur' {
-  if (!order.partnerPurchaseOrderId) return order.docType === 'FACTUUR' ? 'Verkoopfactuur' : 'Offerte';
+  if (order.purpose === 'STANDARD' || (!order.partnerPurchaseOrderId && !order.purpose?.startsWith('PARTNER_'))) return order.docType === 'FACTUUR' ? 'Verkoopfactuur' : 'Offerte';
   if (order.docType !== 'FACTUUR') return 'Voorschotofferte';
   return isSettlementInvoice(order) ? 'Slotfactuur' : 'Voorschotfactuur';
 }
