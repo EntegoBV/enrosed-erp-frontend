@@ -22,14 +22,13 @@ import {
   rowSwipeDecision,
 } from '../../shared/row-actions';
 
-/** Quotes and invoices are two piles; the archive is the drawer under both. */
-type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
+import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-navigation';
 
 @Component({
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation],
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
@@ -77,36 +76,9 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
         </div>
       }
 
-      <!-- Offerte or factuur: two piles of a different nature; the tab
-           keeps each pile clean instead of mixing claim and proposal. -->
-      <div class="doc-tabs" role="group" aria-label="Soort verkoop">
-        <button type="button" [class.doc-tabs__active]="businessScope() === 'STANDARD'" (click)="businessScope.set('STANDARD')">Reguliere verkoop</button>
-        <button type="button" [class.doc-tabs__active]="businessScope() === 'PARTNER'" (click)="businessScope.set('PARTNER')">Partnercontainers</button>
-        <button type="button" [class.doc-tabs__active]="businessScope() === 'ALL'" (click)="businessScope.set('ALL')">Alles</button>
-      </div>
-      <div class="doc-tabs" role="tablist" aria-label="Documenttype">
-        <button type="button" role="tab" [attr.aria-selected]="docTab() === 'OFFERTE'"
-                [class.doc-tabs__active]="docTab() === 'OFFERTE'" (click)="switchTab('OFFERTE')">
-          Offertes <b>{{ docCount('OFFERTE') }}</b>
-        </button>
-        <button type="button" role="tab" [attr.aria-selected]="docTab() === 'FACTUUR'"
-                [class.doc-tabs__active]="docTab() === 'FACTUUR'" (click)="switchTab('FACTUUR')">
-          Facturen <b>{{ docCount('FACTUUR') }}</b>
-        </button>
-        <button type="button" role="tab" [attr.aria-selected]="docTab() === 'ARCHIEF'"
-                [class.doc-tabs__active]="docTab() === 'ARCHIEF'" (click)="switchTab('ARCHIEF')"
-                title="Gearchiveerde offertes en facturen">
-          Archief <b>{{ docCount('ARCHIEF') }}</b>
-        </button>
-      </div>
-
-      @if (docTab() === 'FACTUUR') {
-        <div class="doc-tabs" role="group" aria-label="Betalingsstatus">
-          <button type="button" [class.doc-tabs__active]="!outstandingOnly()" (click)="outstandingOnly.set(false)">Alle facturen</button>
-          <button type="button" [class.doc-tabs__active]="outstandingOnly()" (click)="outstandingOnly.set(true)">Nog te ontvangen</button>
-        </div>
-        @if (outstandingOnly()) { <p class="tiny muted">Open bedragen op uitgereikte facturen, inclusief gearchiveerde facturen.</p> }
-      }
+      <app-sales-document-navigation [scope]="businessScope()" [tab]="docTab()"
+        [counts]="documentCounts()" [loading]="loading()" [outstandingOnly]="outstandingOnly()"
+        (scopeChange)="switchScope($event)" (tabChange)="switchTab($event)" (outstandingChange)="filterOutstanding($event)" />
 
       <!-- One quiet row: search grows, two pills open native pickers,
            the count sits at the end - no card, no grid of chips. -->
@@ -118,14 +90,14 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
             <path d="m16 16 4 4"></path>
           </svg>
           <input class="input" id="sales-search" type="search" inputmode="search"
-                 autocomplete="off" placeholder="Zoek klant of nummer…"
+                 autocomplete="off" aria-label="Zoek klant of documentnummer" placeholder="Zoek klant of nummer…"
                  [ngModel]="query()" (ngModelChange)="query.set($event)" />
           @if (query()) {
             <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
                     (click)="query.set('')">×</button>
           }
         </div>
-        <button class="filter-toggle" type="button"
+        <button class="filter-toggle" type="button" aria-label="Filters tonen of verbergen"
                 [class.filter-toggle--active]="activeFilterCount() > 0"
                 [attr.aria-expanded]="filtersOpen()"
                 (click)="filtersOpen.set(!filtersOpen())">
@@ -173,7 +145,7 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
         }
       </div>
 
-      <div class="card">
+      <div class="card" id="sales-document-results" role="tabpanel" [attr.aria-labelledby]="'sales-tab-' + docTab()" [attr.aria-busy]="loading()" tabindex="0">
         <div class="list">
           @for (row of rows(); track row.order.id) {
             <!-- Drag left for the bin, drag right for the archive; hold the
@@ -296,10 +268,11 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
             } @else {
               <div class="empty">
                 <div class="empty__icon">▤</div>
-                <div class="empty__title">Geen orders</div>
-                <button class="btn btn--primary" type="button" (click)="startNew()">
+                <div class="empty__title">{{ docTab() === 'OFFERTE' ? 'Nog geen offertes' : docTab() === 'FACTUUR' ? 'Nog geen facturen' : 'Het archief is leeg' }}</div>
+                <p class="muted">{{ businessScope() === 'PARTNER' ? 'Partnerdocumenten maak je vanuit de betreffende inkoopcontainer.' : 'Hier verschijnen de documenten voor de gekozen soort verkoop.' }}</p>
+                @if (businessScope() === 'PARTNER') { <a class="btn btn--primary" routerLink="/purchasing">Naar partnercontainers</a> } @else if (docTab() !== 'ARCHIEF') { <button class="btn btn--primary" type="button" (click)="startNew()">
                   Nieuwe order
-                </button>
+                </button> }
               </div>
             }
           }
@@ -467,15 +440,6 @@ type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
     .website-request-item__icon { border:1px solid var(--rose-line);background:#fff!important;
       color:var(--rose-dark);font-weight:850 }
 
-    .doc-tabs { display:grid;grid-template-columns:1fr 1fr .8fr;gap:3px;margin-bottom:10px;padding:4px;
-      border:1px solid var(--line);border-radius:14px;background:var(--surface) }
-    .doc-tabs button { min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:7px;
-      border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;
-      font-weight:680;cursor:pointer }
-    .doc-tabs button b { min-width:20px;padding:1px 6px;border-radius:999px;background:var(--surface-2);
-      font-size:10.5px;font-weight:750 }
-    .doc-tabs__active { background:var(--rose-soft)!important;color:var(--rose-dark)!important }
-    .doc-tabs__active b { background:var(--surface)!important }
     .doc-choice { margin-bottom:12px }
     .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px;padding:12px;
       border:1px solid var(--line);border-radius:var(--r);background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
@@ -735,7 +699,7 @@ export class SalesList {
 
   readonly filter = signal<QuoteStatus | ''>('');
   readonly docTab = signal<SalesTab>('OFFERTE');
-  readonly businessScope = signal<'ALL' | 'STANDARD' | 'PARTNER'>('STANDARD');
+  readonly businessScope = signal<SalesScope>('STANDARD');
   readonly outstandingOnly = signal(false);
   readonly partner = isPartnerDocument;
   readonly receivable = invoiceReceivable;
@@ -772,7 +736,26 @@ export class SalesList {
     this.websiteOnly.set(false);
     this.outstandingOnly.set(false);
     this.openRow.set(null);
+    this.rememberNavigation();
   }
+
+  switchScope(scope: SalesScope): void {
+    this.businessScope.set(scope);
+    this.websiteOnly.set(false);
+    this.openRow.set(null);
+    this.rememberNavigation();
+  }
+
+  filterOutstanding(value: boolean): void {
+    this.outstandingOnly.set(value);
+    this.rememberNavigation();
+  }
+
+  private rememberNavigation(): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { scope: this.businessScope(), tab: this.docTab(), payment: this.outstandingOnly() ? 'open' : null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  readonly documentCounts = computed(() => ({ OFFERTE: this.docCount('OFFERTE'), FACTUUR: this.docCount('FACTUUR'), ARCHIEF: this.docCount('ARCHIEF') }));
 
   docCount(tab: SalesTab): number {
     return this.rowsByDocument()[tab].length;
@@ -966,6 +949,7 @@ export class SalesList {
     this.customerFilter.set('');
     this.websiteOnly.set(false);
     this.outstandingOnly.set(false);
+    this.rememberNavigation();
   }
 
   statusCount(status: QuoteStatus | ''): number {
