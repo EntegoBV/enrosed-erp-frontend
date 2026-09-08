@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -94,17 +94,9 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
                 }
 
                 <div class="cat-card__actions">
-                  <label class="btn btn--primary btn--sm cat-upload" [class.btn--disabled]="busyId() !== null">
+                  <button class="btn btn--primary btn--sm" type="button" [disabled]="busyId() !== null" (click)="choosing.set(category)">
                     {{ busyId() === category.id ? 'Bezig…' : 'Foto toevoegen' }}
-                    <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" [disabled]="busyId() !== null"
-                           (change)="upload(category, $event)" />
-                  </label>
-                  <button class="btn btn--sm" type="button" [disabled]="busyId() !== null" (click)="libraryFor.set(category)">Uit bibliotheek</button>
-                  @if (websitePhoto(category); as suggestion) {
-                    <button class="btn btn--sm" type="button" [disabled]="busyId() !== null"
-                            [title]="suggestion.url" (click)="importFromWebsite(category, suggestion.url)">Van enrosed.com</button>
-                  }
-                  <button class="btn btn--sm btn--quiet" type="button" [disabled]="busyId() !== null" (click)="askUrl(category)">Via webadres</button>
+                  </button>
                 </div>
               </div>
             </article>
@@ -118,6 +110,34 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
         </div>
       }
     </div>
+
+    <input class="cat-file" #catFile type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden (change)="uploadPicked($event)" />
+
+    @if (choosing(); as category) {
+      <app-sheet [title]="'Foto toevoegen · ' + category.name" (closed)="choosing.set(null)">
+        <div body class="cat-choice">
+          <p class="small muted">Waar komt de foto vandaan?</p>
+          <button class="cat-choice__option" type="button" (click)="chooseDevice(category)">
+            <i aria-hidden="true">⇪</i><span><b>Van dit apparaat</b><small>Een bestand van je computer of telefoon</small></span>
+          </button>
+          <button class="cat-choice__option" type="button" (click)="chooseLibrary(category)">
+            <i aria-hidden="true">▤</i><span><b>Uit de bibliotheek</b><small>Foto’s die al in Documenten &amp; media staan, ook meerdere tegelijk</small></span>
+          </button>
+          @if (websitePhoto(category); as suggestion) {
+            <button class="cat-choice__option" type="button" [title]="suggestion.url" (click)="chooseWebsite(category, suggestion.url)">
+              <i aria-hidden="true">↗</i><span><b>Van enrosed.com</b><small>De collectiefoto die de website al toont</small></span>
+            </button>
+          }
+          <button class="cat-choice__option" type="button" (click)="chooseUrl(category)">
+            <i aria-hidden="true">⌘</i><span><b>Via webadres</b><small>Plak het adres van een foto op enrosed.com</small></span>
+          </button>
+        </div>
+        <div foot style="display:contents">
+          <span class="spacer"></span>
+          <button class="btn" type="button" (click)="choosing.set(null)">Annuleren</button>
+        </div>
+      </app-sheet>
+    }
 
     @if (urlPrompt(); as prompt) {
       <app-sheet [title]="'Foto van enrosed.com · ' + prompt.category.name" (closed)="urlPrompt.set(null)">
@@ -143,6 +163,13 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
     }
   `,
   styles: [`
+    .cat-choice { display: grid; gap: 8px; }
+    .cat-choice__option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+    .cat-choice__option:hover { border-color: var(--rose-line); background: var(--rose-soft); }
+    .cat-choice__option i { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 10px; background: var(--surface-2); color: var(--rose); font-size: 15px; font-style: normal; }
+    .cat-choice__option span { display: grid; gap: 2px; min-width: 0; }
+    .cat-choice__option b { font-size: 13.5px; }
+    .cat-choice__option small { color: var(--muted); font-size: 11.5px; }
     :host{display:block}
     .cat-intro{margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.5;max-width:720px}
     .cat-intro b{color:var(--ink)}
@@ -238,6 +265,42 @@ export class CategoriesPage {
 
   /** Which category is choosing from the media library right now. */
   readonly libraryFor = signal<Category | null>(null);
+  /** Which category is being asked where its new photo comes from. */
+  readonly choosing = signal<Category | null>(null);
+  /** The category a file from this device is meant for, while the picker is open. */
+  private uploadFor: Category | null = null;
+  private readonly fileInput = viewChild.required<ElementRef<HTMLInputElement>>('catFile');
+
+  chooseDevice(category: Category): void {
+    this.choosing.set(null);
+    this.uploadFor = category;
+    const input = this.fileInput().nativeElement;
+    input.value = '';
+    input.click();
+  }
+
+  chooseLibrary(category: Category): void {
+    this.choosing.set(null);
+    this.libraryFor.set(category);
+  }
+
+  chooseWebsite(category: Category, url: string): void {
+    this.choosing.set(null);
+    void this.importFromWebsite(category, url);
+  }
+
+  chooseUrl(category: Category): void {
+    this.choosing.set(null);
+    this.askUrl(category);
+  }
+
+  /** The device file arrives on the page's one input; it goes to the category that asked for it. */
+  async uploadPicked(event: Event): Promise<void> {
+    const category = this.uploadFor;
+    this.uploadFor = null;
+    if (!category) return;
+    await this.upload(category, event);
+  }
 
   /** Pictures that already live in the media library become this category's photos too. */
   async addFromLibrary(category: Category, assets: MediaAssetSummary[]): Promise<void> {
