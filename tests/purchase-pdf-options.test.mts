@@ -5,11 +5,11 @@ import {
   purchasePdfQuery,
 } from '../src/app/core/api/purchase-pdf-options.ts';
 
-test('fixed landscape preset preserves the existing output', () => {
+test('the landscape preset is the internal calculation with every cost column', () => {
   assert.deepEqual(normalizePurchasePdfOptions(), {
     layout: 'LANDSCAPE',
     audience: undefined,
-    showRevenue: false,
+    showRevenue: true,
     showSupplier: true,
     showPrices: true,
     includeUnitPrice: true,

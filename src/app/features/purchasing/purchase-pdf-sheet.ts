@@ -246,8 +246,8 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER';
                   </span>
                   <span class="choice-copy">
                     <span class="choice-kicker">A4 horizontaal</span>
-                    <strong>Breed overzicht</strong>
-                    <small>Vaste indeling met extra ruimte voor lange productregels.</small>
+                    <strong>Interne calculatie</strong>
+                    <small>Voor intern gebruik: per regel goederen, vracht, rechten, Enrosed kost, inspectie en geland per stuk.</small>
                   </span>
                   <span class="choice-action">
                     {{ busyChoice() === 'LANDSCAPE' ? 'Maken…' : 'Download' }}
@@ -372,7 +372,7 @@ export class PurchasePdfSheet {
   download(choice: 'SUPPLIER' | 'LANDSCAPE'): Promise<void> {
     return this.downloadPdf(choice, choice === 'SUPPLIER'
       ? { layout: 'PORTRAIT', audience: 'SUPPLIER' }
-      : { layout: 'LANDSCAPE', audience: 'STANDARD' });
+      : { layout: 'LANDSCAPE', audience: 'STANDARD', showRevenue: true });
   }
 
   private async downloadPdf(choice: PurchasePdfChoice, options: PurchasePdfOptions): Promise<void> {

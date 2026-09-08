@@ -75,7 +75,8 @@ export function normalizePurchasePdfOptions(
   return {
     layout,
     audience,
-    showRevenue: options.showRevenue ?? false,
+    /* Landscape is the internal calculation: every cost column, unless a caller says otherwise. */
+    showRevenue: options.showRevenue ?? layout === 'LANDSCAPE',
     showSupplier,
     showPrices,
     includeUnitPrice: standardPortrait
