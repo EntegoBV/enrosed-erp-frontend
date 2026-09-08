@@ -104,19 +104,22 @@ export function monthlyEquivalentEur(definition: Pick<RecurringCost, 'amountExcl
 export interface RecurringSummary {
   activeCount: number;
   pausedCount: number;
-  /** Every active definition, weighed to a year, excluding VAT. */
+  endedCount: number;
+  /** Every active, unfinished definition, weighed to a year, excluding VAT. */
   yearlyExclEur: number;
   monthlyExclEur: number;
   yearlyInclEur: number;
 }
 
 export function recurringSummary(definitions: readonly RecurringCost[]): RecurringSummary {
-  const active = definitions.filter((definition) => definition.active);
+  const active = definitions.filter((definition) => definition.active && !(definition.nextDate === null && definition.lastBookedOn));
+  const pausedCount = definitions.filter((definition) => !definition.active).length;
   const yearlyExclEur = round2(active.reduce((sum, definition) => sum + yearlyEur(definition), 0));
   const yearlyInclEur = round2(active.reduce((sum, definition) => sum + inclOf(definition) * perYear(definition.interval), 0));
   return {
     activeCount: active.length,
-    pausedCount: definitions.length - active.length,
+    pausedCount,
+    endedCount: definitions.length - active.length - pausedCount,
     yearlyExclEur,
     monthlyExclEur: round2(yearlyExclEur / 12),
     yearlyInclEur,
@@ -194,15 +197,24 @@ export function latestBankReading(balances: readonly BankBalance[]): BankBalance
   return orderedBankReadings(balances).at(-1) ?? null;
 }
 
+/** Same identity rule as bank reconciliation; labels remain human-readable. */
+function bankAccountIdentity(value: string): string {
+  const key = value.trim().replace(/\s+/g, ' ').toUpperCase();
+  return /^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{11,34}$/.test(key) ? key.replace(/ /g, '') : key;
+}
+
 export function bankOverview(balances: readonly BankBalance[]): BankOverview {
-  const ordered = orderedBankReadings(balances);
+  const ordered = orderedBankReadings(balances.filter(row => !!bankAccountIdentity(row.account)));
   const perAccount = new Map<string, BankBalance[]>();
-  for (const row of ordered) perAccount.set(row.account, [...(perAccount.get(row.account) ?? []), row]);
-  const accounts: AccountBalance[] = [...perAccount.entries()].map(([account, rows]) => {
+  for (const row of ordered) {
+    const key = bankAccountIdentity(row.account);
+    perAccount.set(key, [...(perAccount.get(key) ?? []), row]);
+  }
+  const accounts: AccountBalance[] = [...perAccount.values()].map((rows) => {
     const latest = rows[rows.length - 1];
     const previous = rows.length > 1 ? rows[rows.length - 2] : null;
     return {
-      account,
+      account: latest.account.trim().replace(/\s+/g, ' '),
       date: latest.date,
       balanceEur: finite(latest.balanceEur),
       previousEur: previous ? finite(previous.balanceEur) : null,
@@ -216,7 +228,7 @@ export function bankOverview(balances: readonly BankBalance[]): BankOverview {
   let cursor = 0;
   for (const date of dates) {
     while (cursor < ordered.length && ordered[cursor].date <= date) {
-      running.set(ordered[cursor].account, finite(ordered[cursor].balanceEur));
+      running.set(bankAccountIdentity(ordered[cursor].account), finite(ordered[cursor].balanceEur));
       cursor += 1;
     }
     values.push(round2([...running.values()].reduce((sum, value) => sum + value, 0)));

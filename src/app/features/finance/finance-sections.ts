@@ -6,18 +6,18 @@ export type FinanceView = 'overview' | 'costs' | 'open' | 'recurring' | 'bank' |
 export interface FinanceSection {
   id: FinanceView;
   label: string;
-  /** Fits under a number in the phone pill. */
+  /** Compact navigation label. */
   short: string;
   hint: string;
   icon: string;
 }
 
 export const FINANCE_SECTIONS: readonly FinanceSection[] = [
-  { id: 'overview', label: 'Overzicht', short: 'Overzicht', hint: 'Bank, open, komend en het resultaat', icon: 'home' },
+  { id: 'overview', label: 'Overzicht', short: 'Overzicht', hint: 'Je saldo, wat nog betaald moet worden en wat je nog ontvangt', icon: 'home' },
   { id: 'costs', label: 'Kosten', short: 'Kosten', hint: 'Bedrijfskosten en gekoppelde containerbetalingen, per maand', icon: 'exchange' },
-  { id: 'open', label: 'Openstaand', short: 'Open', hint: 'Nog te betalen, oudste eerst', icon: 'bell' },
-  { id: 'recurring', label: 'Vaste kosten', short: 'Vast', hint: 'Huur, boekhouder, software: automatisch geboekt', icon: 'activity' },
-  { id: 'bank', label: 'Banksaldo', short: 'Bank', hint: 'Wat op de rekeningen staat en waar dat heen gaat', icon: 'stock' },
+  { id: 'open', label: 'Te betalen', short: 'Te betalen', hint: 'Open bedrijfskosten, van oud naar nieuw', icon: 'bell' },
+  { id: 'recurring', label: 'Vaste kosten', short: 'Vaste kosten', hint: 'Huur, boekhouder, software: automatisch geboekt', icon: 'activity' },
+  { id: 'bank', label: 'Bank & betalingen', short: 'Bank', hint: 'Noteer geld in en uit, koppel factuurbetalingen en controleer je saldo', icon: 'stock' },
   { id: 'analysis', label: 'Analyse', short: 'Analyse', hint: 'Per categorie, per maand, per kanaal', icon: 'analytics' },
 ];
 

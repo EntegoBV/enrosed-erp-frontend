@@ -62,6 +62,17 @@ test('a definition weighs into a year and a month', () => {
   assert.equal(summary.yearlyInclEur, 12462);
 });
 
+test('completed schedules do not inflate active recurring costs or count as paused', () => {
+  const summary = recurringSummary([
+    definition(),
+    definition({ id: 2, name: 'Afgeronde verzekering', amountExclEur: 1200, interval: 'YEARLY', nextDate: null, lastBookedOn: '2026-01-31', endDate: '2026-01-31' }),
+    definition({ id: 3, active: false, nextDate: null, lastBookedOn: '2026-01-31' }),
+    definition({ id: 4, name: 'Nog niet geboekt', amountExclEur: 100, nextDate: null, lastBookedOn: null }),
+  ]);
+  assert.deepEqual(summary, { activeCount: 2, pausedCount: 1, endedCount: 1,
+    yearlyExclEur: 11400, monthlyExclEur: 950, yearlyInclEur: 13794 });
+});
+
 test('the monthly series fills quiet months with zero, oldest first', () => {
   const series = monthlyCostSeries([
     cost({ date: '2026-07-03', amountExclEur: 100 }), cost({ date: '2026-07-20', amountExclEur: 50.5 }), cost({ date: '2026-09-01', amountExclEur: 20 }),
@@ -95,6 +106,21 @@ test('the bank overview keeps the newest reading per account and totals them ove
       [['KBC spaar', 25000, null, 1], ['KBC zicht', 8500.5, -1499.5, 2]]);
   assert.deepEqual(overview.series, { dates: ['2026-09-01', '2026-09-08'], values: [35000, 33500.5] });
   assert.deepEqual(bankOverview([]), { accounts: [], totalEur: 0, asOf: null, series: { dates: [], values: [] } });
+});
+
+test('bank history merges account case, whitespace and formatted IBAN aliases without doubling money', () => {
+  const overview = bankOverview([
+    { id: 1, account: '  Kbc   zicht ', date: '2026-09-01', balanceEur: 1000, notes: null },
+    { id: 2, account: 'BE68539007547034', date: '2026-09-01', balanceEur: 400, notes: null },
+    { id: 3, account: 'KBC zicht', date: '2026-09-02', balanceEur: 900, notes: null },
+    { id: 4, account: ' BE68 5390 0754 7034 ', date: '2026-09-02', balanceEur: 500, notes: null },
+    { id: 5, account: 'ING', date: '2026-09-02', balanceEur: 200, notes: null },
+    { id: 6, account: '   ', date: '2026-09-02', balanceEur: 999, notes: null },
+  ]);
+  assert.equal(overview.totalEur, 1600);
+  assert.deepEqual(overview.accounts.map(row => [row.account, row.balanceEur, row.previousEur, row.deltaEur, row.readings]),
+    [['KBC zicht', 900, 1000, -100, 2], ['BE68 5390 0754 7034', 500, 400, 100, 2], ['ING', 200, null, null, 1]]);
+  assert.deepEqual(overview.series, { dates: ['2026-09-01', '2026-09-02'], values: [1400, 1600] });
 });
 
 test('the cash outlook takes the open and coming costs off the bank and adds the open invoices', () => {

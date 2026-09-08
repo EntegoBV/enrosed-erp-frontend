@@ -16,33 +16,68 @@ import { incomingMoneyTotals } from './incoming-money';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, EurPipe, DateNlPipe, TrendChart, CostRow, PurchasePaymentCostRow],
   template: `
-    <section class="fin-kpis" aria-label="Kerncijfers">
-      <button type="button" class="card fin-kpi fin-kpi--dark" (click)="navigate.emit('bank')">
-        <small>Op de bank</small><strong>{{ state.currentBankEur() | eur: 0 }}</strong>
-        <span>{{ state.bankLedger().accounts.length }} rekeningen · eigen saldo + eigen bankbewegingen</span>
+    <section class="finance-snapshot" aria-label="Geld in één oogopslag">
+      <button type="button" class="finance-balance" (click)="navigate.emit('bank')">
+        <span class="finance-eyebrow">{{ bankKnown() ? bankComplete() ? 'Berekend banksaldo' : 'Bekend deel van je banksaldo' : 'Banksaldo nog onbekend' }}</span>
+        <strong>{{ bankKnown() ? (state.currentBankEur() | eur) : 'Vul je saldo in' }}</strong>
+        <span>{{ bankComplete() ? state.bankLedger().accounts.length + ' rekening(en) · op basis van je registraties' : bankKnown() ? 'Deeltotaal · ' + state.bankLedger().missingReadings + ' rekening(en) zonder beginsaldo' : 'Begin met het saldo en tijdstip uit je bankapp.' }}</span>
+        <b>{{ bankKnown() ? 'Rekeningen bekijken' : 'Bank instellen' }} <span aria-hidden="true">↗</span></b>
       </button>
-      <button type="button" class="card fin-kpi" [class.fin-kpi--warn]="state.openCosts().length" (click)="navigate.emit('open')">
-        <small>Nog te betalen</small><strong>{{ state.openCostsInclEur() | eur: 0 }}</strong>
-        <span>{{ state.openCosts().length }} open, incl. btw</span>
-      </button>
-      <button type="button" class="card fin-kpi" (click)="navigate.emit('recurring')">
-        <small>Komende 30 dagen</small><strong>{{ state.upcomingInclEur() | eur: 0 }}</strong>
-        <span>{{ state.upcoming().length }} vaste {{ state.upcoming().length === 1 ? 'kost' : 'kosten' }}, incl. btw</span>
-      </button>
-      <a class="card fin-kpi" routerLink="/sales">
-        <small>Te ontvangen</small><strong>{{ state.openInvoices().totalEur | eur: 0 }}</strong>
-        <span>{{ state.openInvoices().count }} open · {{ state.openInvoices().partialCount }} deels betaald, incl. btw</span>
-      </a>
-      <button type="button" class="card fin-kpi" (click)="navigate.emit('bank')"><small>Ontvangen deze maand</small><strong>{{ incomingMonth().receivedEur | eur }}</strong><span>{{ incomingMonth().count }} betalingen · kas, incl. btw</span></button>
-      <button type="button" class="card fin-kpi" (click)="navigate.emit('bank')"><small>Partnervoorschotten deze maand</small><strong>{{ incomingMonth().partnerAdvanceEur | eur }}</strong><span>ontvangen financiering</span></button>
-      <article class="card fin-kpi fin-kpi--accent">
-        <small>Verwacht saldo</small><strong>{{ state.outlook().expectedEur | eur: 0 }}</strong>
-        <span>bank − open − komend + facturen</span>
-      </article>
-      <a class="card fin-kpi" routerLink="/analyses/result" [class.fin-kpi--neg]="result().resultEur < 0">
-        <small>Resultaat {{ year }}</small><strong>{{ result().resultEur | eur: 0 }}</strong>
-        <span>marge {{ result().marginEur | eur: 0 }} − kosten {{ result().costsEur | eur: 0 }}</span>
-      </a>
+      <div class="finance-position">
+        <button type="button" (click)="navigate.emit('open')"><span><b>Te betalen</b><small>{{ state.openCosts().length }} open bedrijfskosten · incl. btw</small></span><strong>{{ state.openCostsInclEur() | eur }}</strong></button>
+        <a routerLink="/sales" [queryParams]="{scope: 'ALL', tab: 'FACTUUR', payment: 'open'}"><span><b>Te ontvangen</b><small>{{ state.openInvoices().count }} open verkoop- en partnerfacturen</small></span><strong>{{ state.openInvoices().totalEur | eur }}</strong></a>
+        <button type="button" (click)="navigate.emit('recurring')"><span><b>Vaste kosten binnenkort</b><small>{{ state.upcoming().length }} geplande boekingen · komende 30 dagen</small></span><strong>{{ state.upcomingInclEur() | eur }}</strong></button>
+      </div>
+    </section>
+
+    <section class="card fin-panel finance-next" aria-label="Volgende acties">
+      <header class="fin-panel__head"><div><span class="section-kicker">Aan de slag</span><h2>Wat wil je bijwerken?</h2></div></header>
+      <div class="finance-actions">
+        <button type="button" (click)="navigate.emit('bank')"><span class="finance-action-icon" aria-hidden="true">↔</span><span><b>Bankbeweging noteren</b><small>Geld ontvangen of betaald? Vul het handmatig in.</small></span><span aria-hidden="true">›</span></button>
+        <button type="button" (click)="state.openCost(null)"><span class="finance-action-icon" aria-hidden="true">+</span><span><b>Kost toevoegen</b><small>Een bedrijfsuitgave met factuur of bon.</small></span><span aria-hidden="true">›</span></button>
+        <button type="button" (click)="navigate.emit('open')"><span class="finance-action-icon" aria-hidden="true">✓</span><span><b>Betalingen bijwerken</b><small>{{ olderCosts() ? olderCosts() + (olderCosts() === 1 ? ' open kost met een boekdatum ouder dan 30 dagen.' : ' open kosten met een boekdatum ouder dan 30 dagen.') : 'Bekijk je open bedrijfskosten en noteer wat betaald is.' }}</small></span><span aria-hidden="true">›</span></button>
+      </div>
+      @if (state.dueNow().length || state.bankLedger().unassignedPayments) {
+        <div class="finance-attention">
+          @if (state.dueNow().length) { <button class="linklike" type="button" (click)="navigate.emit('recurring')">{{ state.dueNow().length }} vaste kosten klaar om te boeken ›</button> }
+          @if (state.bankLedger().unassignedPayments) { <button class="linklike" type="button" (click)="navigate.emit('bank')">{{ state.bankLedger().unassignedPayments }} {{ state.bankLedger().unassignedPayments === 1 ? 'factuurbetaling' : 'factuurbetalingen' }} zonder rekening ›</button> }
+        </div>
+      }
+    </section>
+
+    <div class="fin-cols">
+      <section class="card fin-panel finance-scenario">
+        <header class="fin-panel__head"><div><span class="section-kicker">Vooruitkijken</span><h2>Als alles wordt betaald</h2></div></header>
+        <p class="fin-panel__hint">Een rekenscenario met de bedragen die nu bekend zijn.</p>
+        @if (bankComplete() && !state.loadErrors().length) {
+          <dl class="finance-equation">
+            <div><dt>Berekend banksaldo</dt><dd>{{ state.currentBankEur() | eur }}</dd></div>
+            <div><dt>Alle open bedrijfskosten</dt><dd>− {{ state.openCostsInclEur() | eur }}</dd></div>
+            <div><dt>Vaste kosten komende 30 dagen</dt><dd>− {{ state.upcomingInclEur() | eur }}</dd></div>
+            <div class="finance-equation__subtotal"><dt>Na deze kosten</dt><dd [class.finance-negative]="afterCosts() < 0">{{ afterCosts() | eur }}</dd></div>
+            <div><dt>Alle open klant- en partnerfacturen</dt><dd>+ {{ state.openInvoices().totalEur | eur }}</dd></div>
+            <div class="finance-equation__total"><dt>Als ook die facturen binnenkomen</dt><dd [class.finance-negative]="state.outlook().expectedEur < 0">{{ state.outlook().expectedEur | eur }}</dd></div>
+          </dl>
+        } @else {
+          <div class="finance-placeholder"><b>{{ state.loadErrors().length ? 'Nog geen volledig beeld' : 'Eerst een beginsaldo per rekening' }}</b><p>Dit scenario verschijnt zodra alle gegevens en rekeningsaldi beschikbaar zijn.</p><button class="linklike" type="button" (click)="navigate.emit('bank')">Rekeningen bekijken ›</button></div>
+        }
+        <details class="finance-explainer"><summary>Welke bedragen tellen mee?</summary><p>Alle open bedrijfskosten en uitgeschreven facturen tellen mee, ongeacht hun betaaldatum. Van vaste kosten nemen we de komende 30 dagen mee. Nog te betalen containertermijnen, toekomstige verkopen en mogelijke terugbetalingen zitten hier niet in. Dit is geen voorspelling voor een vaste datum.</p></details>
+      </section>
+      <section class="card fin-panel finance-receipts">
+        <header class="fin-panel__head"><div><span class="section-kicker">{{ monthLabel }}</span><h2>Ontvangen op facturen</h2></div><button class="linklike" type="button" (click)="navigate.emit('bank')">Bekijk ›</button></header>
+        <div class="finance-receipt-total"><strong>{{ incomingMonth().receivedEur | eur }}</strong><span>netto · {{ incomingMonth().count }} registraties</span></div>
+        <dl class="finance-equation">
+          <div><dt>Ontvangsten</dt><dd>{{ incomingMonth().grossReceivedEur | eur }}</dd></div>
+          <div><dt>Terugbetalingen</dt><dd>− {{ incomingMonth().refundedEur | eur }}</dd></div>
+        </dl>
+        <div class="finance-breakdown"><b>Waaruit bestaat het nettobedrag?</b><div><span>Klantbetalingen</span><strong>{{ incomingMonth().standardEur | eur }}</strong></div><div><span>Partnervoorschotten</span><strong>{{ incomingMonth().partnerAdvanceEur | eur }}</strong></div><div><span>Partnerafrekeningen</span><strong>{{ incomingMonth().partnerSettlementEur | eur }}</strong></div></div>
+        <p class="fin-panel__hint">Partnervoorschotten zijn ontvangen financiering. Een ontvangst is niet automatisch omzet of winst.</p>
+      </section>
+    </div>
+
+    <section class="card fin-panel">
+      <header class="fin-panel__head"><div><span class="section-kicker">Open facturen</span><h2>Wie moet nog betalen?</h2></div><a class="linklike" routerLink="/sales" [queryParams]="{scope: 'ALL', tab: 'FACTUUR', payment: 'open'}">Naar facturen ›</a></header>
+      <div class="finance-receivable-split"><div><span>Reguliere verkoop</span><strong>{{ state.openInvoices().standardEur | eur }}</strong></div><div><span>Partnercontainers</span><strong>{{ state.openInvoices().partnerEur | eur }}</strong></div><p>{{ state.openInvoices().partialCount }} facturen zijn gedeeltelijk betaald. De bedragen tonen alleen wat nog openstaat.</p></div>
     </section>
 
     <section class="card fin-panel">
@@ -50,8 +85,9 @@ import { incomingMoneyTotals } from './incoming-money';
         <div><span class="section-kicker">Bedrijfskosten per maand</span><h2>{{ monthEur() | eur: 0 }} deze maand · {{ yearEur() | eur: 0 }} dit jaar</h2></div>
         <button class="linklike" type="button" (click)="navigate.emit('analysis')">Analyse ›</button>
       </header>
+      <p class="fin-panel__hint">Bedrijfskosten excl. btw · <a class="linklike" routerLink="/analyses/result">Resultaat {{ year }}: {{ result().resultEur | eur }} ›</a></p>
       <app-trend-chart [series]="series()" prefix="€ " [decimals]="0" [height]="150" ariaLabel="Kosten per maand, de laatste twaalf maanden" emptyText="Nog geen kosten geboekt" />
-      @if (containerPaymentsEur()) { <p class="fin-panel__hint">Daarnaast {{ containerPaymentsEur() | eur }} aan containerbetalingen dit jaar, automatisch gekoppeld in Kosten en Bank. De goederenwaarde telt in de verkoopmarge mee.</p> }
+      @if (containerPaymentsEur()) { <p class="fin-panel__hint">Daarnaast {{ containerPaymentsEur() | eur }} aan containerbetalingen dit jaar, geregistreerd bij de inkooporders. De goederenwaarde telt in de verkoopmarge mee.</p> }
     </section>
 
     <div class="fin-cols">
@@ -86,7 +122,7 @@ import { incomingMoneyTotals } from './incoming-money';
           <button class="linklike" type="button" (click)="navigate.emit('open')">Alles open ›</button>
         </header>
         @if (!state.openCosts().length) {
-          <p class="fin-empty">Alles is betaald.</p>
+          <p class="fin-empty">Er zijn geen open bedrijfskosten geregistreerd.</p>
         } @else {
           <div class="fin-list">
             @for (cost of openSoon(); track cost.id) { <app-cost-row [cost]="cost" /> }
@@ -126,6 +162,11 @@ export class FinanceOverview {
   readonly navigate = output<FinanceView>();
   readonly intervalLabel = intervalLabel;
   readonly year = YEAR;
+  readonly monthLabel = new Date(TODAY + 'T12:00:00').toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' });
+  readonly bankKnown = computed(() => this.state.bankLedger().accounts.some(account => account.currentEur !== null));
+  readonly bankComplete = computed(() => this.bankKnown() && !this.state.bankLedger().missingReadings);
+  readonly afterCosts = computed(() => this.state.currentBankEur() - this.state.openCostsInclEur() - this.state.upcomingInclEur());
+  readonly olderCosts = computed(() => this.state.openCosts().filter(cost => cost.date < addDays(TODAY, -30)).length);
   readonly incomingMonth = computed(() => incomingMoneyTotals(this.state.incomingPayments(), MONTH_START, TODAY));
 
   readonly monthEur = computed(() => sum(this.state.costs().filter((cost) => cost.date >= MONTH_START && cost.date <= TODAY)));

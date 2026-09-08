@@ -125,7 +125,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 
     @if (year() > 0) {
       <section class="card fin-panel">
-        <header class="fin-panel__head"><div><span class="section-kicker">Btw per kwartaal</span><h2>Voor de btw-aangifte van {{ year() }}</h2></div>
+        <header class="fin-panel__head"><div><span class="section-kicker">Btw per kwartaal</span><h2>Geregistreerde btw in {{ year() }}</h2></div>
           <strong class="fin-panel__total">{{ quartersTotal().vatEur | eur }} <small>btw</small></strong></header>
         <div class="fin-quarters">
           <div class="fin-quarters__row fin-quarters__row--head"><span></span><span>kosten</span><strong>excl.</strong><strong>btw</strong><strong>incl.</strong></div>
@@ -140,7 +140,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
           }
           <div class="fin-quarters__row fin-quarters__row--total"><b>{{ year() }}</b><small></small><strong>{{ quartersTotal().exclEur | eur }}</strong><em>{{ quartersTotal().vatEur | eur }}</em><strong>{{ quartersTotal().inclEur | eur }}</strong></div>
         </div>
-        <p class="fin-panel__hint">De btw op kosten die je terugvraagt; kosten zonder btw tellen alleen in excl. en incl.</p>
+        <p class="fin-panel__hint">Btw volgens de ingevoerde bedrijfskosten. Kosten zonder btw tellen alleen in de bedragen excl. en incl. mee. Containerbetalingen bevatten hier geen afzonderlijke btw-berekening.</p>
       </section>
 
       <section class="card fin-panel">

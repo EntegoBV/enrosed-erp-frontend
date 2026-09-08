@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal, type WritableSignal } from '@angular/core';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { BankingApi, BankStatementLine } from '../../core/api/banking-api';
@@ -53,6 +53,11 @@ export class FinanceState {
   readonly attachments = signal<MediaAssetSummary[]>([]);
   readonly uploading = signal(false);
   readonly loading = signal(true);
+  /** Failed sources stay visible while retrying; their last successful data remains on screen. */
+  readonly loadErrors = signal<string[]>([]);
+  /** Completion time of the most recent refresh; loadErrors states whether it was partial. */
+  readonly loadedAt = signal<Date | null>(null);
+  private loadRequestId = 0;
   readonly saving = signal(false);
   readonly booking = signal(false);
 
@@ -92,9 +97,21 @@ export class FinanceState {
   });
   /** Definitions whose next occurrence is today or earlier: the hourly job has not passed yet. */
   readonly dueNow = computed(() => this.recurring().filter((definition) => definition.active && !!definition.nextDate && definition.nextDate <= this.today));
-  readonly accounts = computed(() => [...new Set(this.balances().map((row) => row.account))].sort((left, right) => left.localeCompare(right)));
+  readonly accounts = computed(() => {
+    const labels = new Map<string, string>();
+    const names = [...this.balances().map(row => row.account), ...this.bankStatements().map(row => row.account),
+      ...this.incomingPayments().map(row => row.bankAccount)];
+    for (const name of names) {
+      const key = bankAccountKey(name);
+      if (key && !labels.has(key)) labels.set(key, name!.trim().replace(/\s+/g, ' '));
+    }
+    return [...labels.values()].sort((left, right) => left.localeCompare(right, 'nl'));
+  });
+
+  retryLoad(): Promise<void> { return this.load(); }
 
   async load(): Promise<void> {
+    const requestId = ++this.loadRequestId;
     this.loading.set(true);
     try {
       const [costs, recurring, balances, orders, customers, payments, attachments, incoming, statements] = await Promise.allSettled([
@@ -102,20 +119,29 @@ export class FinanceState {
         this.sales.customers(), this.sourcing.purchasePayments(), this.media.assets({ targetType: 'COMPANY_COST', limit: 500 }),
         this.sales.incomingPayments(), this.banking.list(),
       ]);
-      if (costs.status === 'fulfilled') this.costs.set(costs.value); else this.ui.toast(messageOf(costs.reason, 'Kosten laden mislukt'), 'err');
-      if (recurring.status === 'fulfilled') this.recurring.set(recurring.value);
-      if (balances.status === 'fulfilled') this.balances.set(balances.value);
-      if (orders.status === 'fulfilled') this.salesOrders.set(orders.value);
-      if (customers.status === 'fulfilled') this.customers.set(customers.value);
-      if (payments.status === 'fulfilled') this.payments.set(payments.value);
-      else this.ui.toast(messageOf(payments.reason, 'Containerbetalingen laden mislukt; kosten en banksaldo kunnen onvolledig zijn'), 'err');
-      if (attachments.status === 'fulfilled') this.attachments.set(attachments.value);
-      if (statements.status === 'fulfilled') this.bankStatements.set(statements.value);
-      else this.ui.toast(messageOf(statements.reason, 'Bankbewegingen laden mislukt; het saldo kan onvolledig zijn'), 'err');
-      if (incoming.status === 'fulfilled') this.incomingPayments.set(incoming.value);
-      else this.ui.toast(messageOf(incoming.reason, 'Ontvangsten laden mislukt; het banksaldo kan onvolledig zijn'), 'err');
+      if (requestId !== this.loadRequestId) return;
+      const errors: string[] = [];
+      const apply = <T>(result: PromiseSettledResult<T>, target: WritableSignal<T>, source: string): void => {
+        if (result.status === 'fulfilled') target.set(result.value);
+        else errors.push(`${source}: ${messageOf(result.reason, 'laden mislukt')}`);
+      };
+      apply(costs, this.costs, 'Bedrijfskosten');
+      apply(recurring, this.recurring, 'Vaste kosten');
+      apply(balances, this.balances, 'Banksaldi');
+      apply(orders, this.salesOrders, 'Verkoopfacturen');
+      apply(customers, this.customers, 'Klanten');
+      apply(payments, this.payments, 'Containerbetalingen');
+      apply(attachments, this.attachments, 'Kostendocumenten');
+      apply(incoming, this.incomingPayments, 'Ontvangsten en terugbetalingen');
+      apply(statements, this.bankStatements, 'Bankbewegingen');
+      this.loadErrors.set(errors);
+      this.loadedAt.set(new Date());
+    } catch (failure) {
+      if (requestId !== this.loadRequestId) return;
+      this.loadErrors.set([messageOf(failure, 'Financieel overzicht laden mislukt')]);
+      this.loadedAt.set(new Date());
     } finally {
-      this.loading.set(false);
+      if (requestId === this.loadRequestId) this.loading.set(false);
     }
   }
 

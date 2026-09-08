@@ -5,6 +5,7 @@ import { filter, map } from 'rxjs';
 import { Auth } from '../../core/api/auth';
 import { BrandMark } from '../../shared/brand-mark';
 import { Icon } from '../../shared/icon';
+import { containerFilterId } from './cost-ledger';
 import { FINANCE_SECTIONS, financeView } from './finance-sections';
 
 /**
@@ -26,9 +27,9 @@ import { FINANCE_SECTIONS, financeView } from './finance-sections';
         <span class="files-sidebar__label">Geld</span>
         @for (section of sections; track section.id) {
           @if (section.id === 'analysis') { <span class="files-sidebar__label files-sidebar__label--spaced">Inzicht</span> }
-          <a routerLink="/costs" [queryParams]="section.id === 'overview' ? {} : { view: section.id }" [class.active]="view() === section.id">
+          <a routerLink="/costs" [queryParams]="section.id === 'overview' ? {} : { view: section.id }" [class.active]="view() === section.id" [attr.aria-current]="view() === section.id ? 'page' : null">
             <app-icon [name]="section.icon" [size]="19" />
-            <span><b>{{ section.label }}</b><small>{{ section.hint }}</small></span>
+            <span><b><span class="nav-full">{{ section.label }}</span><span class="nav-short">{{ section.short }}</span></b><small>{{ section.hint }}</small></span>
           </a>
         }
       </nav>
@@ -54,6 +55,7 @@ import { FINANCE_SECTIONS, financeView } from './finance-sections';
     .files-sidebar__label { display: none; }
     .files-sidebar__nav > a { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 9px; min-height: 54px; padding: 8px 11px; border: 1px solid transparent; border-radius: 12px; color: rgb(255 255 255 / 68%); text-decoration: none; }
     .files-sidebar__nav > a > span { display: grid; min-width: 0; gap: 1px; }
+    .nav-short { display: none; }
     .files-sidebar__nav b { color: inherit; font-size: 13px; line-height: 1.25; }
     .files-sidebar__nav small { overflow: hidden; color: rgb(255 255 255 / 42%); font-size: 10.5px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
     .files-sidebar__nav > a:hover { background: rgb(255 255 255 / 7%); color: #fff; }
@@ -70,7 +72,8 @@ import { FINANCE_SECTIONS, financeView } from './finance-sections';
       .files-sidebar__nav > a { grid-template-columns: 1fr; justify-items: center; min-height: 58px; padding: 8px 4px 6px; gap: 5px; text-align: center; }
       .files-sidebar__nav > a > span { justify-items: center; }
       .files-sidebar__nav b { overflow: hidden; max-width: 76px; font-size: 10px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
-      .files-sidebar__nav small { display: none; }
+      .files-sidebar__nav small, .nav-full { display: none; }
+      .nav-short { display: inline; }
       .files-sidebar__label { display: block; margin: 8px 0 2px; color: rgb(255 255 255 / 30%); font-size: 8.5px; font-weight: 850; letter-spacing: .1em; text-align: center; text-transform: uppercase; }
       .files-sidebar__footer { display: grid; padding: 8px 6px 12px; border-top: 1px solid rgb(255 255 255 / 10%); }
       .files-sidebar__back { display: grid; justify-items: center; gap: 2px; padding: 8px 4px; border-radius: 10px; color: rgb(255 255 255 / 75%); text-decoration: none; }
@@ -107,7 +110,10 @@ export class FinanceAdminNav {
     map(() => this.router.url),
   ), { initialValue: this.router.url });
 
-  readonly view = computed(() => financeView(new URLSearchParams(this.url().split('?')[1] ?? '').get('view')));
+  readonly view = computed(() => {
+    const params = new URLSearchParams(this.url().split('?')[1] ?? '');
+    return containerFilterId(params.get('container')) ? 'costs' : financeView(params.get('view'));
+  });
 
   logout(): void {
     this.auth.logout();
