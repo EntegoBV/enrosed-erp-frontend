@@ -19,12 +19,12 @@ import { Sheet, Ui } from '../../shared/ui';
   template: `
     <section class="variant-group" aria-labelledby="variant-group-title">
       <div class="variant-group__head">
-        <div>
+        <div class="variant-group__identity">
           <span class="variant-group__eyebrow">Varianten</span>
           <h2 id="variant-group-title">Gekoppelde producten</h2>
           <p>
             @if (family(); as group) {
-              {{ siblings().length ? siblings().length + ' andere variant' + (siblings().length === 1 ? '' : 'en') : 'Reeks zonder andere varianten' }}
+              {{ siblings().length ? siblings().length + ' andere actieve variant' + (siblings().length === 1 ? '' : 'en') : 'Reeks zonder andere actieve varianten' }}
               · voorraad, kleur, EAN's en foto's blijven per variant
             } @else {
               Nog geen andere kleur- of maatvariant gekoppeld.
@@ -51,7 +51,7 @@ import { Sheet, Ui } from '../../shared/ui';
             }
           }
         </div>
-        <div class="variant-group__actions">
+        <div class="variant-group__actions" role="group" aria-label="Acties voor deze reeks">
           @if (family() && siblings().length) {
             <button class="series-sync" type="button" [disabled]="disabled()"
                     (click)="syncRequested.emit()">
@@ -72,6 +72,10 @@ import { Sheet, Ui } from '../../shared/ui';
         </p>
       }
 
+      @if (family()) {
+        <p class="variant-group__current"><span>Je bewerkt</span><b>{{ optionLabel(product().colour, product().variantSize) }}</b>@if (product().sku) { <span>{{ product().sku }}</span> }</p>
+      }
+
       <div class="variant-strip" aria-label="Productvarianten">
         @if (family(); as group) {
           <!-- A sibling chip opens a small peek, not another page: you
@@ -82,15 +86,17 @@ import { Sheet, Ui } from '../../shared/ui';
             <button class="variant-chip" type="button"
                     [class.variant-chip--peek]="peekId() === member.productId"
                     [attr.aria-expanded]="peekId() === member.productId"
+                    [attr.aria-label]="'Bekijk variant ' + optionLabel(member.colour, member.size) + (member.sku ? ', ' + member.sku : '')"
                     (click)="togglePeek(member.productId)">
               @if (member.colourHex) {
                 <span class="variant-chip__swatch" [style.background]="member.colourHex"
                       aria-hidden="true"></span>
               }
-              <span>
+              <span class="variant-chip__body">
                 <b>{{ optionLabel(member.colour, member.size) }}</b>
                 <small>{{ member.sku || member.name }}</small>
               </span>
+              <span class="variant-chip__toggle" aria-hidden="true">{{ peekId() === member.productId ? '−' : '+' }}</span>
             </button>
           }
           @if (!siblings().length) {
@@ -117,11 +123,11 @@ import { Sheet, Ui } from '../../shared/ui';
                 @if (!sibling.active) { · <span class="warn-text">inactief</span> }
               </small>
             </div>
-            <a class="btn btn--sm" [routerLink]="['/products', sibling.id]">Openen</a>
+            <a class="btn btn--sm variant-peek__open" [routerLink]="['/products', sibling.id]">Product openen</a>
             <button class="variant-peek__unlink" type="button" title="Uit de reeks halen"
                     [disabled]="unlinking()"
                     [attr.aria-label]="sibling.name + ' uit de reeks halen'"
-                    (click)="unlinkSibling(sibling)">×</button>
+                    (click)="unlinkSibling(sibling)">Loskoppelen</button>
           } @else {
             <span class="small muted">Laden…</span>
           }
@@ -205,10 +211,10 @@ import { Sheet, Ui } from '../../shared/ui';
     }
   `,
   styles: `
-    .variant-peek__unlink { width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px;
-      background: var(--surface); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+    .variant-peek__unlink { min-height: 34px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px;
+      background: var(--surface); color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
     .variant-peek__unlink:hover { background: var(--danger-soft); border-color: #efcdc9; color: var(--danger); }
-    :host { display: block; }
+    :host { display: block; min-width: 0; }
     .variant-group {
       padding: 15px;
       border: 1px solid var(--line);
@@ -216,18 +222,20 @@ import { Sheet, Ui } from '../../shared/ui';
       background: var(--surface);
     }
     .series-name {
-      display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 2px 0;
+      display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin-top: 6px; padding: 2px 0;
       border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px;
       cursor: pointer; text-align: left;
     }
+    .series-name span { min-width: 0; overflow-wrap: anywhere; }
     .series-name b { color: var(--ink-2); font-weight: 650; }
-    .series-name svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7;
+    .series-name svg { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7;
       stroke-linecap: round; stroke-linejoin: round; opacity: .6; }
     .series-name:hover b { text-decoration: underline dotted; }
     .series-name:hover svg { opacity: 1; }
     .series-name:disabled { cursor: default; }
     .series-name__input { margin-top: 6px; max-width: 320px; font-size: 13px; }
-    .variant-group__head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+    .variant-group__head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between; }
+    .variant-group__identity { flex: 1 1 260px; min-width: 0; }
     .variant-group__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
     .series-sync {
       display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 10px;
@@ -248,18 +256,26 @@ import { Sheet, Ui } from '../../shared/ui';
       margin: 11px 0 0; padding: 8px 10px; border-radius: var(--r-sm);
       background: var(--warn-soft); color: var(--text); font-size: 12px;
     }
+    .variant-group__current { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+      margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 11px; }
+    .variant-group__current span { color: var(--muted); }
+    .variant-group__current b { font-weight: 650; }
+    .variant-group__current span, .variant-group__current b { overflow-wrap: anywhere; }
     .variant-strip {
-      display: flex; gap: 7px; margin-top: 12px; padding-bottom: 2px;
-      overflow-x: auto; scrollbar-width: thin;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+      gap: 8px; margin-top: 10px;
     }
+    .variant-strip:empty { display: none; }
     .variant-chip {
-      display: flex; align-items: center; gap: 8px; min-width: max-content;
-      min-height: 44px; padding: 7px 10px; border: 1px solid var(--line);
-      border-radius: 12px; color: inherit; background: var(--surface-2); text-decoration: none;
+      display: flex; align-items: center; gap: 8px; min-width: 0;
+      min-height: 52px; padding: 9px 10px; border: 1px solid var(--line);
+      border-radius: 12px; color: inherit; background: var(--surface-2); font: inherit; text-align: left; cursor: pointer;
     }
-    .variant-chip--peek { border-color: var(--accent); }
+    .variant-chip:hover { border-color: var(--brand); }
+    .variant-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .variant-chip--peek { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 7%, var(--surface)); }
     .variant-peek {
-      display: flex; align-items: center; gap: 12px;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
       margin-top: 10px; padding: 10px 12px;
       border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
       animation: rise 0.2s ease;
@@ -267,13 +283,14 @@ import { Sheet, Ui } from '../../shared/ui';
     .variant-peek__photo { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: none;
       background: var(--surface-2); border: 1px solid var(--line); }
     .variant-peek__photo--empty { display: flex; align-items: center; justify-content: center; color: var(--muted); }
-    .variant-peek__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .variant-peek__body { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
     .variant-peek__body small { font-size: 12px; color: var(--muted); }
-    .variant-group__none { color: var(--muted); font-size: 12.5px; }
+    .variant-group__none { grid-column: 1 / -1; color: var(--muted); font-size: 12.5px; }
     .variant-chip__swatch { width: 18px; height: 18px; border: 1px solid rgb(0 0 0 / .14); border-radius: 50%; flex: none; }
-    .variant-chip span:last-child { display: grid; gap: 1px; }
-    .variant-chip b { font-size: 12px; }
-    .variant-chip small { color: var(--muted); font-size: 10px; }
+    .variant-chip__body { flex: 1; min-width: 0; display: grid; gap: 3px; }
+    .variant-chip b { font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+    .variant-chip small { color: var(--muted); font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+    .variant-chip__toggle { flex: none; color: var(--muted); font-size: 16px; }
     .picker-intro { margin-bottom: 15px; }
     .picker-search { display: grid; gap: 5px; font-size: 12px; font-weight: 650; }
     .candidate-list { display: grid; margin: 14px -16px 0; }
@@ -310,7 +327,13 @@ import { Sheet, Ui } from '../../shared/ui';
     }
     @media (max-width: 520px) {
       .variant-group__head { align-items: stretch; flex-direction: column; }
+      .variant-group__identity { flex-basis: auto; }
       .variant-group__actions { justify-content: flex-start; }
+      .variant-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .variant-chip { padding: 8px; gap: 6px; }
+    }
+    @media (max-width: 360px) {
+      .variant-strip { grid-template-columns: minmax(0, 1fr); }
     }
     @media (pointer: coarse) {
       .series-sync { min-height: 44px; }

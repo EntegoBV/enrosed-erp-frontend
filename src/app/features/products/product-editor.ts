@@ -17,6 +17,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { Icon } from '../../shared/icon';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
@@ -42,6 +43,7 @@ import {
   productVariantNavigation,
   productVariantOptionLabel,
 } from './product-variant-navigation';
+import { productEditorReady, visibleProductEditorTab } from './product-editor-state';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -72,16 +74,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
  */
 @Component({
   selector: 'app-product-editor',
+  host: { id: 'product-editor-workspace' },
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [KgPipe, 
     FormsModule, PageHeader, PhotoManager, ProductFamilyGallery, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
-    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage,
+    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon,
   ],
   template: `
     <app-page-header
-      [title]="isNew() ? 'Nieuw product' : draft().name || 'Product'"
-      [subtitle]="isNew() ? 'Aan een leverancier koppelen' : (draft().sku ?? '')"
+      [title]="id() && id() !== 'new' ? 'Product bewerken' : 'Nieuw product'"
+      [subtitle]="editorReady() ? (draft().colour || 'Productgegevens') : productLoadError() ? 'Niet geladen' : 'Product laden…'"
       [showBack]="true"
       [showBell]="false"
     >
@@ -107,6 +110,22 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               (click)="save()">{{ saveActionLabel() }}</button>
     </app-page-header>
 
+    <header class="editor-toolbar">
+      <div class="editor-toolbar__title">
+        <a routerLink="/products">Producten</a><span aria-hidden="true">/</span>
+        <h1>{{ id() && id() !== 'new' ? 'Product bewerken' : 'Nieuw product' }}</h1>
+      </div>
+      <div class="editor-toolbar__actions">
+        <span class="editor-save-status" role="status" [class.is-dirty]="workspaceDirty()">
+          {{ !editorReady() ? (productLoadError() ? 'Niet geladen' : 'Laden…') : saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Niet-opgeslagen wijzigingen' : 'Geen openstaande wijzigingen' }}
+        </span>
+        @if (editorReady() && !isNew()) {
+          <a class="btn btn--sm" [routerLink]="['/products', draft().id]">Bekijken</a>
+        }
+        <button class="btn btn--primary" type="button" [disabled]="saveBusy()" (click)="save()">{{ saveActionLabel() }}</button>
+      </div>
+    </header>
+
     @if (productLoadError()) {
       <div class="content product-load-error" role="alert">
         <span><b>Product kon niet worden geladen</b><small>{{ productLoadError() }}</small></span>
@@ -114,6 +133,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </div>
     }
 
+    @if (editorReady()) {
     <div class="product-editor-lead erp-workspace erp-workspace--product erp-workspace--edit">
       <div class="content product-editor-lead__content">
         <section class="erp-workspace__hero product-editor-hero" aria-label="Product in één oogopslag">
@@ -134,12 +154,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <span class="erp-workspace__eyebrow">
               {{ selectedCategoryName() || (isNew() ? 'Nieuw catalogusproduct' : 'Productdossier') }}
             </span>
-            <h1 class="erp-workspace__title">{{ draft().name || 'Geef dit product een naam' }}</h1>
+            <h2 class="erp-workspace__title">{{ draft().name || 'Geef dit product een naam' }}</h2>
             <p class="erp-workspace__meta">
               @if (draft().colour) { <span>{{ draft().colour }}</span> }
               @if (draft().variantSize) { <span>{{ draft().variantSize }}</span> }
               @if (draft().sku) { <span class="mono">{{ draft().sku }}</span> }
-              @if (selectedSupplierName()) { <span>{{ selectedSupplierName() }}</span> }
             </p>
             <div class="erp-workspace__badges" aria-label="Productstatus">
               <span class="erp-workspace__badge"
@@ -155,6 +174,19 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               }
               @if (workspaceDirty()) {
                 <span class="erp-workspace__badge erp-workspace__badge--dirty">Niet opgeslagen</span>
+              }
+              @if (desktop.active() && !isNew() && variantNeighbours(); as around) {
+                <span class="product-nav editor-variant-nav" role="group" aria-label="Kleurvarianten">
+                  <a class="product-nav__btn" [class.product-nav__btn--off]="!around.previous"
+                     [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null"
+                     [attr.aria-disabled]="!around.previous"
+                     [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'">‹</a>
+                  <small>Kleur {{ around.index + 1 }}/{{ around.total }}</small>
+                  <a class="product-nav__btn" [class.product-nav__btn--off]="!around.next"
+                     [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null"
+                     [attr.aria-disabled]="!around.next"
+                     [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'">›</a>
+                </span>
               }
             </div>
           </div>
@@ -191,23 +223,42 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     </div>
 
     <div class="content product-editor-page erp-workspace erp-workspace--product erp-workspace--edit">
-      <!-- Same rail as the settings page. Phone: one section at a time;
-           desktop: a jump list whose highlight follows the scroll. -->
       <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
+        <p class="editor-nav-label">Productgegevens</p>
+        <label class="editor-section-picker" for="editor-section-select">
+          <span>Onderdeel</span>
+          <select id="editor-section-select" class="select" [ngModel]="activeTab()" (ngModelChange)="showTab($event)">
+            @for (tab of visibleTabs(); track tab.id) { <option [value]="tab.id">{{ tab.label }}</option> }
+          </select>
+        </label>
         <div class="subnav__rail erp-workspace__nav-rail">
           @for (tab of visibleTabs(); track tab.id) {
             <button class="erp-workspace__nav-item" type="button" [class.active]="activeTab() === tab.id"
-                    [class.is-done]="tabState(tab.id) === 'done'" [class.is-warn]="tabState(tab.id) === 'warn'"
                     [attr.aria-current]="activeTab() === tab.id ? 'location' : null"
+                    [attr.aria-controls]="tab.id"
                     (click)="showTab(tab.id)">
-              <span class="erp-workspace__nav-index">{{ tabState(tab.id) === 'done' ? '✓' : $index + 1 }}</span>
-              <span>{{ tab.label }}@if (desktop.active() && tabHint(tab.id); as hint) { <small>{{ hint }}</small> }</span>
+              <app-icon [name]="tabIcon(tab.id)" [size]="19" />
+              <span>{{ tab.label }}<small>{{ tabDescription(tab.id) }}</small></span>
+              @if (tabState(tab.id) === 'warn') { <b class="editor-nav-warning" aria-label="Verplichte gegevens ontbreken">!</b> }
             </button>
           }
         </div>
+        @if (!isNew()) {
+          <a class="editor-translation-link" [routerLink]="['/products', draft().id, 'translations']"><app-icon name="countries" [size]="17" /> Vertalingen <span aria-hidden="true">↗</span></a>
+        }
       </nav>
       <div class="editor-canvas erp-workspace__main" [attr.data-tab]="activeTab()"
            [class.editor-canvas--last]="isLastPhoneTab()">
+      <div class="editor-section-note"><app-icon [name]="activeTab() === 'stock' || activeTab() === 'media' ? 'activity' : 'settings'" [size]="17" /><p>{{ sectionSaveHint(activeTab()) }}</p></div>
+      @if (saveError(); as error) {
+        <div class="editor-feedback editor-feedback--error" role="alert"><b>Opslaan niet voltooid</b><p>{{ error }}</p></div>
+      }
+      @if (missingFields().length) {
+        <details class="editor-feedback editor-required">
+          <summary>{{ missingFields().length }} {{ missingFields().length === 1 ? 'verplicht gegeven ontbreekt' : 'verplichte gegevens ontbreken' }}</summary>
+          <div>@for (item of missingFields(); track item.field) { <button class="btn btn--sm" type="button" (click)="focusField(item.tab, item.field)">{{ item.label }} <span aria-hidden="true">→</span></button> }</div>
+        </details>
+      }
       <!-- ============================================ product -->
       <section class="card editor-section erp-workspace__section" id="identity" aria-labelledby="identity-title">
         <div class="card__head section-head erp-workspace__section-head">
@@ -226,8 +277,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <option value="inactief">Inactief</option>
           </select>
         </div>
-        <div class="card__body">
-          <div class="form-grid">
+        <div class="card__body identity-layout">
+          <div class="form-grid identity-layout__main">
             <div class="field span-2">
               <label class="req" for="p-supplier">Leverancier</label>
               <select class="select" id="p-supplier" [ngModel]="draft().supplierId"
@@ -337,6 +388,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
           </div>
 
+          <div class="identity-layout__measurements">
           <fieldset class="measure-group">
             <legend>Productafmeting</legend>
             <div class="measure-grid measure-grid--4">
@@ -472,6 +524,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             @if (innerCheck(); as result) {
               <span class="hint" [class.danger-text]="!result.valid">{{ result.message }}</span>
             }
+          </div>
           </div>
         </div>
       </section>
@@ -916,6 +969,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
            image curation do not belong on a phone at the fair. -->
       <div class="editor-desktop-only erp-workspace__section" id="publication">
       <app-product-publication-editor
+        [expanded]="activeTab() === 'publication'"
         [product]="draft()"
         [family]="family()"
         [categories]="categories()"
@@ -933,18 +987,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </div>
 
       <div class="editor-actions erp-workspace__actions">
-        <!-- Phone: walk the sections with Volgende, save at the end (the
-             header keeps a save shortcut once something changed). Desktop
-             sees everything at once and simply saves. -->
-        <button class="btn btn--primary btn--block editor-next" type="button"
-                (click)="nextTab()">
-          Volgende
-        </button>
-        <button class="btn btn--primary btn--block editor-save" type="button"
-                [disabled]="saveBusy()"
-                (click)="save()">
-          {{ saveActionLabel() }}
-        </button>
         @if (!isNew()) {
           <button class="btn btn--block" type="button"
                   [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
@@ -1192,7 +1234,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div><dt>Inhoud</dt><dd>{{ (draft().carton.piecesPerCarton || autoCartonPieces()) ? ((draft().carton.piecesPerCarton || autoCartonPieces()) | num) + ' stuks' : '—' }}@if (!draft().carton.piecesPerCarton && autoCartonPieces()) { <small>automatisch uit de maten</small> }</dd></div>
             <div><dt>Maat</dt><dd>{{ draft().carton.lengthCm && draft().carton.widthCm && draft().carton.heightCm ? (draft().carton.lengthCm | num) + ' × ' + (draft().carton.widthCm | num) + ' × ' + (draft().carton.heightCm | num) + ' cm' : '—' }}<small>{{ cartonCbm() | cbm }} per doos · {{ pieceCbm() | cbm }} per stuk</small></dd></div>
             <div><dt>Gewicht</dt><dd>{{ draft().carton.weightKg ? (draft().carton.weightKg | kg) : (autoCartonWeight() ? (autoCartonWeight() | kg) : '—') }}@if (!draft().carton.weightKg && autoCartonWeight()) { <small>uit het stukgewicht</small> }</dd></div>
-            <div><dt>40' HC</dt><dd>{{ (draft().carton.hcCapacity || autoHcCapacity()) ? ((draft().carton.hcCapacity || autoHcCapacity()) | num) + ' dozen' : '—' }}</dd></div>
+            <div><dt>40' HC</dt><dd>{{ (draft().carton.piecesPerHc || autoHcCapacity()) ? ((draft().carton.piecesPerHc || autoHcCapacity()) | num) + ' stuks' : '—' }}</dd></div>
           </dl>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('packaging')">Omdoos aanpassen ›</button>
         </section>
@@ -1230,13 +1272,13 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
     @if (!desktop.active()) {
       <nav class="erp-workspace__mobile-actions product-editor-dock"
-           aria-label="Productstappen en acties">
+           aria-label="Productonderdelen en opslaan">
         @if (phoneTabIndex() > 0) {
           <button class="product-editor-dock__back" type="button" (click)="previousTab()"
                   [attr.aria-label]="'Terug naar ' + phoneTabs()[phoneTabIndex() - 1].label">‹</button>
         }
         <span class="product-editor-dock__context">
-          <small>Stap {{ phoneTabIndex() + 1 }} van {{ phoneTabs().length }}</small>
+          <small>Onderdeel {{ phoneTabIndex() + 1 }}/{{ phoneTabs().length }}</small>
           <strong>{{ phoneTabs()[phoneTabIndex()].label }}</strong>
         </span>
         <button class="btn product-editor-dock__save" type="button"
@@ -1334,6 +1376,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </div>
         </app-sheet>
       }
+    }
+    } @else if (!productLoadError()) {
+      <div class="editor-loading content" role="status"><span class="editor-loading__shape"></span><h2>Product laden…</h2><p>De gegevens en varianten worden opgehaald.</p></div>
     }
 
   `,
@@ -1732,8 +1777,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   `,
 })
 export class ProductEditor implements OnDestroy {
-  /** Which section a phone shows; on desktop the scroll spy drives it. */
+  /** The selected editor section, shared by desktop navigation and the mobile picker. */
   readonly activeTab = signal('identity');
+  private tabScrollFrame = 0;
 
   /* The draft as last loaded or saved; anything different is unsaved
      work. JSON is crude but honest - it also catches a field typed and
@@ -1896,35 +1942,57 @@ export class ProductEditor implements OnDestroy {
   readonly pendingVariant = signal<Product | null>(null);
 
   ngOnDestroy(): void {
-    window.removeEventListener('scroll', this.onScroll);
-    if (this.spyFrame) cancelAnimationFrame(this.spyFrame);
+    if (this.tabScrollFrame) cancelAnimationFrame(this.tabScrollFrame);
+    ++this.productLoadVersion;
+    ++this.familyLoadVersion;
   }
 
   readonly tabs = computed(() => {
     const list = [
-      { id: 'identity', label: 'Basis' },
+      { id: 'identity', label: 'Basisgegevens' },
       { id: 'media', label: "Foto's" },
       { id: 'packaging', label: 'Omdoos' },
-      { id: 'purchasing', label: 'Inkoop' },
-      { id: 'sales', label: 'Verkoop' },
+      { id: 'purchasing', label: 'Inkoop & kostprijs' },
+      { id: 'sales', label: 'Verkoopprijs' },
       { id: 'stock', label: 'Voorraad' },
-      { id: 'agreements', label: 'Afspraken' },
-      { id: 'publication', label: 'Website' },
+      { id: 'agreements', label: 'Leveranciersafspraken' },
+      { id: 'publication', label: 'Website & orderapp' },
     ];
     return list;
   });
 
+  tabIcon(id: string): string {
+    return ({ identity: 'products', media: 'media', packaging: 'purchase', purchasing: 'suppliers', sales: 'sales', stock: 'stock', agreements: 'pdf', publication: 'countries' } as Record<string, string>)[id] ?? 'products';
+  }
+
+  tabDescription(id: string): string {
+    return ({ identity: 'Artikel, kleur en afmetingen', media: 'Productfoto’s en galerij', packaging: 'Inhoud en transportmaten', purchasing: 'Leverancier en kosten', sales: 'Prijs en marge', stock: 'Aantallen per locatie', agreements: 'Notities en bijlagen', publication: 'Publicatie en teksten' } as Record<string, string>)[id] ?? '';
+  }
+
+  sectionSaveHint(id: string): string {
+    if (id === 'media') return this.isNew()
+      ? 'Foto’s worden samen met het nieuwe product opgeslagen.'
+      : 'Variantfoto’s worden direct verwerkt. De volgorde van de gedeelde galerij bevestig je met Opslaan; die geldt voor de hele reeks.';
+    if (id === 'stock') return 'Een aangepast voorraadaantal wordt direct geboekt zodra je het veld verlaat. Verplaatsen en stuk/demo bevestig je apart.';
+    if (id === 'agreements') return 'Sla je notitie op met Opslaan. Fotoacties worden apart verwerkt; controleer ook de opslagstatus bij de bijlagen.';
+    if (id === 'publication') return 'Publicatie-instellingen sla je bovenaan op. Vertalingen hebben een eigen opslagknop. Reeksteksten gelden voor alle varianten.';
+    return 'Je bewerkt deze variant. Wisselen van onderdeel behoudt je wijzigingen; bevestig ze met Opslaan.';
+  }
+
   showTab(id: string): void {
-    this.activeTab.set(id);
-    if (window.innerWidth >= 680) {
-      /* Desktop: every section is on the page; jump to it. The spy below
-         is muted briefly so the smooth scroll does not flicker the
-         highlight through the sections it passes. */
-      this.spyMutedUntil = Date.now() + 700;
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      window.scrollTo({ top: 0 });
-    }
+    const next = visibleProductEditorTab(id, this.visibleTabs().map(tab => tab.id));
+    this.activeTab.set(next);
+    if (this.tabScrollFrame) cancelAnimationFrame(this.tabScrollFrame);
+    // Let Angular reveal the selected section before measuring its scroll position.
+    this.tabScrollFrame = requestAnimationFrame(() => {
+      this.tabScrollFrame = requestAnimationFrame(() => {
+        this.tabScrollFrame = 0;
+        if (this.activeTab() !== next || !this.editorReady()) return;
+        const canvas = document.querySelector<HTMLElement>('#product-editor-workspace .editor-canvas');
+        const target = canvas ?? document.getElementById(next);
+        target?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+      });
+    });
   }
 
   openPublicationWorkspace(): void {
@@ -1939,39 +2007,6 @@ export class ProductEditor implements OnDestroy {
     }
     this.ui.toast('Maak het product eerst aan; daarna kun je de publieke teksten invullen.');
   }
-
-  /* Scroll spy (desktop): the highlighted tab follows the section under
-     the sticky rail, like the settings page. */
-  private spyMutedUntil = 0;
-  private spyFrame = 0;
-  private readonly onScroll = () => {
-    if (this.spyFrame) return;
-    this.spyFrame = requestAnimationFrame(() => {
-      this.spyFrame = 0;
-      if (window.innerWidth < 680 || Date.now() < this.spyMutedUntil) return;
-      /* Normally the last section whose top passed the rail owns the
-         highlight. At the very end of the page that rule sticks on the
-         section above the one you scrolled to (short sections cannot
-         reach the top), so there the section filling most of the
-         viewport wins instead. */
-      const rail = document.querySelector<HTMLElement>('.subnav');
-      const top = (rail?.getBoundingClientRect().bottom ?? 0);
-      const atEnd = window.scrollY + window.innerHeight >= document.body.scrollHeight - 2;
-      let current = this.tabs()[0].id;
-      let best = -1;
-      for (const tab of this.tabs()) {
-        const box = document.getElementById(tab.id)?.getBoundingClientRect();
-        if (!box) continue;
-        if (atEnd) {
-          const visible = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, top);
-          if (visible > best) { best = visible; current = tab.id; }
-        } else if (box.top <= top + 12) {
-          current = tab.id;
-        }
-      }
-      if (this.activeTab() !== current) this.activeTab.set(current);
-    });
-  };
 
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
@@ -2087,6 +2122,9 @@ export class ProductEditor implements OnDestroy {
   readonly savedHere = signal(history.state?.savedHere === true);
   readonly saveError = signal<string | null>(null);
   readonly productLoadError = signal<string | null>(null);
+  readonly productLoading = signal(false);
+  readonly editorReady = computed(() => productEditorReady(this.id(), this.draft().id,
+    this.productLoading(), this.productLoadError()));
   readonly translationDirty = signal(false);
   readonly translationSaving = signal(false);
   readonly priceStrategy = signal<'MARKUP' | 'FIXED'>('MARKUP');
@@ -2363,11 +2401,13 @@ export class ProductEditor implements OnDestroy {
 
   /** One shared action state for the app bar, workspace hero and mobile dock. */
   readonly saveBusy = computed(() =>
-    this.saving() || this.photoUploading() || this.agreementBusy()
+    !this.editorReady() || this.saving() || this.photoUploading() || this.agreementBusy()
       || this.translationSaving() || this.translationDirty());
   readonly workspaceDirty = computed(() =>
-    this.dirty() || this.familyDirty() || this.agreementDirty() || this.translationDirty());
+    this.dirty() || this.familyDirty() || this.agreementDirty() || this.translationDirty()
+      || (this.photoManager()?.pendingCount() ?? 0) > 0);
   readonly saveActionLabel = computed(() => {
+    if (!this.editorReady()) return this.productLoading() ? 'Product laden…' : 'Product niet geladen';
     if (this.saving()) return 'Bezig…';
     if (this.photoUploading()) return 'Foto’s…';
     if (this.agreementBusy()) return 'Afspraken…';
@@ -2389,7 +2429,10 @@ export class ProductEditor implements OnDestroy {
   });
 
   readonly workspacePublicationLive = computed(() => {
-    const family = this.family();
+    if (this.familyLoading() || this.familyLoadError() || this.familyDirty()) return false;
+    const baseline = this.baseline();
+    if (baseline && JSON.parse(baseline).active !== this.draft().active) return false;
+    const family = this.savedFamily();
     if (!family || !family.active || !this.draft().active) return false;
     return family.websiteStatus === 'PUBLISHED' || family.orderAppStatus === 'PUBLISHED';
   });
@@ -2398,6 +2441,9 @@ export class ProductEditor implements OnDestroy {
   readonly workspacePublicationShortLabel = computed(() => {
     if (this.familyLoading()) return 'Laden…';
     if (this.familyLoadError()) return 'Onbekend';
+    const baseline = this.baseline();
+    const activeChanged = !!baseline && JSON.parse(baseline).active !== this.draft().active;
+    if (this.familyDirty() || activeChanged) return 'Publicatiewijziging nog opslaan';
     const family = this.family();
     if (!family) return 'Niet gestart';
     if (!family.active || !this.draft().active) return 'Inactief';
@@ -2408,8 +2454,10 @@ export class ProductEditor implements OnDestroy {
     if (orderApp) return 'Orderapp live';
     return this.readinessIssues().length ? `${this.readinessIssues().length} aandacht` : 'Concept';
   });
-  readonly workspacePublicationLabel = computed(() =>
-    `Publicatie · ${this.workspacePublicationShortLabel()}`);
+  readonly workspacePublicationLabel = computed(() => {
+    const status = this.workspacePublicationShortLabel();
+    return status === 'Publicatiewijziging nog opslaan' ? status : `Publicatie · ${status}`;
+  });
 
   /** The duplicate endpoint copies the saved product, not unsaved form edits. */
   readonly copySource = computed(() =>
@@ -2451,7 +2499,11 @@ export class ProductEditor implements OnDestroy {
     && !this.copyVariantConflict());
 
   constructor() {
-    window.addEventListener('scroll', this.onScroll, { passive: true });
+    effect(() => {
+      const current = this.activeTab();
+      const valid = visibleProductEditorTab(current, this.visibleTabs().map(tab => tab.id));
+      if (valid !== current) untracked(() => this.showTab(valid));
+    });
     void this.loadReference();
     void this.loadFamilies();
     /* React to the route id only. Everything else runs untracked: loadProduct
@@ -2464,6 +2516,12 @@ export class ProductEditor implements OnDestroy {
       untracked(() => {
         if (routeId && routeId !== 'new') {
           const productId = +routeId;
+          if (!Number.isSafeInteger(productId) || productId <= 0) {
+            ++this.productLoadVersion;
+            this.productLoading.set(false);
+            this.productLoadError.set('Dit product kon niet worden gevonden.');
+            return;
+          }
           if (this.activeProductId !== null && productId !== this.activeProductId
               && (this.translationSaving()
                 || (this.translationDirty() && !this.confirmDiscardTranslations()))) {
@@ -2475,7 +2533,9 @@ export class ProductEditor implements OnDestroy {
           if (productId !== this.activeProductId) void this.loadProduct(productId);
         } else {
           ++this.productLoadVersion;
+          this.productLoading.set(false);
           this.productLoadError.set(null);
+          this.activeProductId = null;
         }
       });
     });
@@ -2488,6 +2548,7 @@ export class ProductEditor implements OnDestroy {
 
   private async loadProduct(productId: number): Promise<void> {
     const version = ++this.productLoadVersion;
+    this.productLoading.set(true);
     this.productLoadError.set(null);
     if (this.draft().id !== productId) {
       ++this.familyLoadVersion;
@@ -2512,13 +2573,12 @@ export class ProductEditor implements OnDestroy {
       void this.loadStockHistory(productId);
       const stockLevelsRequest = this.loadStockLevels(productId);
       const wanted = this.tab();
-      if (wanted && this.tabs().some((item) => item.id === wanted)) {
-        setTimeout(() => this.showTab(wanted), 50);
-      }
+      this.activeTab.set(visibleProductEditorTab(wanted || this.activeTab(), this.visibleTabs().map(tab => tab.id)));
       /* Arriving from the product page's "Beschadigd" / "Demo": open that form at once. */
       const action = this.action();
       if (action === 'damaged' || action === 'demo') {
         const levels = await stockLevelsRequest.then(() => this.stockLevels() ?? []);
+        if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
         if (levels.length) this.startTakeOut(levels, action === 'damaged' ? 'DAMAGED' : 'DEMO');
       }
       this.syncPriceStrategy(product);
@@ -2526,6 +2586,11 @@ export class ProductEditor implements OnDestroy {
     } catch (failure: unknown) {
       if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
       this.productLoadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
+    } finally {
+      if (version === this.productLoadVersion && Number(this.id()) === productId) {
+        this.productLoading.set(false);
+        if (this.editorReady() && this.tab()) this.showTab(this.activeTab());
+      }
     }
   }
 
@@ -3310,6 +3375,8 @@ export class ProductEditor implements OnDestroy {
       });
       this.copying.set(false);
       this.ui.toast(`${copy.sku} aangemaakt en gekoppeld — vul de barcodes en foto's nog aan`);
+      // The write has completed; the leave guard can now review any source edits.
+      this.saving.set(false);
       await this.router.navigate(['/products', copy.id, 'edit']);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Kopiëren mislukt'), 'err');
@@ -3369,6 +3436,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   async save(): Promise<void> {
+    if (!this.editorReady()) return;
     if (this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving()) return;
     /* Every reason not to save is said out loud and the screen jumps to
        the field - a greyed-out button explained nothing. */
@@ -3407,20 +3475,31 @@ export class ProductEditor implements OnDestroy {
         ? null
         : await this.agreementEditor()?.flush(saved.id) ?? null;
       this.markClean();
+      const agreementRemaining = agreementResult?.remaining ?? 0;
+      if (this.agreementDirty() || agreementRemaining > 0) {
+        const partialMessage = agreementRemaining > 0
+          ? `Product opgeslagen · ${agreementRemaining} afspraakfoto${agreementRemaining === 1 ? '' : '’s'} nog niet geüpload. Probeer de resterende afspraken opnieuw op te slaan.`
+          : 'Product opgeslagen · één of meer bijschriften bij de afspraakfoto’s zijn nog niet opgeslagen. Probeer opnieuw.';
+        this.saveError.set(partialMessage);
+        this.savedHere.set(true);
+        this.ui.toast(partialMessage, 'err');
+        return;
+      }
       const publicationIssueCount = Math.max(
         this.family()?.publicationIssues.length ?? 0,
         saved.publicationIssues.length,
       );
-      this.ui.toast(agreementResult?.remaining
-        ? `Product opgeslagen · ${agreementResult.remaining} afspraakfoto${agreementResult.remaining === 1 ? '' : '’s'} wacht op opnieuw proberen`
-        : (publicationIssueCount
+      this.ui.toast(publicationIssueCount
           ? `Opgeslagen · nog ${publicationIssueCount} publicatiepunt(en)`
           : (wasNew
             ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
-            : 'Opgeslagen')));
+            : 'Opgeslagen'));
       /* Saving keeps you on the form: the next tweak is usually seconds
          away. A caller that sent us here with a return address (a sales
          order creating a product) still gets its product back. */
+      // All writes and queued uploads succeeded. Internal navigation must obey
+      // the same guard as user navigation, which blocks while saving is true.
+      this.saving.set(false);
       const back = this.returnTo();
       if (back) {
         await this.router.navigateByUrl(back);
@@ -3645,17 +3724,20 @@ export class ProductEditor implements OnDestroy {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
-    if (this.translationSaving() || this.agreementBusy()) return false;
-    if (this.translationDirty()) return this.confirmDiscardTranslations();
-    if ((!this.dirty() && !this.agreementDirty()) || this.saving()) return true;
-    /* Unsaved product fields: ask in our own words - save, drop, or stay. */
+    if (this.saving() || this.photoUploading() || this.translationSaving()
+        || this.agreementBusy() || this.sharedFieldsBusy()) return false;
+    if (this.translationDirty() && !this.confirmDiscardTranslations()) return false;
+    const pendingWork = () => this.dirty() || this.familyDirty() || this.agreementDirty()
+      || (this.photoManager()?.pendingCount() ?? 0) > 0;
+    if (!pendingWork()) return true;
+    /* Discarding translations does not discard the rest of the editor. */
     return new Promise<boolean>((resolve) => {
       this.leaveQuestion.set(async (keep) => {
         this.leaveQuestion.set(null);
         if (keep === null) { resolve(false); return; }
         if (keep) {
           await this.save();
-          resolve(!this.dirty() && !this.agreementDirty());
+          resolve(!pendingWork());
           return;
         }
         resolve(true);
@@ -3665,8 +3747,10 @@ export class ProductEditor implements OnDestroy {
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (!this.dirty() && !this.agreementDirty()
-        && !this.translationDirty() && !this.translationSaving() && !this.agreementBusy()) return;
+    if (!this.dirty() && !this.familyDirty() && !this.agreementDirty()
+        && !(this.photoManager()?.pendingCount() ?? 0)
+        && !this.translationDirty() && !this.translationSaving() && !this.agreementBusy()
+        && !this.saving() && !this.photoUploading() && !this.sharedFieldsBusy()) return;
     event.preventDefault();
     event.returnValue = '';
   }
@@ -3676,13 +3760,14 @@ export class ProductEditor implements OnDestroy {
   saveShortcut(event: KeyboardEvent): void {
     if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
     event.preventDefault();
-    const productWorkChanged = this.dirty() || this.familyDirty() || this.agreementDirty();
+    const productWorkChanged = this.dirty() || this.familyDirty() || this.agreementDirty()
+      || (this.photoManager()?.pendingCount() ?? 0) > 0;
     if (productWorkChanged && !this.saveBusy()) void this.save();
   }
 
   private confirmDiscardTranslations(): boolean {
     return window.confirm(
-      'Je hebt productvertalingen die nog niet zijn opgeslagen. Dit scherm toch verlaten?',
+      'Je hebt vertalingen die nog niet zijn opgeslagen. Deze vertaalwijzigingen laten vervallen? Andere productwijzigingen worden daarna apart gecontroleerd.',
     );
   }
 }
