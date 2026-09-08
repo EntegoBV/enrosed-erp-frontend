@@ -24,7 +24,7 @@ import { ReceiptDraft, receiptLocalParts, receiptRequest } from '../../shared/re
           @if (summary.creditEur > 0) { <p class="receipts__warning">{{ summary.creditEur | eur }} credit voor de klant. Dit is geen open inkomende betaling.</p> }
           @if (summary.legacyPaidMarker) { <p class="receipts__warning">De historische betaalmarkering is als ontvangst overgenomen. Corrigeer die bestaande ontvangst als het bedrag of tijdstip niet klopt. Een nieuwe ontvangst wordt erbij opgeteld.</p> }
           @if (summary.instalments.length) {
-            <div class="receipts__plan"><b>Betaalplan productie</b>@for (step of summary.instalments; track step.key) {
+            <div class="receipts__plan"><b>Betaalplan</b>@for (step of summary.instalments; track step.key) {
               <div><span>{{ step.label }}<small>{{ step.paidEur | eur }} ontvangen van {{ step.expectedEur | eur }}</small></span><b>{{ step.remainingEur | eur }} open</b>@if (step.remainingEur > 0 && canRecord()) { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" [attr.aria-label]="'Ontvangst registreren: ' + step.label" (click)="add(step.remainingEur)">Noteren</button> }</div>
             }</div>
           }
