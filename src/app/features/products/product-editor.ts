@@ -2501,6 +2501,9 @@ export class ProductEditor implements OnDestroy {
     try {
       const product = await this.catalog.product(productId);
       if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
+      /* The variant group is part of the first paint: it loads before the form fills. */
+      await this.loadFamilyForProduct(product);
+      if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
       this.savedProductFamilyId.set(product.familyId ?? null);
       this.savedSupplierId.set(product.supplierId ?? null);
       this.activeProductId = productId;
@@ -2519,7 +2522,6 @@ export class ProductEditor implements OnDestroy {
       }
       this.syncPriceStrategy(product);
       this.markClean();
-      await this.loadFamilyForProduct(product);
     } catch (failure: unknown) {
       if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
       this.productLoadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));

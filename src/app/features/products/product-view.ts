@@ -1590,6 +1590,10 @@ export class ProductView {
       this.sourcing.suppliers(),
     ]);
     if (version !== this.loadVersion) return;
+    /* The variant group belongs to the first paint: it loads before the
+       product shows, so no block appears a moment later. */
+    if (product.familyId != null) await this.loadFamily(product.familyId, version);
+    if (version !== this.loadVersion) return;
     this.product.set(product);
     this.stockLevels.set(null);
     if (product.id !== null) {
@@ -1605,7 +1609,6 @@ export class ProductView {
           orders.find((item) => item.order.number === product.landedCostSource)?.order.id ?? null);
       }).catch(() => {});
     }
-    if (product.familyId != null) await this.loadFamily(product.familyId, version);
     const requestedSection = this.visibleDetailSections()
       .find((item) => `#${item.id}` === window.location.hash)?.id;
     if (requestedSection) setTimeout(() => this.scrollToDetailSection(requestedSection), 0);

@@ -729,8 +729,11 @@ export class ProductList {
     void this.sourcing.expectedStock()
       .then((expected) => this.expected.set(new Map(expected.map((item) => [item.productId, item]))))
       .catch(() => undefined);
-    this.loading.set(false);
+    /* The families name and group the rows; the list waits for them so no
+       name changes a moment after the first paint. A failed request still
+       shows the list, with the retry beside it. */
     await familyRequest;
+    this.loading.set(false);
   }
 
   async retryFamilies(): Promise<void> {
