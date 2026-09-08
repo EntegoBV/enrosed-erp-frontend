@@ -50,6 +50,7 @@ export const COLLECTIONS: readonly Collection[] = [
   { key: 'product', label: 'Productfoto’s', hint: 'per product', icon: '❀', filters: { targetType: 'PRODUCT', kind: 'IMAGE' } },
   { key: 'family', label: 'Reeks- & websitefoto’s', hint: 'per productreeks', icon: '◫', filters: { targetType: 'PRODUCT_FAMILY' } },
   { key: 'purchase', label: 'Inkoopdocumenten', hint: 'per inkooporder', icon: '▤', filters: { targetType: 'PURCHASE_ORDER' } },
+  { key: 'cost', label: 'Kosten', hint: 'facturen bij kosten', icon: '▣', filters: { targetType: 'COMPANY_COST' } },
   { key: 'planner', label: 'Planner', hint: 'per planneritem', icon: '▥', filters: { targetType: 'PLANNER_ITEM' } },
   { key: 'quote', label: 'Offertes', hint: 'bijlagen bij offertes', icon: '▧', filters: { role: 'QUOTE' } },
   { key: 'invoice', label: 'Facturen', hint: 'bijlagen bij facturen', icon: '▨', filters: { role: 'INVOICE' } },

@@ -50,12 +50,12 @@ export function hasSeparateCosts(order: PurchaseOrder | null | undefined): boole
   return (order.otherCosts ?? []).some((cost) => (cost.amountEur ?? 0) > 0);
 }
 
-/** The bottom line under the landed total, named after what it adds. */
+/** The landed total's label when an inspection or other named cost sits inside it. */
 export function separateCostsTotalLabel(totals: {
   otherCosts?: { amountEur: number | null }[];
 }): string {
   const others = (totals.otherCosts ?? []).some((cost) => (cost.amountEur ?? 0) > 0);
-  return others ? 'Totaal incl. aparte kosten' : 'Totaal incl. inspectie';
+  return others ? 'Totaal geland incl. inspectie en andere kosten' : 'Totaal geland incl. inspectie';
 }
 
 function clean(value: string | null | undefined): string {

@@ -252,3 +252,104 @@ export function costsCsv(costs: readonly CompanyCost[], categoryLabel: (code: st
     ].map(cell).join(';'));
   return [header.join(';'), ...lines].join('\r\n');
 }
+
+export type MovementKind = 'COST' | 'PURCHASE' | 'INVOICE';
+
+/** One thing the ERP saw move on the bank after the last reading: out is negative, in is positive. */
+export interface BankMovement {
+  date: string;
+  kind: MovementKind;
+  label: string;
+  detail: string;
+  amountEur: number;
+}
+
+export interface BankMovements {
+  since: string | null;
+  rows: BankMovement[];
+  outEur: number;
+  inEur: number;
+  netEur: number;
+  /** The last reading plus what moved after it. */
+  currentEur: number;
+}
+
+export interface PurchasePaymentLike { paidOn: string; amountEur: number; orderNumber: string | null; orderAlias?: string | null; label: string | null }
+export interface PaidInvoice { date: string; number: string; customer: string | null; amountEur: number }
+
+/**
+ * The bank rolled forward from its last reading: costs paid, containers paid
+ * and invoices received after that day. Without a reading nothing rolls; the
+ * ERP cannot know what was on the account before it was told.
+ */
+export function movementsSince(since: string | null, bankEur: number, costs: readonly CompanyCost[],
+                               payments: readonly PurchasePaymentLike[], invoices: readonly PaidInvoice[]): BankMovements {
+  if (!since) return { since: null, rows: [], outEur: 0, inEur: 0, netEur: 0, currentEur: round2(finite(bankEur)) };
+  const rows: BankMovement[] = [];
+  for (const cost of costs) {
+    if (cost.paidOn && cost.paidOn > since) {
+      rows.push({ date: cost.paidOn, kind: 'COST', label: cost.description, detail: cost.party ? `${cost.party} · kost` : 'kost', amountEur: -inclOf(cost) });
+    }
+  }
+  for (const payment of payments) {
+    if (payment.paidOn > since) {
+      rows.push({
+        date: payment.paidOn, kind: 'PURCHASE',
+        label: payment.orderNumber ? `Inkoop ${payment.orderNumber}` : 'Inkoopbetaling',
+        detail: [payment.orderAlias, payment.label].filter((part): part is string => !!part).join(' · ') || 'inkoop',
+        amountEur: -finite(payment.amountEur),
+      });
+    }
+  }
+  for (const invoice of invoices) {
+    if (invoice.date > since) {
+      rows.push({ date: invoice.date, kind: 'INVOICE', label: `Factuur ${invoice.number}`, detail: invoice.customer ?? 'ontvangen', amountEur: finite(invoice.amountEur) });
+    }
+  }
+  rows.sort((left, right) => right.date.localeCompare(left.date) || left.label.localeCompare(right.label));
+  const outEur = round2(rows.filter((row) => row.amountEur < 0).reduce((sum, row) => sum - row.amountEur, 0));
+  const inEur = round2(rows.filter((row) => row.amountEur > 0).reduce((sum, row) => sum + row.amountEur, 0));
+  return { since, rows, outEur, inEur, netEur: round2(inEur - outEur), currentEur: round2(finite(bankEur) + inEur - outEur) };
+}
+
+export interface PartyRow { party: string; count: number; exclEur: number; sharePct: number }
+
+/** Who got the most, excluding VAT; costs without a party count under "Zonder naam". */
+export function topParties(costs: readonly CompanyCost[], limit = 8): PartyRow[] {
+  const total = costs.reduce((sum, cost) => sum + finite(cost.amountExclEur), 0);
+  const map = new Map<string, PartyRow>();
+  for (const cost of costs) {
+    const party = (cost.party ?? '').trim() || 'Zonder naam';
+    const row = map.get(party) ?? { party, count: 0, exclEur: 0, sharePct: 0 };
+    row.count += 1;
+    row.exclEur = round2(row.exclEur + finite(cost.amountExclEur));
+    map.set(party, row);
+  }
+  return [...map.values()]
+    .map((row) => ({ ...row, sharePct: total > 0 ? round2(row.exclEur / total * 100) : 0 }))
+    .sort((left, right) => right.exclEur - left.exclEur || left.party.localeCompare(right.party))
+    .slice(0, limit);
+}
+
+/** The biggest single costs, excluding VAT. */
+export function largestCosts(costs: readonly CompanyCost[], limit = 8): CompanyCost[] {
+  return [...costs].sort((left, right) => finite(right.amountExclEur) - finite(left.amountExclEur) || left.date.localeCompare(right.date)).slice(0, limit);
+}
+
+export interface QuarterRow { quarter: number; label: string; count: number; exclEur: number; vatEur: number; inclEur: number }
+
+/** The four quarters of a year, the way the VAT return wants them. */
+export function vatByQuarter(costs: readonly CompanyCost[], year: number): QuarterRow[] {
+  const rows: QuarterRow[] = [1, 2, 3, 4].map((quarter) => ({ quarter, label: `Q${quarter}`, count: 0, exclEur: 0, vatEur: 0, inclEur: 0 }));
+  for (const cost of costs) {
+    if (Number((cost.date ?? '').slice(0, 4)) !== year) continue;
+    const month = Number((cost.date ?? '').slice(5, 7));
+    if (!month) continue;
+    const row = rows[Math.floor((month - 1) / 3)];
+    row.count += 1;
+    row.exclEur = round2(row.exclEur + finite(cost.amountExclEur));
+    row.vatEur = round2(row.vatEur + vatOf(cost));
+    row.inclEur = round2(row.inclEur + inclOf(cost));
+  }
+  return rows;
+}

@@ -9,6 +9,7 @@ export type MediaTargetType =
   | 'PRODUCT'
   | 'PRODUCT_FAMILY'
   | 'PURCHASE_ORDER'
+  | 'COMPANY_COST'
   | 'PLANNER_ITEM';
 
 export interface MediaAssetLink {

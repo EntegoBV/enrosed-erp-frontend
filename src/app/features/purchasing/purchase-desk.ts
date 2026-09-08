@@ -119,7 +119,7 @@ type DeskRow =
             <div class="desk-kpi desk-kpi--total">
               <small>Totaal geland</small>
               <strong>{{ data.costing.totals.totalEur | eur: 0 }}</strong>
-              <span>@if (hasSeparateCosts(data.order) && data.costing.totals.totalWithSeparateCostsEur) { + {{ data.costing.totals.totalWithSeparateCostsEur - data.costing.totals.totalEur | eur: 0 }} apart = {{ data.costing.totals.totalWithSeparateCostsEur | eur: 0 }} } @else { {{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk }</span>
+              <span>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk@if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) { · waarvan {{ data.costing.totals.separateCostsEur | eur: 0 }} inspectie &amp; andere }</span>
             </div>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('pay')" [class.is-warn]="openAll() > 0">
               <small>Te betalen</small>
@@ -642,16 +642,15 @@ type DeskRow =
                         <div class="desk-chain__row"><i>+</i><span>{{ costLabels().destinationCostsLabel }}</span><b>{{ data.costing.totals.destinationEur | eur }}</b></div>
                       }
                       @if (data.costing.totals.extraRevenueEur) { <div class="desk-chain__row"><i>+</i><span>Enrosed kost <small>eigen opslag</small></span><b>{{ data.costing.totals.extraRevenueEur | eur }}</b></div> }
-                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal geland <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
                       @if (data.costing.totals.separateCostsEur) {
                         @if (data.costing.totals.inspectionEur) {
-                          <div class="desk-chain__row"><i>+</i><span>Inspectie <small>apart, niet in de stukprijs</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
+                          <div class="desk-chain__row"><i>+</i><span>Inspectie <small>in de stukprijs verdeeld</small></span><b>{{ data.costing.totals.inspectionEur | eur }}</b></div>
                         }
                         @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
-                          <div class="desk-chain__row"><i>+</i><span>{{ cost.label }} <small>apart, niet in de stukprijs</small></span><b>{{ cost.amountEur | eur }}</b></div>
+                          <div class="desk-chain__row"><i>+</i><span>{{ cost.label }} <small>in de stukprijs verdeeld</small></span><b>{{ cost.amountEur | eur }}</b></div>
                         }
-                        <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ separateCostsTotalLabel(data.costing.totals) }}</span><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></div>
                       }
+                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ data.costing.totals.separateCostsEur ? separateCostsTotalLabel(data.costing.totals) : 'Totaal geland' }} <small>{{ data.costing.totals.averageUnitEur | eur: 4 }} per stuk</small></span><b>{{ data.costing.totals.totalEur | eur }}</b></div>
                     </div>
                     @if (!isDdp() && data.costing.totals.goodsEur > 0) {
                       <div class="desk-overhead">

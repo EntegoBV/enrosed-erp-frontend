@@ -1065,7 +1065,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
                   @if (data.costing.totals.separateCostsEur) {
                     <div class="cost-summary__group">
-                      <span class="cost-section">Apart · niet in de stukprijs</span>
+                      <span class="cost-section">In de stukprijs verdeeld</span>
                       @if (data.costing.totals.inspectionEur) {
                         <div class="stat-row">
                           <span>Inspectie</span>
@@ -1080,7 +1080,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       }
                       <div class="stat-row cost-summary__subtotal">
                         <span>{{ separateCostsTotalLabel(data.costing.totals) }}</span>
-                        <span class="num">{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</span>
+                        <span class="num">{{ data.costing.totals.totalEur | eur }}</span>
                       </div>
                     </div>
                   }

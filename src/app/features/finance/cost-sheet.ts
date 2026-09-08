@@ -62,13 +62,36 @@ import { FinanceState } from './finance-state';
             <span class="hint">Een standhuur bij TICA telt dan mee in het resultaat van dat kanaal.</span></div>
           <div class="field span-2"><label for="k-notes">Notities <span class="opt"></span></label>
             <textarea class="textarea" id="k-notes" rows="3" [ngModel]="draft().notes" (ngModelChange)="patch({ notes: $event })"></textarea></div>
+          <div class="field span-2 fin-docs">
+            <div class="fin-docs__head">
+              <span class="label">Factuur of document <span class="opt"></span></span>
+              <label class="btn btn--sm fin-docs__add">+ Bestand<input type="file" multiple accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx,.txt" hidden (change)="pick($event)" /></label>
+            </div>
+            @for (asset of attached(); track asset.id) {
+              <div class="fin-doc">
+                <button type="button" class="fin-doc__open" (click)="state.openAttachment(asset)" [title]="asset.originalFilename">
+                  <i aria-hidden="true">{{ asset.kind === 'IMAGE' ? '🖼' : '📄' }}</i>
+                  <span><b>{{ asset.name }}</b><small>{{ size(asset.sizeBytes) }} · in de bibliotheek</small></span>
+                </button>
+                <button type="button" class="fin-doc__remove" aria-label="Document losmaken" (click)="state.detach(asset, draft().id!)">×</button>
+              </div>
+            }
+            @for (file of pending(); track file.name + file.size) {
+              <div class="fin-doc fin-doc--pending">
+                <span class="fin-doc__open"><i aria-hidden="true">⤴</i><span><b>{{ file.name }}</b><small>gaat mee bij het boeken</small></span></span>
+                <button type="button" class="fin-doc__remove" aria-label="Niet opladen" (click)="unqueue(file)">×</button>
+              </div>
+            }
+            @if (state.uploading()) { <span class="hint">Opladen…</span> }
+            @if (!attached().length && !pending().length) { <span class="hint">De factuur van de leverancier, het ticket, het contract: komt in Documenten &amp; media onder Kosten / {{ draft().date.slice(0, 4) }}.</span> }
+          </div>
         </div>
       </div>
       <div foot style="display:contents">
         @if (draft().id) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCost(draft())">Verwijderen</button> }
         <span class="spacer"></span>
         <button class="btn" type="button" (click)="state.costDraft.set(null)">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !canSave()" (click)="state.saveCost(draft())">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaren' : 'Boeken' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !canSave()" (click)="save()">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaren' : 'Boeken' }}</button>
       </div>
     </app-sheet>
   `,
@@ -79,6 +102,9 @@ export class CostSheet {
   readonly inclOf = inclOf;
   readonly draft = linkedSignal<CompanyCost>(() => this.state.costDraft() ?? blankCost());
   readonly customCategory = signal(false);
+  /** Files chosen before the cost exists; they go up right after the booking. */
+  readonly pending = signal<File[]>([]);
+  readonly attached = computed(() => this.state.attachmentsFor(this.draft().id));
   readonly categories = computed(() => categoryChoices([...this.state.costs().map((cost) => cost.category), ...this.state.recurring().map((row) => row.category)]));
   readonly categoryChoice = computed(() => {
     if (this.customCategory()) return '__other__';
@@ -92,6 +118,31 @@ export class CostSheet {
 
   patch(changes: Partial<CompanyCost>): void {
     this.draft.update((draft) => ({ ...draft, ...changes }));
+  }
+
+  pick(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    if (!files.length) return;
+    const id = this.draft().id;
+    if (id) void this.state.attach(id, files);
+    else this.pending.update((queue) => [...queue, ...files]);
+  }
+
+  unqueue(file: File): void {
+    this.pending.update((queue) => queue.filter((row) => row !== file));
+  }
+
+  size(bytes: number): string {
+    if (!bytes) return '';
+    return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} kB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  async save(): Promise<void> {
+    const files = this.pending();
+    const saved = await this.state.saveCost(this.draft());
+    if (saved?.id && files.length) void this.state.attach(saved.id, files);
   }
 
   pickCategory(value: string): void {

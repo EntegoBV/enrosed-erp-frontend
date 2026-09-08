@@ -116,15 +116,8 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
                 <p class="pq__hint">@if (costPct() === 0) { Wij financieren de container; de kost en onze winst rekenen we na de veiling af. } @else if (costPct() < 100) { De rest van de kost en onze winst volgen in de veilingafrekening. } @else { De partner betaalt de container vooraf; na de veiling volgt enkel onze winstdeling. }</p>
               }
             </div>
-            @if (costs().length) {
-              <div class="pq__costs" role="group" aria-label="Aparte kosten van de container">
-                @for (cost of costs(); track cost.key) {
-                  <label class="pq__cost">
-                    <input type="checkbox" [checked]="includedCosts().has(cost.key)" (change)="toggleCost(cost.key)" />
-                    <span>{{ cost.description }}</span><b>{{ cost.amountEur | eur }}</b>
-                  </label>
-                }
-              </div>
+            @if (separateCostsEur() > 0) {
+              <p class="pq__hint">Inspectie en andere kosten ({{ separateCostsEur() | eur }}) zitten in de kostprijs per stuk verdeeld.</p>
             }
           } @else if (!costKnown()) {
             <p class="pq__hint">De kostprijs per stuk is nog niet bekend voor elke regel; reken de calculatie eerst door om aan kostprijs te kunnen offreren.</p>
@@ -140,10 +133,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <li class="pq__empty">Deze container heeft nog geen productregels.</li>
           }
           @if (pricing() === 'COST') {
-            @for (cost of chosenCosts(); track cost.key) {
-              <li class="pq__extra"><span>{{ cost.description }}</span><b>{{ costAmount(cost) | eur }}</b></li>
-            }
-            <li class="pq__total"><span>Goederen en aparte kosten, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
+            <li class="pq__total"><span>Goederen aan gelande kostprijs, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
           }
         </ul>
       </div>
@@ -245,18 +235,11 @@ export class PurchaseQuoteSheet {
 
   /** Cost pricing needs a landed cost on every line; a half-calculated container cannot be passed on. */
   readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => line.landedUnitEur !== null));
-  /** The container's separate costs: inspection and the named others, each a line of its own. */
-  readonly costs = computed<PurchaseQuoteCost[]>(() => {
+  /** The inspection and the named other costs; since they sit inside every landed piece price, nothing travels as a line of its own. */
+  readonly costs = computed<PurchaseQuoteCost[]>(() => []);
+  readonly separateCostsEur = computed(() => {
     const order = this.order();
-    const suffix = ` · ${order.number}`;
-    const costs: PurchaseQuoteCost[] = [];
-    if ((order.inspectionCostEur ?? 0) > 0) costs.push({ key: 'inspection', description: `Inspectie${suffix}`, amountEur: order.inspectionCostEur! });
-    (order.otherCosts ?? []).forEach((cost, index) => {
-      const amount = cost.amountEur ?? 0;
-      if (!cost.label?.trim() || !(amount > 0)) return;
-      costs.push({ key: `other-${index}`, description: `${cost.label.trim()}${suffix}`, amountEur: amount });
-    });
-    return costs;
+    return (order.inspectionCostEur ?? 0) + (order.otherCosts ?? []).reduce((sum, cost) => sum + (cost.amountEur ?? 0), 0);
   });
   /* Every separate cost travels along unless it is ticked off; a new container resets the ticks. */
   readonly includedCosts = linkedSignal<ReadonlySet<string>>(() => new Set(this.costs().map((cost) => cost.key)));
@@ -389,8 +372,8 @@ export class PurchaseQuoteSheet {
         partner: partnerDeal,
         sharePct: partnerDeal ? this.sharePct() : null,
         costPct: partnerDeal ? this.costPct() : null,
-        includeInspection: atCost && included.includes('inspection'),
-        otherCostIndexes: atCost ? included.filter((key) => key.startsWith('other-')).map((key) => Number(key.slice('other-'.length))) : [],
+        includeInspection: false,
+        otherCostIndexes: [],
         salesChannel: partnerDeal ? 'PARTNER' : null,
       });
       const count = view.order.lines.length + (view.order.extraLines ?? []).length;

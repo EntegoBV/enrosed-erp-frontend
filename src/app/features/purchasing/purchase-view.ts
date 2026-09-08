@@ -620,15 +620,15 @@ type PurchaseWorkspaceSectionId =
                   }
                   @if (data.costing.totals.separateCostsEur) {
                     @if (data.costing.totals.inspectionEur) {
-                      <div class="stat-row"><span>Inspectie <small>apart, niet in de stukprijs</small></span>
+                      <div class="stat-row"><span>Inspectie <small>in de stukprijs verdeeld</small></span>
                         <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span></div>
                     }
                     @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
-                      <div class="stat-row"><span>{{ cost.label }} <small>apart, niet in de stukprijs</small></span>
+                      <div class="stat-row"><span>{{ cost.label }} <small>in de stukprijs verdeeld</small></span>
                         <span class="num">{{ cost.amountEur | eur }}</span></div>
                     }
                     <div class="stat-row"><span><b>{{ separateCostsTotalLabel(data.costing.totals) }}</b></span>
-                      <span class="num"><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></span></div>
+                      <span class="num"><b>{{ data.costing.totals.totalEur | eur }}</b></span></div>
                   }
                 </div>
 

@@ -971,6 +971,18 @@ export interface PurchasePayment {
   payee?: Payee | null;
 }
 
+/** One payment on a container as the bank saw it, with the container it went to. */
+export interface PurchasePaymentRow {
+  id: number;
+  orderId: number;
+  orderNumber: string | null;
+  orderAlias: string | null;
+  paidOn: string;
+  amountEur: number;
+  label: string | null;
+  payee?: Payee | null;
+}
+
 export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
 
 /** A file that belongs to a container. */
@@ -1171,6 +1183,8 @@ export interface SalesOrderLine {
   manualDiscountPct: number | null;
   /** Zelf ingevulde leverweek, bv. "2026-W34". Optioneel. */
   deliveryWeek: string | null;
+  /** What one piece cost us when the line was written; fixed, so an old document's margin never drifts. */
+  unitCostEur?: number | null;
 }
 
 /** A hand-built pallet: label plus product/carton assignments. */

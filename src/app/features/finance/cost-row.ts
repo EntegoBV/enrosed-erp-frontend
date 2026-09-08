@@ -18,7 +18,7 @@ import { FinanceState } from './finance-state';
         <span class="fin-row__cat" [attr.data-cat]="cost().category">{{ categoryLabel(cost().category) }}</span>
         <span class="fin-row__body">
           <span class="fin-row__title">{{ cost().description }}@if (cost().recurringCostId) { <i class="fin-row__auto" title="Automatisch geboekt als vaste kost">↻</i> }</span>
-          <span class="fin-row__meta">{{ meta() }}</span>
+          <span class="fin-row__meta">{{ meta() }}@if (attachments()) { <i class="fin-row__clip" [title]="attachments() + ' document(en)'">📎 {{ attachments() }}</i> }</span>
         </span>
         <span class="fin-row__amount">
           <b>{{ cost().amountExclEur | eur }}</b>
@@ -38,6 +38,8 @@ export class CostRow {
   readonly cost = input.required<CompanyCost>();
   readonly categoryLabel = categoryLabel;
   readonly inclOf = inclOf;
+
+  readonly attachments = computed(() => this.state.attachmentsFor(this.cost().id).length);
 
   /** Who, which invoice and which channel, on one line. */
   readonly meta = computed(() => {

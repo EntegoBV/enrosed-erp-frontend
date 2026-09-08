@@ -1,11 +1,11 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
   FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
-  PurchaseDocument, DocumentKind,
+  PurchaseDocument, DocumentKind, PurchasePaymentRow,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -132,6 +132,13 @@ export class SourcingApi {
 
   deletePayment(orderId: number, paymentId: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/purchase-orders/${orderId}/payments/${paymentId}`)));
+  }
+
+  /** Every payment on every container from a day on: what left the bank for purchasing. */
+  purchasePayments(from?: string | null): Promise<PurchasePaymentRow[]> {
+    let params = new HttpParams();
+    if (from) params = params.set('from', from);
+    return firstValueFrom(this.http.get<PurchasePaymentRow[]>(api('/api/purchase-payments'), { params }));
   }
 
   documents(orderId: number): Promise<PurchaseDocument[]> {

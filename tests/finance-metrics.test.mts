@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { BankBalance, CompanyCost, RecurringCost } from '../src/app/core/api/models.ts';
 import {
   addDays, bankOverview, cashOutlook, costsCsv, monthlyCostSeries, monthlyEquivalentEur, occurrencesBetween,
-  recurringSummary, stepDate, upcomingRecurring, yearComparison, yearlyEur,
+  largestCosts, movementsSince, recurringSummary, stepDate, topParties, upcomingRecurring, vatByQuarter, yearComparison, yearlyEur,
 } from '../src/app/features/finance/finance-metrics.ts';
 
 function definition(input: Partial<RecurringCost> = {}): RecurringCost {
@@ -111,4 +111,44 @@ test('the CSV uses semicolons and a decimal comma and quotes what would break a 
   assert.equal(lines[0].split(';')[5], 'Bedrag excl. btw');
   assert.equal(lines[1], '2026-09-01;Huur & magazijn;Huur;;;10,00;0,00;0,00;10,00;;;nee;');
   assert.equal(lines[2], '2026-09-05;Huur & magazijn;Huur;"TICA; Trends & Trade";"F ""77""";1250,00;21,00;262,50;1512,50;;;ja;');
+});
+
+test('the bank rolls forward with what moved after the last reading, and not before it', () => {
+  const costs = [
+    cost({ id: 1, date: '2026-09-02', amountExclEur: 100, paidOn: '2026-09-02', description: 'Boekhouder', party: 'Accountant BV' }),
+    cost({ id: 2, date: '2026-09-05', amountExclEur: 200, paidOn: '2026-09-09', description: 'Huur', vatPct: 0 }),
+    cost({ id: 3, date: '2026-09-06', amountExclEur: 50, paidOn: null, description: 'Open' }),
+  ];
+  const payments = [
+    { paidOn: '2026-09-10', amountEur: 5000, orderNumber: 'PO-2026-005', orderAlias: 'Rozen', label: 'Saldo' },
+    { paidOn: '2026-09-01', amountEur: 9999, orderNumber: 'PO-2026-004', label: null },
+  ];
+  const invoices = [{ date: '2026-09-12', number: 'F-2026-0003', customer: 'Bloemen BV', amountEur: 1210 }];
+
+  const moves = movementsSince('2026-09-08', 12500, costs, payments, invoices);
+
+  assert.deepEqual(moves.rows.map((row) => `${row.date} ${row.label} ${row.amountEur}`),
+      ['2026-09-12 Factuur F-2026-0003 1210', '2026-09-10 Inkoop PO-2026-005 -5000', '2026-09-09 Huur -200']);
+  assert.equal(moves.rows[1].detail, 'Rozen · Saldo');
+  assert.equal(moves.outEur, 5200);
+  assert.equal(moves.inEur, 1210);
+  assert.equal(moves.netEur, -3990);
+  assert.equal(moves.currentEur, 8510);
+  const none = movementsSince(null, 0, costs, payments, invoices);
+  assert.equal(none.rows.length, 0, 'without a reading nothing rolls');
+  assert.equal(none.currentEur, 0);
+});
+
+test('parties, largest costs and quarters read from the same list', () => {
+  const costs = [
+    cost({ id: 1, date: '2026-01-10', amountExclEur: 300, party: 'TICA' }),
+    cost({ id: 2, date: '2026-04-10', amountExclEur: 100, party: 'TICA', vatPct: 6 }),
+    cost({ id: 3, date: '2026-04-20', amountExclEur: 500, party: null }),
+    cost({ id: 4, date: '2025-12-31', amountExclEur: 900, party: 'Vorig jaar' }),
+  ];
+  assert.deepEqual(topParties(costs, 2).map((row) => [row.party, row.exclEur, row.sharePct]), [['Vorig jaar', 900, 50], ['Zonder naam', 500, 27.78]]);
+  assert.deepEqual(largestCosts(costs, 2).map((row) => row.id), [4, 3]);
+  const quarters = vatByQuarter(costs, 2026);
+  assert.deepEqual(quarters.map((row) => [row.label, row.count, row.exclEur, row.vatEur, row.inclEur]),
+      [['Q1', 1, 300, 63, 363], ['Q2', 2, 600, 111, 711], ['Q3', 0, 0, 0, 0], ['Q4', 0, 0, 0, 0]]);
 });
