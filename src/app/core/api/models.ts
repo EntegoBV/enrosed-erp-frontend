@@ -1608,6 +1608,45 @@ export interface CompanyCost {
   vatEur?: number;
   amountInclEur?: number;
   paid?: boolean;
+  /** The recurring definition that booked this cost automatically; null for a hand-booked cost. */
+  recurringCostId?: number | null;
+}
+
+export type RecurringInterval = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
+
+/** A cost that returns on a fixed rhythm; the server books every occurrence as a CompanyCost. */
+export interface RecurringCost {
+  id: number | null;
+  name: string;
+  category: string;
+  party: string | null;
+  amountExclEur: number;
+  vatPct: number | null;
+  salesChannel: string | null;
+  interval: RecurringInterval;
+  /** The first occurrence; every later one is counted from here. */
+  startDate: string;
+  /** The last occurrence, inclusive; null runs until stopped. */
+  endDate: string | null;
+  /** Server-kept: the next occurrence still to book; null once the schedule has ended. */
+  nextDate?: string | null;
+  active: boolean;
+  /** A direct debit or standing order: the booked cost is marked paid on its date. */
+  autoPaid: boolean;
+  reference: string | null;
+  notes: string | null;
+  lastBookedOn?: string | null;
+  createdAt?: string | null;
+}
+
+/** What an account held on a day, typed over from the bank. */
+export interface BankBalance {
+  id: number | null;
+  account: string;
+  date: string;
+  balanceEur: number;
+  notes: string | null;
+  createdAt?: string | null;
 }
 
 /** What the quote sheet asks for when a container becomes a quote. */

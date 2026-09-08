@@ -10,6 +10,7 @@ import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
 import { Icon } from './shared/icon';
 import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
+import { FinanceAdminNav } from './features/finance/finance-admin-nav';
 import { FilesAdminNav } from './features/files/files-admin-nav';
 import { DesktopViewport } from './core/platform/desktop-viewport';
 import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
@@ -25,13 +26,15 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
   template: `
-    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()">
+    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()">
       @if (websiteWorkspace()) {
         <app-website-admin-nav />
       } @else if (filesWorkspace()) {
         <app-files-admin-nav />
+      } @else if (financeWorkspace()) {
+        <app-finance-admin-nav />
       } @else if (!bare()) {
         <aside class="sidebar" [class.sidebar--rail]="railed()">
           <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
@@ -193,7 +196,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
             <div class="sidebar__sub" id="sidebar-bedrijf"
                  [class.sidebar__sub--closed]="!groupOpen('bedrijf')">
               <a class="sidebar__link sidebar__link--wide" routerLink="/costs" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Kosten
+                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Kosten &amp; bank
               </a>
               <a class="sidebar__link sidebar__link--wide" routerLink="/activity" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="activity" [size]="18" /> Logboek
@@ -376,6 +379,8 @@ export class App {
   /** The library gets its own workspace navigation on a desktop; a phone keeps the tab bar. */
   private readonly desktopViewport = inject(DesktopViewport);
   readonly filesWorkspace = computed(() => this.url().startsWith('/files') && this.desktopViewport.active());
+  /** Kosten & bank is a workspace of its own as well: costs, recurring costs and the bank side by side. */
+  readonly financeWorkspace = computed(() => this.url().startsWith('/costs') && this.desktopViewport.active());
 
   readonly salesRoute = computed(() => {
     const url = this.url();

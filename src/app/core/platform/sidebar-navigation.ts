@@ -44,12 +44,12 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
 }
 
 /**
- * The document and photo library is the one workspace that asks the desktop
- * sidebar to fold to its rail: the library is wide, the menu is not needed.
+ * The document library and the Kosten & bank workspace ask the desktop
+ * sidebar to fold to its rail: they are wide and bring their own navigation.
  */
 export function sidebarRailForUrl(url: string): boolean {
   const path = url.split('?', 1)[0].split('#', 1)[0];
-  return path === '/files' || path.startsWith('/files/');
+  return path === '/files' || path.startsWith('/files/') || path === '/costs' || path.startsWith('/costs/');
 }
 
 /** A real accordion: opening one section closes the previous one. */

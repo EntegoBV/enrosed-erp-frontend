@@ -36,6 +36,8 @@ const ENTITY_CATEGORIES: Record<string, ActivityCategory> = {
   CUSTOMER: 'RELATIONS',
   PLANNER_ITEM: 'PLANNING',
   COMPANY_COST: 'FINANCE',
+  RECURRING_COST: 'FINANCE',
+  BANK_BALANCE: 'FINANCE',
 };
 
 const CATEGORY_LABELS: Record<ActivityCategory, string> = {
@@ -44,7 +46,7 @@ const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   CATALOGUE: 'Producten',
   RELATIONS: 'Relaties',
   PLANNING: 'Planning',
-  FINANCE: 'Kosten',
+  FINANCE: 'Kosten & bank',
   OTHER: 'Overig',
 };
 
@@ -88,6 +90,8 @@ export function activityEntityLabel(event: ActivityEvent): string {
   if (type === 'CUSTOMER') return 'Klant';
   if (type === 'PLANNER_ITEM') return 'Planning';
   if (type === 'COMPANY_COST') return 'Kost';
+  if (type === 'RECURRING_COST') return 'Vaste kost';
+  if (type === 'BANK_BALANCE') return 'Banksaldo';
   return event.entityType.replaceAll('_', ' ').toLocaleLowerCase('nl-BE');
 }
 
@@ -100,5 +104,7 @@ export function activityRoute(event: ActivityEvent): string[] | null {
   if (type === 'PRODUCT') return ['/products', String(event.entityId)];
   if (type === 'PRODUCT_FAMILY') return ['/website/products'];
   if (type === 'COMPANY_COST') return ['/costs'];
+  if (type === 'RECURRING_COST') return ['/costs?view=recurring'];
+  if (type === 'BANK_BALANCE') return ['/costs?view=bank'];
   return null;
 }
