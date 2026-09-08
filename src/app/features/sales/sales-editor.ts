@@ -3180,7 +3180,7 @@ export class SalesEditor {
     const data = this.view();
     if (!data) return;
     const blob = await this.sales.packingSlip(data.order.id);
-    saveBlob(blob, `${data.order.number}-pakbon.pdf`);
+    saveBlob(blob, `${data.order.number.replace(/[\/\\:*?"<>|]/g, '-')}-pakbon.pdf`);
     this.pdfSheet.set(false);
     this.ui.toast('Pakbon gedownload — zonder prijzen, voor magazijn en transport');
   }

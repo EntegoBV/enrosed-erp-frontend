@@ -1478,6 +1478,12 @@ export interface CompanyProfile {
   /** The letters in front of document numbers: ENR-2026-0001, F-2026-0001. */
   quoteNumberPrefix?: string | null;
   invoiceNumberPrefix?: string | null;
+  /** Partner documents number their own series from a pattern: partner/{jaar}/{nr:3}. */
+  partnerQuoteNumberPattern?: string | null;
+  partnerInvoiceNumberPattern?: string | null;
+  /** Where those series carry on from when the books already count further. */
+  partnerQuoteNextNumber?: number | null;
+  partnerInvoiceNextNumber?: number | null;
 }
 
 /** One step in the life of a quote. */
