@@ -1,4 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
+import { SalesDocumentNote } from './sales-document-note';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
@@ -49,7 +50,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -213,6 +214,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           }
         </section>
+
+        <app-sales-document-note [notes]="data.order.notes" />
 
         @if (saveError()) {
           <div class="alert alert--warn quote-action-error" role="alert">

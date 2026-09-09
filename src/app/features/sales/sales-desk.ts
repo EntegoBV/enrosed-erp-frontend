@@ -1,4 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
+import { SalesDocumentNote } from './sales-document-note';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, computed, signal, effect, inject } from '@angular/core';
@@ -51,7 +52,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -192,6 +193,8 @@ interface JourneyStep {
             }
           </div>
         </header>
+
+        <app-sales-document-note [notes]="data.order.notes" />
 
         @if (pendingRevision(); as revision) {
           <div class="desk-attention" role="status">

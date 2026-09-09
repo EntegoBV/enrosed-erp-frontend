@@ -1,4 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
+import { SalesDocumentNote } from './sales-document-note';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
@@ -42,7 +43,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -240,6 +241,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             </strong>
           </div>
         </section>
+
+        <app-sales-document-note [notes]="data.order.notes" />
 
         @if (advanceAgreement(); as agreement) {
           <app-sales-advance-agreement [agreement]="agreement" />
