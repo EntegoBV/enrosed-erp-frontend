@@ -58,7 +58,9 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                 <strong>Voor de klant</strong
                 ><small>
                   {{
-                    invoice()
+                    agreementQuote()
+                      ? 'Producten en opgeslagen voorschottermijnen; het eindbedrag volgt na verkoop.'
+                      : invoice()
                       ? 'Bedragen, btw en betaalgegevens blijven altijd zichtbaar.'
                       : 'Prijzen en totalen blijven altijd zichtbaar.'
                   }}
@@ -116,7 +118,9 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
           <div class="base-includes">
             <b>Altijd zichtbaar</b
             ><span>{{
-              invoice()
+              agreementQuote()
+                ? 'Offertenummer · klant · aantallen · opgeslagen voorschottermijnen en afspraak over de slotfactuur'
+                : invoice()
                 ? 'Factuurnummer · klant · aantallen · prijzen · btw · totaal · vervaldatum en betaalgegevens'
                 : 'Offertenummer · klant · aantallen · prijzen · kortingen · totalen en betalingsafspraak'
             }}</span>
@@ -645,6 +649,7 @@ export class SalesPdfSheet implements OnInit {
   readonly customerName = input('');
   readonly customerLanguage = input<LanguageCode>('NL');
   readonly invoice = input(false);
+  readonly agreementQuote = input(false);
   readonly dirty = input(false);
   readonly saving = input(false);
   readonly initialChoice = input<SalesPdfChoice | null>(null);

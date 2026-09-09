@@ -1,4 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
+import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
@@ -48,7 +49,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -58,10 +59,12 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                        [titleEditable]="canEdit()"
                        (titleChange)="patch({ number: $event })">
         <div class="quote-header-actions">
+          @if (!advanceAgreement()) {
           <div class="quote-header-total" aria-label="Offertetotaal exclusief btw">
             <span>Totaal</span>
             <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
           </div>
+          }
           <!-- One primary at a time: with unsaved changes the only next
                step is saving; once saved, sending takes the spot. -->
           @if (canEdit() && (dirty() || saving())) {
@@ -157,9 +160,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               }
             </div>
             <div class="hero-fact hero-fact--total">
+              @if (advanceAgreement()) {
+                <span class="hero-fact__label">Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
+              } @else {
               <span class="hero-fact__label">{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
               <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
               <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</span>
+              }
             </div>
           </div>
 
@@ -298,7 +305,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           </section>
         }
 
-        @if (!canEdit()) {
+        @if (advanceAgreement(); as agreement) {
+          <app-sales-advance-agreement [agreement]="agreement" />
+        } @else if (!canEdit()) {
           <div class="alert alert--info quote-lock">
             <span class="alert__icon">✓</span>
             <div class="grow">
@@ -969,7 +978,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <span class="section-heading__number">4</span>
               <div>
                 <h2 id="totals-title">Controleren</h2>
-                <p>Bedragen, minimumorder en winst vóór het versturen</p>
+                <p>{{ advanceAgreement() ? 'Opgeslagen voorschottermijnen en latere slotfactuur' : 'Bedragen en voorwaarden vóór het versturen' }}</p>
               </div>
             </div>
           </div>
@@ -979,7 +988,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">Factuur e-mailen…</button>
             }
             @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
-            @if (data.order.partnerPurchaseOrderId) {
+            @if (advanceAgreement(); as agreement) {
+              <p class="hint">De opgeslagen betaalafspraak staat bovenaan. De slotfactuur volgt na de veiling.</p>
+            } @else if (data.order.partnerPurchaseOrderId) {
               <section class="desk-partner" aria-label="Partnercontainer">
                 <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
                 @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
@@ -1001,6 +1012,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             }
             <!-- What is actually in the box, before any figure: the check
                  starts with the order as the customer will read it. -->
+            @if (!advanceAgreement()) {
             <ol class="check-lines">
               @for (line of data.priced.lines; track line.productId) {
                 <li>
@@ -1171,6 +1183,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <span class="num">{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</span>
               </div>
             </section>
+            }
           </div>
         </section>
 
@@ -1275,7 +1288,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     (click)="focusPendingRevision()">Wijziging beoordelen</button>
           } @else if (!dirty() && !isInvoiceDoc() && data.order.status === 'GEACCEPTEERD') {
             <a class="btn btn--primary sales-mobile-dock__primary"
-               [routerLink]="['/sales', data.order.id]">Factuur maken</a>
+               [routerLink]="advanceAgreement() ? ['/purchasing', advanceAgreement()!.purchaseOrderId] : ['/sales', data.order.id]"
+               [queryParams]="advanceAgreement() ? { section: 'payments' } : {}">{{ advanceAgreement() ? 'Voorschotten beheren' : 'Factuur maken' }}</a>
           } @else if (!dirty() && !isInvoiceDoc()
                      && (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD')) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
@@ -1328,6 +1342,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           [customerName]="customerName()"
           [customerLanguage]="customerLanguage()"
           [invoice]="isInvoiceDoc()"
+          [agreementQuote]="!!advanceAgreement()"
           [dirty]="dirty()"
           [saving]="saving()"
           (saveRequested)="save()"
@@ -1941,10 +1956,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
   `],
 })
 export class SalesEditor {
+  readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
   readonly displayedProfit = displayedSalesProfit;
-  readonly paymentLabel = displayedPaymentTerms;
+  paymentLabel(order: SalesOrder, fallback?: string): string {
+    return this.advanceAgreement() ? 'Volgens het opgeslagen betaalplan' : displayedPaymentTerms(order, fallback);
+  }
   readonly receiptOpenRequest = signal(0);
   paymentReceived(fresh: SalesOrderView): void {
     this.view.update((current) => current ? withPaymentState(current, fresh) : fresh);
@@ -2279,6 +2297,7 @@ export class SalesEditor {
   readonly isInvoiceDoc = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
   /** "Verkoopofferte", "Voorschotfactuur", "Slotfactuur": what this document is. */
   readonly documentKind = computed(() => {
+    if (this.advanceAgreement()) return 'Offerte met betaalplan';
     const order = this.view()?.order;
     if (!order) return 'Verkoopofferte';
     const kind = salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
@@ -2503,7 +2522,7 @@ export class SalesEditor {
   });
 
   /** Commercial fields belong to the draft version only. */
-  readonly canEdit = computed(() => this.view()?.order.status === 'CONCEPT');
+  readonly canEdit = computed(() => !this.advanceAgreement() && this.view()?.order.status === 'CONCEPT');
 
   /** A customer-link token alone is not use; sending, viewing or deciding is. */
   readonly canDelete = computed(() => {
@@ -2515,6 +2534,7 @@ export class SalesEditor {
 
   /** Open delivery promises may still be completed without unlocking prices. */
   readonly canEditTerms = computed(() => {
+    if (this.advanceAgreement()) return false;
     const status = this.view()?.order.status;
     return status === 'CONCEPT' || status === 'VERZONDEN' || status === 'BEKEKEN';
   });
@@ -2540,7 +2560,7 @@ export class SalesEditor {
         ? 'Bepaal de doosinhoud en vul voor elk aangevraagd product een positief aantal in'
         : 'Vul voor elk product een positief aantal in');
     }
-    if (data.priced.lines.some((line) => !(line.unitPrice > 0))) {
+    if (!this.advanceAgreement() && data.priced.lines.some((line) => !(line.unitPrice > 0))) {
       issues.push('Vul voor elk product een geldige stukprijs groter dan € 0 in');
     }
     if (data.order.loadMode === 'LOOSE_CARTONS'
@@ -3051,6 +3071,10 @@ export class SalesEditor {
 
   /** Starts a clean draft instead of changing a quote the customer already received. */
   async duplicate(): Promise<void> {
+    if (this.advanceAgreement()) {
+      await this.router.navigate(['/purchasing', this.advanceAgreement()!.purchaseOrderId], { queryParams: { section: 'payments' } });
+      return;
+    }
     const data = this.view();
     if (!data || this.busy()) return;
     this.busy.set(true);

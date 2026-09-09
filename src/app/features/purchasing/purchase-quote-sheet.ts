@@ -1,9 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
-import { Customer, PurchaseOrder, PurchaseReconciliation } from '../../core/api/models';
+import { Customer, PartnerAdvanceSchedule, PurchaseOrder, PurchaseReconciliation } from '../../core/api/models';
+import { SourcingApi } from '../../core/api/sourcing-api';
+import { QuoteAdvanceTerms } from './quote-advance-terms';
+import { AdvanceScheduleDraft, cents, scheduleDraft, schedulePreset, quoteScheduleRequest } from './partner-advance-schedule-state';
 import { SalesApi } from '../../core/api/sales-api';
-import { EurPipe, NumPipe, EurUpPipe, NumUpPipe, WeekNlPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe, EurUpPipe, WeekNlPipe } from '../../shared/pipes';
 import { WeekField, isoWeekOf } from '../../shared/week-field';
 import { Sheet, Ui } from '../../shared/ui';
 
@@ -33,14 +36,14 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
 @Component({
   selector: 'app-purchase-quote-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, NumPipe, EurPipe, EurUpPipe, NumUpPipe, WeekNlPipe, WeekField],
+  imports: [Sheet, NumPipe, EurPipe, EurUpPipe, WeekNlPipe, WeekField, QuoteAdvanceTerms],
   template: `
-    <app-sheet [title]="partner() ? 'Voorschotofferte partnercontainer' : 'Reguliere verkoopofferte'" (closed)="closed.emit()">
+    <app-sheet [title]="partner() ? 'Offerte met voorschottermijnen' : 'Reguliere verkoopofferte'" (closed)="closed.emit()">
       <div body class="pq">
         <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="setPurpose(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="setPurpose(true)">Partnercontainer</button></div>
-        <p class="pq__hint">{{ partner() ? 'Offerte voor het volledige afgesproken partnerbedrag. Afzonderlijke voorschotfacturen per termijn maak je bij Betalingen op de container. Per veiling volgt een deel- of slotafrekening. Geen minimumorder.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
+        <p class="pq__hint">{{ partner() ? 'Begin met een offerte met de betaalafspraken. Daarna maak je per termijn een voorschotfactuur. De slotfactuur volgt met de afrekening en ons aandeel in het resultaat. Er staat geen definitief ordertotaal op deze offerte.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
         <p class="pq__intro">Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen.
-          @if (partnersOnly()) { Een partner rekent aan onze kostprijs van deze container; een andere klant krijgt zijn eigen prijzen. } @else { Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
+          @if (partner()) { Op het document staan de producten en aantallen, de voorschottermijnen en de afspraak over de afrekening. } @else { Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
         <div class="pq__pick">
           <label class="pq__search">
             <span class="sr-only">Klant zoeken</span>
@@ -82,6 +85,18 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <p class="pq__chosen">Offerte voor <b>{{ customer.company }}</b> · {{ customer.incoterm || 'DAP' }}@if (customer.language) { · {{ customer.language }} }</p>
           }
         </div>
+        @if (partner()) {
+          <div class="pq__partner">
+            <b>Interne berekening</b>
+            <p class="pq__hint">Deze percentages bepalen de voorschotten en de latere afrekening. De klant ontvangt een offerte met neutrale benamingen.</p>
+            <div class="pq__markup"><label for="pq-contribution">Aandeel in de containerkosten</label><span class="pq__markup-field"><input class="input num right" id="pq-contribution" type="number" min="0" max="100" step="0.5" [disabled]="termsLocked()" [value]="costPct()" (input)="setCost($any($event.target).value)" /><i>%</i></span></div>
+            <div class="pq__markup"><label for="pq-result-share">Aandeel ENROSED in het veilingresultaat</label><span class="pq__markup-field"><input class="input num right" id="pq-result-share" type="number" min="0" max="100" step="0.5" [disabled]="termsLocked()" [value]="sharePct()" (input)="setShare($any($event.target).value)" /><i>%</i></span></div>
+          </div>
+          @if (termsLoading()) { <p class="pq__hint" role="status">Betaalafspraken laden…</p> }
+          @else if (termsError()) { <p class="pq__error" role="alert">{{ termsError() }} <button class="linklike" type="button" (click)="loadTerms()">Opnieuw proberen</button></p> }
+          @else if (agreementEur() > 0) { <app-quote-advance-terms [rows]="terms()" [agreedEur]="agreementEur()" [locked]="termsLocked()" [disabled]="busy()" (rowsChange)="terms.set($event)" /> }
+          @else { <p class="pq__hint">Er is geen voorschot afgesproken. De offerte vermeldt dat de volledige afrekening na de veiling volgt.</p> }
+        } @else {
         <div class="pq__pricing">
           <div class="per-toggle" role="group" aria-label="Prijzen op de offerte">
             <button type="button" [class.on]="pricing() === 'CUSTOMER'" [disabled]="partner()" (click)="pricing.set('CUSTOMER')">Klantprijzen</button>
@@ -134,16 +149,17 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <p class="pq__hint">De kostprijs per stuk is nog niet bekend voor elke regel; reken de calculatie eerst door om aan kostprijs te kunnen offreren.</p>
           }
         </div>
+        }
         <ul class="pq__lines" aria-label="Regels die meegaan">
           @for (line of lines(); track line.productId) {
             <li>
               <span>{{ line.name }}</span>
-              <b>{{ line.quantity | num }} st.@if (pricing() === 'COST' && line.landedUnitEur !== null) { · {{ unitPrice(line) | eurUp: 3 }} / st }</b>
+              <b>{{ line.quantity | num }} st.@if (!partner() && pricing() === 'COST' && line.landedUnitEur !== null) { · {{ unitPrice(line) | eurUp: 3 }} / st }</b>
             </li>
           } @empty {
             <li class="pq__empty">Deze container heeft nog geen productregels.</li>
           }
-          @if (pricing() === 'COST') {
+          @if (!partner() && pricing() === 'COST') {
             <li class="pq__total"><span>Goederen aan gelande kostprijs, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
           }
         </ul>
@@ -157,7 +173,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
         @if (createError(); as error) { <p class="pq__error pq__error--foot" role="alert">{{ error }}</p> }
         <span class="spacer"></span>
         <button class="btn" type="button" [disabled]="busy()" (click)="closed.emit()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || chosen() === null || !lines().length"
+        <button class="btn btn--primary" type="button" [disabled]="busy() || loading() || chosen() === null || !lines().length || (partner() && (termsLoading() || !!termsError()))"
                 (click)="create()">{{ busy() ? 'Bezig…' : 'Offerte maken' }}</button>
       </div>
     </app-sheet>
@@ -222,6 +238,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
 })
 export class PurchaseQuoteSheet {
   private readonly sales = inject(SalesApi);
+  private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
 
@@ -256,6 +273,17 @@ export class PurchaseQuoteSheet {
   /** A partner deal: the customer sponsors the container and shares the auction profit with us. */
   readonly partner = signal(false);
   readonly sharePct = signal(50);
+  readonly terms = signal<AdvanceScheduleDraft[]>(schedulePreset('30_70', 0));
+  readonly savedTerms = signal<PartnerAdvanceSchedule | null>(null);
+  readonly termsLoading = signal(false);
+  readonly termsError = signal('');
+  readonly termsLocked = computed(() => this.savedTerms()?.rows.some(row => row.invoiceId != null) ?? false);
+  readonly agreementEur = computed(() => {
+    const saved = this.savedTerms();
+    return saved && saved.financingPct === this.costPct()
+      ? saved.agreedAmountEur
+      : cents((this.reconciliation()?.totals.forecastExternalEur ?? 0) * this.costPct() / 100);
+  });
   /** The part of the landed cost the partner pays on this quote; the rest is settled after the auction. */
   readonly costPct = signal(100);
   /** Whether the list shows every customer or only the partners. */
@@ -308,27 +336,41 @@ export class PurchaseQuoteSheet {
 
   /** The document purpose is selected explicitly; the same customer can buy normally too. */
   choose(customer: Customer): void {
-    if (customer.id === null) return;
+    if (customer.id === null || customer.id === this.chosen()) return;
+    if (this.partner() && this.termsLocked()) {
+      this.createError.set('Er zijn al voorschotfacturen. De klant en de financieringsafspraak staan vast.');
+      return;
+    }
     this.chosen.set(customer.id);
     if (this.partner()) {
-      this.sharePct.set(customer.partnerSharePct ?? 50);
-      this.costPct.set(customer.partnerCostPct ?? 100);
+      this.useCustomerAgreement(customer);
       if (this.costKnown()) this.pricing.set('COST');
     }
   }
 
+  private useCustomerAgreement(customer: Customer): void {
+    const linked = customer.id === this.order().partnerCustomerId;
+    this.sharePct.set(linked ? this.presetSharePct() ?? this.order().partnerSharePct ?? customer.partnerSharePct ?? 50 : customer.partnerSharePct ?? 50);
+    this.costPct.set(linked ? this.presetCostPct() ?? this.order().partnerCostPct ?? customer.partnerCostPct ?? 100 : customer.partnerCostPct ?? 100);
+  }
+
   setPurpose(partner: boolean): void {
+    if (partner === this.partner()) return;
     this.partner.set(partner);
+    if (partner && this.order().partnerCustomerId != null && !this.savedTerms()) void this.loadTerms();
     this.showAll.set(!partner);
     this.pricing.set(partner && this.costKnown() ? 'COST' : 'CUSTOMER');
     const customer = this.chosenCustomer();
     if (partner && customer) {
-      this.costPct.set(customer.partnerCostPct ?? 100);
-      this.sharePct.set(customer.partnerSharePct ?? 50);
+      if (this.termsLocked() && this.savedTerms()?.partnerCustomerId !== customer.id) {
+        const original = this.customers().find(row => row.id === this.savedTerms()?.partnerCustomerId);
+        if (original) { this.chosen.set(original.id); this.useCustomerAgreement(original); }
+      } else this.useCustomerAgreement(customer);
     }
   }
 
   setCost(raw: string): void {
+    if (this.termsLocked()) return;
     const value = Number(String(raw).replace(',', '.'));
     this.costPct.set(Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 100);
   }
@@ -340,6 +382,7 @@ export class PurchaseQuoteSheet {
   }
 
   setShare(raw: string): void {
+    if (this.termsLocked()) return;
     const value = Number(String(raw).replace(',', '.'));
     this.sharePct.set(Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0);
   }
@@ -381,15 +424,30 @@ export class PurchaseQuoteSheet {
       if (partner) {
         this.choose(partner);
         this.partner.set(true);
+        this.useCustomerAgreement(partner);
         if (this.costKnown()) this.pricing.set('COST');
         if (this.presetCostPct() != null) this.costPct.set(this.presetCostPct()!);
         if (this.presetSharePct() != null) this.sharePct.set(this.presetSharePct()!);
+        await this.loadTerms();
       }
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'Klanten laden mislukt'));
     } finally {
       this.loading.set(false);
     }
+  }
+
+  async loadTerms(): Promise<void> {
+    if (this.termsLoading() || this.order().partnerCustomerId == null) return;
+    this.termsLoading.set(true); this.termsError.set('');
+    try {
+      const plan = await this.sourcing.partnerAdvanceSchedule(this.order().id);
+      this.savedTerms.set(plan);
+      this.terms.set(plan.rows.length ? scheduleDraft(plan.rows) : schedulePreset('30_70', this.agreementEur()));
+      if (plan.reservedOutsideScheduleEur > 0) this.termsError.set('Er bestaan al voorschotfacturen buiten dit betaalplan. Beheer die documenten en de resterende termijnen bij Betalingen op de inkooporder; voor deze bestaande financiering kan geen nieuwe volledige voorschotofferte worden gemaakt.');
+      else if (plan.invoicingBlocked) this.termsError.set('De veilingafrekening is al begonnen. Bekijk de bestaande documenten bij Betalingen op de inkooporder.');
+    } catch (failure) { this.termsError.set(messageOf(failure, 'Betaalafspraken laden mislukt')); }
+    finally { this.termsLoading.set(false); }
   }
 
   /** Enter in the search box takes the first match: one hit, one key. */
@@ -415,7 +473,7 @@ export class PurchaseQuoteSheet {
   /** Creates the quote in one go on the server and opens it; a rule that blocks it shows here, not in a half-made draft. */
   async create(): Promise<void> {
     const customer = this.customers().find((row) => row.id === this.chosen());
-    if (!customer || customer.id === null || this.busy()) return;
+    if (!customer || customer.id === null || this.busy() || this.loading() || this.partner() && (this.termsLoading() || this.termsError())) return;
     this.busy.set(true);
     this.createError.set(null);
     try {
@@ -423,9 +481,16 @@ export class PurchaseQuoteSheet {
       const atCost = this.pricing() === 'COST' && this.costKnown();
       const partnerDeal = atCost && this.partner();
       const included = this.chosenCosts().map((cost) => cost.key);
+      const advanceSchedule = partnerDeal
+        ? quoteScheduleRequest(this.terms(), this.agreementEur())
+        : undefined;
+      if (advanceSchedule && this.savedTerms() && this.savedTerms()!.financingPct !== this.costPct()) {
+        advanceSchedule.recalculateAgreement = true;
+      }
       const view = await this.sales.createFromPurchaseOrder({
+        advanceSchedule,
         purpose: partnerDeal ? 'PARTNER_ADVANCE' : 'STANDARD',
-        paymentPlan: partnerDeal ? 'THIRD_TWO_THIRDS_PRODUCTION' : 'FULL',
+        paymentPlan: 'FULL',
         purchaseOrderId: this.order().id,
         customerId: customer.id,
         pricing: atCost ? 'COST' : 'CUSTOMER',
@@ -439,7 +504,7 @@ export class PurchaseQuoteSheet {
         deliveryWeek: this.deliveryWeek().trim() || null,
       });
       const count = view.order.lines.length + (view.order.extraLines ?? []).length;
-      this.ui.toast(`Offerte ${view.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${partnerDeal ? ' als partnercontainer' : atCost ? ' aan kostprijs' : ''}`, 'ok');
+      this.ui.toast(`Offerte ${view.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${partnerDeal ? ' en betaalafspraken' : atCost ? ' aan kostprijs' : ''}`, 'ok');
       this.closed.emit();
       await this.router.navigate(['/sales', view.order.id, 'edit']);
     } catch (failure: unknown) {

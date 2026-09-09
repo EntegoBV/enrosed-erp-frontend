@@ -1,4 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
+import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -41,7 +42,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -91,6 +92,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           [customerName]="customerName()"
           [customerLanguage]="customer()?.language ?? 'NL'"
           [invoice]="isInvoice()"
+          [agreementQuote]="!!advanceAgreement()"
           [initialChoice]="pdfInitialChoice()"
           (closed)="closePdfSheet()"
         />
@@ -181,9 +183,13 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               }
             </div>
             <div class="hero-facts__total">
+              @if (advanceAgreement()) {
+                <span>Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><small>Slotfactuur na verkoop</small>
+              } @else {
               <span>{{ isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
               <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
               <small>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</small>
+              }
             </div>
           </div>
 
@@ -235,6 +241,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </div>
         </section>
 
+        @if (advanceAgreement(); as agreement) {
+          <app-sales-advance-agreement [agreement]="agreement" />
+        }
         <!-- The four-stop rail walks a phone through the document; a desk
              shows every section at once and needs no such bar. -->
         @if (!desktop.active()) {
@@ -538,6 +547,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
           <aside class="sales-side erp-workspace__rail" id="sales-control" aria-label="Totalen en acties">
             <section class="totals-card erp-workspace__decision">
+              @if (advanceAgreement()) {
+                <header><span class="section-kicker">Controle</span><h2>Voorschotafspraken</h2></header>
+                <p>Het opgeslagen betaalplan staat bovenaan. Het definitieve bedrag volgt op de slotfactuur na verkoop.</p>
+              } @else {
               <header><span class="section-kicker">Controle</span><h2>Totalen</h2></header>
               <dl class="totals-list">
                 <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div>
@@ -554,7 +567,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <div><b>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</b><strong [class.negative]="displayedProfit(data) < 0">{{ displayedProfit(data) | eur: 2 }}</strong></div>
                 <small>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Resultaat bij uitgegeven afrekening' : 'Goederenwinst vóór vrachtkosten' }}</small>
               </div>
-
+              }
               <section class="next-step-card" aria-labelledby="sales-next-step-title">
                 <span class="section-kicker">Volgende stap</span>
                 <h3 id="sales-next-step-title">{{ nextStepTitle(data) }}</h3>
@@ -587,7 +600,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 } @else if (data.order.status === 'GEACCEPTEERD') {
                   <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
                           (click)="makeInvoice(data)">
-                    {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+                    {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
                   </button>
                 } @else {
                   <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
@@ -634,7 +647,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   @if (data.order.status === 'CONCEPT') {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="makeInvoice(data)">
-                      {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+                      {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
                     </button>
                   }
                 }
@@ -985,6 +998,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   `],
 })
 export class SalesView {
+  readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
   readonly displayedProfit = displayedSalesProfit;
@@ -1105,7 +1119,7 @@ export class SalesView {
     }
     if (data.order.status === 'CONCEPT') return data.order.sentAt
       ? 'Nieuwe versie naar de klant' : 'Offerte naar de klant';
-    if (data.order.status === 'GEACCEPTEERD') return 'Factuur maken';
+    if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data) ? 'Voorschotfacturen beheren' : 'Factuur maken';
     if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
       return 'Reactie van de klant volgen';
     }
@@ -1125,7 +1139,9 @@ export class SalesView {
       return 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
     }
     if (data.order.status === 'CONCEPT') return 'Controleer de PDF en verstuur daarna dezelfde versie naar de klant.';
-    if (data.order.status === 'GEACCEPTEERD') return 'Bevries deze afspraken in een nieuwe verkoopfactuur.';
+    if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data)
+      ? 'Maak per afgesproken termijn een voorschotfactuur op de inkooporder. De slotfactuur volgt na verkoop.'
+      : 'Bevries deze afspraken in een nieuwe verkoopfactuur.';
     if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
       return 'De klantlink blijft actief. Open Beheren alleen als je een nieuwe versie wilt voorbereiden.';
     }
@@ -1135,6 +1151,7 @@ export class SalesView {
   readonly isInvoice = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
   /** "Verkoopofferte", "Voorschotfactuur", "Slotfactuur": what this document is. */
   readonly documentKind = computed(() => {
+    if (this.advanceAgreement()) return 'Offerte met betaalplan';
     const order = this.view()?.order;
     if (!order) return 'Verkoopofferte';
     const kind = salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
@@ -1237,6 +1254,11 @@ export class SalesView {
 
   makeInvoice(data: SalesOrderView): void {
     if (this.invoiceBusy()) return;
+    const agreement = advanceAgreementFor(data);
+    if (agreement) {
+      void this.routerNav.navigate(['/purchasing', agreement.purchaseOrderId], { queryParams: { section: 'payments' } });
+      return;
+    }
     this.ui.confirm({
       title: 'Factuur maken',
       message: `De inhoud van ${data.order.number} wordt bevroren in een nieuwe factuur. `
@@ -1246,6 +1268,7 @@ export class SalesView {
   }
 
   private async createInvoice(data: SalesOrderView): Promise<void> {
+    if (advanceAgreementFor(data)) { this.makeInvoice(data); return; }
     this.invoiceBusy.set(true);
     try {
       const invoice = await this.sales.createInvoiceFrom(data.order.id!);
@@ -1454,6 +1477,7 @@ export class SalesView {
   }
 
   paymentTerms(): string {
+    if (this.advanceAgreement()) return 'Volgens het opgeslagen betaalplan';
     /* Mirrors the backend: without agreed terms the house standard applies. */
     return displayedPaymentTerms(this.view()?.order, this.customer()?.paymentTerms || 'Vooruitbetaling');
   }

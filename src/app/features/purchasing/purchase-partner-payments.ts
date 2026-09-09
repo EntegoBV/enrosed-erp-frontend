@@ -29,7 +29,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
             <p class="partner-money__hint">De partner stort aan ENROSED. Zijn financieringsaandeel en de verdeling van het veilingresultaat zijn twee afzonderlijke afspraken.</p>
           </section>
 
-          <app-partner-advance-schedule [purchaseOrderId]="order().id" [documents]="docs()" (saved)="refresh()" (invoiceCreated)="created($event)" (openInvoice)="open($event)" />
+          <app-partner-advance-schedule [purchaseOrderId]="order().id" [documents]="docs()" [sharePct]="order().partnerSharePct ?? 50" (saved)="refresh()" (invoiceCreated)="created($event)" (openInvoice)="open($event)" (quote)="quote.emit()" />
 
           <section class="money-section" aria-label="Ontvangsten van de partner">
             <h4><span class="step">3</span> Ontvangsten &amp; afrekening</h4>
@@ -52,7 +52,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
           <div class="partner-money__details">
             <details><summary>Alle offertes &amp; facturen <span>{{ summary.documents.length }}</span></summary>
               <div class="partner-money__docs">@for (doc of summary.documents; track doc.id) {
-                <article><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>{{ doc.purpose === 'PARTNER_SETTLEMENT' ? 'Veilingafrekening' : doc.docType === 'FACTUUR' ? 'Voorschotfactuur' : 'Voorschotofferte' }} · {{ statusLabel[doc.status] }}</small><b>{{ doc.invoiceTotalEur | eur }} <small>incl. btw</small></b>@if (doc.docType === 'FACTUUR') { <small>{{ doc.receivedEur | eur }} netto ontvangen · {{ doc.remainingEur | eur }} open</small> }@if (doc.creditEur > 0) { <small>{{ doc.creditEur | eur }} credit</small> }</div>@if (doc.docType === 'FACTUUR') { <button class="btn btn--sm" type="button" [disabled]="opening()" (click)="open(doc.id)">Betalingen bekijken</button> }</article>
+                <article><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>{{ doc.purpose === 'PARTNER_SETTLEMENT' ? 'Veilingafrekening' : doc.docType === 'FACTUUR' ? 'Voorschotfactuur' : 'Voorschotofferte' }} · {{ statusLabel[doc.status] }}</small>@if (doc.docType === 'FACTUUR') { <b>{{ doc.invoiceTotalEur | eur }} <small>incl. btw</small></b> } @else { <small>Betaalafspraken · afrekening volgt later</small> }@if (doc.docType === 'FACTUUR') { <small>{{ doc.receivedEur | eur }} netto ontvangen · {{ doc.remainingEur | eur }} open</small> }@if (doc.creditEur > 0) { <small>{{ doc.creditEur | eur }} credit</small> }</div>@if (doc.docType === 'FACTUUR') { <button class="btn btn--sm" type="button" [disabled]="opening()" (click)="open(doc.id)">Betalingen bekijken</button> }</article>
               } @empty { <p class="partner-money__hint">Nog geen partnerdocumenten gekoppeld.</p> }</div>
             </details>
             @if (summary.payments.length) {
@@ -85,6 +85,7 @@ export class PurchasePartnerPayments {
   readonly docs = input<SalesOrderView[]>([]);
   readonly landedTotalEur = input(0);
   readonly changed = output<void>();
+  readonly quote = output<void>();
   readonly summary = signal<PartnerFinancing | null>(null);
   readonly invoices = computed(() => this.summary()?.documents.filter(doc => doc.docType === 'FACTUUR') ?? []);
   readonly statusLabel = STATUS_LABEL;

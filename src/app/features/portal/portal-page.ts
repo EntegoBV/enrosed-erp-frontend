@@ -245,12 +245,14 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                           · {{ line.pallets }} {{ t('portalPalletsShort') }}
                         }
                       </div>
+                      @if (!data.advanceAgreement) {
                       <div class="list-item__meta">
                         {{ line.unitPrice | eur: 3: locale() }} {{ t('portalPerPiece') }}
                         @if (line.discountPct) {
                           · {{ t('portalDiscount') }} {{ line.discountPct | pct: 1: locale() }}
                         }
                       </div>
+                      }
                       <div class="list-item__meta list-item__meta--wrap">
                         @if (line.inStock) {
                           <span class="ok-text"><span class="stock-dot stock-dot--ok"></span>
@@ -269,12 +271,14 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                         }
                       </div>
                     </div>
+                    @if (!data.advanceAgreement) {
                     <div class="list-item__end">
                       <div class="strong num">{{ line.net | eur: 2: locale() }}</div>
                     </div>
+                    }
                   </div>
                 }
-                @for (extra of data.extraLines ?? []; track $index) {
+                @for (extra of data.advanceAgreement ? [] : data.extraLines ?? []; track $index) {
                   <div class="list-item">
                     <div class="portal-line__photo portal-line__photo--empty" aria-hidden="true">＋</div>
                     <div class="list-item__body">
@@ -290,6 +294,24 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
             </div>
           </div>
 
+          @if (data.advanceAgreement; as agreement) {
+            <section class="card portal-agreement" aria-labelledby="portal-agreement-title">
+              <div class="card__head"><h2 id="portal-agreement-title">{{ t('advanceAgreementTitle') }}</h2></div>
+              <div class="card__body">
+                <p>{{ t('advanceAgreementIntro') }}</p>
+                <ol class="portal-agreement__rows">
+                  @for (row of agreement.rows; track row.scheduleRowId) {
+                    <li>
+                      <div><b>{{ row.label }}</b><small>@if (row.percentage !== null) { {{ row.percentage | num: 2: locale() }}% } @if (row.dueDate) { {{ t('dueDate') }} {{ row.dueDate | dateNl: locale() }} }</small></div>
+                      <strong>{{ row.amountEur | eur: 2: locale() }}</strong>
+                    </li>
+                  }
+                </ol>
+                <p class="small muted">{{ t('advanceAgreementExclVat') }}</p>
+                <div class="portal-agreement__final"><b>{{ t('advanceFinalPending') }}</b><p>{{ agreementSettlementText() }}</p></div>
+              </div>
+            </section>
+          } @else {
           <div class="card">
             <div class="card__body">
               <div class="stat-row"><span>{{ t('subtotal') }}</span>
@@ -340,8 +362,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
               }
             </div>
           </div>
+          }
 
-          @if (data.totals.vatLegalMention) {
+          @if (!data.advanceAgreement && data.totals.vatLegalMention) {
             <div class="alert alert--info mt-12">
               <span class="alert__icon">§</span>
               <div>{{ data.totals.vatLegalMention }}</div>
@@ -372,8 +395,10 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 } @else {
                   <button class="btn btn--accept btn--block" type="button"
                           (click)="signSheet.set(true)">{{ t('portalAccept') }}</button>
-                  <button class="btn btn--block mt-8" type="button"
-                          (click)="openProposal()">{{ t('portalPropose') }}</button>
+                  @if (!data.advanceAgreement) {
+                    <button class="btn btn--block mt-8" type="button"
+                            (click)="openProposal()">{{ t('portalPropose') }}</button>
+                  }
                   <button class="btn btn--block btn--quiet mt-8" type="button"
                           (click)="rejectSheet.set(true)">{{ t('portalRejectQuote') }}</button>
                 }
@@ -399,6 +424,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                  (closed)="signSheet.set(false)">
         <div body>
           <p class="small muted" style="margin-bottom:14px">{{ t('portalSignText') }}</p>
+          @if (quote()?.advanceAgreement) {
+            <p class="small" style="margin-bottom:14px">{{ t('advanceAgreementIntro') }} {{ agreementSettlementText() }}</p>
+          }
           <div class="field">
             <label for="sign-name">{{ t('portalYourName') }}</label>
             <input class="input" id="sign-name" [ngModel]="signName()"
@@ -526,6 +554,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     }
   `,
   styles: `
+    .portal-agreement{margin-top:16px}.portal-agreement p{margin:0;line-height:1.6}.portal-agreement__rows{display:grid;gap:8px;list-style:none;margin:16px 0;padding:0}.portal-agreement__rows li{display:flex;align-items:start;justify-content:space-between;gap:16px;padding:13px;border:1px solid var(--line);border-radius:10px}.portal-agreement__rows li>div{min-width:0}.portal-agreement__rows b{overflow-wrap:anywhere}.portal-agreement__rows small{display:block;color:var(--muted);margin-top:4px;font-size:12px}.portal-agreement__rows strong{white-space:nowrap;font-variant-numeric:tabular-nums}.portal-agreement__final{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.portal-agreement__final p{margin-top:6px;font-size:13px}@media(max-width:430px){.portal-agreement__rows li{display:grid;gap:8px}}
     .portal { min-height: 100dvh; background: var(--bg); }
     .portal__bar {
       background: #17120f;
@@ -646,7 +675,7 @@ export class PortalPage implements OnDestroy {
       this.quote.set(quote);
       this.language.set(chosen ?? (quote.language as LanguageCode) ?? 'NL');
       this.proposeBy.set(quote.contactName ?? '');
-      this.catalog.set(await this.sales.portalCatalog(token, this.language()));
+      this.catalog.set(quote.advanceAgreement ? [] : await this.sales.portalCatalog(token, this.language()));
     } catch {
       this.error.set(true);
     }
@@ -692,6 +721,12 @@ export class PortalPage implements OnDestroy {
     return fallback ? this.local(fallback) : key;
   }
 
+  agreementSettlementText(): string {
+    const share = this.quote()?.advanceAgreement?.sharePct;
+    if (share == null) return this.t('advanceAgreementSettlementUnspecified');
+    return this.t('advanceAgreementSettlement').replace('%s%%', `${new Intl.NumberFormat(this.locale(), { maximumFractionDigits: 2 }).format(share)}%`);
+  }
+
   local(key: PortalFallback): string {
     return (PORTAL_FALLBACKS[this.language()] ?? PORTAL_FALLBACKS.NL)[key];
   }
@@ -732,10 +767,8 @@ export class PortalPage implements OnDestroy {
   async setLanguage(code: LanguageCode): Promise<void> {
     try {
       const token = this.token();
-      const [quote, catalog] = await Promise.all([
-        this.sales.portalQuote(token, code),
-        this.sales.portalCatalog(token, code),
-      ]);
+      const quote = await this.sales.portalQuote(token, code);
+      const catalog = quote.advanceAgreement ? [] : await this.sales.portalCatalog(token, code);
       this.quote.set(quote);
       this.catalog.set(catalog);
       this.language.set(code);
@@ -809,7 +842,7 @@ export class PortalPage implements OnDestroy {
 
   openProposal(): void {
     const quote = this.quote();
-    if (!quote) return;
+    if (!quote || quote.advanceAgreement) return;
     this.proposalLines.set(quote.lines.map((line) => ({
       productId: line.productId, description: line.description, quantity: line.quantity,
       piecesPerCarton: Math.max(1, line.piecesPerCarton || 1),
@@ -911,6 +944,7 @@ export class PortalPage implements OnDestroy {
   }
 
   async propose(): Promise<void> {
+    if (this.quote()?.advanceAgreement) return;
     /* Existing lines AND what the customer wants added, in one proposal. */
     const lines = [
       ...this.proposalLines().map((line) => ({

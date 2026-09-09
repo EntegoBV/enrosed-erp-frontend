@@ -1547,6 +1547,14 @@ export interface PartnerAdvanceScheduleRequest {
   recalculateAgreement?: boolean;
   rows: { id?: number; label: string; percentage?: number; amountEur?: number; dueDate?: string | null }[];
 }
+/** The payment terms captured when a container quotation was created. */
+export interface AdvanceAgreement {
+  purchaseOrderId: number;
+  financingPct: number;
+  agreedAmountEur: number;
+  sharePct: number;
+  rows: { scheduleRowId: number; label: string; percentage: number | null; amountEur: number; dueDate: string | null }[];
+}
 export interface PartnerSettlementAvailability {
   purchaseOrderId: number;
   partnerCustomerId: number | null;
@@ -1601,6 +1609,7 @@ export interface PartnerFinancing {
 }
 
 export interface SalesOrderView {
+  advanceAgreement?: AdvanceAgreement | null;
   settlement?: { revenueEur: number; costEur: number; advanceEur: number; finalSettlement: boolean } | null;
   paymentSummary?: SalesPaymentSummary | null;
   accounting?: SalesAccounting | null;
@@ -1663,9 +1672,10 @@ export interface PortalLine {
   cbm?: number;
   /** Carton content, for rounding quantities to full cartons. */
   piecesPerCarton: number;
-  unitPrice: number;
-  discountPct: number;
-  net: number;
+  /** Agreement quotations expose products and terms, without definitive product prices. */
+  unitPrice: number | null;
+  discountPct: number | null;
+  net: number | null;
   inventoryKnown: boolean;
   inStock: boolean;
   deliveryDate: string | null;
@@ -1763,6 +1773,7 @@ export interface NotificationFeed {
 }
 
 export interface PortalQuote {
+  advanceAgreement?: AdvanceAgreement | null;
   /** True only for the authenticated, read-only staff preview. */
   preview?: boolean;
   number: string;
@@ -1780,12 +1791,12 @@ export interface PortalQuote {
   lines: PortalLine[];
   totals: {
     pieces: number; cartons: number; pallets: number; cbm?: number;
-    subtotal: number; orderDiscountPercent: number; orderDiscountAmount: number;
-    extraDiscountPercent: number; extraDiscountLabel: string | null; extraDiscountAmount: number;
-    goodsTotal: number; freight: number; handling: number;
-    total: number; vatRatePct: number; vatAmount: number; totalInclVat: number;
-    vatTreatment: string; vatLegalMention: string | null;
-    extraLinesTotal?: number;
+    subtotal: number | null; orderDiscountPercent: number | null; orderDiscountAmount: number | null;
+    extraDiscountPercent: number | null; extraDiscountLabel: string | null; extraDiscountAmount: number | null;
+    goodsTotal: number | null; freight: number | null; handling: number | null;
+    total: number | null; vatRatePct: number | null; vatAmount: number | null; totalInclVat: number | null;
+    vatTreatment: string | null; vatLegalMention: string | null;
+    extraLinesTotal?: number | null;
   };
   /** Free lines next to the products; optional while an older backend answers. */
   extraLines?: { description: string; quantity: number; unitPrice: number; total: number }[];
@@ -1952,6 +1963,7 @@ export interface BankBalance {
 
 /** What the quote sheet asks for when a container becomes a quote. */
 export interface FromPurchaseOrderRequest {
+  advanceSchedule?: PartnerAdvanceScheduleRequest | null;
   purpose?: SalesPurpose | null;
   paymentPlan?: SalesPaymentPlan | null;
   purchaseOrderId: number;

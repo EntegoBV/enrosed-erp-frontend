@@ -1,4 +1,5 @@
 import { SalesReceipts } from './sales-receipts';
+import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, computed, signal, effect, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -50,7 +51,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -79,7 +80,7 @@ interface JourneyStep {
           </button>
         } @else if (!isInvoiceDoc() && data.order.status === 'GEACCEPTEERD') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)">
-            {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+            {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
           </button>
         }
       </app-page-header>
@@ -150,9 +151,13 @@ interface JourneyStep {
               <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Bij uitgegeven afrekening' : (data.priced.totals.marginPct | pct: 0) + ' van de goederen' }}</span>
             </button>
             <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" (click)="railTab.set('check')">
+              @if (advanceAgreement()) {
+                <small>Betaalplan</small><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
+              } @else {
               <small>{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</small>
               <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
               <span>{{ data.priced.totals.vatLegalMention ? 'btw verlegd' : 'excl. btw · ' + ((data.priced.totals.totalInclVat) | eur: 0) + ' incl.' }}</span>
+              }
             </button>
             @if (isInvoiceDoc()) {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="railTab.set('status')">
@@ -163,7 +168,7 @@ interface JourneyStep {
             } @else if (data.order.status === 'GEACCEPTEERD') {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)">
                 <small>Volgende stap</small>
-                <strong>Factuur maken ›</strong>
+                <strong>{{ advanceAgreement() ? 'Voorschotten beheren' : 'Factuur maken' }} ›</strong>
                 <span>getekend door {{ data.order.signedByName || 'de klant' }}</span>
               </button>
             } @else if (sendIssues().length) {
@@ -228,7 +233,9 @@ interface JourneyStep {
             <button class="btn btn--sm" type="button" (click)="retryReference()">Opnieuw</button>
           </div>
         }
-        @if (!canEdit()) {
+        @if (advanceAgreement(); as agreement) {
+          <app-sales-advance-agreement [agreement]="agreement" />
+        } @else if (!canEdit()) {
           <div class="desk-lock" role="status">
             <span aria-hidden="true">✓</span>
             <span><b>Deze versie staat vast.</b> Klant, aantallen en prijzen veranderen niet meer; leverweken en vracht kun je nog aanvullen.</span>
@@ -665,6 +672,9 @@ interface JourneyStep {
 
                 @case ('check') {
                   <div class="desk-form">
+                    @if (advanceAgreement(); as agreement) {
+                      <p class="hint">De opgeslagen voorschottermijnen staan bovenaan. Per termijn maak je een voorschotfactuur op de inkooporder; de slotfactuur volgt na verkoop.</p>
+                    } @else {
                     @if (data.order.partnerPurchaseOrderId) {
                       <section class="desk-partner" aria-label="Partnercontainer">
                         <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
@@ -742,6 +752,7 @@ interface JourneyStep {
                       </div>
                       <span class="hint">Staat als eigen lijn op het document, bovenop de staffels.</span>
                     }
+                    }
                   </div>
                 }
 
@@ -801,7 +812,7 @@ interface JourneyStep {
                           </button>
                         }
                         @if (data.order.status === 'GEACCEPTEERD' || data.order.status === 'CONCEPT') {
-                          <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>Factuur maken</b><small>De inhoud wordt bevroren in een nieuwe factuur</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>{{ advanceAgreement() ? 'Voorschotfacturen beheren' : 'Factuur maken' }}</b><small>{{ advanceAgreement() ? 'Maak elke termijn op de inkooporder afzonderlijk aan' : 'De inhoud wordt bevroren in een nieuwe factuur' }}</small></span></button>
                         }
                         @if (customerPortalLink(); as portalLink) {
                           @if (portalLink.available && portalLink.url) {
@@ -877,7 +888,7 @@ interface JourneyStep {
       @if (pdfSheet()) {
         <app-sales-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
                              [customerName]="customerName()" [customerLanguage]="customerLanguage()"
-                             [invoice]="isInvoiceDoc()" [dirty]="dirty()" [saving]="saving()"
+                             [invoice]="isInvoiceDoc()" [agreementQuote]="!!advanceAgreement()" [dirty]="dirty()" [saving]="saving()"
                              (saveRequested)="save()" (closed)="pdfSheet.set(false)" />
       }
 
@@ -1246,6 +1257,11 @@ export class SalesDesk extends SalesEditor {
 
   makeInvoice(data: SalesOrderView): void {
     if (this.invoiceBusy()) return;
+    const agreement = advanceAgreementFor(data);
+    if (agreement) {
+      void this.router.navigate(['/purchasing', agreement.purchaseOrderId], { queryParams: { section: 'payments' } });
+      return;
+    }
     this.ui.confirm({
       title: 'Factuur maken',
       message: `De inhoud van <b>${escapeHtml(data.order.number)}</b> wordt bevroren in een nieuwe factuur. `
@@ -1255,6 +1271,7 @@ export class SalesDesk extends SalesEditor {
   }
 
   private async createInvoice(data: SalesOrderView): Promise<void> {
+    if (advanceAgreementFor(data)) { this.makeInvoice(data); return; }
     this.invoiceBusy.set(true);
     try {
       const invoice = await this.sales.createInvoiceFrom(data.order.id);
@@ -1332,6 +1349,7 @@ export class SalesDesk extends SalesEditor {
   }
 
   documentLabel(order: SalesOrder): string {
+    if (this.advanceAgreement()) return 'Offerte met betaalplan';
     return salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
   }
 }
