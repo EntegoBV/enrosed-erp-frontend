@@ -12,9 +12,9 @@ export type SalesScope = 'STANDARD' | 'PARTNER' | 'ALL';
       <div class="scope-row">
         <label class="scope-field"><span>Soort verkoop</span>
           <select [value]="scope()" (change)="scopeChange.emit($any($event.target).value)">
+            <option value="ALL">Alles</option>
             <option value="STANDARD">Reguliere verkoop</option>
             <option value="PARTNER">Partnercontainers</option>
-            <option value="ALL">Alle verkoop</option>
           </select>
         </label>
         <p class="scope-hint">{{ scopeHint() }}</p>
@@ -55,7 +55,7 @@ export type SalesScope = 'STANDARD' | 'PARTNER' | 'ALL';
   `,
 })
 export class SalesDocumentNavigation {
-  readonly scope = input<SalesScope>('STANDARD');
+  readonly scope = input<SalesScope>('ALL');
   readonly tab = input<SalesTab>('OFFERTE');
   readonly counts = input.required<Record<SalesTab, number>>();
   readonly loading = input(false);

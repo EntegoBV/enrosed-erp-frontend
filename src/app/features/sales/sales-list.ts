@@ -699,7 +699,7 @@ export class SalesList {
 
   readonly filter = signal<QuoteStatus | ''>('');
   readonly docTab = signal<SalesTab>('OFFERTE');
-  readonly businessScope = signal<SalesScope>('STANDARD');
+  readonly businessScope = signal<SalesScope>('ALL');
   readonly outstandingOnly = signal(false);
   readonly partner = isPartnerDocument;
   readonly receivable = invoiceReceivable;
