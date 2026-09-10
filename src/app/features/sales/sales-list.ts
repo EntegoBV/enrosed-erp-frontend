@@ -2,7 +2,9 @@ import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { invoiceReceivable } from '../finance/incoming-money';
 import { NgTemplateOutlet } from '@angular/common';
-import { groupSalesInvoices } from './sales-list-groups';
+import { groupSalesInvoices, type SalesContainerGroup } from './sales-list-groups';
+import { SalesContainerMenu } from './sales-container-menu';
+import type { PartnerContainerDeletionResult } from '../../core/api/partner-container-deletion-api';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -31,7 +33,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, NgTemplateOutlet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation, SalesContainerMenu],
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
@@ -157,7 +159,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                  [class.swipe--dragging]="draggingOrderId() === row.order.id"
                  [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
             <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
-                    [disabled]="archivingOrderId() !== null"
+                    [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
                     [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ')
                       + documentLabel(row.order) + ' ' + row.order.number">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -238,7 +240,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
             </a>
             @if (canDelete(row.order)) {
               <button class="swipe__delete" type="button"
-                      [disabled]="deletingOrderId() !== null"
+                      [disabled]="deletingOrderId() !== null || containerDeletingId() !== null"
                       [attr.aria-busy]="deletingOrderId() === row.order.id"
                       (click)="remove(row)"
                       [attr.aria-label]="documentLabel(row.order) + ' ' + row.order.number + ' verwijderen'"
@@ -259,6 +261,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
           @for (entry of groupedRows(); track entry.key) {
             @if (entry.kind === 'PARTNER_CONTAINER') {
               <section class="sales-container" [class.sales-container--open]="groupOpen(entry.key)">
+                <div class="sales-container__header" (contextmenu)="openContainerMenu($event, entry)">
                 <button class="sales-container__toggle" type="button"
                         [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
                         [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)">
@@ -284,6 +287,11 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                   </span>
                   <span class="sales-container__chevron" aria-hidden="true"></span>
                 </button>
+                <button class="sales-container__menu" type="button" aria-haspopup="dialog"
+                        [attr.aria-label]="'Acties voor partnercontainer ' + (entry.purchaseOrderNumber || 'Inkoop #' + entry.purchaseOrderId)"
+                        [disabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
+                        (click)="openContainerMenu($event, entry)"><span aria-hidden="true">⋯</span></button>
+                </div>
                 <div class="sales-container__invoices" [id]="entry.key + '-invoices'"
                      [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
                   @if (groupOpen(entry.key)) {
@@ -332,6 +340,12 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
 
     <button class="fab" type="button" (click)="startNew()">{{ businessScope() === 'PARTNER' ? 'Container kiezen' : '+ Order' }}</button>
 
+    @if (containerMenu(); as menuContainer) {
+      <app-sales-container-menu [container]="menuContainer" [customerName]="customerName(menuContainer.rows[0])"
+        [externalBusy]="deletingOrderId() !== null || archivingOrderId() !== null"
+        (closed)="containerMenu.set(null)" (busyChange)="containerDeletingId.set($event ? menuContainer.purchaseOrderId : null)"
+        (deleted)="containerDeleted($event)" />
+    }
     @if (rowMenu(); as menuRow) {
       <app-sheet [title]="documentLabel(menuRow.order) + ' ' + menuRow.order.number" (closed)="rowMenu.set(null)">
         <div body>
@@ -342,7 +356,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
               <i aria-hidden="true">›</i>
               <span><b>Openen</b><small>Bekijken of bewerken</small></span>
             </a>
-            <button class="desk-action" type="button" [disabled]="archivingOrderId() !== null"
+            <button class="desk-action" type="button" [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
                     (click)="toggleArchive(menuRow)">
               <i aria-hidden="true">▤</i>
               <span>
@@ -352,7 +366,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
             </button>
             @if (canDelete(menuRow.order)) {
               <button class="desk-action desk-action--danger" type="button"
-                      [disabled]="deletingOrderId() !== null" (click)="rowMenu.set(null); remove(menuRow)">
+                      [disabled]="deletingOrderId() !== null || containerDeletingId() !== null" (click)="rowMenu.set(null); remove(menuRow)">
                 <i aria-hidden="true">×</i>
                 <span><b>Verwijderen</b><small>Tijdelijk, na bevestiging</small></span>
               </button>
@@ -468,9 +482,11 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
   `,
   styles: `
     .sales-container:not(:last-child){border-bottom:1px solid var(--line)}
-    .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;width:100%;min-height:98px;padding:19px 20px;border:0;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}
-    .sales-container__toggle:hover,.sales-container--open>.sales-container__toggle{background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface))}
+    .sales-container__header{display:flex;align-items:stretch;background:var(--surface)}
+    .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;flex:1;min-width:0;min-height:98px;padding:19px 20px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}
+    .sales-container__toggle:hover,.sales-container--open>.sales-container__header{background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface))}
     .sales-container__toggle:focus-visible{outline:3px solid var(--rose);outline-offset:-3px}
+    .sales-container__menu{align-self:center;flex:0 0 44px;width:44px;height:44px;margin-right:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink-2);font-family:inherit;font-size:23px;font-weight:700;line-height:1;cursor:pointer}.sales-container__menu:hover{background:var(--rose-soft);color:var(--rose-dark)}.sales-container__menu:focus-visible{outline:3px solid var(--rose);outline-offset:2px}.sales-container__menu:disabled{opacity:.45;cursor:wait}
     .sales-container__identity{grid-area:identity;display:grid;gap:5px;min-width:0}
     .sales-container__identity>strong{font-size:16px;overflow-wrap:anywhere}
     .sales-container__eyebrow{font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--rose-dark)}
@@ -793,6 +809,9 @@ export class SalesList {
   readonly swipeOffset = signal(0);
   readonly deletingOrderId = signal<number | null>(null);
   readonly archivingOrderId = signal<number | null>(null);
+  readonly containerMenu = signal<SalesContainerGroup | null>(null);
+  readonly containerDeletingId = signal<number | null>(null);
+  private loadVersion = 0;
   /** The row whose menu is open, from a long press or a right-click. */
   readonly rowMenu = signal<SalesOrderView | null>(null);
   private swipeHandled = false;
@@ -925,12 +944,14 @@ export class SalesList {
 
   async load(): Promise<void> {
     if (this.loading() && this.all().length) return;
+    const version = ++this.loadVersion;
     this.loading.set(true);
     this.loadError.set(null);
     try {
       const [orders, customers, countries] = await Promise.all([
         this.sales.orders(), this.sales.customers(), this.sales.countries(),
       ]);
+      if (version !== this.loadVersion) return;
       this.all.set(orders);
       this.customers.set(customers);
       this.countries.set(countries);
@@ -944,12 +965,13 @@ export class SalesList {
         this.startAddCustomer();
       }
     } catch (failure: unknown) {
+      if (version !== this.loadVersion) return;
       this.loadError.set(messageOf(
         failure,
         'Controleer de verbinding met Enrosed en probeer opnieuw.',
       ));
     } finally {
-      this.loading.set(false);
+      if (version === this.loadVersion) this.loading.set(false);
     }
   }
 
@@ -1079,7 +1101,7 @@ export class SalesList {
 
   startSwipe(event: PointerEvent, row: SalesOrderView): void {
     if (!event.isPrimary || event.button !== 0 || this.deletingOrderId() !== null
-        || this.archivingOrderId() !== null) return;
+        || this.archivingOrderId() !== null || this.containerDeletingId() !== null) return;
     if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
     this.swipeHandled = false;
     const open = this.openRow();
@@ -1171,7 +1193,7 @@ export class SalesList {
 
   /** A horizontal two-finger trackpad gesture follows the same thresholds, both ways. */
   wheelSwipe(event: WheelEvent, row: SalesOrderView): void {
-    if (this.deletingOrderId() !== null || this.archivingOrderId() !== null) return;
+    if (this.deletingOrderId() !== null || this.archivingOrderId() !== null || this.containerDeletingId() !== null) return;
     if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
     event.preventDefault();
     if (this.wheelOrderId !== row.order.id) {
@@ -1198,13 +1220,37 @@ export class SalesList {
   /** The row's choices as a menu: a long press on a phone, a right-click on a desk. */
   openRowMenu(event: Event | null, row: SalesOrderView): void {
     event?.preventDefault();
+    if (this.containerDeletingId() !== null) return;
+    this.containerMenu.set(null);
     this.openRow.set(null);
     this.rowMenu.set(row);
   }
 
+  openContainerMenu(event: Event, container: SalesContainerGroup): void {
+    event.preventDefault(); event.stopPropagation();
+    if (this.containerDeletingId() !== null || this.deletingOrderId() !== null
+      || this.archivingOrderId() !== null || this.ui.confirmRequest() !== null) return;
+    this.rowMenu.set(null); this.openRow.set(null);
+    this.containerMenu.set(container);
+  }
+
+  async containerDeleted(result: PartnerContainerDeletionResult): Promise<void> {
+    const ids = new Set(result.deletedInvoiceIds);
+    // The server returns the complete cascade, including invoices hidden by filters.
+    this.loadVersion++;
+    this.loading.set(false);
+    this.all.update(rows => rows.filter(row => !ids.has(row.order.id)));
+    this.expandedGroups.update(keys => new Set([...keys].filter(key => !key.startsWith(`container-${result.purchaseOrderId}-customer-`))));
+    this.containerMenu.set(null); this.containerDeletingId.set(null); this.openRow.set(null);
+    this.ui.toast(`Container en ${ids.size} ${ids.size === 1 ? 'voorschotfactuur' : 'voorschotfacturen'} tijdelijk verwijderd`);
+    await this.load();
+    // Notification refresh failure must not turn a successful deletion into a retry.
+    void this.work.refresh(true).catch(() => undefined);
+  }
+
   /** Off the working list into the archive drawer, or back; the document itself stays as it is. */
   async toggleArchive(row: SalesOrderView): Promise<void> {
-    if (this.archivingOrderId() !== null) return;
+    if (this.archivingOrderId() !== null || this.containerDeletingId() !== null) return;
     const id = row.order.id;
     const toArchive = !row.order.archivedAt;
     const label = this.documentLabel(row.order);
@@ -1241,7 +1287,7 @@ export class SalesList {
 
   remove(row: SalesOrderView): void {
     const order = row.order;
-    if (!this.canDelete(order) || this.deletingOrderId() !== null
+    if (!this.canDelete(order) || this.deletingOrderId() !== null || this.containerDeletingId() !== null
         || this.ui.confirmRequest() !== null) return;
     const label = this.documentLabel(order);
     const customer = this.customerName(row);
@@ -1260,7 +1306,7 @@ export class SalesList {
         danger: true,
       },
       async () => {
-        if (this.deletingOrderId() !== null) return;
+        if (this.deletingOrderId() !== null || this.containerDeletingId() !== null) return;
         this.deletingOrderId.set(order.id);
         try {
           await this.sales.deleteOrder(order.id);
