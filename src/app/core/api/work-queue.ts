@@ -37,6 +37,10 @@ export class WorkQueue {
   readonly actionCount = computed(() =>
     this.visible().filter((item) => item.actionNeeded).length);
 
+  /** The Wijzigingen page lists all pending proposals, even dismissed alerts. */
+  readonly revisionCount = computed(() =>
+    this.items().filter((item) => item.kind === 'VOORSTEL' && item.actionNeeded).length);
+
   readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded));
   readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded));
 

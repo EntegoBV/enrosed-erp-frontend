@@ -25,6 +25,7 @@ export function matchesAdvanceAgreement(document: SalesOrderView, plan: Schedule
 @Component({
   selector: 'app-partner-advance-schedule',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { id: 'purchase-advance-invoices', tabindex: '-1' },
   imports: [RouterLink, DateField, DateNlPipe, EurPipe, NumPipe],
   template: `
     <section class="advance-plan" aria-label="Afzonderlijke voorschotfacturen">
@@ -76,7 +77,7 @@ export function matchesAdvanceAgreement(document: SalesOrderView, plan: Schedule
     </section>
   `,
   styles: `
-    :host{display:block;min-width:0}.advance-plan{container:advance-plan / inline-size;padding:18px;border-block:1px solid var(--line);background:var(--surface)}header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}h4{display:flex;align-items:center;gap:9px;font-size:15px;margin:0;font-weight:700}.step{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--rose-soft);color:var(--rose-dark);font-size:12px}
+    :host{display:block;min-width:0;scroll-margin-top:calc(var(--appbar-h) + 90px)}.advance-plan{container:advance-plan / inline-size;padding:18px;border-block:1px solid var(--line);background:var(--surface)}header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}h4{display:flex;align-items:center;gap:9px;font-size:15px;margin:0;font-weight:700}.step{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--rose-soft);color:var(--rose-dark);font-size:12px}
     .plan-copy{font-size:12px;line-height:1.6;color:var(--muted);margin:12px 0}.plan-copy b{color:var(--ink-2)}.plan-label{font-size:12px;font-weight:650;color:var(--ink-2);margin:16px 0 6px}.plan-presets{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 16px}.btn{min-height:44px;white-space:normal}.plan-presets>.btn{flex:1 1 auto}
     .plan-empty{padding:16px;margin-top:14px;border-radius:12px;background:var(--surface-2)}.plan-empty>b{font-size:14px}.plan-empty p{font-size:13px;line-height:1.6;color:var(--muted);margin:8px 0 14px}.plan-empty .btn{width:100%}
     .plan-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:15px;border:1px solid var(--line);border-radius:12px;margin:12px 0;background:var(--surface)}.plan-editor__head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding-bottom:11px;border-bottom:1px solid var(--line);font-size:13px}.plan-editor__head span{font-size:11px;color:var(--muted)}.plan-name,.plan-row-result{grid-column:1/-1}.field{min-width:0}.field>span{font-size:12px;font-weight:650}.input,.select{min-width:0;min-height:44px;font-size:14px}.plan-row-result,.plan-total{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:13px}.plan-row-result{padding-top:8px}.plan-row-result>b{font-size:17px}.plan-row-result small{font-size:11px;color:var(--muted);font-weight:400}.plan-row-result .linklike{min-height:44px;font-size:12px}

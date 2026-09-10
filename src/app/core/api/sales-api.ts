@@ -107,7 +107,7 @@ export class SalesApi {
     return firstValueFrom(this.http.post<SalesOrderView>(api('/api/sales-orders/auction-settlement'), body));
   }
 
-  /** Freezes the quote's content into a new invoice; the quote stays. */
+  /** Creates an unsent draft invoice and archives its source quote; retries reuse the linked invoice. */
   createInvoiceFrom(quoteId: number): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/invoice`), {}));

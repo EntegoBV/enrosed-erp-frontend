@@ -1205,7 +1205,8 @@ export class SalesList {
   /** The order marker remains visible in filters and rows, independent of a
       personally dismissed bell item. */
   readonly websiteRequests = computed(() => this.all().filter((row) =>
-    (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && isWebsiteQuoteRequest(row.order)));
+    !row.order.archivedAt && !row.invoicedAsId
+    && (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && isWebsiteQuoteRequest(row.order)));
   readonly attentionCount = computed(() => this.openWork().length);
   readonly websiteRequest = isWebsiteQuoteRequest;
 

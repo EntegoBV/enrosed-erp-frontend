@@ -5,6 +5,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { QuoteRevision, SalesOrderView } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { DateNlPipe, NumPipe } from '../../shared/pipes';
+import { messageOf } from '../../core/api/errors';
 
 /** Customer change proposals awaiting our review. */
 @Component({
@@ -13,7 +14,7 @@ import { DateNlPipe, NumPipe } from '../../shared/pipes';
   imports: [Skeleton, RouterLink, PageHeader, NumPipe, DateNlPipe],
   template: `
     <app-page-header title="Wijzigingen"
-                     [subtitle]="revisions().length + ' voorstel(len) in behandeling'" />
+                     [subtitle]="loading() ? 'Voorstellen laden…' : error() ? 'Niet vernieuwd' : revisions().length + ' voorstel(len) in behandeling'" />
 
     <div class="content">
       <div class="alert alert--info">
@@ -23,6 +24,15 @@ import { DateNlPipe, NumPipe } from '../../shared/pipes';
           komt hier terecht: pas wanneer jij ze overneemt gaan de aantallen naar de order.
         </div>
       </div>
+
+      @if (error()) {
+        <div class="alert alert--danger mt-12" role="alert">
+          <div>{{ error() }}</div>
+          <button class="btn" type="button" [disabled]="loading()" (click)="load()">
+            {{ loading() ? 'Laden…' : 'Opnieuw proberen' }}
+          </button>
+        </div>
+      }
 
       <div class="card mt-12">
         <div class="list">
@@ -43,15 +53,18 @@ import { DateNlPipe, NumPipe } from '../../shared/pipes';
               <span class="list-item__chev">›</span>
             </a>
           } @empty {
-            <div class="empty">
-              <div class="empty__icon">⇄</div>
-              <div class="empty__title">
-                @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen openstaande voorstellen }
+            @if (!error()) {
+              <div class="empty">
+                <div class="empty__icon">⇄</div>
+                <div class="empty__title">
+                  @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen openstaande voorstellen }
+                </div>
+                <div class="empty__text">
+                  Zodra een klant een wijziging voorstelt verschijnt die hier.
+                  Nieuwe websiteaanvragen staan bij <a routerLink="/sales">Verkooporders</a>.
+                </div>
               </div>
-              <div class="empty__text">
-                Zodra een klant een wijziging voorstelt verschijnt die hier.
-              </div>
-            </div>
+            }
           }
         </div>
       </div>
@@ -64,18 +77,26 @@ export class RevisionList {
   readonly revisions = signal<QuoteRevision[]>([]);
   readonly orders = signal<SalesOrderView[]>([]);
   readonly loading = signal(true);
+  readonly error = signal<string | null>(null);
 
   constructor() {
     void this.load();
   }
 
-  private async load(): Promise<void> {
-    const [revisions, orders] = await Promise.all([
-      this.sales.pendingRevisions(), this.sales.orders(),
-    ]);
-    this.revisions.set(revisions);
-    this.orders.set(orders);
-    this.loading.set(false);
+  async load(): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const [revisions, orders] = await Promise.all([
+        this.sales.pendingRevisions(), this.sales.orders(),
+      ]);
+      this.revisions.set(revisions);
+      this.orders.set(orders);
+    } catch (failure) {
+      this.error.set(messageOf(failure, 'Wijzigingsvoorstellen konden niet worden geladen. Probeer opnieuw.'));
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   orderNumber(orderId: number): string {

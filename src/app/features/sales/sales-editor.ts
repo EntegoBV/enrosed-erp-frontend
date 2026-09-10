@@ -1,5 +1,6 @@
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
+import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
@@ -1248,6 +1249,12 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   </button>
                 }
               }
+              @if (canCreateInvoice(data)) {
+                <button class="btn" type="button" [disabled]="invoiceConversionBusy() || dirty() || saving() || sending()"
+                        [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="makeInvoiceFromEditor(data)">
+                  {{ invoiceConversionBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
+                </button>
+              }
               <button class="btn btn--primary" type="button"
                       [disabled]="sending() || sendIssues().length > 0"
                       (click)="openSend()">
@@ -1290,9 +1297,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     (click)="focusPendingRevision()">Wijziging beoordelen</button>
           } @else if (!dirty() && !isInvoiceDoc() && data.order.status === 'GEACCEPTEERD') {
-            <a class="btn btn--primary sales-mobile-dock__primary"
-               [routerLink]="advanceAgreement() ? ['/purchasing', advanceAgreement()!.purchaseOrderId] : ['/sales', data.order.id]"
-               [queryParams]="advanceAgreement() ? { section: 'payments' } : {}">{{ advanceAgreement() ? 'Voorschotten beheren' : 'Factuur maken' }}</a>
+            <button class="btn btn--primary sales-mobile-dock__primary" type="button"
+                    [disabled]="invoiceConversionBusy() || saving()" (click)="makeInvoiceFromEditor(data)">
+              {{ advanceAgreement() ? 'Voorschotten beheren' : invoiceConversionBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+            </button>
           } @else if (!dirty() && !isInvoiceDoc()
                      && (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD')) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
@@ -1981,6 +1989,47 @@ export class SalesEditor {
   protected readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
   private readonly destroyRef = inject(DestroyRef);
+
+  readonly canCreateInvoice = canCreateInvoiceFromQuote;
+  readonly invoiceConversionBusy = signal(false);
+
+  protected refreshWorkQueue(): void { void this.work.refresh(true); }
+
+  makeInvoiceFromEditor(data: SalesOrderView): void {
+    if (this.invoiceConversionBusy() || this.dirty() || this.saving() || this.sending()) return;
+    const agreement = advanceAgreementFor(data);
+    if (agreement) {
+      void this.router.navigate(['/purchasing', agreement.purchaseOrderId], { queryParams: { section: 'payments' } });
+      return;
+    }
+    if (data.invoicedAsId) {
+      void this.router.navigate(['/sales', data.invoicedAsId]);
+      return;
+    }
+    if (!canCreateInvoiceFromQuote(data)) return;
+    this.ui.confirm({
+      title: 'Factuur maken zonder versturen',
+      message: `De inhoud van <b>${escapeHtml(data.order.number)}</b> komt in een nieuwe conceptfactuur. `
+        + 'De offerte wordt gearchiveerd en blijft gekoppeld aan de factuur. Er wordt geen e-mail verstuurd.',
+      confirmLabel: 'Conceptfactuur maken',
+    }, () => { void this.createDraftInvoice(data); });
+  }
+
+  private async createDraftInvoice(data: SalesOrderView): Promise<void> {
+    if (this.invoiceConversionBusy() || this.dirty() || this.saving() || this.sending()
+      || this.view()?.order.id !== data.order.id || !canCreateInvoiceFromQuote(data)) return;
+    this.invoiceConversionBusy.set(true);
+    try {
+      const invoice = await this.sales.createInvoiceFrom(data.order.id);
+      this.refreshWorkQueue();
+      this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
+      await this.router.navigate(['/sales', invoice.order.id]);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Factuur maken mislukt'), 'err');
+    } finally {
+      this.invoiceConversionBusy.set(false);
+    }
+  }
 
   readonly id = input<string>('');
   readonly validOrderId = computed(() => {

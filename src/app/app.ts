@@ -67,10 +67,11 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
                 <app-icon class="sidebar__icon" name="sales" [size]="18" />
                 <span class="sidebar__text sidebar__text--full">Verkooporders</span>
                 <span class="sidebar__text sidebar__text--rail">Verkoop</span>
+                @if (openWork(); as n) { <span class="sidebar__count">{{ n }}</span> }
               </a>
               <a class="sidebar__link" routerLink="/revisions" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Wijzigingen
-                @if (openWork(); as n) { <span class="sidebar__count">{{ n }}</span> }
+                @if (openRevisions(); as n) { <span class="sidebar__count">{{ n }}</span> }
               </a>
               <a class="sidebar__link" routerLink="/customers" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="customers" [size]="18" /> Klanten
@@ -368,6 +369,7 @@ export class App {
    * apart.
    */
   readonly openWork = this.work.actionCount;
+  readonly openRevisions = this.work.revisionCount;
 
   /** Aanmeldpagina en klantportaal krijgen geen navigatie. */
   readonly bare = computed(() => {

@@ -491,9 +491,12 @@ export class DashboardHome {
     this.planner.items().filter((item) => item.pinned).length - this.pinnedItems().length));
 
   readonly newWebsiteRequests = computed(() => this.salesOrders()
-    .filter((row) => !row.awaitingResend && isWebsiteQuoteRequest(row.order)));
+    .filter((row) => !row.order.archivedAt && !row.invoicedAsId
+      && (row.order.docType ?? 'OFFERTE') === 'OFFERTE'
+      && !row.awaitingResend && isWebsiteQuoteRequest(row.order)));
   readonly awaitingResend = computed(() => this.salesOrders().filter((row) =>
-    (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && row.awaitingResend));
+    !row.order.archivedAt && !row.invoicedAsId
+    && (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && row.awaitingResend));
   readonly salesActionCount = computed(() => this.newWebsiteRequests().length
     + this.revisions().length + this.awaitingResend().length);
   readonly salesActionLabel = computed(() => {

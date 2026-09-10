@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 import { cents } from '../src/app/features/purchasing/partner-advance-schedule-state.ts';
+import { canCreateInvoiceFromQuote } from '../src/app/features/sales/sales-invoice-actions.ts';
 
 /** Run the production guards with actual Angular signals, without HTTP or a browser. */
 async function productionMembers(file: string, className: string, names: string[]) {
@@ -35,6 +36,7 @@ const advanceAgreementFor = helperExports.advanceAgreementFor!;
 const deskJs = await productionMembers('sales/sales-desk', 'SalesDesk', ['makeInvoice', 'createInvoice']);
 const viewJs = await productionMembers('sales/sales-view', 'SalesView', ['makeInvoice', 'createInvoice']);
 const editorJs = await productionMembers('sales/sales-editor', 'SalesEditor', ['advanceAgreement', 'canEdit', 'canEditTerms', 'duplicate']);
+const editorConversionJs = await productionMembers('sales/sales-editor', 'SalesEditor', ['makeInvoiceFromEditor', 'createDraftInvoice']);
 const portalJs = await productionMembers('portal/portal-page', 'PortalPage', ['openProposal', 'propose', 'setLanguage', 'agreementSettlementText']);
 
 const agreement = { purchaseOrderId: 48, financingPct: 50, agreedAmountEur: 5000, sharePct: 50,
@@ -44,7 +46,7 @@ function quote(snapshot = true) { return { order: { id: 9, number: 'O-9', docTyp
 
 function makeHarness(javascript: string, className: string, snapshot = true) {
   const exports: Record<string, new () => any> = {};
-  vm.runInNewContext(javascript, { exports, advanceAgreementFor, computed, signal, Intl,
+  vm.runInNewContext(javascript, { exports, advanceAgreementFor, canCreateInvoiceFromQuote, computed, signal, Intl,
     escapeHtml: (value: string) => value, messageOf: () => 'Error', localStorage: { setItem() {} } });
   const screen = new exports[className]();
   const routes: unknown[] = [];
@@ -53,12 +55,75 @@ function makeHarness(javascript: string, className: string, snapshot = true) {
   const router = { navigate: async (...args: unknown[]) => { routes.push(args); return true; } };
   Object.assign(screen, {
     view: signal(quote(snapshot)), quote: signal(quote(snapshot)), invoiceBusy: signal(false), busy: signal(false),
+    dirty: signal(false), saving: signal(false), sending: signal(false), sendingQuote: signal(false),
+    invoiceConversionBusy: signal(false), refreshWorkQueue() {}, work: { refresh: async () => {} },
     router, routerNav: router,
     sales: { createInvoiceFrom: async (id: number) => { api.push(id); return { order: { id: 22, number: 'F-22' } }; },
       duplicateOrder: async (id: number) => { api.push(id); return { order: { id: 23 } }; } },
     ui: { confirm: (_options: unknown, fn: () => void) => { confirmation = fn; }, toast() {} },
   });
   return { screen, routes, api, get confirmation() { return confirmation; } };
+}
+
+test('only active, uninvoiced quotations can create a draft invoice directly', () => {
+  const ordinary = quote(false) as any;
+  assert.equal(canCreateInvoiceFromQuote(ordinary), true);
+  assert.equal(canCreateInvoiceFromQuote({ ...ordinary, order: { ...ordinary.order, status: 'GEACCEPTEERD' } }), true);
+  for (const status of ['AFGEWEZEN', 'GEANNULEERD', 'VERLOPEN', 'WIJZIGING_GEVRAAGD', 'BETAALD']) {
+    assert.equal(canCreateInvoiceFromQuote({ ...ordinary, order: { ...ordinary.order, status } }), false);
+  }
+  assert.equal(canCreateInvoiceFromQuote({ ...ordinary, order: { ...ordinary.order, docType: 'FACTUUR' } }), false);
+  assert.equal(canCreateInvoiceFromQuote({ ...ordinary, order: { ...ordinary.order, archivedAt: '2026-09-10T10:00:00Z' } }), false);
+  assert.equal(canCreateInvoiceFromQuote({ ...ordinary, invoicedAsId: 22 }), false);
+  assert.equal(canCreateInvoiceFromQuote({ ...ordinary, invoicedAs: 'F-22' }), false);
+  assert.equal(canCreateInvoiceFromQuote(quote() as any), false, 'Agreement snapshots use their separate term invoices');
+});
+
+for (const [name, javascript, open, create] of [
+  ['SalesDesk', deskJs, 'makeInvoice', 'createInvoice'],
+  ['SalesView', viewJs, 'makeInvoice', 'createInvoice'],
+  ['SalesEditor', editorConversionJs, 'makeInvoiceFromEditor', 'createDraftInvoice'],
+]) {
+  test(`${name} converts a never-sent draft without changing its send history or sending mail`, async () => {
+    const state = makeHarness(javascript, name, false);
+    const draft = { ...quote(false), order: { ...quote(false).order, notes: 'Keep original terms', sentAt: null } };
+    state.screen.view.set(draft);
+    const before = JSON.stringify(draft);
+    state.screen[open](draft);
+    assert.ok(state.confirmation, 'An explicit conversion confirmation is shown');
+    assert.equal(state.api.length, 0, 'Opening the action does not create or send anything');
+    await state.screen[create](draft);
+    assert.deepEqual(state.api, [9], 'Only the conversion endpoint is called; no send API exists in this harness');
+    assert.equal(JSON.stringify(draft), before, 'The app never fabricates a sent or accepted status');
+    assert.equal(JSON.stringify(state.routes), JSON.stringify([[['/sales', 22]]]));
+  });
+
+  test(`${name} opens an already linked invoice and blocks conversion after route changes`, async () => {
+    const state = makeHarness(javascript, name, false);
+    state.screen[open]({ ...quote(false), invoicedAsId: 22 });
+    assert.equal(state.api.length, 0);
+    assert.equal(JSON.stringify(state.routes), JSON.stringify([[['/sales', 22]]]));
+    state.screen.view.set({ ...quote(false), order: { ...quote(false).order, id: 99 } });
+    await state.screen[create](quote(false));
+    assert.equal(state.api.length, 0, 'A stale confirmation cannot convert the previous route');
+  });
+
+  if (name !== 'SalesView') {
+    test(`${name} never drops unsaved edits through direct conversion or its delayed confirmation`, async () => {
+      const state = makeHarness(javascript, name, false);
+      state.screen.dirty.set(true);
+      state.screen[open](quote(false));
+      assert.equal(state.confirmation, null);
+      await state.screen[create](quote(false));
+      assert.equal(state.api.length, 0);
+      state.screen.dirty.set(false);
+      state.screen[open](quote(false));
+      assert.ok(state.confirmation);
+      state.screen.saving.set(true);
+      await state.screen[create](quote(false));
+      assert.equal(state.api.length, 0);
+    });
+  }
 }
 
 test('only an immutable quotation snapshot changes the workflow; legacy quotes and invoices stay unchanged', () => {

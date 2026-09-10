@@ -1986,7 +1986,7 @@ export class PurchaseEditor {
   }
 
   /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
-  jumpToSection(sectionId: string, disclosure?: 'order' | 'costs'): void {
+  jumpToSection(sectionId: string, disclosure?: 'order' | 'costs', scroll = true): void {
     if (disclosure && !this.sectionOpen(disclosure)) {
       const next = new Set(this.openSections());
       next.add(disclosure);
@@ -1996,9 +1996,10 @@ export class PurchaseEditor {
     if (!this.desktop.active()) {
       const phoneStep = this.phoneStepIds.indexOf(sectionId as (typeof this.phoneStepIds)[number]);
       if (phoneStep >= 0) this.phoneStep.set(phoneStep);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    if (!scroll) return;
     requestAnimationFrame(() => {
       const target = document.getElementById(sectionId);
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' });

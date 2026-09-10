@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, effect, inject, input, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, afterEveryRender, effect, inject, input, untracked, viewChild } from '@angular/core';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { PurchaseDesk } from './purchase-desk';
 import { PurchaseEditor } from './purchase-editor';
@@ -35,26 +35,56 @@ export class PurchaseScreen {
   private readonly viewer = viewChild(PurchaseView);
   private openedPaymentsFor: object | null = null;
   private openedPaymentsId = '';
+  private pendingPaymentsFocus: { screen: object; id: string; fallback: HTMLElement | null } | null = null;
 
   constructor() {
-    effect(() => {
-      const section = this.section();
-      const id = this.id();
-      const desk = this.desk();
-      const screen = desk ?? this.editor() ?? this.viewer();
-      if (section !== 'payments') {
-        this.openedPaymentsFor = null;
-        return;
-      }
-      if (!screen || screen.view()?.order.id !== Number(id)
-        || (this.openedPaymentsFor === screen && this.openedPaymentsId === id)) return;
-      this.openedPaymentsFor = screen;
-      this.openedPaymentsId = id;
-      untracked(() => {
-        if (desk) desk.railTab.set('pay');
-        else screen.jumpToSection('purchase-payments-section');
-      });
+    effect(() => this.openRequestedSection());
+    afterEveryRender(() => this.focusRequestedSection());
+  }
+
+  private openRequestedSection(): void {
+    const section = this.section();
+    const id = this.id();
+    const desk = this.desk();
+    const editor = this.editor();
+    const viewer = this.viewer();
+    const screen = desk ?? editor ?? viewer;
+    if (section !== 'payments') {
+      this.openedPaymentsFor = null;
+      this.pendingPaymentsFocus = null;
+      return;
+    }
+    if (!screen || screen.view()?.order.id !== Number(id)
+      || (this.openedPaymentsFor === screen && this.openedPaymentsId === id)) return;
+    this.openedPaymentsFor = screen;
+    this.openedPaymentsId = id;
+    this.pendingPaymentsFocus = { screen, id, fallback: null };
+    untracked(() => {
+      if (desk) desk.railTab.set('pay');
+      else if (editor) editor.jumpToSection('purchase-payments-section', undefined, false);
+      else viewer?.workspaceSection.set('purchase-payments-section');
     });
+  }
+
+  /** The term controls arrive after the financing API; focus only once they exist. */
+  private focusRequestedSection(): void {
+    const pending = this.pendingPaymentsFocus;
+    if (!pending) return;
+    if (this.id() !== pending.id || this.section() !== 'payments'
+      || (this.desk() ?? this.editor() ?? this.viewer()) !== pending.screen
+      || (pending.fallback && document.activeElement !== pending.fallback)) {
+      this.pendingPaymentsFocus = null;
+      return;
+    }
+    const terms = document.getElementById('purchase-advance-invoices');
+    const target = terms ?? document.getElementById('purchase-partner-payments')
+      ?? document.getElementById('purchase-payments-section');
+    if (!target) return;
+    if (terms) this.pendingPaymentsFocus = null;
+    else if (pending.fallback) return;
+    else pending.fallback = target;
+    target.scrollIntoView({ behavior: 'instant', block: 'start' });
+    target.focus({ preventScroll: true });
   }
 
   /** The open editor owns the unsaved-changes verdict; a plain view has none. */

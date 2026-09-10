@@ -1,5 +1,6 @@
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
+import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, computed, signal, effect, inject } from '@angular/core';
@@ -71,6 +72,12 @@ interface JourneyStep {
           </button>
         }
         <button class="btn btn--sm" type="button" (click)="openPdfSheet()">PDF</button>
+        @if (data.order.status === 'CONCEPT' && canCreateInvoice(data)) {
+          <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()"
+                  [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="makeInvoice(data)">
+            {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
+          </button>
+        }
         @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="reopen()">Heropenen</button>
         } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
@@ -80,8 +87,8 @@ interface JourneyStep {
             {{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }}
           </button>
         } @else if (!isInvoiceDoc() && data.order.status === 'GEACCEPTEERD') {
-          <button class="btn btn--primary btn--sm" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)">
-            {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="makeInvoice(data)">
+            {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
           </button>
         }
       </app-page-header>
@@ -814,8 +821,8 @@ interface JourneyStep {
                             <i aria-hidden="true">➤</i><span><b>{{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }}</b><small>{{ dirty() ? 'Sla eerst op' : 'PDF in bijlage en een link om te tekenen' }}</small></span>
                           </button>
                         }
-                        @if (data.order.status === 'GEACCEPTEERD' || data.order.status === 'CONCEPT') {
-                          <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>{{ advanceAgreement() ? 'Voorschotfacturen beheren' : 'Factuur maken' }}</b><small>{{ advanceAgreement() ? 'Maak elke termijn op de inkooporder afzonderlijk aan' : 'De inhoud wordt bevroren in een nieuwe factuur' }}</small></span></button>
+                        @if (advanceAgreement() || canCreateInvoice(data)) {
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>{{ advanceAgreement() ? 'Voorschotfacturen beheren' : 'Factuur maken zonder versturen' }}</b><small>{{ advanceAgreement() ? 'Maak elke termijn op de inkooporder afzonderlijk aan' : dirty() ? 'Sla de wijzigingen eerst op' : 'Maak een conceptfactuur en archiveer de offerte. Er gaat geen e-mail uit.' }}</small></span></button>
                         }
                         @if (customerPortalLink(); as portalLink) {
                           @if (portalLink.available && portalLink.url) {
@@ -1259,26 +1266,34 @@ export class SalesDesk extends SalesEditor {
   readonly invoiceBusy = signal(false);
 
   makeInvoice(data: SalesOrderView): void {
-    if (this.invoiceBusy()) return;
+    if (this.invoiceBusy() || this.dirty() || this.saving() || this.sending()) return;
     const agreement = advanceAgreementFor(data);
     if (agreement) {
       void this.router.navigate(['/purchasing', agreement.purchaseOrderId], { queryParams: { section: 'payments' } });
       return;
     }
+    if (data.invoicedAsId) {
+      void this.router.navigate(['/sales', data.invoicedAsId]);
+      return;
+    }
+    if (!canCreateInvoiceFromQuote(data)) return;
     this.ui.confirm({
-      title: 'Factuur maken',
-      message: `De inhoud van <b>${escapeHtml(data.order.number)}</b> wordt bevroren in een nieuwe factuur. `
-        + 'De offerte zelf blijft bestaan.',
-      confirmLabel: 'Factuur maken',
+      title: 'Factuur maken zonder versturen',
+      message: `De inhoud van <b>${escapeHtml(data.order.number)}</b> komt in een nieuwe conceptfactuur. `
+        + 'De offerte wordt gearchiveerd en blijft gekoppeld aan de factuur. Er wordt geen e-mail verstuurd.',
+      confirmLabel: 'Conceptfactuur maken',
     }, () => { void this.createInvoice(data); });
   }
 
   private async createInvoice(data: SalesOrderView): Promise<void> {
+    if (this.invoiceBusy() || this.dirty() || this.saving() || this.sending() || this.view()?.order.id !== data.order.id) return;
     if (advanceAgreementFor(data)) { this.makeInvoice(data); return; }
+    if (!canCreateInvoiceFromQuote(data)) return;
     this.invoiceBusy.set(true);
     try {
       const invoice = await this.sales.createInvoiceFrom(data.order.id);
-      this.ui.toast(`${invoice.order.number} aangemaakt`);
+      this.refreshWorkQueue();
+      this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
       await this.router.navigate(['/sales', invoice.order.id]);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Factuur maken mislukt'), 'err');

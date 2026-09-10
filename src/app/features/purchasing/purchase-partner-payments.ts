@@ -13,6 +13,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
 @Component({
   selector: 'app-purchase-partner-payments',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { id: 'purchase-partner-payments', tabindex: '-1' },
   imports: [RouterLink, EurPipe, NumPipe, SalesReceipts, PartnerAdvanceSchedule],
   template: `
     @if (order().partnerCustomerId != null) {
@@ -65,7 +66,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
     }
   `,
   styles: `
-    :host{display:block;min-width:0}.partner-money{margin:16px 0;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
+    :host{display:block;min-width:0;scroll-margin-top:calc(var(--appbar-h) + 90px)}.partner-money{margin:16px 0;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
     .partner-money__head{padding:18px;background:var(--rose-soft);border-bottom:1px solid var(--rose-line)}header{display:flex;align-items:center;justify-content:space-between;gap:12px}header>div{min-width:0}.eyebrow{font-size:11px;color:var(--rose-dark);font-weight:700;letter-spacing:.04em}h3{margin:5px 0 0;font-size:19px;overflow-wrap:anywhere}
     .money-section{padding:18px}.money-section+.money-section{border-top:1px solid var(--line)}h4{display:flex;align-items:center;gap:9px;margin:0 0 15px;font-size:15px;font-weight:700}.step{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--rose-soft);color:var(--rose-dark);font-size:12px}
     .agreement-grid,.partner-money__kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.agreement-grid>div{display:grid;align-content:start;gap:7px;padding:13px;border-radius:12px;background:var(--surface-2)}.agreement-grid small{font-size:12px;line-height:1.4;color:var(--ink-2)}.agreement-grid strong{font-size:25px;line-height:1.15;letter-spacing:-.03em}.agreement-grid b{font-size:13px;overflow-wrap:anywhere}.agreement-grid span{font-size:12px;line-height:1.5;color:var(--muted)}
