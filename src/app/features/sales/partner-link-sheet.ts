@@ -8,7 +8,7 @@ import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 
 /**
- * Ties a quote or invoice to the container a partner co-finances, after
+ * Ties an invoice to the container a partner co-finances, after
  * the fact. A container we first paid ourselves can still become a partner
  * deal once the partner takes the goods over; the analyses then count its
  * money apart from ours.
@@ -20,8 +20,9 @@ import { Sheet, Ui } from '../../shared/ui';
   template: `
     <app-sheet title="Container en soort verkoop" (closed)="closed.emit()">
       <div body class="pl">
-        <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="partner.set(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="partner.set(true)">Partnercontainer</button></div>
+        <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="partner.set(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" [disabled]="order().docType !== 'FACTUUR'" (click)="partner.set(true)">Partnercontainer</button></div>
         <p class="pl__intro">{{ partner() ? 'Voorschot voor samen inkopen. De container en winstdeling worden gekoppeld; er geldt geen minimumorder.' : 'Gewone verkoop, met deze container als herkomst. Dit document financiert geen partnercontainer.' }}</p>
+        @if (order().docType !== 'FACTUUR') { <p class="pl__intro">Voorschotten voor een partner maak je direct als conceptfactuur vanuit de inkooporder. Deze offerte kan alleen een reguliere broncontainer krijgen.</p> }
         <div class="field">
           <label for="pl-search">Container zoeken</label>
           <input class="input" id="pl-search" type="search" placeholder="Zoek op nummer, naam of leverancier" autocomplete="off"
@@ -54,7 +55,7 @@ import { Sheet, Ui } from '../../shared/ui';
       <div foot style="display:contents">
         <span class="spacer"></span>
         <button class="btn" type="button" [disabled]="busy()" (click)="closed.emit()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || chosen() === null" (click)="link()">{{ busy() ? 'Bezig…' : 'Koppelen' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="busy() || chosen() === null || (partner() && order().docType !== 'FACTUUR')" (click)="link()">{{ busy() ? 'Bezig…' : 'Koppelen' }}</button>
       </div>
     </app-sheet>
   `,
@@ -106,7 +107,7 @@ export class PartnerLinkSheet {
     queueMicrotask(() => {
       const current = this.order();
       this.chosen.set(current.partnerPurchaseOrderId ?? current.sourcePurchaseOrderId ?? null);
-      this.partner.set(isPartnerDocument(current) || !current.sourcePurchaseOrderId);
+      this.partner.set(current.docType === 'FACTUUR' && (isPartnerDocument(current) || !current.sourcePurchaseOrderId));
       this.sharePct.set(current.partnerSharePct ?? 50);
       void this.load();
     });
@@ -135,13 +136,13 @@ export class PartnerLinkSheet {
 
   async link(): Promise<void> {
     const container = this.containers().find((row) => row.order.id === this.chosen());
-    if (!container || this.busy()) return;
+    if (!container || this.busy() || (this.partner() && this.order().docType !== 'FACTUUR')) return;
     this.busy.set(true);
     try {
       const view = await this.sales.setPartnerDeal(this.order().id, {
         purchaseOrderId: container.order.id, sharePct: this.partner() ? this.sharePct() : null, reference: container.order.number,
         purpose: this.partner() ? 'PARTNER_ADVANCE' : 'STANDARD',
-        paymentPlan: this.partner() ? 'THIRD_TWO_THIRDS_PRODUCTION' : 'FULL',
+        paymentPlan: 'FULL',
       });
       this.ui.toast(`${view.order.number} gekoppeld aan ${container.order.alias || container.order.number}`, 'ok');
       this.linked.emit(view);

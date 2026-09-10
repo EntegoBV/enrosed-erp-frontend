@@ -145,7 +145,7 @@ function blank(countryCode: string): Customer {
             <div class="field span-2 partner-field">
               <label class="partner-toggle">
                 <input type="checkbox" [checked]="draft().partner ?? false" (change)="patch({ partner: $any($event.target).checked })" />
-                <span><b>Partnercontainers</b><small>Bestelt containers met ons mee aan onze gelande kost en verkoopt de goederen op de veiling. Bij een offerte vanuit een inkooporder staat deze klant vooraan en rekenen we aan kostprijs.</small></span>
+                <span><b>Partnercontainers</b><small>Bestelt containers met ons mee aan onze gelande kost en verkoopt de goederen op de veiling. Vanuit de inkooporder maak je direct conceptvoorschotfacturen per betaaltermijn. De slotfactuur volgt na de veiling.</small></span>
               </label>
               @if (draft().partner) {
                 <div class="partner-grid">

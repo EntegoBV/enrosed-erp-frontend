@@ -97,7 +97,7 @@ export class SalesApi {
     return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/partner-deal`), body));
   }
 
-  /** A container becomes a quote in one go: lines, costs and the partner deal, or nothing at all. */
+  /** Atomically creates a regular quote or partner draft invoices. For a term plan, returns its first invoice; all invoices are on the purchase schedule. */
   createFromPurchaseOrder(body: FromPurchaseOrderRequest): Promise<SalesOrderView> {
     return firstValueFrom(this.http.post<SalesOrderView>(api('/api/sales-orders/from-purchase-order'), body));
   }

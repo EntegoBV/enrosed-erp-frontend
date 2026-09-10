@@ -1961,7 +1961,7 @@ export interface BankBalance {
   createdAt?: string | null;
 }
 
-/** What the quote sheet asks for when a container becomes a quote. */
+/** Creates a regular quote, or unsent partner invoices: one per advance term, returning the first invoice. */
 export interface FromPurchaseOrderRequest {
   advanceSchedule?: PartnerAdvanceScheduleRequest | null;
   purpose?: SalesPurpose | null;

@@ -1,3 +1,4 @@
+import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
@@ -44,7 +45,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -243,6 +244,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </div>
         </section>
 
+        <app-sales-advance-invoices [order]="data.order" />
         <app-sales-document-note [notes]="data.order.notes" />
 
         @if (advanceAgreement(); as agreement) {

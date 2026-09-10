@@ -14,7 +14,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
  * The partner question, asked where the container is described: off by
  * default, and once on it shows who, what he pays up front and our share of
  * the profit, saved straight onto the container. From here the partner's
- * quote is made without searching, an existing document is linked, and the
+ * draft invoices are made without searching, an existing document is linked, and the
  * auction settlement follows.
  */
 @Component({
@@ -67,22 +67,22 @@ import { STATUS_LABEL } from '../sales/quote-status';
             </div>
           </div>
       } @else if (!on()) {
-        <p class="po-partner__lead">Deze container betalen we volledig zelf. Bestelt een partner mee en verkoopt hij de goederen op de veiling? Zet de schakelaar aan; de offerte, de koppeling en de veilingafrekening volgen dan hier.</p>
+        <p class="po-partner__lead">Deze container betalen we volledig zelf. Bestelt een partner mee en verkoopt hij de goederen op de veiling? Zet de schakelaar aan; de voorschotfacturen, de koppeling en de veilingafrekening volgen dan hier.</p>
       } @else {
           <dl class="po-partner__facts">
             <div><dt>Partner</dt><dd>{{ partnerName() || '—' }}</dd></div>
             <div><dt>Financiert in totaal</dt><dd>{{ order().partnerCostPct ?? 100 | num }} % van de kost{{ landedTotalEur() ? ' · ' + (landedTotalEur() * (order().partnerCostPct ?? 100) / 100 | eur: 0) : '' }}</dd></div>
             <div><dt>Ons deel van het veilingresultaat</dt><dd>{{ order().partnerSharePct ?? 50 | num }} %</dd></div>
           </dl>
-          <p class="po-partner__lead">Maak eerst een offerte met de betaalafspraken, bijvoorbeeld 30% bij productiestart en 70% na productie. Daarna maak je per termijn een voorschotfactuur. De slotfactuur verrekent de voorschotten, de werkelijke kosten en ons aandeel in het resultaat.</p>
+          <p class="po-partner__lead">Maak direct conceptvoorschotfacturen, bijvoorbeeld 30% bij productiestart en 70% na productie. Elke termijn krijgt een eigen factuur; er wordt nog niets uitgegeven of verstuurd. De slotfactuur verrekent de voorschotten, de werkelijke kosten en ons aandeel in het resultaat.</p>
 
         @if (docs().length) {
           <ul class="po-partner__docs">
             @for (deal of docs(); track deal.order.id) {
               <li>
-                <a class="po-partner__doc" [routerLink]="['/sales', deal.order.id, 'edit']">
+                <a class="po-partner__doc" [routerLink]="['/sales', deal.order.id]">
                   <b>{{ deal.order.number }}</b>
-                  <small>{{ kind(deal.order, deal.settlement?.finalSettlement) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ deal.order.docType === 'FACTUUR' ? (deal.order.paidAt ? ' · betaald' : ' · nog niet betaald') : '' }}</small>
+                  <small>{{ kind(deal.order, deal.settlement?.finalSettlement) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ deal.order.docType === 'FACTUUR' ? (deal.order.status === 'CONCEPT' ? ' · nog niet uitgegeven' : deal.order.paidAt ? ' · betaald' : ' · nog niet betaald') : '' }}</small>
                 </a>
                 <span class="po-partner__amount">@if (deal.advanceAgreement) { Betaalafspraken } @else { {{ deal.priced.totals.total | eur }} }</span>
                 <button class="po-partner__unlink" type="button" [attr.aria-label]="'Koppeling van ' + deal.order.number + ' verwijderen'" title="Koppeling verwijderen" (click)="unlink.emit(deal)">×</button>
@@ -92,12 +92,12 @@ import { STATUS_LABEL } from '../sales/quote-status';
         }
 
         <div class="po-partner__buttons">
-          <button class="btn btn--sm" [class.btn--primary]="!costDocument()" type="button" [disabled]="!canQuote()" (click)="quote.emit()">{{ costDocument() ? 'Nieuwe offerte met betaalafspraken' : 'Offerte met betaalafspraken maken' }}</button>
+          <button class="btn btn--sm" [class.btn--primary]="!costDocument()" type="button" [disabled]="!canQuote()" (click)="quote.emit()">Conceptvoorschotfacturen maken</button>
           <button class="btn btn--sm" [class.btn--primary]="!!costDocument()" type="button" (click)="schedule.emit()">{{ costDocument() ? 'Voorschotfacturen per termijn' : 'Betaalafspraken bekijken' }}</button>
           @if (canAuction()) { <button class="btn btn--sm" type="button" (click)="auction.emit()">Deelveiling / slot afrekenen</button> }
-          <button class="btn btn--sm" type="button" (click)="link.emit()">Offerte of factuur koppelen</button>
+          <button class="btn btn--sm" type="button" (click)="link.emit()">Bestaande factuur koppelen</button>
         </div>
-        @if (!costDocument() && !canQuote()) { <p class="hint">Reken de container eerst door; de offerte neemt de gelande kost over.</p> }
+        @if (!costDocument() && !canQuote()) { <p class="hint">Reken de container eerst door; de voorschotfacturen volgen de afgesproken bijdrage in de gelande kost.</p> }
       }
     </section>
   `,
@@ -111,7 +111,7 @@ export class PurchasePartnerPanel {
   /** The partner's sales documents on this container: quote, invoice, settlement. */
   readonly docs = input<SalesOrderView[]>([]);
   readonly landedTotalEur = input(0);
-  /** Whether a cost quote can be made: every line has a landed cost. */
+  /** Whether advance invoices can be made: every line has a landed cost. */
   readonly canQuote = input(true);
   /** Whether the auction statement can be drawn up: the container has costed lines. */
   readonly canAuction = input(false);

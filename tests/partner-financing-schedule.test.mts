@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { schedulePreset, scheduleRowAmount, scheduleRowAmounts, scheduleRequest, quoteScheduleRequest } from '../src/app/features/purchasing/partner-advance-schedule-state.ts';
+import { schedulePreset, scheduleRowAmount, scheduleRowAmounts, scheduleRequest, advanceInvoiceScheduleRequest } from '../src/app/features/purchasing/partner-advance-schedule-state.ts';
 import { partialSettlementPreview } from '../src/app/features/sales/partner-settlement-progress.ts';
 import type { PartnerSettlementAvailability } from '../src/app/core/api/models.ts';
 
@@ -36,19 +36,19 @@ test('unused saved terms can all be removed before beginning the auction settlem
   assert.deepEqual(scheduleRequest([], 6000, 0, true), { rows: [] });
 });
 
-test('quotation captures all agreed advances and dates, and rejects an incomplete agreement', () => {
+test('draft invoice plan captures all agreed advances and dates, and rejects an incomplete allocation', () => {
   const rows = schedulePreset('30_70', 6000);
   rows[0].dueDate = '2026-10-01';
-  assert.deepEqual(quoteScheduleRequest(rows, 6000).rows.map(row => [row.percentage, row.dueDate]), [[30, '2026-10-01'], [70, null]]);
-  assert.throws(() => quoteScheduleRequest(rows.slice(0, 1), 6000), /volledig/);
-  assert.throws(() => quoteScheduleRequest([], 6000), /minstens/);
-  assert.deepEqual(quoteScheduleRequest(schedulePreset('THIRDS', 1000), 1000).rows.map(row => row.amountEur), [333.33, 666.67]);
+  assert.deepEqual(advanceInvoiceScheduleRequest(rows, 6000).rows.map(row => [row.percentage, row.dueDate]), [[30, '2026-10-01'], [70, null]]);
+  assert.throws(() => advanceInvoiceScheduleRequest(rows.slice(0, 1), 6000), /volledig/);
+  assert.throws(() => advanceInvoiceScheduleRequest([], 6000), /minstens/);
+  assert.deepEqual(advanceInvoiceScheduleRequest(schedulePreset('THIRDS', 1000), 1000).rows.map(row => row.amountEur), [333.33, 666.67]);
 });
 
 test('a deal without advance funding has no zero-value invoices and settles later', () => {
-  assert.deepEqual(quoteScheduleRequest(schedulePreset('30_70', 0), 0), { rows: [] });
-  assert.throws(() => quoteScheduleRequest([], Number.NaN), /ongeldig/);
-  assert.throws(() => quoteScheduleRequest([], -1), /ongeldig/);
+  assert.throws(() => advanceInvoiceScheduleRequest(schedulePreset('30_70', 0), 0), /ongeldig/);
+  assert.throws(() => advanceInvoiceScheduleRequest([], Number.NaN), /ongeldig/);
+  assert.throws(() => advanceInvoiceScheduleRequest([], -1), /ongeldig/);
 });
 
 const availability = (cost = 12000, advance = 6000): PartnerSettlementAvailability => ({

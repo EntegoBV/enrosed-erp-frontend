@@ -1,3 +1,4 @@
+import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
@@ -53,7 +54,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -201,6 +202,7 @@ interface JourneyStep {
           </div>
         </header>
 
+        <app-sales-advance-invoices [order]="data.order" />
         <app-sales-document-note [notes]="data.order.notes" />
 
         @if (pendingRevision(); as revision) {
@@ -249,7 +251,7 @@ interface JourneyStep {
           <div class="desk-lock" role="status">
             <span aria-hidden="true">✓</span>
             <span><b>Deze versie staat vast.</b> Klant, aantallen en prijzen veranderen niet meer; leverweken en vracht kun je nog aanvullen.</span>
-            <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="duplicate()">Nieuwe kopie</button>
+            <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="duplicate()">{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</button>
           </div>
         }
 
@@ -837,7 +839,7 @@ interface JourneyStep {
                         }
                         <button class="desk-action" type="button" (click)="openPdfSheet()"><i aria-hidden="true">⎙</i><span><b>PDF</b><small>Taal en inhoud kiezen en downloaden</small></span></button>
                       }
-                      <button class="desk-action" type="button" [disabled]="busy()" (click)="duplicate()"><i aria-hidden="true">⧉</i><span><b>Nieuwe kopie</b><small>Een nieuw concept met dezelfde inhoud</small></span></button>
+                      <button class="desk-action" type="button" [disabled]="busy()" (click)="duplicate()"><i aria-hidden="true">⧉</i><span><b>{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</b><small>{{ isPartnerDocument(data.order) ? 'Voorschotten en afrekeningen op de container bekijken' : 'Een nieuw concept met dezelfde inhoud' }}</small></span></button>
                     </div>
 
                     <p class="desk-form__group">Geschiedenis</p>

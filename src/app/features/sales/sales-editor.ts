@@ -1,3 +1,4 @@
+import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
@@ -51,7 +52,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -216,6 +217,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
         </section>
 
+        <app-sales-advance-invoices [order]="data.order" />
         <app-sales-document-note [notes]="data.order.notes" />
 
         @if (saveError()) {
@@ -315,14 +317,14 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           <div class="alert alert--info quote-lock">
             <span class="alert__icon">✓</span>
             <div class="grow">
-              <b>Deze offerteversie staat vast</b>
+              <b>Deze {{ data.order.docType === 'FACTUUR' ? 'factuur' : 'offerteversie' }} staat vast</b>
               <div class="small">
                 Klant, aantallen en prijzen veranderen niet meer via dit scherm.
                 Leverweken en vracht kun je nog veilig aanvullen.
               </div>
             </div>
             <button class="btn btn--sm" type="button" [disabled]="busy()"
-                    (click)="duplicate()">Nieuwe kopie</button>
+                    (click)="duplicate()">{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</button>
           </div>
         }
 
@@ -2869,7 +2871,7 @@ export class SalesEditor {
 
   patch(changes: Partial<SalesOrder>): void {
     if (!this.canEdit()) {
-      this.ui.toast('Deze offerteversie staat vast. Maak een nieuwe kopie om prijzen of aantallen te wijzigen.', 'err');
+      this.ui.toast('Deze documentversie staat vast. Beheer partnerfacturen via de inkooporder; voor reguliere verkoop kun je een nieuwe kopie maken.', 'err');
       return;
     }
     this.saveError.set(null);
@@ -3121,14 +3123,16 @@ export class SalesEditor {
     }
   }
 
-  /** Starts a clean draft instead of changing a quote the customer already received. */
+  /** Partner claims must be managed on their schedule; regular sales can start a clean copy. */
   async duplicate(): Promise<void> {
-    if (this.advanceAgreement()) {
-      await this.router.navigate(['/purchasing', this.advanceAgreement()!.purchaseOrderId], { queryParams: { section: 'payments' } });
-      return;
-    }
     const data = this.view();
     if (!data || this.busy()) return;
+    const purchaseId = this.advanceAgreement()?.purchaseOrderId ?? data.order.partnerPurchaseOrderId;
+    if (this.advanceAgreement() || isPartnerDocument(data.order)) {
+      if (purchaseId) await this.router.navigate(['/purchasing', purchaseId], { queryParams: { section: 'payments' } });
+      else this.ui.toast('Beheer partnerfacturen vanuit de gekoppelde inkooporder.', 'err');
+      return;
+    }
     this.busy.set(true);
     try {
       const copy = await this.sales.duplicateOrder(data.order.id);

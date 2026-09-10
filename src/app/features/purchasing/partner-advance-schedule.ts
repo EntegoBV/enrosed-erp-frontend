@@ -8,20 +8,6 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { AdvanceScheduleDraft, cents, scheduleDraft, schedulePreset, scheduleRequest, scheduleRowAmounts } from './partner-advance-schedule-state';
 import { STATUS_LABEL } from '../sales/quote-status';
 
-/** Match the same immutable facts the server checks before creating a term invoice. */
-export function matchesAdvanceAgreement(document: SalesOrderView, plan: Schedule, sharePct: number): boolean {
-  const quote = document.advanceAgreement;
-  return !!quote && document.order.docType !== 'FACTUUR'
-    && !['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(document.order.status)
-    && document.order.customerId === plan.partnerCustomerId
-    && quote.purchaseOrderId === plan.purchaseOrderId && quote.sharePct === sharePct
-    && quote.financingPct === plan.financingPct && quote.agreedAmountEur === plan.agreedAmountEur
-    && quote.rows.length === plan.rows.length
-    && plan.rows.every(row => quote.rows.some(saved => saved.scheduleRowId === row.id
-      && saved.label === row.label && saved.percentage === row.percentage
-      && saved.amountEur === row.amountEur && (saved.dueDate ?? null) === (row.dueDate ?? null)));
-}
-
 @Component({
   selector: 'app-partner-advance-schedule',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -34,13 +20,6 @@ export function matchesAdvanceAgreement(document: SalesOrderView, plan: Schedule
       </header>
       @if (error()) { <p class="plan-error" role="alert">{{ error() }}</p> }
       @if (schedule(); as plan) {
-        @if (!hasAgreementQuotes() && !hasQuote() && !hasInvoices() && !plan.invoicingBlocked) {
-          <div class="plan-empty"><b>Begin met een offerte</b><p>Leg eerst de voorschottermijnen vast op de offerte. Daarna maak je hieronder de afzonderlijke voorschotfacturen.</p><button class="btn btn--primary" type="button" [disabled]="busy()" (click)="quote.emit()">Offerte met betaalafspraken maken</button></div>
-        }
-        @if (needsNewAgreementQuote()) {
-          <div class="plan-empty" role="status"><b>Nieuwe offerte nodig voor deze afspraken</b><p>Het huidige betaalplan of de winstdeling wijkt af van de opgeslagen offerte, of die offerte is niet meer actief. Leg de actuele afspraken eerst vast in een nieuwe offerte. Bestaande facturen blijven beschikbaar.</p><button class="btn btn--primary" type="button" [disabled]="busy() || loading()" (click)="quote.emit()">Nieuwe offerte met betaalafspraken</button></div>
-        }
-        @if (agreementQuote(); as agreement) { <p class="plan-copy">De betaalafspraken staan op <a [routerLink]="['/sales', agreement.order.id]">offerte {{ agreement.order.number }}</a>. Elke termijn wordt afzonderlijk gefactureerd. De slotfactuur volgt na de veiling. <button class="linklike" type="button" [disabled]="busy()" (click)="quote.emit()">Nieuwe offerte voor gewijzigde afspraken</button></p> }
         <p class="plan-copy">Verdeel de partnerbijdrage van <b>{{ plan.agreedAmountEur | eur }}</b> in termijnen. Elke termijn krijgt een eigen voorschotfactuur. Percentages gelden voor dit partnerbedrag; bedragen zijn excl. btw.</p>
         @if (plan.invoicingBlocked) { <p class="plan-copy">De veilingafrekening is al begonnen. Nieuwe voorschotfacturen zijn daarom niet meer mogelijk. Eventuele ongebruikte termijnen kun je verwijderen via Termijnen aanpassen; bestaande facturen en betalingen blijven beschikbaar.</p> }
         @if (plan.reservedOutsideScheduleEur > 0) { <p class="plan-copy"><b>{{ plan.reservedOutsideScheduleEur | eur }}</b> is al gefactureerd of gepland buiten deze termijnen. Dit bedrag telt mee in het partnerbedrag; verdeel alleen het restant.</p> }
@@ -66,10 +45,10 @@ export function matchesAdvanceAgreement(document: SalesOrderView, plan: Schedule
         } @else {
           @for (row of plan.rows; track row.id; let index = $index) {
             <article class="plan-row"><div><small class="plan-label">TERMIJN {{ index + 1 }}</small><b>{{ row.label }}</b><small>{{ row.percentage == null ? 'Vast bedrag' : (row.percentage | num) + '% van partnerbedrag' }} · {{ row.dueDate ? 'vervalt ' + (row.dueDate | dateNl) : 'geen vervaldatum' }}</small>
-              @if (row.invoiceId) { <a [routerLink]="['/sales', row.invoiceId]">{{ row.invoiceNumber }} · {{ row.invoiceStatus ? statusLabel[row.invoiceStatus] : 'status onbekend' }} ›</a><small>{{ row.receivedEur | eur }} netto ontvangen · {{ row.remainingEur | eur }} open (incl. btw)</small> }
+              @if (row.invoiceId) { <a [routerLink]="['/sales', row.invoiceId]">{{ row.invoiceNumber }} · {{ row.invoiceStatus ? statusLabel[row.invoiceStatus] : 'status onbekend' }} ›</a>@if (row.invoiceStatus === 'CONCEPT') { <small>Concept · nog niet uitgegeven</small> } @else { <small>{{ row.receivedEur | eur }} netto ontvangen · {{ row.remainingEur | eur }} open (incl. btw)</small> } }
               @else { <small>{{ plan.invoicingBlocked ? 'Ongebruikte termijn · afrekening al begonnen' : 'Nog niet gefactureerd' }}</small> }
             </div><div class="plan-actions"><b>{{ row.amountEur | eur }}</b>@if (!row.invoiceId && !plan.invoicingBlocked) { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || loading() || !canCreateInvoice()" (click)="makeInvoice(row.id)">Conceptfactuur maken</button> } @else if (row.invoiceId) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="openInvoice.emit(row.invoiceId)">{{ row.invoiceStatus === 'CONCEPT' ? 'Factuur bekijken & uitgeven' : 'Betalingen bekijken' }}</button> }</div></article>
-          } @empty { <div class="plan-empty"><b>{{ plan.invoicingBlocked ? 'Voorschotplanning afgesloten' : 'Hoe betaalt de partner zijn bijdrage?' }}</b><p>{{ plan.invoicingBlocked ? 'De veilingafrekening is begonnen. Bekijk de bestaande documenten en ontvangsten hieronder.' : 'Bijvoorbeeld 30% bij start productie en 70% na productie. Een eigen verdeling kan ook.' }}</p>@if (!plan.invoicingBlocked) { <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="edit()">Voorschottermijnen instellen</button> }</div> }
+          } @empty { <div class="plan-empty"><b>{{ plan.invoicingBlocked ? 'Voorschotplanning afgesloten' : plan.agreedAmountEur <= 0 ? 'Geen voorschot afgesproken' : 'Hoe betaalt de partner zijn bijdrage?' }}</b><p>{{ plan.invoicingBlocked ? 'De veilingafrekening is begonnen. Bekijk de bestaande documenten en ontvangsten hieronder.' : plan.agreedAmountEur <= 0 ? 'Er is geen voorschotfactuur nodig. Bewaar de partnerafspraak op de container; de afrekening volgt na de veiling.' : 'Bijvoorbeeld 30% bij start productie en 70% na productie. Een eigen verdeling kan ook.' }}</p>@if (!plan.invoicingBlocked && plan.agreedAmountEur > 0) { <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="edit()">Voorschottermijnen instellen</button> }</div> }
           @if (plan.unallocatedEur > 0 && plan.rows.length) { <p class="plan-copy">{{ plan.unallocatedEur | eur }} van de partnerfinanciering is nog niet aan een factuurtermijn toegewezen.</p> }
           @if (plan.rows.length) { <p class="plan-copy">Na het maken controleer en geef je de factuur uit. De werkelijke ontvangst noteer je apart bij de factuur.</p> }
         }
@@ -91,22 +70,15 @@ export function matchesAdvanceAgreement(document: SalesOrderView, plan: Schedule
 export class PartnerAdvanceSchedule {
   readonly purchaseOrderId = input.required<number>();
   readonly documents = input<SalesOrderView[]>([]);
-  readonly sharePct = input(50);
   readonly saved = output<void>();
   readonly invoiceCreated = output<SalesOrderView>();
   readonly openInvoice = output<number>();
   readonly quote = output<void>();
-  readonly hasAgreementQuotes = computed(() => this.documents().some(doc => doc.advanceAgreement != null));
-  readonly agreementQuote = computed(() => {
+  readonly canCreateInvoice = computed(() => {
     const plan = this.schedule();
-    return plan ? this.documents().find(doc => matchesAdvanceAgreement(doc, plan, this.sharePct())) ?? null : null;
+    return !!plan && plan.purchaseOrderId === this.purchaseOrderId() && plan.partnerCustomerId != null
+      && plan.agreedAmountEur > 0 && !plan.invoicingBlocked;
   });
-  readonly hasQuote = computed(() => this.hasAgreementQuotes() ? !!this.agreementQuote()
-    : this.documents().some(doc => doc.order.docType !== 'FACTUUR' && !['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(doc.order.status)));
-  readonly needsNewAgreementQuote = computed(() => !!this.schedule() && !this.schedule()?.invoicingBlocked
-    && this.hasAgreementQuotes() && !this.agreementQuote());
-  readonly canCreateInvoice = computed(() => this.schedule()?.purchaseOrderId === this.purchaseOrderId()
-    && !this.schedule()?.invoicingBlocked && !this.needsNewAgreementQuote() && (this.hasQuote() || this.hasInvoices()));
   readonly schedule = signal<Schedule | null>(null);
   readonly draft = signal<AdvanceScheduleDraft[]>([]);
   readonly editing = signal(false);
@@ -149,7 +121,8 @@ export class PartnerAdvanceSchedule {
     finally { this.busy.set(false); }
   }
   async makeInvoice(rowId: number): Promise<void> {
-    if (this.busy() || this.loading() || !this.canCreateInvoice()) return;
+    if (this.busy() || this.loading() || !this.canCreateInvoice()
+      || !this.schedule()?.rows.some(row => row.id === rowId && row.invoiceId == null)) return;
     this.busy.set(true); this.error.set('');
     try { const invoice = await this.sourcing.invoicePartnerAdvance(this.purchaseOrderId(), rowId); this.invoiceCreated.emit(invoice); await this.load(); }
     catch (failure) { this.error.set(messageOf(failure, 'Voorschotfactuur maken mislukt')); }

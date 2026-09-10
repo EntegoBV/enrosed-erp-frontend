@@ -244,16 +244,6 @@ const normalizeCategoryCode = (value: string): string => value
                        [ngModel]="profile.partnerInvoiceNextNumber ?? ''" (ngModelChange)="patchCompany({ partnerInvoiceNextNumber: $event === '' || $event === null ? null : +$event })" placeholder="bv. 3" />
                 <span class="hint">Alleen als de boekhouding al verder telt: 3 geeft partner/{{ year }}/003 als eerstvolgende; daarna telt de reeks vanzelf door.</span>
               </div>
-              <div class="field">
-                <label for="co-partner-quote-pattern">Nummering partneroffertes <span class="opt"></span></label>
-                <input class="input mono" id="co-partner-quote-pattern" maxlength="60" [ngModel]="profile.partnerQuoteNumberPattern ?? ''"
-                       (ngModelChange)="patchCompany({ partnerQuoteNumberPattern: $event })" placeholder="offerte/partner/{jaar}/{nr:3}" />
-              </div>
-              <div class="field">
-                <label for="co-partner-quote-next">Volgend nummer partneroffertes <span class="opt"></span></label>
-                <input class="input num" id="co-partner-quote-next" type="number" min="1" step="1" inputmode="numeric"
-                       [ngModel]="profile.partnerQuoteNextNumber ?? ''" (ngModelChange)="patchCompany({ partnerQuoteNextNumber: $event === '' || $event === null ? null : +$event })" placeholder="bv. 1" />
-              </div>
               <div class="field span-2">
                 <label for="co-foot">Voettekst op documenten (NL) <span class="opt"></span></label>
                 <textarea class="textarea" id="co-foot" [ngModel]="profile.documentFooter"

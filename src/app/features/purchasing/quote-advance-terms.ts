@@ -9,10 +9,10 @@ import { AdvanceScheduleDraft, cents, schedulePreset, scheduleRowAmounts } from 
   imports: [DateField, EurPipe],
   template: `
     <section class="quote-terms" aria-labelledby="quote-terms-title">
-      <header><span class="eyebrow">Op de offerte</span><h3 id="quote-terms-title">Betaalafspraken</h3>
+      <header><span class="eyebrow">Per conceptfactuur</span><h3 id="quote-terms-title">Betaalafspraken</h3>
         <p>Elke termijn is een voorschot. De slotfactuur volgt na de veiling, met verrekening van de voorschotten, de werkelijke kosten en het afgesproken aandeel in het resultaat.</p>
       </header>
-      @if (locked()) { <p class="terms-note">Deze termijnen zijn al in gebruik. De offerte neemt de bewaarde afspraken over. Bekijk bestaande facturen bij Betalingen op de inkooporder.</p> }
+      @if (locked()) { <p class="terms-note">Deze termijnen zijn al in gebruik. De bewaarde facturen worden opnieuw geopend; er komen geen dubbele facturen bij. Bekijk ze bij Betalingen op de inkooporder.</p> }
       @else {
         <div class="presets" role="group" aria-label="Betaalregeling kiezen">
           <button class="btn btn--sm" type="button" [disabled]="disabled()" (click)="preset('30_70')">30% / 70%</button>
@@ -33,7 +33,7 @@ import { AdvanceScheduleDraft, cents, schedulePreset, scheduleRowAmounts } from 
       }
       @if (unallocated() > 0) { <p class="terms-note">{{ unallocated() | eur }} van de bijdrage heeft nog geen betaalafspraak. Voeg hiervoor een termijn toe.</p> }
       @if (unallocated() < 0) { <p class="terms-error" role="alert">De voorschotten overschrijden de afgesproken bijdrage met {{ -unallocated() | eur }}.</p> }
-      <p class="terms-note">Percentages gelden voor de afgesproken bijdrage van de klant. Op de offerte staan de afzonderlijke voorschotten en de latere afrekening; er staat geen definitief ordertotaal.</p>
+      <p class="terms-note">Percentages gelden voor de afgesproken bijdrage van de klant. Elke termijn krijgt direct een eigen conceptfactuur. Er komt geen extra factuur voor het volledige partnerbedrag bij. Uitgeven en versturen doe je later.</p>
     </section>
   `,
   styles: `

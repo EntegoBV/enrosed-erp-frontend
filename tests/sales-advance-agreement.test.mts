@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 import { cents } from '../src/app/features/purchasing/partner-advance-schedule-state.ts';
+import { isPartnerDocument } from '../src/app/features/sales/sales-payment-state.ts';
 import { canCreateInvoiceFromQuote } from '../src/app/features/sales/sales-invoice-actions.ts';
 
 /** Run the production guards with actual Angular signals, without HTTP or a browser. */
@@ -46,7 +47,7 @@ function quote(snapshot = true) { return { order: { id: 9, number: 'O-9', docTyp
 
 function makeHarness(javascript: string, className: string, snapshot = true) {
   const exports: Record<string, new () => any> = {};
-  vm.runInNewContext(javascript, { exports, advanceAgreementFor, canCreateInvoiceFromQuote, computed, signal, Intl,
+  vm.runInNewContext(javascript, { exports, advanceAgreementFor, isPartnerDocument, canCreateInvoiceFromQuote, computed, signal, Intl,
     escapeHtml: (value: string) => value, messageOf: () => 'Error', localStorage: { setItem() {} } });
   const screen = new exports[className]();
   const routes: unknown[] = [];
@@ -177,7 +178,7 @@ test('copying an agreement cannot create an unsnapshotted duplicate and bypass t
   await state.screen.duplicate();
   assert.equal(state.api.length, 0);
   assert.equal(state.routes.length, 1);
-  state.screen.view.set(quote(false));
+  state.screen.view.set({ ...quote(false), order: { ...quote(false).order, purpose: 'STANDARD' } });
   await state.screen.duplicate();
   assert.deepEqual(state.api, [9]);
 });
@@ -210,18 +211,8 @@ test('the customer final-invoice notice uses the stored profit share without raw
   assert.equal(screen.agreementSettlementText(), 'Winstaandeel van ENROSED (50%)');
 });
 
-const scheduleSource = await readFile(new URL('../src/app/features/purchasing/partner-advance-schedule.ts', import.meta.url), 'utf8');
-const scheduleParsed = ts.createSourceFile('schedule.ts', scheduleSource, ts.ScriptTarget.Latest, true);
-const matchFunction = scheduleParsed.statements.find((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && node.name?.text === 'matchesAdvanceAgreement');
-assert.ok(matchFunction);
-const matchJs = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(scheduleParsed, [matchFunction])), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-}).outputText;
-const matchExports: { matchesAdvanceAgreement?: (...args: any[]) => boolean } = {};
-vm.runInNewContext(matchJs, { exports: matchExports });
-const matchesAdvanceAgreement = matchExports.matchesAdvanceAgreement!;
 const scheduleJs = await productionMembers('purchasing/partner-advance-schedule', 'PartnerAdvanceSchedule',
-  ['hasAgreementQuotes', 'agreementQuote', 'hasQuote', 'needsNewAgreementQuote', 'canCreateInvoice', 'hasInvoices', 'makeInvoice']);
+  ['canCreateInvoice', 'hasInvoices', 'makeInvoice']);
 const selectionJs = await productionMembers('purchasing/purchase-quote-sheet', 'PurchaseQuoteSheet',
   ['choose', 'useCustomerAgreement', 'setPurpose', 'setCost', 'setShare', 'agreementEur']);
 
@@ -229,73 +220,50 @@ function planFixture() {
   return { purchaseOrderId: 48, partnerCustomerId: 2, agreedAmountEur: 5000, financingPct: 50,
     invoicingBlocked: false, reservedOutsideScheduleEur: 0,
     rows: agreement.rows.map(row => ({ id: row.scheduleRowId, label: row.label, percentage: row.percentage,
-      amountEur: row.amountEur, dueDate: row.dueDate, invoiceId: null })) };
+      amountEur: row.amountEur, dueDate: row.dueDate, invoiceId: null as number | null })) };
 }
-function matchingQuote() { return { ...quote(), order: { ...quote().order, customerId: 2 } }; }
-
-test('current term plan must match saved amounts, percentages, dates, labels and ownership exactly', () => {
-  const document = matchingQuote();
-  assert.equal(matchesAdvanceAgreement(document, planFixture(), 50), true);
-  for (const change of [{ label: 'Different milestone' }, { percentage: 40 }, { amountEur: 1600 }, { dueDate: '2026-10-01' }, { id: 999 }]) {
-    const plan = planFixture();
-    Object.assign(plan.rows[0], change);
-    assert.equal(matchesAdvanceAgreement(document, plan, 50), false, JSON.stringify(change));
-  }
-  for (const change of [{ partnerCustomerId: 3 }, { purchaseOrderId: 49 }, { financingPct: 100 }, { agreedAmountEur: 10000 }]) {
-    assert.equal(matchesAdvanceAgreement(document, { ...planFixture(), ...change }, 50), false, JSON.stringify(change));
-  }
-  assert.equal(matchesAdvanceAgreement(document, planFixture(), 25), false, 'The current profit share must also match');
-  for (const status of ['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']) {
-    assert.equal(matchesAdvanceAgreement({ ...document, order: { ...document.order, status } }, planFixture(), 50), false);
-  }
-  assert.equal(matchesAdvanceAgreement(document, { ...planFixture(), rows: [] }, 50), false);
-});
 
 function scheduleHarness() {
   const exports: { PartnerAdvanceSchedule?: new () => any } = {};
-  vm.runInNewContext(scheduleJs, { exports, computed, matchesAdvanceAgreement, messageOf: () => 'Error' });
+  vm.runInNewContext(scheduleJs, { exports, computed, messageOf: () => 'Error' });
   const screen = new exports.PartnerAdvanceSchedule!();
   const calls: unknown[] = [];
-  Object.assign(screen, { documents: signal([matchingQuote()]), schedule: signal(planFixture()), sharePct: signal(50),
-    purchaseOrderId: () => 48, busy: signal(false), loading: signal(false), error: signal(''),
+  Object.assign(screen, { documents: signal([]), schedule: signal(planFixture()),
+    purchaseOrderId: signal(48), busy: signal(false), loading: signal(false), error: signal(''),
     sourcing: { invoicePartnerAdvance: async (...args: unknown[]) => { calls.push(args); return {}; } },
     invoiceCreated: { emit() {} }, load: async () => {},
   });
   return { screen, calls };
 }
 
-test('a changed plan requires a new quote even if an earlier term already has an invoice', async () => {
+test('a saved positive partner term creates its concept invoice without any quotation', async () => {
   const { screen, calls } = scheduleHarness();
-  const changed = planFixture();
-  changed.rows[0].invoiceId = 12;
-  changed.rows[1].label = 'New shipping milestone';
-  screen.schedule.set(changed);
-  assert.equal(screen.hasInvoices(), true);
-  assert.equal(screen.needsNewAgreementQuote(), true);
-  assert.equal(screen.canCreateInvoice(), false);
-  await screen.makeInvoice(2);
-  assert.equal(calls.length, 0);
-  screen.schedule.set(planFixture());
   assert.equal(screen.canCreateInvoice(), true);
   await screen.makeInvoice(2);
-  assert.equal(calls.length, 1);
+  assert.equal(JSON.stringify(calls), JSON.stringify([[48, 2]]));
+  assert.equal(screen.busy(), false);
+  screen.documents.set([quote(), { ...quote(), order: { ...quote().order, status: 'VERLOPEN' } }]);
+  screen.schedule.update((plan: any) => ({ ...plan, rows: plan.rows.map((row: any) => ({ ...row, label: 'Updated milestone' })) }));
+  assert.equal(screen.canCreateInvoice(), true, 'Historical quote snapshots do not gate the current invoice plan');
 });
 
-test('expired snapshots cannot fall back to a legacy quote, but historical invoice flows stay available', () => {
-  const { screen } = scheduleHarness();
-  const expired = matchingQuote();
-  expired.order.status = 'VERLOPEN';
-  screen.documents.set([expired, quote(false)]);
-  assert.equal(screen.hasQuote(), false);
-  assert.equal(screen.needsNewAgreementQuote(), true);
-  screen.documents.set([quote(false)]);
-  assert.equal(screen.hasQuote(), true);
-  assert.equal(screen.canCreateInvoice(), true);
-  screen.documents.set([{ ...quote(false), order: { ...quote(false).order, status: 'VERLOPEN' } }]);
-  assert.equal(screen.hasQuote(), false);
-  assert.equal(screen.canCreateInvoice(), false);
-  screen.schedule.set({ ...planFixture(), reservedOutsideScheduleEur: 500 });
-  assert.equal(screen.canCreateInvoice(), true, 'No snapshots exist, so already-started legacy invoicing remains available');
+test('zero advance, missing partner, stale route, settlement and existing invoice guard term creation', async () => {
+  const { screen, calls } = scheduleHarness();
+  for (const change of [{ agreedAmountEur: 0 }, { partnerCustomerId: null }, { purchaseOrderId: 49 }, { invoicingBlocked: true }]) {
+    screen.schedule.set({ ...planFixture(), ...change });
+    assert.equal(screen.canCreateInvoice(), false);
+    await screen.makeInvoice(2);
+  }
+  screen.schedule.set(planFixture());
+  await screen.makeInvoice(999);
+  screen.schedule.update((plan: any) => ({ ...plan, rows: plan.rows.map((row: any) => ({ ...row, invoiceId: 12 })) }));
+  await screen.makeInvoice(2);
+  assert.equal(calls.length, 0, 'A delayed click cannot duplicate an already-linked or removed term');
+  screen.schedule.set(planFixture()); screen.loading.set(true);
+  await screen.makeInvoice(2);
+  screen.loading.set(false); screen.busy.set(true);
+  await screen.makeInvoice(2);
+  assert.equal(calls.length, 0);
 });
 
 function selectionHarness(locked = false) {

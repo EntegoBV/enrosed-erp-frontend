@@ -14,8 +14,8 @@ export function advanceAgreementFor(view: SalesOrderView | null | undefined): Ad
   imports: [RouterLink, DateNlPipe, EurPipe, NumPipe],
   template: `
     <section class="agreement" aria-label="Opgeslagen betaalplan">
-      <header><span>Opgeslagen afspraak</span><h2>Offerte met betaalplan</h2></header>
-      <p>Deze offerte legt de producten en voorschottermijnen vast. Per termijn volgt een afzonderlijke voorschotfactuur. Het definitieve bedrag volgt op de slotfactuur na de veiling, inclusief de afgesproken winstdeling.</p>
+      <header><span>Opgeslagen afspraak</span><h2>Historische offerte met betaalplan</h2></header>
+      <p>Deze bestaande offerte bewaart de toen afgesproken producten en voorschottermijnen. Nieuwe partnerdocumenten worden direct als conceptfactuur per termijn gemaakt. Het definitieve bedrag volgt op de slotfactuur na de veiling, inclusief de afgesproken winstdeling.</p>
       <ol>
         @for (row of agreement().rows; track row.scheduleRowId) {
           <li><span class="agreement__number">{{ $index + 1 }}</span><div><b>{{ row.label }}</b><small>@if (row.percentage !== null) { {{ row.percentage | num }}% van het afgesproken voorschot } @else { Vast bedrag } @if (row.dueDate) { · {{ row.dueDate | dateNl }} }</small></div><strong>{{ row.amountEur | eur }}<small>excl. btw</small></strong></li>

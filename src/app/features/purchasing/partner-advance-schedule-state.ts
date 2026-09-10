@@ -62,11 +62,11 @@ export function scheduleRequest(rows: readonly AdvanceScheduleDraft[], agreedEur
     ...(row.mode === 'PERCENT' ? { percentage: row.value } : { amountEur: cents(row.value) }), dueDate: row.dueDate || null })) };
 }
 
-/** A quotation records the complete advance agreement, including a zero-advance deal. */
-export function quoteScheduleRequest(rows: readonly AdvanceScheduleDraft[], agreedEur: number): PartnerAdvanceScheduleRequest {
-  if (!Number.isFinite(agreedEur) || agreedEur < 0) throw new Error('De afgesproken bijdrage is ongeldig.');
-  const request = scheduleRequest(agreedEur === 0 ? [] : rows, agreedEur, 0, agreedEur === 0);
-  const allocated = cents(scheduleRowAmounts(agreedEur === 0 ? [] : rows, agreedEur).reduce((sum, amount) => sum + amount, 0));
-  if (allocated !== cents(agreedEur)) throw new Error('Verdeel de afgesproken bijdrage volledig over de betaaltermijnen voordat je de offerte maakt.');
+/** Invoice creation allocates the complete positive advance across distinct draft invoices. */
+export function advanceInvoiceScheduleRequest(rows: readonly AdvanceScheduleDraft[], agreedEur: number): PartnerAdvanceScheduleRequest {
+  if (!Number.isFinite(agreedEur) || agreedEur <= 0) throw new Error('De afgesproken bijdrage is ongeldig.');
+  const request = scheduleRequest(rows, agreedEur);
+  const allocated = cents(scheduleRowAmounts(rows, agreedEur).reduce((sum, amount) => sum + amount, 0));
+  if (allocated !== cents(agreedEur)) throw new Error('Verdeel de afgesproken bijdrage volledig over de betaaltermijnen voordat je de conceptfacturen maakt.');
   return request;
 }

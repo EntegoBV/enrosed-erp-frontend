@@ -1388,7 +1388,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   Deze container kopiëren
                 </button>
                 <button class="btn btn--block" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)">
-                  Verkoopofferte maken
+                  {{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}
                 </button>
               </div>
 

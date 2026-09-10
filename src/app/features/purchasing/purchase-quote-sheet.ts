@@ -4,7 +4,7 @@ import { messageOf } from '../../core/api/errors';
 import { Customer, PartnerAdvanceSchedule, PurchaseOrder, PurchaseReconciliation } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { QuoteAdvanceTerms } from './quote-advance-terms';
-import { AdvanceScheduleDraft, cents, scheduleDraft, schedulePreset, quoteScheduleRequest } from './partner-advance-schedule-state';
+import { AdvanceScheduleDraft, cents, scheduleDraft, schedulePreset, advanceInvoiceScheduleRequest } from './partner-advance-schedule-state';
 import { SalesApi } from '../../core/api/sales-api';
 import { EurPipe, NumPipe, EurUpPipe, WeekNlPipe } from '../../shared/pipes';
 import { WeekField, isoWeekOf } from '../../shared/week-field';
@@ -38,12 +38,11 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, NumPipe, EurPipe, EurUpPipe, WeekNlPipe, WeekField, QuoteAdvanceTerms],
   template: `
-    <app-sheet [title]="partner() ? 'Offerte met voorschottermijnen' : 'Reguliere verkoopofferte'" (closed)="closed.emit()">
+    <app-sheet [title]="partner() ? 'Conceptvoorschotfacturen' : 'Reguliere verkoopofferte'" (closed)="closed.emit()">
       <div body class="pq">
         <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="setPurpose(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="setPurpose(true)">Partnercontainer</button></div>
-        <p class="pq__hint">{{ partner() ? 'Begin met een offerte met de betaalafspraken. Daarna maak je per termijn een voorschotfactuur. De slotfactuur volgt met de afrekening en ons aandeel in het resultaat. Er staat geen definitief ordertotaal op deze offerte.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
-        <p class="pq__intro">Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen.
-          @if (partner()) { Op het document staan de producten en aantallen, de voorschottermijnen en de afspraak over de afrekening. } @else { Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
+        <p class="pq__hint">{{ partner() ? 'Maak direct één conceptfactuur per voorschottermijn. Er wordt niets verstuurd of uitgegeven. Na de veiling volgt de slotfactuur met de afrekening en ons aandeel in het resultaat.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
+        <p class="pq__intro">@if (partner()) { De partnerbijdrage voor {{ order().number }} is gebaseerd op de afgesproken containerkost. Elke factuur bevat alleen het bedrag van die termijn. Samen dekken de termijnen de partnerbijdrage. } @else { Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen. Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
         <div class="pq__pick">
           <label class="pq__search">
             <span class="sr-only">Klant zoeken</span>
@@ -82,20 +81,20 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             </div>
           }
           @if (chosenCustomer(); as customer) {
-            <p class="pq__chosen">Offerte voor <b>{{ customer.company }}</b> · {{ customer.incoterm || 'DAP' }}@if (customer.language) { · {{ customer.language }} }</p>
+            <p class="pq__chosen">{{ partner() ? 'Facturen voor' : 'Offerte voor' }} <b>{{ customer.company }}</b> · {{ customer.incoterm || 'DAP' }}@if (customer.language) { · {{ customer.language }} }</p>
           }
         </div>
         @if (partner()) {
           <div class="pq__partner">
             <b>Interne berekening</b>
-            <p class="pq__hint">Deze percentages bepalen de voorschotten en de latere afrekening. De klant ontvangt een offerte met neutrale benamingen.</p>
+            <p class="pq__hint">Deze percentages bepalen de voorschotten en de latere afrekening. De conceptfacturen blijven intern totdat je ze zelf uitgeeft of verstuurt.</p>
             <div class="pq__markup"><label for="pq-contribution">Aandeel in de containerkosten</label><span class="pq__markup-field"><input class="input num right" id="pq-contribution" type="number" min="0" max="100" step="0.5" [disabled]="termsLocked()" [value]="costPct()" (input)="setCost($any($event.target).value)" /><i>%</i></span></div>
             <div class="pq__markup"><label for="pq-result-share">Aandeel ENROSED in het veilingresultaat</label><span class="pq__markup-field"><input class="input num right" id="pq-result-share" type="number" min="0" max="100" step="0.5" [disabled]="termsLocked()" [value]="sharePct()" (input)="setShare($any($event.target).value)" /><i>%</i></span></div>
           </div>
           @if (termsLoading()) { <p class="pq__hint" role="status">Betaalafspraken laden…</p> }
           @else if (termsError()) { <p class="pq__error" role="alert">{{ termsError() }} <button class="linklike" type="button" (click)="loadTerms()">Opnieuw proberen</button></p> }
           @else if (agreementEur() > 0) { <app-quote-advance-terms [rows]="terms()" [agreedEur]="agreementEur()" [locked]="termsLocked()" [disabled]="busy()" (rowsChange)="terms.set($event)" /> }
-          @else { <p class="pq__hint">Er is geen voorschot afgesproken. De offerte vermeldt dat de volledige afrekening na de veiling volgt.</p> }
+          @else { <p class="pq__hint">Er is geen voorschot afgesproken; daarom maken we geen voorschotfactuur. Bewaar de partnerafspraak op de inkooporder. De afrekening volgt na de veiling.</p> }
         } @else {
         <div class="pq__pricing">
           <div class="per-toggle" role="group" aria-label="Prijzen op de offerte">
@@ -173,8 +172,8 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
         @if (createError(); as error) { <p class="pq__error pq__error--foot" role="alert">{{ error }}</p> }
         <span class="spacer"></span>
         <button class="btn" type="button" [disabled]="busy()" (click)="closed.emit()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || loading() || chosen() === null || !lines().length || (partner() && (termsLoading() || !!termsError()))"
-                (click)="create()">{{ busy() ? 'Bezig…' : 'Offerte maken' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="busy() || loading() || chosen() === null || !lines().length || (partner() && (termsLoading() || !!termsError() || agreementEur() <= 0))"
+                (click)="create()">{{ busy() ? 'Bezig…' : partner() ? 'Conceptfacturen maken' : 'Offerte maken' }}</button>
       </div>
     </app-sheet>
   `,
@@ -444,7 +443,7 @@ export class PurchaseQuoteSheet {
       const plan = await this.sourcing.partnerAdvanceSchedule(this.order().id);
       this.savedTerms.set(plan);
       this.terms.set(plan.rows.length ? scheduleDraft(plan.rows) : schedulePreset('30_70', this.agreementEur()));
-      if (plan.reservedOutsideScheduleEur > 0) this.termsError.set('Er bestaan al voorschotfacturen buiten dit betaalplan. Beheer die documenten en de resterende termijnen bij Betalingen op de inkooporder; voor deze bestaande financiering kan geen nieuwe volledige voorschotofferte worden gemaakt.');
+      if (plan.reservedOutsideScheduleEur > 0) this.termsError.set('Er bestaan al voorschotfacturen buiten dit betaalplan. Beheer die documenten en de resterende termijnen bij Betalingen op de inkooporder; voor deze bestaande financiering kan geen nieuw volledig voorschot worden gefactureerd.');
       else if (plan.invoicingBlocked) this.termsError.set('De veilingafrekening is al begonnen. Bekijk de bestaande documenten bij Betalingen op de inkooporder.');
     } catch (failure) { this.termsError.set(messageOf(failure, 'Betaalafspraken laden mislukt')); }
     finally { this.termsLoading.set(false); }
@@ -470,19 +469,20 @@ export class PurchaseQuoteSheet {
     return [...code.toUpperCase()].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('');
   }
 
-  /** Creates the quote in one go on the server and opens it; a rule that blocks it shows here, not in a half-made draft. */
+  /** Atomically creates partner draft invoices (one per term) or a regular quote, then opens the returned document. */
   async create(): Promise<void> {
     const customer = this.customers().find((row) => row.id === this.chosen());
     if (!customer || customer.id === null || this.busy() || this.loading() || this.partner() && (this.termsLoading() || this.termsError())) return;
     this.busy.set(true);
     this.createError.set(null);
     try {
-      if (this.partner() && !this.costKnown()) throw new Error('De externe containerkost ontbreekt. Vernieuw de container voordat je de voorschotofferte maakt.');
-      const atCost = this.pricing() === 'COST' && this.costKnown();
+      if (this.partner() && !this.costKnown()) throw new Error('De externe containerkost ontbreekt. Vernieuw de container voordat je de conceptfacturen maakt.');
+      if (this.partner() && this.agreementEur() <= 0) throw new Error('Er is geen voorschot afgesproken. Bewaar de partnerafspraak op de inkooporder; de afrekening volgt na de veiling.');
+      const atCost = (this.partner() || this.pricing() === 'COST') && this.costKnown();
       const partnerDeal = atCost && this.partner();
       const included = this.chosenCosts().map((cost) => cost.key);
       const advanceSchedule = partnerDeal
-        ? quoteScheduleRequest(this.terms(), this.agreementEur())
+        ? advanceInvoiceScheduleRequest(this.terms(), this.agreementEur())
         : undefined;
       if (advanceSchedule && this.savedTerms() && this.savedTerms()!.financingPct !== this.costPct()) {
         advanceSchedule.recalculateAgreement = true;
@@ -503,12 +503,15 @@ export class PurchaseQuoteSheet {
         salesChannel: partnerDeal ? 'PARTNER' : null,
         deliveryWeek: this.deliveryWeek().trim() || null,
       });
+      if (partnerDeal && view.order.docType !== 'FACTUUR') throw new Error('De server heeft geen conceptfactuur teruggegeven. Vernieuw de app en bekijk de documenten op de inkooporder voordat je opnieuw probeert.');
       const count = view.order.lines.length + (view.order.extraLines ?? []).length;
-      this.ui.toast(`Offerte ${view.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${partnerDeal ? ' en betaalafspraken' : atCost ? ' aan kostprijs' : ''}`, 'ok');
+      this.ui.toast(partnerDeal
+        ? `Voorschotfacturen klaar · ${view.order.number} geopend · niets verstuurd`
+        : `Offerte ${view.order.number} gemaakt met ${count} regel${count === 1 ? '' : 's'}${atCost ? ' aan kostprijs' : ''}`, 'ok');
       this.closed.emit();
-      await this.router.navigate(['/sales', view.order.id, 'edit']);
+      await this.router.navigate(partnerDeal ? ['/sales', view.order.id] : ['/sales', view.order.id, 'edit']);
     } catch (failure: unknown) {
-      const message = messageOf(failure, 'Offerte maken mislukt');
+      const message = failure instanceof Error ? failure.message : messageOf(failure, this.partner() ? 'Conceptfacturen maken mislukt' : 'Offerte maken mislukt');
       this.createError.set(message);
       this.ui.toast(message, 'err');
     } finally {

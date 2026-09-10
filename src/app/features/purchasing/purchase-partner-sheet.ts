@@ -8,7 +8,7 @@ import { isSettlementInvoice } from '../sales/partner-settlement';
 import { STATUS_LABEL } from '../sales/quote-status';
 
 /**
- * Ties an existing quote or invoice to this container as the partner's
+ * Ties an existing invoice to this container as the partner's
  * document, after the fact. Handy when the invoice to the partner was made
  * by hand first and the container only later turns out to be co-financed.
  */
@@ -17,9 +17,9 @@ import { STATUS_LABEL } from '../sales/quote-status';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, EurPipe, DateNlPipe],
   template: `
-    <app-sheet title="Verkoopdocument koppelen" (closed)="closed.emit()">
+    <app-sheet title="Bestaande factuur koppelen" (closed)="closed.emit()">
       <div body class="pp">
-        <p class="pp__intro">Welke offerte of factuur ging naar de partner voor {{ order().alias || order().number }}? Na het koppelen telt deze container als partnercontainer in de analyses.</p>
+        <p class="pp__intro">Welke factuur hoort bij de partner voor {{ order().alias || order().number }}? Na het koppelen telt deze container als partnercontainer in de analyses.</p>
         <div class="field">
           <label for="pp-search">Document zoeken</label>
           <input class="input" id="pp-search" type="search" placeholder="Zoek op nummer of klant" autocomplete="off"
@@ -28,7 +28,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
         @if (loading()) {
           <p class="muted">Documenten laden…</p>
         } @else if (!visible().length) {
-          <p class="muted">Geen offerte of factuur gevonden.</p>
+          <p class="muted">Geen beschikbare factuur gevonden.</p>
         } @else {
           <ul class="pp__list" role="listbox" aria-label="Verkoopdocumenten">
             @for (row of visible(); track row.order.id) {
@@ -96,7 +96,7 @@ export class PurchasePartnerSheet {
     const needle = normalise(this.query());
     const mine = this.order().id;
     const rows = this.documents()
-      .filter((row) => row.order.partnerPurchaseOrderId !== mine && !isSettlementInvoice(row.order)
+      .filter((row) => row.order.docType === 'FACTUUR' && !row.order.archivedAt && row.order.partnerPurchaseOrderId !== mine && !isSettlementInvoice(row.order)
         && row.order.status !== 'GEANNULEERD' && row.order.status !== 'AFGEWEZEN' && row.order.status !== 'VERLOPEN')
       .sort((left, right) => right.order.id - left.order.id);
     if (!needle) return rows;
@@ -135,7 +135,7 @@ export class PurchasePartnerSheet {
 
   async link(): Promise<void> {
     const document = this.documents().find((row) => row.order.id === this.chosen());
-    if (!document || this.busy()) return;
+    if (!document || document.order.docType !== 'FACTUUR' || document.order.archivedAt || this.busy()) return;
     this.busy.set(true);
     try {
       const view = await this.sales.setPartnerDeal(document.order.id, {

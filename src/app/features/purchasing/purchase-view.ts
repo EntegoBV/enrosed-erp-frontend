@@ -805,7 +805,7 @@ type PurchaseWorkspaceSectionId =
                   PDF downloaden
                 </button>
                 <button class="btn btn--block" type="button" [disabled]="!quoteLinesOf(data).length" (click)="quoteOpen.set(true)">
-                  Verkoopofferte maken
+                  {{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}
                 </button>
               </div>
             </section>
