@@ -4,7 +4,7 @@ import { messageOf } from '../../core/api/errors';
 import { Customer, PartnerAdvanceSchedule, PurchaseOrder, PurchaseReconciliation } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { QuoteAdvanceTerms } from './quote-advance-terms';
-import { AdvanceScheduleDraft, cents, scheduleDraft, schedulePreset, advanceInvoiceScheduleRequest } from './partner-advance-schedule-state';
+import { AdvanceScheduleDraft, cents, scheduleDraft, schedulePreset, advanceInvoiceScheduleRequest, shouldRecalculateLegacySchedule, recreatedScheduleDraft } from './partner-advance-schedule-state';
 import { SalesApi } from '../../core/api/sales-api';
 import { EurPipe, NumPipe, EurUpPipe, WeekNlPipe } from '../../shared/pipes';
 import { WeekField, isoWeekOf } from '../../shared/week-field';
@@ -42,7 +42,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
       <div body class="pq">
         <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="setPurpose(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="setPurpose(true)">Partnercontainer</button></div>
         <p class="pq__hint">{{ partner() ? 'Maak direct één conceptfactuur per voorschottermijn. Er wordt niets verstuurd of uitgegeven. Na de veiling volgt de slotfactuur met de afrekening en ons aandeel in het resultaat.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
-        <p class="pq__intro">@if (partner()) { De partnerbijdrage voor {{ order().number }} is gebaseerd op de afgesproken containerkost. Elke factuur bevat alleen het bedrag van die termijn. Samen dekken de termijnen de partnerbijdrage. } @else { Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen. Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
+        <p class="pq__intro">@if (partner()) { De partnerbijdrage voor {{ order().number }} volgt de hieronder getoonde financieringsafspraak. Elke factuur bevat het bedrag van die termijn en de producten en aantallen ter informatie. Samen dekken de termijnen de partnerbijdrage. } @else { Alle {{ lines().length }} productregels van {{ order().number }} gaan mee met dezelfde aantallen. Prijzen en korting volgen de klant; de offerte opent meteen om bij te sturen. }</p>
         <div class="pq__pick">
           <label class="pq__search">
             <span class="sr-only">Klant zoeken</span>
@@ -86,9 +86,13 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
         </div>
         @if (partner()) {
           <div class="pq__partner">
-            <b>Interne berekening</b>
+            <b>Basis van het voorschot</b>
+            <p class="pq__hint">Totaal incl. aparte kosten op de inkooporder: <strong>{{ advanceBasisEur() != null ? (advanceBasisEur() | eur) : 'Nog niet beschikbaar' }}</strong>. Het financieringspercentage wordt eerst op dit bedrag toegepast; daarna verdelen de termijnen de partnerbijdrage.
+              @if (recalculateLegacyTerms()) { Er zijn geen bestaande voorschotfacturen meer. Bij het maken van de nieuwe conceptfacturen wordt de oude betaalafspraak opnieuw berekend op dit inkooptotaal; hieronder zie je de nieuwe bedragen. }
+              @else if (savedTerms(); as saved) { @if (saved.financingPct === costPct()) { De opgeslagen bijdrage blijft {{ saved.agreedAmountEur | eur }} zolang de betaalafspraak niet opnieuw wordt berekend. @if (saved.financingBasis === 'EXTERNAL_FORECAST' || !saved.financingBasis) { Deze bestaande afspraak gebruikt nog de historische externe kostenbasis. } } }
+            </p>
             <p class="pq__hint">Deze percentages bepalen de voorschotten en de latere afrekening. De conceptfacturen blijven intern totdat je ze zelf uitgeeft of verstuurt.</p>
-            <div class="pq__markup"><label for="pq-contribution">Aandeel in de containerkosten</label><span class="pq__markup-field"><input class="input num right" id="pq-contribution" type="number" min="0" max="100" step="0.5" [disabled]="termsLocked()" [value]="costPct()" (input)="setCost($any($event.target).value)" /><i>%</i></span></div>
+            <div class="pq__markup"><label for="pq-contribution">Aandeel in het inkooptotaal</label><span class="pq__markup-field"><input class="input num right" id="pq-contribution" type="number" min="0" max="100" step="0.5" [disabled]="termsLocked()" [value]="costPct()" (input)="setCost($any($event.target).value)" /><i>%</i></span></div>
             <div class="pq__markup"><label for="pq-result-share">Aandeel ENROSED in het veilingresultaat</label><span class="pq__markup-field"><input class="input num right" id="pq-result-share" type="number" min="0" max="100" step="0.5" [disabled]="termsLocked()" [value]="sharePct()" (input)="setShare($any($event.target).value)" /><i>%</i></span></div>
           </div>
           @if (termsLoading()) { <p class="pq__hint" role="status">Betaalafspraken laden…</p> }
@@ -244,6 +248,8 @@ export class PurchaseQuoteSheet {
   readonly order = input.required<PurchaseOrder>();
   readonly lines = input<PurchaseQuoteLine[]>([]);
   readonly reconciliation = input<PurchaseReconciliation | null | undefined>(undefined);
+  /** Exact purchase total including separately listed costs; never reconstructed from rounded unit prices. */
+  readonly advanceBasisEur = input<number | null>(null);
   /** The container's own partner and deal: chosen the moment the sheet opens, so nobody has to search. */
   readonly presetCustomerId = input<number | null>(null);
   readonly presetCostPct = input<number | null>(null);
@@ -277,21 +283,24 @@ export class PurchaseQuoteSheet {
   readonly termsLoading = signal(false);
   readonly termsError = signal('');
   readonly termsLocked = computed(() => this.savedTerms()?.rows.some(row => row.invoiceId != null) ?? false);
+  readonly recalculateLegacyTerms = computed(() => shouldRecalculateLegacySchedule(this.savedTerms()));
   readonly agreementEur = computed(() => {
     const saved = this.savedTerms();
-    return saved && saved.financingPct === this.costPct()
+    return saved && saved.financingPct === this.costPct() && !this.recalculateLegacyTerms()
       ? saved.agreedAmountEur
-      : cents((this.reconciliation()?.totals.forecastExternalEur ?? 0) * this.costPct() / 100);
+      : cents((this.advanceBasisEur() ?? 0) * this.costPct() / 100);
   });
-  /** The part of the landed cost the partner pays on this quote; the rest is settled after the auction. */
+  /** Financing share of the purchase total including separate costs, before splitting payment terms. */
   readonly costPct = signal(100);
   /** Whether the list shows every customer or only the partners. */
   readonly showAll = signal(true);
   readonly partnerCustomers = computed(() => this.customers().filter((customer) => customer.partner));
   readonly partnersOnly = computed(() => this.partnerCustomers().length > 0 && !this.showAll());
 
-  /** Cost pricing needs a landed cost on every line; a half-calculated container cannot be passed on. */
-  readonly costKnown = computed(() => this.lines().length > 0 && this.lines().every((line) => this.partner() ? this.reconciliation()?.lines.find((cost) => cost.productId === line.productId)?.forecastExternalUnitEur != null : line.landedUnitEur !== null));
+  /** Partner advances need the exact purchase total; ordinary cost quotes need each product unit cost. */
+  readonly costKnown = computed(() => this.lines().length > 0 && (this.partner()
+    ? this.advanceBasisEur() != null && Number.isFinite(this.advanceBasisEur()) && this.advanceBasisEur()! >= 0
+    : this.lines().every(line => line.landedUnitEur !== null)));
   /** The inspection and the named other costs, as lines of their own while they sit apart from the piece price; spread by a key they are already inside it. */
   readonly costs = computed<PurchaseQuoteCost[]>(() => {
     const order = this.order();
@@ -442,9 +451,12 @@ export class PurchaseQuoteSheet {
     try {
       const plan = await this.sourcing.partnerAdvanceSchedule(this.order().id);
       this.savedTerms.set(plan);
-      this.terms.set(plan.rows.length ? scheduleDraft(plan.rows) : schedulePreset('30_70', this.agreementEur()));
+      this.terms.set(this.recalculateLegacyTerms()
+        ? recreatedScheduleDraft(plan, this.agreementEur())
+        : plan.rows.length ? scheduleDraft(plan.rows) : schedulePreset('30_70', this.agreementEur()));
       if (plan.reservedOutsideScheduleEur > 0) this.termsError.set('Er bestaan al voorschotfacturen buiten dit betaalplan. Beheer die documenten en de resterende termijnen bij Betalingen op de inkooporder; voor deze bestaande financiering kan geen nieuw volledig voorschot worden gefactureerd.');
       else if (plan.invoicingBlocked) this.termsError.set('De veilingafrekening is al begonnen. Bekijk de bestaande documenten bij Betalingen op de inkooporder.');
+      else if (plan.financingBasis !== 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' && this.termsLocked() && plan.rows.some(row => row.invoiceId == null)) this.termsError.set('Er bestaat nog een voorschotfactuur op de oude kostenbasis. Verwijder of beoordeel eerst de overige oude conceptfacturen bij Betalingen op de inkooporder voordat je de volledige regeling opnieuw maakt.');
     } catch (failure) { this.termsError.set(messageOf(failure, 'Betaalafspraken laden mislukt')); }
     finally { this.termsLoading.set(false); }
   }
@@ -476,7 +488,7 @@ export class PurchaseQuoteSheet {
     this.busy.set(true);
     this.createError.set(null);
     try {
-      if (this.partner() && !this.costKnown()) throw new Error('De externe containerkost ontbreekt. Vernieuw de container voordat je de conceptfacturen maakt.');
+      if (this.partner() && !this.costKnown()) throw new Error('Het inkooptotaal inclusief aparte kosten ontbreekt. Vernieuw de container voordat je de conceptfacturen maakt.');
       if (this.partner() && this.agreementEur() <= 0) throw new Error('Er is geen voorschot afgesproken. Bewaar de partnerafspraak op de inkooporder; de afrekening volgt na de veiling.');
       const atCost = (this.partner() || this.pricing() === 'COST') && this.costKnown();
       const partnerDeal = atCost && this.partner();
@@ -484,7 +496,7 @@ export class PurchaseQuoteSheet {
       const advanceSchedule = partnerDeal
         ? advanceInvoiceScheduleRequest(this.terms(), this.agreementEur())
         : undefined;
-      if (advanceSchedule && this.savedTerms() && this.savedTerms()!.financingPct !== this.costPct()) {
+      if (advanceSchedule && this.savedTerms() && (this.recalculateLegacyTerms() || this.savedTerms()!.financingPct !== this.costPct())) {
         advanceSchedule.recalculateAgreement = true;
       }
       const view = await this.sales.createFromPurchaseOrder({

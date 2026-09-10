@@ -24,7 +24,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
           <section class="money-section" aria-label="Financieringsafspraak">
             <h4><span class="step">1</span> De afspraak</h4>
             <div class="agreement-grid">
-              <div><small>Partner financiert</small><strong>{{ summary.costPct | num }}%</strong><b>{{ summary.committedAdvanceEur | eur }}</b><span>van de externe containerkosten, excl. btw</span></div>
+              <div><small>Partner financiert</small><strong>{{ summary.costPct | num }}%</strong><b>{{ summary.committedAdvanceEur | eur }}</b><span>{{ summary.financingBasis === 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' ? 'van het inkooptotaal incl. aparte kosten, excl. btw' : summary.financingBasis === 'EXTERNAL_FORECAST' ? 'volgens de opgeslagen historische externe kostenbasis, excl. btw' : 'volgens de opgeslagen financieringsafspraak, excl. btw' }}</span></div>
               <div><small>Veilingresultaat voor ENROSED</small><strong>{{ summary.profitSharePct | num }}%</strong><b>{{ 100 - summary.profitSharePct | num }}% voor de partner</b><span>Verdeling van winst of verlies na de veiling</span></div>
             </div>
             <p class="partner-money__hint">De partner stort aan ENROSED. Zijn financieringsaandeel en de verdeling van het veilingresultaat zijn twee afzonderlijke afspraken.</p>
@@ -59,7 +59,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
             @if (summary.payments.length) {
               <details><summary>Betaalhistorie <span>{{ summary.payments.length }}</span></summary><div class="partner-money__trail">@for (payment of summary.payments; track payment.id) { <a [routerLink]="['/sales', payment.salesOrderId]"><b>{{ (payment.amountEur < 0 ? -payment.amountEur : payment.amountEur) | eur }} {{ payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}</b><span>{{ payment.orderNumber }} · {{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.reference || 'Geen referentie' }}@if (payment.legacy) { · historische ontvangst }</small></a> }</div></details>
             }
-            <details class="partner-money__costs"><summary>Kostprijs &amp; gerealiseerd resultaat</summary><dl><div><dt>{{ summary.costFinalized ? 'Externe containerkost' : 'Verwachte externe containerkost' }}</dt><dd>{{ summary.forecastExternalEur | eur }}</dd></div><div><dt>Afgesproken financiering</dt><dd>{{ summary.committedAdvanceEur | eur }}</dd></div><div><dt>Uitgereikte voorschotfacturen</dt><dd>{{ summary.invoicedAdvanceEur | eur }}</dd></div><div><dt>Afrekeningen na voorschotten</dt><dd>{{ summary.settlementEur | eur }}</dd></div><div><dt>Gerealiseerd resultaat ENROSED</dt><dd>{{ summary.recognizedProfitEur | eur }}</dd></div></dl><p class="partner-money__hint">Deze bedragen zijn excl. btw. Voorschotten zijn financiering; resultaat wordt vastgelegd bij elke uitgegeven veilingafrekening.</p></details>
+            <details class="partner-money__costs"><summary>Kostprijs &amp; gerealiseerd resultaat</summary><dl><div><dt>{{ summary.costFinalized ? 'Externe containerkost' : 'Verwachte externe containerkost' }}</dt><dd>{{ summary.forecastExternalEur | eur }}</dd></div>@if (advanceBasisEur() != null) { <div><dt>Actueel inkooptotaal incl. aparte kosten</dt><dd>{{ advanceBasisEur() | eur }}</dd></div> }@if (summary.financingBasisEur != null) { <div><dt>{{ summary.financingBasis === 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' ? 'Opgeslagen inkoopbasis incl. aparte kosten' : 'Opgeslagen financieringsbasis' }}</dt><dd>{{ summary.financingBasisEur | eur }}</dd></div> }<div><dt>Afgesproken financiering</dt><dd>{{ summary.committedAdvanceEur | eur }}</dd></div><div><dt>Uitgereikte voorschotfacturen</dt><dd>{{ summary.invoicedAdvanceEur | eur }}</dd></div><div><dt>Afrekeningen na voorschotten</dt><dd>{{ summary.settlementEur | eur }}</dd></div><div><dt>Gerealiseerd resultaat ENROSED</dt><dd>{{ summary.recognizedProfitEur | eur }}</dd></div></dl><p class="partner-money__hint">Deze bedragen zijn excl. btw. Voorschotten zijn financiering; resultaat wordt vastgelegd bij elke uitgegeven veilingafrekening.</p></details>
           </div>
         } @else if (loading()) { <p class="partner-money__hint">Partnerfinanciering laden…</p> }
       </section>
@@ -84,7 +84,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
 export class PurchasePartnerPayments {
   readonly order = input.required<PurchaseOrder>();
   readonly docs = input<SalesOrderView[]>([]);
-  readonly landedTotalEur = input(0);
+  readonly advanceBasisEur = input<number | null>(null);
   readonly changed = output<void>();
   readonly quote = output<void>();
   readonly summary = signal<PartnerFinancing | null>(null);

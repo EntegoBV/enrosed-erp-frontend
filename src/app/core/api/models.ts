@@ -1530,7 +1530,10 @@ export interface PartnerAdvanceScheduleRow {
   receivedEur: number;
   remainingEur: number;
 }
+export type PartnerFinancingBasis = 'EXTERNAL_FORECAST' | 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS';
 export interface PartnerAdvanceSchedule {
+  financingBasisEur?: number | null;
+  financingBasis?: PartnerFinancingBasis | null;
   invoicingBlocked?: boolean;
   invoicingBlockedReason?: string | null;
   purchaseOrderId: number;
@@ -1572,6 +1575,8 @@ export interface PartnerSettlementAvailability {
   }[];
 }
 export interface PartnerFinancing {
+  financingBasisEur?: number | null;
+  financingBasis?: PartnerFinancingBasis | null;
   unbilledAdvanceEur?: number;
   unbilledAdvanceCount?: number;
   overdueUnbilledAdvanceEur?: number;

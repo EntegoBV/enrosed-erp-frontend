@@ -1,4 +1,4 @@
-import type { PartnerAdvanceScheduleRequest, PartnerAdvanceScheduleRow } from '../../core/api/models';
+import type { PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerAdvanceScheduleRow } from '../../core/api/models';
 
 export interface AdvanceScheduleDraft {
   id?: number;
@@ -16,6 +16,33 @@ export function scheduleDraft(rows: readonly PartnerAdvanceScheduleRow[]): Advan
   return rows.map((row) => ({ id: row.id, label: row.label, mode: row.percentage == null ? 'AMOUNT' : 'PERCENT',
     value: row.percentage ?? row.amountEur, dueDate: row.dueDate ?? '', locked: row.invoiceId != null,
     ...(row.invoiceId != null ? { fixedAmountEur: row.amountEur } : {}) }));
+}
+
+/** Only recreating an unused legacy plan may adopt the current purchase basis. */
+export function shouldRecalculateLegacySchedule(plan: PartnerAdvanceSchedule | null): boolean {
+  return !!plan && plan.financingBasis !== 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS'
+    && !plan.invoicingBlocked && !(plan.reservedOutsideScheduleEur > 0)
+    && plan.rows.every(row => row.invoiceId == null);
+}
+
+/** Preview a new agreement without writing or changing any linked invoice. */
+export function recreatedScheduleDraft(plan: PartnerAdvanceSchedule, agreedEur: number): AdvanceScheduleDraft[] {
+  const rows = scheduleDraft(plan.rows);
+  if (!shouldRecalculateLegacySchedule(plan)) return rows;
+  if (!rows.length) return schedulePreset('30_70', agreedEur);
+  if (rows.every(row => row.mode === 'PERCENT')) return rows;
+  const previous = plan.agreedAmountEur;
+  if (!(previous > 0) || !Number.isFinite(agreedEur) || agreedEur < 0) return rows;
+  // The thirds preset uses amounts to avoid rounding a percentage approximation.
+  if (rows.length === 2 && rows.every(row => row.mode === 'AMOUNT')
+      && rows[0].label.trim().toLowerCase() === '1/3 bij start productie'
+      && rows[1].label.trim().toLowerCase() === '2/3 na productie'
+      && rows[0].value === cents(previous / 3) && rows[1].value === cents(previous - rows[0].value)) {
+    const first = cents(agreedEur / 3);
+    return rows.map((row, index) => ({ ...row, value: index === 0 ? first : cents(agreedEur - first) }));
+  }
+  // Custom fixed amounts are an explicit choice; the user must complete their new allocation.
+  return rows;
 }
 
 export function schedulePreset(preset: '30_70' | 'THIRDS' | 'FULL', agreedEur: number): AdvanceScheduleDraft[] {

@@ -36,7 +36,7 @@ function creationHarness(partner = true) {
     customers: signal([{ id: 2, company: 'Partner' }]), chosen: signal(2), partner: signal(partner),
     busy: signal(false), loading: signal(false), termsLoading: signal(false), termsError: signal(''), createError: signal(null),
     costKnown: signal(true), pricing: signal('COST'), chosenCosts: signal([]), terms: signal(schedulePreset('30_70', 5000)),
-    agreementEur: signal(5000), savedTerms: signal(null), order: signal({ id: 48 }),
+    agreementEur: signal(5000), savedTerms: signal(null), recalculateLegacyTerms: signal(false), order: signal({ id: 48 }),
     costPct: signal(50), sharePct: signal(50), markupPct: signal(15), deliveryWeek: signal(''),
     sales: { createFromPurchaseOrder: async (body: any) => { requests.push(body); return document; } },
     router: { navigate: async (...args: unknown[]) => { routes.push(args); return true; } },

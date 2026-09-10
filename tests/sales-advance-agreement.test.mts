@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { computed, signal } from '@angular/core';
-import { cents } from '../src/app/features/purchasing/partner-advance-schedule-state.ts';
+import { cents, shouldRecalculateLegacySchedule } from '../src/app/features/purchasing/partner-advance-schedule-state.ts';
 import { isPartnerDocument } from '../src/app/features/sales/sales-payment-state.ts';
 import { canCreateInvoiceFromQuote } from '../src/app/features/sales/sales-invoice-actions.ts';
 
@@ -214,7 +214,7 @@ test('the customer final-invoice notice uses the stored profit share without raw
 const scheduleJs = await productionMembers('purchasing/partner-advance-schedule', 'PartnerAdvanceSchedule',
   ['canCreateInvoice', 'hasInvoices', 'makeInvoice']);
 const selectionJs = await productionMembers('purchasing/purchase-quote-sheet', 'PurchaseQuoteSheet',
-  ['choose', 'useCustomerAgreement', 'setPurpose', 'setCost', 'setShare', 'agreementEur']);
+  ['choose', 'useCustomerAgreement', 'setPurpose', 'setCost', 'setShare', 'agreementEur', 'recalculateLegacyTerms']);
 
 function planFixture() {
   return { purchaseOrderId: 48, partnerCustomerId: 2, agreedAmountEur: 5000, financingPct: 50,
@@ -268,7 +268,7 @@ test('zero advance, missing partner, stale route, settlement and existing invoic
 
 function selectionHarness(locked = false) {
   const exports: { PurchaseQuoteSheet?: new () => any } = {};
-  vm.runInNewContext(selectionJs, { exports, computed, cents });
+  vm.runInNewContext(selectionJs, { exports, computed, cents, shouldRecalculateLegacySchedule });
   const screen = new exports.PurchaseQuoteSheet!();
   const linked = { id: 2, partnerCostPct: 100, partnerSharePct: 25 };
   const other = { id: 3, partnerCostPct: 100, partnerSharePct: 20 };
@@ -318,10 +318,11 @@ test('zero-percent container financing is retained instead of replaced by custom
   assert.equal(screen.sharePct(), 0);
 });
 
-test('an empty saved schedule keeps its agreed financing basis until the percentage is explicitly changed', () => {
+test('an empty schedule already using the purchase total keeps its basis until explicitly changed', () => {
   const { screen } = selectionHarness();
-  screen.savedTerms = signal({ partnerCustomerId: 2, financingPct: 50, agreedAmountEur: 5000, rows: [] });
-  screen.reconciliation = () => ({ totals: { forecastExternalEur: 12000 } });
+  screen.savedTerms = signal({ partnerCustomerId: 2, financingPct: 50, agreedAmountEur: 5000, financingBasis: 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS', rows: [] });
+  screen.advanceBasisEur = signal(12000);
+  screen.reconciliation = () => ({ totals: { forecastExternalEur: 19000 } });
   assert.equal(screen.agreementEur(), 5000, 'Removing all unused rows must not silently recalculate the fixed basis to 6000');
   screen.setCost('100');
   assert.equal(screen.agreementEur(), 12000);

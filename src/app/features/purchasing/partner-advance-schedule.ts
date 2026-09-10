@@ -20,6 +20,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
       </header>
       @if (error()) { <p class="plan-error" role="alert">{{ error() }}</p> }
       @if (schedule(); as plan) {
+        @if (plan.financingBasisEur != null) { <p class="plan-copy">Basis van deze afspraak: <b>{{ plan.financingBasisEur | eur }}</b> · {{ plan.financingBasis === 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' ? 'inkoop totaal incl. aparte kosten' : 'opgeslagen historische externe kostenbasis' }}. De partner financiert {{ plan.financingPct | num }}% daarvan.</p> }
         <p class="plan-copy">Verdeel de partnerbijdrage van <b>{{ plan.agreedAmountEur | eur }}</b> in termijnen. Elke termijn krijgt een eigen voorschotfactuur. Percentages gelden voor dit partnerbedrag; bedragen zijn excl. btw.</p>
         @if (plan.invoicingBlocked) { <p class="plan-copy">De veilingafrekening is al begonnen. Nieuwe voorschotfacturen zijn daarom niet meer mogelijk. Eventuele ongebruikte termijnen kun je verwijderen via Termijnen aanpassen; bestaande facturen en betalingen blijven beschikbaar.</p> }
         @if (plan.reservedOutsideScheduleEur > 0) { <p class="plan-copy"><b>{{ plan.reservedOutsideScheduleEur | eur }}</b> is al gefactureerd of gepland buiten deze termijnen. Dit bedrag telt mee in het partnerbedrag; verdeel alleen het restant.</p> }
@@ -41,7 +42,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
           }
           <p class="plan-total"><b>{{ allocated() | eur }} ingepland</b><span [class.plan-error]="unallocated() < 0">{{ unallocated() | eur }} nog te verdelen</span></p>
           <div class="plan-presets"><button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="save()">{{ busy() ? 'Bewaren…' : 'Factuurtermijnen bewaren' }}</button><button class="btn btn--sm" type="button" [disabled]="busy()" (click)="editing.set(false)">Annuleren</button></div>
-          @if (!hasInvoices() && !plan.invoicingBlocked) { <p class="plan-copy">Zijn de containerkosten of het financieringspercentage veranderd? <button class="linklike" type="button" [disabled]="busy()" (click)="recalculate()">Afgesproken bedrag opnieuw berekenen</button>. Bewaar eerst eventuele wijzigingen aan de container.</p> }
+          @if (!hasInvoices() && !plan.invoicingBlocked) { <p class="plan-copy">Is het inkooptotaal incl. aparte kosten of het financieringspercentage veranderd? <button class="linklike" type="button" [disabled]="busy()" (click)="recalculate()">Afgesproken bedrag opnieuw berekenen</button>. Bewaar eerst eventuele wijzigingen aan de container.</p> }
         } @else {
           @for (row of plan.rows; track row.id; let index = $index) {
             <article class="plan-row"><div><small class="plan-label">TERMIJN {{ index + 1 }}</small><b>{{ row.label }}</b><small>{{ row.percentage == null ? 'Vast bedrag' : (row.percentage | num) + '% van partnerbedrag' }} · {{ row.dueDate ? 'vervalt ' + (row.dueDate | dateNl) : 'geen vervaldatum' }}</small>

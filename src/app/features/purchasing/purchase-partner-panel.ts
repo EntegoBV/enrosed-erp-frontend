@@ -54,7 +54,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
                 <span class="po-partner__pct"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Eigen percentage"
                        [ngModel]="draftCostPct()" (ngModelChange)="draftCostPct.set(clamp($event))" /><i>%</i></span>
               </div>
-              <span class="hint">Van de gelande kost{{ landedTotalEur() ? ': ' + (landedTotalEur() * draftCostPct() / 100 | eur: 0) + ' vooraf, ' + (landedTotalEur() * (100 - draftCostPct()) / 100 | eur: 0) + ' eigen geld tot de veiling' : '' }}.</span>
+              <span class="hint">Van het inkooptotaal incl. aparte kosten{{ (advanceBasisEur() ?? 0) ? ': ' + ((advanceBasisEur() ?? 0) * draftCostPct() / 100 | eur) + ' vooraf, ' + ((advanceBasisEur() ?? 0) * (100 - draftCostPct()) / 100 | eur) + ' resterend deel tot de veiling' : '' }}.</span>
             </div>
             <div class="field">
               <label for="po-partner-share">Ons deel van het veilingresultaat na de veiling</label>
@@ -71,7 +71,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
       } @else {
           <dl class="po-partner__facts">
             <div><dt>Partner</dt><dd>{{ partnerName() || '—' }}</dd></div>
-            <div><dt>Financiert in totaal</dt><dd>{{ order().partnerCostPct ?? 100 | num }} % van de kost{{ landedTotalEur() ? ' · ' + (landedTotalEur() * (order().partnerCostPct ?? 100) / 100 | eur: 0) : '' }}</dd></div>
+            <div><dt>Bijdrage volgens actueel inkooptotaal</dt><dd>{{ order().partnerCostPct ?? 100 | num }} % van het inkooptotaal incl. aparte kosten{{ (advanceBasisEur() ?? 0) ? ' · ' + ((advanceBasisEur() ?? 0) * (order().partnerCostPct ?? 100) / 100 | eur) : '' }}</dd></div>
             <div><dt>Ons deel van het veilingresultaat</dt><dd>{{ order().partnerSharePct ?? 50 | num }} %</dd></div>
           </dl>
           <p class="po-partner__lead">Maak direct conceptvoorschotfacturen, bijvoorbeeld 30% bij productiestart en 70% na productie. Elke termijn krijgt een eigen factuur; er wordt nog niets uitgegeven of verstuurd. De slotfactuur verrekent de voorschotten, de werkelijke kosten en ons aandeel in het resultaat.</p>
@@ -97,7 +97,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
           @if (canAuction()) { <button class="btn btn--sm" type="button" (click)="auction.emit()">Deelveiling / slot afrekenen</button> }
           <button class="btn btn--sm" type="button" (click)="link.emit()">Bestaande factuur koppelen</button>
         </div>
-        @if (!costDocument() && !canQuote()) { <p class="hint">Reken de container eerst door; de voorschotfacturen volgen de afgesproken bijdrage in de gelande kost.</p> }
+        @if (!costDocument() && !canQuote()) { <p class="hint">Reken de container eerst door; de voorschotfacturen volgen de afgesproken bijdrage in het inkooptotaal incl. aparte kosten.</p> }
       }
     </section>
   `,
@@ -110,7 +110,7 @@ export class PurchasePartnerPanel {
   readonly order = input.required<PurchaseOrder>();
   /** The partner's sales documents on this container: quote, invoice, settlement. */
   readonly docs = input<SalesOrderView[]>([]);
-  readonly landedTotalEur = input(0);
+  readonly advanceBasisEur = input<number | null>(null);
   /** Whether advance invoices can be made: every line has a landed cost. */
   readonly canQuote = input(true);
   /** Whether the auction statement can be drawn up: the container has costed lines. */
