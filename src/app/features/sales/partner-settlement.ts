@@ -63,7 +63,7 @@ export function isSettlementInvoice(order: {
 }): boolean {
   if (order.docType !== 'FACTUUR') return false;
   if (order.purpose === 'PARTNER_SETTLEMENT') return true;
-  if (order.purpose === 'STANDARD' || !order.partnerPurchaseOrderId) return false;
+  if (order.purpose === 'STANDARD' || order.purpose === 'PARTNER_ADVANCE' || !order.partnerPurchaseOrderId) return false;
   if (order.partnerSettlement) return true;
   if ((order.lines ?? []).length > 0) return false;
   return (order.extraLines ?? []).some((line) => (line.description ?? '').startsWith(SETTLEMENT_LINE_PREFIX));

@@ -1,3 +1,4 @@
+import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
@@ -54,7 +55,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -129,7 +130,10 @@ interface JourneyStep {
           </div>
 
           <div class="desk-kpis" aria-label="Kerncijfers">
-            <div class="desk-kpi">
+            @if (isAdvanceInvoice(data)) {
+            <div class="desk-kpi"><small>Producten</small><strong>{{ advanceSummary(data).pieces }}</strong><span>{{ advanceSummary(data).lines ?? '—' }} productregels van de container</span></div>
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"><small>Lading container</small><strong>{{ advanceSummary(data).load }}</strong><span>{{ advanceSummary(data).volume }}</span></button>
+            } @else {<div class="desk-kpi">
               <small>Producten</small>
               <strong>{{ data.priced.totals.pieces | num }}</strong>
               <span>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }} · {{ data.priced.totals.cartons | num }} dozen</span>
@@ -144,7 +148,10 @@ interface JourneyStep {
                 <span>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatisch' }} · {{ data.priced.totals.cbm | cbm }}</span>
               }
             </button>
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"
+            }
+            @if (isAdvanceInvoice(data)) {
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"><small>Planning</small><strong>{{ advanceSummary(data).arrival ? (advanceSummary(data).arrival | dateNl) : advanceSummary(data).deliveryWeek || 'Nog te bevestigen' }}</strong><span>{{ advanceSummary(data).arrival ? 'verwachte aankomst container' : 'leverweek container' }}</span></button>
+            } @else {            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"
                     [class.is-warn]="data.order.freight === 'TE_BEPALEN'">
               <small>Verzending</small>
               @if (data.order.freight === 'TE_BEPALEN') {
@@ -154,6 +161,7 @@ interface JourneyStep {
               }
               <span>{{ freightStrategyLabel(data) }}</span>
             </button>
+            }
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('check')">
               <small>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</small>
               <strong>{{ displayedProfit(data) | eur: 0 }}</strong>
@@ -258,6 +266,7 @@ interface JourneyStep {
         <div class="desk-body">
           <!-- ============================ the table: every line, keyed through -->
           <main class="desk-main">
+            @if (isAdvanceInvoice(data)) { <app-sales-advance-contents [view]="data" [products]="products()" /> } @else {
             <div class="desk-table-bar">
               <div>
                 <h2>Producten</h2>
@@ -511,7 +520,8 @@ interface JourneyStep {
                 <button class="btn" type="button" [disabled]="!canEdit()" (click)="addExtraLine()">Andere regel</button>
               </div>
             }
-          </main>
+
+            }</main>
 
           <!-- ============================ the rail: everything that is not a product line -->
           <aside class="desk-rail" aria-label="Documentgegevens">
@@ -614,7 +624,7 @@ interface JourneyStep {
                 }
 
                 @case ('delivery') {
-                  <div class="desk-form">
+                  @if (isAdvanceInvoice(data)) { <app-sales-advance-contents [view]="data" mode="delivery" /> } @else {<div class="desk-form">
                     <p class="desk-form__group">Transport</p>
                     <dl class="desk-facts">
                       <div><dt>Lading</dt><dd>
@@ -680,6 +690,7 @@ interface JourneyStep {
                       }
                     }
                   </div>
+                  }
                 }
 
                 @case ('check') {
@@ -709,7 +720,7 @@ interface JourneyStep {
                     }
                     <p class="desk-form__group">Prijsopbouw</p>
                     <div class="desk-chain">
-                      <div class="desk-chain__row"><i></i><span>Bruto <small>{{ data.priced.totals.pieces | num }} stuks</small></span><b>{{ data.priced.totals.gross | eur }}</b></div>
+                      <div class="desk-chain__row"><i></i><span>Bruto @if (!isAdvanceInvoice(data)) { <small>{{ data.priced.totals.pieces | num }} stuks</small> }</span><b>{{ data.priced.totals.gross | eur }}</b></div>
                       @if (data.priced.totals.lineDiscountTotal) {
                         <div class="desk-chain__row"><i>−</i><span>Kortingen op regels <small>staffel en extra</small></span><b>{{ data.priced.totals.lineDiscountTotal | eur }}</b></div>
                       }
@@ -796,7 +807,7 @@ interface JourneyStep {
                           }
                         </div>
                       } @else {
-                        <p class="desk-ok"><span aria-hidden="true">✓</span> Klant, producten, pallets en minimumorder zijn in orde.</p>
+                        <p class="desk-ok"><span aria-hidden="true">✓</span> {{ isAdvanceInvoice(data) ? 'Klant en voorschotbedrag zijn gecontroleerd. De containerinhoud staat bij Producten.' : 'Klant, producten, pallets en minimumorder zijn in orde.' }}</p>
                       }
                     }
 

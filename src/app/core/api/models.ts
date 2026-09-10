@@ -1608,7 +1608,22 @@ export interface PartnerFinancing {
   payments: IncomingPaymentRow[];
 }
 
+/** Frozen, price-free container contents on an advance invoice. Never participates in its monetary claim. */
+export interface AdvanceContents {
+  purchaseOrderId: number;
+  purchaseOrderNumber: string;
+  sourceQuoteId: number | null;
+  lines: { productId: number; sku: string; productName: string; quantity: number;
+    cartons: number | null; cbm: number | null; weightKg: number | null }[];
+  totals: { pieces: number; cartons: number | null; cbm: number | null; weightKg: number | null; pallets: number | null };
+  delivery: { destinationCountry: string | null; departurePort: string | null; destinationPort: string | null;
+    loadMode: string | null; containerType: string | null; expectedArrival: string | null; shippedOn: string | null;
+    receivedOn: string | null; deliveryWeek: string | null };
+  capturedAt: string;
+}
+
 export interface SalesOrderView {
+  advanceContents?: AdvanceContents | null;
   advanceAgreement?: AdvanceAgreement | null;
   settlement?: { revenueEur: number; costEur: number; advanceEur: number; finalSettlement: boolean } | null;
   paymentSummary?: SalesPaymentSummary | null;

@@ -1,3 +1,5 @@
+import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
+import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
@@ -45,7 +47,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -167,7 +169,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </div>
 
           <div class="hero-facts" aria-label="Offerte in cijfers">
-            <div>
+            @if (isAdvanceInvoice(data)) {
+            <div><span>Producten</span><strong>{{ advanceSummary(data).lines ?? '—' }}</strong><small>{{ advanceSummary(data).pieces }}</small></div>
+            <div><span>Lading container</span><strong>{{ advanceSummary(data).load }}</strong><small>{{ advanceSummary(data).volume }}</small></div>
+            } @else {<div>
               <span>Producten</span>
               <strong>{{ data.priced.lines.length }}</strong>
               <small>{{ data.priced.totals.pieces | num }} stuks</small>
@@ -185,6 +190,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <small>{{ palletCount(data) === 1 ? 'pallet' : 'pallets' }}</small>
               }
             </div>
+            }
             <div class="hero-facts__total">
               @if (advanceAgreement()) {
                 <span>Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><small>Slotfactuur na verkoop</small>
@@ -262,7 +268,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   (click)="scrollToSection('sales-products')">
             <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">1</span>
             <span class="workflow-nav__copy erp-workspace__section-copy"><b>Producten</b>
-              <small>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}</small></span>
+              <small>{{ isAdvanceInvoice(data) ? advanceSummary(data).productLines : data.priced.lines.length + (data.priced.lines.length === 1 ? ' regel' : ' regels') }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-delivery'"
@@ -313,7 +319,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
         <div class="sales-layout erp-workspace__layout">
           <div class="sales-main erp-workspace__content">
-            <section class="section-card products-card erp-workspace__section" id="sales-products" aria-labelledby="sales-lines-title">
+            @if (isAdvanceInvoice(data)) { <section id="sales-products" class="erp-workspace__section"><app-sales-advance-contents [view]="data" [products]="products()" /></section> } @else {<section class="section-card products-card erp-workspace__section" id="sales-products" aria-labelledby="sales-lines-title">
               <header class="section-card__head">
                 <div>
                   <span class="section-kicker">Orderinhoud</span>
@@ -525,9 +531,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 </ng-template>
               </div>
             </section>
+            }
 
 
-            <section class="section-card erp-workspace__section" id="sales-delivery" aria-labelledby="delivery-details-title">
+            @if (isAdvanceInvoice(data)) { <section id="sales-delivery" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> } @else {<section class="section-card erp-workspace__section" id="sales-delivery" aria-labelledby="delivery-details-title">
               <header class="section-card__head">
                 <div><span class="section-kicker">Logistiek</span><h2 id="delivery-details-title">Levering</h2></div>
                 <span class="delivery-state" [class.delivery-state--open]="data.order.deliveryTerms === 'TE_BEPALEN'">
@@ -548,6 +555,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <div class="detail-item"><span>Levertermijn</span><strong>{{ deliveryState(data) }}</strong></div>
               </div>
             </section>
+            }
 
           </div>
 
@@ -1013,6 +1021,8 @@ export class SalesView {
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
+  readonly isAdvanceInvoice = isAdvanceInvoice;
+  readonly advanceSummary = advanceContentsSummary;
   readonly displayedProfit = displayedSalesProfit;
   readonly receiptOpenRequest = signal(0);
   paymentReceived(fresh: SalesOrderView): void { this.view.set(fresh); void this.sales.history(fresh.order.id).then((history) => this.history.set(history)).catch(() => undefined); }
@@ -1551,6 +1561,7 @@ export class SalesView {
   }
 
   deliveryState(data: SalesOrderView): string {
+    if (isAdvanceInvoice(data)) return advancePlanningHint(data);
     switch (data.order.deliveryTerms) {
       case 'TE_BEPALEN': return 'Nog te bepalen';
       case 'AANGEVULD': return 'Aangevuld';

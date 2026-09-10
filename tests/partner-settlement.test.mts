@@ -58,3 +58,15 @@ test('a sales document is named after what it is for the partner', () => {
     'even when the partner pays the whole cost up front');
   assert.equal(salesDocumentKind({ docType: 'FACTUUR', partnerPurchaseOrderId: 13, partnerSettlement: true }), 'Slotfactuur');
 });
+
+
+test('explicit advances stay advances at 100 percent and on the last production term', () => {
+  for (const description of ['100% voorschot', '2/3 na productie', '70% na productie', 'Winstdeling later op de slotfactuur']) {
+    const order = { docType: 'FACTUUR', purpose: 'PARTNER_ADVANCE' as const, partnerPurchaseOrderId: 13,
+      partnerSettlement: true, lines: [], extraLines: [{ description }] };
+    assert.equal(isSettlementInvoice(order), false, 'Explicit document purpose overrides legacy flags and wording');
+    assert.equal(salesDocumentKind(order), 'Voorschotfactuur');
+    assert.equal(partnerDocumentKind(order), 'Voorschotfactuur');
+  }
+  assert.equal(salesDocumentKind({ docType: 'FACTUUR', purpose: 'PARTNER_SETTLEMENT', partnerPurchaseOrderId: 13 }), 'Slotfactuur');
+});

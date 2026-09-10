@@ -1,3 +1,5 @@
+import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
+import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
@@ -52,7 +54,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -141,7 +143,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           </div>
 
           <div class="quote-hero__facts" aria-label="Offerte-overzicht">
-            <div class="hero-fact">
+            @if (isAdvanceInvoice(data)) {
+            <div class="hero-fact"><span class="hero-fact__label">Producten</span><strong>{{ advanceSummary(data).lines ?? '—' }}</strong><span>{{ advanceSummary(data).pieces }}</span></div>
+            <div class="hero-fact"><span class="hero-fact__label">Lading container</span><strong>{{ advanceSummary(data).load }}</strong><span>{{ advanceSummary(data).volume }}</span></div>
+            } @else {<div class="hero-fact">
               <span class="hero-fact__label">Producten</span>
               <strong>{{ data.priced.lines.length }}</strong>
               <span>{{ data.priced.totals.pieces | num }} stuks</span>
@@ -162,6 +167,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 </span>
               }
             </div>
+            }
             <div class="hero-fact hero-fact--total">
               @if (advanceAgreement()) {
                 <span class="hero-fact__label">Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
@@ -534,7 +540,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
         <!-- ==================================== lines -->
         @if (desktop.active() || phoneStep() === 1) {
-        <section class="card products-card erp-workspace__section" id="order-lines" aria-labelledby="order-lines-title">
+        @if (isAdvanceInvoice(data)) { <section id="order-lines" class="erp-workspace__section"><app-sales-advance-contents [view]="data" [products]="products()" /></section> } @else {<section class="card products-card erp-workspace__section" id="order-lines" aria-labelledby="order-lines-title">
           <div class="products-card__head">
             <div class="section-heading">
               <span class="section-heading__number">2</span>
@@ -843,13 +849,14 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             }
           </div>
         </section>
+            }
 
         <!-- Pricing rules ride with the products: they shape the same lines. -->
         }
 
         <!-- ==================================== transport and delivery -->
         @if (desktop.active() || phoneStep() === 2) {
-        <section class="card logistics-card erp-workspace__section" id="quote-logistics" aria-labelledby="logistics-title">
+        @if (isAdvanceInvoice(data)) { <section id="quote-logistics" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> } @else {<section class="card logistics-card erp-workspace__section" id="quote-logistics" aria-labelledby="logistics-title">
           <div class="section-card-head">
             <div class="section-heading">
               <span class="section-heading__number">3</span>
@@ -974,6 +981,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             }
           </div>
         </section>
+            }
         }
 
         <!-- ==================================== totals: the overview -->
@@ -1020,7 +1028,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                  starts with the order as the customer will read it. -->
             @if (!advanceAgreement()) {
             <ol class="check-lines">
-              @for (line of data.priced.lines; track line.productId) {
+              @for (line of isAdvanceInvoice(data) ? [] : data.priced.lines; track line.productId) {
                 <li>
                   @if (line.photoUrl) {
                     <img class="check-lines__photo" [appAuthSrc]="line.photoUrl" alt="" loading="lazy" />
@@ -1035,7 +1043,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   <span class="num check-lines__amount">{{ line.net | eur }}</span>
                 </li>
               } @empty {
-                <li class="hint">Nog geen producten op de order.</li>
+                @if (!isAdvanceInvoice(data)) { <li class="hint">Nog geen producten op de order.</li> }
               }
               @for (extra of data.priced.extraLines ?? []; track $index) {
                 <li>
@@ -1047,7 +1055,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   <span class="num check-lines__amount">{{ extra.total | eur }}</span>
                 </li>
               }
-              @if (data.priced.lines.length) {
+              @if (!isAdvanceInvoice(data) && data.priced.lines.length) {
                 <li class="check-lines__delivery">
                   <span class="check-lines__delivery-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7zM7.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0M17.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0" /></svg>
@@ -1229,7 +1237,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             } @else {
               <ul class="send-checklist">
                 <li class="send-checklist__ok"><i aria-hidden="true">✓</i>
-                  <span>Klant, producten, pallets en minimumorder zijn in orde.</span></li>
+                  <span>{{ isAdvanceInvoice(data) ? 'Klant en voorschotbedrag zijn gecontroleerd. De containerinhoud staat bij Producten.' : 'Klant, producten, pallets en minimumorder zijn in orde.' }}</span></li>
               </ul>
             }
             <!-- One quiet row: the destructive act far left, the way
@@ -1972,6 +1980,8 @@ export class SalesEditor {
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
+  readonly isAdvanceInvoice = isAdvanceInvoice;
+  readonly advanceSummary = advanceContentsSummary;
   readonly displayedProfit = displayedSalesProfit;
   paymentLabel(order: SalesOrder, fallback?: string): string {
     return this.advanceAgreement() ? 'Volgens het opgeslagen betaalplan' : displayedPaymentTerms(order, fallback);
@@ -2234,10 +2244,15 @@ export class SalesEditor {
         && !!data.order.countryCode;
     }
     if (id === 'order-lines') {
+      if (isAdvanceInvoice(data)) {
+        const lines = advanceContentsFor(data)?.lines ?? [];
+        return lines.length > 0 && lines.every(line => line.quantity > 0);
+      }
       return data.priced.lines.length > 0
         && data.priced.lines.every((line) => line.quantity > 0 && line.unitPrice > 0);
     }
     if (id === 'quote-logistics') {
+      if (isAdvanceInvoice(data)) return advancePlanningHint(data) !== 'Nog te bevestigen';
       return !data.priced.validation.freightPricingIssue
         && (data.priced.totals.unassignedCartons ?? 0) <= 0
         && !this.overassigned();
@@ -2268,10 +2283,12 @@ export class SalesEditor {
       return customer ? customer.company : 'Klant kiezen';
     }
     if (id === 'order-lines') {
+      if (isAdvanceInvoice(data)) return advanceContentsSummary(data).productLines;
       if (!data.priced.lines.length) return 'Product toevoegen';
       return `${data.priced.lines.length} ${data.priced.lines.length === 1 ? 'regel' : 'regels'}`;
     }
     if (id === 'quote-logistics') {
+      if (isAdvanceInvoice(data)) return advancePlanningHint(data);
       if (data.priced.validation.freightPricingIssue) return 'Vracht nakijken';
       if (data.priced.totals.unassignedCartons > 0 || this.overassigned()) return 'Indeling nakijken';
       return data.order.freight === 'TE_BEPALEN' ? 'Vracht later' : 'Volledig';
