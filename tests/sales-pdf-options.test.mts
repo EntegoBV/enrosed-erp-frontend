@@ -14,6 +14,7 @@ test('sales PDF includes the complete customer document by default', () => {
     includeProductDetails: true,
     includeLogistics: true,
     includeTerms: true,
+    includePaymentDetails: true,
     showOuterCarton: false,
     showBarcode: false,
   });
@@ -27,17 +28,18 @@ test('sales PDF query keeps every manual export choice explicit', () => {
       includeProductDetails: true,
       includeLogistics: false,
       includeTerms: false,
+      includePaymentDetails: false,
       showOuterCarton: true,
       showBarcode: true,
     }),
-    'language=EN&includePhotos=false&includeProductDetails=true&includeLogistics=false&includeTerms=false&showOuterCarton=true&showBarcode=true',
+    'language=EN&includePhotos=false&includeProductDetails=true&includeLogistics=false&includeTerms=false&includePaymentDetails=false&showOuterCarton=true&showBarcode=true',
   );
 });
 
 test('empty language is omitted without dropping content defaults', () => {
   assert.equal(
     salesPdfQuery({ language: null }),
-    'includePhotos=true&includeProductDetails=true&includeLogistics=true&includeTerms=true&showOuterCarton=false&showBarcode=false',
+    'includePhotos=true&includeProductDetails=true&includeLogistics=true&includeTerms=true&includePaymentDetails=true&showOuterCarton=false&showBarcode=false',
   );
 });
 
@@ -51,6 +53,14 @@ test('outer carton and barcode remain independent from general product details',
   assert.equal(options.includeProductDetails, false);
   assert.equal(options.showOuterCarton, true);
   assert.equal(options.showBarcode, true);
+});
+
+test('payment details can be hidden independently of the full terms appendix', () => {
+  const compact = normalizeSalesPdfOptions({ includePaymentDetails: false });
+  assert.equal(compact.includePaymentDetails, false);
+  assert.equal(compact.includeTerms, true);
+  assert.equal(new URLSearchParams(salesPdfQuery(compact)).get('includePaymentDetails'), 'false');
+  assert.equal(normalizeSalesPdfOptions({ includeTerms: false }).includePaymentDetails, true);
 });
 
 test('packing slip exposes only price-free packing identifiers and defaults them off', () => {

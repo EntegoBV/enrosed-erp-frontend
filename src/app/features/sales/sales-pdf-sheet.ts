@@ -59,9 +59,9 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                 ><small>
                   {{
                     agreementQuote()
-                      ? 'Producten en opgeslagen voorschottermijnen; het eindbedrag volgt na verkoop.'
+                      ? 'Producten en het afgesproken voorschotbedrag; kies zelf of je de betaalafspraken toont.'
                       : invoice()
-                      ? 'Bedragen, btw en betaalgegevens blijven altijd zichtbaar.'
+                      ? 'Bedragen, btw en het te betalen bedrag blijven altijd zichtbaar.'
                       : 'Prijzen en totalen blijven altijd zichtbaar.'
                   }}
                 </small>
@@ -78,7 +78,7 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                 <span class="choice-copy"
                   ><span class="choice-kicker">A4 · klantdocument</span>
                   <strong>{{ invoice() ? 'Factuur instellen' : 'Offerte instellen' }}</strong>
-                  <small>Kies taal, presentatie, logistiek en voorwaarden.</small></span
+                  <small>Kies taal, presentatie, betaalafspraken en voorwaarden.</small></span
                 >
                 <span class="choice-action">Instellen</span>
               </button>
@@ -119,10 +119,10 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
             <b>Altijd zichtbaar</b
             ><span>{{
               agreementQuote()
-                ? 'Offertenummer · klant · aantallen · opgeslagen voorschottermijnen en afspraak over de slotfactuur'
+                ? 'Offertenummer · klant · aantallen · afgesproken voorschotbedrag excl. btw'
                 : invoice()
-                ? 'Factuurnummer · klant · aantallen · prijzen · btw · totaal · vervaldatum en betaalgegevens'
-                : 'Offertenummer · klant · aantallen · prijzen · kortingen · totalen en betalingsafspraak'
+                ? 'Factuurnummer · klant · aantallen · prijzen · btw · totaal en te betalen'
+                : 'Offertenummer · klant · aantallen · prijzen · kortingen en totalen'
             }}</span>
           </div>
 
@@ -224,6 +224,29 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
             <fieldset class="pdf-option-group">
               <legend>Document</legend>
               <div class="option-grid">
+                <label class="pdf-option"
+                  ><input
+                    id="sales-pdf-payment-details"
+                    type="checkbox"
+                    [ngModel]="documentOptions().includePaymentDetails"
+                    [disabled]="busy()"
+                    (ngModelChange)="patchDocument({ includePaymentDetails: $event })"
+                  />
+                  <span
+                    ><b>Betaalafspraken en betaaloverzicht</b>
+                    <small>{{
+                      documentOptions().includePaymentDetails
+                        ? agreementQuote()
+                          ? 'Voorschottermijnen, financieringsafspraken en uitleg over de slotafrekening.'
+                          : invoice()
+                            ? 'Betaalvoorwaarden, ontvangen betalingen en openstaand saldo.'
+                            : 'Betalingsafspraken en toelichting bij het betaalbedrag.'
+                        : agreementQuote()
+                          ? 'Alleen het afgesproken voorschotbedrag excl. btw; geen termijnen of uitleg over de slotafrekening.'
+                          : 'Het te betalen bedrag blijft staan; zonder betalingsafspraken, ontvangen bedragen of saldo-overzicht.'
+                    }}</small></span
+                  ></label
+                >
                 <label class="pdf-option"
                   ><input
                     type="checkbox"
@@ -676,6 +699,7 @@ export class SalesPdfSheet implements OnInit {
       value.showBarcode,
       value.includeLogistics,
       value.includeTerms,
+      value.includePaymentDetails,
     ].filter(Boolean).length;
   });
   readonly packingOptionCount = computed(() => {

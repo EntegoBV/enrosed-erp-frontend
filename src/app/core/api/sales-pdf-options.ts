@@ -7,6 +7,8 @@ export interface SalesPdfOptions {
   includeProductDetails?: boolean;
   includeLogistics?: boolean;
   includeTerms?: boolean;
+  /** Shows payment terms, instalments and the payment/settlement breakdown. */
+  includePaymentDetails?: boolean;
   /** Shows outer-carton dimensions, quantity and EAN as a separate product fact. */
   showOuterCarton?: boolean;
   /** Shows product and packaging barcodes as separate product facts. */
@@ -19,6 +21,7 @@ export interface NormalizedSalesPdfOptions {
   includeProductDetails: boolean;
   includeLogistics: boolean;
   includeTerms: boolean;
+  includePaymentDetails: boolean;
   showOuterCarton: boolean;
   showBarcode: boolean;
 }
@@ -41,6 +44,7 @@ export function normalizeSalesPdfOptions(options: SalesPdfOptions = {}): Normali
     includeProductDetails: options.includeProductDetails ?? true,
     includeLogistics: options.includeLogistics ?? true,
     includeTerms: options.includeTerms ?? true,
+    includePaymentDetails: options.includePaymentDetails ?? true,
     showOuterCarton: options.showOuterCarton ?? false,
     showBarcode: options.showBarcode ?? false,
   };
@@ -64,6 +68,7 @@ export function salesPdfQuery(options: SalesPdfOptions = {}): string {
   query.set('includeProductDetails', String(resolved.includeProductDetails));
   query.set('includeLogistics', String(resolved.includeLogistics));
   query.set('includeTerms', String(resolved.includeTerms));
+  query.set('includePaymentDetails', String(resolved.includePaymentDetails));
   query.set('showOuterCarton', String(resolved.showOuterCarton));
   query.set('showBarcode', String(resolved.showBarcode));
   return query.toString();
