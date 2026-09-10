@@ -1,3 +1,4 @@
+import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -196,7 +197,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                       [disabled]="deletingOrderId() !== null"
                       (click)="rowMenu.set(null); remove(menuRow.order.id, menuRow.order.number)">
                 <i aria-hidden="true">×</i>
-                <span><b>Verwijderen</b><small>Definitief, na bevestiging</small></span>
+                <span><b>Verwijderen</b><small>Tijdelijk, na bevestiging</small></span>
               </button>
             }
           </div>
@@ -701,8 +702,8 @@ export class PurchaseList {
     }
     this.ui.confirm(
       { title: 'Inkooporder verwijderen',
-        message: `Inkooporder <b>${escapeHtml(number)}</b> definitief verwijderen?`
-          + '<br><small>Dit kan niet ongedaan worden gemaakt.</small>',
+        message: `Inkooporder <b>${escapeHtml(number)}</b> tijdelijk verwijderen?`
+          + '<br><br>' + TEMPORARY_DELETION_NOTICE,
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
         this.deletingOrderId.set(id);

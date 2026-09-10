@@ -1,3 +1,4 @@
+import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -3413,7 +3414,7 @@ export class SalesEditor {
           + `<b>${escapeHtml(data.order.number)}</b> van `
           + `<b>${escapeHtml(customer)}</b> wilt verwijderen?<br><br>`
           + (this.dirty() ? 'Niet-opgeslagen wijzigingen gaan ook verloren.<br><br>' : '')
-          + 'Dit kan niet ongedaan worden gemaakt.',
+          + TEMPORARY_DELETION_NOTICE,
         confirmLabel: 'Verwijderen', danger: true,
       },
       () => { void this.deleteAndLeave(data, label); },

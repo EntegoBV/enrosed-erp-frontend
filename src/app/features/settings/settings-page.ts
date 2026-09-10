@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { PushSetup, playSoundFor } from '../../core/platform/push';
 import {
   AfterViewInit,
@@ -71,6 +71,7 @@ const normalizeCategoryCode = (value: string): string => value
     FormsModule,
     PageHeader,
     ProductPicker,
+    RouterLink,
     WebsiteSyncStatus,
   ],
   template: `
@@ -846,6 +847,12 @@ const normalizeCategoryCode = (value: string): string => value
       <!-- ======================================= categorieen -->
 
       <!-- ======================================= weergave -->
+      @if (!websiteCategoryMode) {
+        <details class="card settings-management">
+          <summary><span>Beheer</span><i aria-hidden="true">›</i></summary>
+          <a routerLink="/settings/deleted-items"><span><b>Verwijderde items</b><small>Tijdelijk verwijderde documenten bekijken en herstellen</small></span><i aria-hidden="true">›</i></a>
+        </details>
+      }
       <!-- ============== app on this device: looks and notifications -->
       <p class="app-settings-kicker">App op dit toestel</p>
       <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance">
@@ -944,6 +951,7 @@ const normalizeCategoryCode = (value: string): string => value
     }
   `,
   styles: `
+    .settings-management{margin-top:18px}.settings-management summary,.settings-management>a{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:54px}.settings-management summary{list-style:none;cursor:pointer;font-size:14px;font-weight:650}.settings-management summary::-webkit-details-marker{display:none}.settings-management i{font-style:normal;color:var(--muted)}.settings-management[open] summary i{transform:rotate(90deg)}.settings-management>a{border-top:1px solid var(--line);text-decoration:none;color:var(--ink)}.settings-management>a>span{display:grid;gap:5px}.settings-management b{font-size:13px}.settings-management small{font-size:11px;color:var(--muted);line-height:1.5}.settings-management summary:focus-visible,.settings-management>a:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
     .website-category-nav { max-width: 1540px; padding-bottom: 0; }
     .category-ownership {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;

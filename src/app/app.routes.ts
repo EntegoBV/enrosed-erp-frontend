@@ -244,6 +244,11 @@ export const routes: Routes = [
   },
   { path: 'settings/documents-media', pathMatch: 'full', redirectTo: 'files' },
   {
+    path: 'settings/deleted-items',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/settings/deleted-items-page').then((m) => m.DeletedItemsPage),
+  },
+  {
     path: 'settings',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],

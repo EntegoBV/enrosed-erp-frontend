@@ -873,7 +873,7 @@ interface JourneyStep {
                     @if (canDelete()) {
                       <details class="desk-danger">
                         <summary>Verwijderen</summary>
-                        <p>Alleen een concept dat de klant nooit zag. Dit kan niet ongedaan worden gemaakt.</p>
+                        <p>Alleen een concept dat de klant nooit zag. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
                         <button class="btn btn--danger btn--block" type="button" [disabled]="deleting()" (click)="remove()">
                           {{ deleting() ? 'Verwijderen…' : (isInvoiceDoc() ? 'Deze factuur verwijderen' : 'Deze offerte verwijderen') }}
                         </button>

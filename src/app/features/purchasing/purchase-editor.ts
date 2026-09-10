@@ -1,3 +1,4 @@
+import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
@@ -39,7 +40,7 @@ import { ProductDraft } from '../../shared/product-picker';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Skeleton } from '../../shared/skeleton';
-import { Sheet, Ui } from '../../shared/ui';
+import { Sheet, Ui, escapeHtml } from '../../shared/ui';
 import { PAYMENT_TOLERANCE_EUR, instalmentsOf, paymentPlanLabel, splitTotal, withinTolerance } from './payment-plan';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe, ceilTo } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
@@ -1396,10 +1397,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <details class="danger-zone">
                   <summary>Meer acties</summary>
                   <div>
-                    <p>Verwijderen kan niet ongedaan worden gemaakt.</p>
+                    <p>Tijdelijk verwijderen. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
                     <button class="btn btn--danger btn--block" type="button"
-                            (click)="remove()">
-                      Calculatie verwijderen
+                            [disabled]="deletingOrder() || saving()" (click)="remove()">
+                      {{ deletingOrder() ? 'Verwijderen…' : 'Calculatie verwijderen' }}
                     </button>
                   </div>
                 </details>
@@ -3106,6 +3107,7 @@ export class PurchaseEditor {
      (or a status step, which is an action) writes the order. */
   private readonly savedOrder = signal<string>('');
   readonly saving = signal(false);
+  readonly deletingOrder = signal(false);
   readonly dirty = computed(() => {
     const data = this.view();
     return !!data && JSON.stringify(data.order) !== this.savedOrder();
@@ -3119,7 +3121,7 @@ export class PurchaseEditor {
     afterSave?: (saved: PurchaseOrderView) => void,
   ): void {
     const data = this.view();
-    if (!data) return;
+    if (!data || this.deletingOrder()) return;
     const order = make(data.order);
     this.view.set({ ...data, order });
     if (afterSave) {
@@ -3147,14 +3149,14 @@ export class PurchaseEditor {
       if (version !== this.previewVersion || !current) return;
       this.view.set({ ...fresh, order: current.order });
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Berekening vernieuwen mislukt'), 'err');
+      if (version === this.previewVersion && !this.deletingOrder()) this.ui.toast(messageOf(failure, 'Berekening vernieuwen mislukt'), 'err');
     }
   }
 
   /** Writes the draft; the server answers with the order as it stands. */
   async save(): Promise<PurchaseOrderView | null> {
     const data = this.view();
-    if (!data || this.saving()) return null;
+    if (!data || this.saving() || this.deletingOrder()) return null;
     if (this.negativeExtra()) {
       this.ui.toast('De Enrosed kost van de container staat in totaal onder nul; zet dat eerst recht', 'err');
       return null;
@@ -3189,7 +3191,7 @@ export class PurchaseEditor {
 
   /** Leaving with unsaved work asks first; saving in progress holds the door. */
   canDeactivate(): boolean | Promise<boolean> {
-    if (this.saving()) return false;
+    if (this.saving() || this.deletingOrder()) return false;
     if (!this.dirty()) return true;
     return new Promise<boolean>((resolve) => {
       this.ui.confirm(
@@ -3612,16 +3614,31 @@ export class PurchaseEditor {
 
   remove(): void {
     const data = this.view();
-    if (!data) return;
+    if (!data || this.isReceived() || this.deletingOrder() || this.saving() || this.ui.confirmRequest() !== null) return;
     this.ui.confirm(
       { title: 'Calculatie verwijderen',
-        message: `Inkooporder <b>${data.order.number}</b> verwijderen?`,
+        message: `Inkooporder <b>${escapeHtml(data.order.number)}</b> tijdelijk verwijderen?<br><br>`
+          + (this.dirty() ? 'Niet-opgeslagen wijzigingen gaan verloren.<br><br>' : '')
+          + TEMPORARY_DELETION_NOTICE,
         confirmLabel: 'Verwijderen', danger: true },
-      async () => {
-        await this.sourcing.deletePurchaseOrder(data.order.id);
-        this.ui.toast('Calculatie verwijderd');
-        await this.router.navigate(['/purchasing']);
-      });
+      () => { void this.deleteAndLeave(data); });
+  }
+
+  private async deleteAndLeave(data: PurchaseOrderView): Promise<void> {
+    if (this.deletingOrder() || this.saving() || this.isReceived()) return;
+    this.deletingOrder.set(true);
+    if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
+    ++this.previewVersion;
+    try {
+      await this.sourcing.deletePurchaseOrder(data.order.id);
+      /* Navigation must never offer to save the deleted draft again. */
+      this.savedOrder.set(JSON.stringify(this.view()?.order ?? data.order));
+      this.deletingOrder.set(false);
+      this.ui.toast('Inkooporder tijdelijk verwijderd');
+      await this.router.navigate(['/purchasing']);
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Inkooporder verwijderen mislukt'), 'err');
+    } finally { this.deletingOrder.set(false); }
   }
 }
 

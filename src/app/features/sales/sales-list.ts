@@ -1,3 +1,4 @@
+import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { invoiceReceivable } from '../finance/incoming-money';
 import { NgTemplateOutlet } from '@angular/common';
@@ -353,7 +354,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
               <button class="desk-action desk-action--danger" type="button"
                       [disabled]="deletingOrderId() !== null" (click)="rowMenu.set(null); remove(menuRow)">
                 <i aria-hidden="true">×</i>
-                <span><b>Verwijderen</b><small>Definitief, na bevestiging</small></span>
+                <span><b>Verwijderen</b><small>Tijdelijk, na bevestiging</small></span>
               </button>
             }
           </div>
@@ -1254,7 +1255,7 @@ export class SalesList {
               && (order.status !== 'CONCEPT' || order.sentAt !== null)
             ? 'De gedeelde klantlink werkt daarna niet meer.<br><br>'
             : '')
-          + 'Dit kan niet ongedaan worden gemaakt.',
+          + TEMPORARY_DELETION_NOTICE,
         confirmLabel: 'Verwijderen',
         danger: true,
       },

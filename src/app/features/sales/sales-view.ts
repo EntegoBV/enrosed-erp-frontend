@@ -1,3 +1,4 @@
+import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney } from './sales-invoice-journey';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
@@ -1393,7 +1394,7 @@ export class SalesView {
         message: `Weet je zeker dat je ${label.toLowerCase()} `
           + `<b>${escapeHtml(data.order.number)}</b> van `
           + `<b>${escapeHtml(customer)}</b> wilt verwijderen?<br><br>`
-          + 'Dit kan niet ongedaan worden gemaakt.',
+          + TEMPORARY_DELETION_NOTICE,
         confirmLabel: 'Verwijderen',
         danger: true,
       },

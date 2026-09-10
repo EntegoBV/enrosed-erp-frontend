@@ -941,8 +941,8 @@ type DeskRow =
                     @if (!isReceived()) {
                       <details class="desk-danger">
                         <summary>Meer acties</summary>
-                        <p>Verwijderen kan niet ongedaan worden gemaakt.</p>
-                        <button class="btn btn--danger btn--block" type="button" (click)="remove()">Calculatie verwijderen</button>
+                        <p>Tijdelijk verwijderen. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
+                        <button class="btn btn--danger btn--block" type="button" [disabled]="deletingOrder() || saving()" (click)="remove()">{{ deletingOrder() ? 'Verwijderen…' : 'Calculatie verwijderen' }}</button>
                       </details>
                     }
                   </div>
