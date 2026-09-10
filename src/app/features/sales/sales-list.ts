@@ -266,9 +266,12 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                     <strong>{{ customerName(entry.rows[0]) }}</strong>
                     <span class="sales-container__meta">{{ entry.purchaseOrderNumber || 'Inkoop #' + entry.purchaseOrderId }} · {{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
                     <span class="sales-container__badges">
-                      @if (entry.summary.draftCount) { <span class="so-status-mini so-status-mini--neutral">{{ entry.summary.draftCount }} concept · nog niet uitgegeven</span> }
-                      @if (entry.summary.issuedCount) { <span class="so-status-mini so-status-mini--rose">{{ entry.summary.issuedCount }} uitgegeven</span> }
-                      @if (entry.summary.inactiveCount) { <span class="so-status-mini so-status-mini--neutral">{{ entry.summary.inactiveCount }} vervallen/geannuleerd · buiten totaal</span> }
+                      @for (status of entry.summary.statuses; track status.label) {
+                        <span [class]="'so-status-mini so-status-mini--' + status.cls"
+                              [class.sales-container__status--concept]="status.concept">
+                          <i aria-hidden="true"></i>{{ status.count }} {{ status.label }}@if (status.concept) { · nog niet uitgereikt }@if (status.inactive) { · buiten totaal }
+                        </span>
+                      }
                       @if (entry.summary.attentionCount) { <span class="so-status-mini so-status-mini--warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
                     </span>
                   </span>
@@ -500,6 +503,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       border-radius:999px;background:color-mix(in srgb,currentColor 10%,transparent);
       font-size:10.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
     .so-status-mini i { width:6px;height:6px;flex:none;border-radius:50%;background:currentColor }
+    @media(max-width:600px){.list-item__end .so-status-mini{white-space:normal;text-align:left;overflow-wrap:anywhere;line-height:1.35}}
     .so-status-mini--ok { color:var(--ok) }
     .so-status-mini--danger { color:var(--danger) }
     .so-status-mini--gold { color:var(--gold) }
@@ -507,6 +511,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     .so-status-mini--blue { color:var(--blue) }
     .so-status-mini--neutral { color:var(--muted) }
     .so-status-mini--warn { color:var(--warn) }
+    .sales-container__status--concept { color:var(--ink);font-weight:700;background:var(--surface-2) }
     .so-source-mini { display:inline-flex;align-items:center;max-width:100%;padding:4px 9px;
       border:1px solid color-mix(in srgb,var(--rose) 38%,transparent);border-radius:999px;
       background:var(--rose);color:#fff;font-size:10px;font-weight:780;line-height:1.2;

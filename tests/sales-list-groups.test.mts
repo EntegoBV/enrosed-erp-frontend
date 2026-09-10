@@ -7,6 +7,7 @@ import { computed, signal } from '@angular/core';
 import { parseTemplate } from '@angular/compiler';
 import { invoiceReceivable } from '../src/app/features/finance/incoming-money.ts';
 import { isPartnerDocument } from '../src/app/features/sales/sales-payment-state.ts';
+import { statusOf } from '../src/app/features/sales/quote-status.ts';
 import type { SalesOrderView } from '../src/app/core/api/models.ts';
 import type { SalesContainerGroup, SalesListEntry } from '../src/app/features/sales/sales-list-groups.ts';
 
@@ -16,6 +17,7 @@ const helperExports: any = {};
 vm.runInNewContext(helperJs, { exports: helperExports, require: (path: string) => {
   if (path === '../finance/incoming-money') return { invoiceReceivable };
   if (path === './sales-payment-state') return { isPartnerDocument };
+  if (path === './quote-status') return { statusOf };
   throw new Error(`Unexpected dependency ${path}`);
 } });
 const groupSalesInvoices = helperExports.groupSalesInvoices as (rows: readonly SalesOrderView[], attention?: (row: SalesOrderView) => boolean) => SalesListEntry[];
@@ -84,6 +86,78 @@ test('issued receipts and credits remain separate from drafts and cancelled clai
   assert.equal(result.summary.remainingEur, 150.01, 'A credit is not silently allocated to another invoice');
   assert.equal(result.summary.creditEur, 20.01);
   assert.equal(result.summary.attentionCount, 1);
+});
+
+test('concepts remain concepts regardless of a derived payment summary, until explicitly issued', () => {
+  for (const paymentStatus of ['UNPAID', 'PARTIAL', 'PAID', 'OVERPAID', 'CREDIT'] as const) {
+    const draft = invoice(61, 18145.27);
+    draft.paymentSummary = { status: paymentStatus, receivedEur: 100, remainingEur: 18045.27 } as any;
+    assert.deepEqual(statusOf(draft), { label: 'Concept', cls: 'neutral' });
+    const result = group([draft]);
+    assert.deepEqual(Array.from(result.summary.statuses, badge => [badge.label, badge.count, badge.concept]), [['Concept', 1, true]]);
+    assert.equal(result.summary.issuedCount, 0);
+    assert.equal(result.summary.draftEur, 18145.27);
+    assert.equal(result.summary.receivedEur, 0);
+    assert.equal(result.summary.remainingEur, 0, 'Payment metadata does not make a concept an open invoice');
+    assert.equal(draft.order.status, 'CONCEPT');
+  }
+  const issued = invoice(61, 18145.27, { status: 'UITGEREIKT' });
+  issued.paymentSummary = { status: 'UNPAID', receivedEur: 0, remainingEur: 18145.27 } as any;
+  assert.equal(group([issued]).summary.statuses[0].label, 'Uitgereikt · niet gemaild');
+  assert.equal(group([issued]).summary.remainingEur, 18145.27);
+});
+
+test('mixed groups show each actual invoice status using the same label and color as individual rows', () => {
+  const issued = invoice(1, 100, { status: 'UITGEREIKT' });
+  const sent = invoice(2, 100, { status: 'VERZONDEN' });
+  const partialIssued = invoice(3, 100, { status: 'UITGEREIKT' });
+  const partialSent = invoice(4, 100, { status: 'VERZONDEN' });
+  for (const row of [partialIssued, partialSent]) {
+    row.paymentSummary = { status: 'PARTIAL', receivedEur: 25, remainingEur: 75 } as any;
+  }
+  const paid = invoice(5, 100, { status: 'BETAALD' });
+  const draft = invoice(6, 100);
+  const cancelled = invoice(7, 100, { status: 'GEANNULEERD' });
+  const expired = invoice(8, 100, { status: 'VERLOPEN' });
+  const rows = [issued, sent, partialIssued, partialSent, paid, draft, cancelled, expired];
+  const before = JSON.stringify(rows);
+  const result = group(rows);
+  assert.deepEqual(Array.from(result.summary.statuses, badge => [badge.label, badge.count]), [
+    ['Concept', 1], ['Uitgereikt · niet gemaild', 1], ['Verzonden', 1], ['Deels betaald', 2],
+    ['Betaald', 1], ['Geannuleerd', 1], ['Verlopen', 1],
+  ]);
+  for (const row of rows) {
+    const status = statusOf(row);
+    const badge = result.summary.statuses.find(badge => badge.label === status.label);
+    assert.equal(badge?.cls, status.cls);
+  }
+  assert.equal(result.summary.totalEur, 600);
+  assert.equal(result.summary.draftCount, 1);
+  assert.equal(result.summary.issuedCount, 5);
+  assert.equal(result.summary.inactiveCount, 2);
+  assert.equal(result.summary.receivedEur, 150);
+  assert.equal(result.summary.remainingEur, 350);
+  assert.equal(JSON.stringify(rows), before, 'Status presentation never mutates a document or its financial data');
+});
+
+test('terminal lifecycle and historical quote states are never replaced by payment badges', () => {
+  for (const status of ['GEANNULEERD', 'VERLOPEN', 'AFGEWEZEN'] as const) {
+    const row = invoice(1, 100, { status });
+    row.paymentSummary = { status: 'PAID', receivedEur: 100, remainingEur: 0 } as any;
+    assert.equal(statusOf(row).label, { GEANNULEERD: 'Geannuleerd', VERLOPEN: 'Verlopen', AFGEWEZEN: 'Afgewezen' }[status]);
+    const result = group([row]);
+    assert.equal(result.summary.statuses[0].inactive, true);
+    assert.equal(result.summary.totalEur, 0);
+    assert.equal(result.summary.issuedCount, 0);
+  }
+  assert.deepEqual(statusOf({ order: { docType: 'OFFERTE', status: 'VERZONDEN' }, paymentSummary: { status: 'PARTIAL' } }),
+    { label: 'Verzonden', cls: 'rose' });
+  assert.equal(statusOf({ order: { docType: 'OFFERTE', status: 'CONCEPT' }, invoicedAs: 'INV-1', invoiceStatus: 'CONCEPT' }).label, 'Factuur in concept');
+  assert.equal(statusOf({ order: { docType: 'OFFERTE', status: 'CONCEPT' }, invoicedAs: 'INV-1', invoiceStatus: 'UITGEREIKT' }).label, 'Gefactureerd');
+  for (const status of ['PAID', 'OVERPAID'] as const) {
+    assert.deepEqual(statusOf({ order: { docType: 'FACTUUR', status: 'VERZONDEN' }, paymentSummary: { status } }),
+      { label: 'Betaald', cls: 'ok' });
+  }
 });
 
 const listSource = await readFile(new URL('../src/app/features/sales/sales-list.ts', import.meta.url), 'utf8');

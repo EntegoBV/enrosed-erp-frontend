@@ -1,6 +1,15 @@
 import type { SalesOrderView } from '../../core/api/models';
 import { invoiceReceivable } from '../finance/incoming-money';
 import { isPartnerDocument } from './sales-payment-state';
+import { statusOf } from './quote-status';
+
+export interface SalesContainerStatus {
+  label: string;
+  cls: string;
+  count: number;
+  concept: boolean;
+  inactive: boolean;
+}
 
 export interface SalesContainerGroup {
   kind: 'PARTNER_CONTAINER';
@@ -16,6 +25,7 @@ export interface SalesContainerGroup {
     draftEur: number;
     issuedCount: number;
     inactiveCount: number;
+    statuses: SalesContainerStatus[];
     receivedEur: number;
     remainingEur: number;
     creditEur: number;
@@ -44,7 +54,7 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
     if (!group) {
       group = { kind: 'PARTNER_CONTAINER', key, purchaseOrderId: purchaseOrderId!, customerId: row.order.customerId,
         purchaseOrderNumber: null, rows: [], summary: { count: 0, totalEur: 0, draftCount: 0, draftEur: 0,
-          issuedCount: 0, inactiveCount: 0, receivedEur: 0, remainingEur: 0, creditEur: 0, attentionCount: 0, containerPieces: null } };
+          issuedCount: 0, inactiveCount: 0, statuses: [], receivedEur: 0, remainingEur: 0, creditEur: 0, attentionCount: 0, containerPieces: null } };
       groups.set(key, group); entries.push(group);
     }
     group.rows.push(row);
@@ -56,12 +66,21 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
     const payments = issued.map(invoiceReceivable);
     const contents = group.rows.map(row => row.advanceContents).filter(contents => contents?.purchaseOrderId === group.purchaseOrderId);
     const quantities = contents.map(contents => contents!.totals.pieces).filter(Number.isFinite);
+    const statuses = new Map<string, SalesContainerStatus>();
+    for (const row of group.rows) {
+      const status = statusOf(row);
+      const existing = statuses.get(status.label);
+      if (existing) existing.count += 1;
+      else statuses.set(status.label, { ...status, count: 1,
+        concept: row.order.status === 'CONCEPT', inactive: INACTIVE.has(row.order.status) });
+    }
     group.purchaseOrderNumber = contents.find(contents => contents!.purchaseOrderNumber?.trim())?.purchaseOrderNumber ?? null;
     group.summary = {
       count: group.rows.length,
       totalEur: sumMoney(active.map(row => row.priced.totals.total)),
       draftCount: drafts.length, draftEur: sumMoney(drafts.map(row => row.priced.totals.total)),
       issuedCount: issued.length, inactiveCount: group.rows.length - active.length,
+      statuses: [...statuses.values()].sort((left, right) => Number(right.concept) - Number(left.concept)),
       receivedEur: sumMoney(payments.map(payment => payment.receivedEur)),
       remainingEur: sumMoney(payments.map(payment => payment.remainingEur)),
       creditEur: sumMoney(payments.map(payment => payment.creditEur)),

@@ -1,3 +1,5 @@
+import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
+import { advanceInvoiceJourney } from './sales-invoice-journey';
 import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
@@ -55,7 +57,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -117,7 +119,7 @@ interface JourneyStep {
             </div>
             <div class="desk-status" role="group" aria-label="Voortgang van het document">
               @for (step of journey(); track step.label; let last = $last) {
-                <span class="desk-status__step"
+                <span class="desk-status__step" [attr.aria-current]="['now', 'stop', 'wait'].includes(step.state) ? 'step' : null"
                       [class.desk-status__step--done]="step.state === 'done'"
                       [class.desk-status__step--now]="step.state === 'now'"
                       [class.desk-status__step--stop]="step.state === 'stop'"
@@ -811,6 +813,8 @@ interface JourneyStep {
                       }
                     }
 
+                    <app-sales-invoice-declaration [view]="data" [dirty]="dirty() || saving()" />
+
                     <p class="desk-form__group">Acties</p>
                     <div class="desk-actions">
                       @if (isInvoiceDoc()) {
@@ -1215,9 +1219,7 @@ export class SalesDesk extends SalesEditor {
     if (!order) return [];
     if (this.isInvoiceDoc()) {
       if (isAdvanceDocument(order)) {
-        const flags = [true, order.status !== 'CONCEPT', order.status === 'BETAALD'];
-        const now = flags.indexOf(false);
-        return ['Concept', 'Uitgereikt', 'Voorschot ontvangen'].map((label, index) => ({ label, state: flags[index] ? 'done' : index === now ? 'now' : 'todo' }));
+        return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
       }
       const flags = [true, order.status !== 'CONCEPT', !!order.goodsShippedAt, order.status === 'BETAALD'];
       const now = flags.indexOf(false);

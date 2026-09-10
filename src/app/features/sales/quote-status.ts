@@ -1,4 +1,4 @@
-import { QuoteStatus, SalesOrder } from '../../core/api/models';
+import type { QuoteStatus, SalesOrder, SalesPaymentSummary } from '../../core/api/models';
 
 /**
  * Machine-readable source marker used by the public quote endpoint.
@@ -108,10 +108,16 @@ export const STATUS_LABEL: Record<QuoteStatus, string> = {
  * invoice is past its own statuses: it reads "Gefactureerd", whatever the
  * quote status still says.
  */
-export function statusOf(view: { order: Pick<SalesOrder, 'status' | 'docType'>; invoicedAs?: string | null; invoiceStatus?: QuoteStatus | null }): { label: string; cls: string } {
+export function statusOf(view: { order: Pick<SalesOrder, 'status' | 'docType'>; invoicedAs?: string | null; invoiceStatus?: QuoteStatus | null; paymentSummary?: Pick<SalesPaymentSummary, 'status'> | null }): { label: string; cls: string } {
   if (view.invoicedAs && view.order.docType !== 'FACTUUR') {
     /* A draft invoice is not an invoice yet: the quote waits for it to go out. */
     return view.invoiceStatus === 'CONCEPT' ? { label: 'Factuur in concept', cls: 'gold' } : { label: 'Gefactureerd', cls: 'ok' };
+  }
+  // A payment summary also exists for drafts. It never proves that an invoice was issued.
+  if (view.order.docType === 'FACTUUR' && ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(view.order.status)) {
+    if (view.paymentSummary?.status === 'PARTIAL') return { label: 'Deels betaald', cls: 'gold' };
+    if (view.paymentSummary?.status === 'PAID' || view.paymentSummary?.status === 'OVERPAID') return { label: 'Betaald', cls: 'ok' };
+    if (view.order.status === 'UITGEREIKT') return { label: 'Uitgereikt · niet gemaild', cls: statusClass(view.order.status) };
   }
   return { label: STATUS_LABEL[view.order.status], cls: statusClass(view.order.status) };
 }

@@ -1,3 +1,5 @@
+import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
+import { advanceInvoiceJourney } from './sales-invoice-journey';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
@@ -47,7 +49,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -226,7 +228,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           <div class="stepper hero-stepper"
                [attr.aria-label]="isInvoice() ? 'Status van de factuur' : 'Status van de offerte'">
             @for (step of journey(data.order); track step.label; let last = $last) {
-              <div class="stepper__step"
+              <div class="stepper__step" [attr.aria-current]="['now', 'stop', 'wait'].includes(step.state) ? 'step' : null"
                    [class.stepper__step--done]="step.state === 'done'"
                    [class.stepper__step--now]="step.state === 'now'"
                    [class.hero-stepper__step--danger]="step.kind === 'danger'"
@@ -582,6 +584,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <small>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Resultaat bij uitgegeven afrekening' : 'Goederenwinst vóór vrachtkosten' }}</small>
               </div>
               }
+              <app-sales-invoice-declaration [view]="data" />
               <section class="next-step-card" aria-labelledby="sales-next-step-title">
                 <span class="section-kicker">Volgende stap</span>
                 <h3 id="sales-next-step-title">{{ nextStepTitle(data) }}</h3>
@@ -1254,12 +1257,8 @@ export class SalesView {
   /** The quote's journey, or the invoice's shorter one. */
   journey(order: SalesOrder) {
     if ((order.docType ?? 'OFFERTE') !== 'FACTUUR') return this.quoteJourney(order.status);
-    /* Payment and shipment are separate facts, so each step carries its own
-       flag; the first thing not yet done gets the "now" ring. */
     if (isAdvanceDocument(order)) {
-      const flags = [true, order.status !== 'CONCEPT', order.status === 'BETAALD'];
-      const now = flags.indexOf(false);
-      return ['Concept', 'Uitgereikt', 'Voorschot ontvangen'].map((label, index) => ({ label, mark: flags[index] ? '✓' : `${index + 1}`, state: (flags[index] ? 'done' : index === now ? 'now' : 'todo') as 'done' | 'now' | 'todo', kind: undefined }));
+      return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
     }
     const flags = [true, order.status !== 'CONCEPT', !!order.goodsShippedAt,
                    order.status === 'BETAALD'];

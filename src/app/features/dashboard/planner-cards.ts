@@ -12,6 +12,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** A read-only line the containers write into the agenda by themselves. */
 export interface PlannerMilestone {
   date: string;
+  kind: 'ORDERED' | 'SHIPPED' | 'EXPECTED_ARRIVAL' | 'RECEIVED';
   icon: string;
   title: string;
   sub: string | null;
@@ -55,7 +56,7 @@ interface CompactAgendaEntry {
             <div class="planner-compact__list">
               @for (entry of compactAgenda(); track entry.id) {
                 <button class="planner-compact__row" type="button" (click)="openCompactAgenda(entry)">
-                  <span class="planner-compact__date">{{ compactDay(entry.date) }}
+                  <span class="planner-compact__date" [class.planner-compact__date--arrival]="entry.milestone?.kind === 'EXPECTED_ARRIVAL'">{{ compactDay(entry.date) }}
                     @if (entry.atTime) { <small>{{ entry.atTime }}</small> }
                   </span>
                   <span class="planner-compact__copy">
@@ -128,11 +129,19 @@ interface CompactAgendaEntry {
                       [class.cal-day--outside]="!cell.inMonth"
                       [class.cal-day--today]="cell.today"
                       [class.cal-day--selected]="cell.date === selectedDate()"
+                      [attr.aria-label]="longDay(cell.date) + (cell.events ? ', ' + cell.events + ' agenda-items' : '') + (cell.arrivals ? ', ' + cell.arrivals + ' verwachte containers' : '')"
                       (click)="selectedDate.set(cell.date)">
                 {{ cell.label }}
                 @if (cell.events) { <i class="cal-count" aria-hidden="true">{{ cell.events }}</i> }
+                @if (cell.arrivals) {
+                  <i class="cal-count cal-count--arrival" [class.cal-count--mixed]="cell.events > 0" aria-hidden="true">{{ cell.arrivals }}</i>
+                }
               </button>
             }
+          </div>
+          <div class="cal-legend">
+            <span><i aria-hidden="true"></i> Agenda</span>
+            <span><i class="cal-legend__arrival" aria-hidden="true"></i> Verwachte containers</span>
           </div>
           </div>
           @if (dayItems(); as items) {
@@ -160,7 +169,7 @@ interface CompactAgendaEntry {
               @for (stone of selectedMilestones(); track stone.title) {
                 <!-- The containers keep their own diary in here: read-only,
                      one tap opens the order. -->
-                <button class="cal-agenda__row cal-agenda__row--stone" type="button" (click)="openMilestone(stone)">
+                <button class="cal-agenda__row cal-agenda__row--stone" [class.cal-agenda__row--arrival]="stone.kind === 'EXPECTED_ARRIVAL'" type="button" (click)="openMilestone(stone)">
                   <span class="cal-agenda__time cal-agenda__stone-icon">{{ stone.icon }}</span>
                   <span class="cal-agenda__open">
                     <b>{{ stone.title }}</b>
@@ -178,7 +187,7 @@ interface CompactAgendaEntry {
                   <span class="upcoming__label">Eerstvolgend</span>
                   @for (next of upcoming(); track next.id) {
                     <button class="upcoming__row" type="button" (click)="jumpToUpcoming(next)">
-                      <small class="task__date">{{ shortDay(next.onDate) }}</small>
+                      <small class="task__date" [class.task__date--arrival]="next.stone?.kind === 'EXPECTED_ARRIVAL'">{{ shortDay(next.onDate) }}</small>
                       <b>{{ next.title }}</b>
                       @if (next.atTime) { <small class="muted">{{ next.atTime }}</small> }
                     </button>
@@ -427,7 +436,7 @@ interface CompactAgendaEntry {
     }
   `,
   styles: `
-    :host { display: block; min-width: 0; }
+    :host { display: block; min-width: 0; --container-arrival: #2563eb; --container-arrival-soft: #eff6ff; }
     .planner-compact { overflow: hidden; }
     .planner-compact--hidden,.planner-full { display: none; }
     /* The planner sizes its columns by the room it actually gets, so it
@@ -497,6 +506,17 @@ interface CompactAgendaEntry {
       min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--rose);
       color: #fff; font-size: 8.5px; font-style: normal; font-weight: 800; line-height: 1; }
     .cal-day--selected .cal-count { background: #fff; color: var(--rose-dark); }
+    .cal-count.cal-count--arrival,.cal-day--selected .cal-count.cal-count--arrival {
+      background: var(--container-arrival); color: #fff; box-shadow: 0 0 0 1px var(--surface); }
+    .cal-count--mixed { right: auto; left: 2px; }
+    .cal-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 14px; margin-top: 10px;
+      color: var(--muted); font-size: 10px; }
+    .cal-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .cal-legend i { width: 7px; height: 7px; border-radius: 50%; background: var(--rose); }
+    .cal-legend .cal-legend__arrival { background: var(--container-arrival); }
+    .planner-compact__date.planner-compact__date--arrival,.task__date.task__date--arrival {
+      color: var(--container-arrival); background: var(--container-arrival-soft); }
+    .cal-agenda__row.cal-agenda__row--arrival { border-left: 3px solid var(--container-arrival); }
     .cal-empty { margin: 0; padding: 10px 0 2px; color: var(--muted-2); font-size: 12px; text-align: center; }
     .cal-agenda { margin-top: 8px; border-top: 1px solid var(--line); }
     /* Desktop: the little calendar sits left like a paper desk planner,
@@ -869,13 +889,15 @@ export class PlannerCards {
 
   readonly calendar = computed(() => {
     const counts = new Map<string, number>();
+    const arrivals = new Map<string, number>();
     for (const item of this.items()) {
       if (item.onDate && !(item.kind === 'TASK' && item.done)) {
         counts.set(item.onDate, (counts.get(item.onDate) ?? 0) + 1);
       }
     }
     for (const stone of this.milestones()) {
-      counts.set(stone.date, (counts.get(stone.date) ?? 0) + 1);
+      const target = stone.kind === 'EXPECTED_ARRIVAL' ? arrivals : counts;
+      target.set(stone.date, (target.get(stone.date) ?? 0) + 1);
     }
     const today = isoDate(new Date());
     const first = this.month();
@@ -889,6 +911,7 @@ export class PlannerCards {
         inMonth: date.getMonth() === first.getMonth(),
         today: iso === today,
         events: counts.get(iso) ?? 0,
+        arrivals: arrivals.get(iso) ?? 0,
       };
     });
   });

@@ -587,21 +587,21 @@ export class DashboardHome {
       const name = row.order.alias || row.order.number;
       const supplier = this.supplierNameById().get(row.order.supplierId) ?? row.order.number;
       if (row.order.orderDate && row.order.status !== 'CONCEPT') {
-        milestones.push({ date: row.order.orderDate, icon: '🛒', title: `${name} besteld`,
+        milestones.push({ date: row.order.orderDate, kind: 'ORDERED', icon: '🛒', title: `${name} besteld`,
           sub: supplier, orderId: row.order.id });
       }
       if (row.order.shippedOn) {
-        milestones.push({ date: row.order.shippedOn, icon: '🚢', title: `${name} vertrokken`,
+        milestones.push({ date: row.order.shippedOn, kind: 'SHIPPED', icon: '🚢', title: `${name} vertrokken`,
           sub: row.order.trackingReference ? `T&T ${row.order.trackingReference}` : supplier,
           orderId: row.order.id });
       }
       if (row.order.expectedArrival && row.order.status !== 'ONTVANGEN') {
-        milestones.push({ date: row.order.expectedArrival, icon: '📦', title: `${name} verwachte aankomst`,
+        milestones.push({ date: row.order.expectedArrival, kind: 'EXPECTED_ARRIVAL', icon: '📦', title: `${name} verwachte aankomst`,
           sub: `${row.costing.totals.pieces.toLocaleString('nl-BE')} st · ${supplier}`,
           orderId: row.order.id });
       }
       if (row.order.receivedOn) {
-        milestones.push({ date: row.order.receivedOn, icon: '✓', title: `${name} ontvangen`,
+        milestones.push({ date: row.order.receivedOn, kind: 'RECEIVED', icon: '✓', title: `${name} ontvangen`,
           sub: supplier, orderId: row.order.id });
       }
     }
