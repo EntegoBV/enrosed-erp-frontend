@@ -196,7 +196,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <span>Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><small>Slotfactuur na verkoop</small>
               } @else {
               <span>{{ isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
-              <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
+              <strong>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</strong>
               <small>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</small>
               }
             </div>
@@ -286,7 +286,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   [attr.aria-current]="activeDetailSection() === 'sales-control' ? 'true' : null"
                   (click)="scrollToSection('sales-control')">
             <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">3</span>
-            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Controle</b><small>{{ data.priced.totals.total | eur: 0 }}</small></span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Controle</b><small>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-status'"

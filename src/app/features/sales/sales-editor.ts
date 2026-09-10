@@ -67,7 +67,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           @if (!advanceAgreement()) {
           <div class="quote-header-total" aria-label="Offertetotaal exclusief btw">
             <span>Totaal</span>
-            <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
+            <strong>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</strong>
           </div>
           }
           <!-- One primary at a time: with unsaved changes the only next
@@ -173,7 +173,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <span class="hero-fact__label">Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
               } @else {
               <span class="hero-fact__label">{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
-              <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
+              <strong>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</strong>
               <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</span>
               }
             </div>

@@ -1,5 +1,7 @@
 import { isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { invoiceReceivable } from '../finance/incoming-money';
+import { NgTemplateOutlet } from '@angular/common';
+import { groupSalesInvoices } from './sales-list-groups';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -27,7 +29,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
 @Component({
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton,
+  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, NgTemplateOutlet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation],
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
@@ -90,7 +92,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
             <path d="m16 16 4 4"></path>
           </svg>
           <input class="input" id="sales-search" type="search" inputmode="search"
-                 autocomplete="off" aria-label="Zoek klant of documentnummer" placeholder="Zoek klant of nummer…"
+                 autocomplete="off" aria-label="Zoek klant, documentnummer of containerreferentie" placeholder="Zoek klant, factuur of container…"
                  [ngModel]="query()" (ngModelChange)="query.set($event)" />
           @if (query()) {
             <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
@@ -145,12 +147,10 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
         }
       </div>
 
-      <div class="card" id="sales-document-results" role="tabpanel" [attr.aria-labelledby]="'sales-tab-' + docTab()" [attr.aria-busy]="loading()" tabindex="0">
-        <div class="list">
-          @for (row of rows(); track row.order.id) {
+      <ng-template #documentRow let-row let-grouped="grouped">
             <!-- Drag left for the bin, drag right for the archive; hold the
                  row (or right-click it) for the same choices as a menu. -->
-            <div class="swipe"
+            <div class="swipe" [class.swipe--grouped]="grouped"
                  [class.swipe--open]="rowOpenSide(row.order.id) === 'end'"
                  [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
                  [class.swipe--dragging]="draggingOrderId() === row.order.id"
@@ -174,24 +174,27 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                (dragstart)="$event.preventDefault()"
                (click)="blockWhenSwiped($event)">
               <div class="list-item__body">
-                <div class="list-item__title">{{ customerName(row) }}</div>
+                <div class="list-item__title">{{ grouped ? row.order.number : customerName(row) }}</div>
                 <!-- No country chip: it repeats what the customer name already
                      implies and pushed the date into "18/0...". -->
                 <div class="list-item__meta list-item__meta--wrap">
                   {{ documentLabel(row.order) }} ·
-                  {{ row.order.number }} · {{ row.order.orderDate | dateNl }}
+                  @if (!grouped) { {{ row.order.number }} · }{{ row.order.orderDate | dateNl }}
                   @if (row.order.sourceQuoteId && row.sourceQuoteNumber) {
                     · uit <a class="so-link" [routerLink]="['/sales', row.order.sourceQuoteId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Offerte ' + row.sourceQuoteNumber + ' openen'">{{ row.sourceQuoteNumber }}</a>
                   }
                   @if (row.invoicedAs && row.invoicedAsId) {
                     · factuur <a class="so-link" [routerLink]="['/sales', row.invoicedAsId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.invoicedAs + ' openen'">{{ row.invoicedAs }}</a>
                   }
-                  @if (channelCode(row.order.salesChannel) !== 'DIRECT') { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
+                  @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT') { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
                   @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate) {
                     · vervalt {{ row.order.invoiceDueDate | dateNl }}
                   }
                 </div>
                 <div class="list-item__meta list-item__meta--wrap">
+                  @if (partner(row.order)) {
+                    {{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}
+                  } @else {
                   {{ row.priced.totals.pieces | num }} st ·
                   @if (row.order.loadMode === 'LOOSE_CARTONS') {
                     {{ row.priced.totals.cartons | num }}
@@ -205,13 +208,14 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                   @if (!partner(row.order) && row.priced.totals.marginPct) {
                     · marge {{ row.priced.totals.marginPct | pct: 0 }}
                   }
+                  }
                 </div>
               </div>
               <div class="list-item__end list-item__end--stacked">
                 @if (websiteRequest(row.order)) {
                   <span class="so-source-mini">Websiteaanvraag</span>
                 }
-                <div class="strong num">{{ row.priced.totals.total | eur: 0 }}</div>
+                <div class="strong num">{{ row.priced.totals.total | eur: (partner(row.order) ? 2 : 0) }}</div>
                 @if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
                   <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
                 }
@@ -247,6 +251,48 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
               </button>
             }
             </div>
+      </ng-template>
+
+      <div class="card" id="sales-document-results" role="tabpanel" [attr.aria-labelledby]="'sales-tab-' + docTab()" [attr.aria-busy]="loading()" tabindex="0">
+        <div class="list">
+          @for (entry of groupedRows(); track entry.key) {
+            @if (entry.kind === 'PARTNER_CONTAINER') {
+              <section class="sales-container" [class.sales-container--open]="groupOpen(entry.key)">
+                <button class="sales-container__toggle" type="button"
+                        [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
+                        [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)">
+                  <span class="sales-container__identity">
+                    <span class="sales-container__eyebrow">Partnercontainer</span>
+                    <strong>{{ customerName(entry.rows[0]) }}</strong>
+                    <span class="sales-container__meta">{{ entry.purchaseOrderNumber || 'Inkoop #' + entry.purchaseOrderId }} · {{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
+                    <span class="sales-container__badges">
+                      @if (entry.summary.draftCount) { <span class="so-status-mini so-status-mini--neutral">{{ entry.summary.draftCount }} concept · nog niet uitgegeven</span> }
+                      @if (entry.summary.issuedCount) { <span class="so-status-mini so-status-mini--rose">{{ entry.summary.issuedCount }} uitgegeven</span> }
+                      @if (entry.summary.inactiveCount) { <span class="so-status-mini so-status-mini--neutral">{{ entry.summary.inactiveCount }} vervallen/geannuleerd · buiten totaal</span> }
+                      @if (entry.summary.attentionCount) { <span class="so-status-mini so-status-mini--warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
+                    </span>
+                  </span>
+                  <span class="sales-container__totals">
+                    <small>Getoonde facturen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong>
+                    @if (entry.summary.draftCount && entry.summary.issuedCount) { <small>Waarvan concept {{ entry.summary.draftEur | eur }}</small> }
+                    @if (entry.summary.issuedCount) { <small>{{ entry.summary.receivedEur | eur }} ontvangen · {{ entry.summary.remainingEur | eur }} open incl. btw</small> }
+                    @if (entry.summary.creditEur > 0) { <small>{{ entry.summary.creditEur | eur }} credit incl. btw</small> }
+                  </span>
+                  <span class="sales-container__chevron" aria-hidden="true"></span>
+                </button>
+                <div class="sales-container__invoices" [id]="entry.key + '-invoices'"
+                     [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
+                  @if (groupOpen(entry.key)) {
+                    <div class="sales-container__tools"><span>De facturen hieronder volgen je huidige filters.</span><a [routerLink]="['/purchasing', entry.purchaseOrderId]" [queryParams]="{ section: 'payments' }">Container en betaalafspraken ›</a></div>
+                    @for (row of entry.rows; track row.order.id) {
+                      <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" />
+                    }
+                  }
+                </div>
+              </section>
+            } @else {
+              <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: entry.row, grouped: false }" />
+            }
           } @empty {
             @if (loading()) {
               <app-skeleton kind="list" [rows]="5" />
@@ -286,7 +332,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       <app-sheet [title]="documentLabel(menuRow.order) + ' ' + menuRow.order.number" (closed)="rowMenu.set(null)">
         <div body>
           <p class="row-menu__who">{{ customerName(menuRow) }} · {{ label(menuRow.order.status) }}
-            · {{ menuRow.priced.totals.total | eur: 0 }}</p>
+            · {{ menuRow.priced.totals.total | eur: (partner(menuRow.order) ? 2 : 0) }}</p>
           <div class="desk-actions">
             <a class="desk-action" [routerLink]="['/sales', menuRow.order.id]" (click)="rowMenu.set(null)">
               <i aria-hidden="true">›</i>
@@ -417,6 +463,35 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     }
   `,
   styles: `
+    .sales-container:not(:last-child){border-bottom:1px solid var(--line)}
+    .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;width:100%;min-height:98px;padding:19px 20px;border:0;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}
+    .sales-container__toggle:hover,.sales-container--open>.sales-container__toggle{background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface))}
+    .sales-container__toggle:focus-visible{outline:3px solid var(--rose);outline-offset:-3px}
+    .sales-container__identity{grid-area:identity;display:grid;gap:5px;min-width:0}
+    .sales-container__identity>strong{font-size:16px;overflow-wrap:anywhere}
+    .sales-container__eyebrow{font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--rose-dark)}
+    .sales-container__meta{font-size:12px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
+    .sales-container__badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
+    .sales-container__totals{grid-area:totals;display:grid;gap:4px;text-align:right;font-variant-numeric:tabular-nums}
+    .sales-container__totals>strong{font-size:19px;letter-spacing:-.02em}
+    .sales-container__totals>small{font-size:11px;color:var(--muted);line-height:1.4}
+    .sales-container__chevron{grid-area:chevron;width:8px;height:8px;border-right:2px solid var(--rose-dark);border-bottom:2px solid var(--rose-dark);transform:rotate(45deg);transition:transform .2s ease}
+    .sales-container--open .sales-container__chevron{transform:rotate(225deg)}
+    .sales-container__invoices:not([hidden]){border-top:1px solid var(--rose-line);animation:container-invoices-enter .18s ease-out}
+    .sales-container__tools{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:11px 20px;background:var(--surface-2);font-size:11px;line-height:1.5;color:var(--muted)}
+    .sales-container__tools a{color:var(--rose-dark);font-weight:650;text-underline-offset:3px}
+    .sales-container__invoices>.swipe:not(:last-child){border-bottom:1px solid var(--line)}
+    .swipe--grouped .list-item{border-bottom:0;padding-left:26px}
+    .swipe--grouped .list-item__title{font-size:13px}
+    @keyframes container-invoices-enter{from{opacity:.4;transform:translateY(-3px)}to{opacity:1;transform:none}}
+    @media(max-width:600px){
+      .sales-container__toggle{grid-template-columns:minmax(0,1fr) 16px;grid-template-areas:'identity chevron' 'totals totals';gap:12px;padding:16px}
+      .sales-container__totals{text-align:left;border-top:1px solid var(--line);padding-top:10px}
+      .sales-container__totals>strong{font-size:20px}
+      .sales-container__tools{padding:11px 16px}
+      .swipe--grouped .list-item{padding-left:16px}
+    }
+    @media(prefers-reduced-motion:reduce){.sales-container__toggle,.sales-container__chevron{transition:none}.sales-container__invoices:not([hidden]){animation:none}}
     .so-link { color: var(--rose-dark); font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
     .swipe--dragging { user-select:none }
     .swipe--dragging .swipe__row { transform:translateX(var(--swipe-offset, 0px));transition:none }
@@ -736,6 +811,7 @@ export class SalesList {
     this.websiteOnly.set(false);
     this.outstandingOnly.set(false);
     this.openRow.set(null);
+    this.expandedGroups.set(new Set());
     this.rememberNavigation();
   }
 
@@ -743,6 +819,7 @@ export class SalesList {
     this.businessScope.set(scope);
     this.websiteOnly.set(false);
     this.openRow.set(null);
+    this.expandedGroups.set(new Set());
     this.rememberNavigation();
   }
 
@@ -905,18 +982,44 @@ export class SalesList {
     const customer = this.customerFilter();
     const websiteOnly = this.websiteOnly();
     const needle = this.query().toLowerCase().trim();
-    return this.inTab().filter((row) => {
+    const documents = this.inTab();
+    const purchaseNames = new Map<number, string>();
+    for (const row of documents) {
+      const purchaseId = isPartnerDocument(row.order) ? row.order.partnerPurchaseOrderId : null;
+      const contents = row.advanceContents;
+      if (purchaseId != null && contents?.purchaseOrderId === purchaseId && contents.purchaseOrderNumber?.trim()
+          && !purchaseNames.has(purchaseId)) purchaseNames.set(purchaseId, contents.purchaseOrderNumber);
+    }
+    return documents.filter((row) => {
       if (this.outstandingOnly() && (['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status) || invoiceReceivable(row).remainingEur <= 0)) return false;
       if (status && row.order.status !== status) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
       if (websiteOnly && !isWebsiteQuoteRequest(row.order)) return false;
       if (!needle) return true;
-      /* Customer and number are how anyone refers to an order out loud. */
-      return (this.customerName(row) + ' ' + row.order.number)
+      const purchaseId = isPartnerDocument(row.order) ? row.order.partnerPurchaseOrderId : null;
+      const container = purchaseId != null
+        ? purchaseNames.get(purchaseId) ?? `Inkoop #${purchaseId}`
+        : '';
+      return (this.customerName(row) + ' ' + row.order.number + ' ' + container)
         .toLowerCase()
         .includes(needle);
     });
   });
+
+  /** Filtering remains document-based; container sections only organize the matching invoices. */
+  readonly groupedRows = computed(() => groupSalesInvoices(this.rows(), row => !!this.attention(row)?.length));
+  readonly expandedGroups = signal<ReadonlySet<string>>(new Set());
+
+  groupOpen(key: string): boolean { return this.expandedGroups().has(key); }
+
+  toggleGroup(key: string): void {
+    this.openRow.set(null);
+    this.expandedGroups.update(current => {
+      const expanded = new Set(current);
+      if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
+      return expanded;
+    });
+  }
 
   readonly filtersOpen = signal(false);
   readonly customerFilter = signal<number | ''>('');

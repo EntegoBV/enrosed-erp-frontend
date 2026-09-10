@@ -172,8 +172,8 @@ interface JourneyStep {
                 <small>Betaalplan</small><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
               } @else {
               <small>{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</small>
-              <strong>{{ data.priced.totals.total | eur: 0 }}</strong>
-              <span>{{ data.priced.totals.vatLegalMention ? 'btw verlegd' : 'excl. btw · ' + ((data.priced.totals.totalInclVat) | eur: 0) + ' incl.' }}</span>
+              <strong>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</strong>
+              <span>{{ data.priced.totals.vatLegalMention ? 'btw verlegd' : 'excl. btw · ' + ((data.priced.totals.totalInclVat) | eur: (isPartnerDocument(data.order) ? 2 : 0)) + ' incl.' }}</span>
               }
             </button>
             @if (isInvoiceDoc()) {
