@@ -1278,7 +1278,7 @@ export class SalesDesk extends SalesEditor {
   }
 
   /* ---- invoices: the same steps the phone view offers ---- */
-  readonly invoiceBusy = signal(false);
+  readonly invoiceBusy = this.documentMutationBusy;
 
   makeInvoice(data: SalesOrderView): void {
     if (this.invoiceBusy() || this.dirty() || this.saving() || this.sending()) return;
@@ -1318,13 +1318,16 @@ export class SalesDesk extends SalesEditor {
   }
 
   async markSent(data: SalesOrderView): Promise<void> {
-    if (this.invoiceBusy() || this.dirty() || this.saving()) return;
+    if (this.invoiceBusy() || this.dirty() || this.saving() || this.view()?.order.id !== data.order.id) return;
     this.invoiceBusy.set(true);
     try {
-      this.view.set(await this.sales.markInvoiceSent(data.order.id));
+      const updated = await this.sales.markInvoiceSent(data.order.id);
+      if (this.view()?.order.id !== data.order.id) return;
+      this.adopt(updated);
       void this.loadHistory(data.order.id);
       this.ui.toast('Factuur staat op verstuurd');
     } catch (failure: unknown) {
+      if (this.view()?.order.id !== data.order.id) return;
       this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
     } finally {
       this.invoiceBusy.set(false);
@@ -1363,13 +1366,17 @@ export class SalesDesk extends SalesEditor {
   }
 
   private async shipGoods(data: SalesOrderView): Promise<void> {
+    if (this.invoiceBusy() || this.dirty() || this.saving() || this.view()?.order.id !== data.order.id) return;
     this.invoiceBusy.set(true);
     try {
-      this.view.set(await this.sales.shipGoods(data.order.id));
+      const updated = await this.sales.shipGoods(data.order.id);
+      if (this.view()?.order.id !== data.order.id) return;
+      this.adopt(updated);
       void this.loadHistory(data.order.id);
       this.shipSheet.set(null);
       this.ui.toast('Bestelling verzonden — voorraad afgepunt');
     } catch (failure: unknown) {
+      if (this.view()?.order.id !== data.order.id) return;
       this.ui.toast(messageOf(failure, 'Voorraad afpunten mislukt'), 'err');
     } finally {
       this.invoiceBusy.set(false);

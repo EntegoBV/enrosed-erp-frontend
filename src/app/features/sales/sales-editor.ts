@@ -1991,9 +1991,19 @@ export class SalesEditor {
   }
   readonly receiptOpenRequest = signal(0);
   paymentReceived(fresh: SalesOrderView): void {
-    this.view.update((current) => current ? withPaymentState(current, fresh) : fresh);
     const current = this.view();
-    if (current) this.savedOrder.set(JSON.stringify(current.order));
+    if (current && current.order.id !== fresh.order.id) return;
+    if (!current || !this.dirty()) {
+      this.adopt(fresh);
+    } else {
+      // A payment response confirms payment fields, never local commercial edits.
+      ++this.previewVersion;
+      this.view.set(withPaymentState(current, fresh));
+      try {
+        const saved = JSON.parse(this.savedOrder()) as SalesOrder;
+        this.savedOrder.set(JSON.stringify({ ...saved, status: fresh.order.status, paidAt: fresh.order.paidAt }));
+      } catch { /* Keep the existing dirty baseline if it cannot be read. */ }
+    }
     void this.loadHistory(fresh.order.id);
   }
 
@@ -2596,7 +2606,9 @@ export class SalesEditor {
   });
 
   /** Commercial fields belong to the draft version only. */
-  readonly canEdit = computed(() => !this.advanceAgreement() && this.view()?.order.status === 'CONCEPT');
+  readonly documentMutationBusy = signal(false);
+  readonly canEdit = computed(() => !this.documentMutationBusy() && !this.advanceAgreement()
+    && this.view()?.order.status === 'CONCEPT' && !this.view()?.order.archivedAt);
 
   /** A customer-link token alone is not use; sending, viewing or deciding is. */
   readonly canDelete = computed(() => {
@@ -2608,7 +2620,7 @@ export class SalesEditor {
 
   /** Open delivery promises may still be completed without unlocking prices. */
   readonly canEditTerms = computed(() => {
-    if (this.advanceAgreement()) return false;
+    if (this.documentMutationBusy() || this.advanceAgreement() || this.view()?.order.archivedAt) return false;
     const status = this.view()?.order.status;
     return status === 'CONCEPT' || status === 'VERZONDEN' || status === 'BEKEKEN';
   });
@@ -2757,7 +2769,8 @@ export class SalesEditor {
   private previewVersion = 0;
 
   /** A view straight from the server: what is shown is what is saved. */
-  private adopt(view: SalesOrderView): void {
+  protected adopt(view: SalesOrderView): void {
+    if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     ++this.previewVersion;
     this.view.set(view);
     this.savedOrder.set(JSON.stringify(view.order));
@@ -2768,7 +2781,7 @@ export class SalesEditor {
   /** Applies a change to the draft and re-prices it. */
   private enqueue(make: (order: SalesOrder) => SalesOrder | null): void {
     const data = this.view();
-    if (!data) return;
+    if (!data || !this.canEdit()) return;
     const next = make(data.order);
     if (!next) return;
     this.view.set({ ...data, order: next });
@@ -2808,6 +2821,12 @@ export class SalesEditor {
     const data = this.view();
     if (!data || this.saving()) return false;
     if (!this.dirty()) return true;
+    if (!this.canEdit()) {
+      this.saveError.set(this.documentMutationBusy()
+        ? 'Wacht tot de huidige factuuractie is afgerond. Je wijzigingen blijven in dit scherm staan.'
+        : 'Deze documentversie staat vast. Je lokale wijzigingen blijven in dit scherm staan; ze kunnen niet over de uitgegeven versie worden opgeslagen.');
+      return false;
+    }
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
     this.saveError.set(null);
@@ -3253,12 +3272,13 @@ export class SalesEditor {
                       freightPricingStrategy: SalesOrder['freightPricingStrategy'],
                       freightRatePerCbmEur: number | null,
                       freightCarrierId: number | null = null): void {
+    if (!this.canEditTerms()) return;
     void (async () => {
       /* The freight endpoint answers with the saved quote: write the draft
          first, or the answer would undo what was typed since. */
       if (this.dirty() && !(await this.save())) return;
       const data = this.view();
-      if (!data) return;
+      if (!data || !this.canEditTerms()) return;
       try {
         this.adopt(await this.sales.updateFreight(data.order.id, state, manualFreightEur,
           freightPricingStrategy ?? null, freightRatePerCbmEur, freightCarrierId));

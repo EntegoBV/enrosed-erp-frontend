@@ -55,7 +55,7 @@ function makeHarness(javascript: string, className: string, snapshot = true) {
   let confirmation: (() => void) | null = null;
   const router = { navigate: async (...args: unknown[]) => { routes.push(args); return true; } };
   Object.assign(screen, {
-    view: signal(quote(snapshot)), quote: signal(quote(snapshot)), invoiceBusy: signal(false), busy: signal(false),
+    view: signal(quote(snapshot)), quote: signal(quote(snapshot)), invoiceBusy: signal(false), documentMutationBusy: signal(false), busy: signal(false),
     dirty: signal(false), saving: signal(false), sending: signal(false), sendingQuote: signal(false),
     invoiceConversionBusy: signal(false), refreshWorkQueue() {}, work: { refresh: async () => {} },
     router, routerNav: router,
