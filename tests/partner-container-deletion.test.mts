@@ -139,8 +139,8 @@ test('templates expose keyboard actions and full scope, preserve escaped text an
     const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(source)?.[1]; assert.ok(template);
     assert.equal(parseTemplate(template, `${name}.html`).errors, null);
   }
-  assert.match(listSource, /class="sales-container__menu" type="button" aria-haspopup="dialog"/);
-  assert.match(listSource, /\(contextmenu\)="openContainerMenu\(\$event, entry\)"/);
+  assert.match(listSource, /class="sales-container__toggle" type="button"[\s\S]*?appSalesMenu[\s\S]*?aria-haspopup="dialog"/);
+  assert.match(listSource, /\(salesMenu\)="openContainerMenu\(null, entry\)"/);
   assert.match(menuSource, /volledige factuurlijst/); assert.match(menuSource, /Herstel eerst de container en daarna de facturen/);
   assert.match(menuSource, /invoice.totalEur === null \? 'Niet beschikbaar'/);
   assert.doesNotMatch(menuSource, /innerHTML|deleteOrder\(|sendOrder\(/);

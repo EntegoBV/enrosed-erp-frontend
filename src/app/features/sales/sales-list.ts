@@ -4,6 +4,8 @@ import { invoiceReceivable } from '../finance/incoming-money';
 import { NgTemplateOutlet } from '@angular/common';
 import { groupSalesInvoices, type SalesContainerGroup } from './sales-list-groups';
 import { SalesContainerMenu } from './sales-container-menu';
+import { SalesMenuTrigger } from './sales-menu-trigger';
+import { isSalesMenuInteractiveChild } from './sales-menu-gesture';
 import type { PartnerContainerDeletionResult } from '../../core/api/partner-container-deletion-api';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -23,7 +25,7 @@ import { messageOf } from '../../core/api/errors';
 import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
 import { salesDocumentKind } from './partner-settlement';
 import {
-  ROW_LONG_PRESS_MS, ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
+  ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
 } from '../../shared/row-actions';
 
@@ -33,7 +35,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, NgTemplateOutlet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation, SalesContainerMenu],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation, SalesContainerMenu, SalesMenuTrigger],
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
@@ -150,6 +152,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
         }
       </div>
 
+      <p id="sales-menu-help" class="sr-only">Acties: houd de rij ingedrukt op een aanraakscherm, gebruik de rechtermuisknop of druk op Shift+F10.</p>
       <ng-template #documentRow let-row let-grouped="grouped">
             <!-- Drag left for the bin, drag right for the archive; hold the
                  row (or right-click it) for the same choices as a menu. -->
@@ -168,12 +171,13 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
               <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
             </button>
             <a class="list-item swipe__row" [routerLink]="['/sales', row.order.id]"
+               appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
+               (salesMenu)="openRowMenu(null, row)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
                (pointerdown)="startSwipe($event, row)"
                (pointermove)="moveSwipe($event, row)"
                (pointerup)="finishSwipe($event, row)"
                (pointercancel)="cancelSwipe($event)"
                (wheel)="wheelSwipe($event, row)"
-               (contextmenu)="openRowMenu($event, row)"
                (dragstart)="$event.preventDefault()"
                (click)="blockWhenSwiped($event)">
               <div class="list-item__body">
@@ -261,8 +265,10 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
           @for (entry of groupedRows(); track entry.key) {
             @if (entry.kind === 'PARTNER_CONTAINER') {
               <section class="sales-container" [class.sales-container--open]="groupOpen(entry.key)">
-                <div class="sales-container__header" (contextmenu)="openContainerMenu($event, entry)">
+                <div class="sales-container__header">
                 <button class="sales-container__toggle" type="button"
+                        appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
+                        (salesMenu)="openContainerMenu(null, entry)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
                         [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
                         [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)">
                   <span class="sales-container__identity">
@@ -287,10 +293,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                   </span>
                   <span class="sales-container__chevron" aria-hidden="true"></span>
                 </button>
-                <button class="sales-container__menu" type="button" aria-haspopup="dialog"
-                        [attr.aria-label]="'Acties voor partnercontainer ' + (entry.purchaseOrderNumber || 'Inkoop #' + entry.purchaseOrderId)"
-                        [disabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
-                        (click)="openContainerMenu($event, entry)"><span aria-hidden="true">⋯</span></button>
                 </div>
                 <div class="sales-container__invoices" [id]="entry.key + '-invoices'"
                      [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
@@ -486,7 +488,8 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;flex:1;min-width:0;min-height:98px;padding:19px 20px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}
     .sales-container__toggle:hover,.sales-container--open>.sales-container__header{background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface))}
     .sales-container__toggle:focus-visible{outline:3px solid var(--rose);outline-offset:-3px}
-    .sales-container__menu{align-self:center;flex:0 0 44px;width:44px;height:44px;margin-right:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink-2);font-family:inherit;font-size:23px;font-weight:700;line-height:1;cursor:pointer}.sales-container__menu:hover{background:var(--rose-soft);color:var(--rose-dark)}.sales-container__menu:focus-visible{outline:3px solid var(--rose);outline-offset:2px}.sales-container__menu:disabled{opacity:.45;cursor:wait}
+    .sales-container__toggle{touch-action:pan-y}
+    @media(pointer:coarse){[appSalesMenu]{-webkit-touch-callout:none;user-select:none}}
     .sales-container__identity{grid-area:identity;display:grid;gap:5px;min-width:0}
     .sales-container__identity>strong{font-size:16px;overflow-wrap:anywhere}
     .sales-container__eyebrow{font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--rose-dark)}
@@ -816,8 +819,7 @@ export class SalesList {
   readonly rowMenu = signal<SalesOrderView | null>(null);
   private swipeHandled = false;
   private pointerSwipe: { pointerId: number; orderId: number; startX: number; startY: number;
-    startOffset: number; horizontal: boolean; row: HTMLElement;
-    hold: ReturnType<typeof setTimeout> | null } | null = null;
+    startOffset: number; horizontal: boolean; row: HTMLElement } | null = null;
   private swipeResetTimer: ReturnType<typeof setTimeout> | null = null;
   private wheelTotal = 0;
   private wheelOrderId: number | null = null;
@@ -1102,6 +1104,7 @@ export class SalesList {
   startSwipe(event: PointerEvent, row: SalesOrderView): void {
     if (!event.isPrimary || event.button !== 0 || this.deletingOrderId() !== null
         || this.archivingOrderId() !== null || this.containerDeletingId() !== null) return;
+    if (isSalesMenuInteractiveChild(event.currentTarget as HTMLElement, event.target)) return;
     if (this.swipeResetTimer !== null) clearTimeout(this.swipeResetTimer);
     this.swipeHandled = false;
     const open = this.openRow();
@@ -1115,23 +1118,11 @@ export class SalesList {
       startOffset: restingRowOffset(this.rowOpenSide(row.order.id)),
       horizontal: false,
       row: target,
-      hold: null as ReturnType<typeof setTimeout> | null,
     };
-    /* A press that stays put opens the row menu: the long press of a phone,
-       and just as well a mouse button held down. */
-    active.hold = setTimeout(() => {
-      if (this.pointerSwipe !== active || active.horizontal) return;
-      this.swipeHandled = true;
-      this.releaseSwipePointer(active);
-      this.resetPointerSwipe();
-      this.deferSwipeClickRelease();
-      this.openRowMenu(null, row);
-    }, ROW_LONG_PRESS_MS);
     this.pointerSwipe = active;
     try {
       target.setPointerCapture(event.pointerId);
     } catch {
-      this.clearHold(active);
       this.pointerSwipe = null;
     }
   }
@@ -1143,7 +1134,6 @@ export class SalesList {
     const dy = event.clientY - active.startY;
     if (!active.horizontal) {
       if (Math.hypot(dx, dy) < ROW_LONG_PRESS_SLOP_PX) return;
-      this.clearHold(active);
       if (Math.abs(dx) <= Math.abs(dy) * 1.2) return;
       active.horizontal = true;
       this.swipeHandled = true;
@@ -1157,7 +1147,6 @@ export class SalesList {
   finishSwipe(event: PointerEvent, row: SalesOrderView): void {
     const active = this.pointerSwipe;
     if (!active || active.pointerId !== event.pointerId) return;
-    this.clearHold(active);
     if (active.horizontal) {
       event.preventDefault();
       event.stopPropagation();
@@ -1184,7 +1173,6 @@ export class SalesList {
   cancelSwipe(event: PointerEvent): void {
     const active = this.pointerSwipe;
     if (!active || active.pointerId !== event.pointerId) return;
-    this.clearHold(active);
     if (active.horizontal) this.deferSwipeClickRelease();
     else this.swipeHandled = false;
     this.releaseSwipePointer(active);
@@ -1221,13 +1209,14 @@ export class SalesList {
   openRowMenu(event: Event | null, row: SalesOrderView): void {
     event?.preventDefault();
     if (this.containerDeletingId() !== null) return;
+    if (this.pointerSwipe) { this.releaseSwipePointer(this.pointerSwipe); this.resetPointerSwipe(); }
     this.containerMenu.set(null);
     this.openRow.set(null);
     this.rowMenu.set(row);
   }
 
-  openContainerMenu(event: Event, container: SalesContainerGroup): void {
-    event.preventDefault(); event.stopPropagation();
+  openContainerMenu(event: Event | null, container: SalesContainerGroup): void {
+    event?.preventDefault(); event?.stopPropagation();
     if (this.containerDeletingId() !== null || this.deletingOrderId() !== null
       || this.archivingOrderId() !== null || this.ui.confirmRequest() !== null) return;
     this.rowMenu.set(null); this.openRow.set(null);
@@ -1266,13 +1255,6 @@ export class SalesList {
       this.ui.toast(messageOf(failure, toArchive ? 'Archiveren mislukt' : 'Terugzetten mislukt'), 'err');
     } finally {
       this.archivingOrderId.set(null);
-    }
-  }
-
-  private clearHold(active: { hold: ReturnType<typeof setTimeout> | null }): void {
-    if (active.hold !== null) {
-      clearTimeout(active.hold);
-      active.hold = null;
     }
   }
 

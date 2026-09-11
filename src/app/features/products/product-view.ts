@@ -99,13 +99,12 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
       <div class="content product-view-page erp-workspace erp-workspace--product erp-workspace--view">
         <div class="product-view-canvas erp-workspace__main">
           <section class="phero erp-workspace__hero" id="product-overview" aria-label="Productoverzicht">
-            <!-- Phone: the app bar folds into the hero - back and Bewerk on
-                 the dark surface, so the page starts as one piece from the top. -->
+            <!-- The phone opens with a compact identity and original product photo. -->
             @if (!desktop.active()) {
               <div class="phero__bar">
                 <button class="phero__back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
                 <span class="phero__bar-spacer"></span>
-                <a class="phero__edit erp-workspace__primary" [routerLink]="['/products', product.id, 'edit']">Bewerk</a>
+                <span class="product-phone-caption">Productoverzicht</span>
               </div>
             }
 
@@ -304,7 +303,14 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             </section>
           }
 
-          <nav class="subnav product-detail-nav workflow-nav workflow-nav--wide erp-workspace__nav" aria-label="Productonderdelen">
+          @if (!desktop.active()) {
+            <nav class="product-phone-shortcuts" aria-label="Direct product bewerken">
+              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'identity' }"><span>Gegevens</span><small>Kleur &amp; maat <i aria-hidden="true">↗</i></small></a>
+              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'sales' }"><span>Verkoopprijs</span><small>Prijs aanpassen <i aria-hidden="true">↗</i></small></a>
+              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'packaging' }"><span>Omdoos</span><small>Inhoud &amp; maten <i aria-hidden="true">↗</i></small></a>
+            </nav>
+          }
+          <nav id="product-detail-navigation" class="subnav product-detail-nav workflow-nav workflow-nav--wide erp-workspace__nav" aria-label="Productonderdelen">
             <div class="subnav__rail erp-workspace__nav-rail workflow-nav__rail">
               @for (item of visibleDetailSections(); track item.id) {
                 <a class="erp-workspace__nav-item workflow-nav__item" [class.active]="activeDetailSection() === item.id"

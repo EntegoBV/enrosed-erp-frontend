@@ -82,6 +82,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon,
   ],
   template: `
+    @if (!desktop.active()) {
+      <header class="product-mobile-header">
+        <a class="product-mobile-back" [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']" aria-label="Terug naar product">‹</a>
+        <div><span>{{ isNew() ? 'Nieuw product' : 'Product bewerken' }}</span><h1>{{ editorReady() ? (draft().name || 'Nieuw product') : 'Product laden…' }}</h1></div>
+        @if (editorReady()) { <span class="product-mobile-state" [class.is-dirty]="workspaceDirty()" aria-label="Opslagstatus">{{ saveBusy() ? 'Bezig…' : workspaceDirty() ? 'Gewijzigd' : 'Opgeslagen' }}</span> }
+      </header>
+    }
+    @if (desktop.active()) {
     <app-page-header
       [title]="id() && id() !== 'new' ? 'Product bewerken' : 'Nieuw product'"
       [subtitle]="editorReady() ? (draft().colour || 'Productgegevens') : productLoadError() ? 'Niet geladen' : 'Product laden…'"
@@ -109,6 +117,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               [disabled]="saveBusy()"
               (click)="save()">{{ saveActionLabel() }}</button>
     </app-page-header>
+    }
 
     <header class="editor-toolbar">
       <div class="editor-toolbar__title">
@@ -134,6 +143,29 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     }
 
     @if (editorReady()) {
+    @if (!desktop.active()) {
+      <section class="product-mobile-identity" aria-label="Huidige productvariant">
+        <button class="product-mobile-photo" type="button" (click)="showTab('media')" aria-label="Productfoto’s bewerken">
+          @if (draft().photos[0]; as photo) { <img [appAuthSrc]="photo.url" [alt]="draft().name" /> }
+          @else { <app-icon name="media" [size]="24" /> }
+          <span><app-icon name="media" [size]="12" /></span>
+        </button>
+        <div class="product-mobile-variant">
+          <strong>@if (draft().colourHex) { <i [style.background]="draft().colourHex"></i> }{{ draft().colour || 'Kleur nog kiezen' }}@if (draft().variantSize) { <small>· {{ draft().variantSize }}</small> }</strong>
+          <span>{{ draft().sku || selectedCategoryName() || 'Nieuwe variant' }}</span>
+          <div class="product-mobile-metrics"><button type="button" (click)="showTab('sales')">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Prijs instellen' }}</button><span>·</span><button type="button" (click)="showTab('stock')">{{ workspaceStockLabel() }} op voorraad</button></div>
+        </div>
+        @if (!isNew() && variantNeighbours(); as around) {
+          @if (around.total > 1) {
+            <div class="product-mobile-colours" role="group" aria-label="Kleurvariant kiezen">
+              <a [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null" [attr.aria-disabled]="!around.previous" [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'">‹</a>
+              <small>{{ around.index + 1 }}/{{ around.total }}</small>
+              <a [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null" [attr.aria-disabled]="!around.next" [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'">›</a>
+            </div>
+          }
+        }
+      </section>
+    }
     <div class="product-editor-lead erp-workspace erp-workspace--product erp-workspace--edit">
       <div class="content product-editor-lead__content">
         <section class="erp-workspace__hero product-editor-hero" aria-label="Product in één oogopslag">
@@ -224,6 +256,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
     <div class="content product-editor-page erp-workspace erp-workspace--product erp-workspace--edit">
       <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
+        @if (!desktop.active()) {
+          <div class="product-mobile-tabs" role="group" aria-label="Bewerkonderdeel">
+            @for (tab of mobilePrimaryTabs; track tab.id) {
+              <button type="button" [class.is-active]="activeTab() === tab.id" [attr.aria-pressed]="activeTab() === tab.id" [attr.aria-controls]="tab.id" (click)="showTab(tab.id)"><app-icon [name]="tabIcon(tab.id)" [size]="19" /><span>{{ tab.label }}</span></button>
+            }
+            <button type="button" [class.is-active]="mobileMoreActive()" [attr.aria-expanded]="mobileSectionsOpen()" aria-haspopup="dialog" (click)="mobileSectionsOpen.set(true)"><app-icon name="settings" [size]="19" /><span>{{ mobileMoreActive() ? mobileSectionLabel() : 'Meer' }}</span></button>
+          </div>
+        }
         <p class="editor-nav-label">Productgegevens</p>
         <label class="editor-section-picker" for="editor-section-select">
           <span>Onderdeel</span>
@@ -247,7 +287,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <a class="editor-translation-link" [routerLink]="['/products', draft().id, 'translations']"><app-icon name="countries" [size]="17" /> Vertalingen <span aria-hidden="true">↗</span></a>
         }
       </nav>
-      <div class="editor-canvas erp-workspace__main" [attr.data-tab]="activeTab()"
+      <fieldset class="editor-canvas erp-workspace__main" [disabled]="formWriteBusy()" [attr.aria-busy]="formWriteBusy()" [attr.data-tab]="activeTab()"
            [class.editor-canvas--last]="isLastPhoneTab()">
       <div class="editor-section-note"><app-icon [name]="activeTab() === 'stock' || activeTab() === 'media' ? 'activity' : 'settings'" [size]="17" /><p>{{ sectionSaveHint(activeTab()) }}</p></div>
       @if (saveError(); as error) {
@@ -279,33 +319,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
         <div class="card__body identity-layout">
           <div class="form-grid identity-layout__main">
-            <div class="field span-2">
-              <label class="req" for="p-supplier">Leverancier</label>
-              <select class="select" id="p-supplier" [ngModel]="draft().supplierId"
-                      (ngModelChange)="setSupplier(+$event)">
-                @for (supplier of suppliers(); track supplier.id) {
-                  <option [ngValue]="supplier.id">
-                    {{ supplier.name }} — {{ supplier.city }} ({{ supplier.currency }})
-                  </option>
-                }
-              </select>
-            </div>
-            <div class="field">
+            <div class="field identity-name">
               <label class="req" for="p-name">Productnaam intern</label>
               <input class="input" id="p-name" [ngModel]="draft().name"
                      (ngModelChange)="patch({ name: $event })" />
             </div>
-            <div class="field">
-              <label for="p-category">Categorie <span class="opt"></span></label>
-              <select class="select" id="p-category" [ngModel]="draft().categoryId"
-                      (ngModelChange)="patch({ categoryId: $event === null ? null : +$event })">
-                <option [ngValue]="null">— geen categorie —</option>
-                @for (category of categories(); track category.id) {
-                  <option [ngValue]="category.id">{{ category.name }}</option>
-                }
-              </select>
-            </div>
-                <div class="field">
+                <div class="field identity-colour">
                   <label class="req" for="p-colour">Kleur</label>
                   <!-- Compact: a dropdown with the current swatch dot in
                        front of it. Colours typed on other products join the
@@ -344,6 +363,42 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                          [ngModel]="draft().variantSize"
                          (ngModelChange)="patch({ variantSize: emptyToNull($event) })" />
                 </div>
+            <div class="field identity-category">
+              <label for="p-category">Categorie <span class="opt"></span></label>
+              <select class="select" id="p-category" [ngModel]="draft().categoryId"
+                      (ngModelChange)="patch({ categoryId: $event === null ? null : +$event })">
+                <option [ngValue]="null">— geen categorie —</option>
+                @for (category of categories(); track category.id) {
+                  <option [ngValue]="category.id">{{ category.name }}</option>
+                }
+              </select>
+            </div>
+            <details class="identity-extra identity-extra--article span-2" [open]="desktop.active()">
+              <summary><span>Artikelgegevens<small>Leverancier en omschrijving</small></span><span aria-hidden="true">⌄</span></summary>
+              <div class="identity-extra__body form-grid">
+            <div class="field span-2">
+              <label class="req" for="p-supplier">Leverancier</label>
+              <select class="select" id="p-supplier" [ngModel]="draft().supplierId"
+                      (ngModelChange)="setSupplier(+$event)">
+                @for (supplier of suppliers(); track supplier.id) {
+                  <option [ngValue]="supplier.id">
+                    {{ supplier.name }} — {{ supplier.city }} ({{ supplier.currency }})
+                  </option>
+                }
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="p-description">Omschrijving op offerte <span class="opt"></span></label>
+              <textarea class="textarea" id="p-description" rows="3"
+                        placeholder="Korte omschrijving voor verkoopdocumenten"
+                        [ngModel]="draft().description"
+                        (ngModelChange)="patch({ description: $event })"></textarea>
+            </div>
+              </div>
+            </details>
+            <details class="identity-extra identity-extra--variants span-2" [open]="desktop.active()">
+              <summary><span>Kleurvarianten<small>Reeks koppelen en beheren</small></span><span aria-hidden="true">⌄</span></summary>
+              <div class="identity-extra__body">
             @if (isNew()) {
               <!-- A sibling can be chosen before the product exists; the
                    editor links it right after create, so "save first" is
@@ -379,15 +434,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                                          (syncRequested)="openSharedFields()"
                                          (familyChange)="onFamilyChange($event)" />
             }
-            <div class="field span-2">
-              <label for="p-description">Omschrijving op offerte <span class="opt"></span></label>
-              <textarea class="textarea" id="p-description" rows="3"
-                        placeholder="Korte omschrijving voor verkoopdocumenten"
-                        [ngModel]="draft().description"
-                        (ngModelChange)="patch({ description: $event })"></textarea>
-            </div>
+              </div>
+            </details>
           </div>
 
+          <details class="identity-extra identity-extra--measurements" [open]="desktop.active()">
+            <summary><span>Afmetingen &amp; verpakking<small>Product, geschenkdoos en barcode</small></span><span aria-hidden="true">⌄</span></summary>
           <div class="identity-layout__measurements">
           <fieldset class="measure-group">
             <legend>Productafmeting</legend>
@@ -526,6 +578,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             }
           </div>
           </div>
+          </details>
         </div>
       </section>
 
@@ -1211,7 +1264,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </div>
         </app-sheet>
       }
-      </div>
+      </fieldset>
 
       <!-- A wide desk keeps the figures the form drives in view: the cost
            chain, the carton, what still blocks saving or publishing, and
@@ -1272,30 +1325,22 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
     @if (!desktop.active()) {
       <nav class="erp-workspace__mobile-actions product-editor-dock"
-           aria-label="Productonderdelen en opslaan">
-        @if (phoneTabIndex() > 0) {
-          <button class="product-editor-dock__back" type="button" (click)="previousTab()"
-                  [attr.aria-label]="'Terug naar ' + phoneTabs()[phoneTabIndex() - 1].label">‹</button>
-        }
-        <span class="product-editor-dock__context">
-          <small>Onderdeel {{ phoneTabIndex() + 1 }}/{{ phoneTabs().length }}</small>
-          <strong>{{ phoneTabs()[phoneTabIndex()].label }}</strong>
-        </span>
+           aria-label="Product opslaan">
+        <span class="product-editor-dock__context" role="status"><strong>{{ saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Wijzigingen klaar' : 'Alles opgeslagen' }}</strong><small>{{ saveBusy() ? 'Even geduld' : workspaceDirty() ? 'Bewaar deze productvariant' : 'Je kunt verder bewerken' }}</small></span>
         <button class="btn product-editor-dock__save" type="button"
                 [class.btn--primary]="workspaceDirty()"
                 [class.erp-workspace__primary--dirty]="workspaceDirty()"
                 [disabled]="saveBusy() || !workspaceDirty()" (click)="save()">
-          {{ saveBusy() ? saveActionLabel() : (isNew() ? 'Aanmaken' : 'Opslaan') }}
+          <span class="product-save-check" aria-hidden="true">✓</span>{{ saveBusy() ? 'Opslaan…' : (isNew() ? 'Aanmaken' : 'Opslaan') }}
         </button>
-        @if (!isLastPhoneTab()) {
-          <button class="product-editor-dock__next" type="button" (click)="nextTab()"
-                  [attr.aria-label]="'Volgende: ' + phoneTabs()[phoneTabIndex() + 1].label">›</button>
-        } @else if (!isNew()) {
-          <a class="btn product-editor-dock__view" [routerLink]="['/products', draft().id]">
-            Bekijken
-          </a>
-        }
       </nav>
+      @if (mobileSectionsOpen()) {
+        <app-sheet title="Productonderdelen" (closed)="mobileSectionsOpen.set(false)">
+          <div body class="product-section-sheet"><p>Kies wat je wilt aanpassen.</p><div class="product-section-choices">
+            @for (tab of phoneTabs(); track tab.id) { <button type="button" [class.is-active]="activeTab() === tab.id" (click)="showTab(tab.id)"><span class="product-section-icon"><app-icon [name]="tabIcon(tab.id)" [size]="23" /></span><span><strong>{{ tab.label }}</strong><small>{{ tabDescription(tab.id) }}</small></span><span class="product-section-arrow" aria-hidden="true">{{ activeTab() === tab.id ? '✓' : '›' }}</span></button> }
+          </div>@if (!isNew()) { <a class="product-section-translation" [routerLink]="['/products', draft().id, 'translations']"><app-icon name="countries" [size]="19" /> Namen &amp; vertalingen <span aria-hidden="true">↗</span></a> }</div>
+        </app-sheet>
+      }
     }
 
     @if (takeOutDraft(); as out) {
@@ -1779,6 +1824,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 export class ProductEditor implements OnDestroy {
   /** The selected editor section, shared by desktop navigation and the mobile picker. */
   readonly activeTab = signal('identity');
+  readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy());
+  readonly mobileSectionsOpen = signal(false);
+  readonly mobilePrimaryTabs = [{ id: 'identity', label: 'Basis' }, { id: 'media', label: 'Foto’s' }, { id: 'sales', label: 'Prijs' }];
+  readonly mobileMoreActive = computed(() => !this.mobilePrimaryTabs.some(tab => tab.id === this.activeTab()));
+  readonly mobileSectionLabel = computed(() => ({ packaging: 'Omdoos', purchasing: 'Inkoop', stock: 'Voorraad', agreements: 'Afspraken' } as Record<string, string>)[this.activeTab()] ?? 'Meer');
   private tabScrollFrame = 0;
 
   /* The draft as last loaded or saved; anything different is unsaved
@@ -1980,6 +2030,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   showTab(id: string): void {
+    this.mobileSectionsOpen.set(false);
     const next = visibleProductEditorTab(id, this.visibleTabs().map(tab => tab.id));
     this.activeTab.set(next);
     if (this.tabScrollFrame) cancelAnimationFrame(this.tabScrollFrame);
@@ -2313,9 +2364,10 @@ export class ProductEditor implements OnDestroy {
 
   private async loadStockLevels(productId: number): Promise<void> {
     try {
-      this.stockLevels.set(await this.catalog.productStock(productId));
+      const levels = await this.catalog.productStock(productId);
+      if (this.draft().id === productId) this.stockLevels.set(levels);
     } catch {
-      this.stockLevels.set([]);
+      if (this.draft().id === productId) this.stockLevels.set([]);
     }
   }
 
@@ -2324,7 +2376,13 @@ export class ProductEditor implements OnDestroy {
   /** A figure typed straight into a tile: booked at once as a correction. */
   async quickSetStock(level: ProductStock, field: HTMLInputElement): Promise<void> {
     const before = level.quantity;
-    const quantity = Math.max(0, Math.round(Number(field.value) || 0));
+    if (field.value.trim() === '' || this.stockSaving() || this.saveBusy()) { field.value = String(before); return; }
+    const quantity = Number(field.value);
+    if (!Number.isSafeInteger(quantity) || quantity < 0) {
+      field.value = String(before);
+      this.ui.toast('Geef een heel aantal stuks op (0 of meer).', 'err');
+      return;
+    }
     if (quantity === before) { field.value = String(before); return; }
     this.stockDraft.set(quantity);
     try {
@@ -2354,6 +2412,7 @@ export class ProductEditor implements OnDestroy {
     this.stockSaving.set(true);
     try {
       const saved = await this.catalog.setStock(id, Number(quantity), locationId);
+      if (this.draft().id !== id) return;
       /* Only the stock figures change; the rest of the form keeps the
          user's unsaved edits. */
       this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
@@ -2705,7 +2764,13 @@ export class ProductEditor implements OnDestroy {
   /** Jumps to a section and lands the cursor in the field that is still empty. */
   focusField(tab: string, field: string): void {
     this.showTab(tab);
-    setTimeout(() => document.getElementById(field)?.focus(), 350);
+    setTimeout(() => {
+      const target = document.getElementById(field);
+      let parent = target?.parentElement;
+      while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    }, 350);
   }
 
   readonly readinessIssues = computed(() => {
@@ -3451,8 +3516,7 @@ export class ProductEditor implements OnDestroy {
     if (missing.length) {
       const first = missing[0];
       this.ui.toast(`Nog invullen: ${missing.map((m) => m.label).join(', ')}.`, 'err');
-      this.showTab(first.tab);
-      setTimeout(() => document.getElementById(first.field)?.focus(), 250);
+      this.focusField(first.tab, first.field);
       return;
     }
     const wasNew = this.isNew();

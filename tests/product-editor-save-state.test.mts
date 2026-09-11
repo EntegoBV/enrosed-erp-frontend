@@ -6,7 +6,7 @@ import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 
 /**
- * Run the production leave guards and publication-state expressions with
+ * Run the production save, stock, leave and publication-state expressions with
  * real Angular signals. AST selection omits the editor's unrelated DOM/API
  * constructor; it does not replace any tested method or expression.
  */
@@ -16,7 +16,7 @@ const original = parsed.statements.find((node): node is ts.ClassDeclaration => t
 assert.ok(original);
 const names = new Set(['dirty', 'familyDirty', 'workspacePublicationLive', 'workspacePublicationShortLabel',
   'workspacePublicationLabel', 'workspaceDirty', 'canDeactivate', 'warnBeforeUnload', 'confirmDiscardTranslations',
-  'save', 'copy', 'saveShortcut', 'markClean']);
+  'save', 'copy', 'saveShortcut', 'markClean', 'formWriteBusy', 'saveBusy', 'quickSetStock']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size, 'Every tested production member must still exist');
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -65,7 +65,7 @@ function harness() {
     canCopyVariant: signal(true), copyVariantConflict: signal(null), copying: signal(true),
     copyColour: signal('White'), copyColourHex: signal('#FFFFFF'), copySize: signal('XL'),
     catalog: { duplicateProduct: async () => ({ id: 101, sku: 'COPY-101' }) },
-    saveBusy: computed(() => editor.saving() || editor.photoUploading() || editor.agreementBusy() || editor.translationSaving()),
+    stockSaving: signal(false), stockDraft: signal<number | null>(null), stockLevels: signal([]),
   });
   editor.isNew = () => editor.draft().id === null;
   editor.photoManager = () => ({ pendingCount: editor.pendingPhotos });
@@ -268,4 +268,82 @@ test('a failed photo queue enables the save action and the keyboard shortcut', (
   editor.photoUploading.set(true);
   editor.saveShortcut({ key: 's', ctrlKey: true, metaKey: false, preventDefault: () => {} });
   assert.equal(saved, 1, 'The shortcut cannot start a second save during an upload');
+});
+
+test('unsaved translations keep their own controls editable while actual writes lock the product form', () => {
+  const { editor } = harness();
+  assert.equal(editor.formWriteBusy(), false);
+  editor.translationDirty.set(true);
+  assert.equal(editor.saveBusy(), true, 'The main product save waits for the separate translation save');
+  assert.equal(editor.formWriteBusy(), false, 'Typing a translation must not disable its own fields and save button');
+  for (const flag of ['saving', 'photoUploading', 'agreementBusy', 'translationSaving', 'sharedFieldsBusy']) {
+    editor[flag].set(true);
+    assert.equal(editor.formWriteBusy(), true, flag);
+    editor[flag].set(false);
+    assert.equal(editor.formWriteBusy(), false, `Only unsaved translations remain after ${flag}`);
+  }
+});
+
+test('save sends missing fields through the reveal-and-focus helper before any write', async () => {
+  for (const field of ['p-supplier', 'p-packaging-pieces']) {
+    const { editor, save, notifications, navigations } = harness();
+    const focused: { tab: string; field: string }[] = [];
+    const writes: string[] = [];
+    editor.missingFields.set([{ tab: 'identity', field, label: 'Ontbrekend verplicht veld' }]);
+    editor.focusField = (tab: string, field: string) => focused.push({ tab, field });
+    editor.persistFamilyDraft = async () => { writes.push('family'); };
+    editor.updateWithPendingPhotos = async () => { writes.push('product/photos'); return editor.draft(); };
+    editor.agreementEditor = () => ({ flush: async () => { writes.push('agreements'); return { remaining: 0 }; } });
+    await save();
+    assert.deepEqual(focused, [{ tab: 'identity', field }], 'The helper opens the native details before focusing');
+    assert.deepEqual(writes, []);
+    assert.deepEqual(navigations, []);
+    assert.equal(editor.saving(), false);
+    assert.match(notifications.at(-1)?.message ?? '', /Nog invullen/);
+  }
+});
+
+test('blank or invalid stock input restores the previous value without booking a correction', async () => {
+  for (const value of ['', ' \t ', 'not a number', '-1', '1.5', 'Infinity', '9007199254740992']) {
+    const { editor } = harness();
+    const level = { locationId: 3, quantity: 24 };
+    const field = { value };
+    const writes: number[] = [];
+    editor.stockDraft.set(17);
+    editor.saveStock = async (locationId: number) => { writes.push(locationId); };
+    await editor.quickSetStock(level, field);
+    assert.equal(field.value, '24', `Restore previous stock for ${JSON.stringify(value)}`);
+    assert.equal(editor.stockDraft(), 17, 'Invalid input cannot reach the correction draft');
+    assert.deepEqual(writes, []);
+  }
+});
+
+test('an explicitly entered zero still books the intended stock correction once', async () => {
+  const { editor } = harness();
+  const level = { locationId: 3, quantity: 24 };
+  const field = { value: '0' };
+  const writes: { locationId: number; quantity: number }[] = [];
+  editor.stockLevels.set([level]);
+  editor.saveStock = async (locationId: number) => {
+    writes.push({ locationId, quantity: editor.stockDraft() });
+    editor.stockLevels.set([{ ...level, quantity: editor.stockDraft() }]);
+  };
+  await editor.quickSetStock(level, field);
+  assert.deepEqual(writes, [{ locationId: 3, quantity: 0 }]);
+  assert.equal(field.value, '0');
+  assert.equal(editor.stockDraft(), 0);
+});
+
+test('leaving a stock field during another write cannot start a second correction', async () => {
+  for (const flag of ['stockSaving', 'saving', 'photoUploading', 'agreementBusy', 'translationSaving']) {
+    const { editor } = harness();
+    const writes: number[] = [];
+    const field = { value: '0' };
+    editor[flag].set(true);
+    editor.saveStock = async (locationId: number) => { writes.push(locationId); };
+    await editor.quickSetStock({ locationId: 3, quantity: 24 }, field);
+    assert.equal(field.value, '24', flag);
+    assert.equal(editor.stockDraft(), null, flag);
+    assert.deepEqual(writes, [], flag);
+  }
 });
