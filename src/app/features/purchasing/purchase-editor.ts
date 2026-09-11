@@ -1913,7 +1913,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
     .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.purchase-summary.erp-workspace__sidebar{margin-top:0}
     :is(.section-toggle,.section-heading){display:flex;width:100%;min-height:72px;align-items:center;gap:10px;padding:12px 14px;border:0;background:var(--surface);text-align:left}
-    .section-toggle{cursor:pointer}.section-step{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:750}
+    .section-toggle{cursor:pointer}
+    /* One step per screen on a phone: the header is a title, the chevron goes. */
+    @media(max-width:679px){.section-toggle{pointer-events:none}.section-toggle .section-chevron{display:none}}
+    .section-step{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:750}
     .section-title-block{display:block;min-width:0;flex:1}.section-name{display:block;font-size:15px;font-weight:700}.section-summary{display:block;overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
     .section-chevron{flex:none;color:var(--muted)}.section-chevron--open{transform:rotate(180deg)}.section-body{padding:14px 14px 0;border-top:1px solid var(--line);background:var(--surface-2)}
 

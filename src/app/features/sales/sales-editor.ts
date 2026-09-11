@@ -1683,6 +1683,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .section-toggle__chev { color:var(--muted);font-size:18px;transition:transform .2s }
     .section-toggle__chev--open { transform:rotate(90deg) }
     .form-card .collapse--open { border-top:1px solid var(--line) }
+    /* One step per screen on a phone: the step's card is always open, its header is a title, not a toggle. */
+    @media(max-width:679px) { .form-card .section-toggle { pointer-events:none } .section-toggle__chev { display:none } .form-card .collapse { grid-template-rows:1fr;border-top:1px solid var(--line) } .form-card .collapse>.collapse__inner { overflow:visible } }
     .card-intro,.panel-help { margin:0 0 14px;color:var(--muted);font-size:12px }
     .progressive-panel,.line-pricing,.cost-breakdown { border:1px solid var(--line);border-radius:13px;background:var(--surface-2);overflow:hidden }
     .progressive-panel { margin-top:4px }
@@ -3657,7 +3659,7 @@ export class SalesEditor {
   scrollToSection(id: string): void {
     if (!this.desktop.active()) {
       this.phoneStep.set(this.stepOf(id as (typeof this.workflowSections)[number]['id']));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      this.scrollToPhoneStep();
       return;
     }
     if (this.workflowSections.some((item) => item.id === id)) {
