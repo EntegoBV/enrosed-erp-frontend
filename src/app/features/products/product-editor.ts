@@ -302,7 +302,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                       [attr.aria-selected]="activeTab() === tab.id" [attr.aria-controls]="tab.id"
                       (click)="showTab(tab.id)">
                 <span class="workflow-nav__mark" aria-hidden="true">{{ tabState(tab.id) === 'warn' ? '!' : tabState(tab.id) === 'done' ? '✓' : i + 1 }}</span>
-                <span class="workflow-nav__copy"><b>{{ tab.label }}</b><small>{{ tabHint(tab.id) || tabDescription(tab.id) }}</small></span>
+                <span class="workflow-nav__copy"><b>{{ phoneTabLabel(tab.id) }}</b><small>{{ tabHint(tab.id) || phoneTabHint(tab.id) }}</small></span>
               </button>
             }
           </div>
@@ -2036,6 +2036,16 @@ export class ProductEditor implements OnDestroy {
 
   tabIcon(id: string): string {
     return ({ identity: 'products', media: 'media', packaging: 'purchase', purchasing: 'suppliers', sales: 'sales', stock: 'stock', agreements: 'pdf', publication: 'countries' } as Record<string, string>)[id] ?? 'products';
+  }
+
+  /** Short names for the phone pill; the desk nav keeps the full ones. */
+  phoneTabLabel(id: string): string {
+    return ({ identity: 'Basis', media: 'Foto’s', packaging: 'Omdoos', purchasing: 'Inkoop', sales: 'Verkoop', stock: 'Voorraad', agreements: 'Afspraken', publication: 'Website' } as Record<string, string>)[id]
+      ?? this.tabs().find((tab) => tab.id === id)?.label ?? id;
+  }
+
+  phoneTabHint(id: string): string {
+    return ({ identity: 'naam, kleur, maten', media: 'galerij', packaging: 'inhoud & maten', purchasing: 'EXW & kostprijs', sales: 'prijs & marge', stock: 'per locatie', agreements: 'voor de leverancier', publication: 'website & orderapp' } as Record<string, string>)[id] ?? '';
   }
 
   tabDescription(id: string): string {

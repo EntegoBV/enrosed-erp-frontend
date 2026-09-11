@@ -268,9 +268,10 @@
     .editor-section-picker, .editor-nav-label, .subnav .erp-workspace__nav-rail, .editor-translation-link { display: none; }
     /* The step pill of the phone editor: the shared glass pill, not sticky
        on its own (the section bar above already is), every section a stop. */
-    .product-mobile-steps.workflow-nav { position: static; display: grid; margin: 0; padding: 4px; }
-    .product-mobile-steps .workflow-nav__item { min-height: 56px; }
-    .product-mobile-steps .workflow-nav__copy small { max-width: 92px; }
+    .product-mobile-steps.workflow-nav { position: static; display: grid; grid-auto-columns: max-content; margin: 0; padding: 4px; }
+    .product-mobile-steps .workflow-nav__item { min-height: 56px; padding: 6px 12px 5px; }
+    .product-mobile-steps .workflow-nav__copy b { overflow: visible; }
+    .product-mobile-steps .workflow-nav__copy small { max-width: 118px; }
     .editor-canvas { scroll-margin-top: calc(var(--product-header-h) + 86px); }
     .editor-section-note { display: none; }
     .editor-canvas[data-tab='media'] > .editor-section-note, .editor-canvas[data-tab='stock'] > .editor-section-note, .editor-canvas[data-tab='agreements'] > .editor-section-note { display: flex; margin: 0 4px 12px; }
