@@ -11,6 +11,7 @@ import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
+import { PurchasePaymentResult } from './purchase-payment-result';
 import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -52,7 +53,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentResult, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -829,6 +830,7 @@ type DeskRow =
                       <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span>
                     </div>
                   }
+                  <app-purchase-payment-result [view]="data" [editable]="true" [busy]="payingBusy() || saving() || payments() === null" (manage)="reviewPayment($event)" />
                 }
 
                 @case ('files') {
@@ -1172,7 +1174,7 @@ type DeskRow =
               <div class="field span-2">
                 <label class="pay-settle">
                   <input type="checkbox" [checked]="pay.settles" (change)="paying.set({ ...pay, settles: $any($event.target).checked })" />
-                  <span><b>Slotbetaling: hiermee is alles vereffend</b><small>Ook als het bedrag afwijkt van de afspraak. Het verschil staat daarna op de order als te veel of te weinig betaald.</small></span>
+                  <span><b>Volledig betaald · {{ paymentGroupLabel(pay.payee) }}</b><small>Er volgt geen betaling meer voor deze hele groep. Een lager eindbedrag telt na opslaan mee bij Extra opbrengst uit betalingen.</small></span>
                 </label>
               </div>
               }

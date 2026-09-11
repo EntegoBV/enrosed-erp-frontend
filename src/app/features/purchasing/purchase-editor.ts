@@ -25,6 +25,7 @@ import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
+import { PurchasePaymentResult } from './purchase-payment-result';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
@@ -97,7 +98,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentResult, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1269,6 +1270,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               @if (data.costing.totals.extraRevenueEur) {
                 <p class="pay-ours">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p>
               }
+              <app-purchase-payment-result [view]="data" [editable]="true" [busy]="payingBusy() || saving() || payments() === null" (manage)="reviewPayment($event)" />
             </section>
 
             <!-- The container's diary: agreements, then the receipt, the
@@ -1587,7 +1589,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <div class="field span-2">
                 <label class="pay-settle">
                   <input type="checkbox" [checked]="pay.settles" (change)="paying.set({ ...pay, settles: $any($event.target).checked })" />
-                  <span><b>Slotbetaling: hiermee is alles vereffend</b><small>Ook als het bedrag afwijkt van de afspraak. Het verschil staat daarna op de order als te veel of te weinig betaald.</small></span>
+                  <span><b>Volledig betaald · {{ paymentGroupLabel(pay.payee) }}</b><small>Er volgt geen betaling meer voor deze hele groep. Een lager eindbedrag telt na opslaan mee bij Extra opbrengst uit betalingen.</small></span>
                 </label>
               </div>
               }
@@ -2195,6 +2197,23 @@ export class PurchaseEditor {
   editPayment(payment: PurchasePayment): void {
     this.paying.set({ id: payment.id, amount: payment.amount, currency: payment.currency, paidOn: payment.paidOn,
       label: payment.label ?? '', payee: payment.payee ?? 'SUPPLIER', files: [], settles: !!payment.settles });
+  }
+
+  paymentGroupLabel(payee: Payee): string {
+    return { SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport', SEPARATE: 'Inspectie & andere kosten', OTHER: 'Andere betalingen' }[payee];
+  }
+
+  /** Confirm the existing payment, preserving its amount and original recorded FX. */
+  reviewPayment(payee: Payee): void {
+    if (this.payingBusy() || this.saving() || this.paying() || payee === 'OTHER') return;
+    const payments = this.paymentsTo(payee);
+    const payment = payments.find(item => item.settles)
+      ?? [...payments].sort((a, b) => b.paidOn.localeCompare(a.paidOn) || b.id - a.id)[0];
+    if (!payment || payment.orderId !== this.view()?.order.id) return;
+    this.editPayment(payment);
+    if (!this.reconciliationStream(payee)?.finalized) {
+      this.paying.update(current => current ? { ...current, settles: true } : current);
+    }
   }
 
   /** Attaches the bank statement to a payment that was noted without one. */

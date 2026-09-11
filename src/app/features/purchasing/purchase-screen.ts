@@ -35,7 +35,8 @@ export class PurchaseScreen {
   private readonly viewer = viewChild(PurchaseView);
   private openedPaymentsFor: object | null = null;
   private openedPaymentsId = '';
-  private pendingPaymentsFocus: { screen: object; id: string; fallback: HTMLElement | null } | null = null;
+  private openedPaymentsSection = '';
+  private pendingPaymentsFocus: { screen: object; id: string; section: string; fallback: HTMLElement | null } | null = null;
 
   constructor() {
     effect(() => this.openRequestedSection());
@@ -49,16 +50,17 @@ export class PurchaseScreen {
     const editor = this.editor();
     const viewer = this.viewer();
     const screen = desk ?? editor ?? viewer;
-    if (section !== 'payments') {
+    if (section !== 'payments' && section !== 'payment-result') {
       this.openedPaymentsFor = null;
       this.pendingPaymentsFocus = null;
       return;
     }
     if (!screen || screen.view()?.order.id !== Number(id)
-      || (this.openedPaymentsFor === screen && this.openedPaymentsId === id)) return;
+      || (this.openedPaymentsFor === screen && this.openedPaymentsId === id && this.openedPaymentsSection === section)) return;
     this.openedPaymentsFor = screen;
     this.openedPaymentsId = id;
-    this.pendingPaymentsFocus = { screen, id, fallback: null };
+    this.openedPaymentsSection = section;
+    this.pendingPaymentsFocus = { screen, id, section, fallback: null };
     untracked(() => {
       if (desk) desk.railTab.set('pay');
       else if (editor) editor.jumpToSection('purchase-payments-section', undefined, false);
@@ -70,10 +72,18 @@ export class PurchaseScreen {
   private focusRequestedSection(): void {
     const pending = this.pendingPaymentsFocus;
     if (!pending) return;
-    if (this.id() !== pending.id || this.section() !== 'payments'
+    if (this.id() !== pending.id || this.section() !== pending.section
       || (this.desk() ?? this.editor() ?? this.viewer()) !== pending.screen
       || (pending.fallback && document.activeElement !== pending.fallback)) {
       this.pendingPaymentsFocus = null;
+      return;
+    }
+    if (pending.section === 'payment-result') {
+      const result = document.getElementById('purchase-payment-result');
+      if (!result) return;
+      this.pendingPaymentsFocus = null;
+      result.scrollIntoView({ behavior: 'instant', block: 'start' });
+      result.focus({ preventScroll: true });
       return;
     }
     const terms = document.getElementById('purchase-advance-invoices');

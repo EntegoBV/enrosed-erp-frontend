@@ -11,7 +11,7 @@ const source = await readFile(new URL('../src/app/features/purchasing/purchase-s
 const parsed = ts.createSourceFile('purchase-screen.ts', source, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PurchaseScreen');
 assert.ok(original);
-const selected = ['openRequestedSection', 'focusRequestedSection', 'openedPaymentsFor', 'openedPaymentsId', 'pendingPaymentsFocus'];
+const selected = ['openRequestedSection', 'focusRequestedSection', 'openedPaymentsFor', 'openedPaymentsId', 'openedPaymentsSection', 'pendingPaymentsFocus'];
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && selected.includes(member.name.text));
 assert.equal(members.length, selected.length);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -119,3 +119,18 @@ test('a late response cannot steal focus after the user leaves the waiting payme
   assert.equal(state.calls.length, 0);
   assert.equal(state.screen.pendingPaymentsFocus, null);
 });
+
+for (const kind of ['desk', 'editor', 'viewer'] as const) {
+  test(`${kind} opens the payment-result link at its own card, preserving the financing link`, () => {
+    const state = harness(kind);
+    state.screen.section.set('payment-result');
+    state.screen.openRequestedSection();
+    state.flush();
+    assert.deepEqual(state.calls.slice(-3), [['target', 'purchase-payment-result'], ['scroll'], ['focus']]);
+    assert.equal(state.screen.pendingPaymentsFocus, null);
+    state.screen.section.set('payments');
+    state.screen.openRequestedSection();
+    state.flush();
+    assert.deepEqual(state.calls.slice(-3), [['target', 'purchase-advance-invoices'], ['scroll'], ['focus']]);
+  });
+}
