@@ -3852,7 +3852,7 @@ a.desk-kpi{text-decoration:none}
 /* A laptop keeps the rail beside the table: the sidebar folds to its icon rail
    on these widths (see App.railed), so the desk has the room. Only a narrow
    desk stacks the rail under the table. */
-@media(max-width:1439px){.desk-body{grid-template-columns:minmax(0,1fr) 300px;gap:14px}.desk-facts>div{grid-template-columns:104px minmax(0,1fr)}}
+@media(max-width:1439px){.desk-body{grid-template-columns:minmax(0,1fr) 300px;gap:14px}.desk-facts>div{grid-template-columns:104px minmax(0,1fr)}.desk-tabs{overflow-x:auto;scrollbar-width:none}.desk-tabs::-webkit-scrollbar{display:none}.desk-tabs button{flex:1 0 auto;padding:0 7px;font-size:11px}}
 @media(max-width:1179px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
 @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{align-self:flex-start;max-width:100%}}
@@ -3875,7 +3875,18 @@ a.desk-kpi{text-decoration:none}
 .attn-strip__copy b{overflow:hidden;font-size:13.5px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
 .attn-strip__copy small{overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 .attn-strip__chev{color:var(--muted-2);font-size:16px}
-@media(min-width:1024px){.attn-strip{display:flex;align-items:center;gap:14px;padding:8px 12px}.attn-strip__head{margin:0;flex:none}.attn-strip__items{flex:1}.attn-strip__item{flex:0 1 auto;min-height:40px}}
+@media(min-width:1024px){.attn-strip{display:flex;align-items:flex-start;gap:14px;padding:8px 12px}.attn-strip__head{margin:0;flex:none;min-height:40px}.attn-strip__items{flex:1}.attn-strip__item{flex:1 1 280px;max-width:440px;min-height:40px}}
+/* On a phone several items become one swipe rail of cards, so the strip
+   stays one hand high and the list is still on the first screen. */
+@media(max-width:679px){
+  .attn-strip--rail{padding-right:0}
+  .attn-strip--rail .attn-strip__head{padding-right:14px}
+  .attn-strip--rail .attn-strip__items{flex-wrap:nowrap;gap:8px;margin:0 -14px 0 0;padding:0 14px 2px 0;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-inline:0;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .attn-strip--rail .attn-strip__items::-webkit-scrollbar{display:none}
+  .attn-strip--rail .attn-strip__item{flex:0 0 min(78vw,300px);scroll-snap-align:start}
+}
+.attn-strip__more{margin-left:auto;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.attn-strip__more:hover{text-decoration:underline}
 
 /* One search field for every list: icon left, clear cross right. */
 .search-control{position:relative;min-width:0}

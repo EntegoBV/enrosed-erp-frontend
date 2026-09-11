@@ -41,10 +41,13 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     <div class="content">
       @if (!archiveTab() && attentionRows().length) {
         <!-- What needs a buyer first: an open payment, a missing week, a container to book in. -->
-        <section class="attn-strip attn-strip--warn" aria-label="Actie vereist">
+        <section class="attn-strip attn-strip--warn" [class.attn-strip--rail]="attentionRows().length > 1" aria-label="Actie vereist">
           <div class="attn-strip__head">
             <b>Actie vereist</b>
-            <span class="attn-strip__count">{{ attentionRows().length }}</span>
+            <span class="attn-strip__count">{{ attentionCount() }}</span>
+            @if (attentionRows().length > 1) {
+              <button class="attn-strip__more" type="button" (click)="statusFilter.set('ATTENTION')">Alles tonen ›</button>
+            }
           </div>
           <div class="attn-strip__items">
             @for (row of attentionRows(); track row.order.id) {
@@ -442,6 +445,7 @@ export class PurchaseList {
   readonly archiveTab = signal(false);
   readonly activeOrders = computed(() => this.orders().filter((row) => !row.order.archivedAt));
   /** Working containers with an open point, newest first: the strip above the list. */
+  readonly attentionCount = computed(() => this.activeOrders().filter((row) => row.attention?.length).length);
   readonly attentionRows = computed(() => this.activeOrders()
     .filter((row) => row.attention?.length)
     .sort((a, b) => b.order.orderDate.localeCompare(a.order.orderDate) || (b.order.id ?? 0) - (a.order.id ?? 0))

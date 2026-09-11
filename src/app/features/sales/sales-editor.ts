@@ -1328,7 +1328,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <button class="sales-mobile-dock__next" type="button" (click)="nextPhoneStep()"
                     [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">
               <span class="sales-mobile-dock__context">
-                <small>Volgende · stap {{ phoneStep() + 2 }} van 4</small>
+                <small>Volgende</small>
                 <strong>{{ phoneStepLabels[phoneStep() + 1] }}</strong>
               </span>
               <i aria-hidden="true">›</i>

@@ -62,7 +62,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       @if (attentionCount()) {
         <!-- The card appears and disappears; without its own bottom margin it
              lands right on top of the search bar. -->
-        <section class="attn-strip" aria-label="Klant wacht op ons">
+        <section class="attn-strip" [class.attn-strip--rail]="openWork().length > 1" aria-label="Klant wacht op ons">
           <div class="attn-strip__head">
             <b>Klant wacht op ons</b>
             <span class="attn-strip__count">{{ attentionCount() }}</span>

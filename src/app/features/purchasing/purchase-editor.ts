@@ -1467,7 +1467,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     (click)="nextPhoneStep()"
                     [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">
               <span class="purchase-mobile-dock__context">
-                <small>Volgende · stap {{ phoneStep() + 2 }} van {{ phoneStepLabels.length }}</small>
+                <small>Volgende</small>
                 <strong>{{ phoneStepLabels[phoneStep() + 1] }}</strong>
               </span>
               <i aria-hidden="true">›</i>
