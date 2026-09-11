@@ -62,38 +62,33 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       @if (attentionCount()) {
         <!-- The card appears and disappears; without its own bottom margin it
              lands right on top of the search bar. -->
-        <div class="card" style="border-color:var(--rose-line);margin-bottom:14px">
-          <div class="card__head">
-            <h2>Klant wacht op ons</h2>
-            <span class="spacer"></span>
-            <span class="badge badge--todo">{{ attentionCount() }}</span>
+        <section class="sales-attention" aria-label="Klant wacht op ons">
+          <div class="sales-attention__head">
+            <b>Klant wacht op ons</b>
+            <span class="sales-attention__count">{{ attentionCount() }}</span>
           </div>
-          <div class="card__body card__body--flush">
-            <div class="list">
-              @for (item of openWork(); track $index) {
-                <a class="list-item" [routerLink]="['/sales', item.orderId]">
-                  <span class="thumb thumb--placeholder">{{ workIcon(item.kind) }}</span>
-                  <div class="list-item__body">
-                    <div class="list-item__title">{{ item.title }}</div>
-                    <div class="list-item__meta">
-                      {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
-                    </div>
-                  </div>
-                  <span class="list-item__chev">›</span>
-                </a>
-              }
-            </div>
+          <div class="sales-attention__items">
+            @for (item of openWork(); track $index) {
+              <a class="sales-attention__item" [routerLink]="['/sales', item.orderId]">
+                <span class="sales-attention__icon" aria-hidden="true">{{ workIcon(item.kind) }}</span>
+                <span class="sales-attention__copy">
+                  <b>{{ item.title }}</b>
+                  <small>{{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }</small>
+                </span>
+                <span class="sales-attention__chev" aria-hidden="true">›</span>
+              </a>
+            }
           </div>
-        </div>
+        </section>
       }
 
+      <!-- One toolbar: documents and scope on the left, search and filters
+           on the right; on a phone they stack in that order. -->
+      <div class="sales-toolbar">
       <app-sales-document-navigation [scope]="businessScope()" [tab]="docTab()"
         [counts]="documentCounts()" [loading]="loading()" [outstandingOnly]="outstandingOnly()"
         (scopeChange)="switchScope($event)" (tabChange)="switchTab($event)" (outstandingChange)="filterOutstanding($event)" />
 
-      <!-- One quiet row: search grows, two pills open native pickers,
-           the count sits at the end - no card, no grid of chips. -->
-      <!-- One Filter button; the choices unfold underneath, catalogue-style. -->
       <div class="sales-filterbar">
         <div class="search-control search-control--bar">
           <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -155,6 +150,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
           </div>
         }
       </div>
+      </div>
 
       <p id="sales-menu-help" class="sr-only">Acties: houd de rij ingedrukt op een aanraakscherm, gebruik de rechtermuisknop of druk op Shift+F10.</p>
       <ng-template #documentRow let-row let-grouped="grouped">
@@ -197,7 +193,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                   @if (row.invoicedAs && row.invoicedAsId) {
                     · factuur <a class="so-link" [routerLink]="['/sales', row.invoicedAsId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.invoicedAs + ' openen'">{{ row.invoicedAs }}</a>
                   }
-                  @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT') { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
                   @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate) {
                     · vervalt {{ row.order.invoiceDueDate | dateNl }}
                   }
@@ -233,6 +228,9 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
               <div class="list-item__end list-item__end--stacked so-row__flags">
                 @if (websiteRequest(row.order)) {
                   <span class="so-source-mini">Websiteaanvraag</span>
+                }
+                @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT') {
+                  <span class="so-status-mini so-status-mini--neutral channel-flag">{{ channelLabel(row.order.salesChannel) }}</span>
                 }
                 <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
                   <i aria-hidden="true"></i>{{ statusOf(row).label }}
@@ -275,6 +273,11 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       </ng-template>
 
       <div class="card" id="sales-document-results" role="tabpanel" [attr.aria-labelledby]="'sales-tab-' + docTab()" [attr.aria-busy]="loading()" tabindex="0">
+        @if (groupedRows().length) {
+          <div class="so-table-head" aria-hidden="true">
+            <span>Klant · document</span><span>Omvang</span><span>Status</span><span class="so-table-head__amount">Bedrag</span>
+          </div>
+        }
         <div class="list">
           @for (entry of groupedRows(); track entry.key) {
             @if (entry.kind === 'PARTNER_CONTAINER') {
@@ -526,32 +529,53 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     }
   `,
   styles: `
+    /* ------------------------------------------------------------ list page */
     /* Order rows: the customer and the figure share the top line, the
        document line and size line run under it at full width, and every
-       flag sits together on the last row. Wide screens line the same parts
-       up as columns so twenty rows read like a table. */
-    .so-row { display:grid;grid-template-columns:minmax(0,1fr) auto 14px;grid-template-areas:'title amount chev' 'doc doc chev' 'size size chev' 'flags flags chev';column-gap:12px;row-gap:3px;align-items:center;padding:12px 14px }
+       flag sits together on the last row. From 1024px the same parts line
+       up under a column header so twenty rows read like a table. */
+    .so-row { display:grid;grid-template-columns:minmax(0,1fr) auto 14px;grid-template-areas:'title amount chev' 'doc doc chev' 'size size chev' 'flags flags chev';column-gap:12px;row-gap:3px;align-items:center;padding:13px 14px }
     .so-row .list-item__body { display:contents }
-    .so-row .list-item__title { grid-area:title;min-width:0 }
+    .so-row .list-item__title { grid-area:title;min-width:0;font-size:15px }
     .so-row .so-row__doc { grid-area:doc;min-width:0;line-height:1.4 }
-    .so-row .so-row__size { grid-area:size;min-width:0;line-height:1.4 }
+    .so-row .so-row__size { grid-area:size;min-width:0;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    .so-row .so-row__doc { overflow:hidden;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2 }
     .so-row .so-row__amount { grid-area:amount;display:grid;justify-items:end;gap:2px;text-align:right;white-space:nowrap }
     .so-row .so-row__amount .num { font-size:15px;letter-spacing:-.01em;font-variant-numeric:tabular-nums }
-    .so-row .so-row__amount small { color:var(--muted);font-size:11px;white-space:normal;text-align:right;max-width:150px }
-    .so-row .so-row__flags { grid-area:flags;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:5px;max-width:none;margin-top:3px;text-align:left }
+    .so-row .so-row__amount small { max-width:150px;color:var(--muted);font-size:11px;text-align:right;white-space:normal }
+    .so-row .so-row__flags { grid-area:flags;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:5px;max-width:none;margin-top:4px;text-align:left }
     .so-row .so-row__flags:empty { display:none }
     .so-row .list-item__chev { grid-area:chev;align-self:center }
-    .so-row .so-row__size { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
-    /* The document line may take two lines everywhere: a clipped "PA…" tag told nobody anything. */
-    .so-row .so-row__doc { overflow:hidden;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2 }
+    .so-table-head { display:none }
+    .sales-toolbar { display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-bottom:12px }
+    .sales-toolbar>app-sales-document-navigation { flex:1 1 420px;min-width:0 }
+    .sales-toolbar>.sales-filterbar { flex:1 1 360px;margin:0 }
     @media(min-width:1024px){
-      .so-row { grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,.9fr) auto 14px;grid-template-areas:'title size flags amount chev' 'doc size flags amount chev';column-gap:16px;row-gap:2px;padding:12px 16px }
-      .so-row .so-row__size { align-self:center }
-      .so-row .so-row__flags { align-self:center;margin-top:0 }
+      .so-row,.so-table-head { --so-cols:minmax(0,1.7fr) minmax(0,.9fr) minmax(0,1.2fr) 128px }
+      .so-row { grid-template-columns:var(--so-cols) 14px;grid-template-areas:'title size flags amount chev' 'doc size flags amount chev';column-gap:18px;row-gap:2px;padding:12px 18px }
+      .so-row .so-row__size,.so-row .so-row__flags { align-self:center }
+      .so-row .so-row__flags { margin-top:0 }
       .so-row .list-item__end .so-status-mini { white-space:nowrap }
+      .so-table-head { display:grid;grid-template-columns:var(--so-cols) 14px;column-gap:18px;padding:9px 18px 8px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.07em;text-transform:uppercase }
+      .so-table-head__amount { text-align:right }
+      .sales-toolbar { flex-wrap:nowrap;align-items:flex-start }
+      .sales-toolbar>.sales-filterbar { flex:1 1 380px;justify-content:flex-end }
     }
     .swipe--grouped .so-row { padding-left:26px }
     @media(max-width:600px){ .swipe--grouped .so-row { padding-left:16px } }
+
+    /* What waits on us: a quiet rose strip, not a second full card. */
+    .sales-attention { margin-bottom:12px;padding:10px 14px 10px;border:1px solid var(--rose-line);border-radius:16px;background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface)) }
+    .sales-attention__head { display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--rose-dark);font-size:12px }
+    .sales-attention__count { display:inline-grid;min-width:20px;height:20px;padding:0 6px;place-items:center;border-radius:999px;background:var(--rose);color:#fff;font-size:11px;font-weight:750;font-variant-numeric:tabular-nums }
+    .sales-attention__items { display:flex;flex-wrap:wrap;gap:6px }
+    .sales-attention__item { display:flex;flex:1 1 260px;align-items:center;gap:10px;min-width:0;min-height:44px;padding:6px 10px 6px 8px;border:1px solid rgb(255 255 255/.8);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none;box-shadow:0 1px 2px rgb(26 22 20/.05) }
+    .sales-attention__icon { display:grid;width:28px;height:28px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose-dark);font-size:14px;font-weight:800 }
+    .sales-attention__copy { display:grid;min-width:0;flex:1;gap:1px }
+    .sales-attention__copy b { overflow:hidden;font-size:13.5px;font-weight:650;text-overflow:ellipsis;white-space:nowrap }
+    .sales-attention__copy small { overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap }
+    .sales-attention__chev { color:var(--muted-2);font-size:16px }
+    @media(min-width:1024px){ .sales-attention { display:flex;align-items:center;gap:14px;padding:8px 12px } .sales-attention__head { margin:0;flex:none } .sales-attention__items { flex:1 } .sales-attention__item { flex:0 1 auto;min-height:40px } }
     .sales-container:not(:last-child){border-bottom:1px solid var(--line)}
     .sales-container__header{display:flex;align-items:stretch;background:var(--surface)}
     .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;flex:1;min-width:0;min-height:98px;padding:19px 20px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}
@@ -610,9 +634,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       color:var(--rose-dark);font-weight:850 }
 
     .doc-choice { margin-bottom:12px }
-    .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px;padding:12px;
-      border:1px solid var(--line);border-radius:var(--r);background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
-      box-shadow:0 5px 18px rgb(31 25 22/4%) }
+    .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;min-width:0 }
     .sales-load-error { display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
       gap:12px;margin-bottom:14px;padding:14px;border:1px solid var(--danger);border-radius:var(--r-sm);
       background:var(--danger-soft);color:var(--danger) }
