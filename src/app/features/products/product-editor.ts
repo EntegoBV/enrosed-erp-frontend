@@ -1349,7 +1349,20 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @if (!desktop.active()) {
       <nav class="erp-workspace__mobile-actions product-editor-dock"
            aria-label="Product opslaan">
-        <span class="product-editor-dock__context" role="status"><strong>{{ saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Wijzigingen klaar' : 'Alles opgeslagen' }}</strong><small>{{ saveBusy() ? 'Even geduld' : workspaceDirty() ? 'Bewaar deze productvariant' : 'Je kunt verder bewerken' }}</small></span>
+        <!-- A new product has nothing saved yet: the dock says what is still
+             needed before it can be created, not "alles opgeslagen". -->
+        <span class="product-editor-dock__context" role="status">
+          @if (saveBusy()) {
+            <strong>{{ saveActionLabel() }}</strong><small>Even geduld</small>
+          } @else if (isNew()) {
+            <strong>{{ missingFields().length ? 'Nog ' + missingFields().length + ' verplicht' + (missingFields().length === 1 ? ' gegeven' : 'e gegevens') : 'Klaar om aan te maken' }}</strong>
+            <small>{{ missingFields().length ? missingSummary() : 'Alles ingevuld, maak het product aan' }}</small>
+          } @else if (workspaceDirty()) {
+            <strong>Wijzigingen klaar</strong><small>Bewaar deze productvariant</small>
+          } @else {
+            <strong>Alles opgeslagen</strong><small>Je kunt verder bewerken</small>
+          }
+        </span>
         <button class="btn product-editor-dock__save" type="button"
                 [class.btn--primary]="workspaceDirty()"
                 [class.erp-workspace__primary--dirty]="workspaceDirty()"
@@ -3561,6 +3574,8 @@ export class ProductEditor implements OnDestroy {
   }
 
   /** What still has to be filled in before the product can be saved, per section. */
+  /** The first missing fields by name, for the phone dock of a new product. */
+  readonly missingSummary = computed(() => this.missingFields().slice(0, 3).map((item) => item.label).join(', '));
   readonly missingFields = computed(() => {
     const draft = this.draft();
     const missing: { tab: string; field: string; label: string }[] = [];
