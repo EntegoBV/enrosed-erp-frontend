@@ -431,20 +431,26 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
           @if (loading()) {
             <app-skeleton kind="lines" [rows]="3" />
           } @else if (!addingCustomer()) {
-            <p class="tiny muted">Reguliere verkoop aan een klant. Samen inkopen met een partner start vanuit de container; zo blijven voorschot en slotfactuur correct gekoppeld.</p>
-            <a class="btn btn--sm" routerLink="/purchasing" (click)="picking.set(false)">Partnercontainer kiezen ›</a>
-            <div class="per-toggle doc-choice" role="group" aria-label="Documenttype">
-              <button type="button" [class.on]="newDocType() === 'OFFERTE'"
-                      (click)="newDocType.set('OFFERTE')">Offerte</button>
-              <button type="button" [class.on]="newDocType() === 'FACTUUR'"
-                      (click)="newDocType.set('FACTUUR')">Factuur</button>
+            <!-- First the kind, then the customer, then the way out to a partner
+                 container: the common case reads top to bottom. -->
+            <div class="seg seg--fill doc-choice" role="group" aria-label="Documenttype">
+              <button class="seg__item" type="button" [class.on]="newDocType() === 'OFFERTE'"
+                      [attr.aria-pressed]="newDocType() === 'OFFERTE'" (click)="newDocType.set('OFFERTE')">
+                <span>Offerte</span>
+              </button>
+              <button class="seg__item" type="button" [class.on]="newDocType() === 'FACTUUR'"
+                      [attr.aria-pressed]="newDocType() === 'FACTUUR'" (click)="newDocType.set('FACTUUR')">
+                <span>Factuur</span>
+              </button>
             </div>
-            @if (newDocType() === 'FACTUUR') {
-              <p class="tiny muted" style="margin:-4px 0 10px">
+            <p class="tiny muted doc-choice__why">
+              @if (newDocType() === 'FACTUUR') {
                 Meteen een factuur, zonder offerte vooraf — voor directe verkoop.
                 Vanuit een geaccepteerde offerte maak je een factuur via de offerte zelf.
-              </p>
-            }
+              } @else {
+                Een offerte voor een klant; na ondertekening maak je er met één klik een factuur van.
+              }
+            </p>
             <div class="field">
               <label class="req" for="so-customer">Klant</label>
               <select class="select" id="so-customer" [ngModel]="chosen()"
@@ -463,6 +469,10 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
               Op de beurs staat de klant vaak nog niet in het systeem. Voeg hem hier meteen toe
               zonder de order te verlaten.
             </p>
+            <div class="doc-partner">
+              <span><b>Samen inkopen met een partner?</b><small>Dat start vanuit de container, zo blijven voorschot en slotfactuur gekoppeld.</small></span>
+              <a class="btn btn--sm" routerLink="/purchasing" (click)="picking.set(false)">Container kiezen ›</a>
+            </div>
           } @else {
             <p class="legend"><b>*</b> verplicht — de rest kan je later aanvullen.</p>
             <div class="form-grid">
@@ -622,7 +632,11 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     .website-request-item__icon { border:1px solid var(--rose-line);background:#fff!important;
       color:var(--rose-dark);font-weight:850 }
 
-    .doc-choice { margin-bottom:12px }
+    .doc-choice { margin-bottom:8px }
+    .doc-choice__why { margin:0 2px 14px;line-height:1.45 }
+    .doc-partner { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px 14px;border:1px dashed var(--line-strong);border-radius:14px;background:var(--surface-2) }
+    .doc-partner>span { display:grid;gap:2px;min-width:0 }.doc-partner b { font-size:12.5px }.doc-partner small { color:var(--muted);font-size:11.5px;line-height:1.4 }.doc-partner .btn { flex:none }
+    @media(max-width:420px){ .doc-partner { align-items:stretch;flex-direction:column } .doc-partner .btn { width:100% } }
     .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;min-width:0 }
     .sales-load-error { display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
       gap:12px;margin-bottom:14px;padding:14px;border:1px solid var(--danger);border-radius:var(--r-sm);

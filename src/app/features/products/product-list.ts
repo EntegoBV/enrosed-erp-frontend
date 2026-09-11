@@ -184,6 +184,9 @@ interface ProductSwipe {
             </h2>
           }
           <div class="card">
+            <div class="product-table-head" aria-hidden="true">
+              <span>Product</span><span>Voorraad</span><span>Kostprijs</span><span>Catalogusprijs</span>
+            </div>
             <div class="list">
             @for (group of section.groups; track group.key) {
               <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
@@ -222,6 +225,9 @@ interface ProductSwipe {
           </button>
           @if (showDemoFold()) {
             <div class="card">
+              <div class="product-table-head" aria-hidden="true">
+                <span>Product</span><span>Voorraad</span><span>Kostprijs</span><span>Catalogusprijs</span>
+              </div>
               <div class="list">
                 @for (group of demoGroups(); track group.key) {
                   <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
@@ -649,6 +655,27 @@ interface ProductSwipe {
     .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block;
       border: 1px solid rgb(0 0 0 / 14%); }
 
+    .product-table-head { display: none; }
+    /* A desk reads the catalogue as a table: the name, then stock, cost and
+       catalogue price in fixed columns under one head. The per-row labels
+       give way to that head. */
+    @media (min-width: 1024px) {
+      .product-table-head, .product-row__end, .group-head__end { --product-cols: 128px 104px 112px; }
+      .product-table-head {
+        display: grid; grid-template-columns: minmax(0, 1fr) var(--product-cols); column-gap: 14px;
+        padding: 9px 14px 8px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+        color: var(--muted); font-size: 10.5px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase;
+      }
+      .product-table-head span:not(:first-child) { text-align: right; }
+      .product-row__end, .group-head__end { display: grid; grid-template-columns: var(--product-cols); column-gap: 14px; align-items: center; }
+      .product-row__stock { justify-items: end; gap: 2px; }
+      .product-row__stock > span { display: none; }
+      .product-row__prices { display: contents; }
+      .product-row__prices > div { display: grid; justify-items: end; }
+      .product-row__prices > div > span { display: none; }
+      .product-row__prices strong { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+      .stock { font-size: 12px; }
+    }
     /* Phone: "te verwachten" wraps instead of running into the colour dots. */
     @media (max-width: 679px) {
       .stock-expected { white-space: normal; max-width: 82px; text-align: right; line-height: 1.2; }
