@@ -1,4 +1,4 @@
-import type { QuoteStatus, SalesOrder, SalesPaymentSummary } from '../../core/api/models';
+import type { QuoteStatus, SalesOrder, SalesPaymentSummary, SalesOrderView } from '../../core/api/models';
 
 /**
  * Machine-readable source marker used by the public quote endpoint.
@@ -37,6 +37,20 @@ function splitWebsiteRequestNotes(notes: string): {
 export function isWebsiteQuoteRequest(order: SalesOrder | null | undefined): boolean {
   return order?.status === 'CONCEPT'
     && !!order.internalNotes?.trimStart().startsWith(WEBSITE_QUOTE_REQUEST_PREFIX);
+}
+
+/** The customer's original request stays customer-authored after the quote is sent or invoiced. */
+export function hasWebsiteCustomerMessage(order: SalesOrder | null | undefined): boolean {
+  return order?.salesChannel?.trim().toUpperCase() === 'WEBSITE'
+    || !!order?.internalNotes?.trimStart().startsWith(WEBSITE_QUOTE_REQUEST_PREFIX);
+}
+
+export function customerMessageIsReadOnly(view: SalesOrderView): boolean {
+  return view.customerRequestMessageReadonly === true || hasWebsiteCustomerMessage(view.order);
+}
+
+export function originalCustomerMessage(view: SalesOrderView): string {
+  return view.customerRequestMessageReadonly === true ? (view.customerRequestMessage ?? '') : (view.order.notes ?? '');
 }
 
 /** Hide the machine header while leaving any real team note editable. */
@@ -133,6 +147,16 @@ export function statusClass(status: QuoteStatus): string {
     case 'BEKEKEN': return 'blue';
     default: return 'neutral';
   }
+}
+
+/** Shipment planning never implies that a concept was issued or paid. */
+export function fulfillmentStatusOf(view: Pick<SalesOrderView, 'order' | 'fulfillment' | 'invoicedAsId'>): { label: string; cls: string } | null {
+  if (!view.fulfillment) return null;
+  if (['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(view.order.status)) return { label: 'Levering vervallen', cls: 'neutral' };
+  if (view.invoicedAsId && view.order.docType !== 'FACTUUR') return { label: 'Levering via factuur', cls: 'neutral' };
+  if (view.order.goodsShippedAt || view.fulfillment.status === 'SHIPPED') return { label: 'Bestelling verzonden', cls: 'ok' };
+  if (view.fulfillment.status === 'WAITING_FOR_STOCK') return { label: 'Wacht op voorraad', cls: 'gold' };
+  return { label: view.fulfillment.part === 2 ? 'Nalevering gepland' : 'Eerste levering', cls: 'blue' };
 }
 
 /**

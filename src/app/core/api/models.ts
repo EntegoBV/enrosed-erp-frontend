@@ -1628,6 +1628,9 @@ export interface AdvanceContents {
 }
 
 export interface SalesOrderView {
+  fulfillment?: SalesFulfillment | null;
+  customerRequestMessageReadonly?: boolean;
+  customerRequestMessage?: string | null;
   advanceContents?: AdvanceContents | null;
   advanceAgreement?: AdvanceAgreement | null;
   settlement?: { revenueEur: number; costEur: number; advanceEur: number; finalSettlement: boolean } | null;
@@ -1644,6 +1647,78 @@ export interface SalesOrderView {
   invoiceStatus?: QuoteStatus | null;
   /** For an invoice: the number of the quote it was made from. */
   sourceQuoteNumber?: string | null;
+}
+
+/** Delivery planning is separate from the document's issued/payment status. */
+export interface SalesFulfillment {
+  groupId: string;
+  rootOrderId: number;
+  part: 1 | 2;
+  status: 'PLANNED' | 'WAITING_FOR_STOCK' | 'SHIPPED';
+  siblingId: number | null;
+  siblingNumber: string | null;
+  financialsLocked: true;
+}
+
+export interface SalesSplitLine {
+  lineId: number;
+  productId: number;
+  description: string;
+  quantity: number;
+  piecesPerCarton: number | null;
+  stockQuantity: number | null;
+  inventoryKnown: boolean;
+}
+
+export interface SalesSplitEligibility {
+  allowed: boolean;
+  reason: string | null;
+  sourceId: number;
+  sourceNumber: string;
+  lines: SalesSplitLine[];
+  existingGroupId: string | null;
+}
+
+export interface SalesSplitRequest {
+  lines: { lineId: number; laterQuantity: number }[];
+  deliveryWeek: string | null;
+  currentFreightEur?: number | null;
+  laterFreightEur?: number | null;
+  currentExtraDiscountPct?: number | null;
+  laterExtraDiscountPct?: number | null;
+}
+
+export interface SalesSplitPartPreview {
+  quantity: number;
+  totalExclVatEur: number;
+  vatEur: number;
+  totalInclVatEur: number;
+  freightEur: number;
+  handlingEur: number;
+  extraLinesEur: number;
+  goodsEur: number;
+}
+
+export interface SalesSplitPreview {
+  previewToken: string;
+  sourceId: number;
+  original: SalesSplitPartPreview;
+  current: SalesSplitPartPreview;
+  later: SalesSplitPartPreview;
+  warnings: string[];
+  deltaExclVatEur: number;
+  deltaInclVatEur: number;
+}
+
+export interface SalesSplitCommitRequest extends SalesSplitRequest {
+  previewToken: string;
+  requestId: string;
+}
+
+export interface SalesSplitResult {
+  groupId: string;
+  current: SalesOrderView;
+  later: SalesOrderView;
 }
 
 /**

@@ -34,7 +34,16 @@ export interface SalesContainerGroup {
   };
 }
 
-export type SalesListEntry = SalesContainerGroup | { kind: 'DOCUMENT'; key: string; row: SalesOrderView };
+export interface SalesSplitGroup {
+  kind: 'SPLIT_ORDER';
+  key: string;
+  groupId: string;
+  rootOrderId: number;
+  rows: SalesOrderView[];
+  summary: { parts: number; totalEur: number; pieces: number; waitingCount: number; shippedCount: number };
+}
+
+export type SalesListEntry = SalesContainerGroup | SalesSplitGroup | { kind: 'DOCUMENT'; key: string; row: SalesOrderView };
 const INACTIVE = new Set(['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const sumMoney = (values: number[]): number => values.reduce((sum, value) => sum + (Number.isFinite(value) ? Math.round(value * 100) : 0), 0) / 100;
 
@@ -42,7 +51,21 @@ const sumMoney = (values: number[]): number => values.reduce((sum, value) => sum
 export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttention: (row: SalesOrderView) => boolean = () => false): SalesListEntry[] {
   const entries: SalesListEntry[] = [];
   const groups = new Map<string, SalesContainerGroup>();
+  const splitGroups = new Map<string, SalesSplitGroup>();
   for (const row of rows) {
+    const split = row.fulfillment;
+    if (split?.groupId && Number.isSafeInteger(split.rootOrderId) && split.rootOrderId > 0
+        && [1, 2].includes(split.part) && !isPartnerDocument(row.order)) {
+      const key = `split-${split.groupId}-${row.order.customerId ?? 'unknown'}`;
+      let group = splitGroups.get(key);
+      if (!group) {
+        group = { kind: 'SPLIT_ORDER', key, groupId: split.groupId, rootOrderId: split.rootOrderId, rows: [],
+          summary: { parts: 0, totalEur: 0, pieces: 0, waitingCount: 0, shippedCount: 0 } };
+        splitGroups.set(key, group); entries.push(group);
+      }
+      group.rows.push(row);
+      continue;
+    }
     const purchaseOrderId = row.order.partnerPurchaseOrderId;
     if (row.order.docType !== 'FACTUUR' || !isPartnerDocument(row.order)
         || !Number.isInteger(purchaseOrderId) || purchaseOrderId! <= 0) {
@@ -58,6 +81,19 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
       groups.set(key, group); entries.push(group);
     }
     group.rows.push(row);
+  }
+  for (const group of splitGroups.values()) {
+    group.rows.sort((a, b) => a.fulfillment!.part - b.fulfillment!.part);
+    // An archived source quote and its invoice can share one part. Count its live document only.
+    const active = group.rows.filter(row => !INACTIVE.has(row.order.status)
+      && !((row.order.docType ?? 'OFFERTE') === 'OFFERTE' && (row.invoicedAsId || row.invoicedAs)));
+    group.summary = {
+      parts: new Set(group.rows.map(row => row.fulfillment!.part)).size,
+      totalEur: sumMoney(active.map(row => row.priced.totals.total)),
+      pieces: active.reduce((sum, row) => sum + (Number.isFinite(row.priced.totals.pieces) ? row.priced.totals.pieces : 0), 0),
+      waitingCount: active.filter(row => !row.order.goodsShippedAt && row.fulfillment!.status === 'WAITING_FOR_STOCK').length,
+      shippedCount: active.filter(row => !!row.order.goodsShippedAt || row.fulfillment!.status === 'SHIPPED').length,
+    };
   }
   for (const group of groups.values()) {
     const active = group.rows.filter(row => !INACTIVE.has(row.order.status));

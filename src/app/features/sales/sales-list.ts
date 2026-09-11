@@ -1,3 +1,7 @@
+import { SalesSplitSheet } from './sales-split-sheet';
+import { salesSplitBlockReason } from './sales-split-state';
+import { fulfillmentStatusOf } from './quote-status';
+import type { SalesSplitResult } from '../../core/api/models';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { invoiceReceivable } from '../finance/incoming-money';
@@ -7,7 +11,7 @@ import { SalesContainerMenu } from './sales-container-menu';
 import { SalesMenuTrigger } from './sales-menu-trigger';
 import { isSalesMenuInteractiveChild } from './sales-menu-gesture';
 import type { PartnerContainerDeletionResult } from '../../core/api/partner-container-deletion-api';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
@@ -35,7 +39,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, NgTemplateOutlet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation, SalesContainerMenu, SalesMenuTrigger],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation, SalesContainerMenu, SalesMenuTrigger, SalesSplitSheet],
   template: `
     <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
@@ -222,14 +226,17 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                 @if (websiteRequest(row.order)) {
                   <span class="so-source-mini">Websiteaanvraag</span>
                 }
-                <div class="strong num">{{ row.priced.totals.total | eur: (partner(row.order) ? 2 : 0) }}</div>
+                <div class="strong num">{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
                 @if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
                   <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
                 }
                 <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
                   <i aria-hidden="true"></i>{{ statusOf(row).label }}
                 </span>
-                @if (row.order.goodsShippedAt) {
+                @if (fulfillmentStatus(row); as delivery) {
+                  <span [class]="'so-status-mini so-status-mini--' + delivery.cls"><i aria-hidden="true"></i>Deel {{ row.fulfillment?.part }} · {{ delivery.label }}</span>
+                }
+                @if (row.order.goodsShippedAt && !row.fulfillment) {
                   <span class="so-status-mini so-status-mini--ok">
                     <i aria-hidden="true"></i>Bestelling verzonden
                   </span>
@@ -304,6 +311,29 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                   }
                 </div>
               </section>
+            } @else if (entry.kind === 'SPLIT_ORDER') {
+              <section class="sales-container sales-container--split" [class.sales-container--open]="groupOpen(entry.key)">
+                <div class="sales-container__header">
+                  <button class="sales-container__toggle" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)" [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)">
+                    <span class="sales-container__identity">
+                      <span class="sales-container__eyebrow">Gesplitste order</span><strong>{{ customerName(entry.rows[0]) }}</strong>
+                      <span class="sales-container__meta">{{ entry.summary.parts }} van 2 delen in dit overzicht · {{ entry.summary.pieces | num }} stuks</span>
+                      <span class="sales-container__badges">
+                        @if (entry.summary.waitingCount) { <span class="so-status-mini so-status-mini--gold"><i aria-hidden="true"></i>{{ entry.summary.waitingCount }} wacht op voorraad</span> }
+                        @if (entry.summary.shippedCount) { <span class="so-status-mini so-status-mini--ok"><i aria-hidden="true"></i>{{ entry.summary.shippedCount }} verzonden</span> }
+                        @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="so-status-mini so-status-mini--blue"><i aria-hidden="true"></i>Leveringen gepland</span> }
+                      </span>
+                    </span>
+                    <span class="sales-container__totals"><small>Getoonde delen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong></span><span class="sales-container__chevron" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <div class="sales-container__invoices" [id]="entry.key + '-parts'" [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
+                  @if (groupOpen(entry.key)) {
+                    <div class="sales-container__tools"><span>Elk deel heeft een eigen document- en leverstatus.</span></div>
+                    @for (row of entry.rows; track row.order.id) { <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" /> }
+                  }
+                </div>
+              </section>
             } @else {
               <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: entry.row, grouped: false }" />
             }
@@ -352,12 +382,15 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       <app-sheet [title]="documentLabel(menuRow.order) + ' ' + menuRow.order.number" (closed)="rowMenu.set(null)">
         <div body>
           <p class="row-menu__who">{{ customerName(menuRow) }} · {{ label(menuRow.order.status) }}
-            · {{ menuRow.priced.totals.total | eur: (partner(menuRow.order) ? 2 : 0) }}</p>
+            · {{ menuRow.priced.totals.total | eur: (menuRow.fulfillment || partner(menuRow.order) ? 2 : 0) }}</p>
           <div class="desk-actions">
             <a class="desk-action" [routerLink]="['/sales', menuRow.order.id]" (click)="rowMenu.set(null)">
               <i aria-hidden="true">›</i>
               <span><b>Openen</b><small>Bekijken of bewerken</small></span>
             </a>
+            @if (!partner(menuRow.order) && !menuRow.fulfillment) {
+              <button class="desk-action" type="button" [disabled]="!!splitBlockReason(menuRow)" (click)="openSplit(menuRow)"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ splitBlockReason(menuRow) || 'Verplaats producten naar een latere levering' }}</small></span></button>
+            }
             <button class="desk-action" type="button" [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
                     (click)="toggleArchive(menuRow)">
               <i aria-hidden="true">▤</i>
@@ -377,6 +410,8 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
         </div>
       </app-sheet>
     }
+
+    @if (splitRow(); as splitData) { <app-sales-split-sheet [view]="splitData" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
 
     @if (picking()) {
       <app-sheet [title]="newDocType() === 'FACTUUR' ? 'Nieuwe factuur' : 'Nieuwe offerte'"
@@ -777,6 +812,30 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
   `,
 })
 export class SalesList {
+  readonly splitRow = signal<SalesOrderView | null>(null);
+  readonly splitBusy = signal(false);
+  readonly splitBlockReason = salesSplitBlockReason;
+  readonly fulfillmentStatus = fulfillmentStatusOf;
+  openSplit(row: SalesOrderView): void {
+    if (this.splitBusy() || this.splitBlockReason(row)) return;
+    this.rowMenu.set(null); this.openRow.set(null); this.splitRow.set(row);
+  }
+  closeSplit(): void { if (!this.splitBusy()) { this.splitRow.set(null); void this.load(); } }
+  canDeactivate(): boolean { return !this.splitBusy(); }
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.splitBusy()) return;
+    event.preventDefault(); event.returnValue = '';
+  }
+  async splitSaved(result: SalesSplitResult): Promise<void> {
+    this.splitBusy.set(false);
+    this.splitRow.set(null);
+    this.expandedGroups.update(keys => new Set([...keys, `split-${result.groupId}-${result.current.order.customerId ?? 'unknown'}`]));
+    this.ui.toast(`Order gesplitst · ${result.later.order.number} voor de nalevering`);
+    void this.work.refresh(true);
+    await this.load();
+  }
+
   private readonly sales = inject(SalesApi);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);

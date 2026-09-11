@@ -1,4 +1,8 @@
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
+import { SalesSplitSheet } from './sales-split-sheet';
+import { SalesFulfillmentCard } from './sales-fulfillment-card';
+import { salesSplitBlockReason } from './sales-split-state';
+import type { SalesSplitResult } from '../../core/api/models';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -36,7 +40,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
-import { STATUS_LABEL, internalNotesForDisplay, isWebsiteQuoteRequest, replaceInternalNotesForDisplay, statusClass, websiteCartonRequests, statusOf } from './quote-status';
+import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, internalNotesForDisplay, isWebsiteQuoteRequest, replaceInternalNotesForDisplay, statusClass, websiteCartonRequests, statusOf } from './quote-status';
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
@@ -56,14 +60,14 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                        [showBack]="true" [showBell]="false"
-                       [titleEditable]="canEdit()"
+                       [titleEditable]="mobileCommercialEditable()"
                        (titleChange)="patch({ number: $event })">
         <div class="quote-header-actions">
           @if (!advanceAgreement()) {
@@ -226,7 +230,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
         </section>
 
         <app-sales-advance-invoices [order]="data.order" />
-        <app-sales-document-note [notes]="data.order.notes" />
+        <app-sales-document-note [notes]="mobileCustomerAuthoredMessage(data) ? mobileCustomerNote(data) : data.order.notes" [fromCustomer]="mobileCustomerAuthoredMessage(data)" />
+        <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || mobileSplitBusy()" (changed)="mobileFulfillmentChanged($event)" />
+        @if (!data.fulfillment && !isPartnerDocument(data.order)) {
+          <section class="mobile-split-entry"><div><b>Een deel later leveren?</b><span>{{ mobileSplitBlockReason(data) || 'Verplaats producten naar een gekoppelde nalevering.' }}</span></div><button class="btn btn--sm" type="button" [disabled]="!!mobileSplitBlockReason(data) || dirty() || saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (click)="openMobileSplit()">Order splitsen</button></section>
+        }
 
         @if (saveError()) {
           <div class="alert alert--warn quote-action-error" role="alert">
@@ -430,7 +438,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <div class="form-grid">
               <div class="field span-2">
                 <label class="req" for="so-customer">Klant</label>
-                <select class="select" id="so-customer" [ngModel]="data.order.customerId"
+                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked()" [ngModel]="data.order.customerId"
                         (ngModelChange)="setCustomer(+$event)">
                   @for (customer of customers(); track customer.id) {
                     <option [ngValue]="customer.id">{{ customer.company }}</option>
@@ -440,7 +448,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <div class="field-duo">
                 <div class="field">
                   <label class="req" for="so-country">Land van levering</label>
-                  <select class="select" id="so-country" [ngModel]="data.order.countryCode"
+                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked()" [ngModel]="data.order.countryCode"
                           (ngModelChange)="patch({ countryCode: $event })">
                     @for (country of countries(); track country.code) {
                       <option [ngValue]="country.code">{{ country.name }}</option>
@@ -478,7 +486,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               </div>
               <div class="field">
                 <label for="so-channel">Verkoopkanaal</label>
-                <select class="select" id="so-channel" [ngModel]="channelCode(data.order.salesChannel)" (ngModelChange)="patch({ salesChannel: $event })">
+                <select class="select" id="so-channel" [disabled]="mobileFinanciallyLocked()" [ngModel]="channelCode(data.order.salesChannel)" (ngModelChange)="patch({ salesChannel: $event })">
                   @for (channel of channels; track channel.code) { <option [value]="channel.code">{{ channel.label }}</option> }
                 </select>
                 <span class="hint">{{ channelHint(data.order.salesChannel) }}</span>
@@ -514,11 +522,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               </summary>
               <div class="progressive-panel__body form-grid">
                 <div class="field span-2">
-                  <label for="so-notes">Bericht op de offerte <span class="opt"></span></label>
-                  <textarea class="textarea" id="so-notes" [ngModel]="data.order.notes"
-                            (ngModelChange)="patch({ notes: $event })"
+                  <label for="so-notes">{{ mobileCustomerAuthoredMessage(data) ? 'Bericht van klant' : 'Documentnotitie' }} <span class="opt"></span></label>
+                  <textarea class="textarea" id="so-notes" [readonly]="mobileCustomerAuthoredMessage(data)" [ngModel]="mobileCustomerAuthoredMessage(data) ? mobileCustomerNote(data) : data.order.notes"
+                            (ngModelChange)="!mobileCustomerAuthoredMessage(data) && patch({ notes: $event })"
                             placeholder="Bijvoorbeeld een afspraak of persoonlijke toelichting."></textarea>
-                  <span class="hint">Zichtbaar voor de klant.</span>
+                  <span class="hint">{{ mobileCustomerAuthoredMessage(data) ? 'Originele aanvraag · alleen lezen. Gebruik interne notities voor je eigen aanvulling.' : 'Zichtbaar voor de klant.' }}</span>
                 </div>
                 <div class="field span-2">
                   <label for="so-internal">Interne notities <span class="opt"></span></label>
@@ -553,7 +561,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
             @if (data.priced.lines.length) {
               <button class="btn btn--primary btn--sm add-product" type="button"
-                      [disabled]="!canEdit() || !available().length" (click)="openPicker()">
+                      [disabled]="!mobileCommercialEditable() || !available().length" (click)="openPicker()">
                 <span aria-hidden="true">＋</span> Product
               </button>
             }
@@ -627,7 +635,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   </div>
                   <!-- Small and out of the way: the row is about the product,
                        not about deleting it. -->
-                  <button class="order-line__remove" type="button" [disabled]="!canEdit()"
+                  <button class="order-line__remove" type="button" [disabled]="!mobileCommercialEditable()"
                           title="Regel verwijderen" [attr.aria-label]="line.description + ' verwijderen'"
                           (click)="removeLine(line.productId)">×</button>
                 </div>
@@ -637,7 +645,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   <div class="field">
                     <label [attr.for]="'q-' + line.productId">Aantal</label>
                     <input class="input num" [id]="'q-' + line.productId" type="number"
-                           min="0" step="1" inputmode="numeric" [disabled]="!canEdit()"
+                           min="0" step="1" inputmode="numeric" [disabled]="!mobileCommercialEditable()"
                            [ngModel]="line.quantity"
                            (ngModelChange)="setLineQuantity(line.productId, +$event)" />
                     @if (linePending()[line.productId]; as to) {
@@ -648,7 +656,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     <label [attr.for]="'p-' + line.productId">Stukprijs</label>
                     <div class="input-affix">
                       <input class="input num" [id]="'p-' + line.productId" type="number"
-                             min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
+                             min="0" step="0.01" inputmode="decimal" [disabled]="!mobileCommercialEditable()"
                              [ngModel]="line.unitPrice"
                              (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
                       <!-- The discount hides behind its own vertical tab: two
@@ -666,12 +674,12 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                       @if (discountMode(line.productId) === 'EUR') {
                         <input class="input num" [id]="'d-' + line.productId" type="number"
                                min="0" step="0.01" inputmode="decimal"
-                               [disabled]="!canEdit()" [ngModel]="lineDiscountEur(line)"
+                               [disabled]="!mobileCommercialEditable()" [ngModel]="lineDiscountEur(line)"
                                (ngModelChange)="setLineDiscountEur(line, +$event)" />
                       } @else {
                         <input class="input num" [id]="'d-' + line.productId" type="number"
                                min="0" max="100" step="0.5" inputmode="decimal"
-                               [disabled]="!canEdit()" [ngModel]="line.manualPercent"
+                               [disabled]="!mobileCommercialEditable()" [ngModel]="line.manualPercent"
                                (ngModelChange)="setLine(line.productId, { manualDiscountPct: +$event })" />
                       }
                       <button class="input-affix__suffix discount-flip" type="button"
@@ -798,7 +806,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <h3>Nog geen producten</h3>
                 <p>Voeg een product toe, kies het aantal en de prijs wordt meteen berekend.</p>
                 <button class="btn btn--primary" type="button"
-                        [disabled]="!canEdit() || !available().length"
+                        [disabled]="!mobileCommercialEditable() || !available().length"
                         (click)="openPicker()">Eerste product toevoegen</button>
               </div>
             }
@@ -806,7 +814,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <!-- A line of your own next to the products: assembly, an extra
                  transport leg, a sample. It reads as its own line on the
                  document and stays outside the tier discounts. -->
-            @if ((data.order.extraLines ?? []).length || canEdit()) {
+            @if ((data.order.extraLines ?? []).length || mobileCommercialEditable()) {
               <div class="extra-lines" aria-label="Andere regels">
                 <div class="extra-lines__head">
                   <strong>Andere regels</strong>
@@ -817,30 +825,30 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     <input class="input extra-line__what" type="text" maxlength="120"
                            placeholder="Omschrijving, bv. montage ter plaatse"
                            [attr.aria-label]="'Omschrijving regel ' + (i + 1)"
-                           [disabled]="!canEdit()"
+                           [disabled]="!mobileCommercialEditable()"
                            [ngModel]="extra.description"
                            (ngModelChange)="setExtraLine(i, { description: $event })" />
                     <input class="input num extra-line__qty" type="number" min="0" step="1" inputmode="decimal"
                            [attr.aria-label]="'Aantal regel ' + (i + 1)"
-                           [disabled]="!canEdit()"
+                           [disabled]="!mobileCommercialEditable()"
                            [ngModel]="extra.quantity"
                            (ngModelChange)="setExtraLine(i, { quantity: +$event })" />
                     <div class="input-affix extra-line__price">
                       <input class="input num" type="number" step="0.01" inputmode="decimal"
                              placeholder="Prijs per stuk"
                              [attr.aria-label]="'Prijs per stuk regel ' + (i + 1)"
-                             [disabled]="!canEdit()"
+                             [disabled]="!mobileCommercialEditable()"
                              [ngModel]="extra.unitPriceEur"
                              (ngModelChange)="setExtraLine(i, { unitPriceEur: $event === '' || $event === null ? null : +$event })" />
                       <span class="input-affix__suffix">EUR</span>
                     </div>
                     <strong class="num extra-line__total">{{ extraLineTotal(extra) | eur }}</strong>
-                    <button class="other-cost__remove" type="button" [disabled]="!canEdit()"
+                    <button class="other-cost__remove" type="button" [disabled]="!mobileCommercialEditable()"
                             [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))"
                             (click)="removeExtraLine(i)">×</button>
                   </div>
                 }
-                @if (canEdit()) {
+                @if (mobileCommercialEditable()) {
                   <button class="other-costs__add" type="button" (click)="addExtraLine()">
                     <span aria-hidden="true">+</span>
                     <b>Andere regel</b>
@@ -906,14 +914,14 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 {{ data.priced.totals.unassignedCartons | num }} dozen zijn nog niet aan een pallet toegewezen.
               </div>
             }
-            <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditTerms()"
+            <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditTerms() || (mobileFinanciallyLocked() && !canEdit())"
                     (click)="canEdit() ? palletSheet.set(true) : freightOpen.set(!freightOpen())"
                     [attr.aria-expanded]="canEdit() ? palletSheet() : freightOpen()"
                     [attr.aria-haspopup]="canEdit() ? 'dialog' : null"
                     [attr.aria-controls]="canEdit() ? null : 'freight-options'">
               {{ canEdit() ? 'Transport & levering aanpassen' : (freightOpen() ? 'Sluiten' : 'Vracht aanvullen') }}
             </button>
-            @if (!canEdit() && freightOpen()) {
+            @if (!canEdit() && !mobileFinanciallyLocked() && freightOpen()) {
                 <div class="freight-options" id="freight-options">
                   <label class="check-option">
                     <input type="checkbox" [checked]="data.order.freight === 'TE_BEPALEN'"
@@ -1018,14 +1026,14 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
                   <div class="desk-partner__actions">
                     <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>
-                    <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
+                    <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked()" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
                     <button class="linklike" type="button" [disabled]="busy()" (click)="unlinkPartner(data)">Ontkoppelen</button>
                   </div>
                 }
               </section>
             } @else {
               <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
-                <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
+                <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked()" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
             }
             <!-- What is actually in the box, before any figure: the check
                  starts with the order as the customer will read it. -->
@@ -1359,6 +1367,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
         </app-sheet>
       }
 
+      @if (mobileSplitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (busyChange)="mobileSplitBusy.set($event)" (saved)="mobileSplitSaved($event)" (closed)="closeMobileSplit()" /> }
+
       @if (pdfSheet()) {
         <app-sales-pdf-sheet
           [orderId]="data.order.id"
@@ -1377,10 +1387,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       @if (palletSheet()) {
         <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="palletSheet.set(false)">
           <div body>
+            @if (mobileFinanciallyLocked() && canEdit()) {
+              <div class="field"><label for="mobile-split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="mobile-split-manual-freight" type="number" inputmode="decimal" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="patch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
+            }
             @if (view(); as data) {
               <app-shipping-planner
                 [view]="data"
-                [canEdit]="canEdit()"
+                [canEdit]="mobileCommercialEditable()"
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
                 [countryName]="orderCountryName()"
@@ -1673,6 +1686,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .order-line__amount strong { font-size:14px;font-variant-numeric:tabular-nums }
     .order-line__amount span { color:var(--ok);font-size:10px }
     .line-quick-controls { margin-top:10px;display:grid;grid-template-columns:minmax(108px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch }
+    .mobile-split-entry { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin:0 0 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface) }.mobile-split-entry>div{min-width:0;display:grid;gap:5px}.mobile-split-entry b{font-size:12px}.mobile-split-entry span{font-size:11px;line-height:1.5;color:var(--muted)}.mobile-split-entry>.btn{min-height:44px;flex:none}@media(max-width:420px){.mobile-split-entry{align-items:stretch;flex-direction:column}.mobile-split-entry>.btn{width:100%}}
     .quantity-editor { min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:13px;background:var(--surface-2) }
     .quantity-editor:focus-within { border-color:var(--rose);box-shadow:0 0 0 3px var(--rose-soft) }
     .quantity-editor .field { height:100%;margin:0;padding:8px 10px 6px;display:grid;grid-template-rows:auto minmax(28px,1fr);align-content:center }
@@ -1980,6 +1994,35 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
   `],
 })
 export class SalesEditor {
+  readonly mobileSplitOpen = signal(false);
+  readonly mobileSplitBusy = signal(false);
+  readonly mobileSplitBlockReason = salesSplitBlockReason;
+  readonly mobileFinanciallyLocked = computed(() => !!this.view()?.fulfillment?.financialsLocked);
+  readonly mobileCommercialEditable = computed(() => this.canEdit() && !this.mobileFinanciallyLocked());
+  readonly mobileCustomerAuthoredMessage = customerMessageIsReadOnly;
+  readonly mobileCustomerNote = originalCustomerMessage;
+
+  openMobileSplit(): void {
+    if (this.dirty() || this.saving() || this.sending() || this.documentMutationBusy() || this.invoiceConversionBusy()
+      || this.mobileSplitBusy() || this.mobileSplitBlockReason(this.view())) return;
+    this.mobileSplitOpen.set(true);
+  }
+  closeMobileSplit(): void {
+    if (this.mobileSplitBusy()) return;
+    this.mobileSplitOpen.set(false);
+    if (!this.dirty()) this.reloadLatestOrder();
+  }
+  mobileSplitSaved(result: SalesSplitResult): void {
+    this.mobileSplitOpen.set(false); this.mobileSplitBusy.set(false);
+    if (this.view()?.order.id !== result.current.order.id || this.dirty()) return;
+    this.adopt(result.current); this.refreshWorkQueue();
+    this.ui.toast(`Order gesplitst · ${result.later.order.number} voor de nalevering`);
+  }
+  mobileFulfillmentChanged(updated: SalesOrderView): void {
+    if (this.view()?.order.id !== updated.order.id || this.dirty() || this.saving() || this.mobileSplitBusy()) return;
+    this.adopt(updated); this.refreshWorkQueue();
+  }
+
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
@@ -2607,7 +2650,7 @@ export class SalesEditor {
 
   /** Commercial fields belong to the draft version only. */
   readonly documentMutationBusy = signal(false);
-  readonly canEdit = computed(() => !this.documentMutationBusy() && !this.advanceAgreement()
+  readonly canEdit = computed(() => !this.documentMutationBusy() && !this.mobileSplitBusy() && !this.advanceAgreement()
     && this.view()?.order.status === 'CONCEPT' && !this.view()?.order.archivedAt);
 
   /** A customer-link token alone is not use; sending, viewing or deciding is. */
@@ -2620,7 +2663,7 @@ export class SalesEditor {
 
   /** Open delivery promises may still be completed without unlocking prices. */
   readonly canEditTerms = computed(() => {
-    if (this.documentMutationBusy() || this.advanceAgreement() || this.view()?.order.archivedAt) return false;
+    if (this.documentMutationBusy() || this.mobileSplitBusy() || this.advanceAgreement() || this.view()?.order.archivedAt) return false;
     const status = this.view()?.order.status;
     return status === 'CONCEPT' || status === 'VERZONDEN' || status === 'BEKEKEN';
   });
@@ -2783,9 +2826,26 @@ export class SalesEditor {
     const data = this.view();
     if (!data || !this.canEdit()) return;
     const next = make(data.order);
-    if (!next) return;
+    if (!next || !this.mobileAcceptsDraft(data, next)) return;
     this.view.set({ ...data, order: next });
     this.schedulePreview();
+  }
+
+  /** Split products and their pricing stay frozen while the allowed commercial overrides remain editable. */
+  private mobileAcceptsDraft(data: SalesOrderView, next: SalesOrder): boolean {
+    if (customerMessageIsReadOnly(data) && next.notes !== data.order.notes) {
+      this.ui.toast('Het oorspronkelijke bericht van de klant is alleen lezen.', 'err'); return false;
+    }
+    if (!data.fulfillment?.financialsLocked) return true;
+    const editable = new Set(['notes', 'internalNotes', 'paymentTerms', 'deliveryTerms', 'orderDate', 'validUntil', 'invoiceDueDate', 'incoterm', 'manualFreightEur', 'extraDiscountPct', 'extraDiscountLabel', 'lines']);
+    const fields = new Set([...Object.keys(data.order), ...Object.keys(next)]);
+    const changedFrozenField = [...fields].some(field => !editable.has(field)
+      && JSON.stringify(data.order[field as keyof SalesOrder]) !== JSON.stringify(next[field as keyof SalesOrder]));
+    const withoutWeek = (order: SalesOrder) => order.lines.map(({ deliveryWeek: _week, ...line }) => line);
+    if (changedFrozenField || JSON.stringify(withoutWeek(data.order)) !== JSON.stringify(withoutWeek(next))) {
+      this.ui.toast('De producten en staffels van deze verdeling staan vast. Transport, extra korting en afspraken blijven aanpasbaar.', 'err'); return false;
+    }
+    return true;
   }
 
   private schedulePreview(): void {
@@ -2861,7 +2921,7 @@ export class SalesEditor {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
-    if (this.saving()) return false;
+    if (this.saving() || this.mobileSplitBusy()) return false;
     if (!this.dirty()) return true;
     return new Promise<boolean>((resolve) => {
       this.ui.confirm(
@@ -2879,7 +2939,7 @@ export class SalesEditor {
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (!this.dirty()) return;
+    if (!this.dirty() && !this.mobileSplitBusy()) return;
     event.preventDefault();
     event.returnValue = '';
   }
@@ -2939,7 +2999,7 @@ export class SalesEditor {
    * nothing is rounded under someone's fingers.
    */
   setLineQuantity(productId: number, raw: number): void {
-    if (!this.canEdit()) return;
+    if (!this.mobileCommercialEditable()) return;
     const wanted = Math.max(0, raw || 0);
     const per = this.piecesPerCarton(productId);
     const snapped = Math.ceil(wanted / per) * per;
@@ -3031,7 +3091,7 @@ export class SalesEditor {
   }
 
   openPicker(): void {
-    if (!this.canEdit()) return;
+    if (!this.mobileCommercialEditable()) return;
     this.picking.set(true);
   }
 
@@ -3273,6 +3333,9 @@ export class SalesEditor {
                       freightRatePerCbmEur: number | null,
                       freightCarrierId: number | null = null): void {
     if (!this.canEditTerms()) return;
+    if (this.mobileFinanciallyLocked()) {
+      this.ui.toast('Pas voor dit deel het vaste transportbedrag aan; de vrachtstrategie staat vast.', 'err'); return;
+    }
     void (async () => {
       /* The freight endpoint answers with the saved quote: write the draft
          first, or the answer would undo what was typed since. */

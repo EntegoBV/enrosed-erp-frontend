@@ -8,6 +8,7 @@ import { firstValueFrom, of } from 'rxjs';
 import { withPaymentState } from '../src/app/features/sales/sales-payment-state.ts';
 import { normalizeSalesPdfOptions, salesPdfQuery } from '../src/app/core/api/sales-pdf-options.ts';
 import { messageOf } from '../src/app/core/api/errors.ts';
+import { customerMessageIsReadOnly } from '../src/app/features/sales/quote-status.ts';
 
 async function isolate(file: string, name: string, names: string[], globals: Record<string, any> = {}) {
   const source = ts.createSourceFile(file, await readFile(new URL(`../src/app/${file}.ts`, import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
@@ -15,10 +16,10 @@ async function isolate(file: string, name: string, names: string[], globals: Rec
   const members = cls.members.filter(m => m.name && names.includes(m.name.getText(source))); assert.equal(members.length, names.length);
   const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(source, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, clearTimeout, Map, messageOf, withPaymentState, ...globals }); return exports[name];
+  const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, clearTimeout, Map, messageOf, withPaymentState, customerMessageIsReadOnly, ...globals }); return exports[name];
 }
 const Editor = await isolate('features/sales/sales-editor', 'SalesEditor', [
-  'documentMutationBusy', 'canEdit', 'canEditTerms', 'dirty', 'adopt', 'enqueue', 'save', 'paymentReceived', 'setLine', 'saveFreight',
+  'documentMutationBusy', 'mobileSplitBusy', 'mobileFinanciallyLocked', 'mobileAcceptsDraft', 'canEdit', 'canEditTerms', 'dirty', 'adopt', 'enqueue', 'save', 'paymentReceived', 'setLine', 'saveFreight',
 ]);
 const Desk = await isolate('features/sales/sales-desk', 'SalesDesk', ['markSent', 'shipGoods']);
 Object.setPrototypeOf(Desk.prototype, Editor.prototype);

@@ -39,6 +39,7 @@ export const routes: Routes = [
   {
     path: 'sales',
     canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
     loadComponent: () => import('./features/sales/sales-list').then((m) => m.SalesList),
   },
   {

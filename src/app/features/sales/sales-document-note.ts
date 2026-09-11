@@ -7,10 +7,10 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   host: { '[style.display]': 'notes()?.trim() ? "block" : "none"' },
   template: `
     @if (notes()?.trim()) {
-      <section class="document-note" aria-label="Opmerking">
+      <section class="document-note" [attr.aria-label]="fromCustomer() ? 'Bericht van klant' : 'Documentnotitie'">
         <header>
-          <h2>Opmerking</h2>
-          <span>Zichtbaar voor de klant</span>
+          <h2>{{ fromCustomer() ? 'Bericht van klant' : 'Documentnotitie' }}</h2>
+          <span>{{ fromCustomer() ? 'Originele aanvraag · alleen lezen' : 'Zichtbaar op het document' }}</span>
         </header>
         <p>{{ notes() }}</p>
       </section>
@@ -34,4 +34,5 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 })
 export class SalesDocumentNote {
   readonly notes = input<string | null | undefined>();
+  readonly fromCustomer = input(false);
 }

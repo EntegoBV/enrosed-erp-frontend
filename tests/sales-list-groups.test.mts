@@ -7,7 +7,7 @@ import { computed, signal } from '@angular/core';
 import { parseTemplate } from '@angular/compiler';
 import { invoiceReceivable } from '../src/app/features/finance/incoming-money.ts';
 import { isPartnerDocument } from '../src/app/features/sales/sales-payment-state.ts';
-import { statusOf } from '../src/app/features/sales/quote-status.ts';
+import { statusOf, fulfillmentStatusOf, customerMessageIsReadOnly, originalCustomerMessage } from '../src/app/features/sales/quote-status.ts';
 import type { SalesOrderView } from '../src/app/core/api/models.ts';
 import type { SalesContainerGroup, SalesListEntry } from '../src/app/features/sales/sales-list-groups.ts';
 
@@ -241,4 +241,72 @@ test('the Angular template remains valid after sharing the individual document r
   assert.ok(template);
   const result = parseTemplate(template, 'sales-list.html');
   assert.equal(result.errors, null, JSON.stringify(result.errors));
+});
+
+function splitPart(id: number, part: 1 | 2, amount: number, changes: any = {}): SalesOrderView {
+  const row = invoice(id, amount, { purpose: 'STANDARD', partnerPurchaseOrderId: null, ...changes });
+  row.advanceContents = null;
+  row.fulfillment = { groupId: 'group-a', rootOrderId: 91, part, status: part === 2 ? 'WAITING_FOR_STOCK' : 'PLANNED',
+    siblingId: part === 1 ? 92 : 91, siblingNumber: part === 1 ? 'INV-92' : 'INV-91', financialsLocked: true };
+  row.priced.totals.pieces = part === 1 ? 24 : 48;
+  return row;
+}
+
+test('split deliveries group at their first position, preserve cents and show separate fulfillment states', () => {
+  const first = splitPart(91, 1, 144.37), later = splitPart(92, 2, 288.75);
+  const regular = invoice(95, 80, { purpose: 'STANDARD', partnerPurchaseOrderId: null });
+  const before = JSON.stringify([later, regular, first]);
+  const entries = groupSalesInvoices([later, regular, first]);
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0].kind, 'SPLIT_ORDER');
+  if (entries[0].kind !== 'SPLIT_ORDER') return;
+  assert.equal(entries[0].summary.totalEur, 433.12);
+  assert.equal(entries[0].summary.pieces, 72);
+  assert.equal(entries[0].summary.waitingCount, 1);
+  assert.equal(entries[0].summary.shippedCount, 0);
+  assert.deepEqual(Array.from(entries[0].rows, row => row.order.id), [91, 92]);
+  assert.equal(JSON.stringify([later, regular, first]), before, 'Grouping never mutates API values');
+  assert.deepEqual(statusOf(later), { label: 'Concept', cls: 'neutral' });
+  assert.deepEqual(fulfillmentStatusOf(later), { label: 'Wacht op voorraad', cls: 'gold' });
+  later.fulfillment!.status = 'PLANNED';
+  assert.equal(fulfillmentStatusOf(later)?.label, 'Nalevering gepland');
+  later.order.goodsShippedAt = '2026-09-11T12:00:00Z';
+  assert.equal(fulfillmentStatusOf(later)?.label, 'Bestelling verzonden');
+  assert.equal(statusOf(later).label, 'Concept', 'Shipping metadata never issues an invoice');
+});
+
+test('split totals follow filters, exclude converted quotes and cancelled parts, and separate customers', () => {
+  const source = splitPart(91, 1, 144.37, { docType: 'OFFERTE', archivedAt: '2026-09-11T12:00:00Z' });
+  source.invoicedAsId = 94; source.invoicedAs = 'INV-94';
+  const firstInvoice = splitPart(94, 1, 144.37);
+  const later = splitPart(92, 2, 288.75, { status: 'GEANNULEERD' });
+  const result = groupSalesInvoices([source, firstInvoice, later])[0];
+  assert.equal(result.kind, 'SPLIT_ORDER');
+  if (result.kind !== 'SPLIT_ORDER') return;
+  assert.equal(result.summary.totalEur, 144.37);
+  assert.equal(result.summary.pieces, 24);
+  assert.equal(result.summary.waitingCount, 0);
+  assert.equal(fulfillmentStatusOf(later)?.label, 'Levering vervallen');
+  const filtered = groupSalesInvoices([firstInvoice])[0];
+  assert.equal(filtered.kind, 'SPLIT_ORDER');
+  if (filtered.kind === 'SPLIT_ORDER') assert.equal(filtered.summary.parts, 1);
+  const other = splitPart(95, 2, 55, { customerId: 8 });
+  assert.equal(groupSalesInvoices([firstInvoice, other]).length, 2);
+  const unrelated = invoice(96, 15, { purpose: 'STANDARD', partnerPurchaseOrderId: null, sourceQuoteId: 91 });
+  assert.equal(groupSalesInvoices([firstInvoice, unrelated])[1].kind, 'DOCUMENT', 'Only server split metadata creates a group');
+});
+
+test('customer request text remains original after channel changes while own document notes stay identifiable', () => {
+  const customer = splitPart(91, 1, 10, { notes: 'Locally changed', salesChannel: 'DIRECT', internalNotes: null });
+  customer.customerRequestMessageReadonly = true;
+  customer.customerRequestMessage = 'Graag leveren na 15 september.';
+  assert.equal(customerMessageIsReadOnly(customer), true);
+  assert.equal(originalCustomerMessage(customer), 'Graag leveren na 15 september.');
+  customer.customerRequestMessage = null;
+  assert.equal(originalCustomerMessage(customer), '', 'An originally empty message never falls back to a later document note');
+  const own = splitPart(92, 2, 10, { notes: 'Onze eigen toelichting', salesChannel: 'DIRECT' });
+  assert.equal(customerMessageIsReadOnly(own), false);
+  assert.equal(originalCustomerMessage(own), 'Onze eigen toelichting');
+  own.order.salesChannel = 'WEBSITE';
+  assert.equal(customerMessageIsReadOnly(own), true, 'Existing website documents work before snapshot backfill');
 });

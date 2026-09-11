@@ -6,6 +6,7 @@ import {
   CompanyProfile, Country, Customer, CustomerPortalLink, DiscountTier, FreightPricingStrategy, LanguageCode,
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
   SalesOrderView, SalesPayment, SalesPaymentRequest, IncomingPaymentRow, SalesPurpose, SalesPaymentPlan, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest, FromPurchaseOrderRequest,
+  SalesSplitEligibility, SalesSplitRequest, SalesSplitPreview, SalesSplitCommitRequest, SalesSplitResult,
 } from './models';
 import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
@@ -84,6 +85,23 @@ export class SalesApi {
 
   order(id: number): Promise<SalesOrderView> {
     return firstValueFrom(this.http.get<SalesOrderView>(api(`/api/sales-orders/${id}`)));
+  }
+
+  splitEligibility(id: number): Promise<SalesSplitEligibility> {
+    return firstValueFrom(this.http.get<SalesSplitEligibility>(api(`/api/sales-orders/${id}/split`)));
+  }
+
+  /** Prices both proposed deliveries without changing the saved order. */
+  previewSplit(id: number, body: SalesSplitRequest): Promise<SalesSplitPreview> {
+    return firstValueFrom(this.http.post<SalesSplitPreview>(api(`/api/sales-orders/${id}/split/preview`), body));
+  }
+
+  splitOrder(id: number, body: SalesSplitCommitRequest): Promise<SalesSplitResult> {
+    return firstValueFrom(this.http.post<SalesSplitResult>(api(`/api/sales-orders/${id}/split`), body));
+  }
+
+  markFulfillmentReady(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/fulfillment-ready`), {}));
   }
 
   createOrder(customerId: number, countryCode: string | null,

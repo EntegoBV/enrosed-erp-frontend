@@ -1,3 +1,8 @@
+import { SalesSplitSheet } from './sales-split-sheet';
+import { SalesFulfillmentCard } from './sales-fulfillment-card';
+import { salesSplitBlockReason } from './sales-split-state';
+import type { SalesSplitResult } from '../../core/api/models';
+import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney } from './sales-invoice-journey';
@@ -50,7 +55,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -93,6 +98,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         </app-sheet>
       }
 
+      @if (splitOpen()) { <app-sales-split-sheet [view]="data" [externalBusy]="invoiceBusy() || sendingQuote()" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
+
       @if (pdfSheet()) {
         <app-sales-pdf-sheet
           [orderId]="data.order.id"
@@ -114,6 +121,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               {{ isRequest() ? 'Aanvraag annuleren' : 'Annuleren' }}
             </button>
           }
+          @if (!splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || sendingQuote()" (click)="openSplit()">Order splitsen</button> }
           <button class="btn btn--sm" type="button" [disabled]="downloading()"
                   (click)="downloadPdf()">
             {{ downloading() ? 'Even wachten…' : 'PDF' }}
@@ -254,7 +262,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         </section>
 
         <app-sales-advance-invoices [order]="data.order" />
-        <app-sales-document-note [notes]="data.order.notes" />
+        @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="invoiceBusy() || sendingQuote()" (changed)="fulfillmentChanged($event)" /> }
+        <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
 
         @if (advanceAgreement(); as agreement) {
           <app-sales-advance-agreement [agreement]="agreement" />
@@ -636,6 +645,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <details class="manage-more">
                 <summary>Meer acties <span aria-hidden="true">⌄</span></summary>
               <div class="manage-actions">
+                @if (!isPartner(data.order) && !data.fulfillment) { <button class="btn btn--block" type="button" [disabled]="!!splitBlockReason(data) || invoiceBusy() || sendingQuote()" (click)="openSplit()">Order splitsen</button>@if (splitBlockReason(data); as reason) { <p class="link-explainer">{{ reason }}</p> } }
+
                 @if (!nextStepOpensEditor(data)) {
                 <a class="btn btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
                   {{ actionLabel() }}
@@ -1022,6 +1033,32 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   `],
 })
 export class SalesView {
+  readonly splitOpen = signal(false);
+  readonly splitBusy = signal(false);
+  readonly splitBlockReason = salesSplitBlockReason;
+  readonly isPartner = isPartnerDocument;
+  canDeactivate(): boolean { return !this.splitBusy(); }
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.splitBusy()) return;
+    event.preventDefault(); event.returnValue = '';
+  }
+  openSplit(): void { if (this.invoiceBusy() || this.sendingQuote() || this.splitBlockReason(this.view())) return; this.splitOpen.set(true); }
+  closeSplit(): void { if (this.splitBusy()) return; this.splitOpen.set(false); const id = this.view()?.order.id; if (id) void this.load(id); }
+  splitSaved(result: SalesSplitResult): void {
+    this.splitOpen.set(false); this.splitBusy.set(false);
+    if (this.view()?.order.id !== result.current.order.id) return;
+    this.view.set(result.current); void this.work.refresh(true);
+    this.ui.toast(`Order gesplitst · ${result.later.order.number} voor de nalevering`);
+    void this.load(result.current.order.id);
+  }
+  fulfillmentChanged(updated: SalesOrderView): void {
+    if (this.view()?.order.id !== updated.order.id) return;
+    this.view.set(updated); void this.work.refresh(true);
+  }
+
+  readonly customerAuthoredMessage = customerMessageIsReadOnly;
+  readonly customerNote = originalCustomerMessage;
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;

@@ -36,7 +36,7 @@ const advanceAgreementFor = helperExports.advanceAgreementFor!;
 
 const deskJs = await productionMembers('sales/sales-desk', 'SalesDesk', ['makeInvoice', 'createInvoice']);
 const viewJs = await productionMembers('sales/sales-view', 'SalesView', ['makeInvoice', 'createInvoice']);
-const editorJs = await productionMembers('sales/sales-editor', 'SalesEditor', ['advanceAgreement', 'canEdit', 'canEditTerms', 'duplicate']);
+const editorJs = await productionMembers('sales/sales-editor', 'SalesEditor', ['advanceAgreement', 'mobileSplitBusy', 'canEdit', 'canEditTerms', 'duplicate']);
 const editorConversionJs = await productionMembers('sales/sales-editor', 'SalesEditor', ['makeInvoiceFromEditor', 'createDraftInvoice']);
 const portalJs = await productionMembers('portal/portal-page', 'PortalPage', ['openProposal', 'propose', 'setLanguage', 'agreementSettlementText']);
 

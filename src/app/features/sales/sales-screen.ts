@@ -30,10 +30,11 @@ export class SalesScreen {
 
   private readonly desk = viewChild(SalesDesk);
   private readonly editor = viewChild(SalesEditor);
+  private readonly readView = viewChild(SalesView);
 
-  /** The open editor owns the unsaved-changes verdict; a plain view has none. */
+  /** Every screen owns its pending work, including a split started from the read view. */
   canDeactivate(): boolean | Promise<boolean> {
-    const open = this.desk() ?? this.editor();
+    const open = this.desk() ?? this.editor() ?? this.readView();
     return open ? open.canDeactivate() : true;
   }
 }

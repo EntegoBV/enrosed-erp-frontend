@@ -1,3 +1,8 @@
+import { SalesSplitSheet } from './sales-split-sheet';
+import { SalesFulfillmentCard } from './sales-fulfillment-card';
+import { salesSplitBlockReason } from './sales-split-state';
+import type { SalesSplitResult } from '../../core/api/models';
+import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney } from './sales-invoice-journey';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -57,14 +62,14 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                        [showBack]="true" [showBell]="false"
-                       [titleEditable]="canEdit()"
+                       [titleEditable]="commercialEditable()"
                        (titleChange)="patch({ number: $event })">
         @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
             @if (data.order.partnerPurchaseOrderId) {
@@ -75,6 +80,7 @@ interface JourneyStep {
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
         }
+        @if (!splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()">Order splitsen</button> }
         <button class="btn btn--sm" type="button" (click)="openPdfSheet()">PDF</button>
         @if (data.order.status === 'CONCEPT' && canCreateInvoice(data)) {
           <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()"
@@ -212,8 +218,9 @@ interface JourneyStep {
           </div>
         </header>
 
+        @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (changed)="fulfillmentChanged($event)" /> }
         <app-sales-advance-invoices [order]="data.order" />
-        <app-sales-document-note [notes]="data.order.notes" />
+        <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
 
         @if (pendingRevision(); as revision) {
           <div class="desk-attention" role="status">
@@ -278,10 +285,10 @@ interface JourneyStep {
                 <button type="button" [class.on]="profitPerPiece()" [attr.aria-pressed]="profitPerPiece()" (click)="profitPerPiece.set(true)">Per stuk</button>
                 <button type="button" [class.on]="!profitPerPiece()" [attr.aria-pressed]="!profitPerPiece()" (click)="profitPerPiece.set(false)">Per regel</button>
               </span>
-              <button class="btn btn--primary btn--sm" type="button" [disabled]="!canEdit() || !available().length" (click)="openPicker()">
+              <button class="btn btn--primary btn--sm" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">
                 <span aria-hidden="true">＋</span> Product
               </button>
-              <button class="btn btn--sm" type="button" [disabled]="!canEdit()" (click)="addExtraLine()"
+              <button class="btn btn--sm" type="button" [disabled]="!commercialEditable()" (click)="addExtraLine()"
                       title="Een eigen regel op het document, buiten de staffels">
                 <span aria-hidden="true">＋</span> Andere regel
               </button>
@@ -289,7 +296,7 @@ interface JourneyStep {
 
             @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
-              <table class="desk-table" [class.desk-table--editing]="canEdit()">
+              <table class="desk-table" [class.desk-table--editing]="commercialEditable()">
                 <thead>
                   <tr>
                     <th class="c-product">Product</th>
@@ -299,14 +306,14 @@ interface JourneyStep {
                     <th class="c-money">Netto</th>
                     <th class="c-money">{{ profitPerPiece() ? 'Winst / stuk' : 'Winst / regel' }}</th>
                     <th class="c-delivery">Levering</th>
-                    @if (canEdit()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
+                    @if (commercialEditable()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
                   </tr>
                 </thead>
                 <tbody>
                 @for (row of tableRows(); track row.key) {
                   @switch (row.kind) {
                     @case ('section') {
-                      <tr class="desk-section__row"><th [attr.colspan]="canEdit() ? 8 : 7">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
+                      <tr class="desk-section__row"><th [attr.colspan]="commercialEditable() ? 8 : 7">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
                     }
                     @case ('group') {
                       <tr class="desk-group">
@@ -329,7 +336,7 @@ interface JourneyStep {
                         <td class="c-money num c-money--total">{{ row.net | eur }}</td>
                         <td class="c-money"></td>
                         <td class="c-delivery"></td>
-                        @if (canEdit()) { <td class="c-act"></td> }
+                        @if (commercialEditable()) { <td class="c-act"></td> }
                       </tr>
                     }
                     @case ('line') {
@@ -362,7 +369,7 @@ interface JourneyStep {
                           </div>
                         </td>
                         <td class="c-qty num">
-                          @if (canEdit()) {
+                          @if (commercialEditable()) {
                             <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
                                    [attr.aria-label]="'Aantal ' + line.description"
                                    [ngModel]="line.quantity" (ngModelChange)="setLineQuantity(line.productId, +$event)" />
@@ -371,7 +378,7 @@ interface JourneyStep {
                           }
                         </td>
                         <td class="c-price num">
-                          @if (canEdit()) {
+                          @if (commercialEditable()) {
                             <div class="desk-price">
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
                                      [attr.aria-label]="'Stukprijs ' + line.description"
@@ -396,7 +403,7 @@ interface JourneyStep {
                           @if (line.tierPercent) { <small>staffel −{{ line.tierPercent | pct: 1 }}</small> }
                         </td>
                         <td class="c-disc num">
-                          @if (canEdit()) {
+                          @if (commercialEditable()) {
                             <div class="desk-disc">
                               <input class="input num right desk-cell" type="number" min="0" max="100" step="0.5" inputmode="decimal"
                                      [attr.aria-label]="'Extra korting ' + line.description"
@@ -444,7 +451,7 @@ interface JourneyStep {
                             </div>
                           }
                         </td>
-                        @if (canEdit()) {
+                        @if (commercialEditable()) {
                           <td class="c-act">
                             <button class="desk-remove" type="button" [attr.aria-label]="line.description + ' verwijderen'"
                                     (click)="removeLine(line.productId)">×</button>
@@ -461,7 +468,7 @@ interface JourneyStep {
                     <td class="c-product">
                       <div class="desk-extra">
                         <span class="desk-extra__mark" aria-hidden="true">＋</span>
-                        @if (canEdit()) {
+                        @if (commercialEditable()) {
                           <input class="input desk-cell desk-extra__what" type="text" maxlength="120"
                                  placeholder="Omschrijving, bv. montage ter plaatse"
                                  [attr.aria-label]="'Omschrijving regel ' + (i + 1)"
@@ -473,14 +480,14 @@ interface JourneyStep {
                       </div>
                     </td>
                     <td class="c-qty num">
-                      @if (canEdit()) {
+                      @if (commercialEditable()) {
                         <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="decimal"
                                [attr.aria-label]="'Aantal regel ' + (i + 1)"
                                [ngModel]="extra.quantity" (ngModelChange)="setExtraLine(i, { quantity: +$event })" />
                       } @else { <b>{{ extra.quantity | num }}</b> }
                     </td>
                     <td class="c-price">
-                      @if (canEdit()) {
+                      @if (commercialEditable()) {
                         <input class="input num right desk-cell" type="number" step="0.01" inputmode="decimal" placeholder="prijs"
                                [attr.aria-label]="'Prijs per stuk regel ' + (i + 1)"
                                [ngModel]="extra.unitPriceEur"
@@ -491,7 +498,7 @@ interface JourneyStep {
                     <td class="c-money num c-money--total">{{ extraLineTotal(extra) | eur }}</td>
                     <td class="c-money num"><span class="muted">—</span></td>
                     <td class="c-delivery"><small class="muted">eigen regel</small></td>
-                    @if (canEdit()) {
+                    @if (commercialEditable()) {
                       <td class="c-act">
                         <button class="desk-remove" type="button" [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))" (click)="removeExtraLine(i)">×</button>
                       </td>
@@ -508,7 +515,7 @@ interface JourneyStep {
                     <th class="c-money">{{ data.priced.totals.subtotal + (data.priced.totals.extraLinesTotal ?? 0) | eur }}@if (data.priced.totals.extraLinesTotal) { <small>goederen {{ data.priced.totals.subtotal | eur }} + andere regels</small> }</th>
                     <th class="c-money" [class.is-bad]="displayedProfit(data) < 0">@if (isAdvance(data.order)) { Financiering } @else { {{ displayedProfit(data) | eur: 0 }} }</th>
                     <th class="c-delivery"></th>
-                    @if (canEdit()) { <th class="c-act"></th> }
+                    @if (commercialEditable()) { <th class="c-act"></th> }
                   </tr>
                 </tfoot>
               </table>
@@ -518,8 +525,8 @@ interface JourneyStep {
                 <div class="desk-empty__art" aria-hidden="true">＋</div>
                 <h3>Nog geen producten</h3>
                 <p>Voeg een product toe, kies het aantal en de prijs wordt meteen berekend.</p>
-                <button class="btn btn--primary" type="button" [disabled]="!canEdit() || !available().length" (click)="openPicker()">Eerste product toevoegen</button>
-                <button class="btn" type="button" [disabled]="!canEdit()" (click)="addExtraLine()">Andere regel</button>
+                <button class="btn btn--primary" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">Eerste product toevoegen</button>
+                <button class="btn" type="button" [disabled]="!commercialEditable()" (click)="addExtraLine()">Andere regel</button>
               </div>
             }
 
@@ -549,7 +556,7 @@ interface JourneyStep {
                     <p class="desk-form__group">Klant &amp; document</p>
                     <div class="field">
                       <label class="req" for="sd-customer">Klant</label>
-                      <select class="select" id="sd-customer" [ngModel]="data.order.customerId" (ngModelChange)="setCustomer(+$event)">
+                      <select class="select" id="sd-customer" [disabled]="financiallyLocked()" [ngModel]="data.order.customerId" (ngModelChange)="setCustomer(+$event)">
                         @for (customer of customers(); track customer.id) {
                           <option [ngValue]="customer.id">{{ customer.company }}</option>
                         }
@@ -560,7 +567,7 @@ interface JourneyStep {
                     <div class="desk-form__duo">
                       <div class="field">
                         <label class="req" for="sd-country">Land van levering</label>
-                        <select class="select" id="sd-country" [ngModel]="data.order.countryCode" (ngModelChange)="patch({ countryCode: $event })">
+                        <select class="select" id="sd-country" [disabled]="financiallyLocked()" [ngModel]="data.order.countryCode" (ngModelChange)="patch({ countryCode: $event })">
                           @for (country of countries(); track country.code) {
                             <option [ngValue]="country.code">{{ country.name }}</option>
                           }
@@ -610,12 +617,20 @@ interface JourneyStep {
                       }
                     </div>
                     <p class="desk-form__group">Notities</p>
-                    <div class="field">
-                      <label for="sd-notes">Bericht op het document <span class="opt"></span></label>
-                      <textarea class="textarea" id="sd-notes" rows="3" [ngModel]="data.order.notes" (ngModelChange)="patch({ notes: $event })"
-                                placeholder="Bijvoorbeeld een afspraak of persoonlijke toelichting."></textarea>
-                      <span class="hint">Zichtbaar voor de klant.</span>
-                    </div>
+                    @if (customerAuthoredMessage(data)) {
+                      <div class="field">
+                        <label id="sd-customer-message-label">Bericht van klant</label>
+                        <p id="sd-notes" class="customer-message-readonly" aria-labelledby="sd-customer-message-label">{{ customerNote(data) || 'De klant liet geen bericht achter.' }}</p>
+                        <span class="hint">Originele aanvraag. Dit bericht kan niet worden gewijzigd.</span>
+                      </div>
+                    } @else {
+                      <div class="field">
+                        <label for="sd-notes">Documentnotitie <span class="opt"></span></label>
+                        <textarea class="textarea" id="sd-notes" rows="3" [ngModel]="data.order.notes" (ngModelChange)="patch({ notes: $event })"
+                                  placeholder="Een eigen toelichting voor de klant."></textarea>
+                        <span class="hint">Je eigen notitie, zichtbaar op het document.</span>
+                      </div>
+                    }
                     <div class="field">
                       <label for="sd-internal">Interne notities <span class="opt"></span></label>
                       <textarea class="textarea" id="sd-internal" rows="3" [ngModel]="visibleInternalNotes(data.order)"
@@ -854,6 +869,7 @@ interface JourneyStep {
                         }
                         <button class="desk-action" type="button" (click)="openPdfSheet()"><i aria-hidden="true">⎙</i><span><b>PDF</b><small>Taal en inhoud kiezen en downloaden</small></span></button>
                       }
+                      @if (!isPartnerDocument(data.order) && !data.fulfillment) { <button class="desk-action" type="button" [disabled]="!!splitBlockReason(data) || dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ dirty() ? 'Sla de wijzigingen eerst op' : splitBlockReason(data) || 'Verplaats producten naar een nalevering' }}</small></span></button> }
                       <button class="desk-action" type="button" [disabled]="busy()" (click)="duplicate()"><i aria-hidden="true">⧉</i><span><b>{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</b><small>{{ isPartnerDocument(data.order) ? 'Voorschotten en afrekeningen op de container bekijken' : 'Een nieuw concept met dezelfde inhoud' }}</small></span></button>
                     </div>
 
@@ -912,6 +928,8 @@ interface JourneyStep {
         </app-sheet>
       }
 
+      @if (splitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || invoiceBusy()" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
+
       @if (pdfSheet()) {
         <app-sales-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
                              [customerName]="customerName()" [customerLanguage]="customerLanguage()"
@@ -922,7 +940,10 @@ interface JourneyStep {
       @if (palletSheet()) {
         <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="palletSheet.set(false)">
           <div body>
-            <app-shipping-planner [view]="data" [canEdit]="canEdit()" [carriers]="carriers()"
+            @if (financiallyLocked() && canEdit()) {
+              <div class="field"><label for="split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="split-manual-freight" type="number" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="patch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
+            }
+            <app-shipping-planner [view]="data" [canEdit]="commercialEditable()" [carriers]="carriers()"
                                   [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()"
                                   (patch)="applyShippingPatch($event)" (action)="handlePalletAction($event)" />
           </div>
@@ -1168,6 +1189,32 @@ interface JourneyStep {
   `],
 })
 export class SalesDesk extends SalesEditor {
+  readonly splitOpen = signal(false);
+  readonly splitBusy = signal(false);
+  readonly splitBlockReason = salesSplitBlockReason;
+  override canDeactivate(): boolean | Promise<boolean> { return this.splitBusy() ? false : super.canDeactivate(); }
+  /** The inherited beforeunload listener calls this override on the desktop editor. */
+  override warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.splitBusy()) { event.preventDefault(); event.returnValue = ''; return; }
+    super.warnBeforeUnload(event);
+  }
+  readonly financiallyLocked = computed(() => !!this.view()?.fulfillment?.financialsLocked);
+  readonly commercialEditable = computed(() => this.canEdit() && !this.financiallyLocked());
+  openSplit(): void { if (this.dirty() || this.saving() || this.sending() || this.invoiceBusy() || this.splitBlockReason(this.view())) return; this.splitOpen.set(true); }
+  closeSplit(): void { this.splitOpen.set(false); this.splitBusy.set(false); if (!this.dirty()) void this.reloadLatestOrder(); }
+  splitSaved(result: SalesSplitResult): void {
+    this.splitOpen.set(false); this.splitBusy.set(false);
+    if (this.view()?.order.id !== result.current.order.id) return;
+    this.adopt(result.current); this.refreshWorkQueue();
+    this.ui.toast(`Order gesplitst · ${result.later.order.number} voor de nalevering`);
+  }
+  fulfillmentChanged(updated: SalesOrderView): void {
+    if (this.view()?.order.id !== updated.order.id || this.dirty()) return;
+    this.adopt(updated); this.refreshWorkQueue();
+  }
+
+  readonly customerAuthoredMessage = customerMessageIsReadOnly;
+  readonly customerNote = originalCustomerMessage;
   /** Which line shows its extra-discount field on a narrow screen. */
   readonly discOpen = signal<number | null>(null);
 
