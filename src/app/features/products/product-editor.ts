@@ -17,6 +17,8 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { PhotoManager } from '../../shared/photo-manager';
@@ -40,6 +42,7 @@ import {
 } from './product-family-shared-fields-sheet';
 import { planProductFamilyIdentityFinalization } from './product-family-identity';
 import {
+  productCatalogNavigation,
   productVariantNavigation,
   productVariantOptionLabel,
 } from './product-variant-navigation';
@@ -79,7 +82,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   imports: [KgPipe, 
     FormsModule, PageHeader, PhotoManager, ProductFamilyGallery, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
-    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon,
+    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu,
   ],
   template: `
     @if (!desktop.active()) {
@@ -130,10 +133,36 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </span>
         @if (editorReady() && !isNew()) {
           <a class="btn btn--sm" [routerLink]="['/products', draft().id]">Bekijken</a>
+          @if (catalogueNeighbours(); as around) {
+            <span class="editor-toolbar__nav" role="group" aria-label="Door producten bladeren">
+              <a class="editor-toolbar__step" data-product-step="previous"
+                 [routerLink]="around.previous && !toolbarBusy() ? ['/products', around.previous.productId, 'edit'] : null"
+                 [queryParams]="{ tab: activeTab() }"
+                 [attr.aria-disabled]="!around.previous || toolbarBusy()"
+                 [attr.tabindex]="!around.previous || toolbarBusy() ? -1 : 0"
+                 [attr.aria-label]="catalogueStepLabel('previous')" [title]="catalogueStepLabel('previous')">‹</a>
+              <a class="editor-toolbar__step" data-product-step="next"
+                 [routerLink]="around.next && !toolbarBusy() ? ['/products', around.next.productId, 'edit'] : null"
+                 [queryParams]="{ tab: activeTab() }"
+                 [attr.aria-disabled]="!around.next || toolbarBusy()"
+                 [attr.tabindex]="!around.next || toolbarBusy() ? -1 : 0"
+                 [attr.aria-label]="catalogueStepLabel('next')" [title]="catalogueStepLabel('next')">›</a>
+            </span>
+          }
+          <button class="btn btn--sm editor-toolbar__menu" type="button" aria-haspopup="menu"
+                  [attr.aria-expanded]="!!toolbarMenu()" [disabled]="toolbarBusy()"
+                  (click)="openToolbarMenu($event)" (keydown.arrowdown)="$event.preventDefault(); openToolbarMenu($event)">
+            Acties <span aria-hidden="true">⌄</span>
+          </button>
         }
         <button class="btn btn--primary" type="button" [disabled]="saveBusy()" (click)="save()">{{ saveActionLabel() }}</button>
       </div>
     </header>
+
+    @if (toolbarMenu(); as anchor) {
+      <app-context-menu title="Productacties" [items]="toolbarMenuItems()" [anchor]="anchor"
+                        (pick)="pickToolbarAction($event)" (closed)="closeToolbarMenu()" />
+    }
 
     @if (productLoadError()) {
       <div class="content product-load-error" role="alert">
@@ -1308,18 +1337,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           }
         </section>
 
-        @if (!isNew()) {
-          <section class="editor-rail__card">
-            <h3>Acties</h3>
-            <div class="desk-actions">
-              <a class="desk-action" [routerLink]="['/products', draft().id]"><i aria-hidden="true">›</i><span><b>Bekijken</b><small>Het dossier zoals het team het leest</small></span></a>
-              <button class="desk-action" type="button" (click)="openSharedFields()"><i aria-hidden="true">⇄</i><span><b>Naar de reeks kopiëren</b><small>Gegevens van deze kleur naar de andere kleuren; slaat eerst op</small></span></button>
-              <button class="desk-action" type="button" (click)="startCopy()"><i aria-hidden="true">⧉</i><span><b>Kleur- of maatvariant maken</b><small>Een kopie met dezelfde gegevens</small></span></button>
-              <a class="desk-action" [routerLink]="['/products', draft().id, 'translations']"><i aria-hidden="true">🌐</i><span><b>Vertalingen</b><small>Namen en teksten per taal</small></span></a>
-              <button class="desk-action desk-action--danger" type="button" (click)="remove()"><i aria-hidden="true">×</i><span><b>Verwijderen</b><small>Definitief, na bevestiging</small></span></button>
-            </div>
-          </section>
-        }
       </aside>
     </div>
 
@@ -1825,6 +1842,7 @@ export class ProductEditor implements OnDestroy {
   /** The selected editor section, shared by desktop navigation and the mobile picker. */
   readonly activeTab = signal('identity');
   readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy());
+  readonly toolbarBusy = computed(() => this.formWriteBusy() || this.stockSaving() || this.takingCode());
   readonly mobileSectionsOpen = signal(false);
   readonly mobilePrimaryTabs = [{ id: 'identity', label: 'Basis' }, { id: 'media', label: 'Foto’s' }, { id: 'sales', label: 'Prijs' }];
   readonly mobileMoreActive = computed(() => !this.mobilePrimaryTabs.some(tab => tab.id === this.activeTab()));
@@ -2076,8 +2094,70 @@ export class ProductEditor implements OnDestroy {
   private readonly usedColours = signal<Map<string, string | null>>(new Map());
   /** Fresh catalogue labels for the target colours in the family sheet. */
   readonly catalogueProducts = signal<Product[]>([]);
+  private readonly navFamiliesReady = signal(false);
 
   readonly variantOptionLabel = productVariantOptionLabel;
+  readonly catalogueNeighbours = computed(() => !this.editorReady() || this.isNew() || !this.navFamiliesReady() ? null
+    : productCatalogNavigation(this.catalogueProducts(), this.families(), this.categories(), this.draft().id));
+  readonly toolbarMenu = signal<MenuPoint | null>(null);
+  private toolbarMenuTrigger: HTMLElement | null = null;
+  readonly toolbarMenuItems = computed<ContextMenuItem[]>(() => {
+    const family = this.family(), product = this.draft();
+    const busy = this.toolbarBusy() || !this.editorReady();
+    const translationPending = this.translationDirty();
+    const hasOtherVariants = family?.id === product.familyId && !!family?.members.some(member => member.productId !== product.id);
+    return [
+      { id: 'shared', label: 'Naar de reeks kopiëren', hint: hasOtherVariants ? 'Gegevens toepassen op andere kleuren' : 'Koppel eerst een andere kleur aan de reeks', disabled: busy || translationPending || !hasOtherVariants },
+      { id: 'variant', label: 'Kleur- of maatvariant maken', hint: 'Begin met de gegevens van dit product', disabled: busy || translationPending },
+      { id: 'translations', label: 'Vertalingen', hint: 'Namen en teksten per taal', disabled: busy },
+      { id: 'delete', label: 'Verwijderen', hint: 'Je bevestigt dit in de volgende stap', danger: true, divider: true, disabled: busy || translationPending },
+    ];
+  });
+
+  catalogueStepLabel(direction: 'previous' | 'next'): string {
+    const around = this.catalogueNeighbours(), target = around?.[direction];
+    if (!target) return direction === 'previous' ? 'Geen vorig product' : 'Geen volgend product';
+    const changesProduct = direction === 'previous' ? around!.previousChangesProduct : around!.nextChangesProduct;
+    return changesProduct
+      ? `${direction === 'previous' ? 'Vorig' : 'Volgend'} product: ${target.groupName} · ${target.optionLabel}`
+      : `${direction === 'previous' ? 'Vorige' : 'Volgende'} kleur: ${target.optionLabel}`;
+  }
+
+  openToolbarMenu(event: Event): void {
+    if (!this.desktop.active() || !this.editorReady() || this.isNew() || this.toolbarBusy()) return;
+    const trigger = event.currentTarget;
+    if (!(trigger instanceof HTMLElement)) return;
+    this.toolbarMenuTrigger = trigger;
+    const rect = trigger.getBoundingClientRect();
+    this.toolbarMenu.set({ x: rect.right - 280, y: rect.bottom + 8 });
+  }
+
+  closeToolbarMenu(): void {
+    this.toolbarMenu.set(null);
+    this.toolbarMenuTrigger?.focus({ preventScroll: true });
+    this.toolbarMenuTrigger = null;
+  }
+
+  private syncToolbarViewport(): void {
+    if (this.desktop.active()) return;
+    this.toolbarMenu.set(null);
+    this.toolbarMenuTrigger = null;
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  toolbarMenuKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Tab' && this.toolbarMenu()) this.closeToolbarMenu();
+  }
+
+  pickToolbarAction(item: ContextMenuItem): void {
+    if (!this.toolbarMenuItems().some(current => current.id === item.id && !current.disabled)) return;
+    this.closeToolbarMenu();
+    if (item.id === 'shared') this.openSharedFields();
+    else if (item.id === 'variant') this.startCopy();
+    else if (item.id === 'translations') void this.router.navigate(['/products', this.draft().id, 'translations']);
+    else if (item.id === 'delete') this.remove();
+  }
+
   readonly variantNeighbours = computed(() =>
     this.familyLoading() || this.familyLoadError()
       ? null
@@ -2192,11 +2272,13 @@ export class ProductEditor implements OnDestroy {
   readonly stockHistory = signal<StockMovement[] | null>(null);
 
   private async loadStockHistory(productId: number): Promise<void> {
+    if (this.draft().id !== productId) return;
     this.stockHistory.set(null);
     try {
-      this.stockHistory.set(await this.catalog.stockMovements(productId));
+      const history = await this.catalog.stockMovements(productId);
+      if (this.draft().id === productId) this.stockHistory.set(history);
     } catch {
-      this.stockHistory.set([]);
+      if (this.draft().id === productId) this.stockHistory.set([]);
     }
   }
 
@@ -2558,6 +2640,7 @@ export class ProductEditor implements OnDestroy {
     && !this.copyVariantConflict());
 
   constructor() {
+    effect(() => this.syncToolbarViewport());
     effect(() => {
       const current = this.activeTab();
       const valid = visibleProductEditorTab(current, this.visibleTabs().map(tab => tab.id));
@@ -2573,6 +2656,7 @@ export class ProductEditor implements OnDestroy {
     effect(() => {
       const routeId = this.id();
       untracked(() => {
+        this.toolbarMenu.set(null);
         if (routeId && routeId !== 'new') {
           const productId = +routeId;
           if (!Number.isSafeInteger(productId) || productId <= 0) {
@@ -2654,6 +2738,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   private async loadFamilies(): Promise<void> {
+    this.navFamiliesReady.set(false);
     try {
       const families = await this.catalog.productFamilies();
       this.families.set(families);
@@ -2661,6 +2746,7 @@ export class ProductEditor implements OnDestroy {
       if (product.id !== null && this.family() === null) {
         await this.loadFamilyForProduct(product);
       }
+      this.navFamiliesReady.set(true);
     } catch {
       /* Product work remains usable while the family endpoint is unavailable. */
       this.families.set([]);
@@ -3789,7 +3875,7 @@ export class ProductEditor implements OnDestroy {
 
   canDeactivate(): boolean | Promise<boolean> {
     if (this.saving() || this.photoUploading() || this.translationSaving()
-        || this.agreementBusy() || this.sharedFieldsBusy()) return false;
+        || this.agreementBusy() || this.sharedFieldsBusy() || this.stockSaving() || this.takingCode()) return false;
     if (this.translationDirty() && !this.confirmDiscardTranslations()) return false;
     const pendingWork = () => this.dirty() || this.familyDirty() || this.agreementDirty()
       || (this.photoManager()?.pendingCount() ?? 0) > 0;
@@ -3814,7 +3900,8 @@ export class ProductEditor implements OnDestroy {
     if (!this.dirty() && !this.familyDirty() && !this.agreementDirty()
         && !(this.photoManager()?.pendingCount() ?? 0)
         && !this.translationDirty() && !this.translationSaving() && !this.agreementBusy()
-        && !this.saving() && !this.photoUploading() && !this.sharedFieldsBusy()) return;
+        && !this.saving() && !this.photoUploading() && !this.sharedFieldsBusy()
+        && !this.stockSaving() && !this.takingCode()) return;
     event.preventDefault();
     event.returnValue = '';
   }

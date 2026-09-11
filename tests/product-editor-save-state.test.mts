@@ -16,7 +16,7 @@ const original = parsed.statements.find((node): node is ts.ClassDeclaration => t
 assert.ok(original);
 const names = new Set(['dirty', 'familyDirty', 'workspacePublicationLive', 'workspacePublicationShortLabel',
   'workspacePublicationLabel', 'workspaceDirty', 'canDeactivate', 'warnBeforeUnload', 'confirmDiscardTranslations',
-  'save', 'copy', 'saveShortcut', 'markClean', 'formWriteBusy', 'saveBusy', 'quickSetStock']);
+  'save', 'copy', 'saveShortcut', 'markClean', 'formWriteBusy', 'toolbarBusy', 'saveBusy', 'quickSetStock', 'loadStockHistory']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size, 'Every tested production member must still exist');
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -39,6 +39,7 @@ function harness() {
   const editor = new exports.ProductEditor!();
   const save = editor.save.bind(editor);
   const copy = editor.copy.bind(editor);
+  const loadStockHistory = editor.loadStockHistory.bind(editor);
   const notifications: { message: string; type?: string }[] = [];
   const navigations: { target: unknown; saving: boolean }[] = [];
   const initial = { id: 10, active: true, name: 'SKU', carton: { piecesPerCarton: 1, weightKg: 1 }, publicationIssues: [] };
@@ -65,11 +66,11 @@ function harness() {
     canCopyVariant: signal(true), copyVariantConflict: signal(null), copying: signal(true),
     copyColour: signal('White'), copyColourHex: signal('#FFFFFF'), copySize: signal('XL'),
     catalog: { duplicateProduct: async () => ({ id: 101, sku: 'COPY-101' }) },
-    stockSaving: signal(false), stockDraft: signal<number | null>(null), stockLevels: signal([]),
+    stockSaving: signal(false), takingCode: signal(false), stockDraft: signal<number | null>(null), stockLevels: signal([]), stockHistory: signal(null),
   });
   editor.isNew = () => editor.draft().id === null;
   editor.photoManager = () => ({ pendingCount: editor.pendingPhotos });
-  return { editor, save, copy, notifications, navigations, denyTranslationDiscard: () => { translationDiscard = false; }, confirmCalls: () => confirmCalls };
+  return { editor, save, copy, loadStockHistory, notifications, navigations, denyTranslationDiscard: () => { translationDiscard = false; }, confirmCalls: () => confirmCalls };
 }
 
 test('a family-only edit asks before leaving even when the SKU is unchanged', async () => {
@@ -130,8 +131,8 @@ test('pending photo files are protected even when every upload failed before cha
   assert.equal(await leaving, false, 'Unuploaded files still prevent save-and-leave');
 });
 
-test('navigation and browser unload stay guarded throughout saves and uploads', () => {
-  for (const flag of ['saving', 'photoUploading', 'translationSaving', 'agreementBusy', 'sharedFieldsBusy']) {
+test('navigation and browser unload stay guarded throughout saves, uploads, stock writes and barcode allocation', () => {
+  for (const flag of ['saving', 'photoUploading', 'translationSaving', 'agreementBusy', 'sharedFieldsBusy', 'stockSaving', 'takingCode']) {
     const { editor } = harness();
     editor[flag].set(true);
     assert.equal(editor.canDeactivate(), false, flag);
@@ -140,7 +141,57 @@ test('navigation and browser unload stay guarded throughout saves and uploads', 
     editor.warnBeforeUnload(event);
     assert.equal(prevented, true, flag);
     assert.equal(event.returnValue, '');
+    editor[flag].set(false);
+    assert.equal(editor.canDeactivate(), true, `Navigation resumes after ${flag} finishes`);
   }
+});
+
+test('stock and barcode activity disable toolbar actions without disabling unrelated product fields', () => {
+  const { editor } = harness();
+  assert.equal(editor.toolbarBusy(), false);
+  for (const flag of ['stockSaving', 'takingCode']) {
+    editor[flag].set(true);
+    assert.equal(editor.toolbarBusy(), true, flag);
+    assert.equal(editor.formWriteBusy(), false, flag);
+    editor[flag].set(false);
+    assert.equal(editor.toolbarBusy(), false);
+  }
+  editor.saving.set(true);
+  assert.equal(editor.toolbarBusy(), true, 'Ordinary form writes still disable the toolbar');
+});
+
+test('late stock history success or failure cannot replace the newly opened product history', async () => {
+  for (const fails of [false, true]) {
+    const { editor, loadStockHistory } = harness();
+    let finish!: (value: unknown) => void;
+    let fail!: (error: Error) => void;
+    editor.catalog.stockMovements = () => new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+    const pending = loadStockHistory(10);
+    assert.equal(editor.stockHistory(), null);
+    editor.draft.set({ ...editor.draft(), id: 20 });
+    const current = [{ id: 201, productId: 20, quantity: 72 }];
+    editor.stockHistory.set(current);
+    if (fails) fail(new Error('Old request failed'));
+    else finish([{ id: 101, productId: 10, quantity: 24 }]);
+    await pending;
+    assert.equal(editor.stockHistory(), current, fails ? 'Stale error' : 'Stale success');
+    let calls = 0;
+    editor.catalog.stockMovements = async () => { calls++; return []; };
+    await loadStockHistory(10);
+    assert.equal(calls, 0, 'A stale caller cannot clear or request history for another product');
+    assert.equal(editor.stockHistory(), current);
+  }
+});
+
+test('current product stock history still displays returned movements or an empty failure state', async () => {
+  const { editor, loadStockHistory } = harness();
+  const movements = [{ id: 101, productId: 10, quantity: 24 }];
+  editor.catalog.stockMovements = async () => movements;
+  await loadStockHistory(10);
+  assert.equal(editor.stockHistory(), movements);
+  editor.catalog.stockMovements = async () => { throw new Error('Unavailable'); };
+  await loadStockHistory(10);
+  assert.equal(editor.stockHistory().length, 0);
 });
 
 test('browser unload also protects family-only edits and failed photo queues', () => {

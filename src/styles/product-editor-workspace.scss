@@ -161,11 +161,28 @@
     .editor-toolbar { position: sticky; top: 0; z-index: 45; display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 70px; padding: 12px 26px; border-bottom: 1px solid var(--line); background: var(--surface); }
     .editor-toolbar__title, .editor-toolbar__actions { display: flex; align-items: center; gap: 12px; }
     .editor-toolbar__title { min-width: 0; }
+    .editor-toolbar__actions { flex: none; gap: 8px; }
+    .editor-toolbar__nav { display: inline-flex; align-items: center; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); }
+    .editor-toolbar__step { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--ink); font-size: 25px; line-height: 1; text-decoration: none; transition: background .15s, color .15s; }
+    .editor-toolbar__step:hover:not([aria-disabled=true]) { background: var(--surface); color: var(--rose); }
+    .editor-toolbar__step:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+    .editor-toolbar__step[aria-disabled=true] { opacity: .3; cursor: default; }
+    .editor-toolbar__menu { gap: 9px; min-height: 40px; }
+    .editor-toolbar__menu>span { transition: transform .15s; }
+    .editor-toolbar__menu[aria-expanded=true]>span { transform: rotate(180deg); }
     .editor-toolbar__title a, .editor-toolbar__title > span { color: var(--muted); font-size: 12px; }
     .editor-toolbar__title a { text-decoration: none; }
-    .editor-toolbar h1 { margin: 0; font-size: 19px; letter-spacing: -.025em; white-space: nowrap; }
+    .editor-toolbar h1 { margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 19px; letter-spacing: -.025em; white-space: nowrap; }
     .editor-save-status { color: var(--muted); font-size: 11px; }
     .editor-save-status.is-dirty { color: var(--rose-dark); }
+    @media (max-width: 1359px) {
+      .editor-save-status { display: none; }
+      .editor-toolbar__title > a, .editor-toolbar__title > span { display: none; }
+      .editor-toolbar h1 { font-size: 17px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .editor-toolbar__step, .editor-toolbar__menu>span { transition: none; }
+    }
     .product-editor-lead__content { padding: 20px 26px 16px; }
     .product-editor-hero .erp-workspace__title { font-size: 23px; }
     .product-editor-hero .erp-workspace__meta .mono { display: inline; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
