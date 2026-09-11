@@ -2,6 +2,7 @@ import { ApplicationConfig, ErrorHandler, provideBrowserGlobalErrorListeners } f
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import {
   provideRouter, withComponentInputBinding, withInMemoryScrolling, withNavigationErrorHandler,
+  withViewTransitions,
 } from '@angular/router';
 
 import { routes } from './app.routes';
@@ -44,6 +45,11 @@ export const appConfig: ApplicationConfig = {
       withNavigationErrorHandler((event) => {
         if (isStaleChunkError(event.error)) reloadForNewBuild();
       }),
+      /* One soft cross-fade between screens, the way an iOS app moves from a
+         list to a document; the header, tab bar and sidebar stay put (see
+         the view-transition rules in styles.scss). Browsers without the API
+         simply switch. */
+      withViewTransitions({ skipInitialTransition: true }),
     ),
   ],
 };

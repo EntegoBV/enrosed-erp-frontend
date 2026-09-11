@@ -49,6 +49,16 @@ export function sidebarRailForUrl(url: string): boolean {
   return path === '/files' || path.startsWith('/files/') || path === '/costs' || path.startsWith('/costs/');
 }
 
+/**
+ * A document desk - one sales document, one container, one product - lays a
+ * table and a rail side by side. On a laptop that only fits when the sidebar
+ * folds to its rail, so these routes ask for the room below 1440px.
+ */
+export function deskRouteForUrl(url: string): boolean {
+  const path = url.split('?', 1)[0].split('#', 1)[0];
+  return /^\/(sales|purchasing)\/\d+(\/edit)?$/.test(path) || /^\/products\/(\d+|new)(\/edit)?$/.test(path);
+}
+
 /** A real accordion: opening one section closes the previous one. */
 export function toggleSidebarGroup(
   current: SidebarGroup | null,

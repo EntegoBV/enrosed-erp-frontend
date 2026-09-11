@@ -1858,6 +1858,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-overview__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.po-overview__copy{min-width:0}
     :is(.po-eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
     .po-overview h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.po-overview__copy p{color:var(--muted);font-size:12px}
+    @media(max-width:679px){.po-overview h1{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;text-overflow:clip;font-size:20px;line-height:1.2}}
     .po-status{display:flex;flex:none;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11.5px;font-weight:700}
     .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}.overview-stepper{margin:16px 0}
     .po-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}

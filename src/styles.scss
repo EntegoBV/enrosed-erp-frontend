@@ -3849,9 +3849,37 @@ a.desk-kpi{text-decoration:none}
 .desk-action span{display:grid;flex:1;min-width:0}.desk-action b{font-size:13px}.desk-action small{color:var(--muted);font-size:11px}.desk-action i{color:var(--muted);font-style:normal;font-size:18px}
 .desk-danger summary{padding:8px 0;color:var(--muted);font-size:12px;text-align:center;cursor:pointer}.desk-danger p{margin:0 0 8px;color:var(--muted);font-size:11px;text-align:center}
 @media(max-width:1599px){.desk-body{grid-template-columns:minmax(0,1fr) 330px}}
-@media(max-width:1439px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
+/* A laptop keeps the rail beside the table: the sidebar folds to its icon rail
+   on these widths (see App.railed), so the desk has the room. Only a narrow
+   desk stacks the rail under the table. */
+@media(max-width:1439px){.desk-body{grid-template-columns:minmax(0,1fr) 300px;gap:14px}.desk-facts>div{grid-template-columns:104px minmax(0,1fr)}}
+@media(max-width:1179px){.desk-body{grid-template-columns:1fr}.desk-rail{position:static;max-height:none}}
 @media(max-width:1180px){.desk-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:980px){.desk{padding-inline:14px}.desk-hero__top{flex-direction:column}.desk-status{align-self:flex-start;max-width:100%}}
+
+/* One search field for every list: icon left, clear cross right. */
+.search-control{position:relative;min-width:0}
+.search-control>svg{position:absolute;top:50%;left:14px;width:18px;height:18px;transform:translateY(-50%);fill:none;stroke:var(--muted);stroke-linecap:round;stroke-width:1.8;pointer-events:none}
+.search-control .input{padding-right:46px;padding-left:42px}
+.search-control .input::-webkit-search-cancel-button{appearance:none}
+.search-clear{position:absolute;top:50%;right:5px;display:grid;width:36px;height:36px;padding:0;transform:translateY(-50%);place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:22px;cursor:pointer}
+.search-clear:hover{background:var(--surface-2);color:var(--ink)}
+
+/* =====================================================================
+   Route transitions: one soft cross-fade between screens (Angular's
+   withViewTransitions). The chrome - app bar, tab bar, sidebar - keeps its
+   own snapshot so only the page moves, as in an iOS app.
+   ===================================================================== */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.22s;animation-timing-function:cubic-bezier(.2,.7,.2,1)}
+::view-transition-old(root){animation-name:route-leave}
+::view-transition-new(root){animation-name:route-enter}
+@keyframes route-leave{to{opacity:0;transform:translateY(-4px)}}
+@keyframes route-enter{from{opacity:0;transform:translateY(8px)}}
+.appbar{view-transition-name:erp-appbar}
+.tabbar{view-transition-name:erp-tabbar}
+.sidebar{view-transition-name:erp-sidebar}
+::view-transition-group(erp-appbar),::view-transition-group(erp-tabbar),::view-transition-group(erp-sidebar){animation-duration:0s}
+@media(prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root){animation:none}}
 
 /* =====================================================================
    Switch row: a labelled on/off toggle for settings forms - the words

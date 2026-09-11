@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -14,7 +14,7 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
 import { FinanceAdminNav } from './features/finance/finance-admin-nav';
 import { FilesAdminNav } from './features/files/files-admin-nav';
 import { DesktopViewport } from './core/platform/desktop-viewport';
-import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
+import { deskRouteForUrl, sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
 
 /**
@@ -308,7 +308,15 @@ export class App {
      even when nobody opened Instellingen this session. */
   private readonly pushSetup = inject(PushSetup);
 
-  constructor() { void this.pushSetup.init(); }
+  constructor() {
+    void this.pushSetup.init();
+    const media = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 1440px)') : null;
+    if (media) {
+      this.wideDesk.set(media.matches);
+      media.addEventListener('change', (event) => this.wideDesk.set(event.matches));
+    }
+  }
 
   readonly auth = inject(Auth);
   private readonly search = viewChild(CommandPalette);
@@ -344,9 +352,15 @@ export class App {
    * rail while the library is open, and unfolds at the next click in the
    * sidebar or when the route leaves the library by any other way.
    */
-  readonly railed = signal(sidebarRailForUrl(this.router.url));
-  private readonly syncRailWithRoute = effect(() => {
-    this.railed.set(sidebarRailForUrl(this.url()));
+  /** Wide enough for a document desk to keep the full sidebar beside its table and rail. */
+  private readonly wideDesk = signal(true);
+  /** A click in the sidebar overrules the route until the next navigation. */
+  private readonly railOverride = signal<boolean | null>(null);
+  readonly railed = computed(() => this.railOverride()
+    ?? (sidebarRailForUrl(this.url()) || (deskRouteForUrl(this.url()) && !this.wideDesk())));
+  private readonly forgetRailOverrideOnNavigation = effect(() => {
+    this.url();
+    untracked(() => this.railOverride.set(null));
   });
 
   /** One listener for the whole navigation: the library folds it, anything else unfolds it. */
@@ -355,11 +369,11 @@ export class App {
     const control = target?.closest<HTMLElement>('a, button');
     if (!control) return;
     if (control.hasAttribute('data-rail')) {
-      this.railed.set(true);
+      this.railOverride.set(true);
       this.openGroup.set(null);
       return;
     }
-    this.railed.set(false);
+    this.railOverride.set(false);
     if (control.hasAttribute('data-expand')) this.openGroup.set(this.currentGroup());
   }
 

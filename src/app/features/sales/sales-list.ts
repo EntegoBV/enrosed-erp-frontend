@@ -734,40 +734,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       font-size: 12px;
       font-weight: 700;
     }
-    .search-control { position: relative; min-width: 0; }
-    .search-control > svg {
-      position: absolute;
-      top: 50%;
-      left: 14px;
-      width: 18px;
-      height: 18px;
-      transform: translateY(-50%);
-      fill: none;
-      stroke: var(--muted);
-      stroke-linecap: round;
-      stroke-width: 1.8;
-      pointer-events: none;
-    }
-    .search-control .input { padding-right: 46px; padding-left: 42px; }
-    .search-control .input::-webkit-search-cancel-button { appearance: none; }
-    .search-clear {
-      position: absolute;
-      top: 50%;
-      right: 5px;
-      display: grid;
-      width: 36px;
-      height: 36px;
-      padding: 0;
-      transform: translateY(-50%);
-      place-items: center;
-      border: 0;
-      border-radius: 50%;
-      background: transparent;
-      color: var(--muted);
-      font-size: 22px;
-      cursor: pointer;
-    }
-    .search-clear:hover { background: var(--surface-2); color: var(--ink); }
     .desktop-status { display: none; }
     .filter-result {
       display: flex;

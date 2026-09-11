@@ -231,6 +231,32 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
         </section>
 
+        <!-- The step pill sits right under the hero, before any notice or
+             checklist: on a phone it is the map of the document. -->
+        <nav class="workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van de offerte">
+          @for (item of workflowSections; track item.id; let number = $index) {
+            <!-- On the phone, Status lives inside the Controle step; an
+                 invoice has no send step at all. -->
+            @if (item.id !== 'quote-status' ? true : (desktop.active() && !isInvoiceDoc())) {
+            <button type="button"
+                    class="erp-workspace__section-link"
+                    [class.workflow-nav__active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
+                    [class.active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
+                    [class.erp-workspace__section-link--complete]="workflowComplete(item.id)"
+                    [class.erp-workspace__section-link--attention]="workflowAttention(item.id)"
+                    [attr.aria-current]="activeSection() === item.id ? 'step' : null"
+                    [attr.aria-label]="item.label + ': ' + workflowHint(item.id)"
+                    (click)="scrollToSection(item.id)">
+              <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ workflowMark(item.id, number + 1) }}</span>
+              <span class="workflow-nav__copy erp-workspace__section-copy">
+                <b>{{ item.label }}</b>
+                <small>{{ workflowHint(item.id) }}</small>
+              </span>
+            </button>
+            }
+          }
+        </nav>
+
         <app-sales-advance-invoices [order]="data.order" />
         <app-sales-document-note [notes]="mobileCustomerAuthoredMessage(data) ? mobileCustomerNote(data) : data.order.notes" [fromCustomer]="mobileCustomerAuthoredMessage(data)" />
         <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || mobileSplitBusy()" (changed)="mobileFulfillmentChanged($event)" />
@@ -390,29 +416,6 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
         }
 
         <div class="workflow-layout erp-workspace__layout">
-        <nav class="workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van de offerte">
-          @for (item of workflowSections; track item.id; let number = $index) {
-            <!-- On the phone, Status lives inside the Controle step; an
-                 invoice has no send step at all. -->
-            @if (item.id !== 'quote-status' ? true : (desktop.active() && !isInvoiceDoc())) {
-            <button type="button"
-                    class="erp-workspace__section-link"
-                    [class.workflow-nav__active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
-                    [class.active]="desktop.active() ? activeSection() === item.id : stepOfId(item.id) === phoneStep()"
-                    [class.erp-workspace__section-link--complete]="workflowComplete(item.id)"
-                    [class.erp-workspace__section-link--attention]="workflowAttention(item.id)"
-                    [attr.aria-current]="activeSection() === item.id ? 'step' : null"
-                    [attr.aria-label]="item.label + ': ' + workflowHint(item.id)"
-                    (click)="scrollToSection(item.id)">
-              <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ workflowMark(item.id, number + 1) }}</span>
-              <span class="workflow-nav__copy erp-workspace__section-copy">
-                <b>{{ item.label }}</b>
-                <small>{{ workflowHint(item.id) }}</small>
-              </span>
-            </button>
-            }
-          }
-        </nav>
         <div class="workflow-content erp-workspace__content">
 
 
@@ -1315,19 +1318,20 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <button class="sales-mobile-dock__back" type="button" (click)="previousPhoneStep()"
                     [attr.aria-label]="'Terug naar ' + phoneStepLabels[phoneStep() - 1]">‹</button>
           }
-          <span class="sales-mobile-dock__context">
-            <small>Stap {{ phoneStep() + 1 }} van 4</small>
-            <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
-          </span>
           <button class="btn sales-mobile-dock__save" type="button"
                   [class.btn--primary]="dirty()"
                   [disabled]="saving() || !dirty()" (click)="save()">
             {{ saving() ? 'Opslaan…' : 'Opslaan' }}
           </button>
           @if (phoneStep() < 3) {
+            <!-- The next step by name, so the wide dark button says where it goes. -->
             <button class="sales-mobile-dock__next" type="button" (click)="nextPhoneStep()"
                     [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">
-              <span aria-hidden="true">›</span>
+              <span class="sales-mobile-dock__context">
+                <small>Volgende · stap {{ phoneStep() + 2 }} van 4</small>
+                <strong>{{ phoneStepLabels[phoneStep() + 1] }}</strong>
+              </span>
+              <i aria-hidden="true">›</i>
             </button>
           } @else if (!dirty() && pendingRevision()) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
@@ -1352,6 +1356,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           } @else if (!dirty() && isInvoiceDoc()) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     (click)="openPdfSheet()">PDF bekijken</button>
+          } @else {
+            <span class="sales-mobile-dock__context sales-mobile-dock__context--quiet">
+              <small>Stap 4 van 4</small>
+              <strong>{{ phoneStepLabels[3] }}</strong>
+            </span>
           }
         </div>
       }
@@ -1874,15 +1883,21 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .hero-waiting span b { font-weight:800 }
     .hero-waiting__go { flex:none;font-weight:800;white-space:nowrap }
     .sales-mobile-dock { display:flex;align-items:center;gap:7px }
-    .sales-mobile-dock__back,.sales-mobile-dock__next { width:42px;height:42px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer }
-    .sales-mobile-dock__next { background:var(--ink);color:#fff }
-    .sales-mobile-dock__context { min-width:52px;display:grid;flex:1;line-height:1.15 }
-    .sales-mobile-dock__context small { color:var(--muted);font-size:8.5px;font-weight:650;text-transform:uppercase }
-    .sales-mobile-dock__context strong { overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap }
-    .sales-mobile-dock .btn { min-height:42px;margin:0;padding-inline:11px }
+    .sales-mobile-dock__back { width:44px;height:44px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:14px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer }
+    .sales-mobile-dock__back:active { transform:scale(.96) }
+    /* The next step as one wide dark pill: where you go, and the arrow that takes you. */
+    .sales-mobile-dock__next { display:flex;flex:1;min-width:0;min-height:44px;align-items:center;justify-content:space-between;gap:8px;padding:0 6px 0 14px;border:0;border-radius:14px;background:var(--ink);color:#fff;font:inherit;text-align:left;cursor:pointer;transition:transform .15s ease }
+    .sales-mobile-dock__next:active { transform:scale(.98) }
+    .sales-mobile-dock__next i { width:32px;height:32px;display:grid;flex:none;place-items:center;border-radius:10px;background:rgb(255 255 255/.16);font-size:20px;font-style:normal;line-height:1 }
+    .sales-mobile-dock__context { min-width:0;display:grid;flex:1;line-height:1.15 }
+    .sales-mobile-dock__context small { overflow:hidden;color:var(--muted);font-size:8.5px;font-weight:650;letter-spacing:.04em;text-overflow:ellipsis;text-transform:uppercase;white-space:nowrap }
+    .sales-mobile-dock__context strong { overflow:hidden;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap }
+    .sales-mobile-dock__next .sales-mobile-dock__context small { color:rgb(255 255 255/.62) }
+    .sales-mobile-dock__context--quiet { padding-left:4px }
+    .sales-mobile-dock .btn { min-height:44px;margin:0;padding-inline:14px;border-radius:14px }
+    .sales-mobile-dock__save { flex:none }
     .sales-mobile-dock__save:disabled { opacity:.58 }
-    .sales-mobile-dock__primary { flex:none }
-    @media(max-width:390px) { .sales-mobile-dock__context { display:none }.sales-mobile-dock__primary { flex:1 }.sales-mobile-dock__save { padding-inline:9px!important } }
+    .sales-mobile-dock__primary { flex:1;min-width:0 }
     @media (min-width:680px) { .sales-mobile-dock { display:none } }
     .products-empty { padding:38px 18px 42px;text-align:center }
     .products-empty__art { width:64px;height:64px;margin:0 auto 12px;display:grid;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px }

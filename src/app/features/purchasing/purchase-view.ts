@@ -985,6 +985,8 @@ type PurchaseWorkspaceSectionId =
     .journey-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.journey-hero__copy{min-width:0}
     :is(.eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
     .journey-hero h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.journey-hero__copy p{color:var(--muted);font-size:12px}
+    /* A long supplier name on a phone wraps to two lines instead of losing its tail. */
+    @media(max-width:679px){.journey-hero h1{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;text-overflow:clip;font-size:20px;line-height:1.2}}
     .status-pill{display:flex;flex:none;align-items:center;gap:6px;padding:6px 9px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11px;font-weight:720}
     .status-pill__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.status-pill--done{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}
 
