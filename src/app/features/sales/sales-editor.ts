@@ -260,9 +260,6 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
         <app-sales-advance-invoices [order]="data.order" />
         <app-sales-document-note [notes]="mobileCustomerAuthoredMessage(data) ? mobileCustomerNote(data) : data.order.notes" [fromCustomer]="mobileCustomerAuthoredMessage(data)" />
         <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || mobileSplitBusy()" (changed)="mobileFulfillmentChanged($event)" />
-        @if (!data.fulfillment && !isPartnerDocument(data.order)) {
-          <section class="mobile-split-entry"><div><b>Een deel later leveren?</b><span>{{ mobileSplitBlockReason(data) || 'Verplaats producten naar een gekoppelde nalevering.' }}</span></div><button class="btn btn--sm" type="button" [disabled]="!!mobileSplitBlockReason(data) || dirty() || saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (click)="openMobileSplit()">Order splitsen</button></section>
-        }
 
         @if (saveError()) {
           <div class="alert alert--warn quote-action-error" role="alert">
@@ -1307,6 +1304,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
         </div>
         </div>
+
+        @if (phoneStep() === 1 && !data.fulfillment && !isPartnerDocument(data.order)) {
+          <!-- Splitting is about the products: it follows the product step, not the hero. -->
+          <section class="mobile-split-entry"><div><b>Een deel later leveren?</b><span>{{ mobileSplitBlockReason(data) || 'Verplaats producten naar een gekoppelde nalevering.' }}</span></div><button class="btn btn--sm" type="button" [disabled]="!!mobileSplitBlockReason(data) || dirty() || saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (click)="openMobileSplit()">Order splitsen</button></section>
+        }
       </main>
 
       @if (!desktop.active()) {
@@ -1720,7 +1722,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .order-line__amount span { color:var(--ok);font-size:10px }
     .line-quick-controls { margin-top:10px;display:grid;grid-template-columns:minmax(108px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch }
     .order-line--unavailable { border-style:dashed; background:var(--surface-2) }.order-line--unavailable .order-line__photo{opacity:.7}.line-availability{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 0;font-size:11px;color:var(--muted)}.line-availability>button{min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-weight:600}.line-availability--paused>div{display:grid;gap:5px;min-width:0}.line-availability b{font-size:12px;color:var(--ink)}.line-availability span{line-height:1.6}.line-availability-notice{padding:13px;border-radius:12px;background:var(--rose-soft);font-size:12px;line-height:1.6}.line-availability--paused>.btn{flex:none}@media(max-width:420px){.line-availability{align-items:flex-start;flex-direction:column}.line-availability--paused>.btn{width:100%}}
-    .mobile-split-entry { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin:0 0 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface) }.mobile-split-entry>div{min-width:0;display:grid;gap:5px}.mobile-split-entry b{font-size:12px}.mobile-split-entry span{font-size:11px;line-height:1.5;color:var(--muted)}.mobile-split-entry>.btn{min-height:44px;flex:none}@media(max-width:420px){.mobile-split-entry{align-items:stretch;flex-direction:column}.mobile-split-entry>.btn{width:100%}}
+    .mobile-split-entry { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin:14px 0 0;border:1px solid var(--line);border-radius:16px;background:var(--surface) }.mobile-split-entry>div{min-width:0;display:grid;gap:5px}.mobile-split-entry b{font-size:12px}.mobile-split-entry span{font-size:11px;line-height:1.5;color:var(--muted)}.mobile-split-entry>.btn{min-height:44px;flex:none}@media(max-width:420px){.mobile-split-entry{align-items:stretch;flex-direction:column}.mobile-split-entry>.btn{width:100%}}
     .quantity-editor { min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:13px;background:var(--surface-2) }
     .quantity-editor:focus-within { border-color:var(--rose);box-shadow:0 0 0 3px var(--rose-soft) }
     .quantity-editor .field { height:100%;margin:0;padding:8px 10px 6px;display:grid;grid-template-rows:auto minmax(28px,1fr);align-content:center }
@@ -2462,12 +2464,28 @@ export class SalesEditor {
 
   nextPhoneStep(): void {
     this.phoneStep.update((step) => Math.min(3, step + 1));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    this.scrollToPhoneStep();
   }
 
   previousPhoneStep(): void {
     this.phoneStep.update((step) => Math.max(0, step - 1));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    this.scrollToPhoneStep();
+  }
+
+  /**
+   * After a step change the step's content sits right under the sticky pill:
+   * not the hero again, and nothing of the previous step left in view.
+   */
+  private scrollToPhoneStep(): void {
+    requestAnimationFrame(() => {
+      const content = document.querySelector<HTMLElement>('.workflow-content');
+      const nav = document.querySelector<HTMLElement>('.workflow-nav');
+      if (!content) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      const appbar = document.querySelector<HTMLElement>('.appbar')?.offsetHeight || 56;
+      const offset = appbar + 8 + (nav?.offsetHeight ?? 0) + 12;
+      const top = Math.max(0, content.getBoundingClientRect().top + window.scrollY - offset);
+      window.scrollTo({ top, behavior: 'smooth' });
+    });
   }
 
   focusPendingRevision(): void {

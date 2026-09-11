@@ -2031,6 +2031,22 @@ export class PurchaseEditor {
     this.jumpToSection(this.phoneStepIds[next], disclosure);
   }
 
+  /**
+   * After a step change on a phone the step's content sits right under the
+   * sticky rail: not the hero again, and nothing of the previous step in view.
+   */
+  private scrollToPhoneStep(): void {
+    requestAnimationFrame(() => {
+      const content = document.querySelector<HTMLElement>('.purchase-grid');
+      const nav = document.querySelector<HTMLElement>('.purchase-editor__mobile-nav');
+      if (!content) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      const appbar = document.querySelector<HTMLElement>('.appbar')?.offsetHeight || 56;
+      const offset = appbar + 8 + (nav?.offsetHeight ?? 0) + 12;
+      const top = Math.max(0, content.getBoundingClientRect().top + window.scrollY - offset);
+      window.scrollTo({ top, behavior: 'smooth' });
+    });
+  }
+
   /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
   jumpToSection(sectionId: string, disclosure?: 'order' | 'costs', scroll = true): void {
     if (disclosure && !this.sectionOpen(disclosure)) {
@@ -2042,7 +2058,7 @@ export class PurchaseEditor {
     if (!this.desktop.active()) {
       const phoneStep = this.phoneStepIds.indexOf(sectionId as (typeof this.phoneStepIds)[number]);
       if (phoneStep >= 0) this.phoneStep.set(phoneStep);
-      if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (scroll) this.scrollToPhoneStep();
       return;
     }
     if (!scroll) return;
