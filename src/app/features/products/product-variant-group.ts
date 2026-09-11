@@ -52,14 +52,6 @@ import { Sheet, Ui } from '../../shared/ui';
           }
         </div>
         <div class="variant-group__actions" role="group" aria-label="Acties voor deze reeks">
-          <ng-content select="[variant-create-action]" />
-          @if (family() && siblings().length) {
-            <button class="series-sync" type="button" [disabled]="disabled()"
-                    (click)="syncRequested.emit()">
-              <span aria-hidden="true">⇄</span>
-              Reeks bijwerken
-            </button>
-          }
           <button class="btn btn--sm" type="button" [disabled]="!canStart() || disabled()"
                   (click)="openPicker()">
             Product koppelen
@@ -238,15 +230,6 @@ import { Sheet, Ui } from '../../shared/ui';
     .variant-group__head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between; }
     .variant-group__identity { flex: 1 1 260px; min-width: 0; }
     .variant-group__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
-    .series-sync {
-      display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 10px;
-      border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line)); border-radius: 11px;
-      background: color-mix(in srgb, var(--brand) 7%, var(--surface)); color: var(--brand);
-      font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
-    }
-    .series-sync span { font-size: 15px; line-height: 1; }
-    .series-sync:hover { background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
-    .series-sync:disabled { cursor: not-allowed; opacity: .55; }
     .variant-group__eyebrow {
       display: block; margin-bottom: 3px; color: var(--brand); font-size: 10px;
       font-weight: 750; letter-spacing: .08em; text-transform: uppercase;
@@ -336,9 +319,6 @@ import { Sheet, Ui } from '../../shared/ui';
     @media (max-width: 360px) {
       .variant-strip { grid-template-columns: minmax(0, 1fr); }
     }
-    @media (pointer: coarse) {
-      .series-sync { min-height: 44px; }
-    }
   `,
 })
 export class ProductVariantGroup {
@@ -349,8 +329,6 @@ export class ProductVariantGroup {
   readonly family = input<ProductFamily | null>(null);
   readonly disabled = input(false);
   readonly linked = output<ProductFamily>();
-  /** Opens the explicit shared-data flow in the owning product editor. */
-  readonly syncRequested = output<void>();
   readonly unlinking = signal(false);
 
   /** Takes a variant out of the series; the product itself stays. */

@@ -466,13 +466,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                                          [product]="draft()" [family]="family()"
                                          [disabled]="saving() || sharedFieldsBusy() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
                                          (linked)="onVariantLinked($event)"
-                                         (syncRequested)="openSharedFields()"
-                                         (familyChange)="onFamilyChange($event)">
-                <button variant-create-action class="btn btn--sm btn--primary variant-create-action" type="button"
-                        title="Kopiëren als kleur- of maatvariant"
-                        [disabled]="toolbarBusy() || translationDirty()"
-                        (click)="startCopy()"><span aria-hidden="true">+</span> Nieuwe variant</button>
-              </app-product-variant-group>
+                                         (familyChange)="onFamilyChange($event)" />
             }
               </div>
             </details>
@@ -2107,7 +2101,7 @@ export class ProductEditor implements OnDestroy {
     const hasOtherVariants = family?.id === product.familyId && !!family?.members.some(member => member.productId !== product.id);
     return [
       { id: 'shared', label: 'Naar de reeks kopiëren', hint: hasOtherVariants ? 'Gegevens toepassen op andere kleuren' : 'Koppel eerst een andere kleur aan de reeks', disabled: busy || translationPending || !hasOtherVariants },
-      { id: 'variant', label: 'Kleur- of maatvariant maken', hint: 'Begin met de gegevens van dit product', disabled: busy || translationPending },
+      { id: 'variant', label: 'Kopiëren als variant', hint: 'Nieuwe kleur of maat met de gegevens van dit product', disabled: busy || translationPending },
       { id: 'translations', label: 'Vertalingen', hint: 'Namen en teksten per taal', disabled: busy },
       { id: 'delete', label: 'Verwijderen', hint: 'Je bevestigt dit in de volgende stap', danger: true, divider: true, disabled: busy || translationPending },
     ];

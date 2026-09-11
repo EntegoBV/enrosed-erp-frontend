@@ -90,7 +90,6 @@
   .photo-scopes button:focus-visible, .photo-scope-hint button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
   .photo-scope-hint { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
   .photo-scope-hint button { min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--rose); font: inherit; font-weight: 650; cursor: pointer; }
-  .variant-create-action { min-height: 44px; gap: 7px; border-radius: 12px; }
   @media (max-width: 360px) {
     .photo-workspace .photo-details__actions { flex-direction: column; align-items: stretch; }
   }
