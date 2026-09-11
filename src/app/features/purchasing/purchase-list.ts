@@ -39,6 +39,28 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     </app-page-header>
 
     <div class="content">
+      @if (!archiveTab() && attentionRows().length) {
+        <!-- What needs a buyer first: an open payment, a missing week, a container to book in. -->
+        <section class="attn-strip attn-strip--warn" aria-label="Actie vereist">
+          <div class="attn-strip__head">
+            <b>Actie vereist</b>
+            <span class="attn-strip__count">{{ attentionRows().length }}</span>
+          </div>
+          <div class="attn-strip__items">
+            @for (row of attentionRows(); track row.order.id) {
+              <a class="attn-strip__item" [routerLink]="['/purchasing', row.order.id]">
+                <span class="attn-strip__icon" aria-hidden="true">!</span>
+                <span class="attn-strip__copy">
+                  <b>{{ row.attention![0] }}{{ row.attention!.length > 1 ? ' · +' + (row.attention!.length - 1) : '' }}</b>
+                  <small>{{ row.order.alias || row.order.number }} · {{ supplierName(row.order.supplierId) }}</small>
+                </span>
+                <span class="attn-strip__chev" aria-hidden="true">›</span>
+              </a>
+            }
+          </div>
+        </section>
+      }
+
       <!-- One toolbar, the sales list's grammar: the working list or the
            archive as a segmented control, then search and the status pill. -->
       <div class="po-toolbar">
@@ -419,6 +441,11 @@ export class PurchaseList {
   /** The drawer under the working list. */
   readonly archiveTab = signal(false);
   readonly activeOrders = computed(() => this.orders().filter((row) => !row.order.archivedAt));
+  /** Working containers with an open point, newest first: the strip above the list. */
+  readonly attentionRows = computed(() => this.activeOrders()
+    .filter((row) => row.attention?.length)
+    .sort((a, b) => b.order.orderDate.localeCompare(a.order.orderDate) || (b.order.id ?? 0) - (a.order.id ?? 0))
+    .slice(0, 6));
   readonly archivedOrders = computed(() => this.orders().filter((row) => !!row.order.archivedAt));
 
   showArchive(on: boolean): void {

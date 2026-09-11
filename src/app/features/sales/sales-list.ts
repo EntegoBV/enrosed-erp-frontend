@@ -62,20 +62,20 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       @if (attentionCount()) {
         <!-- The card appears and disappears; without its own bottom margin it
              lands right on top of the search bar. -->
-        <section class="sales-attention" aria-label="Klant wacht op ons">
-          <div class="sales-attention__head">
+        <section class="attn-strip" aria-label="Klant wacht op ons">
+          <div class="attn-strip__head">
             <b>Klant wacht op ons</b>
-            <span class="sales-attention__count">{{ attentionCount() }}</span>
+            <span class="attn-strip__count">{{ attentionCount() }}</span>
           </div>
-          <div class="sales-attention__items">
+          <div class="attn-strip__items">
             @for (item of openWork(); track $index) {
-              <a class="sales-attention__item" [routerLink]="['/sales', item.orderId]">
-                <span class="sales-attention__icon" aria-hidden="true">{{ workIcon(item.kind) }}</span>
-                <span class="sales-attention__copy">
+              <a class="attn-strip__item" [routerLink]="['/sales', item.orderId]">
+                <span class="attn-strip__icon" aria-hidden="true">{{ workIcon(item.kind) }}</span>
+                <span class="attn-strip__copy">
                   <b>{{ item.title }}</b>
                   <small>{{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }</small>
                 </span>
-                <span class="sales-attention__chev" aria-hidden="true">›</span>
+                <span class="attn-strip__chev" aria-hidden="true">›</span>
               </a>
             }
           </div>
@@ -565,17 +565,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     @media(max-width:600px){ .swipe--grouped .so-row { padding-left:16px } }
 
     /* What waits on us: a quiet rose strip, not a second full card. */
-    .sales-attention { margin-bottom:12px;padding:10px 14px 10px;border:1px solid var(--rose-line);border-radius:16px;background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface)) }
-    .sales-attention__head { display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--rose-dark);font-size:12px }
-    .sales-attention__count { display:inline-grid;min-width:20px;height:20px;padding:0 6px;place-items:center;border-radius:999px;background:var(--rose);color:#fff;font-size:11px;font-weight:750;font-variant-numeric:tabular-nums }
-    .sales-attention__items { display:flex;flex-wrap:wrap;gap:6px }
-    .sales-attention__item { display:flex;flex:1 1 260px;align-items:center;gap:10px;min-width:0;min-height:44px;padding:6px 10px 6px 8px;border:1px solid rgb(255 255 255/.8);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none;box-shadow:0 1px 2px rgb(26 22 20/.05) }
-    .sales-attention__icon { display:grid;width:28px;height:28px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose-dark);font-size:14px;font-weight:800 }
-    .sales-attention__copy { display:grid;min-width:0;flex:1;gap:1px }
-    .sales-attention__copy b { overflow:hidden;font-size:13.5px;font-weight:650;text-overflow:ellipsis;white-space:nowrap }
-    .sales-attention__copy small { overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap }
-    .sales-attention__chev { color:var(--muted-2);font-size:16px }
-    @media(min-width:1024px){ .sales-attention { display:flex;align-items:center;gap:14px;padding:8px 12px } .sales-attention__head { margin:0;flex:none } .sales-attention__items { flex:1 } .sales-attention__item { flex:0 1 auto;min-height:40px } }
     .sales-container:not(:last-child){border-bottom:1px solid var(--line)}
     .sales-container__header{display:flex;align-items:stretch;background:var(--surface)}
     .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;flex:1;min-width:0;min-height:98px;padding:19px 20px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}
