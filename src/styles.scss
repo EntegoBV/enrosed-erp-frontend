@@ -3831,7 +3831,10 @@ a.desk-kpi{text-decoration:none}
 .workflow-nav button:hover { border-color:transparent }
 .workflow-nav button:active { transform:scale(.97) }
 @media (min-width:680px) { .workflow-nav { grid-auto-columns:minmax(0,1fr) } }
-.workflow-nav--wide { grid-auto-columns:minmax(64px,1fr);overflow-x:auto;scrollbar-width:none }
+.workflow-nav--wide { grid-auto-columns:minmax(64px,1fr);overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity;scroll-padding-inline:4px;overscroll-behavior-x:contain }
+.workflow-nav--wide > .workflow-nav__item, .workflow-nav--wide > button { scroll-snap-align:start }
+/* On a phone the last item is clipped mid-word; a soft fade says "there is more" instead of looking cut. */
+@media (max-width:679px) { .workflow-nav--wide { mask-image:linear-gradient(to right,#000 calc(100% - 34px),rgb(0 0 0/.25));-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 34px),rgb(0 0 0/.25)) } }
 .workflow-nav--wide::-webkit-scrollbar { display:none }
 .workflow-nav button>.workflow-nav__mark { width:22px;height:22px;display:grid;flex:none;place-items:center;margin:0;border:1.5px solid var(--line-strong);border-radius:50%;background:transparent;color:var(--muted);font-size:10px;font-weight:800;line-height:1 }
 .workflow-nav__copy { min-width:0;display:grid;gap:0;justify-items:center;text-align:center;line-height:1 }

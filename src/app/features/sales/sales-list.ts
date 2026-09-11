@@ -174,7 +174,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
               </svg>
               <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
             </button>
-            <a class="list-item swipe__row" [routerLink]="['/sales', row.order.id]"
+            <a class="list-item swipe__row so-row" [routerLink]="['/sales', row.order.id]"
                appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
                (salesMenu)="openRowMenu(null, row)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
                (pointerdown)="startSwipe($event, row)"
@@ -188,7 +188,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                 <div class="list-item__title">{{ grouped ? row.order.number : customerName(row) }}</div>
                 <!-- No country chip: it repeats what the customer name already
                      implies and pushed the date into "18/0...". -->
-                <div class="list-item__meta list-item__meta--wrap">
+                <div class="list-item__meta list-item__meta--wrap so-row__doc">
                   {{ documentLabel(row.order) }} ·
                   @if (!grouped) { {{ row.order.number }} · }{{ row.order.orderDate | dateNl }}
                   @if (row.order.sourceQuoteId && row.sourceQuoteNumber) {
@@ -202,7 +202,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                     · vervalt {{ row.order.invoiceDueDate | dateNl }}
                   }
                 </div>
-                <div class="list-item__meta list-item__meta--wrap">
+                <div class="list-item__meta list-item__meta--wrap so-row__size">
                   @if (partner(row.order)) {
                     {{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}
                   } @else {
@@ -222,13 +222,17 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                   }
                 </div>
               </div>
-              <div class="list-item__end list-item__end--stacked">
-                @if (websiteRequest(row.order)) {
-                  <span class="so-source-mini">Websiteaanvraag</span>
-                }
+              <!-- The figure reads on the title line; the flags share one
+                   row underneath so the customer name keeps its width. -->
+              <div class="so-row__amount">
                 <div class="strong num">{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
                 @if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
                   <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
+                }
+              </div>
+              <div class="list-item__end list-item__end--stacked so-row__flags">
+                @if (websiteRequest(row.order)) {
+                  <span class="so-source-mini">Websiteaanvraag</span>
                 }
                 <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
                   <i aria-hidden="true"></i>{{ statusOf(row).label }}
@@ -522,6 +526,31 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     }
   `,
   styles: `
+    /* Order rows: the customer and the figure share the top line, the
+       document line and size line run under it at full width, and every
+       flag sits together on the last row. Wide screens line the same parts
+       up as columns so twenty rows read like a table. */
+    .so-row { display:grid;grid-template-columns:minmax(0,1fr) auto 14px;grid-template-areas:'title amount chev' 'doc doc chev' 'size size chev' 'flags flags chev';column-gap:12px;row-gap:3px;align-items:center;padding:12px 14px }
+    .so-row .list-item__body { display:contents }
+    .so-row .list-item__title { grid-area:title;min-width:0 }
+    .so-row .so-row__doc { grid-area:doc;min-width:0;line-height:1.4 }
+    .so-row .so-row__size { grid-area:size;min-width:0;line-height:1.4 }
+    .so-row .so-row__amount { grid-area:amount;display:grid;justify-items:end;gap:2px;text-align:right;white-space:nowrap }
+    .so-row .so-row__amount .num { font-size:15px;letter-spacing:-.01em;font-variant-numeric:tabular-nums }
+    .so-row .so-row__amount small { color:var(--muted);font-size:11px;white-space:normal;text-align:right;max-width:150px }
+    .so-row .so-row__flags { grid-area:flags;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:5px;max-width:none;margin-top:3px;text-align:left }
+    .so-row .so-row__flags:empty { display:none }
+    .so-row .list-item__chev { grid-area:chev;align-self:center }
+    .so-row .so-row__doc, .so-row .so-row__size { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    @media(max-width:600px){ .so-row .so-row__doc { white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2 } }
+    @media(min-width:1024px){
+      .so-row { grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,.9fr) auto 14px;grid-template-areas:'title size flags amount chev' 'doc size flags amount chev';column-gap:16px;row-gap:2px;padding:12px 16px }
+      .so-row .so-row__size { align-self:center }
+      .so-row .so-row__flags { align-self:center;margin-top:0 }
+      .so-row .list-item__end .so-status-mini { white-space:nowrap }
+    }
+    .swipe--grouped .so-row { padding-left:26px }
+    @media(max-width:600px){ .swipe--grouped .so-row { padding-left:16px } }
     .sales-container:not(:last-child){border-bottom:1px solid var(--line)}
     .sales-container__header{display:flex;align-items:stretch;background:var(--surface)}
     .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;flex:1;min-width:0;min-height:98px;padding:19px 20px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}

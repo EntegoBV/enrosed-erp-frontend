@@ -654,6 +654,32 @@ interface ProductSwipe {
       .stock-expected { white-space: normal; max-width: 82px; text-align: right; line-height: 1.2; }
       .btn--icon-mobile { min-width: 40px; padding: 0 10px; }
     }
+    /* Phones: the name gets the whole width (two lines at most) and the
+       figures move onto their own line underneath, instead of squeezing the
+       name into "Bowl Rozen X…" beside three columns of numbers. */
+    @media (max-width: 600px) {
+      .list-item.swipe__row, .list-item.group-head {
+        display: grid; grid-template-columns: 44px minmax(0, 1fr); grid-template-areas: 'thumb body' 'thumb end';
+        column-gap: 12px; row-gap: 7px; align-items: start;
+      }
+      .list-item--nested { grid-template-columns: 36px minmax(0, 1fr); }
+      .list-item.swipe__row > .thumb, .list-item.group-head > .thumb { grid-area: thumb; }
+      .list-item.swipe__row > .list-item__body, .list-item.group-head > .list-item__body { grid-area: body; }
+      .list-item.swipe__row > .list-item__end, .list-item.group-head > .list-item__end { grid-area: end; }
+      .product-row__title strong {
+        white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25;
+      }
+      .product-row__end, .group-head__end {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left;
+      }
+      .product-row__stock { grid-auto-flow: column; justify-items: start; align-items: center; gap: 6px; }
+      .product-row__stock span { font-size: 9px; }
+      .stock-expected { max-width: none; margin-top: 0; text-align: left; white-space: nowrap; }
+      .product-row__prices { display: flex; gap: 12px; width: auto; padding-left: 0; border-left: 0; }
+      .product-row__prices > div { display: flex; align-items: baseline; gap: 5px; }
+      .product-row__prices span { font-size: 9px; }
+      .product-row__prices strong { font-size: 12px; }
+    }
   `,
 })
 export class ProductList {

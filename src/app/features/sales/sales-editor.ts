@@ -1569,9 +1569,17 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .quote-header-button--send-quiet { background:var(--rose-soft);color:var(--rose-dark);
       box-shadow:none;border:1px solid var(--rose-line) }
     @media(max-width:679px) { .quote-header-button--desktop { display:none } }
+    .quote-header-total { padding-right:7px }
+    /* Narrow phones: the send pill keeps its icon and drops the word, so the
+       figure never runs into it. */
+    @media(max-width:440px) {
+      .quote-header-button--send span { display:none }
+      .quote-header-button--send svg { margin:0 }
+      .quote-header-button--send { padding-inline:12px }
+    }
     @media(max-width:380px) {
       .quote-header-actions { gap:3px }
-      .quote-header-total { padding-right:0 }
+      .quote-header-total { padding-right:4px }
       .quote-header-total strong { font-size:11px }
       .quote-header-button { padding-inline:7px;font-size:12px }
     }
