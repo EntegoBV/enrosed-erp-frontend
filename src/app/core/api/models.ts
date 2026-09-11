@@ -992,6 +992,8 @@ export interface PurchasePayment {
   payee?: Payee | null;
   /** The payment that settles its stream, whatever the amount. */
   settles?: boolean;
+  /** Supplier instalment receiving this payment; null distributes it over the plan. */
+  instalmentDue?: Instalment['due'] | null;
 }
 
 /** One payment on a container as the bank saw it, with the container it went to. */
@@ -1264,6 +1266,19 @@ export interface PurchaseReconciliation {
   totals: PurchaseReconciliationTotals;
   lines: PurchaseReconciliationLine[];
   notes: string[];
+  supplierInstalments?: PurchaseInstalmentReconciliation[];
+}
+
+export interface PurchaseInstalmentReconciliation {
+  due: Instalment['due'];
+  label: string;
+  plannedEur: number;
+  paidEur: number;
+  remainingEur: number;
+  settledSavingEur: number;
+  overpaidEur: number;
+  explicitlySettled: boolean;
+  finalized: boolean;
 }
 
 /* ----------------------------------------------------------------- sales */

@@ -37,6 +37,7 @@ import { receiptMetrics } from '../analyses/receipt-metrics';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { isSettlementInvoice, partnerDocumentKind, separateCostPerPiece } from '../sales/partner-settlement';
 import { PAYMENT_TOLERANCE_EUR, instalmentsOf, withinTolerance } from './payment-plan';
+import { purchaseGroupSettled, purchaseInstalmentState } from './purchase-instalment-state';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
@@ -677,7 +678,11 @@ type PurchaseWorkspaceSectionId =
                           <span class="instalments__what">
                             <b>{{ step.label }}</b>
                             @if (step.state === 'paid') {
-                              <small><s>{{ step.full | eur }}</s> · betaald</small>
+                              @if (step.settled && step.covered < step.full) {
+                                <small>{{ step.covered | eur }} betaald · <b>Afgerekend</b><br />Begroot {{ step.full | eur }}</small>
+                              } @else {
+                                <small>{{ step.full | eur }} · betaald</small>
+                              }
                             } @else if (step.covered > 0) {
                               <small><s>{{ step.full | eur }}</s> nog {{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : ' · later' }}</small>
                             } @else {
@@ -693,7 +698,7 @@ type PurchaseWorkspaceSectionId =
                   <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
                 }
                 @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
-                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                 }
               </div>
               @if (logisticsOwed() > 0 || paymentsTo('LOGISTICS').length) {
@@ -704,7 +709,7 @@ type PurchaseWorkspaceSectionId =
                   </div>
                   <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
                   @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
-                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                   }
                 </div>
               }
@@ -716,7 +721,7 @@ type PurchaseWorkspaceSectionId =
                   </div>
                   <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SEPARATE'), separateOwed())"></div></div>
                   @for (payment of paymentsTo('SEPARATE'); track payment.id) {
-                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                   }
                 </div>
               }
@@ -727,7 +732,7 @@ type PurchaseWorkspaceSectionId =
                     <span class="num"><b>{{ paidTo('OTHER') | eur }}</b><small>extra</small></span>
                   </div>
                   @for (payment of paymentsTo('OTHER'); track payment.id) {
-                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
+                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
                   }
                 </div>
               }
@@ -934,7 +939,7 @@ type PurchaseWorkspaceSectionId =
   `,
   styles: [`
     .pay-line__settles{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10px;font-style:normal;font-weight:700;vertical-align:middle}.pay-stream__done{margin:6px 0 0;color:var(--ok);font-size:12px;font-weight:650}.pay-diff--over{color:var(--danger)}.pay-diff--under{color:var(--ok)}
-    .instalments{list-style:none;margin:8px 0 4px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what b{color:var(--muted);text-decoration:line-through}.instalments__what s{opacity:.6}
+    .instalments{list-style:none;margin:8px 0 4px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what > b{color:var(--muted);text-decoration:line-through}.instalments__what s{opacity:.6}
     .purchase-line__issue{display:inline-block;margin-top:6px;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}.purchase-line__issue:active{color:var(--rose-dark)}
     :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}.privacy-notice{margin-bottom:12px}
 
@@ -1252,30 +1257,7 @@ export class PurchaseView {
   readonly plannedInstalments = computed(() => {
     const data = this.view();
     if (!data) return [];
-    const instalments = instalmentsOf(data.order, PAYMENT_TERMS);
-    if (!instalments.length) return [];
-    const goods = this.supplierOwed();
-    if (!(goods > 0)) return [];
-    const reached: Record<'ORDERED' | 'SHIPPED' | 'ARRIVED', boolean> = {
-      ORDERED: data.order.status !== 'CONCEPT',
-      SHIPPED: data.order.status === 'ONDERWEG' || data.order.status === 'ONTVANGEN',
-      ARRIVED: data.order.status === 'ONTVANGEN',
-    };
-    const paid = this.settledFor('SUPPLIER') || this.openFor('SUPPLIER') === 0 && this.paidTo('SUPPLIER') > 0 ? goods : this.paidTo('SUPPLIER');
-    let remainingPaid = paid;
-    let stillOpen = Math.max(0, goods - paid);
-    return instalments.map((step) => {
-      const full = Math.round(goods * step.share * 100) / 100;
-      const covered = Math.round(Math.min(full, Math.max(0, remainingPaid)) * 100) / 100;
-      remainingPaid = Math.max(0, remainingPaid - covered);
-      const open = Math.round((full - covered) * 100) / 100;
-      if (open <= 0.05 || stillOpen <= 0.005) {
-        return { label: step.label, amount: full, full, covered: full, state: 'paid' as const };
-      }
-      const ask = Math.round(Math.min(open, stillOpen) * 100) / 100;
-      stillOpen = Math.max(0, stillOpen - ask);
-      return { label: step.label, amount: ask, full, covered, state: (reached[step.due] ? 'due' : 'later') as 'due' | 'later' };
-    });
+    return purchaseInstalmentState(data, instalmentsOf(data.order, PAYMENT_TERMS), this.payments());
   });
   readonly logisticsOwed = computed(() => this.reconciliationStream('LOGISTICS')?.plannedEur ?? this.view()?.payable?.logisticsEur ?? 0);
   readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed() + this.separateOwed());
@@ -1286,8 +1268,7 @@ export class PurchaseView {
   }
 
   settledFor(payee: Payee): boolean {
-    return this.reconciliationStream(payee)?.explicitlySettled
-      ?? this.paymentsTo(payee).some((payment) => !!payment.settles);
+    return purchaseGroupSettled(this.view(), this.payments(), payee);
   }
 
   /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */

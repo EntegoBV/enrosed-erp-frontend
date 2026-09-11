@@ -164,11 +164,11 @@ export class SourcingApi {
     return firstValueFrom(this.http.get(api(`/api/purchase-orders/${orderId}/payments/pdf`), { responseType: 'blob' }));
   }
 
-  addPayment(orderId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee; settles?: boolean }): Promise<PurchasePayment> {
+  addPayment(orderId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee; settles?: boolean; instalmentDue?: PurchasePayment['instalmentDue'] }): Promise<PurchasePayment> {
     return firstValueFrom(this.http.post<PurchasePayment>(api(`/api/purchase-orders/${orderId}/payments`), payment));
   }
 
-  updatePayment(orderId: number, paymentId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee; settles?: boolean }): Promise<PurchasePayment> {
+  updatePayment(orderId: number, paymentId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee; settles?: boolean; instalmentDue?: PurchasePayment['instalmentDue'] }): Promise<PurchasePayment> {
     return firstValueFrom(this.http.put<PurchasePayment>(api(`/api/purchase-orders/${orderId}/payments/${paymentId}`), payment));
   }
 

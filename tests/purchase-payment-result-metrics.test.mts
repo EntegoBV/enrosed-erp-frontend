@@ -187,3 +187,74 @@ test('the pot is explanatory only: Enrosed cost, product prices, forecasts and i
   assert.equal(view.reconciliation!.totals.forecastExternalEur, 940);
   assert.equal(view.reconciliation!.totals.forecastPricingEur, 1_190);
 });
+
+function termPurchase(): PurchaseOrderView {
+  const view = purchase([stream({ plannedEur: 59_620, paidEur: 17_000, remainingEur: 41_734,
+    settledSavingEur: 886, forecastEur: 58_734, varianceEur: -886 })]);
+  view.reconciliation!.supplierInstalments = [
+    { due: 'ORDERED', label: '30% bij bestelling', plannedEur: 17_886, paidEur: 17_000,
+      remainingEur: 0, settledSavingEur: 886, overpaidEur: 0, explicitlySettled: true, finalized: true },
+    { due: 'SHIPPED', label: '30% bij vertrek', plannedEur: 17_886, paidEur: 0,
+      remainingEur: 17_886, settledSavingEur: 0, overpaidEur: 0, explicitlySettled: false, finalized: false },
+    { due: 'ARRIVED', label: '40% bij aankomst', plannedEur: 23_848, paidEur: 0,
+      remainingEur: 23_848, settledSavingEur: 0, overpaidEur: 0, explicitlySettled: false, finalized: false },
+  ];
+  return view;
+}
+
+test('settling just the first 30% counts its 886 saving while the other 70% stays open', () => {
+  const view = termPurchase();
+  const result = purchasePaymentResult(view)!;
+  assert.equal(result.netResultEur, 886);
+  assert.equal(result.settledSavingsEur, 886, 'The same saving on the stream is not added twice');
+  assert.equal(result.finalized, false);
+  assert.equal(result.streams[0].finalized, false);
+  assert.equal(view.reconciliation!.streams[0].remainingEur, 41_734);
+  assert.equal(result.markupWithResultEur, 1_136);
+});
+
+test('reopening or deleting the term slot immediately removes its recognized saving', () => {
+  const view = termPurchase();
+  const term = view.reconciliation!.supplierInstalments![0];
+  Object.assign(term, { explicitlySettled: false, finalized: false, remainingEur: 886, settledSavingEur: 0 });
+  assert.equal(purchasePaymentResult(view)!.netResultEur, 0);
+  Object.assign(term, { paidEur: 0, remainingEur: 17_886 });
+  assert.equal(purchasePaymentResult(view)!.netResultEur, 0);
+});
+
+test('finalized and provisional overruns of other instalments are kept apart', () => {
+  const view = termPurchase();
+  const second = view.reconciliation!.supplierInstalments![1];
+  Object.assign(second, { paidEur: 17_986, remainingEur: 0, overpaidEur: 100 });
+  const provisional = purchasePaymentResult(view)!;
+  assert.equal(provisional.netResultEur, 886);
+  assert.equal(provisional.unsettledOverrunsEur, 100);
+  Object.assign(second, { explicitlySettled: true, finalized: true });
+  const finalized = purchasePaymentResult(view)!;
+  assert.equal(finalized.netResultEur, 786);
+  assert.equal(finalized.settledOverrunsEur, 100);
+  assert.equal(finalized.unsettledOverrunsEur, 0);
+});
+
+test('missing term EUR figures or a provisional explicit marker never count as a saving', () => {
+  const view = termPurchase();
+  const first = view.reconciliation!.supplierInstalments![0];
+  first.finalized = false;
+  assert.equal(purchasePaymentResult(view)!.netResultEur, 0);
+  first.finalized = true;
+  first.paidEur = null as unknown as number;
+  assert.equal(purchasePaymentResult(view)!.netResultEur, 0);
+});
+
+test('all separately finalized instalments finalize the group without a whole-group marker', () => {
+  const view = termPurchase();
+  for (const term of view.reconciliation!.supplierInstalments!.slice(1)) {
+    Object.assign(term, { paidEur: term.plannedEur, remainingEur: 0, finalized: true });
+  }
+  view.reconciliation!.streams[0].finalized = true;
+  view.reconciliation!.totals.finalized = true;
+  const result = purchasePaymentResult(view)!;
+  assert.equal(result.netResultEur, 886);
+  assert.equal(result.finalized, true);
+  assert.equal(result.streams[0].finalized, true);
+});

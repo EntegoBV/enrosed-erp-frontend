@@ -67,7 +67,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
                   <div><dt>Meer betaald, definitief vereffend</dt><dd>− {{ payment.settledOverrunsEur | eur: 2 }}</dd></div>
                   <div><dt>Extra uitgaven buiten begroting</dt><dd>− {{ payment.additionalCostsEur | eur: 2 }}</dd></div>
                 </dl>
-                <p>Besparing telt zodra de betreffende betaalgroep volledig is afgehandeld. Voorschotten en open bedragen zijn geen extra opbrengst.</p>
+                <p>Besparing telt zodra de betreffende betaalgroep of leverancierstermijn is afgerekend. Andere termijnen blijven open; voorschotten en open bedragen zijn geen extra opbrengst.</p>
                 <p>ENROSED-kost en productprijzen blijven gelijk. Kostenverschillen zitten al in de verwachte containerkost; dit overzicht boekt ze niet nogmaals als winst.</p>
               </details>
             } @else {

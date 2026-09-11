@@ -12,6 +12,7 @@ import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
 import { PurchasePaymentResult } from './purchase-payment-result';
+import { PurchasePaymentScope } from './purchase-payment-scope';
 import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -53,7 +54,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentResult, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentResult, PurchasePaymentScope, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -131,8 +132,8 @@ type DeskRow =
             </div>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('pay')" [class.is-warn]="openAll() > 0">
               <small>Te betalen</small>
-              <strong>{{ openAll() | eur: 0 }}</strong>
-              <span>{{ paidAll() | eur: 0 }} betaald</span>
+              <strong>@if (paymentStateError()) { — } @else { {{ openAll() | eur: 0 }} }</strong>
+              <span>@if (paymentStateError()) { Opnieuw laden } @else if (paymentStateLoading()) { Bijwerken… } @else { {{ paidAll() | eur: 0 }} betaald }</span>
             </button>
             @if (nextStep(); as step) {
               <button class="desk-kpi desk-kpi--go" type="button" (click)="advanceStatus()">
@@ -708,10 +709,19 @@ type DeskRow =
 
                 @case ('pay') {
                   <div class="desk-pay-head">
-                    <strong>@if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }</strong>
+                    <strong>@if (paymentStateLoading()) { Betalingen laden… } @else if (paymentStateError()) { Betalingen niet actueel } @else if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }</strong>
                     <small>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</small>
                   </div>
-                  <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
+                  @if (paymentStateError()) {
+                <div class="alert alert--warn payment-refresh-error" role="alert">
+                  <span>{{ paymentStateError() }}</span>
+                  <button class="btn btn--sm" type="button" [disabled]="paymentStateLoading()" (click)="refreshPaymentState()">Opnieuw laden</button>
+                </div>
+              }
+              @if (!paymentStateError()) {
+              <div class="payment-state-content" [class.is-loading]="paymentStateLoading()"
+                   [attr.inert]="paymentStateLoading() ? '' : null" [attr.aria-busy]="paymentStateLoading()">
+              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
                   <app-purchase-sales-links [documents]="relatedSalesDocs()" />
               <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
                   <div class="pay-stream">
@@ -728,13 +738,17 @@ type DeskRow =
                               <i aria-hidden="true">{{ step.state === 'paid' ? '✓' : (step.state === 'due' ? '!' : '·') }}</i>
                               <span class="instalments__what"><b>{{ step.label }}</b>
                                 @if (step.state === 'paid') {
-                                  <small><s>{{ step.full | eur }}</s> · betaald</small>
+                                  @if (step.settled && step.covered < step.full) {
+                                <small>{{ step.covered | eur }} betaald · <b>Afgerekend</b><br />Begroot {{ step.full | eur }}</small>
+                              } @else {
+                                <small>{{ step.full | eur }} · betaald</small>
+                              }
                                 } @else if (step.covered > 0) {
                                   <small><s>{{ step.full | eur }}</s> nog {{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : ' · later' }}</small>
                                 } @else {
                                   <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
                                 }</span>
-                              @if (step.state === 'due') { <button class="btn btn--sm" type="button" (click)="openPayment(step.amount, step.label, 'SUPPLIER')">Noteren</button> }
+                              @if (step.state === 'due') { <button class="btn btn--sm" type="button" (click)="openPayment(step.amount, step.label, 'SUPPLIER', step.due)">Noteren</button> }
                             </li>
                           }
                         </ol>
@@ -742,8 +756,8 @@ type DeskRow =
                     }
                     @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
                       <div class="pay-line">
-                        <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
-                          <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
+                        <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
+                          <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
                         <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                         <span class="pay-line__actions">
                           @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
@@ -766,8 +780,8 @@ type DeskRow =
                       <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
                       @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
                         <div class="pay-line">
-                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
-                            <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
+                            <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
                           <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                           <span class="pay-line__actions">
                           @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
@@ -790,8 +804,8 @@ type DeskRow =
                     @if (separateOwed() > 0) { <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SEPARATE'), separateOwed())"></div></div> }
                     @for (payment of paymentsTo('SEPARATE'); track payment.id) {
                         <div class="pay-line">
-                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
-                            <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
+                            <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
                           <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                           <span class="pay-line__actions">
                           @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
@@ -812,8 +826,8 @@ type DeskRow =
                     </div>
                     @for (payment of paymentsTo('OTHER'); track payment.id) {
                         <div class="pay-line">
-                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">slot</em> }</b>
-                            <small>{{ payment.paidOn | dateNl }}@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
+                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
+                            <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
                           <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
                           <span class="pay-line__actions">
                           @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
@@ -831,6 +845,8 @@ type DeskRow =
                     </div>
                   }
                   <app-purchase-payment-result [view]="data" [editable]="true" [busy]="payingBusy() || saving() || payments() === null" (manage)="reviewPayment($event)" />
+              </div>
+              }
                 }
 
                 @case ('files') {
@@ -1063,7 +1079,7 @@ type DeskRow =
                   <select class="select" id="dk-doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
                     <option value="">— geen —</option>
                     @for (payment of payments() ?? []; track payment.id) {
-                      <option [value]="payment.id">{{ payment.paidOn | dateNl }} · {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option>
+                      <option [value]="payment.id">{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} } · {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option>
                     }
                   </select>
                 </div>
@@ -1134,7 +1150,7 @@ type DeskRow =
             <!-- Deposits are fractions of the goods: one tap fills them in. -->
             <div class="pay-chips" role="group" aria-label="Snel invullen">
               @for (chip of (pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
-                <button class="pay-chip" type="button" (click)="paying.set({ ...pay, amount: chip.amount, currency: 'EUR', label: chip.label })">
+                <button class="pay-chip" type="button" [disabled]="payingBusy() || paymentStateLoading()" (click)="paying.set({ ...pay, amount: chip.amount, currency: 'EUR', label: chip.label, instalmentDue: chip.due ?? null, settles: false })">
                   {{ chip.label }}<small>{{ chip.amount | eur }}</small>
                 </button>
               }
@@ -1172,10 +1188,14 @@ type DeskRow =
               </div>
               @if (pay.payee !== 'OTHER') {
               <div class="field span-2">
-                <label class="pay-settle">
-                  <input type="checkbox" [checked]="pay.settles" (change)="paying.set({ ...pay, settles: $any($event.target).checked })" />
-                  <span><b>Volledig betaald · {{ paymentGroupLabel(pay.payee) }}</b><small>Er volgt geen betaling meer voor deze hele groep. Een lager eindbedrag telt na opslaan mee bij Extra opbrengst uit betalingen.</small></span>
-                </label>
+                <app-purchase-payment-scope
+                  [payee]="pay.payee"
+                  [instalmentDue]="pay.instalmentDue ?? null"
+                  [settles]="pay.settles"
+                  [options]="paymentInstalmentOptions()"
+                  [groupLabel]="paymentGroupLabel(pay.payee)"
+                  [busy]="payingBusy() || paymentStateLoading()"
+                  (changed)="paying.set({ ...pay, ...$event })" />
               </div>
               }
               <div class="field span-2">
@@ -1314,8 +1334,14 @@ type DeskRow =
     }
   `,
   styles: [`
+
+    .payment-refresh-error { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    .payment-refresh-error > span { flex: 1 1 220px; min-width: 0; line-height: 1.5; }
+    .payment-refresh-error > .btn { flex-shrink: 0; min-height: 44px; }
+    .payment-state-content { min-width: 0; }
+    .payment-state-content.is-loading { opacity: .45; pointer-events: none; }
     .pay-line__settles{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10px;font-style:normal;font-weight:700;vertical-align:middle}.pay-settle{display:flex;align-items:flex-start;gap:10px;font-size:12.5px}.pay-settle input{margin-top:3px}.pay-settle span{display:grid;gap:2px}.pay-settle small{color:var(--muted);font-size:11px}.pay-diff--over{color:var(--danger)}.pay-diff--under{color:var(--ok)}
-    .instalments__item--paid .instalments__what b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
+    .instalments__item--paid .instalments__what > b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
     .pay-line__actions{display:inline-flex;align-items:center;gap:2px}.pay-line__btn{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;cursor:pointer}.pay-line__btn:hover{background:var(--surface-3)}.pay-line__proof{color:var(--muted);font-size:11px;margin-right:2px}
     .pay-split__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pay-split__grid label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
     /* Sheets shared with the editor: note a payment, report damage, first instalment. */

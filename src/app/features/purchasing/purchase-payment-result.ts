@@ -31,7 +31,7 @@ import { purchasePaymentResult } from './purchase-payment-result-metrics';
             }
             <div class="payment-result__total"><dt>ENROSED kost + betalingsresultaat</dt><dd>{{ amounts.markupWithResultEur | eur }}</dd></div>
           </dl>
-          <p class="payment-result__note">Een lager bedrag telt mee zodra je de kostenpost volledig betaald verklaart. De ENROSED kost op de order blijft {{ amounts.internalMarkupEur | eur }}.</p>
+          <p class="payment-result__note">Een lager bedrag telt mee zodra je de kostenpost of termijn afrekent. De ENROSED kost op de order blijft {{ amounts.internalMarkupEur | eur }}.</p>
           @if (amounts.unsettledOverrunsEur) {
             <p class="payment-result__pending">{{ amounts.unsettledOverrunsEur | eur }} meer betaald is nog te beoordelen en staat apart van dit nettoresultaat.</p>
           }
@@ -56,7 +56,7 @@ import { purchasePaymentResult } from './purchase-payment-result-metrics';
               }
             }
           </div>
-          <p class="payment-result__note">Afrekenen geldt voor de hele getoonde groep: leverancier, douane &amp; transport, of inspectie &amp; andere kosten.</p>
+          <p class="payment-result__note">Deze knoppen rekenen de hele betaalgroep af. Alleen een leverancierstermijn afrekenen? Kies die termijn bij het aanpassen van de betaling.</p>
           @if (!editable() && amounts.eligible) {
             <a class="payment-result__link" [routerLink]="['/purchasing', view().order.id, 'edit']" [queryParams]="{ section: 'payment-result' }">Betalingen beheren →</a>
           }

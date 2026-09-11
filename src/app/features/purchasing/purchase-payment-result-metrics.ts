@@ -1,4 +1,4 @@
-import type { Payee, PurchaseOrderView, PurchaseReconciliationStream } from '../../core/api/models';
+import type { Payee, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseReconciliationStream } from '../../core/api/models';
 
 export interface PurchasePaymentResultStream {
   payee: Payee;
@@ -39,7 +39,8 @@ export function purchasePaymentResult(
   const report = view.reconciliation;
   if (!report) return null;
   const eligible = view.order.status !== 'CONCEPT' && (view.order.lines?.length ?? 0) > 0;
-  const streams = (report.streams ?? []).map(stream => streamResult(stream, eligible));
+  const streams = (report.streams ?? []).map(stream => streamResult(stream, eligible,
+    stream.payee === 'SUPPLIER' ? report.supplierInstalments : undefined));
   const sum = (field: 'savingEur' | 'settledOverrunEur' | 'additionalCostEur' | 'unsettledOverrunEur') =>
     streams.reduce((total, stream) => total + (cents(stream[field]) ?? 0), 0);
   const saving = sum('savingEur');
@@ -62,7 +63,8 @@ export function purchasePaymentResult(
   };
 }
 
-function streamResult(stream: PurchaseReconciliationStream, eligible: boolean): PurchasePaymentResultStream {
+function streamResult(stream: PurchaseReconciliationStream, eligible: boolean,
+  terms?: readonly PurchaseInstalmentReconciliation[]): PurchasePaymentResultStream {
   const planned = nonnegativeCents(stream.plannedEur);
   const paid = nonnegativeCents(stream.paidEur);
   const saved = nonnegativeCents(stream.settledSavingEur);
@@ -71,11 +73,28 @@ function streamResult(stream: PurchaseReconciliationStream, eligible: boolean): 
   const other = stream.payee === 'OTHER';
   const explicitlySettled = stream.explicitlySettled === true;
   const finalized = eligible && known && stream.finalized === true
-    && (other || ((saved === 0 && overpaid === 0) || explicitlySettled));
+    && (other || !!terms?.length || ((saved === 0 && overpaid === 0) || explicitlySettled));
   // A deposit or a missing historical EUR value must never look like a saving.
-  const saving = eligible && !other && finalized && explicitlySettled ? saved! : 0;
-  const settledOverrun = eligible && !other && finalized && explicitlySettled ? overpaid! : 0;
-  const unsettledOverrun = eligible && !other && !finalized ? overpaid ?? 0 : 0;
+  let saving = eligible && !other && finalized && explicitlySettled ? saved! : 0;
+  let settledOverrun = eligible && !other && finalized && explicitlySettled ? overpaid! : 0;
+  let unsettledOverrun = eligible && !other && !finalized ? overpaid ?? 0 : 0;
+  if (eligible && known && terms?.length) {
+    // A settled 30% instalment can yield a confirmed saving while 70% stays open.
+    // Read each canonical result once; never add the stream's same saving again.
+    saving = 0;
+    settledOverrun = 0;
+    unsettledOverrun = 0;
+    for (const term of terms) {
+      const savedTerm = nonnegativeCents(term.settledSavingEur);
+      const overpaidTerm = nonnegativeCents(term.overpaidEur);
+      const knownTerm = nonnegativeCents(term.plannedEur) !== null && nonnegativeCents(term.paidEur) !== null
+        && savedTerm !== null && overpaidTerm !== null;
+      if (knownTerm && term.finalized && term.explicitlySettled) {
+        saving += savedTerm!;
+        settledOverrun += overpaidTerm!;
+      } else if (overpaidTerm !== null && !term.finalized) unsettledOverrun += overpaidTerm;
+    }
+  }
   // OTHER is already-incurred cost; it has no agreed payable to settle.
   const additional = eligible && other ? paid ?? 0 : 0;
   return {
