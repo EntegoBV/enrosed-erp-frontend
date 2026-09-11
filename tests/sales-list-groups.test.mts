@@ -310,3 +310,25 @@ test('customer request text remains original after channel changes while own doc
   own.order.salesChannel = 'WEBSITE';
   assert.equal(customerMessageIsReadOnly(own), true, 'Existing website documents work before snapshot backfill');
 });
+
+
+test('split unavailable badges count retained requests once without adding remembered quantities to totals', () => {
+  const original = splitPart(91, 1, 144.37, { docType: 'OFFERTE', archivedAt: '2026-09-11T12:00:00Z' });
+  original.invoicedAsId = 94; original.invoicedAs = 'INV-94';
+  const first = splitPart(94, 1, 144.37);
+  const later = splitPart(92, 2, 288.75);
+  const lines = [{ productId: 10, quantity: 24 }, { productId: 11, quantity: 0, unavailable: true, requestedQuantity: 96 },
+    { productId: 12, quantity: 0 }];
+  original.order.lines = structuredClone(lines) as any;
+  first.order.lines = structuredClone(lines) as any;
+  later.order.lines = [{ productId: 20, quantity: 48 }] as any;
+  const grouped = groupSalesInvoices([original, first, later])[0];
+  assert.equal(grouped.kind, 'SPLIT_ORDER');
+  if (grouped.kind !== 'SPLIT_ORDER') return;
+  assert.equal(grouped.summary.unavailableCount, 1, 'Converted quote and unmarked incomplete row are not extra unavailable products');
+  assert.equal(grouped.summary.pieces, 72, 'Remembered quantity is excluded from active units');
+  assert.equal(grouped.summary.totalEur, 433.12);
+  first.order.status = 'GEANNULEERD';
+  const after = groupSalesInvoices([original, first, later])[0];
+  if (after.kind === 'SPLIT_ORDER') assert.equal(after.summary.unavailableCount, 0, 'Cancelled parts do not add an active availability badge');
+});

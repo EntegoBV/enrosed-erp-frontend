@@ -1287,6 +1287,8 @@ export interface SalesOrderLine {
   id: number | null;
   productId: number;
   quantity: number;
+  unavailable?: boolean | null;
+  requestedQuantity?: number | null;
   unitPriceEur: number | null;
   manualDiscountPct: number | null;
   /** Zelf ingevulde leverweek, bv. "2026-W34". Optioneel. */
@@ -1389,6 +1391,8 @@ export interface PricedLine {
   description: string;
   photoUrl: string | null;
   quantity: number;
+  unavailable?: boolean | null;
+  requestedQuantity?: number | null;
   cartons: number;
   cartonsPerPallet: number;
   /** Server-owned explanation of the pallet fit. Optional for older responses. */
@@ -1665,6 +1669,8 @@ export interface SalesSplitLine {
   productId: number;
   description: string;
   quantity: number;
+  unavailable?: boolean | null;
+  requestedQuantity?: number | null;
   piecesPerCarton: number | null;
   stockQuantity: number | null;
   inventoryKnown: boolean;
@@ -1680,7 +1686,7 @@ export interface SalesSplitEligibility {
 }
 
 export interface SalesSplitRequest {
-  lines: { lineId: number; laterQuantity: number }[];
+  lines: { lineId: number; laterQuantity: number; unavailable?: boolean | null }[];
   deliveryWeek: string | null;
   currentFreightEur?: number | null;
   laterFreightEur?: number | null;
@@ -1690,6 +1696,7 @@ export interface SalesSplitRequest {
 
 export interface SalesSplitPartPreview {
   quantity: number;
+  unavailableQuantity?: number;
   totalExclVatEur: number;
   vatEur: number;
   totalInclVatEur: number;
@@ -1702,6 +1709,7 @@ export interface SalesSplitPartPreview {
 export interface SalesSplitPreview {
   previewToken: string;
   sourceId: number;
+  excludedQuantity?: number;
   original: SalesSplitPartPreview;
   current: SalesSplitPartPreview;
   later: SalesSplitPartPreview;
@@ -1762,6 +1770,8 @@ export interface PortalLine {
   description: string;
   photoUrl: string | null;
   quantity: number;
+  unavailable?: boolean | null;
+  requestedQuantity?: number | null;
   cartons: number;
   pallets: number;
   cbm?: number;

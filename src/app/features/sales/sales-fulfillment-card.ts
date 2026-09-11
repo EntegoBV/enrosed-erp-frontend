@@ -22,10 +22,11 @@ import { WeekNlPipe } from '../../shared/pipes';
           @if (split.siblingId) { <a class="fulfillment__sibling" [routerLink]="['/sales', split.siblingId]"><span>{{ split.part === 1 ? 'Naar nalevering' : 'Naar eerste levering' }}</span><small>{{ split.siblingNumber || 'Ander deel openen' }} ↗</small></a> }
         </div>
         @if (canPlan()) {
-          <div class="fulfillment__action"><p>Is de voorraad binnen? Controleer de beschikbaarheid en plan dit deel in.</p><button type="button" class="btn btn--sm" [disabled]="busy() || blocked()" (click)="markReady()">{{ busy() ? 'Voorraad controleren…' : 'Klaar voor levering' }}</button></div>
-          @if (blocked()) { <p class="fulfillment__hint">Sla openstaande wijzigingen eerst op.</p> }
+          <div class="fulfillment__action"><p>Is de voorraad binnen? Controleer de beschikbaarheid en plan dit deel in.</p><button type="button" class="btn btn--sm" [disabled]="busy() || blocked() || !hasDeliverableProducts()" (click)="markReady()">{{ busy() ? 'Voorraad controleren…' : 'Klaar voor levering' }}</button></div>
+          @if (!hasDeliverableProducts()) { <p class="fulfillment__hint">Geen leverbare producten. Herstel eerst een product om dit deel in te plannen.</p> }
+          @else if (blocked()) { <p class="fulfillment__hint">Sla openstaande wijzigingen eerst op.</p> }
         }
-        @if (view().order.status === 'CONCEPT' && !view().order.archivedAt) { <p class="fulfillment__hint">Aantallen en staffels zijn vastgelegd. Transport en extra korting blijven aanpasbaar op dit concept.</p> }
+        @if (view().order.status === 'CONCEPT' && !view().order.archivedAt) { <p class="fulfillment__hint">Aantallen en staffels zijn vastgelegd. Je kunt producten tijdelijk niet beschikbaar maken en hun toegewezen aantal herstellen. Transport en extra korting blijven aanpasbaar.</p> }
         @if (error()) { <p class="fulfillment__error" role="alert">{{ error() }}</p> }
       </section>
     }
@@ -62,13 +63,14 @@ export class SalesFulfillmentCard {
   readonly error = signal('');
   private readonly sales = inject(SalesApi);
   readonly status = computed(() => fulfillmentStatusOf(this.view()));
-  readonly weeks = computed(() => [...new Set(this.view().order.lines.map(line => line.deliveryWeek).filter((week): week is string => !!week))]);
+  readonly hasDeliverableProducts = computed(() => this.view().order.lines.some(line => line.unavailable !== true && line.quantity > 0));
+  readonly weeks = computed(() => [...new Set(this.view().order.lines.filter(line => line.unavailable !== true && line.quantity > 0).map(line => line.deliveryWeek).filter((week): week is string => !!week))]);
   readonly canPlan = computed(() => this.view().fulfillment?.status === 'WAITING_FOR_STOCK'
     && !this.view().order.archivedAt && !this.view().order.goodsShippedAt && !this.view().invoicedAsId && !this.view().invoicedAs
     && !['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(this.view().order.status));
 
   async markReady(): Promise<void> {
-    if (this.busy() || this.blocked() || !this.canPlan()) return;
+    if (this.busy() || this.blocked() || !this.canPlan() || !this.hasDeliverableProducts()) return;
     const id = this.view().order.id;
     this.busy.set(true); this.error.set('');
     try {

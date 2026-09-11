@@ -40,7 +40,7 @@ export interface SalesSplitGroup {
   groupId: string;
   rootOrderId: number;
   rows: SalesOrderView[];
-  summary: { parts: number; totalEur: number; pieces: number; waitingCount: number; shippedCount: number };
+  summary: { parts: number; totalEur: number; pieces: number; unavailableCount: number; waitingCount: number; shippedCount: number };
 }
 
 export type SalesListEntry = SalesContainerGroup | SalesSplitGroup | { kind: 'DOCUMENT'; key: string; row: SalesOrderView };
@@ -60,7 +60,7 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
       let group = splitGroups.get(key);
       if (!group) {
         group = { kind: 'SPLIT_ORDER', key, groupId: split.groupId, rootOrderId: split.rootOrderId, rows: [],
-          summary: { parts: 0, totalEur: 0, pieces: 0, waitingCount: 0, shippedCount: 0 } };
+          summary: { parts: 0, totalEur: 0, pieces: 0, unavailableCount: 0, waitingCount: 0, shippedCount: 0 } };
         splitGroups.set(key, group); entries.push(group);
       }
       group.rows.push(row);
@@ -91,6 +91,7 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
       parts: new Set(group.rows.map(row => row.fulfillment!.part)).size,
       totalEur: sumMoney(active.map(row => row.priced.totals.total)),
       pieces: active.reduce((sum, row) => sum + (Number.isFinite(row.priced.totals.pieces) ? row.priced.totals.pieces : 0), 0),
+      unavailableCount: active.reduce((sum, row) => sum + (row.order.lines ?? []).filter(line => line.unavailable === true).length, 0),
       waitingCount: active.filter(row => !row.order.goodsShippedAt && row.fulfillment!.status === 'WAITING_FOR_STOCK').length,
       shippedCount: active.filter(row => !!row.order.goodsShippedAt || row.fulfillment!.status === 'SHIPPED').length,
     };

@@ -15,30 +15,34 @@ export function salesSplitBlockReason(view: SalesOrderView | null | undefined): 
   const payments = view.paymentSummary;
   if (order.paidAt || payments?.legacyPaidMarker || payments?.payments?.length || (payments?.grossReceivedEur ?? 0) > 0
     || (payments?.receivedEur ?? 0) > 0 || (payments?.refundedEur ?? 0) > 0) return 'Er is al een betaling geregistreerd; deze order kan niet worden gesplitst.';
-  if (!order.lines.length || order.lines.some(line => !line.id || !Number.isInteger(line.quantity) || line.quantity <= 0)) return 'Sla eerst de productregels en aantallen op.';
+  if (!order.lines.length || order.lines.some(line => !line.id || !Number.isInteger(line.quantity)
+    || ((line.unavailable === true) ? line.quantity !== 0 : line.quantity <= 0))) return 'Sla eerst de productregels en aantallen op.';
+  if (!order.lines.some(line => !(line.unavailable === true) && line.quantity > 0)) return 'Herstel eerst producten voordat je de order splitst.';
   return null;
 }
 
 export type SalesSplitQuantities = Record<number, number | null>;
+export type SalesSplitUnavailable = Record<number, boolean>;
 export type SalesSplitOverrides = Pick<SalesSplitRequest, 'currentFreightEur' | 'laterFreightEur' | 'currentExtraDiscountPct' | 'laterExtraDiscountPct'>;
 
-export function salesSplitRequest(eligibility: SalesSplitEligibility, quantities: SalesSplitQuantities, week: string, overrides: SalesSplitOverrides = {}, freightRequired = false): SalesSplitRequest {
+export function salesSplitRequest(eligibility: SalesSplitEligibility, quantities: SalesSplitQuantities, week: string, overrides: SalesSplitOverrides = {}, freightRequired = false, unavailable: SalesSplitUnavailable = {}): SalesSplitRequest {
   if (!eligibility.allowed) throw new Error(eligibility.reason || 'Deze order kan niet worden gesplitst.');
   const lines = eligibility.lines.map(line => {
-    const laterQuantity = quantities[line.lineId] ?? 0;
+    const parked = (line.unavailable === true) || unavailable[line.lineId] === true;
+    const laterQuantity = parked ? 0 : quantities[line.lineId] ?? 0;
     if (!Number.isSafeInteger(laterQuantity) || laterQuantity < 0 || laterQuantity > line.quantity) {
       throw new Error(`Vul voor ${line.description} een geheel aantal van 0 tot ${line.quantity} in.`);
     }
-    if (line.piecesPerCarton && line.piecesPerCarton > 1
+    if (!parked && line.piecesPerCarton && line.piecesPerCarton > 1
       && (laterQuantity % line.piecesPerCarton !== 0 || (line.quantity - laterQuantity) % line.piecesPerCarton !== 0)) {
       throw new Error(`Verdeel ${line.description} in volle dozen van ${line.piecesPerCarton} stuks.`);
     }
-    return { lineId: line.lineId, laterQuantity };
+    return { lineId: line.lineId, laterQuantity, ...(parked ? { unavailable: true } : {}) };
   });
-  const total = eligibility.lines.reduce((sum, line) => sum + line.quantity, 0);
+  const total = eligibility.lines.reduce((sum, line) => sum + ((line.unavailable === true) || unavailable[line.lineId] ? 0 : line.quantity), 0);
   const later = lines.reduce((sum, line) => sum + line.laterQuantity, 0);
   if (!later) throw new Error('Kies minstens één productaantal voor de latere levering.');
-  if (later >= total) throw new Error('Laat ook producten op het eerste deel staan.');
+  if (later >= total) throw new Error('Laat ook beschikbare producten op het eerste deel staan.');
   const deliveryWeek = week.trim() || null;
   if (deliveryWeek && !/^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/.test(deliveryWeek)) throw new Error('Kies een geldige leverweek voor het latere deel.');
   if (freightRequired && (overrides.currentFreightEur == null || overrides.laterFreightEur == null)) {
@@ -60,7 +64,11 @@ export function salesSplitPreviewMatches(preview: SalesSplitPreview, eligibility
   if (preview.sourceId !== eligibility.sourceId || !preview.previewToken || !preview.original || !preview.current || !preview.later) return false;
   const later = request.lines.reduce((sum, line) => sum + line.laterQuantity, 0);
   const total = eligibility.lines.reduce((sum, line) => sum + line.quantity, 0);
-  if (preview.original.quantity !== total || preview.later.quantity !== later || preview.current.quantity !== total - later) return false;
+  const excluded = eligibility.lines.reduce((sum, line) => sum + (!(line.unavailable === true) && request.lines.find(choice => choice.lineId === line.lineId)?.unavailable ? line.quantity : 0), 0);
+  const alreadyUnavailable = eligibility.lines.reduce((sum, line) => sum + ((line.unavailable === true) ? line.requestedQuantity ?? 0 : 0), 0);
+  if (preview.original.quantity !== total || preview.later.quantity !== later || preview.current.quantity !== total - later - excluded
+    || (preview.excludedQuantity ?? 0) !== excluded || (preview.original.unavailableQuantity ?? 0) !== alreadyUnavailable
+    || (preview.current.unavailableQuantity ?? 0) !== alreadyUnavailable + excluded || (preview.later.unavailableQuantity ?? 0) !== 0) return false;
   const amounts = ['totalExclVatEur', 'vatEur', 'totalInclVatEur', 'freightEur', 'handlingEur', 'extraLinesEur', 'goodsEur'] as const;
   for (const field of amounts) {
     const values = [preview.original[field], preview.current[field], preview.later[field]];

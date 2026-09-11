@@ -1,3 +1,4 @@
+import { salesAllProductsUnavailable, salesLineUnavailable, salesLineRequestedQuantity, salesUnavailableLineCount } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
@@ -394,16 +395,19 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                                   </span>
                                 }
                               </span>
+                              @if (unavailableLineCount(group.lines); as count) {
+                                <span class="unavailable-model-label">{{ count === group.lines.length ? 'Tijdelijk niet beschikbaar' : count + ' niet beschikbaar' }}</span>
+                              }
                             </span>
                             <span class="purchase-model__totals">
                               <strong>{{ group.pieces | num }} st</strong>
                               <small>{{ group.cartons | num }} dozen · {{ group.cbm | cbm }}</small>
-                              <small class="purchase-model__cost-label">
-                                {{ profitMode() === 'UNIT' ? 'Gem. netto / stuk' : 'Netto verkoop' }}
-                              </small>
-                              <b>{{ profitMode() === 'UNIT'
-                                ? (averageGroupUnitPrice(group.totalEur, group.pieces) | eur: 2)
-                                : (group.totalEur | eur) }}</b>
+                              @if (unavailableLineCount(group.lines) === group.lines.length) {
+                                <small class="purchase-model__cost-label">Niet meegerekend</small><b>—</b>
+                              } @else {
+                                <small class="purchase-model__cost-label">{{ profitMode() === 'UNIT' ? 'Gem. netto / stuk' : 'Netto verkoop' }}</small>
+                                <b>{{ profitMode() === 'UNIT' ? (averageGroupUnitPrice(group.totalEur, group.pieces) | eur: 2) : (group.totalEur | eur) }}</b>
+                              }
                             </span>
                             <svg class="purchase-model__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
                               <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
@@ -451,7 +455,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
                 <ng-template #salesVariant let-line let-group="group" let-section="section"
                              let-variantIndex="variantIndex">
-                  <article class="sales-line" [class.sales-line--variant]="group.familyId !== null">
+                  <article class="sales-line" [class.sales-line--variant]="group.familyId !== null" [class.sales-line--unavailable]="lineUnavailable(line)">
                     <a class="sales-line__identity" [routerLink]="['/products', line.productId]"
                        [title]="line.description + ' openen'">
                       @if (line.photoUrl) {
@@ -491,6 +495,13 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                       </span>
                     </a>
 
+                    @if (lineUnavailable(line)) {
+                      <div class="line-unavailable">
+                        <strong>Tijdelijk niet beschikbaar</strong>
+                        <span>0 st · Niet meegerekend</span>
+                        @if (lineRequestedQuantity(line); as requested) { <small>Oorspronkelijk aangevraagd: {{ requested | num }} st</small> }
+                      </div>
+                    } @else {
                     <div class="line-facts">
                       <span><small>Aantal</small><strong>{{ line.quantity | num }} st</strong></span>
                       <span><small>Dozen</small><strong>{{ line.cartons | num }}</strong></span>
@@ -538,6 +549,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                           <span class="num">{{ profitPill(line) }}</span>
                         </div> }
                       </div>
+                    }
                     }
                   </article>
                 </ng-template>
@@ -605,7 +617,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   </a>
                 } @else if (isInvoice()) {
                   @if (data.order.status === 'CONCEPT') {
-                    <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote()"
+                    <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
                             (click)="sendSheetOpen.set(true)">Factuur versturen…</button>
                   } @else if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
@@ -620,7 +632,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     </button>
                   }
                 } @else if (data.order.status === 'CONCEPT') {
-                  <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote()"
+                  <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
                           (click)="sendSheetOpen.set(true)">
                     {{ data.order.sentAt ? 'Nieuwe versie versturen…' : 'Offerte versturen…' }}
                   </button>
@@ -654,8 +666,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 }
                 @if (isInvoice()) {
                   @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
-                    @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Factuur e-mailen…</button> }
-                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
+                    @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()" (click)="sendSheetOpen.set(true)">Factuur e-mailen…</button> }
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || allProductsUnavailable()"
                             (click)="markSent(data)">Markeer als verstuurd</button>
                     <p class="link-explainer">Gebruik dit alleen wanneer je de factuur buiten het ERP bezorgde.</p>
                   }
@@ -793,7 +805,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="sendSheetOpen.set(false)">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="sendingQuote()"
+          <button class="btn btn--primary" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
                   (click)="sendFromView()">{{ sendingQuote() ? 'Bezig…' : 'Versturen' }}</button>
         </div>
       </app-sheet>
@@ -850,6 +862,11 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     }
   `,
   styles: [`
+    .unavailable-model-label{color:#765017!important;font-weight:650}
+    .sales-line--unavailable{background:color-mix(in srgb,var(--surface) 92%,#d59625)}
+    .line-unavailable{display:grid;gap:4px;margin-top:12px;padding:12px 14px;border:1px solid #e2cda8;border-radius:14px;background:#fffaf1;color:#765017}
+    .line-unavailable strong{font-size:13px}.line-unavailable span{font-size:12px}.line-unavailable small{font-size:11px}
+
     .sales-hero__link { color: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
     .sales-view-page { max-width:1180px;margin-inline:auto;padding-bottom:96px;background:transparent }
     .sales-view-page>*+* { margin-top:12px }
@@ -1057,6 +1074,10 @@ export class SalesView {
     this.view.set(updated); void this.work.refresh(true);
   }
 
+  readonly allProductsUnavailable = computed(() => salesAllProductsUnavailable(this.view()));
+  readonly unavailableLineCount = salesUnavailableLineCount;
+  readonly lineUnavailable = salesLineUnavailable;
+  readonly lineRequestedQuantity = salesLineRequestedQuantity;
   readonly customerAuthoredMessage = customerMessageIsReadOnly;
   readonly customerNote = originalCustomerMessage;
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
@@ -1173,6 +1194,7 @@ export class SalesView {
   }
 
   nextStepTitle(data: SalesOrderView): string {
+    if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) return 'Wacht op beschikbare producten';
     if (this.pendingRevision()) return 'Wijzigingsvoorstel beoordelen';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Factuur naar de klant';
@@ -1194,6 +1216,7 @@ export class SalesView {
   }
 
   nextStepHelp(data: SalesOrderView): string {
+    if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) return 'Dit concept blijft bewaard. Herstel minstens één product via Bewerken om het document uit te geven of te versturen.';
     if (this.pendingRevision()) return 'De klant wacht op jouw keuze. Open het voorstel en neem de wijzigingen gericht over.';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Mail de PDF vanuit het ERP, of markeer ze bij de extra acties als je ze zelf bezorgde.';
@@ -1278,7 +1301,7 @@ export class SalesView {
   /** The next step without opening the editor: the quote leaves from here. */
   async sendFromView(): Promise<void> {
     const data = this.view();
-    if (!data || this.sendingQuote()) return;
+    if (!data || this.sendingQuote() || this.allProductsUnavailable()) return;
     this.sendingQuote.set(true);
     try {
       this.view.set(await this.sales.sendQuote(data.order.id!, this.sendMessage().trim()));
@@ -1353,7 +1376,7 @@ export class SalesView {
   readonly canCreateInvoice = canCreateInvoiceFromQuote;
 
   async markSent(data: SalesOrderView): Promise<void> {
-    if (this.invoiceBusy()) return;
+    if (this.invoiceBusy() || this.allProductsUnavailable()) return;
     this.invoiceBusy.set(true);
     try {
       this.view.set(await this.sales.markInvoiceSent(data.order.id!));
@@ -1384,7 +1407,7 @@ export class SalesView {
       stockById = new Map(products.filter(product => product.id !== null)
         .map(product => [product.id!, product.stockQuantity ?? 0]));
     } catch { /* stock preview is best-effort; the rows then say "onbekend" */ }
-    const rows = data.priced.lines.map(line => {
+    const rows = data.priced.lines.filter(line => !salesLineUnavailable(line) && line.quantity > 0).map(line => {
       const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
       return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity,
                before, after: before === null ? null : before - line.quantity };
@@ -1573,11 +1596,13 @@ export class SalesView {
   }
 
   deliveryOpen(line: PricedLine, data: SalesOrderView): boolean {
+    if (salesLineUnavailable(line)) return false;
     return !line.deliveryWeek && (data.order.deliveryTerms === 'TE_BEPALEN'
       || !line.inventoryKnown || (line.shortfall ?? 0) > 0);
   }
 
   deliveryText(line: PricedLine, data: SalesOrderView): string {
+    if (salesLineUnavailable(line)) return 'Tijdelijk niet beschikbaar';
     if (line.deliveryWeek) return new WeekNlPipe().transform(line.deliveryWeek, 'short');
     if (line.deliveryExplanation) return line.deliveryExplanation;
     if (data.order.deliveryTerms === 'TE_BEPALEN') return 'Nog te bepalen';
@@ -1589,6 +1614,7 @@ export class SalesView {
 
   /** Fact-cell version of deliveryText: always a couple of words. */
   deliveryShort(line: PricedLine, data: SalesOrderView): string {
+    if (salesLineUnavailable(line)) return 'Niet beschikbaar';
     if (line.deliveryWeek) return new WeekNlPipe().transform(line.deliveryWeek, 'short');
     if ((line.shortfall ?? 0) > 0) return `${new NumPipe().transform(line.shortfall!)} tekort`;
     if (data.order.deliveryTerms === 'TE_BEPALEN') return 'Te bepalen';

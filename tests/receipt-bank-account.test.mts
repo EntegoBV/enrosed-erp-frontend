@@ -7,6 +7,7 @@ import { computed, signal } from '@angular/core';
 import { parseTemplate } from '@angular/compiler';
 import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue } from '../src/app/features/sales/receipt-bank-account.ts';
 import { receiptLocalParts, receiptRequest } from '../src/app/shared/received-at.ts';
+import { salesAllProductsUnavailable } from '../src/app/features/sales/sales-line-availability.ts';
 import { messageOf } from '../src/app/core/api/errors.ts';
 
 const profile = { name: 'Enrosed', legalName: 'Enrosed BV', iban: 'BE94\u00a07310\u00a07408\u00a02814', bic: 'KREDBEBB' };
@@ -18,10 +19,19 @@ const names = ['configuredAccount', 'originalAccount', 'accountLoading', 'accoun
 const members = cls.members.filter(m => m.name && names.includes(m.name.getText(parsed))); assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
 const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-const exports: any = {}; vm.runInNewContext(js, { exports, computed, signal, companyReceiptAccount, receiptAccountChoices, receiptAccountValue, receiptLocalParts, receiptRequest, messageOf, Date });
+const exports: any = {}; vm.runInNewContext(js, { exports, computed, signal, companyReceiptAccount, receiptAccountChoices, receiptAccountValue, receiptLocalParts, receiptRequest, messageOf, salesAllProductsUnavailable, Date });
 const Component = exports.SalesReceipts;
 const payment = (bankAccount: string | null) => ({ id: 7, bankAccount, amountEur: 333.33, receivedAt: '2026-09-08T08:30:00Z', timeZone: 'Europe/Brussels', reference: 'Betaling 1' });
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test('all-unavailable concepts cannot be issued or open a new receipt, even when freight creates a total', async () => {
+  const { component, calls, emitted } = harness();
+  component.view.set({ ...component.view(), order: { ...component.view().order, status: 'CONCEPT', lines: [
+    { id: 1, productId: 7, quantity: 0, unavailable: true, requestedQuantity: 48 },
+  ] } });
+  await component.issue();
+  assert.equal(calls.length, 0); assert.equal(emitted.length, 0); assert.equal(component.draft(), null);
+});
 function harness(company: () => Promise<any> = async () => profile) {
   const component = new Component(), calls: any[] = [], emitted: any[] = [];
   const view = { order: { id: 65, status: 'UITGEREIKT' }, paymentSummary: { invoiceTotalEur: 500, remainingEur: 333.33, refundableEur: 100 } };

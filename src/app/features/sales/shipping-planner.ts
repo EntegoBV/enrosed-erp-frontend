@@ -5,6 +5,7 @@ import {
 } from '../../core/api/models';
 import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { SalesApi } from '../../core/api/sales-api';
+import { salesLineUnavailable } from './sales-line-availability';
 
 import { PALLET_PRODUCT_COLOURS, estimatePalletHeightCm, normalizeManualPalletType } from './pallet-stack';
 
@@ -175,7 +176,7 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
                   </div>
                 }
                 <ul class="stack-list" aria-label="Stapeling per product">
-                  @for (line of view().priced.lines; track line.productId; let i = $index) {
+                  @for (line of activeLines(); track line.productId; let i = $index) {
                     <li>
                       <i class="dot" [style.background]="productColour(line.productId)" aria-hidden="true"></i>
                       <span class="stack-list__name">{{ line.description }}</span>
@@ -190,7 +191,7 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
                 </ul>
                 <p class="note">Dozen per laag × lagen binnen {{ maxPalletHeightCm() | num }} cm, begrensd door gewicht. Elke pallet draagt één product; wil je mengen of een uitzondering, deel dan zelf in.</p>
                 <button class="btn btn--primary btn--block" type="button"
-                        [disabled]="!canEdit() || !view().priced.lines.length || invalidPalletLines().length > 0"
+                        [disabled]="!canEdit() || !activeLines().length || invalidPalletLines().length > 0"
                         [attr.aria-describedby]="invalidPalletLines().length ? 'invalid-pallet-fit' : null"
                         (click)="action.emit({ type: 'auto-layout' })">Zelf indelen vanuit dit voorstel</button>
               } @else {
@@ -317,7 +318,7 @@ type PlannerSection = 'mode' | 'layout' | 'freight';
                 <div class="warning" role="alert"><strong>Buitenmaten ontbreken</strong><span>{{ missingCartonDimensions().join(', ') }}. Het volume is daardoor nog niet compleet.</span></div>
               }
               <ul class="stack-list" aria-label="Volume per product">
-                @for (line of view().priced.lines; track line.productId) {
+                @for (line of activeLines(); track line.productId) {
                   <li>
                     <i class="dot" [style.background]="productColour(line.productId)" aria-hidden="true"></i>
                     <span class="stack-list__name">{{ line.description }}</span>
@@ -625,6 +626,8 @@ export class ShippingPlanner {
   private dragScrollHost: HTMLElement | null = null;
 
   readonly order = computed(() => this.view().order);
+  readonly activeLines = computed(() => this.view().priced.lines.filter(line => line.quantity > 0
+    && !salesLineUnavailable(line) && !salesLineUnavailable(this.order().lines.find(item => item.productId === line.productId))));
   readonly loadMode = computed<LoadMode>(() => this.order().loadMode ?? 'PALLETS');
   readonly palletProfile = computed<PalletProfile>(
     () => this.order().palletProfile ?? 'EURO_120X80');
@@ -645,7 +648,7 @@ export class ShippingPlanner {
   readonly freightPending = computed(() => this.order().freight === 'TE_BEPALEN');
   readonly missingCartonDimensions = computed(() =>
     this.view().priced.validation.productsWithoutCartonDimensions ?? []);
-  readonly invalidPalletLines = computed(() => this.view().priced.lines
+  readonly invalidPalletLines = computed(() => this.activeLines()
     .filter((line) => line.cartons > 0 && line.cartonsPerPallet <= 0));
   readonly preservedLayoutMatches = computed(() => {
     const data = this.view();
@@ -758,7 +761,7 @@ export class ShippingPlanner {
   }
 
   unassignedLines(): { productId: number; description: string; remaining: number }[] {
-    return this.view().priced.lines
+    return this.activeLines()
       .map((line) => ({ productId: line.productId, description: line.description,
         remaining: this.remainingFor(line.productId) }))
       .filter((line) => line.remaining > 0);
@@ -875,7 +878,7 @@ export class ShippingPlanner {
   assignable(palletIndex: number): { productId: number; description: string; remaining: number }[] {
     const onPallet = new Set(
       this.view().order.pallets[palletIndex]?.items.map((item) => item.productId) ?? []);
-    return this.view().priced.lines
+    return this.activeLines()
       .filter((line) => !onPallet.has(line.productId))
       .map((line) => ({ productId: line.productId, description: line.description,
         remaining: this.remainingFor(line.productId) }))

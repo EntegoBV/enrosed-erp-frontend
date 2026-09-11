@@ -1,4 +1,6 @@
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
+import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
+import { salesLineUnavailable, salesUnavailableLineCount, salesLineRequestedQuantity, salesLineWithAvailability, salesAvailabilityBlockReason, salesAllProductsUnavailable, salesFrozenLineChangeAllowed, salesPalletsWithoutUnavailable } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
@@ -60,7 +62,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -567,6 +569,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             }
           </div>
 
+          @if (allProductsUnavailable()) { <p class="line-availability-notice" role="status">Alle producten staan tijdelijk op 0. Je kunt dit concept bewaren; herstel minstens één product voordat je verstuurt of uitgeeft.</p> }
           <div class="product-lines">
             @if (data.priced.lines.length) {
             @for (section of lineSections(); track section.key) {
@@ -597,14 +600,18 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     <span class="po-family__totals">
                       <strong>{{ familyGroup.lines.length }}
                         {{ familyGroup.lines.length === 1 ? 'variant' : 'varianten' }}</strong>
-                      <small>{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen ·
-                        {{ familyGroup.cbm | cbm }}</small>
-                      <b>{{ familyGroup.totalEur | eur }}</b>
+                      @if (unavailableLineCount(familyGroup.lines) === familyGroup.lines.length) {
+                        <small>Tijdelijk niet beschikbaar</small><b>—</b>
+                      } @else {
+                        <small>{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen · {{ familyGroup.cbm | cbm }}</small>
+                        @if (unavailableLineCount(familyGroup.lines); as unavailable) { <small>{{ unavailable }} niet beschikbaar</small> }
+                        <b>{{ familyGroup.totalEur | eur }}</b>
+                      }
                     </span>
                   </header>
                   <div class="po-family__variants">
             @for (line of familyGroup.lines; track line.productId) {
-              <article class="order-line" [attr.aria-labelledby]="'line-title-' + line.productId">
+              <article class="order-line" [class.order-line--unavailable]="lineUnavailable(line.productId)" [attr.aria-labelledby]="'line-title-' + line.productId">
                 <div class="order-line__head">
                   <!-- Photo and name walk through to the product itself. -->
                   <a class="order-line__link" [routerLink]="['/products', line.productId]"
@@ -618,18 +625,18 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   <div class="order-line__identity">
                     <span class="order-line__index">Regel {{ salesLineNumber(line.productId) }} · {{ line.sku }}</span>
                     <h3 [id]="'line-title-' + line.productId">{{ line.description }}</h3>
-                    <span>
+                    @if (!lineUnavailable(line.productId)) { <span>
                       {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} ·
                       @if (!isLooseCartons(data) && !data.order.pallets.length) {
                         {{ line.pallets }} {{ line.pallets === 1 ? 'pallet' : 'pallets' }} ·
                       }
                       {{ line.cbm | cbm }}
-                    </span>
+                    </span> }
                   </div>
                   </a>
                   <div class="order-line__amount">
-                    <strong>{{ line.net | eur }}</strong>
-                    @if (line.discountPct) {
+                    <strong>@if (lineUnavailable(line.productId)) { — } @else { {{ line.net | eur }} }</strong>
+                    @if (!lineUnavailable(line.productId) && line.discountPct) {
                       <span>Regelkorting −{{ line.discountPct | pct: 1 }}</span>
                     }
                   </div>
@@ -640,6 +647,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                           (click)="removeLine(line.productId)">×</button>
                 </div>
 
+                @if (lineUnavailable(line.productId)) {
+                  <div class="line-availability line-availability--paused"><div><b>Tijdelijk niet beschikbaar · 0 st</b><span>Niet meegerekend in deze order.@if (lineRequestedQuantity(line.productId); as requested) { Bewaard: {{ requested | num }} stuks. }</span>@if (lineAvailabilityRestoreHint(line.productId); as hint) { <span>{{ hint }}</span> }</div>
+                    @if (canToggleLineAvailability(line.productId)) { <button class="btn btn--sm" type="button" (click)="toggleLineAvailability(line.productId)">Herstel@if (lineRequestedQuantity(line.productId); as requested) { {{ requested | num }} st }</button> }
+                  </div>
+                } @else {
                 <!-- Three fields in one calm row: nothing folds, nothing jumps. -->
                 <div class="line-fields">
                   <div class="field">
@@ -647,7 +659,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     <input class="input num" [id]="'q-' + line.productId" type="number"
                            min="0" step="1" inputmode="numeric" [disabled]="!mobileCommercialEditable()"
                            [ngModel]="line.quantity"
-                           (ngModelChange)="setLineQuantity(line.productId, +$event)" />
+                           (ngModelChange)="setLineQuantity(line.productId, $event)" />
                     @if (linePending()[line.productId]; as to) {
                       <span class="hint warn-text" role="status">Volle doos: wordt <b>{{ to | num }} st</b></span>
                     }
@@ -749,6 +761,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   }
                 </div>
 
+                @if (canToggleLineAvailability(line.productId)) { <div class="line-availability"><button type="button" (click)="toggleLineAvailability(line.productId)">Tijdelijk niet beschikbaar</button><span>Voor deze order op 0 zetten.</span></div> }
+
                 @if (isAdvance(data.order)) {
                   <p class="line-internal__note">Voorschot voor de containerfinanciering. Het resultaat wordt berekend bij elke uitgegeven veilingafrekening.</p>
                 } @else { <details class="line-internal">
@@ -792,6 +806,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     </p>
                   </div>
                 </details> }
+                }
 
               </article>
             }
@@ -1368,6 +1383,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       }
 
       @if (mobileSplitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (busyChange)="mobileSplitBusy.set($event)" (saved)="mobileSplitSaved($event)" (closed)="closeMobileSplit()" /> }
+      @if (restoreLine(); as restore) { <app-sales-line-restore-sheet [description]="restore.description" [piecesPerCarton]="restore.piecesPerCarton" (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" /> }
 
       @if (pdfSheet()) {
         <app-sales-pdf-sheet
@@ -1686,6 +1702,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .order-line__amount strong { font-size:14px;font-variant-numeric:tabular-nums }
     .order-line__amount span { color:var(--ok);font-size:10px }
     .line-quick-controls { margin-top:10px;display:grid;grid-template-columns:minmax(108px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch }
+    .order-line--unavailable { border-style:dashed; background:var(--surface-2) }.order-line--unavailable .order-line__photo{opacity:.7}.line-availability{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 0;font-size:11px;color:var(--muted)}.line-availability>button{min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-weight:600}.line-availability--paused>div{display:grid;gap:5px;min-width:0}.line-availability b{font-size:12px;color:var(--ink)}.line-availability span{line-height:1.6}.line-availability-notice{padding:13px;border-radius:12px;background:var(--rose-soft);font-size:12px;line-height:1.6}.line-availability--paused>.btn{flex:none}@media(max-width:420px){.line-availability{align-items:flex-start;flex-direction:column}.line-availability--paused>.btn{width:100%}}
     .mobile-split-entry { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin:0 0 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface) }.mobile-split-entry>div{min-width:0;display:grid;gap:5px}.mobile-split-entry b{font-size:12px}.mobile-split-entry span{font-size:11px;line-height:1.5;color:var(--muted)}.mobile-split-entry>.btn{min-height:44px;flex:none}@media(max-width:420px){.mobile-split-entry{align-items:stretch;flex-direction:column}.mobile-split-entry>.btn{width:100%}}
     .quantity-editor { min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:13px;background:var(--surface-2) }
     .quantity-editor:focus-within { border-color:var(--rose);box-shadow:0 0 0 3px var(--rose-soft) }
@@ -1994,6 +2011,50 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
   `],
 })
 export class SalesEditor {
+  readonly unavailableLineCount = salesUnavailableLineCount;
+  readonly restoreLine = signal<{ orderId: number; productId: number; description: string; piecesPerCarton: number } | null>(null);
+  readonly allProductsUnavailable = computed(() => salesAllProductsUnavailable(this.view()));
+  lineUnavailable(productId: number): boolean { return salesLineUnavailable(this.view()?.order.lines.find(line => line.productId === productId)); }
+  lineRequestedQuantity(productId: number): number | null { return salesLineRequestedQuantity(this.view()?.order.lines.find(line => line.productId === productId)); }
+  lineAvailabilityRestoreHint(productId: number): string | null {
+    return this.mobileFinanciallyLocked() && this.lineUnavailable(productId) && !this.lineRequestedQuantity(productId)
+      ? 'Aantal niet vastgelegd bij splitsen; voeg dit product toe aan een nieuwe order.' : null;
+  }
+  canToggleLineAvailability(productId: number): boolean {
+    const data = this.view();
+    return !!data?.order.lines.some(line => line.productId === productId) && this.canEdit()
+      && !this.saving() && !this.sending() && !this.invoiceConversionBusy() && !this.lineAvailabilityRestoreHint(productId) && !salesAvailabilityBlockReason(data);
+  }
+  toggleLineAvailability(productId: number): void {
+    if (!this.canToggleLineAvailability(productId)) return;
+    const data = this.view()!, line = data.order.lines.find(line => line.productId === productId)!;
+    if (salesLineUnavailable(line) && !salesLineRequestedQuantity(line)) {
+      if (data.fulfillment?.financialsLocked) return;
+      this.restoreLine.set({ orderId: data.order.id, productId,
+        description: data.priced.lines.find(line => line.productId === productId)?.description ?? 'Product', piecesPerCarton: this.piecesPerCarton(productId) });
+      return;
+    }
+    this.changeLineAvailability(productId, !salesLineUnavailable(line));
+  }
+  confirmRestoreLine(quantity: number): void {
+    const restore = this.restoreLine();
+    if (!restore || this.view()?.order.id !== restore.orderId || !this.canToggleLineAvailability(restore.productId)
+      || !this.lineUnavailable(restore.productId) || this.mobileFinanciallyLocked()
+      || !Number.isSafeInteger(quantity) || quantity <= 0 || quantity % restore.piecesPerCarton !== 0) return;
+    this.changeLineAvailability(restore.productId, false, quantity); this.restoreLine.set(null);
+  }
+  private changeLineAvailability(productId: number, unavailable: boolean, restoreQuantity?: number): void {
+    if (!this.canToggleLineAvailability(productId)) return;
+    this.enqueue(order => {
+      const line = order.lines.find(item => item.productId === productId);
+      if (!line) return null;
+      const updated = salesLineWithAvailability(line, unavailable, restoreQuantity);
+      if (!updated) return null;
+      const next = { ...order, lines: order.lines.map(item => item === line ? updated : item) };
+      return { ...next, pallets: salesPalletsWithoutUnavailable(next) };
+    });
+    this.linePending.update(values => { const next = { ...values }; delete next[productId]; return next; });
+  }
   readonly mobileSplitOpen = signal(false);
   readonly mobileSplitBusy = signal(false);
   readonly mobileSplitBlockReason = salesSplitBlockReason;
@@ -2304,8 +2365,8 @@ export class SalesEditor {
         const lines = advanceContentsFor(data)?.lines ?? [];
         return lines.length > 0 && lines.every(line => line.quantity > 0);
       }
-      return data.priced.lines.length > 0
-        && data.priced.lines.every((line) => line.quantity > 0 && line.unitPrice > 0);
+      const active = data.priced.lines.filter(line => !this.lineUnavailable(line.productId));
+      return active.length > 0 && active.every((line) => line.quantity > 0 && line.unitPrice > 0);
     }
     if (id === 'quote-logistics') {
       if (isAdvanceInvoice(data)) return advancePlanningHint(data) !== 'Nog te bevestigen';
@@ -2341,6 +2402,9 @@ export class SalesEditor {
     if (id === 'order-lines') {
       if (isAdvanceInvoice(data)) return advanceContentsSummary(data).productLines;
       if (!data.priced.lines.length) return 'Product toevoegen';
+      if (this.allProductsUnavailable()) return 'Alles tijdelijk niet beschikbaar';
+      const excluded = data.order.lines.filter(salesLineUnavailable).length;
+      if (excluded) return `${data.order.lines.length - excluded} actief · ${excluded} niet beschikbaar`;
       return `${data.priced.lines.length} ${data.priced.lines.length === 1 ? 'regel' : 'regels'}`;
     }
     if (id === 'quote-logistics') {
@@ -2681,15 +2745,16 @@ export class SalesEditor {
     if (!customer) issues.push('Kies een klant');
     else if (!customer.email?.trim()) issues.push(`${customer.company} heeft geen e-mailadres`);
     // Issued invoices are immutable; the server validates draft issuance and the frozen document.
+    if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) issues.push('Alle producten staan tijdelijk op 0. Herstel minstens één product voordat je verstuurt of uitgeeft.');
     if (invoice) return issues;
     if (!data.order.countryCode) issues.push('Kies een land van levering');
     if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
-    if (data.priced.lines.some((line) => line.quantity <= 0)) {
+    if (data.priced.lines.some((line) => !this.lineUnavailable(line.productId) && line.quantity <= 0)) {
       issues.push(websiteCartonRequests(data.order).length
         ? 'Bepaal de doosinhoud en vul voor elk aangevraagd product een positief aantal in'
         : 'Vul voor elk product een positief aantal in');
     }
-    if (!this.advanceAgreement() && data.priced.lines.some((line) => !(line.unitPrice > 0))) {
+    if (!this.advanceAgreement() && data.priced.lines.some((line) => !this.lineUnavailable(line.productId) && !(line.unitPrice > 0))) {
       issues.push('Vul voor elk product een geldige stukprijs groter dan € 0 in');
     }
     if (data.order.loadMode === 'LOOSE_CARTONS'
@@ -2836,13 +2901,20 @@ export class SalesEditor {
     if (customerMessageIsReadOnly(data) && next.notes !== data.order.notes) {
       this.ui.toast('Het oorspronkelijke bericht van de klant is alleen lezen.', 'err'); return false;
     }
+    const availabilityChanged = data.order.lines.some(line => {
+      const changed = next.lines.find(item => item.id === line.id && item.productId === line.productId);
+      return changed && (salesLineUnavailable(changed) !== salesLineUnavailable(line) || changed.requestedQuantity !== line.requestedQuantity);
+    });
+    if (availabilityChanged && salesAvailabilityBlockReason(data)) return false;
     if (!data.fulfillment?.financialsLocked) return true;
-    const editable = new Set(['notes', 'internalNotes', 'paymentTerms', 'deliveryTerms', 'orderDate', 'validUntil', 'invoiceDueDate', 'incoterm', 'manualFreightEur', 'extraDiscountPct', 'extraDiscountLabel', 'lines']);
+    const editable = new Set(['notes', 'internalNotes', 'paymentTerms', 'deliveryTerms', 'orderDate', 'validUntil', 'invoiceDueDate', 'incoterm', 'manualFreightEur', 'extraDiscountPct', 'extraDiscountLabel', 'lines', 'pallets']);
     const fields = new Set([...Object.keys(data.order), ...Object.keys(next)]);
     const changedFrozenField = [...fields].some(field => !editable.has(field)
       && JSON.stringify(data.order[field as keyof SalesOrder]) !== JSON.stringify(next[field as keyof SalesOrder]));
-    const withoutWeek = (order: SalesOrder) => order.lines.map(({ deliveryWeek: _week, ...line }) => line);
-    if (changedFrozenField || JSON.stringify(withoutWeek(data.order)) !== JSON.stringify(withoutWeek(next))) {
+    const linesAllowed = next.lines.length === data.order.lines.length && data.order.lines.every((line, index) => salesFrozenLineChangeAllowed(line, next.lines[index]));
+    const palletsAllowed = JSON.stringify(next.pallets) === JSON.stringify(data.order.pallets)
+      || availabilityChanged && JSON.stringify(next.pallets) === JSON.stringify(salesPalletsWithoutUnavailable({ ...data.order, lines: next.lines }));
+    if (changedFrozenField || !linesAllowed || !palletsAllowed) {
       this.ui.toast('De producten en staffels van deze verdeling staan vast. Transport, extra korting en afspraken blijven aanpasbaar.', 'err'); return false;
     }
     return true;
@@ -2998,9 +3070,13 @@ export class SalesEditor {
    * as typed with a notice of what the server will make of it on save -
    * nothing is rounded under someone's fingers.
    */
-  setLineQuantity(productId: number, raw: number): void {
+  setLineQuantity(productId: number, raw: number | null | ''): void {
     if (!this.mobileCommercialEditable()) return;
-    const wanted = Math.max(0, raw || 0);
+    if (raw === null || raw === '' || !Number.isFinite(raw) || raw < 0 || this.lineUnavailable(productId)) return;
+    if (raw === 0 && this.currentQuantity(productId) > 0 && this.canToggleLineAvailability(productId)) {
+      this.changeLineAvailability(productId, true); return;
+    }
+    const wanted = raw;
     const per = this.piecesPerCarton(productId);
     const snapped = Math.ceil(wanted / per) * per;
     const offCarton = snapped !== wanted && wanted > 0;

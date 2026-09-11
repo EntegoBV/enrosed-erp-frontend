@@ -8,6 +8,7 @@ import { computed, signal } from '@angular/core';
 import { parseTemplate } from '@angular/compiler';
 import { firstValueFrom, of } from 'rxjs';
 import { messageOf } from '../src/app/core/api/errors.ts';
+import { salesLineUnavailable, salesLineRequestedQuantity } from '../src/app/features/sales/sales-line-availability.ts';
 import { salesSplitBlockReason, salesSplitRequest, salesSplitPreviewMatches } from '../src/app/features/sales/sales-split-state.ts';
 
 const source = await readFile(new URL('../src/app/features/sales/sales-split-sheet.ts', import.meta.url), 'utf8');
@@ -37,11 +38,11 @@ const result = () => ({ groupId: 'split-uuid', current: view(), later: { ...view
 const request = () => salesSplitRequest(eligibility(), { 101: 24, 102: 0 }, '2026-W45');
 
 class ElementStub { control: any = null; closest() { return this.control; } }
-const Sheet = isolate(source, 'SalesSplitSheet', ['load', 'laterQuantity', 'remaining', 'laneLines', 'laneQuantity', 'photo', 'sku', 'setQuantity', 'step', 'move', 'setWeek', 'freight', 'extraDiscount', 'discount', 'setOverride', 'invalidatePreview', 'startDrag', 'allowDrop', 'drop', 'endDrag', 'check', 'edit', 'confirm', 'close', 'current', 'ngOnDestroy'],
-  { messageOf, salesSplitBlockReason, salesSplitPreviewMatches, salesSplitRequest, crypto: { randomUUID }, Element: ElementStub, Error });
+const Sheet = isolate(source, 'SalesSplitSheet', ['wasUnavailable', 'isUnavailable', 'requestedQuantity', 'unavailableLines', 'newlyUnavailableQuantity', 'toggleUnavailable', 'load', 'laterQuantity', 'remaining', 'laneLines', 'laneQuantity', 'photo', 'sku', 'setQuantity', 'step', 'move', 'setWeek', 'freight', 'extraDiscount', 'discount', 'setOverride', 'invalidatePreview', 'startDrag', 'allowDrop', 'drop', 'endDrag', 'check', 'edit', 'confirm', 'close', 'current', 'ngOnDestroy'],
+  { messageOf, salesLineUnavailable, salesLineRequestedQuantity, salesSplitBlockReason, salesSplitPreviewMatches, salesSplitRequest, crypto: { randomUUID }, Element: ElementStub, Error });
 function harness() {
   const sheet = new Sheet(), calls: any[] = [], saved: any[] = [], busy: boolean[] = [], closed: boolean[] = [];
-  Object.assign(sheet, { view: signal(view()), dirty: signal(false), externalBusy: signal(false), eligibility: signal(null), quantities: signal({}), quantityErrors: signal({}), overrides: signal({}), deliveryWeek: signal(''), preview: signal(null), loading: signal(false), checking: signal(false), saving: signal(false), uncertain: signal(false), error: signal(''), dragOver: signal(null), desktopDrag: true, freightRequired: () => sheet.view().order.freight === 'TE_BEPALEN',
+  Object.assign(sheet, { view: signal(view()), dirty: signal(false), externalBusy: signal(false), eligibility: signal(null), quantities: signal({}), unavailable: signal({}), quantityErrors: signal({}), overrides: signal({}), deliveryWeek: signal(''), preview: signal(null), loading: signal(false), checking: signal(false), saving: signal(false), uncertain: signal(false), error: signal(''), dragOver: signal(null), desktopDrag: true, freightRequired: () => sheet.view().order.freight === 'TE_BEPALEN',
     version: 0, destroyed: false, draggedLineId: null, checkedRequest: null, commitRequest: null, reloadAfterSave: false,
     saved: { emit: (value: any) => saved.push(value) }, closed: { emit: () => closed.push(true) }, busyChange: { emit: (value: boolean) => busy.push(value) },
     api: { splitEligibility: async (id: number) => { calls.push(['GET', id]); return eligibility(); },
@@ -56,6 +57,58 @@ async function prepared() { const h = harness(); await h.sheet.load(); h.sheet.s
 test('selection uses stable line ids, leaves product duplicates separate and preserves quantities', () => {
   assert.deepEqual(request(), { lines: [{ lineId: 101, laterQuantity: 24 }, { lineId: 102, laterQuantity: 0 }], deliveryWeek: '2026-W45', currentFreightEur: null, laterFreightEur: null, currentExtraDiscountPct: null, laterExtraDiscountPct: null });
   assert.equal(salesSplitRequest(eligibility(), { 101: null, 102: 24 }, '').deliveryWeek, null);
+});
+
+test('zero later quantity stays on the current part; an explicit unavailable choice parks the complete line', () => {
+  const source = eligibility();
+  source.lines.push({ ...source.lines[1], lineId: 103, productId: 9, description: 'Witte roos' });
+  const normal = salesSplitRequest(source, { 101: 24, 102: 0, 103: 0 }, '');
+  assert.equal(normal.lines[1].unavailable, undefined);
+  const parked = salesSplitRequest(source, { 101: 24, 102: 0, 103: 24 }, '', {}, false, { 103: true });
+  assert.deepEqual(parked.lines[2], { lineId: 103, laterQuantity: 0, unavailable: true });
+  assert.throws(() => salesSplitRequest(source, { 101: 48, 102: 24 }, '', {}, false, { 103: true }), /Laat ook beschikbare/);
+  assert.throws(() => salesSplitRequest(source, {}, '', {}, false, { 101: true, 102: true, 103: true }), /minstens één/);
+});
+
+test('newly parked split products stay visible separately and undo restores the prior allocation', async () => {
+  const { sheet, calls } = harness(); await sheet.load();
+  const line = eligibility().lines[0]; sheet.setQuantity(line, 24); await sheet.check(); assert.ok(sheet.preview());
+  sheet.toggleUnavailable(line);
+  assert.equal(sheet.preview(), null); assert.equal(sheet.laterQuantity(line), 0); assert.equal(sheet.remaining(line), 0);
+  assert.equal(sheet.newlyUnavailableQuantity(), 48); assert.equal(sheet.unavailableLines()[0].lineId, 101);
+  assert.equal(sheet.laneLines('current').length, 1); assert.equal(sheet.laneLines('later').length, 0);
+  sheet.move(line, 'later'); assert.equal(sheet.laterQuantity(line), 0, 'An excluded card cannot be dragged or stepped back implicitly');
+  sheet.toggleUnavailable(line);
+  assert.equal(sheet.unavailableLines().length, 0); assert.equal(sheet.laterQuantity(line), 24); assert.equal(sheet.remaining(line), 24);
+  assert.equal(calls.filter(call => call[0] === 'SPLIT').length, 0);
+});
+
+test('preexisting parked products remain on the original order and cannot be restored inside the split sheet', async () => {
+  const source = eligibility(); source.lines.push({ ...source.lines[1], lineId: 103, quantity: 0, unavailable: true, requestedQuantity: 72 } as any);
+  const { sheet } = harness(); sheet.api.splitEligibility = async () => source;
+  await sheet.load(); const line = source.lines[2];
+  assert.equal(sheet.unavailableLines().length, 1); assert.equal(sheet.requestedQuantity(line), 72);
+  sheet.toggleUnavailable(line); sheet.setQuantity(line, 24);
+  assert.equal(sheet.isUnavailable(line), true); assert.equal(sheet.newlyUnavailableQuantity(), 0);
+  const req = salesSplitRequest(source, { 101: 24 }, '');
+  assert.deepEqual(req.lines[2], { lineId: 103, laterQuantity: 0, unavailable: true });
+  const doc = view(); doc.order.lines.push({ id: 103, productId: 9, quantity: 0, unavailable: true, requestedQuantity: 72 } as any);
+  assert.equal(salesSplitBlockReason(doc as any), null);
+  doc.order.lines.at(-1)!.unavailable = false;
+  assert.match(salesSplitBlockReason(doc as any)!, /Sla eerst/);
+});
+
+test('split preview must explicitly account for new excluded quantities and all remembered parked quantities', () => {
+  const source = eligibility();
+  source.lines.push({ ...source.lines[1], lineId: 103, quantity: 24 }, { ...source.lines[1], lineId: 104, quantity: 0, unavailable: true, requestedQuantity: 72 } as any);
+  const req = salesSplitRequest(source, { 101: 24 }, '', {}, false, { 103: true });
+  const review = { ...preview(), original: { ...part(96, 960, 12, 3, 5), unavailableQuantity: 72 },
+    current: { ...part(48, 480, 12, 3, 5), unavailableQuantity: 96 }, later: { ...part(24, 240), unavailableQuantity: 0 }, excludedQuantity: 24,
+    deltaExclVatEur: -240, deltaInclVatEur: -290.4 };
+  assert.equal(salesSplitPreviewMatches(review, source, req), true);
+  assert.equal(salesSplitPreviewMatches({ ...review, excludedQuantity: 0 }, source, req), false);
+  assert.equal(salesSplitPreviewMatches({ ...review, current: { ...review.current, unavailableQuantity: 24 } }, source, req), false);
+  assert.equal(salesSplitPreviewMatches({ ...review, later: { ...review.later, quantity: 48 } }, source, req), false);
 });
 
 test('both parts need products and only valid whole-carton quantities may be confirmed', () => {

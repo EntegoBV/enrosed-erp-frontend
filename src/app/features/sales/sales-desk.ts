@@ -1,3 +1,4 @@
+import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
@@ -62,10 +63,15 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
+    @if (restoreLine(); as restore) {
+      <app-sales-line-restore-sheet [description]="restore.description" [piecesPerCarton]="restore.piecesPerCarton"
+        (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" />
+    }
+
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                        [showBack]="true" [showBell]="false"
@@ -184,7 +190,11 @@ interface JourneyStep {
               <span>{{ data.priced.totals.vatLegalMention ? 'btw verlegd' : 'excl. btw · ' + ((data.priced.totals.totalInclVat) | eur: (isPartnerDocument(data.order) ? 2 : 0)) + ' incl.' }}</span>
               }
             </button>
-            @if (isInvoiceDoc()) {
+            @if (allProductsUnavailable()) {
+              <button class="desk-kpi desk-kpi--go" type="button" (click)="railTab.set('status')">
+                <small>Beschikbaarheid</small><strong>Geen leverbare producten</strong><span>Herstel een product om verder te gaan</span>
+              </button>
+            } @else if (isInvoiceDoc()) {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="railTab.set('status')">
                 <small>Volgende stap</small>
                 <strong>{{ invoiceNextStep(data) }} ›</strong>
@@ -203,7 +213,7 @@ interface JourneyStep {
                 <span>{{ sendIssues()[0] }}</span>
               </button>
             } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
-              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="sending() || dirty()" (click)="openSend()">
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="sending() || dirty() || allProductsUnavailable()" (click)="openSend()">
                 <small>Volgende stap</small>
                 <strong>{{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }} ›</strong>
                 <span>{{ dirty() ? 'slaat eerst op' : (data.awaitingResend ? 'de klant wacht op de nieuwe versie' : 'klaar voor de klant') }}</span>
@@ -327,13 +337,14 @@ interface JourneyStep {
                             <span class="desk-product__copy">
                               <strong>{{ row.label }}</strong>
                               <small>Reeks · {{ row.lines.length }} varianten · {{ row.cartons | num }} dozen · {{ row.cbm | cbm }}</small>
+                              @if (unavailableLineCount(row.lines); as count) { <span class="desk-group-unavailable">{{ count === row.lines.length ? 'Tijdelijk niet beschikbaar' : count + ' niet beschikbaar' }}</span> }
                             </span>
                           </div>
                         </td>
                         <td class="c-qty num"><b>{{ row.pieces | num }}</b></td>
                         <td class="c-price"></td>
                         <td class="c-disc"></td>
-                        <td class="c-money num c-money--total">{{ row.net | eur }}</td>
+                        <td class="c-money num c-money--total">@if (unavailableLineCount(row.lines) === row.lines.length) { — } @else { {{ row.net | eur }} }</td>
                         <td class="c-money"></td>
                         <td class="c-delivery"></td>
                         @if (commercialEditable()) { <td class="c-act"></td> }
@@ -341,7 +352,7 @@ interface JourneyStep {
                     }
                     @case ('line') {
                       @let line = row.line;
-                      <tr class="desk-row" [class.desk-row--variant]="row.variant">
+                      <tr class="desk-row" [class.desk-row--variant]="row.variant" [class.desk-row--unavailable]="lineUnavailable(line.productId)">
                         <td class="c-product">
                           <div class="desk-product">
                             <a class="desk-product__photo-link" [routerLink]="['/products', line.productId]" [title]="line.description + ' openen'" tabindex="-1">
@@ -357,6 +368,9 @@ interface JourneyStep {
                               </a>
                               <div class="desk-product__meta">
                                 <span>{{ line.sku }}</span>
+                                @if (lineUnavailable(line.productId)) {
+                                  @if (lineRequestedQuantity(line.productId); as requested) { <span>{{ requested | num }} st aangevraagd</span> }
+                                } @else {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
                                 @if (linePending()[line.productId]; as to) {
                                   <span class="is-warn" role="status">Volle doos: wordt {{ to | num }} st</span>
@@ -364,15 +378,33 @@ interface JourneyStep {
                                 @if (line.nextTierAtQuantity) {
                                   <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} st voor {{ line.nextTierPercent | pct: 0 }}</span>
                                 }
+                                }
                               </div>
                             </div>
                           </div>
                         </td>
+                        @if (lineUnavailable(line.productId)) {
+                          <td class="c-qty num"><b>0</b><small>stuks</small></td>
+                          <td colspan="5">
+                            <div class="desk-unavailable">
+                              <span><b>Tijdelijk niet beschikbaar</b><small>Niet meegerekend in bedrag of levering</small>
+                                @if (lineAvailabilityRestoreHint(line.productId); as hint) { <small>{{ hint }}</small> }
+                              </span>
+                              @if (canToggleLineAvailability(line.productId)) {
+                                <button class="desk-availability desk-availability--restore" type="button"
+                                  [attr.aria-label]="line.description + ' opnieuw beschikbaar maken'"
+                                  (click)="toggleLineAvailability(line.productId)">
+                                  @if (lineRequestedQuantity(line.productId); as requested) { Herstel {{ requested | num }} st } @else { Aantal kiezen }
+                                </button>
+                              }
+                            </div>
+                          </td>
+                        } @else {
                         <td class="c-qty num">
                           @if (commercialEditable()) {
                             <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
                                    [attr.aria-label]="'Aantal ' + line.description"
-                                   [ngModel]="line.quantity" (ngModelChange)="setLineQuantity(line.productId, +$event)" />
+                                   [ngModel]="line.quantity" (ngModelChange)="setLineQuantity(line.productId, $event)" />
                           } @else {
                             <b>{{ line.quantity | num }}</b>
                           }
@@ -444,6 +476,11 @@ interface JourneyStep {
                               {{ editingDelivery() === line.productId ? 'Sluiten' : (line.deliveryWeek ? 'Week wijzigen' : 'Leverweek') }}
                             </button>
                           }
+                          @if (canToggleLineAvailability(line.productId)) {
+                            <button class="desk-availability" type="button"
+                              [attr.aria-label]="line.description + ' tijdelijk niet beschikbaar markeren'"
+                              (click)="toggleLineAvailability(line.productId)">Tijdelijk niet beschikbaar</button>
+                          }
                           @if (editingDelivery() === line.productId) {
                             <div class="desk-week">
                               <app-week-field [fieldId]="'dw-' + line.productId" [value]="weekOf(line.productId)"
@@ -451,6 +488,7 @@ interface JourneyStep {
                             </div>
                           }
                         </td>
+                        }
                         @if (commercialEditable()) {
                           <td class="c-act">
                             <button class="desk-remove" type="button" [attr.aria-label]="line.description + ' verwijderen'"
@@ -831,11 +869,12 @@ interface JourneyStep {
                     <app-sales-invoice-declaration [view]="data" [dirty]="dirty() || saving()" />
 
                     <p class="desk-form__group">Acties</p>
+                    @if (allProductsUnavailable()) { <p class="desk-form__help" role="status">Geen leverbare producten. Herstel eerst een product om uit te geven of te versturen.</p> }
                     <div class="desk-actions">
                       @if (isInvoiceDoc()) {
                         @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
-                          <button class="desk-action" type="button" [disabled]="sending() || dirty()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Factuur e-mailen</b><small>PDF en betaalgegevens naar de klant</small></span></button>
-                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de factuur buiten het ERP bezorgde</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="sending() || dirty() || allProductsUnavailable()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Factuur e-mailen</b><small>PDF en betaalgegevens naar de klant</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || allProductsUnavailable()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de factuur buiten het ERP bezorgde</small></span></button>
                         }
                         @if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
                           <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="openShipSheet(data)"><i aria-hidden="true">▤</i><span><b>Bestelling verzonden</b><small>Punt de voorraad af</small></span></button>
@@ -1079,6 +1118,15 @@ interface JourneyStep {
     }
   `,
   styles: [`
+    .desk-group-unavailable{margin-top:4px;color:#765017;font-size:11px;font-weight:650}
+    .desk-row--unavailable>td{background:color-mix(in srgb,var(--surface) 92%,#d59625)!important}
+    .desk-unavailable{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:4px 0}
+    .desk-unavailable>span{display:grid;gap:4px;color:#765017}.desk-unavailable b{font-size:12px}.desk-unavailable small{font-size:11px}
+    .desk-availability{display:block;min-height:44px;padding:7px 9px;margin-top:4px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--muted);font:inherit;font-size:11px;font-weight:650;text-align:left;cursor:pointer;transition:background .18s,border-color .18s}
+    .desk-availability:hover{border-color:#d6b983;background:#fff7e9;color:#765017}.desk-availability:focus-visible{outline:2px solid var(--rose);outline-offset:3px}
+    .desk-availability--restore{flex:none;margin:0;padding-inline:15px;border-color:#ddc69e;color:#765017;background:#fffaf1}
+    @media(prefers-reduced-motion:reduce){.desk-availability{transition:none}}
+
     .desk-hero__link{color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:2px}.desk-hero__link:hover{opacity:.85}
     :host{display:block;min-width:0}
     .desk-row--extra td{background:var(--surface-2)}.desk-extra{display:flex;align-items:center;gap:10px}.desk-extra__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose);font-weight:800}.desk-extra__what{flex:1;min-width:0;text-align:left}.desk-empty .btn+.btn{margin-left:8px}
@@ -1365,7 +1413,7 @@ export class SalesDesk extends SalesEditor {
   }
 
   async markSent(data: SalesOrderView): Promise<void> {
-    if (this.invoiceBusy() || this.dirty() || this.saving() || this.view()?.order.id !== data.order.id) return;
+    if (this.allProductsUnavailable() || this.invoiceBusy() || this.dirty() || this.saving() || this.view()?.order.id !== data.order.id) return;
     this.invoiceBusy.set(true);
     try {
       const updated = await this.sales.markInvoiceSent(data.order.id);
@@ -1395,7 +1443,7 @@ export class SalesDesk extends SalesEditor {
       stockById = new Map(products.filter((product) => product.id !== null)
         .map((product) => [product.id!, product.stockQuantity ?? 0]));
     } catch { /* the stock preview is best-effort; the rows then say "onbekend" */ }
-    const rows = data.priced.lines.map((line) => {
+    const rows = data.priced.lines.filter(line => !this.lineUnavailable(line.productId) && line.quantity > 0).map((line) => {
       const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
       return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity,
                before, after: before === null ? null : before - line.quantity };

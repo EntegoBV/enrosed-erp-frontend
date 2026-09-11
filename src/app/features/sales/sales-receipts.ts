@@ -8,6 +8,7 @@ import { DateField } from '../../shared/date-field';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { isPartnerDocument } from './sales-payment-state';
+import { salesAllProductsUnavailable } from './sales-line-availability';
 import { ReceiptDraft, receiptLocalParts, receiptRequest } from '../../shared/received-at';
 import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue, type ReceiptBankAccount } from './receipt-bank-account';
 
@@ -35,7 +36,7 @@ import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue, type
               <article><div><b>{{ payment.amountEur | eur }} {{ payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}@if (payment.legacy) { · historisch }</b><span>{{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.timeZone }}@if (payment.bankAccount) { · {{ payment.bankAccount }} }@if (payment.reference) { · {{ payment.reference }} }</small><small>Geregistreerd {{ stamp(payment.recordedAt, payment.timeZone) }}@if (payment.actor) { · {{ payment.actor }} }</small></div><button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="edit(payment)">Corrigeren</button></article>
             } @empty { <p class="receipts__hint">Nog geen afzonderlijke ontvangsten geregistreerd.</p> }
           </div>
-          @if (view().order.status === 'CONCEPT') { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || dirty()" (click)="issue()">{{ summary.invoiceTotalEur > 0 ? 'Uitgeven zonder e-mail & ontvangst noteren' : 'Uitgeven zonder e-mail' }}</button><p class="receipts__hint">Geef de factuur definitief uit om ontvangsten te registreren. De factuur wordt dan vastgezet.</p> }
+          @if (view().order.status === 'CONCEPT') { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || dirty() || allProductsUnavailable(view())" (click)="issue()">{{ summary.invoiceTotalEur > 0 ? 'Uitgeven zonder e-mail & ontvangst noteren' : 'Uitgeven zonder e-mail' }}</button><p class="receipts__hint">@if (allProductsUnavailable(view())) { Alle producten staan tijdelijk op 0. Herstel minstens één product voordat je deze factuur uitgeeft. } @else { Geef de factuur definitief uit om ontvangsten te registreren. De factuur wordt dan vastgezet. }</p> }
           @if (canRefund()) { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="refund()">Terugbetaling noteren · {{ summary.refundableEur | eur }}</button> }
           @if (canRecord()) { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || dirty()" (click)="add()">+ Ontvangst registreren</button> }
         } @else { <p class="receipts__hint">De betalingsgegevens konden niet worden geladen. Vernieuw de factuur.</p> }
@@ -79,6 +80,7 @@ import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue, type
   `,
 })
 export class SalesReceipts implements OnDestroy {
+  readonly allProductsUnavailable = salesAllProductsUnavailable;
   readonly view = input.required<SalesOrderView>();
   readonly dirty = input(false);
   readonly openRequest = input(0);
@@ -174,6 +176,7 @@ export class SalesReceipts implements OnDestroy {
   }
   async issue(): Promise<void> {
     if (this.busy() || this.dirty()) return;
+    if (salesAllProductsUnavailable(this.view())) { this.ui.toast('Herstel minstens één product voordat je deze factuur uitgeeft.', 'err'); return; }
     const orderId = this.view().order.id;
     this.busy.set(true);
     try {

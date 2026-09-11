@@ -228,7 +228,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
             <div class="card__body card__body--flush">
               <div class="list">
                 @for (line of data.lines; track line.productId) {
-                  <div class="list-item">
+                  <div class="list-item" [class.portal-line--unavailable]="line.unavailable" [attr.data-portal-line]="line.productId">
                     @if (line.photoUrl) {
                       <img class="portal-line__photo" [src]="line.photoUrl" alt="" loading="lazy" />
                     } @else {
@@ -236,6 +236,10 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                     }
                     <div class="list-item__body">
                       <div class="list-item__title">{{ line.description }}</div>
+                      @if (line.unavailable) {
+                        <div class="list-item__meta list-item__meta--wrap warn-text strong">{{ t('lineUnavailable') }}</div>
+                        <div class="list-item__meta list-item__meta--wrap">{{ requestedQuantityText(line) }}</div>
+                      } @else {
                       <div class="list-item__meta">
                         {{ line.quantity | num: 0: locale() }} {{ t('portalPieces') }} ·
                         {{ line.cartons | num: 0: locale() }} {{ t('portalBoxes') }}
@@ -270,10 +274,11 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                             {{ t('portalTermToBeDetermined') }}</span>
                         }
                       </div>
+                      }
                     </div>
                     @if (!data.advanceAgreement) {
                     <div class="list-item__end">
-                      <div class="strong num">{{ line.net | eur: 2: locale() }}</div>
+                      <div class="strong num">@if (line.unavailable) { — } @else { {{ line.net | eur: 2: locale() }} }</div>
                     </div>
                     }
                   </div>
@@ -456,6 +461,11 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
           <div class="section-title" style="margin-top:0">{{ t('portalOnYourQuote') }}</div>
           @for (line of proposalLines(); track line.productId) {
             <div class="field">
+              @if (line.unavailable) {
+                <div class="small strong">{{ line.description }}</div>
+                <div class="hint warn-text strong">{{ t('lineUnavailable') }}</div>
+                <div class="hint">{{ requestedQuantityText(line) }}</div>
+              } @else {
               <label [attr.for]="'prop-' + line.productId">{{ line.description }}</label>
               <input class="input num right" [id]="'prop-' + line.productId" type="number"
                      min="0" step="1" inputmode="numeric" [ngModel]="line.quantity"
@@ -469,6 +479,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 <span class="hint">
                   {{ line.piecesPerCarton }} {{ t('portalPerBox') }}
                 </span>
+              }
               }
             </div>
           }
@@ -596,6 +607,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
       /* Black ink on transparent, so invert on the dark bar. */
       filter: invert(1);
     }
+    .portal-line--unavailable { background: color-mix(in srgb, var(--warn, #a85e10) 5%, transparent); }
     .portal-line__photo {
       width: 56px;
       height: 56px;
@@ -636,6 +648,7 @@ export class PortalPage implements OnDestroy {
   readonly proposalSheet = signal(false);
   readonly proposalLines = signal<{
     productId: number; description: string; quantity: number; piecesPerCarton: number;
+    unavailable: boolean; requestedQuantity: number | null;
   }[]>([]);
   /** Quantities about to snap to a full carton; visible now, not yet applied. */
   readonly pendingRound = signal<Record<number, number>>({});
@@ -840,12 +853,19 @@ export class PortalPage implements OnDestroy {
     }
   }
 
+  requestedQuantityText(line: { requestedQuantity?: number | null }): string {
+    const quantity = line.requestedQuantity;
+    return quantity != null && Number.isFinite(quantity) && quantity > 0
+      ? this.t('lineRequestedQuantity').replace('%s', new Intl.NumberFormat(this.locale()).format(quantity)) : '';
+  }
+
   openProposal(): void {
     const quote = this.quote();
     if (!quote || quote.advanceAgreement) return;
     this.proposalLines.set(quote.lines.map((line) => ({
       productId: line.productId, description: line.description, quantity: line.quantity,
       piecesPerCarton: Math.max(1, line.piecesPerCarton || 1),
+      unavailable: line.unavailable === true, requestedQuantity: line.requestedQuantity ?? null,
     })));
     this.pendingRound.set({});
     this.additions.set(new Map());
@@ -873,6 +893,7 @@ export class PortalPage implements OnDestroy {
     [...this.additions()].map(([productId, value]) => ({ productId, ...value })));
 
   addFromCatalog(choice: { item: PortalCatalogItem; quantity: number }): void {
+    if (this.quote()?.lines.some(line => line.productId === choice.item.productId)) return;
     this.catalogSheet.set(false);
     this.additions.update((current) => {
       const next = new Map(current);
@@ -902,6 +923,8 @@ export class PortalPage implements OnDestroy {
    * that check is the guarantee.
    */
   setProposal(productId: number, quantity: number): void {
+    if (this.quote()?.lines.some(line => line.productId === productId && line.unavailable)
+        || this.proposalLines().some(line => line.productId === productId && line.unavailable)) return;
     const wanted = Math.max(0, quantity || 0);
     this.proposalLines.update((lines) =>
       lines.map((line) => (line.productId === productId ? { ...line, quantity: wanted } : line)));
@@ -922,7 +945,8 @@ export class PortalPage implements OnDestroy {
     this.roundTimers.set(productId, setTimeout(() => {
       /* Only adjust when nothing else was typed in the meantime. */
       const current = this.proposalLines().find((l) => l.productId === productId);
-      if (!current || current.quantity !== wanted) return;
+      if (!current || current.unavailable || current.quantity !== wanted
+          || this.quote()?.lines.some(line => line.productId === productId && line.unavailable)) return;
       this.proposalLines.update((lines) =>
         lines.map((l) => (l.productId === productId ? { ...l, quantity: snapped } : l)));
       this.pendingRound.update((map) => {
@@ -945,14 +969,15 @@ export class PortalPage implements OnDestroy {
 
   async propose(): Promise<void> {
     if (this.quote()?.advanceAgreement) return;
+    const unavailable = new Set((this.quote()?.lines ?? []).filter(line => line.unavailable).map(line => line.productId));
     /* Existing lines AND what the customer wants added, in one proposal. */
     const lines = [
-      ...this.proposalLines().map((line) => ({
+      ...this.proposalLines().filter(line => !line.unavailable && !unavailable.has(line.productId)).map((line) => ({
         productId: line.productId,
         quantity: line.quantity,
         note: null as string | null,
       })),
-      ...[...this.additions()].map(([productId, addition]) => ({
+      ...[...this.additions()].filter(([productId]) => !unavailable.has(productId)).map(([productId, addition]) => ({
         productId,
         quantity: addition.quantity,
         note: this.local('addedByCustomer') as string | null,

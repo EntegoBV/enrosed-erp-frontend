@@ -8,6 +8,7 @@ import { firstValueFrom, of } from 'rxjs';
 import { withPaymentState } from '../src/app/features/sales/sales-payment-state.ts';
 import { normalizeSalesPdfOptions, salesPdfQuery } from '../src/app/core/api/sales-pdf-options.ts';
 import { messageOf } from '../src/app/core/api/errors.ts';
+import * as availability from '../src/app/features/sales/sales-line-availability.ts';
 import { customerMessageIsReadOnly } from '../src/app/features/sales/quote-status.ts';
 
 async function isolate(file: string, name: string, names: string[], globals: Record<string, any> = {}) {
@@ -16,10 +17,10 @@ async function isolate(file: string, name: string, names: string[], globals: Rec
   const members = cls.members.filter(m => m.name && names.includes(m.name.getText(source))); assert.equal(members.length, names.length);
   const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(source, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, clearTimeout, Map, messageOf, withPaymentState, customerMessageIsReadOnly, ...globals }); return exports[name];
+  const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, clearTimeout, Map, messageOf, withPaymentState, customerMessageIsReadOnly, ...availability, ...globals }); return exports[name];
 }
 const Editor = await isolate('features/sales/sales-editor', 'SalesEditor', [
-  'documentMutationBusy', 'mobileSplitBusy', 'mobileFinanciallyLocked', 'mobileAcceptsDraft', 'canEdit', 'canEditTerms', 'dirty', 'adopt', 'enqueue', 'save', 'paymentReceived', 'setLine', 'saveFreight',
+  'allProductsUnavailable', 'documentMutationBusy', 'mobileSplitBusy', 'mobileFinanciallyLocked', 'mobileAcceptsDraft', 'canEdit', 'canEditTerms', 'dirty', 'adopt', 'enqueue', 'save', 'paymentReceived', 'setLine', 'saveFreight',
 ]);
 const Desk = await isolate('features/sales/sales-desk', 'SalesDesk', ['markSent', 'shipGoods']);
 Object.setPrototypeOf(Desk.prototype, Editor.prototype);
@@ -108,6 +109,14 @@ test('ordinary concept edits still preview and save normally', async () => {
   assert.equal(screen.dirty(), true); assert.equal(await screen.save(), true);
   assert.equal(screen.dirty(), false); assert.equal(screen.view().order.notes, 'Bewuste wijziging');
   assert.deepEqual(calls, ['POST preview', 'PUT order']);
+});
+
+test('an all-unavailable standard concept still saves its retained rows without issuing or mailing', async () => {
+  const { screen, calls } = harness(document('CONCEPT', { purpose: 'STANDARD', lines: [{ id: 1, productId: 7, quantity: 48 }] }));
+  screen.view.set({ ...screen.view(), order: { ...screen.view().order, lines: [{ id: 1, productId: 7, quantity: 0, unavailable: true, requestedQuantity: 48 }] } });
+  assert.equal(await screen.save(), true);
+  assert.equal(screen.view().order.lines.length, 1); assert.equal(screen.view().order.lines[0].requestedQuantity, 48);
+  assert.equal(screen.view().order.status, 'CONCEPT'); assert.deepEqual(calls, ['PUT order']);
 });
 
 test('payment replies adopt a clean document including persisted issuance fields', () => {

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { isAdvanceDocument } from '../src/app/features/sales/sales-payment-state.ts';
+import { salesLineUnavailable, salesAllProductsUnavailable } from '../src/app/features/sales/sales-line-availability.ts';
 
 // Run production projection helpers without Angular or any API capability.
 const source = await readFile(new URL('../src/app/features/sales/sales-advance-contents-state.ts', import.meta.url), 'utf8');
@@ -106,11 +107,13 @@ async function screenMethods(file: string, className: string, names: string[]) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText;
   const exported: Record<string, any> = {};
-  vm.runInNewContext(javascript, { exports: exported, isAdvanceInvoice, advanceContentsFor, advanceContentsSummary, advancePlanningHint, Intl });
+  vm.runInNewContext(javascript, { exports: exported, isAdvanceInvoice, advanceContentsFor, advanceContentsSummary, advancePlanningHint, salesLineUnavailable, Intl });
   return new exported[className]();
 }
 
-const editor = await screenMethods('sales-editor', 'SalesEditor', ['workflowHint', 'workflowComplete']);
+const editor = await screenMethods('sales-editor', 'SalesEditor', ['workflowHint', 'workflowComplete', 'lineUnavailable']);
+// The isolated view is a plain test function, so evaluate the production helper each time.
+editor.allProductsUnavailable = () => salesAllProductsUnavailable(editor.view());
 const reader = await screenMethods('sales-view', 'SalesView', ['deliveryState']);
 test('mobile/editor navigation counts snapshot products and needs no product prices to complete their step', () => {
   const view = fixture();
@@ -151,4 +154,11 @@ test('regular-sale navigation retains priced-line completion and the normal deli
   assert.equal(editor.workflowHint('order-lines'), '1 regel');
   assert.equal(editor.workflowComplete('order-lines'), true);
   assert.equal(reader.deliveryState(view), 'Aangevuld');
+  view.order.lines = [{ productId: 1, quantity: 24 }, { productId: 2, quantity: 0, unavailable: true, requestedQuantity: 48 }];
+  view.priced.lines = [{ productId: 1, quantity: 24, unitPrice: 6.95 }, { productId: 2, quantity: 0, unitPrice: 0, unavailable: true }];
+  assert.equal(editor.workflowHint('order-lines'), '1 actief · 1 niet beschikbaar');
+  assert.equal(editor.workflowComplete('order-lines'), true);
+  view.order.lines[0] = { productId: 1, quantity: 0, unavailable: true, requestedQuantity: 24 };
+  assert.equal(editor.workflowHint('order-lines'), 'Alles tijdelijk niet beschikbaar');
+  assert.equal(editor.workflowComplete('order-lines'), false);
 });

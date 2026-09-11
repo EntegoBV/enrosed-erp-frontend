@@ -233,6 +233,9 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                 <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
                   <i aria-hidden="true"></i>{{ statusOf(row).label }}
                 </span>
+                @if (unavailableCount(row); as count) {
+                  <span class="so-status-mini so-status-mini--gold">{{ count }} {{ count === 1 ? 'product' : 'producten' }} niet beschikbaar</span>
+                }
                 @if (fulfillmentStatus(row); as delivery) {
                   <span [class]="'so-status-mini so-status-mini--' + delivery.cls"><i aria-hidden="true"></i>Deel {{ row.fulfillment?.part }} · {{ delivery.label }}</span>
                 }
@@ -319,6 +322,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                       <span class="sales-container__eyebrow">Gesplitste order</span><strong>{{ customerName(entry.rows[0]) }}</strong>
                       <span class="sales-container__meta">{{ entry.summary.parts }} van 2 delen in dit overzicht · {{ entry.summary.pieces | num }} stuks</span>
                       <span class="sales-container__badges">
+                        @if (entry.summary.unavailableCount) { <span class="so-status-mini so-status-mini--gold">{{ entry.summary.unavailableCount }} niet beschikbaar</span> }
                         @if (entry.summary.waitingCount) { <span class="so-status-mini so-status-mini--gold"><i aria-hidden="true"></i>{{ entry.summary.waitingCount }} wacht op voorraad</span> }
                         @if (entry.summary.shippedCount) { <span class="so-status-mini so-status-mini--ok"><i aria-hidden="true"></i>{{ entry.summary.shippedCount }} verzonden</span> }
                         @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="so-status-mini so-status-mini--blue"><i aria-hidden="true"></i>Leveringen gepland</span> }
@@ -816,6 +820,9 @@ export class SalesList {
   readonly splitBusy = signal(false);
   readonly splitBlockReason = salesSplitBlockReason;
   readonly fulfillmentStatus = fulfillmentStatusOf;
+  unavailableCount(row: SalesOrderView): number {
+    return (row.order.lines ?? []).filter(line => line.unavailable === true).length;
+  }
   openSplit(row: SalesOrderView): void {
     if (this.splitBusy() || this.splitBlockReason(row)) return;
     this.rowMenu.set(null); this.openRow.set(null); this.splitRow.set(row);
