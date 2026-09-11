@@ -541,8 +541,9 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
     .so-row .so-row__flags { grid-area:flags;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:5px;max-width:none;margin-top:3px;text-align:left }
     .so-row .so-row__flags:empty { display:none }
     .so-row .list-item__chev { grid-area:chev;align-self:center }
-    .so-row .so-row__doc, .so-row .so-row__size { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
-    @media(max-width:600px){ .so-row .so-row__doc { white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2 } }
+    .so-row .so-row__size { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    /* The document line may take two lines everywhere: a clipped "PA…" tag told nobody anything. */
+    .so-row .so-row__doc { overflow:hidden;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2 }
     @media(min-width:1024px){
       .so-row { grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,.9fr) auto 14px;grid-template-areas:'title size flags amount chev' 'doc size flags amount chev';column-gap:16px;row-gap:2px;padding:12px 16px }
       .so-row .so-row__size { align-self:center }
