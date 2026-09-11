@@ -220,7 +220,7 @@
   .identity-extra { min-width: 0; }
   .identity-extra > summary { display: none; }
   .identity-extra__body { min-width: 0; }
-  .product-mobile-header, .product-mobile-identity, .product-mobile-tabs { display: none; }
+  .product-mobile-header, .product-mobile-identity, .product-mobile-steps { display: none; }
   .product-section-sheet > p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
   .product-section-choices { display: grid; gap: 6px; }
   .product-section-choices > button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 68px; padding: 10px 12px; text-align: left; border: 1px solid transparent; border-radius: 17px; background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; }
@@ -266,11 +266,11 @@
     .content.product-editor-page { padding: 0 14px calc(var(--safe-b) + 116px); }
     .product-editor-page > .subnav.erp-workspace__nav { top: var(--product-header-h); margin: 0 -2px 16px; width: calc(100% + 4px); padding: 5px 0 8px; border: 0; background: transparent; }
     .editor-section-picker, .editor-nav-label, .subnav .erp-workspace__nav-rail, .editor-translation-link { display: none; }
-    .product-mobile-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 5px; border: 1px solid color-mix(in srgb, var(--line) 65%, var(--surface)); border-radius: 22px; background: color-mix(in srgb, var(--surface) 86%, transparent); box-shadow: 0 3px 15px rgb(25 36 32 / 6%), inset 0 1px 0 var(--surface); backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); }
-    .product-mobile-tabs button { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; min-width: 0; min-height: 54px; padding: 7px 3px; border: 0; border-radius: 17px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; transition: color 160ms ease, background 160ms ease, transform 160ms ease; }
-    .product-mobile-tabs button.is-active { background: var(--rose-soft); color: var(--rose-dark); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose-line) 75%, transparent); }
-    .product-mobile-tabs button:active { transform: scale(.94); }
-    .product-mobile-tabs button:focus-visible, .product-mobile-photo:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
+    /* The step pill of the phone editor: the shared glass pill, not sticky
+       on its own (the section bar above already is), every section a stop. */
+    .product-mobile-steps.workflow-nav { position: static; display: grid; margin: 0; padding: 4px; }
+    .product-mobile-steps .workflow-nav__item { min-height: 56px; }
+    .product-mobile-steps .workflow-nav__copy small { max-width: 92px; }
     .editor-canvas { scroll-margin-top: calc(var(--product-header-h) + 86px); }
     .editor-section-note { display: none; }
     .editor-canvas[data-tab='media'] > .editor-section-note, .editor-canvas[data-tab='stock'] > .editor-section-note, .editor-canvas[data-tab='agreements'] > .editor-section-note { display: flex; margin: 0 4px 12px; }
@@ -322,7 +322,7 @@
 @media (max-width: 679px) { body:has(app-product-editor) .tabbar { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   #product-editor-workspace .editor-section { animation: none; }
-  #product-editor-workspace :is(.product-mobile-tabs button, .product-editor-dock__save, .identity-extra > summary > span, .photo-scopes button) { transition: none; }
+  #product-editor-workspace :is(.product-mobile-steps button, .product-editor-dock__save, .identity-extra > summary > span, .photo-scopes button) { transition: none; }
 }
 
 @media (max-width: 679px) {
@@ -355,12 +355,6 @@
   app-product-view #product-overview .phero__fact .phero__gain--neg { color: var(--danger) !important; }
   app-product-view #product-overview .phero__expected { grid-column: 1 / -1; margin: 0; color: var(--rose-dark); background: var(--surface); }
   app-product-view #product-overview .phero__nofoto { grid-column: 1; font-size: 11px; color: var(--muted); }
-  app-product-view .product-phone-shortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 16px 0 12px; }
-  app-product-view .product-phone-shortcuts > a { display: grid; align-content: center; gap: 7px; min-width: 0; min-height: 68px; padding: 11px 10px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); color: var(--ink); text-decoration: none; transition: transform 160ms ease, background 160ms ease; }
-  app-product-view .product-phone-shortcuts > a:active { transform: scale(.96); background: var(--rose-soft); }
-  app-product-view .product-phone-shortcuts span { font-size: 12px; font-weight: 650; }
-  app-product-view .product-phone-shortcuts small { color: var(--muted); font-size: 9px; line-height: 1.4; }
-  app-product-view .product-phone-shortcuts i { font-style: normal; color: var(--rose-dark); }
   app-product-view #product-detail-navigation.product-detail-nav { display: block; top: var(--safe-t); padding: 4px; border: 1px solid var(--line); border-radius: 19px; mask-image: none; -webkit-mask-image: none; overflow: hidden; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
   app-product-view #product-detail-navigation.product-detail-nav .subnav__rail { display: flex; gap: 4px; padding: 0; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
   app-product-view #product-detail-navigation.product-detail-nav .workflow-nav__mark { display: none; }
@@ -373,4 +367,3 @@
   app-product-view .product-view-dock .btn { border-radius: 18px; }
   @media (max-width: 359px) { app-product-view #product-overview .erp-workspace__title { font-size: 21px; } app-product-view #product-overview .phero__fact strong { font-size: 15px; } }
 }
-@media (prefers-reduced-motion: reduce) { app-product-view .product-phone-shortcuts > a { transition: none; } }

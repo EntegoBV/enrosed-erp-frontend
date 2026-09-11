@@ -303,13 +303,6 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             </section>
           }
 
-          @if (!desktop.active()) {
-            <nav class="product-phone-shortcuts" aria-label="Direct product bewerken">
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'identity' }"><span>Gegevens</span><small>Kleur &amp; maat <i aria-hidden="true">↗</i></small></a>
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'sales' }"><span>Verkoopprijs</span><small>Prijs aanpassen <i aria-hidden="true">↗</i></small></a>
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'packaging' }"><span>Omdoos</span><small>Inhoud &amp; maten <i aria-hidden="true">↗</i></small></a>
-            </nav>
-          }
           <nav id="product-detail-navigation" class="subnav product-detail-nav workflow-nav workflow-nav--wide erp-workspace__nav" aria-label="Productonderdelen">
             <div class="subnav__rail erp-workspace__nav-rail workflow-nav__rail">
               @for (item of visibleDetailSections(); track item.id) {

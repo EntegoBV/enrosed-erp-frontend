@@ -46,7 +46,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             <b>Actie vereist</b>
             <span class="attn-strip__count">{{ attentionCount() }}</span>
             @if (attentionRows().length > 1) {
-              <button class="attn-strip__more" type="button" (click)="statusFilter.set('ATTENTION')">Alles tonen ›</button>
+              <button class="attn-strip__more" type="button" (click)="statusFilter.set('ATTENTION')">Alle {{ attentionCount() }} tonen ›</button>
             }
           </div>
           <div class="attn-strip__items">
@@ -106,20 +106,13 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         </div>
       </div>
 
-      @if (supplierSections().length) {
+      @if (filtered().length) {
         <div class="card po-card">
           <div class="po-table-head" aria-hidden="true">
-            <span>Order</span><span>Container · lading</span><span>Status</span><span class="po-table-head__amount">Totaal geland</span><span></span>
+            <span>Order</span><span>Leverancier</span><span>Container · lading</span><span>Status</span><span class="po-table-head__amount">Totaal geland</span><span></span>
           </div>
           <div class="list">
-          @for (group of supplierSections(); track group.supplierId) {
-            <!-- One block per supplier: with many orders coming, the name on
-                 top reads faster than a name on every row. -->
-            <h2 class="po-group-head">
-              <span>{{ group.name }}</span>
-              <small>{{ group.rows.length }} order{{ group.rows.length === 1 ? '' : 's' }}</small>
-            </h2>
-            @for (row of group.rows; track row.order.id) {
+            @for (row of filtered(); track row.order.id) {
               <!-- iOS pattern, also with a mouse or trackpad: drag the row left
                    for the bin, right for the archive; hold it (or right-click)
                    for the same choices as a menu. -->
@@ -146,14 +139,16 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                    (dragstart)="$event.preventDefault()"
                    (click)="blockWhenSwiped($event)">
                   <div class="list-item__body">
-                    <!-- The supplier already heads the block; the row leads with
-                         its own identity: the nickname or the number. -->
-                    <div class="list-item__title">{{ row.order.alias || row.order.number }}</div>
-                    <div class="list-item__meta po-row__meta">
-                      {{ creatorName(row) }} · {{ row.order.orderDate | dateNl }}
-                      @if (row.order.alias) { · <b class="po-row__number">{{ row.order.number }}</b> }
+                    <!-- The nickname or the number leads; the supplier and the
+                         products under it are what tells one container from the next. -->
+                    <div class="list-item__title">{{ row.order.alias || row.order.number }}
                       @if (partnerIds().has(row.order.id)) { <span class="po-partner-tag">Partner</span> }
                     </div>
+                    <div class="list-item__meta po-row__supplier">
+                      <span class="po-row__supplier-name">{{ supplierName(row.order.supplierId) }}</span>
+                      <span class="po-row__when">{{ row.order.orderDate | dateNl }}@if (row.order.alias) { · {{ row.order.number }} } · {{ creatorName(row) }}</span>
+                    </div>
+                    <div class="list-item__meta po-row__products" [class.po-row__products--empty]="!row.costing.lines.length">{{ productSummary(row) }}</div>
                     <div class="list-item__meta po-row__load">
                       {{ containerLabel(row.order.containerType) }} ·
                       {{ row.costing.totals.cartons | num }} {{ row.costing.totals.cartons === 1 ? 'karton' : 'kartons' }} ·
@@ -192,7 +187,6 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                 }
               </div>
             }
-          }
           </div>
         </div>
       } @else if (loading()) {
@@ -350,17 +344,17 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     .po-filter svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8;
       stroke-linecap: round; }
     .po-filter__native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
-    /* The supplier caption inside the card, then its orders. */
-    .po-group-head { display:flex;align-items:baseline;gap:8px;margin:0;padding:12px 14px 6px;
-      color:var(--ink-2);font-size:11.5px;font-weight:800;letter-spacing:.06em;line-height:1.3;text-transform:uppercase }
-    .po-group-head+.po-group-head { border-top:1px solid var(--line) }
-    .po-group-head span { min-width:0 }
-    .po-group-head small { flex:none;color:var(--muted);font-size:11px;font-weight:650;letter-spacing:0;text-transform:none }
-    .swipe+.po-group-head { margin-top:4px;border-top:1px solid var(--line) }
     .po-row { padding:13px 14px }
-    .po-row .list-item__title { font-size:15px }
+    .po-row .list-item__title { display:flex;align-items:center;gap:8px;font-size:15px }
+    .po-row__supplier { display:flex;flex-wrap:wrap;gap:0 6px }
+    .po-row__supplier-name { color:var(--ink-2);font-weight:650 }
+    .po-row__when::before { content:'·';margin-right:6px;color:var(--line-strong) }
+    .po-row__products { margin-top:2px;color:var(--ink-2) }
+    .po-row__products--empty { color:var(--muted);font-style:italic }
     .po-row__load { margin-top:1px }
     .po-row__amount { font-size:15px;letter-spacing:-.01em;font-variant-numeric:tabular-nums }
+    /* A phone reads title, supplier and products; the container line is for the desk. */
+    @media (max-width:1023px) { .po-row__load { display:none } .po-row__when::before { content:none } .po-row__when { flex-basis:100% } }
     .po-table-head { display:none }
     .po-row-end { display: grid; justify-items: end; gap: 3px; }
     .po-status-mini { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
@@ -383,11 +377,14 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     .po-partner-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); font-size: 10px; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; vertical-align: middle; }
     /* A desk reads the list as a table: order, container and lading, status, amount. */
     @media (min-width:1024px) {
-      .po-row,.po-table-head { --po-cols:minmax(0,1.5fr) minmax(0,1.1fr) minmax(0,1.1fr) 128px }
-      .po-row { display:grid;grid-template-columns:var(--po-cols) 14px;grid-template-areas:'title load status amount chev' 'meta load status amount chev' 'attn load status amount chev';column-gap:18px;row-gap:2px;align-items:center;padding:12px 18px }
+      .po-row,.po-table-head { --po-cols:minmax(0,1.5fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,.9fr) 120px }
+      .po-row { display:grid;grid-template-columns:var(--po-cols) 14px;grid-template-areas:'title supplier load status amount chev' 'products supplier load status amount chev' 'attn supplier load status amount chev';column-gap:18px;row-gap:2px;align-items:center;padding:12px 18px }
       .po-row .list-item__body,.po-row .list-item__end { display:contents }
       .po-row .list-item__title { grid-area:title;min-width:0 }
-      .po-row .po-row__meta { grid-area:meta;min-width:0 }
+      .po-row .po-row__supplier { grid-area:supplier;display:grid;gap:1px;min-width:0;align-self:center;white-space:normal;line-height:1.35 }
+      .po-row .po-row__supplier-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+      .po-row .po-row__when { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+      .po-row .po-row__products { grid-area:products;min-width:0;margin:0 }
       .po-row .po-row__load { grid-area:load;min-width:0;align-self:center;margin:0;overflow:hidden;white-space:normal;line-height:1.4 }
       .po-row .po-attn-line { grid-area:attn;margin-top:2px }
       .po-row .po-status-mini { grid-area:status;justify-self:start;align-self:center }
@@ -395,7 +392,6 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
       .po-row .list-item__chev { grid-area:chev;align-self:center }
       .po-table-head { display:grid;grid-template-columns:var(--po-cols) 14px;column-gap:18px;padding:9px 18px 8px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.07em;text-transform:uppercase }
       .po-table-head__amount { text-align:right }
-      .po-group-head { padding:12px 18px 6px }
       .po-toolbar { flex-wrap:nowrap;align-items:flex-start }
       .po-toolbar>.po-tabs { flex:0 1 380px }
       .po-toolbar>.po-filterbar { justify-content:flex-end }
@@ -479,27 +475,22 @@ export class PurchaseList {
     const needle = this.query().trim().toLowerCase();
     const rows = !needle ? byStatus : byStatus.filter((row) =>
       [row.order.number, row.order.alias ?? '', this.supplierName(row.order.supplierId), this.creatorName(row),
-       row.order.trackingReference ?? '']
+       row.order.trackingReference ?? '', ...row.costing.lines.map((line) => line.productName)]
         .some((text) => text.toLowerCase().includes(needle)));
     /* Newest first: the order you placed this week is the one you want. */
     return rows.slice().sort((a, b) => b.order.orderDate.localeCompare(a.order.orderDate)
       || (b.order.id ?? 0) - (a.order.id ?? 0));
   });
 
-  /** One block per supplier, ordered by whoever has the newest order. */
-  readonly supplierSections = computed(() => {
-    const groups = new Map<number, { supplierId: number; name: string; rows: PurchaseOrderView[] }>();
-    for (const row of this.filtered()) {
-      const id = row.order.supplierId;
-      let group = groups.get(id);
-      if (!group) {
-        group = { supplierId: id, name: this.supplierName(id), rows: [] };
-        groups.set(id, group);
-      }
-      group.rows.push(row);
-    }
-    return [...groups.values()];
-  });
+  /** What is in the container, in one line: the first products by name, the rest counted. */
+  productSummary(row: PurchaseOrderView): string {
+    const names = [...new Set(row.costing.lines.map((line) => line.productName.trim()).filter(Boolean))];
+    if (!names.length) return 'Nog geen producten';
+    const shown = names.slice(0, 2).join(', ');
+    const rest = names.length - 2;
+    const pieces = row.costing.totals.pieces;
+    return `${shown}${rest > 0 ? ` +${rest}` : ''}${pieces ? ` · ${pieces.toLocaleString('nl-BE')} st` : ''}`;
+  }
 
   statusMiniClass(status: string): string {
     return status === 'ONTVANGEN' ? 'po-status-mini--ok'

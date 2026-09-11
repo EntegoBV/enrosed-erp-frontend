@@ -290,11 +290,21 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     <div class="content product-editor-page erp-workspace erp-workspace--product erp-workspace--edit">
       <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
         @if (!desktop.active()) {
-          <div class="product-mobile-tabs" role="group" aria-label="Bewerkonderdeel">
-            @for (tab of mobilePrimaryTabs; track tab.id) {
-              <button type="button" [class.is-active]="activeTab() === tab.id" [attr.aria-pressed]="activeTab() === tab.id" [attr.aria-controls]="tab.id" (click)="showTab(tab.id)"><app-icon [name]="tabIcon(tab.id)" [size]="19" /><span>{{ tab.label }}</span></button>
+          <!-- Every section in one scrolling pill, the same step language as
+               the sales and purchase editors: a mark that says done, open or
+               missing, the name, and one line of what lives there. -->
+          <div class="workflow-nav workflow-nav--wide product-mobile-steps" role="tablist" aria-label="Bewerkonderdeel">
+            @for (tab of phoneTabs(); track tab.id; let i = $index) {
+              <button type="button" role="tab" class="workflow-nav__item"
+                      [class.workflow-nav__active]="activeTab() === tab.id"
+                      [class.erp-workspace__section-link--attention]="tabState(tab.id) === 'warn'"
+                      [class.erp-workspace__section-link--complete]="tabState(tab.id) === 'done' && activeTab() !== tab.id"
+                      [attr.aria-selected]="activeTab() === tab.id" [attr.aria-controls]="tab.id"
+                      (click)="showTab(tab.id)">
+                <span class="workflow-nav__mark" aria-hidden="true">{{ tabState(tab.id) === 'warn' ? '!' : tabState(tab.id) === 'done' ? '✓' : i + 1 }}</span>
+                <span class="workflow-nav__copy"><b>{{ tab.label }}</b><small>{{ tabHint(tab.id) || tabDescription(tab.id) }}</small></span>
+              </button>
             }
-            <button type="button" [class.is-active]="mobileMoreActive()" [attr.aria-expanded]="mobileSectionsOpen()" aria-haspopup="dialog" (click)="mobileSectionsOpen.set(true)"><app-icon name="settings" [size]="19" /><span>{{ mobileMoreActive() ? mobileSectionLabel() : 'Meer' }}</span></button>
           </div>
         }
         <p class="editor-nav-label">Productgegevens</p>
@@ -1370,13 +1380,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <span class="product-save-check" aria-hidden="true">✓</span>{{ saveBusy() ? 'Opslaan…' : (isNew() ? 'Aanmaken' : 'Opslaan') }}
         </button>
       </nav>
-      @if (mobileSectionsOpen()) {
-        <app-sheet title="Productonderdelen" (closed)="mobileSectionsOpen.set(false)">
-          <div body class="product-section-sheet"><p>Kies wat je wilt aanpassen.</p><div class="product-section-choices">
-            @for (tab of phoneTabs(); track tab.id) { <button type="button" [class.is-active]="activeTab() === tab.id" (click)="showTab(tab.id)"><span class="product-section-icon"><app-icon [name]="tabIcon(tab.id)" [size]="23" /></span><span><strong>{{ tab.label }}</strong><small>{{ tabDescription(tab.id) }}</small></span><span class="product-section-arrow" aria-hidden="true">{{ activeTab() === tab.id ? '✓' : '›' }}</span></button> }
-          </div>@if (!isNew()) { <a class="product-section-translation" [routerLink]="['/products', draft().id, 'translations']"><app-icon name="countries" [size]="19" /> Namen &amp; vertalingen <span aria-hidden="true">↗</span></a> }</div>
-        </app-sheet>
-      }
     }
 
     @if (takeOutDraft(); as out) {
@@ -1849,9 +1852,6 @@ export class ProductEditor implements OnDestroy {
   readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy());
   readonly toolbarBusy = computed(() => this.formWriteBusy() || this.stockSaving() || this.takingCode());
   readonly mobileSectionsOpen = signal(false);
-  readonly mobilePrimaryTabs = [{ id: 'identity', label: 'Basis' }, { id: 'media', label: 'Foto’s' }, { id: 'sales', label: 'Prijs' }];
-  readonly mobileMoreActive = computed(() => !this.mobilePrimaryTabs.some(tab => tab.id === this.activeTab()));
-  readonly mobileSectionLabel = computed(() => ({ packaging: 'Omdoos', purchasing: 'Inkoop', stock: 'Voorraad', agreements: 'Afspraken' } as Record<string, string>)[this.activeTab()] ?? 'Meer');
   private tabScrollFrame = 0;
 
   /* The draft as last loaded or saved; anything different is unsaved

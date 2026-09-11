@@ -66,6 +66,9 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
           <div class="attn-strip__head">
             <b>Klant wacht op ons</b>
             <span class="attn-strip__count">{{ attentionCount() }}</span>
+            @if (openWork().length > 1) {
+              <button class="attn-strip__more" type="button" (click)="websiteOnly.set(true)">Alle {{ attentionCount() }} tonen ›</button>
+            }
           </div>
           <div class="attn-strip__items">
             @for (item of openWork(); track $index) {

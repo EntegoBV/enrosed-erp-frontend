@@ -272,7 +272,6 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
               }
               <span class="home-kpi__chev" aria-hidden="true">›</span>
             </a>
-          </div>
 
           <a class="home-kpi" routerLink="/analyses/purchasing" [class.home-kpi--dark]="financing().partner.count > 0">
             <span class="home-kpi__icon"><app-icon name="purchase" [size]="17" /></span>
@@ -304,6 +303,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
             }
             <span class="home-kpi__chev" aria-hidden="true">›</span>
           </a>
+          </div>
 
           <a class="home-market-link" routerLink="/analyses/market">
             <span class="home-market-link__icon"><app-icon name="analytics" [size]="17" /></span>
@@ -400,21 +400,28 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
       padding-inline: 2px; }
     .home-section__head>a { color: var(--rose-dark); font-size: 11.5px; font-weight: 700; text-decoration: none; }
     .home-section__head>a span { margin-left: 2px; font-size: 15px; }
-    .home-kpis { display: grid; gap: 8px; }
-    .home-kpi { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
-      gap: 2px 9px; min-width: 0; min-height: 83px; padding: 12px 13px; border: 1px solid var(--line);
-      border-radius: var(--r); background: var(--surface); color: inherit; text-decoration: none; box-shadow: var(--sh-1); }
-    .home-kpi:hover { border-color: var(--rose-line); }
-    .home-kpi__icon { display: grid; grid-row: 1 / span 3; width: 33px; height: 33px; place-items: center; border-radius: 10px;
+    /* The figures as compact tiles: label, value, one line under it. Two
+       columns on a phone, a strip of four on a desk. */
+    .home-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .home-web { grid-column: 1 / -1; }
+    .home-kpi { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'icon chev' 'label label' 'value value' 'small small' 'em em';
+      align-content: start; gap: 1px 8px; min-width: 0; min-height: 104px; padding: 11px 12px 12px; border: 1px solid var(--line);
+      border-radius: var(--r); background: var(--surface); color: inherit; text-decoration: none; box-shadow: var(--sh-1);
+      transition: transform .15s ease, box-shadow .15s ease; }
+    .home-kpi:hover { border-color: var(--rose-line); box-shadow: var(--sh-2); transform: translateY(-1px); }
+    .home-kpi:active { transform: scale(.985); }
+    .home-kpi__icon { grid-area: icon; display: grid; width: 28px; height: 28px; margin-bottom: 6px; place-items: center; border-radius: 9px;
       background: var(--surface-2); color: var(--rose-dark); }
-    .home-kpi__label { color: var(--muted); font-size: 9px; font-weight: 780; letter-spacing: .06em; text-transform: uppercase; }
-    .home-kpi strong { grid-column: 2; font-size: 20px; line-height: 1.05; letter-spacing: -.02em; }
-    .home-kpi small { grid-column: 2; overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-    .home-kpi em { grid-column: 2; color: var(--warn); font-size: 9.5px; font-style: normal; }
-    .home-kpi__chev { grid-column: 3; grid-row: 1 / span 4; color: var(--muted-2); font-size: 17px; }
+    .home-kpi__label { grid-area: label; overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 780; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .home-kpi strong { grid-area: value; overflow: hidden; font-size: 19px; line-height: 1.1; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .home-kpi small { grid-area: small; overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .home-kpi small + small { grid-area: em; }
+    .home-kpi em { grid-area: em; overflow: hidden; color: var(--warn); font-size: 9.5px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+    .home-kpi__chev { grid-area: chev; align-self: start; color: var(--muted-2); font-size: 17px; }
     .home-kpi--dark { border-color: #302a27; background: #272220; color: #fff; }
     .home-kpi--dark .home-kpi__icon { background: #3b3431; color: #e8b7c0; }
     .home-kpi--dark :is(.home-kpi__label,small) { color: #cfc7c2; }
+    .home-kpi--dark .home-kpi__chev { color: rgb(255 255 255 / 45%); }
 
     .home-market-link { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px;
       margin-top: 4px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
@@ -427,18 +434,28 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
     .home-market-link small { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
     .home-market-link i { color: var(--muted-2); font-size: 17px; font-style: normal; }
 
+    /* A phone starts the day with the tasks, then the agenda, then the figures. */
+    @media (max-width: 999.98px) {
+      .work-card { order: 1; }
+      .home-planner { order: 2; }
+      .home-side { order: 3; }
+    }
     @media (min-width: 760px) and (max-width: 999.98px) {
       .home-page { padding-bottom: 38px; }
-      .home-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .home-web { grid-column: 1 / -1; }
+      .home-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .home-web { grid-column: span 2; }
     }
     @media (min-width: 1000px) {
       .home-page { padding-bottom: 38px; }
-      /* The figures take a fixed column so the agenda and its task list keep their width. */
-      .home-layout { grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
-      .work-card { grid-column: 1; grid-row: 1; }
-      .home-planner { grid-column: 1; grid-row: 2; }
-      .home-side { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: calc(var(--appbar-h) + 14px); }
+      /* A desk reads like a cockpit: the figures in one strip on top, the
+         tasks beside the agenda under it. */
+      .home-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+      .home-side { grid-column: 1 / -1; grid-row: 1; }
+      .work-card { grid-column: 1; grid-row: 2; }
+      .home-planner { grid-column: 2; grid-row: 2; }
+      .home-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+      .home-web { grid-column: span 2; }
+      .home-market-link { justify-self: end; width: max-content; max-width: 100%; margin-top: 2px; padding: 8px 12px; }
     }
     @media (max-width: 579.98px) {
       .home-pins { display: grid; }
@@ -448,7 +465,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
       .work-row { grid-template-columns: auto minmax(0,1fr) auto auto; gap: 8px; }
     }
     @media (min-width: 1240px) {
-      .home-layout { grid-template-columns: minmax(0, 1fr) 380px; }
+      .home-layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
     }
     @media (prefers-reduced-motion: reduce) {
       .work-row,.home-kpi,.home-market-link { transition: none; }
