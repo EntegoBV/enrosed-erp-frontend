@@ -670,12 +670,12 @@ interface ProductSwipe {
         white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25;
       }
       .product-row__end, .group-head__end {
-        display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left;
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 10px; width: 100%; text-align: left;
       }
       .product-row__stock { grid-auto-flow: column; justify-items: start; align-items: center; gap: 6px; }
       .product-row__stock span { font-size: 9px; }
       .stock-expected { max-width: none; margin-top: 0; text-align: left; white-space: nowrap; }
-      .product-row__prices { display: flex; gap: 12px; width: auto; padding-left: 0; border-left: 0; }
+      .product-row__prices { display: flex; flex-wrap: wrap; gap: 4px 12px; width: auto; padding-left: 0; border-left: 0; }
       .product-row__prices > div { display: flex; align-items: baseline; gap: 5px; }
       .product-row__prices span { font-size: 9px; }
       .product-row__prices strong { font-size: 12px; }

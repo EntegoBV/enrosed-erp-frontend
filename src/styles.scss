@@ -323,6 +323,8 @@ a { color: var(--rose); }
 }
 .sidebar__text--rail { display: none; }
 .sidebar__expand { display: none; }
+/* Search lives in the sidebar, so it only exists where the sidebar does. */
+.sidebar__search { display: none; }
 
 /* From 680px the phone chrome goes: an unfolded Galaxy Fold (about 690px
    wide) or a tablet wants the desktop idiom, not a thumb bar. Up to 1023px
@@ -364,6 +366,8 @@ a { color: var(--rose); }
   .sidebar__brand .brand-mark { padding: 4px; margin: 0; }
   .sidebar__brand .brand-mark__logo { height: 18px; max-width: 64px; }
   .sidebar__brand .brand-mark__sub { display: none; }
+  .sidebar__search { margin: 8px 6px 0; justify-content: center; padding: 8px 0; }
+  .sidebar__search-label, .sidebar__search-kbd { display: none; }
   .sidebar__nav { padding: 6px 6px; flex: 1; overflow-y: auto; }
   .sidebar__label { display: none; }
   .sidebar__group { display: none; }
@@ -455,6 +459,34 @@ a { color: var(--rose); }
     border-bottom: 1px solid var(--line);
   }
 
+  .sidebar__search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 10px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  .sidebar__search:hover { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+  .sidebar__search svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+  .sidebar__search-kbd {
+    margin-left: auto;
+    padding: 1px 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--muted);
+    font: inherit;
+    font-size: 10.5px;
+  }
   .sidebar__nav { padding: 10px; flex: 1; overflow-y: auto; }
   .sidebar__label {
     font-size: 10px;

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -9,6 +9,7 @@ import { WorkQueue } from './core/api/work-queue';
 import { UiHost } from './shared/ui';
 import { BrandMark } from './shared/brand-mark';
 import { Icon } from './shared/icon';
+import { CommandPalette } from './shared/command-palette';
 import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
 import { FinanceAdminNav } from './features/finance/finance-admin-nav';
 import { FilesAdminNav } from './features/files/files-admin-nav';
@@ -26,7 +27,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, CommandPalette, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
   template: `
     <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()">
       @if (websiteWorkspace()) {
@@ -40,6 +41,13 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
           <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
             <app-brand-mark subtitle="Sales &amp; Sourcing" />
           </a>
+          <!-- One box for everything: an order number, a customer, a product
+               or the name of a screen. ⌘K opens it from anywhere. -->
+          <button class="sidebar__search" type="button" title="Zoeken (⌘K)" aria-label="Zoeken" (click)="openSearch()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
+            <span class="sidebar__search-label">Zoeken</span>
+            <kbd class="sidebar__search-kbd" aria-hidden="true">⌘K</kbd>
+          </button>
           <nav class="sidebar__nav" (click)="sidebarClicked($event)">
             @if (railed()) {
               <button class="sidebar__expand" type="button" title="Menu uitklappen"
@@ -257,6 +265,10 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
         <router-outlet />
       </div>
 
+      @if (!bare()) {
+        <app-command-palette />
+      }
+
       @if (!bare() && !websiteWorkspace()) {
         <nav class="tabbar">
           <a class="tabbar__item" routerLink="/dashboard" routerLinkActive="active"
@@ -299,6 +311,10 @@ export class App {
   constructor() { void this.pushSetup.init(); }
 
   readonly auth = inject(Auth);
+  private readonly search = viewChild(CommandPalette);
+
+  openSearch(): void { this.search()?.show(); }
+
   /* Instantiated here so the palette is on <html> before the first screen paints. */
   readonly theme = inject(Theme);
   readonly themes = THEMES;
