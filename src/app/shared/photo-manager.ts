@@ -2,7 +2,9 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   computed,
+  effect,
   inject,
   input,
   output,
@@ -81,11 +83,7 @@ export interface PendingPhotoUploadResult {
       }
     <div class="photo-toolbar">
       <div class="photo-toolbar__copy">
-        <b>Foto’s van deze variant</b>
-        <span id="photo-order-help">
-          Voeg foto’s toe of sleep ze hierheen. De eerste foto is de hoofdfoto in het ERP en op
-          onze documenten; kies per foto of ze de website of de catalogus opent.
-        </span>
+        <span id="photo-order-help">De hoofdfoto verschijnt in lijsten en op documenten.<small>{{ productId() === null ? 'Foto’s worden bij het opslaan toegevoegd.' : 'Wijzigingen worden direct opgeslagen.' }}</small></span>
       </div>
 
       <div class="photo-add-group">
@@ -105,77 +103,39 @@ export interface PendingPhotoUploadResult {
     }
 
     @if (ownPhotos().length) {
-      <section class="photo-series" aria-labelledby="saved-photo-title">
-        <div class="photo-series__head">
-          <h3 id="saved-photo-title">Variantfoto’s <span>{{ ownPhotos().length }}</span></h3>
-          <small>Sleep, veeg of gebruik de pijltjes om te sorteren</small>
-        </div>
-
+      <section class="photo-series" aria-label="Foto’s van deze variant">
         <ol class="photo-strip" aria-describedby="photo-order-help">
           @for (photo of ownPhotos(); track photo.id; let i = $index) {
             <li class="photo-card"
                 [class.photo-card--primary]="isEffectivePrimary(photo)"
+                [class.photo-card--selected]="selectedPhoto()?.id === photo.id"
                 [class.photo-card--dragging]="isDragging('saved', i)"
                 [class.photo-card--drop]="isDropTarget('saved', i)"
-                data-photo-kind="saved"
-                [attr.data-photo-index]="i">
+                data-photo-kind="saved" [attr.data-photo-index]="i">
               <div class="photo-card__preview">
-                <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" draggable="false" />
-                @if (isEffectivePrimary(photo)) {
-                  <span class="photo-card__primary">Hoofdfoto</span>
-                } @else {
-                  <span class="photo-card__position" aria-hidden="true">{{ effectivePosition(photo) }}</span>
-                }
-                <button class="photo-card__handle" type="button"
-                        [disabled]="interactionDisabled() || ownPhotos().length < 2"
-                        aria-keyshortcuts="ArrowLeft ArrowRight Home End"
-                        [attr.aria-label]="orderLabel(photo.originalFilename, i, ownPhotos().length)"
-                        (click)="announceOrderHelp(photo.originalFilename, i, ownPhotos().length)"
-                        (keydown)="orderKeydown($event, 'saved', i, photo.originalFilename)"
-                        (pointerdown)="startPointerReorder($event, 'saved', i)"
-                        (pointermove)="movePointerReorder($event)"
-                        (pointerup)="finishPointerReorder($event)"
-                        (pointercancel)="cancelPointerReorder($event)">
-                  <span aria-hidden="true">⠿</span>
+                <button class="photo-card__select" type="button" (click)="selectPhoto(photo)" [attr.data-photo-select]="photo.id"
+                        [attr.aria-expanded]="selectedPhoto()?.id === photo.id"
+                        aria-controls="photo-details" [attr.aria-label]="'Instellingen voor ' + photo.originalFilename">
+                  <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" draggable="false" />
+                  @if (isEffectivePrimary(photo)) { <span class="photo-card__primary">Hoofdfoto</span> }
+                  @else { <span class="photo-card__position" aria-hidden="true">{{ effectivePosition(photo) }}</span> }
                 </button>
+                @if (ownPhotos().length > 1) {
+                  <button class="photo-card__handle" type="button" [disabled]="interactionDisabled()"
+                          aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+                          [attr.aria-label]="orderLabel(photo.originalFilename, i, ownPhotos().length)"
+                          (click)="announceOrderHelp(photo.originalFilename, i, ownPhotos().length)"
+                          (keydown)="orderKeydown($event, 'saved', i, photo.originalFilename)"
+                          (pointerdown)="startPointerReorder($event, 'saved', i)"
+                          (pointermove)="movePointerReorder($event)" (pointerup)="finishPointerReorder($event)"
+                          (pointercancel)="cancelPointerReorder($event)"><span aria-hidden="true">⠿</span></button>
+                }
               </div>
-
-              <div class="photo-card__roles" role="group" [attr.aria-label]="'Waar ' + photo.originalFilename + ' voorop staat'">
-                <span class="photo-role" [class.photo-role--on]="isEffectivePrimary(photo)" [attr.title]="isEffectivePrimary(photo) ? 'Eerste foto: hoofdfoto in het ERP en op documenten' : 'Sleep naar voren om de hoofdfoto te maken'">Intern</span>
-                <button class="photo-role photo-role--button" type="button"
-                        [class.photo-role--on]="leads(photo, 'WEBSITE')"
-                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
-                        [attr.aria-pressed]="leads(photo, 'WEBSITE')"
-                        title="Deze foto opent het product op de website"
-                        (click)="toggleLead(photo, 'WEBSITE')">Website</button>
-                <button class="photo-role photo-role--button" type="button"
-                        [class.photo-role--on]="leads(photo, 'CATALOGUE')"
-                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
-                        [attr.aria-pressed]="leads(photo, 'CATALOGUE')"
-                        title="Deze foto opent het product in de gedrukte catalogus"
-                        (click)="toggleLead(photo, 'CATALOGUE')">Catalogus</button>
-              </div>
-              <div class="photo-card__footer">
-                <span class="photo-card__copy">
-                  <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
-                  <small>
-                    @if (photo.widthPx !== null && photo.heightPx !== null) {
-                      {{ photo.widthPx }} × {{ photo.heightPx }} ·
-                    }
-                    {{ sizeLabel(photo.sizeBytes) }}
-                  </small>
-                </span>
-                <span class="photo-card__actions" role="group"
-                      [attr.aria-label]="'Acties voor ' + photo.originalFilename">
-                  <button type="button" title="Downloaden" [disabled]="interactionDisabled()"
-                          [attr.aria-label]="photo.originalFilename + ' downloaden'"
-                          (click)="download(photo)"><span aria-hidden="true">↓</span></button>
-                  <button class="danger" type="button" title="Verwijderen"
-                          [disabled]="interactionDisabled()"
-                          [attr.aria-label]="photo.originalFilename + ' verwijderen'"
-                          (click)="remove(photo)"><span aria-hidden="true">×</span></button>
-                </span>
-              </div>
+              <button class="photo-card__caption" type="button" (click)="selectPhoto(photo)"
+                      [attr.aria-expanded]="selectedPhoto()?.id === photo.id" aria-controls="photo-details">
+                <b [title]="photo.originalFilename">{{ photo.originalFilename }}</b>
+                <small>{{ selectedPhoto()?.id === photo.id ? 'Instellingen sluiten' : 'Instellingen' }} <span aria-hidden="true">⌄</span></small>
+              </button>
             </li>
           }
         </ol>
@@ -265,267 +225,632 @@ export interface PendingPhotoUploadResult {
     }
 
     @if (showInherited() && inheritedPhotos().length) {
-      <section class="photo-series photo-series--readonly" aria-labelledby="shared-photo-title">
-        <div class="photo-series__head">
-          <div>
-            <h3 id="shared-photo-title">Gedeelde productgalerij <span>{{ inheritedPhotos().length }}</span></h3>
-            <small>Gekoppeld aan de productreeks · kies het gebruik hieronder</small>
-          </div>
-        </div>
-
-        <ol class="photo-strip" aria-label="Foto’s uit de gedeelde productgalerij">
+      <section class="photo-series photo-series--readonly" aria-label="Foto’s uit de reeks">
+        <div class="photo-series__head"><h3>Uit de reeks</h3><small>Beheren bij de productreeks</small></div>
+        <ol class="photo-strip">
           @for (photo of inheritedPhotos(); track photo.id) {
-            <li class="photo-card photo-card--readonly"
-                [class.photo-card--primary]="isEffectivePrimary(photo)">
+            <li class="photo-card photo-card--readonly" [class.photo-card--primary]="isEffectivePrimary(photo)"
+                [class.photo-card--selected]="selectedPhoto()?.id === photo.id">
               <div class="photo-card__preview">
-                <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" draggable="false" />
-                @if (isEffectivePrimary(photo)) {
-                  <span class="photo-card__primary">Hoofdfoto</span>
-                } @else {
-                  <span class="photo-card__position" aria-hidden="true">{{ effectivePosition(photo) }}</span>
-                }
-                <span class="photo-card__readonly">Gedeeld</span>
+                <button class="photo-card__select" type="button" (click)="selectPhoto(photo)" [attr.data-photo-select]="photo.id"
+                        [attr.aria-expanded]="selectedPhoto()?.id === photo.id" aria-controls="photo-details"
+                        [attr.aria-label]="'Instellingen voor gedeelde foto ' + photo.originalFilename">
+                  <img [appAuthSrc]="photo.url" [alt]="photo.originalFilename" draggable="false" />
+                  @if (isEffectivePrimary(photo)) { <span class="photo-card__primary">Hoofdfoto</span> }
+                  <span class="photo-card__readonly">Reeks</span>
+                </button>
               </div>
-
-              <div class="photo-card__roles" role="group" [attr.aria-label]="'Waar ' + photo.originalFilename + ' voorop staat'">
-                <span class="photo-role" [class.photo-role--on]="isEffectivePrimary(photo)" [attr.title]="isEffectivePrimary(photo) ? 'Eerste foto: hoofdfoto in het ERP en op documenten' : 'Sleep naar voren om de hoofdfoto te maken'">Intern</span>
-                <button class="photo-role photo-role--button" type="button"
-                        [class.photo-role--on]="leads(photo, 'WEBSITE')"
-                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
-                        [attr.aria-pressed]="leads(photo, 'WEBSITE')"
-                        title="Deze foto opent het product op de website"
-                        (click)="toggleLead(photo, 'WEBSITE')">Website</button>
-                <button class="photo-role photo-role--button" type="button"
-                        [class.photo-role--on]="leads(photo, 'CATALOGUE')"
-                        [disabled]="interactionDisabled() || productId() === null || roleBusy() !== null"
-                        [attr.aria-pressed]="leads(photo, 'CATALOGUE')"
-                        title="Deze foto opent het product in de gedrukte catalogus"
-                        (click)="toggleLead(photo, 'CATALOGUE')">Catalogus</button>
-              </div>
-              <div class="photo-card__footer">
-                <span class="photo-card__copy">
-                  <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
-                  <small>
-                    @if (photo.widthPx !== null && photo.heightPx !== null) {
-                      {{ photo.widthPx }} × {{ photo.heightPx }} ·
-                    }
-                    {{ sizeLabel(photo.sizeBytes) }}
-                  </small>
-                </span>
-                <span class="photo-card__actions" role="group"
-                      [attr.aria-label]="'Acties voor ' + photo.originalFilename">
-                  <button type="button" title="Downloaden" [disabled]="interactionDisabled()"
-                          [attr.aria-label]="photo.originalFilename + ' downloaden'"
-                          (click)="download(photo)"><span aria-hidden="true">↓</span></button>
-                </span>
-              </div>
+              <button class="photo-card__caption" type="button" (click)="selectPhoto(photo)"
+                      [attr.aria-expanded]="selectedPhoto()?.id === photo.id" aria-controls="photo-details">
+                <b [title]="photo.originalFilename">{{ photo.originalFilename }}</b><small>Gedeelde foto <span aria-hidden="true">⌄</span></small>
+              </button>
             </li>
           }
         </ol>
       </section>
     }
 
-    @if (!photos().length && !pendingPhotos().length) {
-      <div class="photo-empty">
-        <span aria-hidden="true">◇</span>
-        <div><b>Nog geen foto's</b><small>Voeg meteen meerdere bestanden toe.</small></div>
-      </div>
+    @if (selectedPhoto(); as photo) {
+      <section class="photo-details" id="photo-details" tabindex="-1" aria-label="Foto-instellingen">
+        <div class="photo-details__head">
+          <div><b>{{ photo.originalFilename }}</b><small>{{ isOwnPhoto(photo) ? 'Alleen deze variant' : 'Gedeeld vanuit de reeks' }}@if (photo.widthPx && photo.heightPx) { · {{ photo.widthPx }} × {{ photo.heightPx }} px } · {{ sizeLabel(photo.sizeBytes) }}</small></div>
+          <button class="photo-details__close" type="button" aria-label="Foto-instellingen sluiten" (click)="closePhotoDetails()">×</button>
+        </div>
+        @if (isOwnPhoto(photo)) {
+          <div class="photo-details__primary">
+            <span>{{ isEffectivePrimary(photo) ? 'Hoofdfoto in lijsten en op documenten' : 'Gebruik als hoofdfoto in lijsten en op documenten' }}</span>
+            @if (!isEffectivePrimary(photo)) { <button class="btn btn--sm" type="button" [disabled]="interactionDisabled()" (click)="makePrimary(photo)">Maak hoofdfoto</button> }
+          </div>
+        }
+        <fieldset class="photo-role-settings">
+          <legend>Eerste foto per kanaal</legend>
+          <div class="photo-card__roles">
+            <button class="photo-role" type="button" [class.photo-role--on]="leads(photo, 'WEBSITE')"
+                    [disabled]="interactionDisabled() || productId() === null" [attr.aria-pressed]="leads(photo, 'WEBSITE')"
+                    (click)="toggleLead(photo, 'WEBSITE')"><span aria-hidden="true">{{ leads(photo, 'WEBSITE') ? '✓' : '+' }}</span> Website</button>
+            <button class="photo-role" type="button" [class.photo-role--on]="leads(photo, 'CATALOGUE')"
+                    [disabled]="interactionDisabled() || productId() === null" [attr.aria-pressed]="leads(photo, 'CATALOGUE')"
+                    (click)="toggleLead(photo, 'CATALOGUE')"><span aria-hidden="true">{{ leads(photo, 'CATALOGUE') ? '✓' : '+' }}</span> Catalogus</button>
+          </div>
+          <p>Geen voorkeur? Dan wordt de eerste beschikbare foto gebruikt. Dit wijzigt de publicatie niet.</p>
+        </fieldset>
+        <div class="photo-details__actions">
+          <button class="btn btn--sm" type="button" [disabled]="interactionDisabled()" (click)="download(photo)">Download origineel</button>
+          @if (isOwnPhoto(photo)) { <button class="photo-delete" type="button" [disabled]="interactionDisabled()" (click)="remove(photo)">Foto verwijderen</button> }
+        </div>
+      </section>
     }
 
-    <p class="photo-help">
-      @if (showInherited()) {
-        Eigen foto’s staan vooraan. Zonder eigen foto gebruikt het ERP de eerste foto uit de
-        gedeelde productgalerij.
-      } @else {
-        Variantfoto’s staan vóór de gedeelde galerij hieronder.
-      }
-      JPEG, PNG, GIF of WebP · max. 25 MB per foto.
-    </p>
+    @if (!ownPhotos().length && !(showInherited() && inheritedPhotos().length) && !pendingPhotos().length) {
+      <div class="photo-empty"><b>Nog geen variantfoto’s</b><small>@if (inheritedPhotos().length) { Deze variant gebruikt de foto’s uit de reeks. } @else { Voeg een foto toe via je toestel of de bibliotheek. }</small></div>
+    }
+    <p class="photo-help">JPEG, PNG, GIF of WebP · max. 25 MB per foto.@if (ownPhotos().length > 1) { Sleep via ⠿ om te sorteren. }</p>
     <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
     </div>
   `,
   styles: `
-    :host { display: block; min-width: 0; }
-    .photo-manager { position: relative; min-width: 0; }
-    .photo-manager--drop { outline: 2px dashed var(--rose); outline-offset: 6px; border-radius: var(--r-sm); }
+    :host {
+      display: block;
+      min-width: 0;
+    }
+    .photo-manager {
+      position: relative;
+      min-width: 0;
+    }
+    .photo-manager--drop {
+      outline: 2px dashed var(--rose);
+      outline-offset: 6px;
+      border-radius: 14px;
+    }
     .photo-dropzone {
-      position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 2px; border-radius: var(--r-sm);
-      background: color-mix(in srgb, var(--rose-soft) 88%, transparent); color: var(--rose-dark);
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: grid;
+      place-content: center;
+      text-align: center;
+      gap: 4px;
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--rose-soft) 92%, transparent);
+      color: var(--rose-dark);
       pointer-events: none;
     }
-    .photo-dropzone b { font-size: 15px; }
-    .photo-dropzone span { font-size: 12px; opacity: .8; }
+    .photo-dropzone b {
+      font-size: 15px;
+    }
+    .photo-dropzone span {
+      font-size: 12px;
+    }
     .photo-toolbar {
-      display: flex; flex-direction: column; gap: 12px;
-      padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm);
-      background: var(--surface-2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
     }
-    .photo-toolbar__copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .photo-add-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-    .photo-toolbar__copy b { color: var(--ink-2); font-size: 12.5px; }
-    .photo-toolbar__copy span { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+    .photo-toolbar__copy {
+      min-width: 0;
+      max-width: 320px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .photo-toolbar__copy small {
+      display: block;
+      margin-top: 3px;
+      font-size: 10px;
+    }
+    .photo-add-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      flex-shrink: 0;
+    }
     .photo-add {
-      position: relative; display: flex; align-items: center; justify-content: center; gap: 8px;
-      min-height: 44px; padding: 8px 13px;
-      border: 1px solid var(--rose-mid); border-radius: 10px;
-      background: var(--surface); color: var(--rose);
-      font-size: 12px; font-weight: 750; cursor: pointer;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 42px;
+      padding: 8px 13px;
+      border: 1px solid var(--rose-line);
+      border-radius: 10px;
+      background: var(--rose-soft);
+      color: var(--rose-dark);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
     }
-    .photo-add:hover { border-color: var(--rose); background: var(--rose-soft); }
-    .photo-add:focus-within { outline: 3px solid var(--rose-line); outline-offset: 2px; }
-    .photo-add--busy { cursor: wait; opacity: .68; }
     .photo-add__icon {
-      display: grid; width: 24px; height: 24px; place-items: center;
-      border-radius: 50%; background: var(--rose); color: #fff;
-      font-size: 17px; font-weight: 500; line-height: 1;
+      font-size: 20px;
+      font-weight: 400;
+      line-height: 1;
     }
-    .photo-add__input {
-      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    .photo-add--busy {
+      opacity: 0.55;
+      cursor: wait;
     }
-    .photo-series { min-width: 0; margin-top: 14px; }
+    .photo-add-group > .btn {
+      min-height: 42px;
+    }
+    .photo-add__input,
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .photo-add:focus-within,
+    button:focus-visible {
+      outline: 2px solid var(--rose);
+      outline-offset: 3px;
+    }
+    .photo-series {
+      min-width: 0;
+      margin-top: 14px;
+    }
     .photo-series__head {
-      display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
-      margin: 0 2px 7px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
     }
-    .photo-series__head > div { min-width: 0; }
-    .photo-series__head h3 { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .photo-series__head h3 {
+      font-size: 12px;
+      margin: 0;
+    }
     .photo-series__head h3 span {
-      display: inline-grid; min-width: 20px; min-height: 20px; padding: 0 5px; place-items: center;
-      border-radius: 999px; background: var(--surface-2); color: var(--muted);
-      font: 700 9px/1 var(--mono);
+      color: var(--muted);
+      margin-left: 5px;
     }
-    .photo-series__head small { display: block; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .photo-series__head small {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
     .photo-strip {
-      display: flex; gap: 9px; min-width: 0; margin: 0; padding: 2px 2px 8px;
-      overflow-x: auto; overscroll-behavior-inline: contain;
-      list-style: none; scroll-padding-inline: 2px; scroll-snap-type: inline proximity;
-      scrollbar-width: thin;
-    }
-    /* A desk has room: the photos wrap into rows instead of scrolling sideways, so every card and its buttons stay in view. */
-    @media (min-width: 1024px) {
-      .photo-strip { flex-wrap: wrap; overflow: visible; scroll-snap-type: none; padding-bottom: 2px; }
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+      gap: 10px;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      align-items: start;
     }
     .photo-card {
-      position: relative; flex: 0 0 clamp(132px, 42vw, 158px); min-width: 0; overflow: hidden;
-      border: 1px solid var(--line); border-radius: var(--r-sm);
-      background: var(--surface); box-shadow: 0 2px 8px rgb(26 22 20 / 5%);
-      scroll-snap-align: start; transition: border-color .16s, opacity .16s, transform .16s;
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      transition:
+        border-color 0.18s,
+        opacity 0.18s,
+        transform 0.18s;
     }
-    .photo-card--primary { flex-basis: clamp(178px, 57vw, 220px); border-color: var(--rose-line); }
-    .photo-card--pending { border-style: dashed; }
-    .photo-card--readonly { background: color-mix(in srgb, var(--surface-2) 55%, var(--surface)); }
-    .photo-card--failed { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
-    .photo-card--dragging { z-index: 2; opacity: .5; transform: scale(.97); }
-    .photo-card--drop { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-line); }
+    .photo-card--primary {
+      border-color: var(--rose-line);
+    }
+    .photo-card--selected {
+      border-color: var(--rose);
+      box-shadow: 0 0 0 1px var(--rose);
+    }
+    .photo-card--pending {
+      border-style: dashed;
+    }
+    .photo-card--failed {
+      border-color: var(--danger);
+    }
+    .photo-card--dragging {
+      opacity: 0.5;
+      transform: scale(0.97);
+    }
+    .photo-card--drop {
+      border-color: var(--rose);
+      box-shadow: 0 0 0 3px var(--rose-line);
+    }
     .photo-card__preview {
-      position: relative; aspect-ratio: 1; overflow: hidden;
-      background: linear-gradient(145deg, var(--surface-2), #fff 70%);
+      position: relative;
+      aspect-ratio: 1;
+      overflow: hidden;
+      background: var(--surface-2);
     }
-    .photo-card--primary .photo-card__preview { aspect-ratio: 4 / 3; }
-    .photo-card__preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .photo-card__preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .photo-card__select {
+      position: absolute;
+      inset: 0;
+      display: block;
+      padding: 8px;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+    .photo-card__select:focus-visible {
+      outline-offset: -3px;
+    }
+    .photo-card__primary,
+    .photo-card__position,
+    .photo-card__readonly,
+    .photo-card__state {
+      position: absolute;
+      left: 7px;
+      top: 7px;
+      display: grid;
+      place-items: center;
+      min-height: 23px;
+      padding: 3px 7px;
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--ink-2);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.2;
+      box-shadow: 0 1px 5px #0001;
+    }
     .photo-card__primary {
-      position: absolute; left: 7px; top: 7px;
-      padding: 4px 7px; border-radius: 999px;
-      background: rgb(176 31 63 / 92%); color: #fff;
-      box-shadow: 0 3px 10px rgb(26 22 20 / 18%);
-      font-size: 8.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase;
+      background: var(--rose);
+      color: white;
     }
     .photo-card__position {
-      position: absolute; left: 7px; top: 7px; display: grid; width: 23px; height: 23px; place-items: center;
-      border-radius: 50%; background: rgb(255 255 255 / 92%); color: var(--ink-2);
-      box-shadow: 0 2px 7px rgb(26 22 20 / 12%); font: 750 9px/1 var(--mono);
-    }
-    .photo-card__state {
-      position: absolute; left: 7px; bottom: 7px;
-      padding: 4px 7px; border: 1px solid var(--rose-line); border-radius: 999px;
-      background: rgb(255 255 255 / 92%); color: var(--rose); font-size: 8.5px; font-weight: 750;
-    }
-    .photo-card__state--failed {
-      border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
-      background: color-mix(in srgb, var(--danger) 8%, #fff); color: var(--danger);
+      min-width: 23px;
+      padding-inline: 5px;
     }
     .photo-card__readonly {
-      position: absolute; right: 7px; top: 7px; padding: 4px 7px;
-      border: 1px solid rgb(255 255 255 / 75%); border-radius: 999px;
-      background: rgb(35 31 29 / 76%); color: #fff;
-      font-size: 8.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase;
+      top: auto;
+      bottom: 7px;
+    }
+    .photo-card__state {
+      top: auto;
+      bottom: 7px;
+    }
+    .photo-card__state--failed {
+      color: var(--danger);
     }
     .photo-card__handle {
-      position: absolute; right: 7px; top: 7px; display: grid; width: 38px; height: 38px; place-items: center;
-      border: 1px solid rgb(255 255 255 / 75%); border-radius: 11px;
-      background: rgb(35 31 29 / 76%); color: #fff; box-shadow: 0 3px 10px rgb(26 22 20 / 18%);
-      font: 800 18px/1 var(--mono); cursor: grab; touch-action: none; user-select: none;
+      position: absolute;
+      right: 5px;
+      bottom: 5px;
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      color: var(--muted);
+      font-size: 20px;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
     }
-    .photo-card__handle:active { cursor: grabbing; }
-    .photo-card__handle:hover { background: rgb(35 31 29 / 88%); }
-    .photo-card__handle:focus-visible { outline: 3px solid var(--rose-line); outline-offset: 2px; }
-    .photo-card__handle:disabled { cursor: default; opacity: .45; }
+    .photo-card__handle:active {
+      cursor: grabbing;
+    }
+    .photo-card__handle:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .photo-card__caption {
+      display: grid;
+      gap: 4px;
+      width: 100%;
+      padding: 9px 10px;
+      border: 0;
+      border-top: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
+    .photo-card__caption b {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .photo-card__caption small {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .photo-card__caption:focus-visible {
+      outline-offset: -3px;
+    }
     .photo-card__footer {
-      display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 46px;
-      padding: 5px 5px 5px 8px; border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 6px;
+      padding: 8px;
     }
-    .photo-card__copy { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
+    .photo-card__copy {
+      display: grid;
+      min-width: 0;
+      flex: 1;
+      gap: 3px;
+    }
     .photo-card__copy b {
-      overflow: hidden; color: var(--ink-2); font-size: 9.5px; font-weight: 700;
-      text-overflow: ellipsis; white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
     }
     .photo-card__copy small {
-      overflow: hidden; color: var(--muted); font-size: 8.5px; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 10px;
+      color: var(--muted);
     }
-    .photo-card__copy .photo-card__error { color: var(--danger); }
-    .photo-card__actions { display: flex; flex: 0 0 auto; gap: 2px; }
+    .photo-card__copy .photo-card__error {
+      color: var(--danger);
+      overflow-wrap: anywhere;
+    }
     .photo-card__actions button {
-      display: grid; width: 36px; height: 36px; padding: 0; place-items: center;
-      border: 0; border-radius: 9px; background: transparent; color: var(--ink-2);
-      font: 750 17px/1 var(--mono); cursor: pointer;
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 9px;
+      background: var(--surface-2);
+      color: var(--danger);
+      font-size: 19px;
+      cursor: pointer;
     }
-    .photo-card__actions button:hover { background: var(--surface-2); }
-    .photo-card__actions button:focus-visible { outline: 3px solid var(--rose-line); outline-offset: -2px; }
-    .photo-card__actions button:disabled { cursor: wait; opacity: .45; }
-    .photo-card__actions .danger { color: var(--danger); }
     .retry-button {
-      flex: 0 0 auto; min-height: 36px; padding: 6px 10px;
-      border: 1px solid var(--rose-mid); border-radius: 9px; background: var(--surface);
-      color: var(--rose); font: inherit; font-size: 10px; font-weight: 750; cursor: pointer;
+      min-height: 42px;
+      padding: 8px 12px;
+      border: 1px solid var(--rose-line);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--rose);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
     }
-    .retry-button:hover { border-color: var(--rose); background: var(--rose-soft); }
-    .retry-button:disabled { cursor: wait; opacity: .55; }
+    .photo-details {
+      min-width: 0;
+      margin-top: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface-2);
+      animation: photo-details-in 0.18s ease-out;
+    }
+    .photo-details__head {
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .photo-details__head > div {
+      display: grid;
+      min-width: 0;
+      gap: 5px;
+    }
+    .photo-details__head b {
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .photo-details__head small {
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    .photo-details__close {
+      flex: none;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 0;
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 22px;
+      cursor: pointer;
+    }
+    .photo-details__primary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .photo-details__primary .btn {
+      flex: none;
+    }
+    .photo-role-settings {
+      min-width: 0;
+      margin: 14px 0 0;
+      padding: 0;
+      border: 0;
+    }
+    .photo-role-settings legend {
+      font-size: 12px;
+      font-weight: 650;
+      margin-bottom: 8px;
+    }
+    .photo-card__roles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .photo-role {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 8px 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .photo-role--on {
+      border-color: var(--rose-line);
+      background: var(--rose-soft);
+      color: var(--rose-dark);
+    }
+    .photo-role-settings p {
+      margin: 7px 0 0;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    .photo-details__actions {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .photo-delete {
+      border: 0;
+      background: transparent;
+      color: var(--danger);
+      font: inherit;
+      font-size: 12px;
+      min-height: 40px;
+      padding: 8px;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
     .photo-empty {
-      display: flex; align-items: center; gap: 10px; min-height: 68px; margin-top: 12px; padding: 10px 12px;
-      border: 1px dashed var(--line-strong); border-radius: var(--r-sm); background: var(--surface-2);
+      display: grid;
+      gap: 5px;
+      margin-top: 14px;
+      padding: 24px 16px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 12px;
+      text-align: center;
     }
-    .photo-empty > span { color: var(--rose); font-size: 23px; }
-    .photo-empty > div { display: flex; flex-direction: column; gap: 1px; }
-    .photo-empty b { font-size: 11.5px; }
-    .photo-empty small { color: var(--muted); font-size: 10px; }
-    .photo-help { margin: 8px 2px 0; color: var(--muted); font-size: 9.5px; line-height: 1.4; }
-    .sr-only {
-      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    .photo-empty b {
+      font-size: 13px;
     }
-
-    @media (min-width: 640px) {
-      .photo-toolbar { flex-direction: row; align-items: center; justify-content: space-between; padding: 10px 12px; }
-      .photo-add { flex: 0 0 auto; }
-      .photo-card { flex-basis: 150px; }
-      .photo-card--primary { flex-basis: 210px; }
+    .photo-empty small {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
     }
-
+    .photo-help {
+      margin: 10px 0 0;
+      font-size: 10px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    @keyframes photo-details-in {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @media (max-width: 639px) {
+      .photo-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .photo-toolbar__copy {
+        max-width: none;
+      }
+      .photo-add-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .photo-add,
+      .photo-add-group > .btn {
+        min-height: 44px;
+        padding-inline: 8px;
+        font-size: 12px;
+      }
+      .photo-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+      }
+      .photo-card__handle,
+      .photo-card__actions button {
+        width: 44px;
+        height: 44px;
+      }
+      .photo-card__caption {
+        min-height: 54px;
+      }
+      .photo-details {
+        padding: 13px;
+      }
+      .photo-details__close {
+        width: 44px;
+        height: 44px;
+      }
+      .photo-details__primary {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .photo-role,
+      .photo-details .btn,
+      .photo-delete {
+        min-height: 44px;
+      }
+      .photo-details__actions {
+        align-items: stretch;
+      }
+      .photo-details__actions > .btn {
+        flex: 1;
+      }
+      .photo-card__primary {
+        font-size: 10px;
+      }
+      .photo-series__head {
+        align-items: flex-start;
+      }
+      .photo-series__head small {
+        font-size: 10px;
+      }
+    }
     @media (prefers-reduced-motion: reduce) {
-      .photo-card { transition: none; }
+      .photo-card {
+        transition: none;
+      }
+      .photo-details {
+        animation: none;
+      }
     }
-    .photo-card__roles { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 0; }
-    .photo-role { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font: inherit; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
-    .photo-role--button { cursor: pointer; }
-    .photo-role--button:hover:enabled { border-color: var(--rose-line); color: var(--rose-dark); }
-    .photo-role--button:disabled { cursor: default; opacity: .6; }
-    .photo-role--on { border-color: var(--rose); background: var(--rose); color: #fff; }
-
   `,
 })
 export class PhotoManager {
+  private readonly elementRef: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
   private readonly media = inject(MediaApi);
@@ -542,9 +867,12 @@ export class PhotoManager {
   readonly changed = output<Product>();
 
   readonly busy = signal(false);
-  readonly interactionDisabled = computed(() => this.disabled() || this.busy());
+  readonly interactionDisabled = computed(() => this.disabled() || this.busy() || this.roleBusy() !== null);
   readonly ownPhotos = computed(() => this.photos().filter((photo) => this.isOwnPhoto(photo)));
   readonly inheritedPhotos = computed(() => this.photos().filter((photo) => !this.isOwnPhoto(photo)));
+  readonly selectedPhotoId = signal<number | null>(null);
+  readonly selectedPhoto = computed(() => this.photos().find(photo => photo.id === this.selectedPhotoId()
+    && (this.isOwnPhoto(photo) || this.showInherited())) ?? null);
   readonly pendingPhotos = signal<PendingPhoto[]>([]);
   readonly pendingCount = computed(() => this.pendingPhotos().length);
   readonly draggingSeries = signal<PhotoSeries | null>(null);
@@ -553,9 +881,43 @@ export class PhotoManager {
   readonly reorderAnnouncement = signal('');
 
   constructor() {
+    let previousProductId: number | null | undefined;
+    effect(() => {
+      const productId = this.productId();
+      const selected = this.selectedPhotoId();
+      if (productId !== previousProductId || (selected !== null && !this.selectedPhoto())) {
+        this.selectedPhotoId.set(null);
+      }
+      previousProductId = productId;
+    });
     this.destroyRef.onDestroy(() => {
       for (const photo of this.pendingPhotos()) URL.revokeObjectURL(photo.previewUrl);
     });
+  }
+
+  selectPhoto(photo: PhotoDto): void {
+    if (!this.photos().some(item => item.id === photo.id)) return;
+    this.selectedPhotoId.set(this.selectedPhotoId() === photo.id ? null : photo.id);
+    const productId = this.productId();
+    requestAnimationFrame(() => {
+      if (this.productId() !== productId || this.selectedPhoto()?.id !== photo.id) return;
+      const panel = this.elementRef.nativeElement.querySelector<HTMLElement>('.photo-details');
+      if (!panel?.getClientRects().length) return;
+      panel.focus({ preventScroll: true });
+      panel.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    });
+  }
+
+  closePhotoDetails(): void {
+    const selected = this.selectedPhotoId();
+    this.selectedPhotoId.set(null);
+    if (selected !== null) this.elementRef.nativeElement.querySelector<HTMLElement>(`[data-photo-select="${selected}"]`)?.focus();
+  }
+
+  async makePrimary(photo: PhotoDto): Promise<void> {
+    if (this.interactionDisabled() || !this.isCurrentOwnPhoto(photo)) return;
+    const index = this.ownPhotos().findIndex(item => item.id === photo.id);
+    if (index > 0) await this.reorderSaved(index, 0, photo.originalFilename);
   }
 
   async upload(event: Event): Promise<void> {
@@ -957,7 +1319,8 @@ export class PhotoManager {
 
   async toggleLead(photo: PhotoDto, role: PhotoRole): Promise<void> {
     const productId = this.productId();
-    if (productId === null || this.roleBusy() !== null) return;
+    if (productId === null || this.interactionDisabled()
+        || !this.photos().some(item => item.id === photo.id)) return;
     this.roleBusy.set(photo.id);
     try {
       const product = await this.catalog.setPhotoLead(productId, photo.id, role, !this.leads(photo, role));

@@ -89,7 +89,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <header class="product-mobile-header">
         <a class="product-mobile-back" [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']" aria-label="Terug naar product">‹</a>
         <div><span>{{ isNew() ? 'Nieuw product' : 'Product bewerken' }}</span><h1>{{ editorReady() ? (draft().name || 'Nieuw product') : 'Product laden…' }}</h1></div>
-        @if (editorReady()) { <span class="product-mobile-state" [class.is-dirty]="workspaceDirty()" aria-label="Opslagstatus">{{ saveBusy() ? 'Bezig…' : workspaceDirty() ? 'Gewijzigd' : 'Opgeslagen' }}</span> }
+        @if (editorReady() && !isNew()) {
+          <button class="product-mobile-actions" type="button" aria-haspopup="dialog"
+                  [attr.aria-expanded]="!!toolbarMenu()" [disabled]="toolbarBusy()"
+                  (click)="openToolbarMenu($event)">Acties <span aria-hidden="true">⌄</span></button>
+        }
       </header>
     }
     @if (desktop.active()) {
@@ -318,7 +322,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       </nav>
       <fieldset class="editor-canvas erp-workspace__main" [disabled]="formWriteBusy()" [attr.aria-busy]="formWriteBusy()" [attr.data-tab]="activeTab()"
            [class.editor-canvas--last]="isLastPhoneTab()">
-      <div class="editor-section-note"><app-icon [name]="activeTab() === 'stock' || activeTab() === 'media' ? 'activity' : 'settings'" [size]="17" /><p>{{ sectionSaveHint(activeTab()) }}</p></div>
+      @if (activeTab() !== 'media') {
+        <div class="editor-section-note"><app-icon [name]="activeTab() === 'stock' ? 'activity' : 'settings'" [size]="17" /><p>{{ sectionSaveHint(activeTab()) }}</p></div>
+      }
       @if (saveError(); as error) {
         <div class="editor-feedback editor-feedback--error" role="alert"><b>Opslaan niet voltooid</b><p>{{ error }}</p></div>
       }
@@ -461,7 +467,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                                          [disabled]="saving() || sharedFieldsBusy() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
                                          (linked)="onVariantLinked($event)"
                                          (syncRequested)="openSharedFields()"
-                                         (familyChange)="onFamilyChange($event)" />
+                                         (familyChange)="onFamilyChange($event)">
+                <button variant-create-action class="btn btn--sm btn--primary variant-create-action" type="button"
+                        title="Kopiëren als kleur- of maatvariant"
+                        [disabled]="toolbarBusy() || translationDirty()"
+                        (click)="startCopy()"><span aria-hidden="true">+</span> Nieuwe variant</button>
+              </app-product-variant-group>
             }
               </div>
             </details>
@@ -615,11 +626,25 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <section class="card editor-section erp-workspace__section" id="media" aria-labelledby="media-title">
         <div class="card__head section-head erp-workspace__section-head">
           <span class="section-head__number erp-workspace__section-index" aria-hidden="true">02</span>
-          <div><h2 id="media-title">Foto's</h2><p>Beeldvolgorde voor dossier en productkanalen</p></div>
+          <div><h2 id="media-title">Foto's</h2></div>
           <span class="spacer"></span>
           <span class="badge badge--neutral">{{ mediaPhotoCount() }}</span>
         </div>
         <div class="card__body photo-workspace">
+          @if (family()) {
+            <div class="photo-scopes" role="group" aria-label="Welke foto’s wil je beheren?">
+              <button type="button" [attr.aria-pressed]="activePhotoScope() === 'variant'"
+                      aria-controls="variant-photo-panel" (click)="photoScope.set('variant')">
+                Eigen foto’s <span>{{ variantPhotoCount() }}</span>
+              </button>
+              <button type="button" [attr.aria-pressed]="activePhotoScope() === 'family'"
+                      aria-controls="family-photo-panel" (click)="photoScope.set('family')">
+                Reeksfoto’s <span>{{ family()!.images.length }}</span>
+              </button>
+            </div>
+          }
+          <!-- Keep the manager mounted: a hidden upload queue must still be saved. -->
+          <div id="variant-photo-panel" class="photo-scope-panel" [hidden]="activePhotoScope() !== 'variant'">
           <app-photo-manager
             [productId]="draft().id"
             [photos]="draft().photos"
@@ -627,6 +652,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             [disabled]="saving() || translationSaving() || translationDirty()"
             (changed)="onPhotosChanged($event)"
           />
+          @if (family() && !variantPhotoCount() && draft().photos.length) {
+            <p class="photo-scope-hint">Dit product gebruikt een foto uit de reeks.
+              <button type="button" (click)="photoScope.set('family')">Bekijk reeksfoto’s →</button>
+            </p>
+          }
+          </div>
 
           @if (!isNew()) {
             @if (familyLoading()) {
@@ -637,6 +668,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <button type="button" (click)="retryFamily()">Opnieuw</button>
               </div>
             } @else if (family(); as mediaFamily) {
+              <div id="family-photo-panel" class="photo-scope-panel" [hidden]="activePhotoScope() !== 'family'">
               <app-product-family-gallery
                 class="media-family-gallery"
                 [family]="mediaFamily"
@@ -650,6 +682,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
                 (imagePublicationChangeRequested)="setFamilyImagePublication($event)"
               />
+              </div>
             }
           }
         </div>
@@ -1066,27 +1099,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         (translationSavingChange)="translationSaving.set($event)"
         (translationsSaved)="onPublicTranslationsSaved($event)"
       />
-      </div>
-
-      <div class="editor-actions erp-workspace__actions">
-        @if (!isNew()) {
-          <button class="btn btn--block" type="button"
-                  [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
-                  (click)="startCopy()">
-            Kopiëren als variant
-          </button>
-          <details class="danger-zone">
-            <summary>Geavanceerde acties</summary>
-            <div>
-              <p>Staat dit product al op een order of offerte? Zet het dan inactief; gebruikte producten kunnen niet worden verwijderd.</p>
-              <button class="btn btn--danger btn--block" type="button"
-                      [disabled]="saving() || photoUploading() || agreementBusy() || translationSaving() || translationDirty()"
-                      (click)="remove()">
-                Product definitief verwijderen
-              </button>
-            </div>
-          </details>
-        }
       </div>
 
       @if (publishFix(); as plan) {
@@ -1566,7 +1578,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       /* Phone: Volgende until the last step; saving is the header's job. */
       .editor-next { display: block; }
       .editor-save { display: none; }
-      .editor-canvas--last .editor-actions .editor-next { display: none; }
     }
     .select--status {
       width: auto; min-height: 34px; padding: 4px 30px 4px 12px;
@@ -1579,9 +1590,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .variant-pending { border-color: var(--rose-soft); background: var(--rose-soft); }
     /* Phone: only the active section is in the DOM flow; desktop: all. */
     @media (max-width: 679px) {
-      /* Deleting lives on the list (swipe left) - no danger zone on a
-         phone screen that is mostly about typing numbers. */
-      .danger-zone { display: none; }
       .editor-canvas .editor-section,
       .editor-canvas .editor-desktop-only { display: none; }
       .editor-canvas[data-tab="identity"] #identity,
@@ -1771,14 +1779,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .price-method .price-method__active { background: var(--surface); color: var(--ink);
       box-shadow: 0 1px 5px rgb(26 22 20 / 9%); }
 
-    .editor-actions { display: grid; gap: 8px; margin-top: 16px; }
-    .danger-zone { margin-top: 4px; border: 1px solid var(--line); border-radius: var(--r-sm);
-      background: var(--surface); overflow: hidden; }
-    .danger-zone summary { padding: 12px 14px; color: var(--muted); font-size: 12px;
-      font-weight: 650; cursor: pointer; }
-    .danger-zone > div { padding: 0 12px 12px; }
-    .danger-zone p { margin-bottom: 10px; color: var(--muted); font-size: 11.5px; }
-
     .variant-copy { display: flex; flex-direction: column; gap: 15px; }
     .variant-copy__source {
       display: flex; flex-direction: column; gap: 5px; padding: 14px;
@@ -1807,8 +1807,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       .channel-grid { grid-template-columns: 1fr 1fr; }
       .channel-card { flex-direction: row; align-items: center; justify-content: space-between; }
       .channel-card .select { width: auto; min-width: 142px; }
-      .editor-actions { grid-template-columns: 1fr 1fr; }
-      .editor-actions .danger-zone { grid-column: 1 / -1; }
       .variant-copy__source { padding: 16px; }
     }
     @media (max-width: 520px) {
@@ -2101,6 +2099,7 @@ export class ProductEditor implements OnDestroy {
     : productCatalogNavigation(this.catalogueProducts(), this.families(), this.categories(), this.draft().id));
   readonly toolbarMenu = signal<MenuPoint | null>(null);
   private toolbarMenuTrigger: HTMLElement | null = null;
+  private toolbarMenuDesktop: boolean | null = null;
   readonly toolbarMenuItems = computed<ContextMenuItem[]>(() => {
     const family = this.family(), product = this.draft();
     const busy = this.toolbarBusy() || !this.editorReady();
@@ -2124,10 +2123,11 @@ export class ProductEditor implements OnDestroy {
   }
 
   openToolbarMenu(event: Event): void {
-    if (!this.desktop.active() || !this.editorReady() || this.isNew() || this.toolbarBusy()) return;
+    if (!this.editorReady() || this.isNew() || this.toolbarBusy()) return;
     const trigger = event.currentTarget;
     if (!(trigger instanceof HTMLElement)) return;
     this.toolbarMenuTrigger = trigger;
+    this.toolbarMenuDesktop = this.desktop.active();
     const rect = trigger.getBoundingClientRect();
     this.toolbarMenu.set({ x: rect.right - 280, y: rect.bottom + 8 });
   }
@@ -2139,14 +2139,16 @@ export class ProductEditor implements OnDestroy {
   }
 
   private syncToolbarViewport(): void {
-    if (this.desktop.active()) return;
+    const desktop = this.desktop.active();
+    if (this.toolbarMenuDesktop === null || this.toolbarMenuDesktop === desktop) return;
     this.toolbarMenu.set(null);
     this.toolbarMenuTrigger = null;
+    this.toolbarMenuDesktop = desktop;
   }
 
   @HostListener('document:keydown', ['$event'])
   toolbarMenuKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Tab' && this.toolbarMenu()) this.closeToolbarMenu();
+    if (event.key === 'Tab' && this.desktop.active() && this.toolbarMenu()) this.closeToolbarMenu();
   }
 
   pickToolbarAction(item: ContextMenuItem): void {
@@ -2521,9 +2523,18 @@ export class ProductEditor implements OnDestroy {
   readonly outerCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly packagingCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly photoManager = viewChild(PhotoManager);
-  readonly photoUploading = computed(() => this.photoManager()?.busy() ?? false);
+  readonly photoUploading = computed(() => {
+    const manager = this.photoManager();
+    return !!manager && (manager.busy() || manager.roleBusy() !== null);
+  });
   readonly photoCount = computed(() =>
     this.draft().photos.length + (this.photoManager()?.pendingCount() ?? 0));
+  readonly photoScope = signal<'variant' | 'family' | null>(null);
+  readonly variantPhotoCount = computed(() =>
+    this.draft().photos.filter(photo => photo.origin === 'PRODUCT').length
+      + (this.photoManager()?.pendingCount() ?? 0));
+  readonly activePhotoScope = computed(() => !this.family() ? 'variant'
+    : this.photoScope() ?? (!this.variantPhotoCount() && this.family()!.images.length ? 'family' : 'variant'));
   readonly mediaPhotoCount = computed(() => {
     const product = this.draft();
     const family = this.family();
@@ -2694,6 +2705,7 @@ export class ProductEditor implements OnDestroy {
     this.productLoading.set(true);
     this.productLoadError.set(null);
     if (this.draft().id !== productId) {
+      this.photoScope.set(null);
       ++this.familyLoadVersion;
       this.setFamilyDraft(null);
       this.savedProductFamilyId.set(null);
@@ -3373,6 +3385,7 @@ export class ProductEditor implements OnDestroy {
 
   /** Photo endpoints return a full server product; keep concurrent form edits intact. */
   onPhotosChanged(serverProduct: Product): void {
+    if (serverProduct.id !== this.draft().id) return;
     this.draft.update((current) => ({
       ...current,
       photos: serverProduct.photos,

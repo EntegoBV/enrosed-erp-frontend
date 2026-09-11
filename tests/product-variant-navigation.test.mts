@@ -106,7 +106,7 @@ const parsedEditor = ts.createSourceFile('product-editor.ts', editorSource, ts.S
 const editorClass = parsedEditor.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'ProductEditor');
 assert.ok(editorClass);
 const toolbarMembers = new Set(['formWriteBusy', 'toolbarBusy', 'navFamiliesReady', 'catalogueNeighbours', 'catalogueStepLabel',
-  'toolbarMenu', 'toolbarMenuTrigger', 'toolbarMenuItems', 'openToolbarMenu', 'closeToolbarMenu', 'pickToolbarAction',
+  'toolbarMenu', 'toolbarMenuTrigger', 'toolbarMenuDesktop', 'toolbarMenuItems', 'openToolbarMenu', 'closeToolbarMenu', 'pickToolbarAction',
   'syncToolbarViewport', 'toolbarMenuKeydown', 'loadFamilies']);
 const selectedMembers = editorClass.members.filter(member => member.name && ts.isIdentifier(member.name) && toolbarMembers.has(member.name.text));
 assert.equal(selectedMembers.length, toolbarMembers.size);
@@ -220,7 +220,7 @@ test('Tab closes the local menu, restores trigger focus and keeps native Tab beh
   assert.equal(trigger.focusCalls, 1, 'No focus changes when the menu is already closed');
 });
 
-test('switching to mobile closes the desktop menu without focusing its hidden trigger or reopening it', () => {
+test('switching viewport closes the menu; mobile can open the same actions as a sheet', () => {
   const { editor, trigger } = toolbarHarness();
   editor.openToolbarMenu({ currentTarget: trigger });
   editor.syncToolbarViewport();
@@ -230,7 +230,11 @@ test('switching to mobile closes the desktop menu without focusing its hidden tr
   assert.equal(editor.toolbarMenu(), null);
   assert.equal(trigger.focusCalls, 0);
   editor.openToolbarMenu({ currentTarget: trigger });
-  assert.equal(editor.toolbarMenu(), null, 'Desktop actions cannot be reopened while mobile');
+  assert.ok(editor.toolbarMenu(), 'The mobile Actions button opens the sheet');
+  editor.syncToolbarViewport();
+  assert.ok(editor.toolbarMenu(), 'Remaining on mobile must not dismiss the sheet');
+  editor.toolbarMenuKeydown({ key: 'Tab' });
+  assert.ok(editor.toolbarMenu(), 'The mobile sheet owns its focus trap');
   editor.desktop.active.set(true);
   editor.syncToolbarViewport();
   assert.equal(editor.toolbarMenu(), null);

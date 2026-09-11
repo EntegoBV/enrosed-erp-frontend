@@ -2360,11 +2360,6 @@ app-product-view .gallery__dot.active::before {
   app-product-view .gallery__dot::before { transition: none; }
 }
 
-/* Product media has one canonical family gallery. Product-owned photos stay
-   above it, while channel use and ordering live on the family image itself. */
-app-product-editor .media-family-gallery {
-  display: block; margin-top: 16px; padding-top: 4px; border-top: 1px solid var(--line);
-}
 app-product-editor .media-gallery-state {
   margin: 16px 0 0; padding: 11px 12px; border-radius: 11px; background: var(--surface-2);
   color: var(--muted); font-size: 11px;

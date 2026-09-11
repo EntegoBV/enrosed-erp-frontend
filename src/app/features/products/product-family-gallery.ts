@@ -1,7 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
+  effect,
+  inject,
   input,
   output,
   signal,
@@ -50,194 +53,135 @@ interface GalleryPointerReorder {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AuthImage],
   template: `
-    <section aria-labelledby="family-gallery-title" [attr.aria-busy]="busy()">
+    <section class="family-gallery" aria-label="Foto’s van de productreeks" [attr.aria-busy]="busy()">
       <div class="section-head">
-        <div>
-          <h3 id="family-gallery-title">Gedeelde productgalerij</h3>
-          <p id="gallery-order-help">
-            Elke foto staat hier één keer. Sleep om te sorteren en kies meteen waar ze gebruikt wordt.
-          </p>
-        </div>
-        <div class="gallery-actions">
-          <span>{{ family().images.length }} foto('s)</span>
-          <button class="btn btn--sm" type="button" [disabled]="busy()"
-                  (click)="imageInput.click()">+ Galerijfoto</button>
-          <input
-            #imageInput
-            class="file-input"
-            type="file"
-            [disabled]="busy()"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            (change)="pickImageFile($event)"
-          />
-        </div>
+        <p id="gallery-order-help">Gedeeld binnen deze reeks. Kies per foto voor welke varianten.</p>
+        <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="imageInput.click()">+ Foto toevoegen</button>
+        <input #imageInput class="file-input" type="file" [disabled]="busy()"
+               accept="image/jpeg,image/png,image/webp,image/gif" (change)="pickImageFile($event)" />
       </div>
-
-      @if (!currentProductIsMember()) {
-        <p class="membership-hint" role="note">
-          Sla dit product eerst op in deze variantgroep om een foto specifiek aan deze variant te koppelen.
-          Tot dan geldt een nieuwe foto voor alle varianten.
-        </p>
+      @if (!currentProductIsMember() && currentProductId() !== null) {
+        <p class="membership-hint" role="note">Sla de variant eerst op in deze reeks om er een foto aan te koppelen.</p>
       }
-
       @if (family().images.length) {
         <ol class="image-list" aria-describedby="gallery-order-help">
           @for (image of orderedImages(); track image.id; let i = $index) {
             <li [class.image-row--dragging]="draggingIndex() === i"
                 [class.image-row--drop]="draggingIndex() !== null && draggingIndex() !== i && dropTargetIndex() === i"
+                [class.image-row--open]="selectedImageId() === image.id"
                 [attr.data-family-image-index]="i">
-              <button class="drag-handle" type="button"
-                      [disabled]="busy() || orderedImages().length < 2"
-                      aria-keyshortcuts="ArrowUp ArrowDown Home End"
-                      [attr.aria-label]="orderLabel(image, i)"
-                      (click)="announceOrderHelp(image, i)"
-                      (keydown)="orderKeydown($event, i, image)"
-                      (pointerdown)="startPointerReorder($event, i)"
-                      (pointermove)="movePointerReorder($event)"
-                      (pointerup)="finishPointerReorder($event)"
-                      (pointercancel)="cancelPointerReorder($event)">
-                <span aria-hidden="true">⠿</span>
-              </button>
-              <span class="image-preview">
-                <img [appAuthSrc]="image.smallUrl" alt="" />
-                <span class="image-position" aria-hidden="true">{{ i + 1 }}</span>
-              </span>
-              <div class="image-copy">
-                <div class="image-title">
-                  <b [title]="image.originalFilename">{{ image.originalFilename }}</b>
-                  @if (!publishedChannels(image).length) {
-                    <span>Alleen intern</span>
-                  }
-                  @if (!hasAltText(image)) {
-                    <span class="image-warning" title="Vul de alt-tekst bij Vertalingen in vóór publicatie">
-                      Alt-tekst ontbreekt
-                    </span>
-                  }
-                </div>
-                <label class="variant-link">
-                  <span>Toepassen op</span>
-                  <select class="select input--sm" [ngModel]="image.variantProductId ?? null"
-                          [disabled]="busy()"
-                          (ngModelChange)="assignVariant(image.id, $event)">
-                    <option [ngValue]="null">Alle kleuren</option>
-                    @for (member of members(); track member.productId) {
-                      <option [ngValue]="member.productId">{{ memberLabel(member) }}</option>
-                    }
-                  </select>
-                </label>
-                <div class="publication-controls" role="group"
-                     [attr.aria-label]="'Gebruik van ' + image.originalFilename">
-                  @for (option of publicationChannels; track option.channel) {
-                    <button type="button" [disabled]="publicationControlDisabled(image, option.channel)"
-                            [class.publication-control--on]="isPublishedTo(image, option.channel)"
-                            [attr.aria-pressed]="isPublishedTo(image, option.channel)"
-                            [attr.aria-label]="channelAriaLabel(image, option.channel, option.label)"
-                            [title]="publicationControlTitle(image, option.channel, option.description)"
-                            (click)="togglePublicationChannel(image, option.channel)">
-                      <i aria-hidden="true">{{ isPublishedTo(image, option.channel) ? '✓' : '' }}</i>
-                      <span>{{ option.label }}</span>
-                    </button>
-                  }
-                </div>
-                @if (translationEditing()) {
-                  <label>
-                    <span class="sr-only">Alternatieve tekst voor {{ image.originalFilename }}</span>
-                    <input
-                      class="input input--sm"
-                      [ngModel]="imageAlt(image)"
-                      [disabled]="busy()"
-                      (ngModelChange)="patchImageAlt(image.id, $event)"
-                      [placeholder]="'Beschrijf de foto in ' + language()"
-                    />
-                  </label>
+              <div class="image-overview">
+                <button class="image-open" type="button" (click)="toggleImage(image.id)" [attr.data-family-image-open]="image.id"
+                        [attr.aria-expanded]="selectedImageId() === image.id" [attr.aria-controls]="'family-image-settings-' + image.id"
+                        [attr.aria-label]="'Instellingen voor ' + image.originalFilename">
+                  <span class="image-preview"><img [appAuthSrc]="image.smallUrl" alt="" draggable="false" /><span class="image-position" aria-hidden="true">{{ i + 1 }}</span></span>
+                  <span class="image-copy">
+                    <b>{{ scopeLabel(image) }}</b>
+                    <span class="image-channel-summary">{{ publicationSummary(image) }}</span>
+                    @if (i === 0) { <small class="image-first">Eerste in reeks</small> }
+                    @if (!hasAltText(image)) { <small class="image-warning">Alt-tekst ontbreekt</small> }
+                  </span>
+                  <span class="image-expand" aria-hidden="true">⌄</span>
+                </button>
+                @if (orderedImages().length > 1) {
+                  <button class="drag-handle" type="button" [disabled]="busy()"
+                          aria-keyshortcuts="ArrowUp ArrowDown Home End" [attr.aria-label]="orderLabel(image, i)"
+                          (click)="announceOrderHelp(image, i)" (keydown)="orderKeydown($event, i, image)"
+                          (pointerdown)="startPointerReorder($event, i)" (pointermove)="movePointerReorder($event)"
+                          (pointerup)="finishPointerReorder($event)" (pointercancel)="cancelPointerReorder($event)"><span aria-hidden="true">⠿</span></button>
                 }
               </div>
-              <div class="image-actions">
-                <button
-                  class="delete"
-                  type="button"
-                  title="Verwijderen"
-                  [disabled]="busy()"
-                  [attr.aria-label]="image.originalFilename + ' verwijderen'"
-                  (click)="imageDeleteRequested.emit(image.id)"
-                >
-                  ×
-                </button>
-              </div>
+              @if (selectedImageId() === image.id) {
+                <div class="image-settings" tabindex="-1" [id]="'family-image-settings-' + image.id" aria-label="Instellingen voor reeksfoto">
+                  <div class="image-file"><b>{{ image.originalFilename }}</b>@if (i > 0) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="makeFirst(image)">Zet vooraan</button> }</div>
+                  <label class="variant-link">
+                    <span>Deze foto gebruiken voor</span>
+                    <select class="select" [ngModel]="image.variantProductId ?? null" [disabled]="busy()" (ngModelChange)="assignVariant(image.id, $event)">
+                      <option [ngValue]="null">Alle varianten in deze reeks</option>
+                      @for (member of members(); track member.productId) { <option [ngValue]="member.productId">{{ memberLabel(member) }}</option> }
+                    </select>
+                  </label>
+                  <fieldset class="publication-settings">
+                    <legend>Publiceren op</legend>
+                    <div class="publication-controls">
+                      @for (option of publicationChannels; track option.channel) {
+                        <button type="button" [disabled]="publicationControlDisabled(image, option.channel)"
+                                [class.publication-control--on]="isPublishedTo(image, option.channel)"
+                                [attr.aria-pressed]="isPublishedTo(image, option.channel)"
+                                [attr.aria-label]="channelAriaLabel(image, option.channel, option.label)"
+                                [title]="publicationControlTitle(image, option.channel, option.description)"
+                                (click)="togglePublicationChannel(image, option.channel)"><i aria-hidden="true">{{ isPublishedTo(image, option.channel) ? '✓' : '+' }}</i>{{ option.label }}</button>
+                      }
+                    </div>
+                    @if (!hasAltText(image)) { <p>Voeg een alt-tekst toe bij Website &amp; publicatie om deze foto te publiceren.</p> }
+                  </fieldset>
+                  @if (translationEditing()) {
+                    <label class="alt-field"><span>Alt-tekst · {{ language() }}</span><input class="input" [ngModel]="imageAlt(image)" [disabled]="busy()" (ngModelChange)="patchImageAlt(image.id, $event)" placeholder="Beschrijf wat op deze foto staat" /></label>
+                  }
+                  <div class="image-settings__foot"><small>De volgorde geldt voor de hele reeks.</small><button class="image-delete" type="button" [disabled]="busy()" (click)="imageDeleteRequested.emit(image.id)">Verwijder uit reeks</button></div>
+                </div>
+              }
             </li>
           }
         </ol>
-        <p class="gallery-footnote">
-          Sleep de foto’s in de juiste volgorde en klik daarna bovenaan op Opslaan.
-          Dezelfde volgorde geldt voor website, catalogus en bestelapp.
-        </p>
+        <p class="gallery-footnote">Wijzigingen aan de volgorde bewaren met Opslaan.@if (orderedImages().length > 1) { Sleep via ⠿ of gebruik de pijltjestoetsen. }</p>
         <p class="sr-only" role="status" aria-live="polite">{{ reorderAnnouncement() }}</p>
       } @else {
-        <div class="empty-gallery">
-          <span aria-hidden="true">◇</span>
-          <div>
-            <b>Nog geen productfoto's</b
-            ><small>Voeg een foto toe. Ze blijft intern tot je zelf een publicatiekanaal kiest.</small>
-          </div>
-        </div>
+        <div class="empty-gallery"><b>Nog geen reeksfoto’s</b><small>Nieuwe foto’s blijven intern tot je een publicatiekanaal kiest.</small></div>
       }
     </section>
   `,
   styles: `
     :host {
       display: block;
-      border-bottom: 1px solid var(--line);
+      min-width: 0;
     }
-    section {
-      padding: 18px 0;
+    .family-gallery {
+      padding: 0;
+      min-width: 0;
     }
     .section-head {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-    h3 {
-      font-size: 14px;
-      line-height: 1.25;
+      gap: 14px;
+      margin-bottom: 14px;
     }
     .section-head p {
-      margin-top: 2px;
+      max-width: 360px;
+      margin: 0;
       color: var(--muted);
       font-size: 12px;
-      line-height: 1.35;
+      line-height: 1.5;
     }
-    .gallery-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .section-head .btn {
+      flex: none;
+      min-height: 42px;
     }
-    .gallery-actions > span {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-    .membership-hint {
-      margin: -4px 0 12px;
-      padding: 8px 10px;
-      border-radius: 9px;
-      background: var(--warn-soft);
-      color: var(--ink-2);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .file-input {
+    .file-input,
+    .sr-only {
       position: absolute;
       width: 1px;
       height: 1px;
-      opacity: 0;
-      pointer-events: none;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .membership-hint {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--warn-soft);
+      color: var(--ink-2);
+      font-size: 12px;
+      line-height: 1.5;
     }
     .image-list {
       display: grid;
-      gap: 7px;
+      gap: 9px;
       margin: 0;
       padding: 0;
       list-style: none;
@@ -245,315 +189,392 @@ interface GalleryPointerReorder {
     .image-list li {
       position: relative;
       min-width: 0;
-      display: grid;
-      grid-template-columns: 36px 58px minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 9px;
-      padding: 7px;
       border: 1px solid var(--line);
-      border-radius: var(--r-sm);
-      background: var(--surface-2);
-      transition: border-color .16s, opacity .16s, transform .16s;
-    }
-    .image-list .image-row--dragging { opacity: .5; transform: scale(.985); }
-    .image-list .image-row--drop { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-line); }
-    .drag-handle {
-      width: 36px; height: 44px; border: 1px solid var(--line); border-radius: 9px;
-      background: var(--surface); color: var(--muted); font: 800 17px/1 var(--mono);
-      cursor: grab; touch-action: none; user-select: none;
-    }
-    .drag-handle:active { cursor: grabbing; }
-    .drag-handle:focus-visible { outline: 3px solid var(--rose-line); outline-offset: 2px; }
-    .drag-handle:disabled { cursor: default; opacity: .35; }
-    .image-list img {
-      width: 58px;
-      height: 58px;
-      border-radius: 9px;
-      background: #fff;
-      object-fit: cover;
-    }
-    .image-copy {
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-    .image-copy b {
-      overflow: hidden;
-      font-size: 12px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .variant-link { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
-    .variant-link > span { color: var(--muted); font-size: 12px; font-weight: 700; }
-    .variant-link .select { min-width: 0; height: 36px; padding-block: 4px; font-size: 12px; }
-    .image-actions {
-      display: flex;
-      flex-direction: row;
-      gap: 3px;
-    }
-    .image-actions button {
-      width: 44px;
-      height: 44px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--surface);
-      color: var(--ink-2);
-      cursor: pointer;
-    }
-    .image-actions button:disabled {
-      opacity: 0.3;
-      cursor: default;
-    }
-    .image-actions .delete {
-      color: var(--danger);
-    }
-    .empty-gallery {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      padding: 15px;
-      border: 1px dashed var(--line-strong);
-      border-radius: var(--r-sm);
-      background: var(--surface-2);
-    }
-    .empty-gallery > span {
-      color: var(--rose);
-      font-size: 25px;
-    }
-    .empty-gallery > div {
-      display: flex;
-      flex-direction: column;
-    }
-    .empty-gallery b {
-      font-size: 12px;
-    }
-    .empty-gallery small {
-      margin-top: 2px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-    }
-    @media (max-width: 520px) {
-      .image-list li { grid-template-columns: 36px 50px minmax(0, 1fr); gap: 6px; }
-      .image-list img { width: 50px; height: 50px; }
-      .image-actions { grid-column: 2 / -1; justify-content: flex-end; }
-      .variant-link { grid-template-columns: 1fr; gap: 2px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .image-list li { transition: none; }
-    }
-
-    /* The gallery row is the single source of truth: preview, order, colour
-       scope and channel use all live together instead of repeating photos. */
-    :host { border-bottom: 0; }
-    section { min-width: 0; padding: 16px 0 0; }
-    .section-head { gap: 16px; margin-bottom: 11px; }
-    h3 { margin: 0; font-size: 13px; }
-    .section-head p {
-      max-width: 560px;
-      margin: 3px 0 0;
-      font-size: 10.5px;
-      line-height: 1.4;
-    }
-    .gallery-actions { flex: none; }
-    .gallery-actions > span { font-size: 10.5px; }
-    .image-list { gap: 8px; }
-    .image-list li {
-      grid-template-columns: 36px 64px minmax(0, 1fr);
-      gap: 10px;
-      padding: 8px 50px 8px 8px;
       border-radius: 12px;
       background: var(--surface);
+      transition:
+        border-color 0.18s,
+        opacity 0.18s,
+        transform 0.18s;
     }
-    .drag-handle {
+    .image-list .image-row--dragging {
+      opacity: 0.5;
+      transform: scale(0.985);
+    }
+    .image-list .image-row--drop {
+      border-color: var(--rose);
+      box-shadow: 0 0 0 3px var(--rose-line);
+    }
+    .image-list .image-row--open {
+      border-color: var(--rose-line);
+    }
+    .image-overview {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      padding: 8px;
+      gap: 8px;
+    }
+    .image-open {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      align-items: center;
+      gap: 13px;
+      padding: 0;
       border: 0;
-      background: var(--surface-2);
+      border-radius: 9px;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
     }
     .image-preview {
       position: relative;
       display: block;
-      width: 64px;
-      height: 64px;
+      flex: none;
+      width: 76px;
+      height: 76px;
       overflow: hidden;
       border-radius: 9px;
-      background: #fff;
+      background: var(--surface-2);
     }
     .image-preview img {
       display: block;
       width: 100%;
       height: 100%;
-      border-radius: 0;
-      object-fit: cover;
+      object-fit: contain;
+      padding: 5px;
     }
     .image-position {
       position: absolute;
       top: 4px;
       left: 4px;
       display: grid;
-      min-width: 20px;
-      height: 20px;
-      padding: 0 5px;
+      min-width: 21px;
+      height: 21px;
       place-items: center;
-      border-radius: 999px;
-      background: rgb(23 18 17 / 72%);
-      color: #fff;
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--muted);
       font-size: 10px;
-      font-weight: 800;
-      line-height: 1;
-      backdrop-filter: blur(5px);
+      font-weight: 650;
+      box-shadow: 0 1px 5px #0001;
     }
     .image-copy {
-      display: grid;
-      grid-template-columns: minmax(180px, .8fr) minmax(190px, .9fr) minmax(290px, 1.35fr);
-      align-items: center;
-      gap: 8px 12px;
-    }
-    .image-title {
-      min-width: 0;
       display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 4px;
+      flex: 1;
+      min-width: 0;
+      flex-wrap: wrap;
+      gap: 5px 7px;
+      align-items: center;
     }
-    .image-title b {
-      max-width: 100%;
-      overflow: hidden;
-      font-size: 12px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .image-copy > b {
+      flex-basis: 100%;
+      font-size: 13px;
+      font-weight: 650;
+      overflow-wrap: anywhere;
     }
-    .image-title span {
-      padding: 3px 7px;
-      border: 1px solid var(--line-strong);
-      border-radius: 999px;
+    .image-channel-summary {
+      flex-basis: 100%;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    .image-first,
+    .image-warning {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      border-radius: 5px;
+      padding: 2px 6px;
+      background: var(--rose-soft);
+      color: var(--rose-dark);
+      font-size: 10px;
+      line-height: 1.3;
+    }
+    .image-warning {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+    .image-expand {
+      color: var(--muted);
+      font-size: 18px;
+      transition: transform 0.18s;
+    }
+    .image-row--open .image-expand {
+      transform: rotate(180deg);
+    }
+    .drag-handle {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 44px;
+      padding: 0;
+      border: 0;
+      border-radius: 9px;
       background: var(--surface-2);
       color: var(--muted);
-      font-size: 9.5px;
-      font-weight: 700;
-      line-height: 1;
+      font-size: 21px;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
     }
-    .variant-link {
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 7px;
+    .drag-handle:active {
+      cursor: grabbing;
     }
-    .variant-link > span { font-size: 10px; white-space: nowrap; }
-    .variant-link .select { height: 38px; font-size: 11px; }
+    button:focus-visible {
+      outline: 2px solid var(--rose);
+      outline-offset: 3px;
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+    .image-settings {
+      min-width: 0;
+      margin: 0 12px;
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px 20px;
+      animation: gallery-settings-in 0.18s ease-out;
+    }
+    .image-file {
+      grid-column: 1/-1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .image-file > b {
+      min-width: 0;
+      font-size: 12px;
+      line-height: 1.5;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .image-file > .btn {
+      flex: none;
+    }
+    .variant-link,
+    .alt-field {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      min-width: 0;
+    }
+    .variant-link > span,
+    .alt-field > span,
+    .publication-settings legend {
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.5;
+    }
+    .variant-link .select {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      height: 42px;
+      font-size: 12px;
+    }
+    .publication-settings {
+      min-width: 0;
+      border: 0;
+      padding: 0;
+      margin: 0;
+    }
+    .publication-settings legend {
+      margin-bottom: 8px;
+    }
+    .publication-settings p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
     .publication-controls {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 5px;
     }
     .publication-controls button {
-      min-width: 0;
-      min-height: 38px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      padding: 5px 8px;
+      min-width: 0;
+      min-height: 42px;
+      padding: 8px 6px;
       border: 1px solid var(--line);
       border-radius: 9px;
       background: var(--surface-2);
       color: var(--muted);
       font: inherit;
-      font-size: 10.5px;
-      font-weight: 730;
+      font-size: 11px;
+      font-weight: 600;
       cursor: pointer;
     }
-    .publication-controls button:hover { border-color: var(--line-strong); color: var(--ink-2); }
-    .publication-controls button:focus-visible { outline: 3px solid var(--rose-line); outline-offset: 1px; }
-    .publication-controls button:disabled { cursor: default; opacity: .45; }
     .publication-controls i {
-      display: grid;
-      flex: none;
-      width: 16px;
-      height: 16px;
-      place-items: center;
-      border: 1px solid var(--line-strong);
-      border-radius: 5px;
-      background: var(--surface);
-      color: #fff;
       font-style: normal;
-      font-size: 10px;
-      line-height: 1;
+      font-size: 12px;
     }
     .publication-controls .publication-control--on {
-      border-color: color-mix(in srgb, var(--ok) 34%, var(--line));
-      background: var(--ok-soft);
-      color: var(--ok);
+      border-color: var(--rose-line);
+      background: var(--rose-soft);
+      color: var(--rose-dark);
     }
-    .publication-control--on i { border-color: var(--ok); background: var(--ok); }
-    .image-copy > label:not(.variant-link) { grid-column: 1 / -1; }
-    .image-title .image-warning {
-      border-color: color-mix(in srgb, var(--warn) 28%, var(--line));
-      background: var(--warn-soft);
-      color: var(--warn);
+    .alt-field {
+      grid-column: 1/-1;
     }
-    .image-actions {
-      position: absolute;
-      top: 8px;
-      right: 8px;
+    .alt-field .input {
+      min-width: 0;
+      width: 100%;
+      font-size: 13px;
     }
-    .image-actions button {
-      width: 36px;
-      height: 36px;
-      background: var(--surface-2);
-      font-size: 18px;
+    .image-settings__foot {
+      grid-column: 1/-1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
-    .image-actions button:hover { border-color: var(--danger); background: var(--danger-soft); }
-    .gallery-footnote {
-      margin: 8px 2px 0;
+    .image-settings__foot small {
       color: var(--muted);
-      font-size: 9.5px;
-      line-height: 1.4;
+      font-size: 11px;
+      line-height: 1.5;
     }
-    @media (min-width: 521px) and (max-width: 1280px) {
-      .image-copy { grid-template-columns: minmax(0, .9fr) minmax(160px, 1fr); }
-      .publication-controls { grid-column: 1 / -1; }
+    .image-delete {
+      min-height: 40px;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px;
+      background: transparent;
+      color: var(--danger);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
     }
-    @media (max-width: 520px) {
-      section { padding-top: 14px; }
-      .section-head { flex-direction: column; gap: 9px; }
-      .gallery-actions { width: 100%; justify-content: space-between; }
-      .gallery-actions .btn { min-height: 42px; }
-      .image-list li {
-        grid-template-columns: 44px 54px minmax(0, 1fr);
-        align-items: start;
-        gap: 7px;
-        padding: 8px 52px 9px 7px;
+    .gallery-footnote {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.6;
+    }
+    .empty-gallery {
+      display: grid;
+      gap: 5px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 12px;
+      padding: 24px 16px;
+      text-align: center;
+    }
+    .empty-gallery b {
+      font-size: 13px;
+    }
+    .empty-gallery small {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    @keyframes gallery-settings-in {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
       }
-      .drag-handle { width: 44px; min-height: 54px; height: 54px; }
-      .image-preview { width: 54px; height: 54px; }
-      .image-copy { display: contents; }
-      .image-title { grid-column: 3; grid-row: 1; min-height: 54px; justify-content: center; }
-      .variant-link { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 1fr; gap: 3px; }
-      .variant-link .select { height: 44px; }
-      .publication-controls {
-        grid-column: 1 / -1;
-        grid-row: 3;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @media (max-width: 679px) {
+      .section-head {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .section-head p {
+        max-width: none;
+      }
+      .section-head .btn {
+        min-height: 44px;
+        align-self: flex-start;
+      }
+      .image-overview {
+        gap: 5px;
+        padding: 8px;
+      }
+      .image-open {
+        gap: 10px;
+      }
+      .image-preview {
+        width: 70px;
+        height: 70px;
+      }
+      .image-copy > b {
+        font-size: 12px;
+      }
+      .image-channel-summary {
+        font-size: 10px;
+      }
+      .image-expand {
+        font-size: 16px;
+      }
+      .drag-handle {
+        width: 44px;
+        height: 44px;
+      }
+      .image-settings {
+        grid-template-columns: minmax(0, 1fr);
+        margin-inline: 11px;
+        gap: 14px;
+      }
+      .image-file {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .image-file .btn,
+      .publication-controls button,
+      .image-delete {
+        min-height: 44px;
+      }
+      .variant-link .select,
+      .alt-field .input {
+        height: 44px;
+        font-size: 16px;
+      }
+      .publication-controls button {
+        font-size: 11px;
+        padding-inline: 4px;
         gap: 4px;
       }
-      .publication-controls button { min-height: 44px; padding-inline: 4px; font-size: 9.5px; gap: 4px; }
-      .publication-controls i { width: 15px; height: 15px; }
-      .image-actions { top: 8px; right: 7px; }
-      .image-actions button { width: 44px; height: 44px; }
+      .image-settings__foot {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .image-delete {
+        padding-inline: 0;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .image-list li,
+      .image-expand {
+        transition: none;
+      }
+      .image-settings {
+        animation: none;
+      }
     }
   `,
+
 })
 export class ProductFamilyGallery {
+  private readonly elementRef: ElementRef<HTMLElement> = inject(ElementRef);
   private pointerReorder: GalleryPointerReorder | null = null;
 
   readonly family = input.required<ProductFamily>();
@@ -567,6 +588,7 @@ export class ProductFamilyGallery {
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
   readonly imagePublicationChangeRequested = output<ProductFamilyImagePublicationChange>();
 
+  readonly selectedImageId = signal<number | null>(null);
   readonly draggingIndex = signal<number | null>(null);
   readonly dropTargetIndex = signal<number | null>(null);
   readonly reorderAnnouncement = signal('');
@@ -580,6 +602,48 @@ export class ProductFamilyGallery {
     const productId = this.currentProductId();
     return productId !== null && this.members().some((member) => member.productId === productId);
   });
+
+  constructor() {
+    let previousOwner: string | undefined;
+    effect(() => {
+      const owner = `${this.family().id}:${this.currentProductId()}`;
+      const selected = this.selectedImageId();
+      if (owner !== previousOwner || (selected !== null && !this.family().images.some(image => image.id === selected))) {
+        this.selectedImageId.set(null);
+      }
+      previousOwner = owner;
+    });
+  }
+
+  toggleImage(imageId: number): void {
+    if (!this.family().images.some(image => image.id === imageId)) return;
+    this.selectedImageId.set(this.selectedImageId() === imageId ? null : imageId);
+    const familyId = this.family().id;
+    requestAnimationFrame(() => {
+      if (this.family().id !== familyId || this.selectedImageId() !== imageId) return;
+      const panel = this.elementRef.nativeElement.querySelector<HTMLElement>(`#family-image-settings-${imageId}`);
+      if (!panel?.getClientRects().length) return;
+      panel.focus({ preventScroll: true });
+      panel.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    });
+  }
+
+  scopeLabel(image: ProductFamilyImage): string {
+    if (image.variantProductId == null) return 'Alle varianten';
+    const member = this.members().find(item => item.productId === image.variantProductId);
+    const label = member ? [member.colour, member.size].filter(Boolean).join(' · ') || member.name : `Variant #${image.variantProductId}`;
+    return image.variantProductId === this.currentProductId() ? `Deze variant · ${label}` : label;
+  }
+
+  publicationSummary(image: ProductFamilyImage): string {
+    const channels = this.publishedChannels(image);
+    return PUBLICATION_CHANNELS.filter(option => channels.includes(option.channel)).map(option => option.label).join(' · ') || 'Alleen intern';
+  }
+
+  makeFirst(image: ProductFamilyImage): void {
+    const index = this.orderedImages().findIndex(item => item.id === image.id);
+    if (index > 0) this.reorderTo(index, 0, image.originalFilename);
+  }
 
   pickImageFile(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -662,7 +726,8 @@ export class ProductFamilyGallery {
   }
 
   togglePublicationChannel(image: ProductFamilyImage, channel: CatalogChannel): void {
-    if (this.busy()) return;
+    if (this.publicationControlDisabled(image, channel)
+        || !this.family().images.some(item => item.id === image.id)) return;
     const selected = new Set(this.publishedChannels(image));
     if (selected.has(channel)) selected.delete(channel); else selected.add(channel);
     const channels = PUBLICATION_CHANNELS

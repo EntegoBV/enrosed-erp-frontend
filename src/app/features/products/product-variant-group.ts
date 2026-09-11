@@ -52,6 +52,7 @@ import { Sheet, Ui } from '../../shared/ui';
           }
         </div>
         <div class="variant-group__actions" role="group" aria-label="Acties voor deze reeks">
+          <ng-content select="[variant-create-action]" />
           @if (family() && siblings().length) {
             <button class="series-sync" type="button" [disabled]="disabled()"
                     (click)="syncRequested.emit()">
