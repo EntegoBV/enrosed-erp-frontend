@@ -149,6 +149,7 @@
     .editor-toolbar__title { min-width: 0; }
     .editor-toolbar__actions { flex: none; gap: 8px; }
     .editor-toolbar__nav { display: inline-flex; align-items: center; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); }
+    .editor-toolbar__position { min-width: 30px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
     .editor-toolbar__step { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--ink); font-size: 25px; line-height: 1; text-decoration: none; transition: background .15s, color .15s; }
     .editor-toolbar__step:hover:not([aria-disabled=true]) { background: var(--surface); color: var(--rose); }
     .editor-toolbar__step:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
@@ -314,7 +315,7 @@
     .product-editor-dock__save:active { transform: scale(.97); }
     .product-editor-dock .product-editor-dock__save:disabled { color: var(--muted); background: var(--surface-2); box-shadow: none; opacity: 1; }
     .product-save-check { font-size: 17px; }
-    @media (max-width: 359px) { .product-mobile-colours { display: none; } .product-editor-dock__context small { font-size: 9px; } }
+    @media (max-width: 359px) { .product-editor-dock__context small { font-size: 9px; } }
   }
 }
 

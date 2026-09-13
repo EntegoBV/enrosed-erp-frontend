@@ -145,6 +145,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                  [attr.aria-disabled]="!around.previous || toolbarBusy()"
                  [attr.tabindex]="!around.previous || toolbarBusy() ? -1 : 0"
                  [attr.aria-label]="catalogueStepLabel('previous')" [title]="catalogueStepLabel('previous')">‹</a>
+              <small class="editor-toolbar__position" [attr.aria-label]="'Kleur ' + (around.index + 1) + ' van ' + around.total"
+                     [title]="around.current.groupName + ' · ' + around.current.optionLabel">{{ around.index + 1 }}/{{ around.total }}</small>
               <a class="editor-toolbar__step" data-product-step="next"
                  [routerLink]="around.next && !toolbarBusy() ? ['/products', around.next.productId, 'edit'] : null"
                  [queryParams]="{ tab: activeTab() }"
@@ -1491,9 +1493,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       :host#product-editor-workspace .product-mobile-photo { width: 64px; height: 74px; border-radius: 19px; }
       :host#product-editor-workspace .product-mobile-variant { grid-column: 2; }
       :host#product-editor-workspace .product-mobile-variant > strong { font-size: 15px; }
-      :host#product-editor-workspace .product-mobile-colours { grid-column: 3; grid-template-columns: 44px 44px; border-radius: 15px; background: var(--surface); border: 1px solid var(--line); }
+      :host#product-editor-workspace .product-mobile-colours { grid-column: 3; grid-template-columns: 44px minmax(28px, auto) 44px; border-radius: 15px; background: var(--surface); border: 1px solid var(--line); }
       :host#product-editor-workspace .product-mobile-colours > a { width: 44px; height: 44px; }
-      :host#product-editor-workspace .product-mobile-colours > small { padding-bottom: 7px; font-size: 10px; }
+      :host#product-editor-workspace .product-mobile-colours > a:last-child { grid-column: 3; }
+      :host#product-editor-workspace .product-mobile-colours > small { grid-column: 2; grid-row: 1; padding: 0; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
       :host#product-editor-workspace .product-mobile-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
       :host#product-editor-workspace .product-mobile-metrics > button { display: flex; align-items: center; gap: 9px; min-width: 0;
         min-height: 54px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--rose-dark); text-align: left; }
