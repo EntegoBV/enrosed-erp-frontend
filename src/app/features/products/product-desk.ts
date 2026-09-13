@@ -10,10 +10,8 @@ import { PageHeader } from '../../shared/page-header';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
 import { ProductMediaCard } from './product-media-card';
-import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { ProductView } from './product-view';
-import { NoteBlock, parseSupplierNote } from './supplier-note';
 
 type BookingKind = 'RECOUNT' | 'DAMAGED' | 'SHORTAGE' | 'DEMO';
 interface IssueGroup { key: string; label: string; action: string; link: unknown[]; params: Record<string, string> | null; issues: string[]; }
@@ -35,7 +33,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
 @Component({
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ProductCostHistory, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductSupplierAgreementEditor, ProductMediaCard, PageHeader,
+  imports: [ProductCostHistory, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, PageHeader,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -543,37 +541,25 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
           <app-product-media-card class="pd-card" id="pd-media" [productId]="product.id" />
         }
 
-        <!-- ============================ supplier agreements: read as points, edit in place -->
-        @if (agreementEditing()) {
-          <div class="pd-card pd-card--editor" id="pd-agreements">
-            <app-product-supplier-agreement-editor
-              [productId]="product.id" [supplierId]="product.supplierId" [persistedSupplierId]="product.supplierId"
-              [supplierName]="supplierName()" [note]="noteDraft()" [disabled]="noteSaving()"
-              (noteChange)="noteDraft.set($event)" />
-            <div class="pd-actions pd-actions--end">
-              @if (agreementSiblings().length; as others) {
-                <label class="pd-share">
-                  <input type="checkbox" [checked]="shareAcrossColours()" (change)="setShareAcrossColours($any($event.target).checked)" />
-                  <span><b>Ook voor de andere kleur{{ others === 1 ? '' : 'en' }} van deze reeks</b>
-                    <small>{{ siblingNames() }} krijg{{ others === 1 ? 't' : 'en' }} dezelfde tekst en foto’s</small></span>
-                </label>
-              } @else {
-                <span class="pd-hint pd-hint--inline">"- " begint een punt, Enter gaat verder, Tab maakt een subpunt.</span>
-              }
-              <button class="btn btn--sm" type="button" [disabled]="noteSaving()" (click)="cancelAgreement()">Annuleren</button>
-              <button class="btn btn--sm btn--primary" type="button" [disabled]="noteSaving() || !agreementDirty()" (click)="saveAgreement(product)">{{ noteSaving() ? 'Bezig…' : 'Bewaren' }}</button>
-            </div>
-          </div>
-        } @else {
+        <!-- Supplier agreements use their effective shared source. -->
           <section class="pd-card" id="pd-agreements" aria-labelledby="pd-agreements-title">
             <div class="pd-card__head">
-              <div><h2 id="pd-agreements-title">Afspraken leverancier</h2><p>Engelse instructies en referentiefoto’s, alleen op de inkoop-PDF voor {{ supplierName() || 'de leverancier' }}</p></div>
-              <button class="linklike" type="button" (click)="startAgreement(product)">{{ product.supplierNote || agreementPhotos().length ? 'Bewerken ›' : 'Afspraken vastleggen ›' }}</button>
+              <div><h2 id="pd-agreements-title">Afspraken leverancier</h2><p>Engelse instructies en referentiefoto’s voor leveranciersdocumenten en inspectie-export · {{ supplierName() || 'de leverancier' }}</p></div>
+              <a class="linklike" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'agreements' }">Bewerken ›</a>
             </div>
             <div class="pd-agreement">
-              @if (noteBlocks().length) {
+              @if (supplierAgreement(); as agreement) {
+                @if (!agreement.available) {
+                  <p class="pd-empty" role="note">{{ !product.supplierId ? 'Kies eerst een leverancier via Bewerken om afspraken vast te leggen.' : agreement.inherited ? 'Deze gedeelde afspraak past niet meer bij de leverancier of productreeks. Controleer de koppeling via Bewerken.' : 'De leveranciersafspraak is niet beschikbaar. Controleer de leverancier via Bewerken.' }}</p>
+                } @else if (agreement.variants.length > 1) {
+                  <div class="pd-effective-agreement"><b>Gedeelde afspraak</b><span>{{ agreementVariantNames() }}</span>
+                    @if (agreement.inherited) { <a class="linklike" [routerLink]="['/products', agreement.sourceProductId]" fragment="pd-agreements">Bronproduct bekijken ›</a> }
+                  </div>
+                }
+              }
+              @if (supplierNoteBlocks().length) {
                 <div class="pd-note" lang="en">
-                  @for (block of noteBlocks(); track $index) {
+                  @for (block of supplierNoteBlocks(); track $index) {
                     @if (block.kind === 'p') {
                       <p><ng-container *ngTemplateOutlet="noteText; context: { $implicit: block.text }" /></p>
                     } @else {
@@ -589,11 +575,11 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                     }
                   }
                 </div>
-              } @else {
-                <p class="pd-empty">Nog geen instructies voor de leverancier. <button class="linklike" type="button" (click)="startAgreement(product)">Schrijf ze hier ›</button></p>
+              } @else if (!agreementLoading() && !agreementLoadError() && supplierAgreement()?.available !== false) {
+                <p class="pd-empty">Nog geen instructies voor de leverancier.</p>
               }
               @if (agreementLoading()) {
-                <p class="pd-empty">Referentiefoto’s laden…</p>
+                <p class="pd-empty">Leveranciersafspraak laden…</p>
               } @else if (agreementLoadError(); as error) {
                 <p class="pd-empty">{{ error }} <button class="linklike" type="button" (click)="retrySupplierAgreement()">Opnieuw proberen</button></p>
               } @else if (agreementPhotos().length) {
@@ -610,7 +596,6 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               }
             </div>
           </section>
-        }
         @if (receiptIssues().length) {
           <section class="pd-card pd-issues" id="pd-issues" aria-labelledby="pd-issues-title">
             <div class="pd-card__head">
@@ -739,10 +724,12 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-issues__order{color:var(--rose-dark);font-size:13px;font-weight:750;text-decoration:none}.pd-issues__order:hover{text-decoration:underline}
     .pd-issues__when{color:var(--muted);font-size:12px}.pd-issues__facts{font-size:12.5px}.pd-issues__facts b{color:var(--rose-dark)}
     .pd-issues__note{grid-column:1/-1;color:var(--ink-2);font-size:12.5px;font-style:italic}.pd-issues__note--empty{color:var(--muted)}
-    .pd-card--editor{padding:0;overflow:hidden}.pd-card--editor app-product-supplier-agreement-editor{display:block}
     .pd-actions--end{justify-content:flex-end;align-items:center;margin:0;padding:10px 18px 14px;border-top:1px solid var(--line)}
     .pd-hint--inline{flex:1;margin:0;min-width:0}
     .pd-agreement{display:grid;gap:12px}
+    .pd-effective-agreement { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); font-size: 12px; }
+    .pd-effective-agreement > span { color: var(--muted); }
+    .pd-effective-agreement > a { justify-self: start; min-height: 32px; display: inline-flex; align-items: center; }
     .pd-note{margin:0;padding:10px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px;line-height:1.5}
     .pd-note p{margin:0;white-space:pre-line}.pd-note p+p,.pd-note ul+p,.pd-note p+ul{margin-top:6px}
     .pd-note ul{margin:0;padding-left:18px}.pd-note ul ul{margin-top:2px;padding-left:16px;color:var(--muted)}.pd-note li{margin:2px 0}
@@ -751,8 +738,6 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-ref img{width:118px;height:118px;border:1px solid var(--line);border-radius:12px;object-fit:cover;background:var(--surface-2)}.pd-ref span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pd-ref i{position:absolute;top:6px;left:6px;padding:2px 7px;border-radius:999px;background:rgb(16 13 12/.72);color:#fff;font-size:10px;font-style:normal;font-weight:750}
     .pd-note__ref{display:inline;padding:0 5px;border:1px solid color-mix(in srgb,var(--rose) 35%,transparent);border-radius:999px;background:var(--surface);color:var(--rose-dark);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}.pd-note__ref:hover{background:var(--rose-soft)}
-    .pd-share{display:flex;flex:1;align-items:center;gap:10px;min-width:0;cursor:pointer}.pd-share input{width:18px;height:18px;flex:none;accent-color:var(--rose)}
-    .pd-share span{display:grid;min-width:0;line-height:1.25}.pd-share b{font-size:12.5px}.pd-share small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
 
     @media(max-width:1180px){
       .pd-product{grid-template-columns:minmax(180px,220px) minmax(0,1fr)}.pd-product>div:last-child{grid-column:1/-1}
@@ -807,25 +792,6 @@ export class ProductDesk extends ProductView {
     return 'Geschenkverpakking';
   }
 
-  /* ---- the supplier note as points, and editing it right here */
-  readonly noteBlocks = computed(() => parseSupplierNote(this.product()?.supplierNote));
-  readonly agreementEditing = signal(false);
-  readonly noteDraft = signal<string | null>(null);
-  readonly noteSaving = signal(false);
-  readonly agreementDirty = computed(() =>
-    (this.noteDraft() ?? '').trim() !== (this.product()?.supplierNote ?? '').trim());
-
-  startAgreement(product: Product): void {
-    this.noteDraft.set(product.supplierNote);
-    this.agreementEditing.set(true);
-  }
-
-  /** Photos save as they go inside the editor; only the note waits for Bewaren. */
-  cancelAgreement(): void {
-    this.agreementEditing.set(false);
-    this.retrySupplierAgreement();
-  }
-
   /** "Reference 2" in the note is a link to that photo. */
   noteParts(text: string): { text: string; ref: number | null }[] {
     const parts: { text: string; ref: number | null }[] = [];
@@ -839,72 +805,6 @@ export class ProductDesk extends ProductView {
     }
     if (last < text.length) parts.push({ text: text.slice(last), ref: null });
     return parts;
-  }
-
-  /* ---- the same agreement for every colour of the series, when asked */
-  private static readonly SHARE_KEY = 'enrosed.agreements.share-colours';
-  readonly shareAcrossColours = signal<boolean>((() => {
-    try { return localStorage.getItem(ProductDesk.SHARE_KEY) === '1'; } catch { return false; }
-  })());
-
-  setShareAcrossColours(on: boolean): void {
-    this.shareAcrossColours.set(on);
-    try { localStorage.setItem(ProductDesk.SHARE_KEY, on ? '1' : '0'); } catch { /* remembered for this visit only */ }
-  }
-
-  /** The other colours of the series at the same supplier: agreements are per supplier. */
-  readonly agreementSiblings = computed(() => {
-    const product = this.product();
-    if (!product) return [];
-    return this.variantMembers()
-      .filter((member) => member.productId !== product.id)
-      .map((member) => this.catalogueProduct(member.productId))
-      .filter((sibling): sibling is Product => !!sibling && sibling.id !== null && sibling.supplierId === product.supplierId);
-  });
-
-  readonly siblingNames = computed(() => this.agreementSiblings()
-    .map((sibling) => sibling.colour || sibling.variantSize || sibling.sku || String(sibling.id)).join(', '));
-
-  async saveAgreement(product: Product): Promise<void> {
-    if (product.id === null) return;
-    this.noteSaving.set(true);
-    try {
-      const note = (this.noteDraft() ?? '').trim();
-      const saved = await this.catalog.updateProduct(product.id, { ...product, supplierNote: note || null });
-      this.product.set(saved);
-      const shared = this.shareAcrossColours() ? await this.shareAgreement(product.id, note || null) : 0;
-      this.agreementEditing.set(false);
-      this.retrySupplierAgreement();
-      this.ui.toast(shared ? `Afspraken bewaard, ook voor ${shared} andere kleur${shared === 1 ? '' : 'en'}` : 'Afspraken bewaard');
-    } catch (failure) {
-      this.ui.toast(messageOf(failure, 'Bewaren mislukt'), 'err');
-    } finally {
-      this.noteSaving.set(false);
-    }
-  }
-
-  /**
-   * Copies the note and the reference photos to the other colours: the
-   * note replaces theirs, photos they do not have yet (same file name and
-   * size) are added with their caption. Their own extra photos stay.
-   */
-  private async shareAgreement(productId: number, note: string | null): Promise<number> {
-    const photos = await this.catalog.supplierAgreementPhotos(productId);
-    let shared = 0;
-    for (const sibling of this.agreementSiblings()) {
-      const id = sibling.id!;
-      const fresh = await this.catalog.product(id);
-      await this.catalog.updateProduct(id, { ...fresh, supplierNote: note });
-      const theirs = await this.catalog.supplierAgreementPhotos(id);
-      for (const photo of photos) {
-        if (theirs.some((own) => own.originalFilename === photo.originalFilename && own.sizeBytes === photo.sizeBytes)) continue;
-        const blob = await this.catalog.photoBlob(photo.viewUrl);
-        await this.catalog.uploadSupplierAgreementPhoto(id,
-          new File([blob], photo.originalFilename, { type: photo.contentType }), photo.caption);
-      }
-      shared++;
-    }
-    return shared;
   }
 
   /* ---- publication points, grouped by where they are fixed */

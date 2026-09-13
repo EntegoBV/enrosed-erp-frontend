@@ -42,3 +42,22 @@ export function supplierAgreementOrderIds(
 ): number[] {
   return orderedSupplierAgreementPhotos(photos).map((photo) => photo.id);
 }
+
+/** Explicit applicability always includes its source; future variants are never implied. */
+export function supplierAgreementSelection(sourceId: number, ids: readonly number[]): number[] {
+  return [...new Set([sourceId, ...ids])].sort((a, b) => a - b);
+}
+
+export function sameSupplierAgreementSelection(left: readonly number[], right: readonly number[]): boolean {
+  return [...new Set(left)].sort((a, b) => a - b).join(',') === [...new Set(right)].sort((a, b) => a - b).join(',');
+}
+
+/** A parent save may update its own text/photos; it must not overwrite a concurrent group change. */
+export function sameSupplierAgreementScope(
+  before: { productId: number; sourceProductId: number; supplierId: number | null; familyId: number | null; variants: { productId: number }[] },
+  after: { productId: number; sourceProductId: number; supplierId: number | null; familyId: number | null; variants: { productId: number }[] },
+): boolean {
+  return before.productId === after.productId && before.sourceProductId === after.sourceProductId &&
+    before.supplierId === after.supplierId && before.familyId === after.familyId &&
+    sameSupplierAgreementSelection(before.variants.map(v => v.productId), after.variants.map(v => v.productId));
+}

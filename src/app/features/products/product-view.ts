@@ -1,9 +1,10 @@
 import { ProductCostHistory } from './product-cost-history';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
+import { ProductSupplierAgreementApi, type ProductSupplierAgreement } from '../../core/api/product-supplier-agreement-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
@@ -62,7 +63,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
     @if (product(); as product) {
 
       @if (desktop.active()) {
-        <app-page-header [title]="product.name" [subtitle]="product.sku || ''"
+        <app-page-header title="Productdetails" [subtitle]="categoryName() || 'Catalogus'"
                          [showBack]="true" [showBell]="false">
           <!-- Walk through this model's colours, then continue with the next
                product model in the canonical catalogue order. -->
@@ -99,232 +100,88 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 
       <div class="content product-view-page erp-workspace erp-workspace--product erp-workspace--view">
         <div class="product-view-canvas erp-workspace__main">
-          <section class="phero erp-workspace__hero" id="product-overview" aria-label="Productoverzicht">
-            <!-- The phone opens with a compact identity and original product photo. -->
+          <section class="pd-overview" id="product-overview" aria-labelledby="product-title">
             @if (!desktop.active()) {
-              <div class="phero__bar">
-                <button class="phero__back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
-                <span class="phero__bar-spacer"></span>
-                <span class="product-phone-caption">Productoverzicht</span>
+              <div class="pd-bar">
+                <button class="pd-back" type="button" aria-label="Terug" (click)="goBack()"><span aria-hidden="true">‹</span></button>
+                <span>{{ categoryName() || 'Catalogus' }}</span>
+                <span class="pd-status" [class.pd-status--warn]="!product.active || product.demo">{{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}</span>
               </div>
             }
-
-            @if (!desktop.active() && product.photos.length) {
-              <div class="phero__shots" role="group" [attr.aria-label]="product.photos.length + ' foto’s'">
-                @for (photo of product.photos; track photo.id) {
-                  <button class="phero__shot" type="button" (click)="lightbox.set($index)"
-                          [attr.aria-label]="'Foto ' + ($index + 1) + ' van ' + product.photos.length + ' vergroten'">
-                    <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + ($index + 1)"
-                         draggable="false" loading="lazy" />
-                    @if (product.photos.length > 1) { <span class="phero__photo-position">{{ $index + 1 }} / {{ product.photos.length }}</span> }
-                  </button>
-                }
-              </div>
-              <a class="phero__photo-manage phero__photo-manage--mobile"
-                 [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
-                Foto’s beheren
-              </a>
-            }
-
-            <div class="phero__top">
-              <div class="phero__id erp-workspace__identity">
-                <span class="phero__eyebrow erp-workspace__eyebrow">{{ categoryName() || 'Catalogus' }}</span>
-                <h1 class="erp-workspace__title">{{ product.name }}</h1>
-                @if (supplierName(); as name) {
-                  <a class="phero__supplier" [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} ›</a>
-                }
-                <p class="phero__meta erp-workspace__meta">
-                  @if (!desktop.active()) {
-                    <span class="phero__status" [class.phero__status--warn]="!product.active || product.demo">
-                      {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
-                    </span>
-                  }
-                  @if (product.colour) {
-                    <span>
-                      @if (product.colourHex) {
-                        <i class="variant-swatch" [style.backgroundColor]="product.colourHex" aria-hidden="true"></i>
-                      }
-                      {{ product.colour }}
-                    </span>
-                  }
-                  @if (product.variantSize) { <span>Maat {{ product.variantSize }}</span> }
-                  @if (product.sku) { <span class="mono">{{ product.sku }}</span> }
-                </p>
-              </div>
+            <div class="pd-identity">
               @if (desktop.active()) {
-                <span class="phero__status phero__status--top"
-                      [class.phero__status--warn]="!product.active || product.demo">
-                  {{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}
-                </span>
+                <div class="pd-eyebrow"><span>{{ categoryName() || 'Catalogus' }}</span><span class="pd-status" [class.pd-status--warn]="!product.active || product.demo">{{ product.active ? (product.demo ? 'Demo' : 'Actief') : 'Inactief' }}</span></div>
+              }
+              <h1 id="product-title">{{ product.name }}</h1>
+              @if (product.colour || product.variantSize) {
+                <p class="pd-option">@if (product.colourHex) { <i [style.backgroundColor]="product.colourHex" aria-hidden="true"></i> }{{ product.colour }}@if (product.colour && product.variantSize) { · }{{ product.variantSize }}</p>
+              }
+              @if (product.sku) { <p class="pd-sku">{{ product.sku }}</p> }
+              @if (supplierName(); as name) { <a class="pd-supplier" [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} <span aria-hidden="true">↗</span></a> }
+            </div>
+
+            <div class="pd-gallery" role="region" aria-roledescription="carousel" [attr.aria-label]="'Foto’s van ' + product.name">
+              @if (product.photos[galleryIndex()] || product.photos[0]; as photo) {
+                <button class="pd-photo" type="button" (click)="openCurrentGalleryPhoto()"
+                        (pointerdown)="startGallerySwipe($event, product.photos.length)" (pointerup)="finishGallerySwipe($event, product.photos.length)" (pointercancel)="cancelGallerySwipe()"
+                        (keydown.arrowleft)="stepGallery(-1, product.photos.length); $event.preventDefault()" (keydown.arrowright)="stepGallery(1, product.photos.length); $event.preventDefault()"
+                        (keydown.home)="selectGalleryPhoto(0); $event.preventDefault()" (keydown.end)="selectGalleryPhoto(product.photos.length - 1); $event.preventDefault()"
+                        aria-keyshortcuts="ArrowLeft ArrowRight Home End" [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
+                  <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
+                  <span class="pd-photo-count">{{ galleryIndex() + 1 }} / {{ product.photos.length }} <span aria-hidden="true">⤢</span></span>
+                </button>
+                @if (product.photos.length > 1) {
+                  <div class="pd-thumbnails" aria-label="Kies een foto, dezelfde variant">
+                    @for (item of product.photos; track item.id) {
+                      <button type="button" [class.is-selected]="$index === galleryIndex()" [attr.aria-pressed]="$index === galleryIndex()" [attr.aria-label]="'Toon foto ' + ($index + 1)" (click)="selectGalleryPhoto($index)">
+                        <img [appAuthSrc]="item.url" alt="" draggable="false" loading="lazy" />
+                      </button>
+                    }
+                  </div>
+                }
+                <span class="sr-only" role="status" aria-live="polite">Foto {{ galleryIndex() + 1 }} van {{ product.photos.length }}</span>
+              } @else {
+                <div class="pd-no-photo"><app-icon name="media" [size]="30" /><span>Nog geen foto</span><small>Toevoegen via Bewerken</small></div>
               }
             </div>
 
-            @if (!product.photos.length) {
-              <p class="phero__nofoto">Nog geen productfoto — voeg er een toe via Bewerken.</p>
-            }
-
-            <div class="phero__facts erp-workspace__facts" [class.phero__facts--photo]="desktop.active() && product.photos.length > 0">
-              @if (desktop.active() && product.photos.length) {
-                <div class="phero__gallery" role="region" aria-roledescription="carousel"
-                     [attr.aria-label]="'Productfoto’s van ' + product.name">
-                  <a class="phero__photo-manage phero__photo-manage--desktop"
-                     [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
-                    Foto’s beheren
-                  </a>
-                  @if (product.photos[galleryIndex()] || product.photos[0]; as photo) {
-                    <button class="phero__gallery-main" type="button"
-                            (click)="openCurrentGalleryPhoto()"
-                            (pointerdown)="startGallerySwipe($event, product.photos.length)"
-                            (pointerup)="finishGallerySwipe($event, product.photos.length)"
-                            (pointercancel)="cancelGallerySwipe()"
-                            (keydown.arrowleft)="stepGallery(-1, product.photos.length); $event.preventDefault()"
-                            (keydown.arrowright)="stepGallery(1, product.photos.length); $event.preventDefault()"
-                            (keydown.home)="selectGalleryPhoto(0); $event.preventDefault()"
-                            (keydown.end)="selectGalleryPhoto(product.photos.length - 1); $event.preventDefault()"
-                            aria-keyshortcuts="ArrowLeft ArrowRight Home End"
-                            [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
-                      <img [appAuthSrc]="photo.url"
-                           [alt]="product.name + ' — foto ' + (galleryIndex() + 1)"
-                           draggable="false" />
-                      @if (product.photos.length > 1) {
-                        <span class="phero__gallery-count">
-                          {{ galleryIndex() + 1 }} / {{ product.photos.length }}
-                        </span>
-                      }
-                    </button>
-                  }
-                  @if (product.photos.length > 1) {
-                    <button class="gallery__step phero__gallery-step phero__gallery-step--previous"
-                            type="button" (click)="stepGallery(-1, product.photos.length)"
-                            aria-label="Vorige productfoto">‹</button>
-                    <button class="gallery__step phero__gallery-step phero__gallery-step--next"
-                            type="button" (click)="stepGallery(1, product.photos.length)"
-                            aria-label="Volgende productfoto">›</button>
-                    <div class="gallery__dots phero__gallery-dots" aria-label="Kies een productfoto">
-                      @for (item of product.photos; track item.id) {
-                        <button class="gallery__dot" type="button"
-                                [class.active]="$index === galleryIndex()"
-                                [attr.aria-current]="$index === galleryIndex() ? 'true' : null"
-                                [attr.aria-label]="'Toon foto ' + ($index + 1)"
-                                (click)="selectGalleryPhoto($index)"></button>
-                      }
-                    </div>
-                    <span class="sr-only" role="status" aria-live="polite">
-                      Foto {{ galleryIndex() + 1 }} van {{ product.photos.length }}
-                    </span>
+            @if (familyLoading()) {
+              <div class="pd-variants pd-variant-state" role="status">Varianten laden…</div>
+            } @else if (familyLoadError()) {
+              <div class="pd-variants pd-variant-state" role="alert"><span>Varianten niet geladen.</span><button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button></div>
+            } @else if (variantMembers().length > 1) {
+              <section class="pd-variants" aria-labelledby="variant-links-title">
+                <div class="pd-section-label"><b id="variant-links-title">Variant</b><span>{{ variantMembers().length }} in deze reeks</span></div>
+                <div class="pd-variant-rail" #variantRail>
+                  @for (member of variantMembers(); track member.productId) {
+                    @if (member.productId === product.id) {
+                      <span class="pd-variant is-current" aria-current="page">@if (member.colourHex) { <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i> }{{ variantOptionLabel(member) }}<span aria-hidden="true">✓</span></span>
+                    } @else {
+                      <a class="pd-variant" [routerLink]="['/products', member.productId]">@if (member.colourHex) { <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i> }{{ variantOptionLabel(member) }}</a>
+                    }
                   }
                 </div>
-              }
-              <!-- The stock tile walks down to the stock card: locations
-                   and the latest movements live on the page itself. -->
-              <button class="phero__fact erp-workspace__fact" type="button" (click)="scrollToStock()">
-                <i class="phero__fact-chev" aria-hidden="true"></i>
-                <small class="erp-workspace__fact-label">Voorraad</small>
-                @if (stockLevels()) {
-                  <strong class="num" [class.phero__neg]="stockTotal() <= 0">{{ stockTotal() | num }}</strong>
-                  <span>{{ stockSummary() }}</span>
-                } @else if (product.inventoryKnown) {
-                  <strong class="num" [class.phero__neg]="product.stockQuantity <= 0">
-                    {{ product.stockQuantity | num }}
-                  </strong>
-                  <span>stuks</span>
-                } @else {
-                  <strong>—</strong>
-                  <span>nog niet bevestigd</span>
-                }
-              </button>
-              <!-- The price tile opens the build-up: every euro from the
-                   factory price to the catalogue price. -->
-              <button class="phero__fact erp-workspace__fact" type="button" [class.phero__fact--open]="priceOpen()"
-                      [attr.aria-expanded]="priceOpen()" (click)="togglePrice(product)">
-                <i class="phero__fact-chev" aria-hidden="true"></i>
-                <small class="erp-workspace__fact-label">Catalogusprijs</small>
-                @if (displayPrice(); as price) {
-                  <strong class="num">{{ price | eur: 2 }}</strong>
-                } @else {
-                  <strong>—</strong>
-                }
-                @if (margin(); as value) {
-                  <span class="phero__gain" [class.phero__gain--neg]="value.eur < 0">
-                    marge {{ value.eur | eur: 2 }} · {{ value.pct }} %
-                  </span>
-                } @else {
-                  <span>{{ hasFixedSalesPrice(product) ? 'vaste prijs' : 'kost + opslag' }}</span>
-                }
-              </button>
-              @if (desktop.active()) {
-                <button class="phero__fact erp-workspace__fact" type="button"
-                        (click)="scrollToDetailSection('product-publication')">
-                  <i class="phero__fact-chev" aria-hidden="true"></i>
-                  <small class="erp-workspace__fact-label">Publicatie</small>
-                  <strong>{{ publicationSummary() }}</strong>
-                  <span>{{ publicationIssues().length ? publicationIssues().length + ' aandachtspunt(en)' : 'website & orderapp' }}</span>
-                </button>
-              }
-            </div>
-
-            @if (expected(); as exp) {
-              <a class="phero__expected" [routerLink]="['/purchasing', exp.orderIds[0]]"
-                 [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
-                +{{ exp.quantity | num }} stuks onderweg{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›
-              </a>
+              </section>
             }
 
+            <div class="pd-facts">
+              <div class="pd-fact">
+                <small>Voorraad</small>
+                @if (stockLevels()) { <strong class="num" [class.warn-text]="stockTotal() < 0">{{ stockTotal() | num }} <em>st.</em></strong><span>{{ stockSummary() === 'stuks' ? 'in voorraad' : stockSummary() }}</span> }
+                @else if (product.inventoryKnown) { <strong class="num" [class.warn-text]="product.stockQuantity < 0">{{ product.stockQuantity | num }} <em>st.</em></strong><span>in voorraad</span> }
+                @else { <strong>—</strong><span>Nog niet bevestigd</span> }
+              </div>
+              <div class="pd-fact pd-fact--price">
+                <small>Catalogusprijs</small>
+                @if (displayPrice() !== null) { <strong class="num">{{ displayPrice() | eur: 2 }}</strong> } @else { <strong>—</strong> }
+                <span>per stuk · excl. btw</span>
+              </div>
+            </div>
+            @if (expected(); as exp) {
+              <a class="pd-expected" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')"><span>{{ exp.quantity | num }} stuks onderweg</span><small>{{ exp.expectedArrival ? 'Verwacht ' + (exp.expectedArrival | dateNl) : 'Bekijk inkooporder' }} ›</small></a>
+            }
             <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
           </section>
-
-          @if (familyLoading()) {
-            <div class="variant-group-state" role="status">Productreeks laden…</div>
-          } @else if (familyLoadError()) {
-            <div class="variant-group-state variant-group-state--error" role="alert">
-              <span>De productreeks is niet geladen.</span>
-              <button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button>
-            </div>
-          } @else if (variantMembers().length > 1) {
-            <section class="variant-links" aria-labelledby="variant-links-title">
-              <b id="variant-links-title">Kies een variant <small>{{ variantMembers().length }}</small></b>
-              <div>
-                @for (member of variantMembers(); track member.productId) {
-                  @if (member.productId === product.id) {
-                    <span class="product-variant-link product-variant-link--current" aria-current="page">
-                      @if (member.colourHex) {
-                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                      }
-                      {{ variantOptionLabel(member) }}
-                    </span>
-                  } @else {
-                    <a class="product-variant-link" [routerLink]="['/products', member.productId]">
-                      @if (member.colourHex) {
-                        <i [style.backgroundColor]="member.colourHex" aria-hidden="true"></i>
-                      }
-                      {{ variantOptionLabel(member) }}
-                    </a>
-                  }
-                }
-              </div>
-            </section>
-          }
-
-          @if (!desktop.active()) {
-            <nav class="product-phone-shortcuts" aria-label="Direct product bewerken">
-              <a data-tone="rose" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'identity' }"><app-icon name="products" [size]="20" /><span>Gegevens</span><small>Kleur &amp; maat</small></a>
-              <a data-tone="green" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'sales' }"><app-icon name="sales" [size]="20" /><span>Verkoopprijs</span><small>Prijs aanpassen</small></a>
-              <a data-tone="amber" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'packaging' }"><app-icon name="purchase" [size]="20" /><span>Omdoos</span><small>Inhoud &amp; maten</small></a>
-            </nav>
-          }
-          <nav id="product-detail-navigation" class="subnav product-detail-nav workflow-nav workflow-nav--wide erp-workspace__nav" aria-label="Productonderdelen">
-            <div class="subnav__rail erp-workspace__nav-rail workflow-nav__rail">
-              @for (item of visibleDetailSections(); track item.id) {
-                <a class="erp-workspace__nav-item workflow-nav__item" [attr.data-tone]="item.tone" [class.active]="activeDetailSection() === item.id"
-                   [class.workflow-nav__active]="activeDetailSection() === item.id"
-                   [attr.aria-current]="activeDetailSection() === item.id ? 'location' : null"
-                   [href]="'#' + item.id" (click)="scrollToDetailSection(item.id, $event)">
-                  <span class="product-detail-nav-icon"><app-icon [name]="item.icon" [size]="17" /></span>
-                  <span class="workflow-nav__copy"><b>{{ item.label }}</b></span>
-                </a>
-              }
-            </div>
-          </nav>
 
           <!-- Desktop: the build-up or the stock book unfolds in its own
                panel right under the hero; on a phone they come up as sheets. -->
@@ -363,7 +220,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             <section class="info-card info-card--internal product-dossier-card erp-workspace__section"
                      id="product-core" aria-labelledby="dossier-title">
               <header class="erp-workspace__section-head">
-                <span class="info-card__icon" aria-hidden="true">01</span>
+                <span class="info-card__icon" aria-hidden="true"><app-icon name="products" [size]="19" /></span>
                 <div><h2 id="dossier-title">Product &amp; prijzen</h2><p>Identificatie, inkoop en verkoop</p></div>
               </header>
 
@@ -451,7 +308,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             <section class="info-card info-card--internal agreement-card erp-workspace__section"
                      id="product-agreements" aria-labelledby="supplier-agreement-card-title">
               <header class="erp-workspace__section-head">
-                <span class="info-card__icon" aria-hidden="true">04</span>
+                <span class="info-card__icon" aria-hidden="true"><app-icon name="pdf" [size]="19" /></span>
                 <div>
                   <h2 id="supplier-agreement-card-title">Afspraken leverancier</h2>
                   <p>Engelse instructies en PDF-referentiefoto’s</p>
@@ -467,6 +324,15 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 <span><b>Alleen leverancier</b><small>Nooit online of in de websitegalerij</small></span>
               </div>
 
+              @if (supplierAgreement(); as agreement) {
+                @if (!agreement.available) {
+                  <p class="agreement-state" role="note">{{ !product.supplierId ? 'Kies eerst een leverancier via Bewerken om afspraken vast te leggen.' : agreement.inherited ? 'Deze gedeelde afspraak past niet meer bij de leverancier of productreeks. Controleer de koppeling via Bewerken.' : 'De leveranciersafspraak is niet beschikbaar. Controleer de leverancier via Bewerken.' }}</p>
+                } @else if (agreement.variants.length > 1) {
+                  <p class="pd-agreement-scope"><b>Gedeelde afspraak</b><span>{{ agreementVariantNames() }}</span>
+                    @if (agreement.inherited) { <a [routerLink]="['/products', agreement.sourceProductId]" fragment="product-agreements">Bronproduct bekijken ›</a> }
+                  </p>
+                }
+              }
               @if (supplierNoteBlocks().length) {
                 <div class="agreement-instruction">
                   <span>Product instruction (English)</span>
@@ -491,7 +357,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               }
 
               @if (agreementLoading()) {
-                <p class="agreement-state" role="status">Afspraakfoto’s laden…</p>
+                <p class="agreement-state" role="status">Leveranciersafspraak laden…</p>
               } @else if (agreementLoadError(); as agreementError) {
                 <div class="agreement-state agreement-state--error" role="alert">
                   <span>{{ agreementError }}</span>
@@ -513,7 +379,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                     </li>
                   }
                 </ol>
-              } @else if (!product.supplierNote) {
+              } @else if (!supplierNoteBlocks().length && supplierAgreement()?.available !== false) {
                 <p class="agreement-state">Nog geen productspecifieke afspraken voor deze leverancier.</p>
               }
             </section>
@@ -524,7 +390,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             <section class="info-card omdoos-card erp-workspace__section"
                      id="product-packaging" aria-labelledby="carton-details-title">
               <header class="erp-workspace__section-head">
-                <span class="info-card__icon" aria-hidden="true">02</span>
+                <span class="info-card__icon" aria-hidden="true"><app-icon name="purchase" [size]="19" /></span>
                 <div><h2 id="carton-details-title">Omdoos</h2><p>Verpakking en logistiek</p></div>
               </header>
               <div class="tiles">
@@ -562,7 +428,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             </section>
             <section class="info-card erp-workspace__section" id="stock-card" aria-labelledby="stock-card-title">
               <header class="erp-workspace__section-head">
-                <span class="info-card__icon" aria-hidden="true">03</span>
+                <span class="info-card__icon" aria-hidden="true"><app-icon name="stock" [size]="19" /></span>
                 <div><h2 id="stock-card-title">Voorraad</h2><p>Locaties en laatste bewegingen</p></div>
                 @if (stockLevels()) {
                   <strong class="stock-card__total num" [class.warn-text]="stockTotal() <= 0">
@@ -715,7 +581,6 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
       </div>
       @if (!desktop.active()) {
         <nav class="erp-workspace__mobile-actions product-view-dock" aria-label="Productacties">
-          <button class="btn erp-workspace__secondary" type="button" (click)="scrollToStock()">Voorraad</button>
           <a class="btn btn--primary erp-workspace__primary" [routerLink]="['/products', product.id, 'edit']">
             Bewerken
           </a>
@@ -842,151 +707,12 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
       </div>
     }
   `,
+  styleUrl: './product-view-overview.scss',
   styles: `
-    :host [data-tone] { --product-tone: var(--rose-dark); }
-    :host [data-tone='green'] { --product-tone: color-mix(in srgb, #218363 85%, var(--ink)); }
-    :host [data-tone='blue'] { --product-tone: color-mix(in srgb, #377ac5 85%, var(--ink)); }
-    :host [data-tone='amber'] { --product-tone: color-mix(in srgb, #bb761b 85%, var(--ink)); }
-    :host [data-tone='purple'] { --product-tone: color-mix(in srgb, #8859c5 85%, var(--ink)); }
-    .product-detail-nav-icon { display: grid; place-items: center; flex: none; width: 27px; height: 27px; border-radius: 9px;
-      background: color-mix(in srgb, var(--product-tone) 10%, var(--surface)); color: var(--product-tone); }
-    .phero__photo-position { position: absolute; right: 8px; bottom: 8px; padding: 4px 7px; border-radius: 99px;
-      background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-size: 9px; font-weight: 650; }
-    :host .variant-links > b > small { display: inline-grid; place-items: center; min-width: 23px; height: 23px; margin-left: 6px;
-      border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 10px; }
-    @media (max-width: 679px) {
-      :host #product-overview.phero.erp-workspace__hero { grid-template-columns: 108px minmax(0, 1fr); gap: 12px;
-        border-bottom: 1px solid var(--line); background: var(--surface); box-shadow: none; padding-bottom: 16px; }
-      :host #product-overview .phero__back { width: 44px; height: 44px; border: 1px solid var(--line); }
-      :host #product-overview .phero__shots { width: 108px; border: 1px solid var(--line); background: var(--surface-2); }
-      :host #product-overview .phero__shot { position: relative; flex-basis: 106px; width: 106px; height: 134px; border-radius: 21px; background: var(--surface-2); }
-      :host #product-overview .phero__photo-manage--mobile { min-height: 44px; display: grid; place-items: center; margin-top: -8px; padding: 0; font-size: 11px; }
-      :host #product-overview .erp-workspace__title { font-size: clamp(20px, 5.8vw, 24px); line-height: 1.1; letter-spacing: -.035em; }
-      :host #product-overview .phero__meta { gap: 7px; }
-      :host #product-overview .phero__facts.erp-workspace__facts { gap: 9px; }
-      :host #product-overview .phero__fact { padding: 13px; min-height: 80px; align-items: flex-start; border-color: var(--line); background: var(--surface-2); }
-      :host #product-overview .phero__fact small { font-size: 10px; text-transform: none; letter-spacing: 0; }
-      :host #product-overview .phero__fact strong { font-size: 21px; }
-      :host #product-overview .phero__fact > span { font-size: 10px; }
-      :host #product-overview .phero__expected { min-height: 44px; border: 1px solid var(--rose-line); border-radius: 14px; font-size: 11px; }
-      :host .variant-links { display: block; margin: 16px 0 0; padding: 0; border: 0; background: none; }
-      :host .variant-links > b { display: flex; align-items: center; padding: 0 2px; margin-bottom: 9px; font-size: 12px; color: var(--ink); }
-      :host .variant-links > div { display: flex; flex-wrap: nowrap; gap: 7px; padding: 1px 1px 6px; overflow-x: auto; scrollbar-width: none; }
-      :host .product-variant-link { flex: none; min-height: 44px; padding: 9px 12px; border-radius: 14px; background: var(--surface); font-size: 12px; }
-      :host .product-variant-link i { width: 18px; height: 18px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
-      :host .product-variant-link--current { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
-      :host .product-phone-shortcuts { gap: 8px; margin: 14px 0 16px; }
-      :host .product-phone-shortcuts > a { gap: 6px; min-height: 104px; padding: 12px 10px; border-radius: 19px; }
-      :host .product-phone-shortcuts app-icon { display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 2px;
-        border-radius: 11px; background: color-mix(in srgb, var(--product-tone) 11%, var(--surface)); color: var(--product-tone); }
-      :host .product-phone-shortcuts span { font-size: 11px; }
-      :host .product-phone-shortcuts small { font-size: 9px; }
-      :host #product-detail-navigation.product-detail-nav { margin: 0 0 16px; border-radius: 19px; box-shadow: 0 2px 8px rgb(20 30 25 / 4%); }
-      :host #product-detail-navigation.product-detail-nav a { display: flex; align-items: center; gap: 7px; min-height: 46px; padding: 8px 11px; }
-      :host #product-detail-navigation.product-detail-nav a.active { color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
-      :host #product-detail-navigation.product-detail-nav .workflow-nav__copy b { font-size: 11px; }
-      :host .product-view-dock { border-radius: 22px 22px 0 0; }
-      :host .product-view-dock .btn { min-height: 48px; border-radius: 16px; }
-      :host .product-phone-shortcuts > a:focus-visible, :host #product-detail-navigation a:focus-visible, :host #product-overview button:focus-visible { outline: 2px solid var(--rose); outline-offset: -3px; }
-    }
     .product-view-page { background: transparent; }
     .product-view-canvas { display: block; width: 100%; max-width: 1080px; margin: 0 auto; }
-    .product-detail-nav { top: var(--appbar-h); margin-top: 10px; overflow: hidden;
-      border: 1px solid rgb(255 255 255 / 72%); border-radius: 15px; box-shadow: var(--sh-1); }
-    .product-view-page .erp-workspace__section, #product-overview { scroll-margin-top: calc(var(--appbar-h) + 66px); }
+    .product-view-page .erp-workspace__section, #product-overview { scroll-margin-top: calc(var(--appbar-h) + 16px); }
     .product-view-dock .erp-workspace__primary { flex: 1; }
-
-    .phero { overflow: hidden; padding: 16px; border-radius: 22px;
-      background: linear-gradient(145deg, #27211f, #151210); color: #fff; box-shadow: var(--sh-2); }
-    .phero__bar { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; }
-    .phero__back { display: grid; place-items: center; width: 34px; height: 34px; padding: 0 0 2px;
-      border: 0; border-radius: 50%; background: rgb(255 255 255 / 12%); color: #fff;
-      font-size: 21px; line-height: 1; cursor: pointer; }
-    .phero__back:active { background: rgb(255 255 255 / 24%); }
-    .phero__bar-spacer { flex: 1; }
-    .phero__edit { padding: 8px 16px; border-radius: 999px; background: #fff; color: #1a1614;
-      font-size: 12.5px; font-weight: 750; text-decoration: none; }
-    .phero__edit:active { opacity: .8; }
-    .phero__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-    .phero__id { min-width: 0; }
-    .phero__eyebrow { color: #efb8c4; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-    .phero h1 { margin: 3px 0 0; color: #fff; font-size: clamp(20px, 5.5vw, 28px); line-height: 1.15; letter-spacing: -.03em; }
-    .phero__supplier { display: block; margin: 3px 0 0; color: rgb(255 255 255 / 60%); font-size: 12px; text-decoration: none; }
-    .phero__supplier:active { color: rgb(255 255 255 / 85%); }
-    .phero__meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
-    .phero__meta span { display: inline-flex; align-items: center; gap: 5px; padding: 3.5px 9px;
-      border-radius: 999px; background: rgb(255 255 255 / 10%); color: rgb(255 255 255 / 85%); font-size: 11px; }
-    .phero__status { background: rgb(255 255 255 / 16%) !important; font-weight: 750; }
-    .phero__status--top { flex: none; display: inline-block; padding: 5px 11px; border-radius: 999px;
-      color: #fff; font-size: 11px; }
-    .phero__status--warn { background: rgb(255 213 122 / 18%); color: #ffd57a; }
-    /* Photos above the identity: the phone shows one generous thumb with
-       a "+n ›" badge in the middle, desktop the whole strip. */
-    .phero__shots { display: flex; gap: 7px; min-width: 0; margin-bottom: 12px; overflow-x: auto; scrollbar-width: none; }
-    .phero__shots::-webkit-scrollbar { display: none; }
-    .phero__shot { position: relative; flex: none; width: 92px; height: 92px; padding: 0; overflow: hidden;
-      border: 1px solid rgb(255 255 255 / 18%); border-radius: 16px; background: rgb(255 255 255 / 6%);
-      cursor: pointer; transition: transform .12s ease; }
-    .phero__shot:active { transform: scale(.95); }
-    .phero__shot:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-    .phero__shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    .phero__shot span { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px;
-      background: rgb(20 16 14 / 62%); color: #fff; font-size: 9px; font-weight: 750; }
-    .phero__photo-manage { z-index: 3; display: inline-flex; align-items: center; min-height: 30px;
-      padding: 5px 10px; border: 1px solid rgb(255 255 255 / 34%); border-radius: 999px;
-      background: rgb(20 16 14 / 68%); color: #fff; font-size: 10.5px; font-weight: 750;
-      text-decoration: none; backdrop-filter: blur(8px); }
-    .phero__photo-manage:hover, .phero__photo-manage:active { background: rgb(20 16 14 / 88%); }
-    .phero__photo-manage--desktop { position: absolute; top: 8px; left: 8px; }
-    .phero__photo-manage--mobile { width: max-content; margin: -5px auto 12px; }
-    .phero__nofoto { margin: 12px 0 0; color: rgb(255 255 255 / 55%); font-size: 11.5px; }
-    .phero__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
-    .phero__facts.erp-workspace__facts { border-color: rgb(255 255 255 / 16%);
-      background: rgb(255 255 255 / 14%); }
-    .phero__fact-chev { position: absolute; top: 9px; right: 9px; display: grid; place-items: center;
-      width: 22px; height: 22px; border-radius: 50%; background: rgb(255 255 255 / 14%); }
-    .phero__fact-chev::before { content: ''; width: 7px; height: 7px; margin-left: -2px;
-      border-right: 1.8px solid #fff; border-bottom: 1.8px solid #fff; transform: rotate(-45deg); }
-    .phero__fact { position: relative; min-width: 0; display: grid; gap: 1px; align-content: start; padding: 10px 34px 10px 11px;
-      border: 0; border-radius: 13px; background: rgb(16 13 12 / 58%); color: #fff; font: inherit; text-align: left; }
-    button.phero__fact { cursor: pointer; }
-    button.phero__fact:hover, button.phero__fact:active { background: rgb(255 255 255 / 16%); }
-    .phero__fact--open { background: rgb(255 255 255 / 18%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 35%); }
-    .phero__fact small { overflow: hidden; color: rgb(255 255 255 / 74%); font-size: 8.5px; font-weight: 780;
-      letter-spacing: .07em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-    .phero__fact strong { overflow: hidden; font-size: clamp(13px, 4vw, 18px); letter-spacing: -.02em;
-      text-overflow: ellipsis; white-space: nowrap; }
-    /* A phone fits the photo plus three tiles only when everything breathes
-       a little less. The value must always survive whole. */
-    @media (max-width: 679px) {
-      /* The hero grows out of the top edge of the screen: square above,
-         rounded below, the photo generous and in the middle. */
-      .phero { margin: -14px -12px 0; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 16px;
-        border-radius: 0 0 22px 22px; }
-      .phero__facts { gap: 6px; }
-      .phero__fact:last-child:nth-child(odd) { grid-column: 1 / -1; }
-      .phero__fact { padding: 8px 34px 8px 10px; border-radius: 12px; }
-      /* A swiper: every photo shows, side by side, snapping under the
-         thumb; with one or two they sit centred. */
-      .phero__shots { justify-content: safe center; margin: 2px -16px 12px; padding: 0 16px;
-        scroll-snap-type: x mandatory; }
-      .phero__shot { width: 132px; height: 132px; border-radius: 22px; scroll-snap-align: center; }
-      .phero__top { flex-direction: column; align-items: center; gap: 9px; }
-      .phero__id { display: flex; flex-direction: column; align-items: center; text-align: center; }
-      .phero__meta { justify-content: center; }
-      .product-detail-nav { top: env(safe-area-inset-top, 0px); margin-inline: -4px; }
-      .product-view-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
-    }
-    @media (min-width: 680px) {
-      .phero__facts:not(.phero__facts--photo) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    }
-    .phero__fact > span { overflow: hidden; color: rgb(255 255 255 / 70%); font-size: 9.5px;
-      text-overflow: ellipsis; white-space: nowrap; }
-    .phero__neg { color: #ff9d92; }
-    .phero__gain { color: #7ddfa6 !important; }
-    .phero__gain--neg { color: #ff9d92 !important; }
-    .phero__expected { display: block; margin-top: 8px; padding: 8px 11px; border-radius: 11px;
-      background: rgb(255 213 122 / 14%); color: #ffd57a; font-size: 11.5px; font-weight: 700; text-decoration: none; }
     .fold-panel { margin-top: 10px; padding: 6px 14px 12px; border: 1px solid rgb(255 255 255 / 70%);
       border-radius: var(--r); background: var(--surface); box-shadow: var(--sh-1); animation: rise .18s ease backwards; }
     .fold-panel .stock-book { margin-top: 4px; padding: 0; border: 0; background: transparent; }
@@ -1170,15 +896,9 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
     .barcode-link:hover { text-decoration: underline dotted; }
 
     @media (min-width: 680px) {
-      .phero { padding: 20px 22px; }
-      .phero__facts--photo { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(150px, 190px)); }
       .stock-rows--fold { margin-top: 10px; border-top: 1px solid var(--line); }
       .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
       .product-dossier-card, .agreement-card { grid-column: 1 / -1; }
-    }
-    @media (min-width: 680px) and (max-width: 759px) {
-      .phero__facts--photo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .phero__gallery { grid-column: 1 / -1; height: 160px; min-height: 0; }
     }
     .price-tabs{margin-bottom:12px}
   `,
@@ -1188,23 +908,12 @@ export class ProductView {
   readonly galleryIndex = signal(0);
   readonly agreementLightbox = signal(-1);
   readonly desktop = inject(DesktopViewport);
+  private readonly variantRail = viewChild<ElementRef<HTMLElement>>('variantRail');
   private galleryPointer: { id: number; x: number; y: number } | null = null;
   private gallerySuppressClickUntil = 0;
-  readonly detailSections = [
-    { id: 'product-overview', label: 'Overzicht', icon: 'products', tone: 'rose' },
-    { id: 'product-core', label: 'Product & prijs', icon: 'sales', tone: 'green' },
-    { id: 'product-packaging', label: 'Omdoos', icon: 'purchase', tone: 'amber' },
-    { id: 'stock-card', label: 'Voorraad', icon: 'stock', tone: 'blue' },
-    { id: 'product-media', label: 'Bestanden', icon: 'media', tone: 'purple' },
-    { id: 'product-agreements', label: 'Afspraken', icon: 'pdf', tone: 'purple' },
-    { id: 'product-publication', label: 'Website', icon: 'countries', tone: 'blue' },
-  ] as const;
-  readonly visibleDetailSections = computed(() => this.desktop.active()
-    ? this.detailSections
-    : this.detailSections.filter((item) => item.id !== 'product-publication'));
-  readonly activeDetailSection = signal<(typeof this.detailSections)[number]['id']>('product-overview');
 
   protected readonly catalog = inject(CatalogApi);
+  private readonly supplierAgreementApi = inject(ProductSupplierAgreementApi);
   protected readonly sourcing = inject(SourcingApi);
   private readonly route = inject(ActivatedRoute);
   protected readonly router = inject(Router);
@@ -1214,10 +923,12 @@ export class ProductView {
 
   readonly product = signal<Product | null>(null);
   readonly agreementPhotos = signal<ProductSupplierAgreementPhoto[]>([]);
+  readonly supplierAgreement = signal<ProductSupplierAgreement | null>(null);
+  readonly agreementVariantNames = computed(() => this.supplierAgreement()?.variants.map((variant) => variant.color || variant.name || variant.sku).join(', ') ?? '');
   /** Earlier containers on which this product arrived short or damaged. */
   readonly receiptIssues = signal<ReceiptIssue[]>([]);
   /** The supplier note as points and sub-points, the way the PDF prints it. */
-  readonly supplierNoteBlocks = computed(() => parseSupplierNote(this.product()?.supplierNote));
+  readonly supplierNoteBlocks = computed(() => parseSupplierNote(this.supplierAgreement()?.available ? this.supplierAgreement()?.note : null));
   readonly agreementLoading = signal(false);
   readonly agreementLoadError = signal<string | null>(null);
 
@@ -1267,7 +978,8 @@ export class ProductView {
   }
 
   startGallerySwipe(event: PointerEvent, total: number): void {
-    if (total < 2 || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (!event.isPrimary) { this.cancelGallerySwipe(); return; }
+    if (total < 2 || (event.pointerType === 'mouse' && event.button !== 0)) return;
     this.galleryPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
     (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
   }
@@ -1295,15 +1007,14 @@ export class ProductView {
   }
 
   scrollToDetailSection(
-    id: (typeof this.detailSections)[number]['id'],
+    id: string,
     event?: Event,
   ): void {
     event?.preventDefault();
     const target = document.getElementById(id);
     if (!target) return;
     if (target instanceof HTMLDetailsElement) target.open = true;
-    this.activeDetailSection.set(id);
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     const url = new URL(window.location.href);
     url.hash = id;
     window.history.replaceState(window.history.state, '', url);
@@ -1566,36 +1277,25 @@ export class ProductView {
     return { eur, pct: Math.round((eur / price) * 100) };
   });
 
-  private detailScrollFrame = 0;
-  private readonly syncActiveDetailSection = () => {
-    if (this.detailScrollFrame) return;
-    this.detailScrollFrame = requestAnimationFrame(() => {
-      this.detailScrollFrame = 0;
-      const railBottom = document.querySelector<HTMLElement>('.product-detail-nav')
-        ?.getBoundingClientRect().bottom ?? 0;
-      const sections = this.visibleDetailSections();
-      let current: (typeof this.detailSections)[number]['id'] = sections[0]?.id ?? 'product-overview';
-      for (const item of sections) {
-        const section = document.getElementById(item.id);
-        if (section && section.getBoundingClientRect().top <= railBottom + 18) current = item.id;
-      }
-      if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 3) {
-        current = sections[sections.length - 1]?.id ?? 'product-overview';
-      }
-      if (this.activeDetailSection() !== current) this.activeDetailSection.set(current);
-    });
-  };
-
   constructor() {
-    window.addEventListener('scroll', this.syncActiveDetailSection, { passive: true });
-    this.destroyRef.onDestroy(() => {
-      window.removeEventListener('scroll', this.syncActiveDetailSection);
-      if (this.detailScrollFrame) cancelAnimationFrame(this.detailScrollFrame);
+    afterRenderEffect(() => {
+      this.product()?.id;
+      this.desktop.active();
+      this.revealSelectedVariant(this.variantRail()?.nativeElement);
     });
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const id = Number(params.get('id'));
       if (Number.isInteger(id) && id > 0) void this.loadProduct(id);
     });
+  }
+
+  private revealSelectedVariant(rail: HTMLElement | undefined): void {
+    const selected = rail?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!rail || !selected) return;
+    const bounds = rail.getBoundingClientRect();
+    const item = selected.getBoundingClientRect();
+    if (item.left < bounds.left) rail.scrollLeft += item.left - bounds.left - 1;
+    else if (item.right > bounds.right) rail.scrollLeft += item.right - bounds.right + 1;
   }
 
   retryFamily(): void {
@@ -1632,8 +1332,11 @@ export class ProductView {
     this.familyLoading.set(false);
     this.lightbox.set(-1);
     this.galleryIndex.set(0);
+    this.cancelGallerySwipe();
+    this.gallerySuppressClickUntil = 0;
     this.agreementLightbox.set(-1);
     this.agreementPhotos.set([]);
+    this.supplierAgreement.set(null);
     this.receiptIssues.set([]);
     this.receivedOrders.set([]);
     this.agreementLoadError.set(null);
@@ -1643,7 +1346,6 @@ export class ProductView {
     void this.sourcing.purchaseOrders()
       .then((orders) => { if (version === this.loadVersion) this.receivedOrders.set(receivedContainersFor(orders, id)); })
       .catch(() => { /* without the list a report simply has no container to point at */ });
-    this.activeDetailSection.set('product-overview');
     void this.loadSupplierAgreement(id, version);
 
     const [product, categories, suppliers] = await Promise.all([
@@ -1671,9 +1373,9 @@ export class ProductView {
           orders.find((item) => item.order.number === product.landedCostSource)?.order.id ?? null);
       }).catch(() => {});
     }
-    const requestedSection = this.visibleDetailSections()
-      .find((item) => `#${item.id}` === window.location.hash)?.id;
-    if (requestedSection) setTimeout(() => this.scrollToDetailSection(requestedSection), 0);
+    const requestedSection = ['product-overview', 'product-core', 'product-packaging', 'stock-card', 'product-media', 'product-agreements', 'product-publication', 'pd-agreements']
+      .find((id) => `#${id}` === window.location.hash);
+    if (requestedSection) setTimeout(() => { if (version === this.loadVersion) this.scrollToDetailSection(requestedSection); }, 0);
   }
 
   private loadCatalogueNavigation(): Promise<void> {
@@ -1699,14 +1401,16 @@ export class ProductView {
     this.agreementLoading.set(true);
     this.agreementLoadError.set(null);
     try {
-      const photos = await this.catalog.supplierAgreementPhotos(productId);
+      const agreement = await this.supplierAgreementApi.get(productId);
       if (version !== this.loadVersion) return;
-      this.agreementPhotos.set(orderedSupplierAgreementPhotos(photos));
+      this.supplierAgreement.set(agreement);
+      this.agreementPhotos.set(agreement.available ? orderedSupplierAgreementPhotos(agreement.photos) : []);
     } catch (failure: unknown) {
       if (version !== this.loadVersion) return;
       this.agreementPhotos.set([]);
+      this.supplierAgreement.set(null);
       this.agreementLoadError.set(messageOf(
-        failure, 'Afspraakfoto’s konden niet worden geladen.'));
+        failure, 'De leveranciersafspraak kon niet worden geladen.'));
     } finally {
       if (version === this.loadVersion) this.agreementLoading.set(false);
     }

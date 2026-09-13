@@ -12,6 +12,7 @@ import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
 } from './purchase-pdf-options';
 import { DEFAULT_PURCHASE_CONTAINER_TYPE, PurchaseContainerType } from './geo';
+import { PurchaseInspectionOptions, purchaseInspectionQuery } from './purchase-inspection-options';
 
 export type {
   NormalizedPurchasePdfOptions, PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions,
@@ -106,6 +107,13 @@ export class SourcingApi {
       : optionsOrRevenue;
     return firstValueFrom(this.http.get(
       api(`/api/purchase-orders/${id}/pdf?${purchasePdfQuery(options)}`),
+      { responseType: 'blob' }));
+  }
+
+  /** Price-free inspection brief and blank checklist for the saved purchase order. */
+  purchaseInspectionPdf(id: number, options: PurchaseInspectionOptions = {}): Promise<Blob> {
+    return firstValueFrom(this.http.get(
+      api(`/api/purchase-orders/${id}/inspection.pdf?${purchaseInspectionQuery(options)}`),
       { responseType: 'blob' }));
   }
 

@@ -1071,10 +1071,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         [productId]="draft().id"
         [supplierId]="draft().supplierId"
         [persistedSupplierId]="savedSupplierId()"
+              [productDirty]="dirty()"
         [supplierName]="selectedSupplierName()"
         [note]="draft().supplierNote"
         [disabled]="saving() || photoUploading() || translationSaving()"
         (noteChange)="patch({ supplierNote: $event })"
+        (applicabilitySaved)="agreementGroupSaved()"
       />
 
       <!-- Public content is desktop work: long texts, translations and
@@ -2542,6 +2544,13 @@ export class ProductEditor implements OnDestroy {
   readonly agreementEditor = viewChild(ProductSupplierAgreementEditor);
   readonly agreementBusy = computed(() => this.agreementEditor()?.busy() ?? false);
   readonly agreementDirty = computed(() => this.agreementEditor()?.dirty() ?? false);
+  private agreementGroupError: string | null = null;
+  agreementGroupSaved(): void {
+    if (this.agreementGroupError !== null && this.saveError() === this.agreementGroupError) {
+      this.saveError.set(null);
+    }
+    this.agreementGroupError = null;
+  }
   readonly selectedSupplierName = computed(() =>
     this.suppliers().find((supplier) => supplier.id === this.draft().supplierId)?.name ?? '');
   readonly selectedCategoryName = computed(() =>
@@ -3635,10 +3644,13 @@ export class ProductEditor implements OnDestroy {
         : await this.agreementEditor()?.flush(saved.id) ?? null;
       this.markClean();
       const agreementRemaining = agreementResult?.remaining ?? 0;
-      if (this.agreementDirty() || agreementRemaining > 0) {
-        const partialMessage = agreementRemaining > 0
+      if (this.agreementDirty() || agreementRemaining > 0 || agreementResult?.groupPending) {
+        const partialMessage = agreementResult?.groupPending
+          ? 'Product opgeslagen · de kleurkoppeling is nog niet opgeslagen. Controleer de afspraak en pas de kleuren opnieuw toe.'
+          : agreementRemaining > 0
           ? `Product opgeslagen · ${agreementRemaining} afspraakfoto${agreementRemaining === 1 ? '' : '’s'} nog niet geüpload. Probeer de resterende afspraken opnieuw op te slaan.`
           : 'Product opgeslagen · één of meer bijschriften bij de afspraakfoto’s zijn nog niet opgeslagen. Probeer opnieuw.';
+        this.agreementGroupError = agreementResult?.groupPending ? partialMessage : null;
         this.saveError.set(partialMessage);
         this.savedHere.set(true);
         this.ui.toast(partialMessage, 'err');

@@ -11,6 +11,8 @@ import {
   untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { ProductSupplierAgreementApi, type ProductSupplierAgreement } from '../../core/api/product-supplier-agreement-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { messageOf } from '../../core/api/errors';
@@ -18,6 +20,9 @@ import { ProductSupplierAgreementPhoto } from '../../core/api/models';
 import { Ui, escapeHtml } from '../../shared/ui';
 import {
   SUPPLIER_AGREEMENT_CAPTION_MAX,
+  supplierAgreementSelection,
+  sameSupplierAgreementSelection,
+  sameSupplierAgreementScope,
   moveSupplierAgreementPhoto,
   normalizeSupplierAgreementCaption,
   orderedSupplierAgreementPhotos,
@@ -43,13 +48,14 @@ export interface SupplierAgreementFlushResult {
   savedCaptions: number;
   uploaded: number;
   remaining: number;
+  groupPending?: boolean;
 }
 
 /** Product- and supplier-scoped instructions that can only enter a supplier PDF. */
 @Component({
   selector: 'app-product-supplier-agreement-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, FormsModule, ProductSupplierAgreementPhotoViewer],
+  imports: [AuthImage, FormsModule, RouterLink, ProductSupplierAgreementPhotoViewer],
   template: `
     <div class="card__head agreement-head">
       <div>
@@ -65,15 +71,47 @@ export interface SupplierAgreementFlushResult {
         <div>
           <b>Alleen voor {{ supplierName() || 'de gekozen leverancier' }}</b>
           <p>
-            Deze tekst en foto’s verschijnen uitsluitend in de Engelse leveranciersversie van de
-            inkooporder. Ze worden nooit website- of catalogusmedia.
+            Deze tekst en foto’s verschijnen alleen in leveranciersdocumenten en het inspectierapport. Ze worden nooit website- of catalogusmedia.
           </p>
         </div>
       </div>
 
+      @if (scopePersisted() && agreement(); as shared) {
+        @if (!shared.available) {
+          <p class="photo-error" role="alert">De gekoppelde afspraak past niet meer bij deze familie of leverancier. Koppel los om de eigen afspraken terug te zien.</p>
+        }
+        @if (shared.inherited) {
+          <section class="shared-agreement" aria-label="Gedeelde leveranciersafspraak">
+            <b>Gedeelde afspraak · {{ sourceLabel() }}</b>
+            <p>Deze tekst en foto’s worden één keer in het leveranciersdocument getoond, samen met de gekoppelde kleuren. Je eigen eerdere afspraken blijven bewaard.</p>
+            <div class="shared-agreement__actions">
+              <a [routerLink]="['/products', shared.sourceProductId, 'edit']" [queryParams]="{tab: 'agreements'}">Afspraak bij bronkleur bewerken</a>
+              <button type="button" [disabled]="disabled() || productDirty() || busy()" (click)="unlinkAgreement()">Eigen afspraken gebruiken</button>
+            </div>
+            @if (productDirty()) { <small>Sla eerst de productwijzigingen op.</small> }
+          </section>
+        } @else if (shared.familyId && shared.available && shared.eligibleVariants.length > 1) {
+          <section class="shared-agreement" aria-label="Toepasselijke kleuren">
+            <b>Dezelfde afspraak voor meerdere kleuren</b>
+            <p>Selecteer de kleuren waarvoor deze opgeslagen tekst en foto’s gelden. Eigen afspraken van die kleuren blijven bewaard en komen terug na loskoppelen.</p>
+            <div class="agreement-colours">
+              @for (variant of shared.eligibleVariants; track variant.productId) {
+                <label><input type="checkbox" [checked]="selectedVariantIds().includes(variant.productId)"
+                  [disabled]="disabled() || agreementReadOnly() || busy() || variant.productId === shared.sourceProductId"
+                  (change)="toggleVariant(variant.productId, $any($event.target).checked)" />
+                  <span><b>{{ variant.color || variant.name }}</b><small>{{ variant.sku }}{{ variant.productId === shared.sourceProductId ? ' · bronkleur' : variant.hasOwnAgreement ? ' · eigen afspraken blijven bewaard' : '' }}</small></span>
+                </label>
+              }
+            </div>
+            <button type="button" [disabled]="disabled() || agreementReadOnly() || busy() || !selectionDirty() || !sharingReady()" (click)="saveApplicability()">Kleuren toepassen</button>
+            @if (!sharingReady()) { <small>Sla eerst de producttekst en foto’s op. De kleurkeuze wordt daarbij ook bewaard.</small> }
+          </section>
+        }
+      }
+
       <label class="instruction-field" for="supplier-agreement-note">
         <span
-          ><b>Product instruction (English)</b><small>{{ (note() || '').length }}/4000</small></span
+          ><b>Product instruction (English)</b><small>{{ (displayNote() || '').length }}/4000</small></span
         >
         <textarea
           class="textarea"
@@ -81,13 +119,13 @@ export interface SupplierAgreementFlushResult {
           rows="5"
           maxlength="4000"
           lang="en"
-          [disabled]="disabled() || !supplierId()"
-          [ngModel]="note()"
+          [disabled]="disabled() || agreementReadOnly() || !supplierId()"
+          [ngModel]="displayNote()"
           (ngModelChange)="changeNote($event)"
           (keydown)="noteKeydown($event)"
           placeholder="Example: Match the approved colour sample. Centre the logo and use cardboard corner protection."
         ></textarea>
-        <small>Printed below this product in the supplier order agreement. "- " starts a point, Enter continues the list, Tab makes a sub-point (Shift+Tab back). Refer to a photo as "Reference 2".</small>
+        <small>Included once for the selected variants in supplier and inspection documents. "- " starts a point, Enter continues the list, Tab makes a sub-point (Shift+Tab back). Refer to a photo as "Reference 2".</small>
       </label>
 
       <section
@@ -104,7 +142,7 @@ export interface SupplierAgreementFlushResult {
           </div>
           <label
             class="add-photo"
-            [class.add-photo--disabled]="disabled() || !supplierId() || busy()"
+            [class.add-photo--disabled]="disabled() || agreementReadOnly() || !supplierId() || busy()"
           >
             <span aria-hidden="true">+</span>
             {{ uploading() ? 'Uploaden…' : 'Foto’s toevoegen' }}
@@ -112,7 +150,7 @@ export interface SupplierAgreementFlushResult {
               type="file"
               multiple
               accept="image/jpeg,image/png,image/gif,image/webp"
-              [disabled]="disabled() || !supplierId() || busy()"
+              [disabled]="disabled() || agreementReadOnly() || !supplierId() || busy()"
               (change)="chooseFiles($event)"
             />
           </label>
@@ -160,7 +198,7 @@ export interface SupplierAgreementFlushResult {
                 </button>
                 <div class="photo-copy">
                   <b title="{{ photo.originalFilename }}">{{ photo.originalFilename }}</b>
-                  <button class="refer-link" type="button" [disabled]="disabled()"
+                  <button class="refer-link" type="button" [disabled]="disabled() || agreementReadOnly()"
                           [title]="'Zet \u201cReference ' + (i + 1) + '\u201d in de tekst op de plek van de cursor'"
                           (click)="insertReference(i + 1)">↪ Verwijs in de tekst als Reference {{ i + 1 }}</button>
                   <label>
@@ -173,7 +211,7 @@ export interface SupplierAgreementFlushResult {
                       rows="2"
                       lang="en"
                       [attr.maxlength]="captionMax"
-                      [disabled]="disabled() || busy()"
+                      [disabled]="disabled() || agreementReadOnly() || busy()"
                       [ngModel]="captionDraft(photo)"
                       (ngModelChange)="changeCaption(photo.id, $event)"
                       placeholder="Example: Front view — logo centred"
@@ -183,7 +221,7 @@ export interface SupplierAgreementFlushResult {
                     <button
                       class="save-caption"
                       type="button"
-                      [disabled]="disabled() || busy()"
+                      [disabled]="disabled() || agreementReadOnly() || busy()"
                       (click)="saveCaption(photo)"
                     >
                       Bijschrift opslaan
@@ -197,7 +235,7 @@ export interface SupplierAgreementFlushResult {
                 >
                   <button
                     type="button"
-                    [disabled]="disabled() || busy() || i === 0"
+                    [disabled]="disabled() || agreementReadOnly() || busy() || i === 0"
                     title="Eerder in PDF"
                     (click)="move(photo.id, -1)"
                   >
@@ -205,7 +243,7 @@ export interface SupplierAgreementFlushResult {
                   </button>
                   <button
                     type="button"
-                    [disabled]="disabled() || busy() || i === orderedPhotos().length - 1"
+                    [disabled]="disabled() || agreementReadOnly() || busy() || i === orderedPhotos().length - 1"
                     title="Later in PDF"
                     (click)="move(photo.id, 1)"
                   >
@@ -214,7 +252,7 @@ export interface SupplierAgreementFlushResult {
                   <button
                     class="danger"
                     type="button"
-                    [disabled]="disabled() || busy()"
+                    [disabled]="disabled() || agreementReadOnly() || busy()"
                     title="Afspraakfoto verwijderen"
                     (click)="confirmRemove(photo)"
                   >
@@ -273,7 +311,7 @@ export interface SupplierAgreementFlushResult {
               <button
                 class="retry-upload"
                 type="button"
-                [disabled]="disabled() || busy()"
+                [disabled]="disabled() || agreementReadOnly() || busy()"
                 (click)="uploadPending()"
               >
                 {{ hasFailedPending() ? 'Mislukte uploads opnieuw proberen' : 'Nu uploaden' }}
@@ -653,6 +691,15 @@ export interface SupplierAgreementFlushResult {
       border-radius: 12px;
       color: var(--muted);
     }
+    .shared-agreement { display:grid; gap:10px; padding:16px; border:1px solid var(--line); border-radius:16px; background:var(--surface-2, #f7f8fa); }
+    .shared-agreement p,.shared-agreement small { margin:0; color:var(--muted); font-size:12px; line-height:1.5; }
+    .shared-agreement button,.shared-agreement a { min-height:44px; padding:10px 14px; border:1px solid var(--line); border-radius:10px; background:var(--surface, white); color:var(--ink); font:inherit; font-size:12px; text-decoration:none; }
+    .shared-agreement__actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .agreement-colours { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:6px; }
+    .agreement-colours label { display:flex; align-items:center; gap:10px; padding:8px; min-height:44px; }
+    .agreement-colours input { width:20px; height:20px; flex-shrink:0; }
+    .agreement-colours span { display:grid; gap:3px; min-width:0; }
+    .agreement-colours b { font-size:12px; }
     .empty-photos > span {
       font-size: 25px;
     }
@@ -705,6 +752,7 @@ export interface SupplierAgreementFlushResult {
 })
 export class ProductSupplierAgreementEditor implements OnDestroy {
   private readonly catalog = inject(CatalogApi);
+  private readonly agreements = inject(ProductSupplierAgreementApi);
   private readonly ui = inject(Ui);
   private loadVersion = 0;
   private pendingId = 0;
@@ -717,7 +765,11 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   readonly supplierName = input('');
   readonly note = input<string | null>(null);
   readonly disabled = input(false);
+  readonly productDirty = input(false);
+  readonly agreement = signal<ProductSupplierAgreement | null>(null);
+  readonly selectedVariantIds = signal<number[]>([]);
   readonly noteChange = output<string | null>();
+  readonly applicabilitySaved = output<void>();
 
   readonly photos = signal<ProductSupplierAgreementPhoto[]>([]);
   readonly pending = signal<PendingAgreementPhoto[]>([]);
@@ -735,6 +787,19 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
       this.supplierId() !== null &&
       this.supplierId() === this.persistedSupplierId(),
   );
+  readonly agreementReadOnly = computed(() => this.scopePersisted() &&
+    (this.loading() || !this.agreement() || !!this.agreement()?.inherited || !this.agreement()?.available));
+  readonly displayNote = computed(() => this.scopePersisted() && this.agreement()?.inherited ? this.agreement()?.note ?? null : this.note());
+  readonly sourceLabel = computed(() => {
+    const shared = this.agreement();
+    const source = shared?.variants.find(v => v.productId === shared.sourceProductId);
+    return source?.color || source?.name || `product ${shared?.sourceProductId ?? ''}`;
+  });
+  readonly selectionDirty = computed(() => !!this.agreement() && !sameSupplierAgreementSelection(
+    this.selectedVariantIds(), this.agreement()!.variants.map(v => v.productId)));
+  readonly sharingReady = computed(() => this.scopePersisted() && !this.productDirty() &&
+    !this.pendingCount() && !this.orderedPhotos().some(p => this.captionChanged(p)) &&
+    normalizeSupplierAgreementCaption(this.note()) === normalizeSupplierAgreementCaption(this.agreement()?.note));
   readonly orderedPhotos = computed(() =>
     orderedSupplierAgreementPhotos(
       this.photos().filter((photo) => photo.supplierId === this.supplierId()),
@@ -751,7 +816,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   readonly busy = computed(() => this.mutating() || this.uploading());
   readonly dirty = computed(
     () =>
-      this.pendingCount() > 0 || this.orderedPhotos().some((photo) => this.captionChanged(photo)),
+      this.selectionDirty() || this.pendingCount() > 0 || this.orderedPhotos().some((photo) => this.captionChanged(photo)),
   );
 
   constructor() {
@@ -777,6 +842,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   }
 
   changeNote(value: string): void {
+    if (this.agreementReadOnly() || this.disabled()) return;
     this.noteChange.emit(value.trim() ? value : null);
   }
 
@@ -786,6 +852,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
    * indents the line or selection into a sub-point, Shift+Tab backs out.
    */
   noteKeydown(event: KeyboardEvent): void {
+    if (this.agreementReadOnly() || this.disabled()) return;
     const area = event.target as HTMLTextAreaElement;
     if (event.key === 'Tab') {
       event.preventDefault();
@@ -822,6 +889,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
 
   /** Puts "Reference n" in the note where the cursor is, or at the end. */
   insertReference(number: number): void {
+    if (this.agreementReadOnly() || this.disabled()) return;
     const area = document.getElementById('supplier-agreement-note') as HTMLTextAreaElement | null;
     if (!area) return;
     const label = `Reference ${number}`;
@@ -842,6 +910,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   }
 
   changeCaption(photoId: number, value: string): void {
+    if (this.agreementReadOnly() || this.disabled()) return;
     this.captionDrafts.update((drafts) => ({
       ...drafts,
       [photoId]: value.slice(0, SUPPLIER_AGREEMENT_CAPTION_MAX),
@@ -859,6 +928,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   }
 
   chooseFiles(event: Event): void {
+    if (this.agreementReadOnly() || this.disabled()) return;
     const input = event.target as HTMLInputElement;
     const files = [...(input.files ?? [])];
     input.value = '';
@@ -900,7 +970,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
 
   async uploadPending(productId = this.productId()): Promise<SupplierAgreementFlushResult> {
     const supplierId = this.supplierId();
-    if (productId === null || supplierId === null || this.uploading()) {
+    if (this.agreementReadOnly() || productId === null || supplierId === null || this.uploading()) {
       return { savedCaptions: 0, uploaded: 0, remaining: this.pendingCount() };
     }
     this.uploading.set(true);
@@ -937,6 +1007,8 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
       this.uploading.set(false);
     }
     const remaining = this.pending().filter((photo) => photo.supplierId === supplierId).length;
+    if (uploaded && this.productId() === productId && this.persistedSupplierId() === supplierId)
+      await this.loadPhotos(productId, supplierId, true);
     if (uploaded) this.ui.toast(`${uploaded} afspraakfoto${uploaded === 1 ? '' : '’s'} toegevoegd`);
     if (remaining)
       this.ui.toast(`${remaining} afspraakfoto${remaining === 1 ? '' : '’s'} niet geüpload`, 'err');
@@ -945,7 +1017,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
 
   async saveCaption(photo: ProductSupplierAgreementPhoto): Promise<boolean> {
     const productId = this.productId();
-    if (productId === null || this.mutating() || !this.captionChanged(photo)) return true;
+    if (this.agreementReadOnly() || photo.productId !== productId || productId === null || this.mutating() || !this.captionChanged(photo)) return true;
     this.mutating.set(true);
     try {
       const saved = await this.catalog.updateSupplierAgreementPhotoCaption(
@@ -954,6 +1026,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
         normalizeSupplierAgreementCaption(this.captionDraft(photo)),
       );
       this.replacePhoto(saved);
+      await this.loadPhotos(productId, this.supplierId()!, true);
       this.ui.toast('Engels bijschrift opgeslagen');
       return true;
     } catch (failure: unknown) {
@@ -965,6 +1038,12 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   }
 
   async flush(productId: number): Promise<SupplierAgreementFlushResult> {
+    if (this.scopePersisted() && (this.agreement()?.inherited || this.agreement()?.available === false)) {
+      return { savedCaptions: 0, uploaded: 0, remaining: 0 };
+    }
+    const previous = this.agreement();
+    const selected = this.selectedVariantIds();
+    const groupChanged = this.selectionDirty();
     let savedCaptions = 0;
     for (const photo of this.orderedPhotos()) {
       if (!this.captionChanged(photo)) continue;
@@ -974,12 +1053,23 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
       savedCaptions++;
     }
     const uploads = await this.uploadPending(productId);
+    if (this.supplierId() !== null) await this.loadPhotos(productId, this.supplierId()!, true);
+    if (groupChanged && !uploads.remaining) {
+      const fresh = this.agreement();
+      if (!previous || !fresh || !sameSupplierAgreementScope(previous, fresh) ||
+          normalizeSupplierAgreementCaption(this.note()) !== normalizeSupplierAgreementCaption(fresh.note)) {
+        this.ui.toast('De gedeelde afspraak is gewijzigd. Controleer de kleuren en pas ze opnieuw toe.', 'err');
+        return { ...uploads, savedCaptions, groupPending: true };
+      }
+      this.selectedVariantIds.set(selected);
+      if (!await this.saveApplicability(true)) return { ...uploads, savedCaptions, groupPending: true };
+    }
     return { ...uploads, savedCaptions };
   }
 
   async move(photoId: number, direction: -1 | 1): Promise<void> {
     const productId = this.productId();
-    if (productId === null || this.mutating()) return;
+    if (this.agreementReadOnly() || productId === null || this.mutating()) return;
     const before = this.photos();
     const movedScope = moveSupplierAgreementPhoto(this.orderedPhotos(), photoId, direction);
     if (
@@ -996,6 +1086,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
         supplierAgreementOrderIds(movedScope),
       );
       this.replaceSupplierPhotos(saved);
+      await this.loadPhotos(productId, this.supplierId()!, true);
     } catch (failure: unknown) {
       this.photos.set(before);
       this.ui.toast(messageOf(failure, 'PDF-volgorde opslaan mislukt'), 'err');
@@ -1005,6 +1096,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   }
 
   confirmRemove(photo: ProductSupplierAgreementPhoto): void {
+    if (this.agreementReadOnly() || this.disabled()) return;
     const productId = this.productId();
     if (productId === null) return;
     this.ui.confirm(
@@ -1018,6 +1110,52 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
     );
   }
 
+  toggleVariant(productId: number, checked: boolean): void {
+    const shared = this.agreement();
+    if (!shared || shared.inherited || this.disabled() || this.busy()) return;
+    this.selectedVariantIds.update(ids => supplierAgreementSelection(shared.sourceProductId,
+      checked ? [...ids, productId] : ids.filter(id => id !== productId)));
+  }
+
+  async saveApplicability(afterProductSave = false): Promise<boolean> {
+    const shared = this.agreement();
+    if (!shared || shared.inherited || !shared.available || !this.scopePersisted() || this.busy() ||
+        (!afterProductSave && (this.disabled() || !this.sharingReady()))) return false;
+    this.mutating.set(true);
+    const productId = this.productId();
+    const version = this.loadVersion;
+    try {
+      const saved = await this.agreements.saveApplicability(shared.sourceProductId, shared.revision,
+        supplierAgreementSelection(shared.sourceProductId, this.selectedVariantIds()));
+      if (version !== this.loadVersion || productId !== this.productId()) return false;
+      this.agreement.set(saved);
+      this.selectedVariantIds.set(saved.variants.map(v => v.productId));
+      this.applicabilitySaved.emit();
+      this.ui.toast('Leveranciersafspraak gekoppeld aan de gekozen kleuren');
+      return true;
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Kleuren koppelen mislukt; laad de afspraak opnieuw.'), 'err');
+      return false;
+    } finally { this.mutating.set(false); }
+  }
+
+  async unlinkAgreement(): Promise<void> {
+    const shared = this.agreement();
+    if (!shared?.inherited || this.disabled() || this.productDirty() || !this.scopePersisted() || this.busy()) return;
+    this.mutating.set(true);
+    const version = this.loadVersion;
+    try {
+      const saved = await this.agreements.unlink(shared.productId, shared.revision);
+      if (version !== this.loadVersion || this.productId() !== saved.productId) return;
+      this.agreement.set(saved);
+      this.selectedVariantIds.set(saved.variants.map(v => v.productId));
+      this.replaceSupplierPhotos(saved.photos);
+      this.noteChange.emit(saved.note);
+      this.ui.toast('Eigen afspraken teruggezet; de bronafspraak blijft behouden');
+    } catch (failure) { this.ui.toast(messageOf(failure, 'Loskoppelen mislukt'), 'err'); }
+    finally { this.mutating.set(false); }
+  }
+
   reload(): void {
     const productId = this.productId();
     const supplierId = this.persistedSupplierId();
@@ -1028,7 +1166,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
     productId: number,
     photo: ProductSupplierAgreementPhoto,
   ): Promise<void> {
-    if (this.mutating()) return;
+    if (this.agreementReadOnly() || photo.productId !== productId || this.mutating()) return;
     this.mutating.set(true);
     try {
       await this.catalog.deleteSupplierAgreementPhoto(productId, photo.id);
@@ -1039,6 +1177,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
         return next;
       });
       this.previewIndex.set(-1);
+      await this.loadPhotos(productId, this.supplierId()!, true);
       this.ui.toast('Afspraakfoto verwijderd');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Afspraakfoto verwijderen mislukt'), 'err');
@@ -1053,6 +1192,8 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
     this.loadedKey = key;
     this.previewIndex.set(-1);
     this.photos.set([]);
+    this.agreement.set(null);
+    this.selectedVariantIds.set([]);
     this.captionDrafts.set({});
     this.loadError.set(null);
     if (productId === null || supplierId === null) {
@@ -1063,19 +1204,29 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
     void this.loadPhotos(productId, supplierId);
   }
 
-  private async loadPhotos(productId: number, supplierId: number): Promise<void> {
+  private async loadPhotos(productId: number, supplierId: number, preserveSelection = false): Promise<void> {
     const version = ++this.loadVersion;
+    const unsavedCaptions = new Map(this.orderedPhotos().filter(p => this.captionChanged(p))
+      .map(p => [p.id, this.captionDraft(p)]));
     this.loading.set(true);
     this.loadError.set(null);
     try {
-      const photos = await this.catalog.supplierAgreementPhotos(productId);
+      const agreement = await this.agreements.get(productId);
       if (
         version !== this.loadVersion ||
         this.productId() !== productId ||
         this.persistedSupplierId() !== supplierId
       )
         return;
-      this.replaceSupplierPhotos(photos.filter((photo) => photo.supplierId === supplierId));
+      const preserve = preserveSelection && this.agreement() && sameSupplierAgreementScope(this.agreement()!, agreement);
+      this.agreement.set(agreement);
+      if (!preserve) this.selectedVariantIds.set(agreement.variants.map(v => v.productId));
+      this.replaceSupplierPhotos(agreement.photos.filter((photo) => photo.supplierId === supplierId));
+      if (preserveSelection && !agreement.inherited) this.captionDrafts.update(drafts => {
+        const next = { ...drafts };
+        for (const photo of agreement.photos) if (unsavedCaptions.has(photo.id)) next[photo.id] = unsavedCaptions.get(photo.id)!;
+        return next;
+      });
     } catch (failure: unknown) {
       if (version !== this.loadVersion) return;
       this.loadError.set(messageOf(failure, 'Afspraakfoto’s konden niet worden geladen.'));

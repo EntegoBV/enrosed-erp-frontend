@@ -3,6 +3,9 @@ import test from 'node:test';
 import type { ProductSupplierAgreementPhoto } from '../src/app/core/api/models.ts';
 import {
   moveSupplierAgreementPhoto,
+  supplierAgreementSelection,
+  sameSupplierAgreementSelection,
+  sameSupplierAgreementScope,
   normalizeSupplierAgreementCaption,
   orderedSupplierAgreementPhotos,
   supplierAgreementCaptionChanged,
@@ -65,4 +68,25 @@ test('captions compare like the backend: trimmed and blank becomes null', () => 
     false,
   );
   assert.equal(supplierAgreementCaptionChanged(photo(1, 0), 'Front logo centred'), true);
+});
+
+
+test('explicit colours retain the source and never imply unselected or future colours', () => {
+  const selection = [7, 3, 7];
+  assert.deepEqual(supplierAgreementSelection(5, selection), [3, 5, 7]);
+  assert.deepEqual(selection, [7, 3, 7]);
+  assert.deepEqual(supplierAgreementSelection(5, []), [5]);
+  assert.equal(sameSupplierAgreementSelection([7, 5, 3], [3, 5, 7]), true);
+  assert.equal(sameSupplierAgreementSelection([5, 7], [5, 7, 9]), false);
+});
+
+test('a product save cannot silently adopt concurrent supplier, family or applicability changes', () => {
+  const before = { productId: 5, sourceProductId: 5, supplierId: 20, familyId: 10, variants: [{ productId: 5 }, { productId: 7 }] };
+  assert.equal(sameSupplierAgreementScope(before, { ...before, variants: [...before.variants].reverse() }), true);
+  for (const after of [
+    { ...before, supplierId: 21 }, { ...before, familyId: 11 },
+    { ...before, sourceProductId: 7 }, { ...before, productId: 9 },
+    { ...before, variants: [{ productId: 5 }] },
+    { ...before, variants: [...before.variants, { productId: 9 }] },
+  ]) assert.equal(sameSupplierAgreementScope(before, after), false);
 });
