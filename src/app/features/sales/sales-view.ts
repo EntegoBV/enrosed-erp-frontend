@@ -1016,7 +1016,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .hero-stepper { margin-top:10px;padding:9px 12px;border-radius:13px;background:rgb(255 255 255/.08);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none }
     .hero-stepper::-webkit-scrollbar { display:none }
     .hero-stepper .stepper__dot { width:19px;height:19px;background:transparent;border-color:rgb(255 255 255/.32);color:rgb(255 255 255/.55);font-size:9.5px }
-    .hero-stepper .stepper__label { color:rgb(255 255 255/.5);font-size:10.5px;white-space:nowrap }
+    .hero-stepper .stepper__label { color:rgb(255 255 255/.5);font-size:10.5px;white-space:normal;overflow-wrap:anywhere;max-width:100%;text-wrap:balance }
+    .status-reopen { width:100%;min-height:44px;padding:5px;border:1px solid rgb(255 255 255/.55);border-radius:11px;background:rgb(255 255 255/.08);color:#fff;font:inherit;font-size:11px;white-space:normal;cursor:pointer }
+    .status-reopen:disabled { opacity:.45;cursor:default }
+    .status-reopen:focus-visible { outline:2px solid #fff;outline-offset:3px }
     .hero-stepper .stepper__step--done .stepper__dot,.hero-stepper .stepper__step--now .stepper__dot { background:#fff;border-color:#fff;color:var(--rose-dark) }
     .hero-stepper .stepper__step--done .stepper__label,.hero-stepper .stepper__step--now .stepper__label { color:#fff }
     .hero-stepper .stepper__step--now .stepper__label { font-weight:700 }
