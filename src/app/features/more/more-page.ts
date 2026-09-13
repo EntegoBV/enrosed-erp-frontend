@@ -30,7 +30,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
 
       </nav>
       <div class="more-section-label">Werkruimtes</div>
-      <details class="card more-group more-group--analyses" name="meer-groepen" open>
+      <details class="card more-group more-group--analyses" name="meer-groepen">
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
           <span class="more-group__copy"><strong>Analyses</strong>
