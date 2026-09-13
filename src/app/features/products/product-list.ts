@@ -93,7 +93,6 @@ interface ProductSwipe {
         <!-- Filters and sorting fold away behind one button: the search box
              is what you reach for; the rest is there when you need it. -->
         <button class="filter-toggle" type="button"
-                aria-label="Filters en sortering"
                 [class.filter-toggle--active]="activeFilterCount() > 0"
                 [attr.aria-expanded]="filtersOpen()"
                 (click)="filtersOpen.set(!filtersOpen())">
@@ -174,18 +173,6 @@ interface ProductSwipe {
         }
       </section>
 
-      @if (categories().length) {
-        <nav class="catalog-categories" aria-label="Productcategorie kiezen">
-          <button type="button" [class.is-active]="categoryFilter() === null"
-                  [attr.aria-pressed]="categoryFilter() === null" (click)="categoryFilter.set(null)">Alles</button>
-          @for (category of categories(); track category.id) {
-            <button type="button" [class.is-active]="categoryFilter() === category.id"
-                    [attr.aria-pressed]="categoryFilter() === category.id"
-                    (click)="categoryFilter.set(category.id)">{{ category.name }}</button>
-          }
-        </nav>
-      }
-
       @for (section of sections(); track section.key) {
         <!-- One card per category, its name above the white: the eye finds
              "Glas" faster than it reads twelve product names. -->
@@ -196,12 +183,10 @@ interface ProductSwipe {
               <small>{{ section.count }}</small>
             </h2>
           }
-          <div class="card catalog-section-card">
+          <div class="card">
             <div class="list">
             @for (group of section.groups; track group.key) {
-              <div class="catalog-family-card" [class.catalog-family-card--open]="isOpen(group)">
-                <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
-              </div>
+              <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
             }
             </div>
           </div>
@@ -460,15 +445,6 @@ interface ProductSwipe {
       background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
       box-shadow: 0 5px 18px rgb(31 25 22 / 4%);
     }
-    .catalog-categories { display: flex; align-items: center; gap: 7px; margin: 0 0 20px; padding: 2px 1px 6px;
-      overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
-    .catalog-categories::-webkit-scrollbar { display: none; }
-    .catalog-categories > button { flex: none; min-height: 44px; padding: 10px 17px; border: 1px solid var(--line);
-      border-radius: 99px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px;
-      font-weight: 600; cursor: pointer; scroll-snap-align: start; transition: background 160ms ease, color 160ms ease; }
-    .catalog-categories > button.is-active { border-color: var(--rose-dark); background: var(--rose-dark); color: #fff; }
-    .catalog-categories > button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
-    .catalog-family-card + .catalog-family-card { border-top: 1px solid var(--line); }
     .sr-only {
       position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
       overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -677,57 +653,7 @@ interface ProductSwipe {
     @media (max-width: 679px) {
       .stock-expected { white-space: normal; max-width: 82px; text-align: right; line-height: 1.2; }
       .btn--icon-mobile { min-width: 40px; padding: 0 10px; }
-      .catalog-tools { margin-bottom: 10px; padding: 0; gap: 8px; border: 0; background: none; box-shadow: none; }
-      .catalog-search__input { min-height: 48px; border-radius: 16px; background: var(--surface); font-size: 16px; }
-      .catalog-search__clear { width: 44px; height: 44px; }
-      .filter-toggle { min-width: 48px; min-height: 48px; justify-content: center; padding: 0 10px; border-radius: 16px; }
-      .filter-grid { padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
-      .filter-field__select, .filter-sort__box { min-height: 44px; }
-      .catalog-categories { margin-right: -12px; margin-bottom: 12px; padding-right: 12px; }
-      .section { margin-bottom: 24px; }
-      .section-head { padding: 0 2px; margin-bottom: 10px; font-size: 18px; letter-spacing: -.025em; }
-      .section-head small { display: grid; place-items: center; min-width: 26px; min-height: 26px; padding: 2px 7px;
-        border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
-      .catalog-section-card { overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-      .catalog-section-card > .list { display: grid; gap: 12px; }
-      .catalog-family-card, .catalog-family-card + .catalog-family-card { overflow: hidden; border: 1px solid var(--line);
-        border-radius: 22px; background: var(--surface); box-shadow: 0 2px 5px rgb(25 30 28 / 3%); }
-      .catalog-family-card--open { border-color: var(--rose-line); }
-      .catalog-family-card .list-item { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 11px 13px;
-        width: 100%; min-width: 0; padding: 14px; border: 0; background: var(--surface); text-align: left; }
-      .catalog-family-card .thumb { width: 72px; height: 82px; padding: 4px; border: 1px solid var(--line);
-        border-radius: 15px; background: var(--surface-2); object-fit: contain; }
-      .catalog-family-card .list-item__body { align-self: center; min-width: 0; }
-      .catalog-family-card .product-row__primary, .catalog-family-card .product-row__title { display: flex; flex-wrap: wrap; gap: 5px; }
-      .catalog-family-card .product-row__title strong { width: 100%; white-space: normal; display: -webkit-box;
-        -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 15px; line-height: 1.25; letter-spacing: -.02em; }
-      .catalog-family-card .variant-label { font-size: 12px; color: var(--muted); }
-      .catalog-family-card .product-row__sku { font-size: 10px; margin-top: 6px; overflow-wrap: anywhere; white-space: normal; }
-      .catalog-family-card .group-head__meta { flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px; }
-      .catalog-family-card .group-head__count { color: var(--rose-dark); font-size: 11px; }
-      .catalog-family-card .group-head__dots i { width: 15px; height: 15px; }
-      .catalog-family-card .group-head__end, .catalog-family-card .product-row__end { grid-column: 1 / -1;
-        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 9px;
-        width: 100%; padding: 11px 0 0; border-top: 1px solid var(--line); text-align: left; }
-      .catalog-family-card .product-row__prices { display: contents; }
-      .catalog-family-card .product-row__prices > div, .catalog-family-card .product-row__stock { display: flex;
-        flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
-      .catalog-family-card .product-row__prices span, .catalog-family-card .product-row__stock > span { font-size: 10px; color: var(--muted); }
-      .catalog-family-card .product-row__prices strong, .catalog-family-card .stock { font-size: 14px; line-height: 1.2; }
-      .catalog-family-card .product-row__prices > div:last-child strong { color: var(--rose-dark); }
-      .catalog-family-card .stock-expected { max-width: 100%; font-size: 9px; text-align: left; }
-      .catalog-family-card .group-head--open { box-shadow: none; }
-      .catalog-family-card .group-body { padding: 5px 8px 8px; border-top: 1px solid var(--rose-line); box-shadow: none; }
-      .catalog-family-card .list-item--nested { grid-template-columns: 44px minmax(0, 1fr); gap: 9px; padding: 12px;
-        border: 1px solid var(--line); border-radius: 15px; }
-      .catalog-family-card .swipe--nested { margin-top: 6px; border-radius: 15px; }
-      .catalog-family-card .thumb--sm { width: 44px; height: 48px; border-radius: 10px; }
-      .catalog-family-card .list-item--nested .variant-label { font-size: 13px; color: var(--ink); font-weight: 650; }
-      .catalog-family-card .list-item--nested .product-row__end { padding-top: 9px; }
-      .catalog-family-card .list-item--nested .stock, .catalog-family-card .list-item--nested .product-row__prices strong { font-size: 12px; }
-      .catalog-family-card .list-item:focus-visible { outline: 2px solid var(--rose); outline-offset: -3px; }
     }
-    @media (prefers-reduced-motion: reduce) { .catalog-categories > button { transition: none; } }
   `,
 })
 export class ProductList {
@@ -744,7 +670,7 @@ export class ProductList {
   readonly activeFilterCount = computed(() =>
     (this.categoryFilter() !== null ? 1 : 0)
     + (!this.familyLoadError() && this.statusFilter() !== 'ALL' ? 1 : 0)
-    + (this.sortKey() !== 'STOCK_SMART' ? 1 : 0));
+    + (this.sortKey() !== 'NAME_ASC' ? 1 : 0));
   readonly sortOptions = computed<{ key: SortKey; label: string }[]>(() => [
     { key: 'STOCK_SMART', label: 'Voorraad (standaard)' },
     { key: 'NAME_ASC', label: 'Naam A–Z' },
@@ -1091,7 +1017,7 @@ export class ProductList {
     this.query.set('');
     this.categoryFilter.set(null);
     this.statusFilter.set('ALL');
-    this.sortKey.set('STOCK_SMART');
+    this.sortKey.set('NAME_ASC');
   }
 
   startSwipe(event: PointerEvent, product: Product): void {
