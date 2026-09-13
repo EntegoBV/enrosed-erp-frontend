@@ -3295,7 +3295,7 @@ export class SalesEditor {
   }
   private async confirmReopen(orderId: number): Promise<void> {
     const data = this.view();
-    if (!data || data.order.id !== orderId || !this.canReopen(data) || this.dirty() || this.busy() || this.documentMutationBusy()) return;
+    if (!data || data.order.id !== orderId || !this.canReopen(data) || this.dirty() || this.busy() || this.saving() || this.sending() || this.documentMutationBusy()) return;
     this.documentMutationBusy.set(true); this.busy.set(true);
     try {
       const fresh = await this.sales.reopenQuote(orderId);

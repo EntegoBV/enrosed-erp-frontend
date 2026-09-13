@@ -10,6 +10,7 @@ import { normalizeSalesPdfOptions, salesPdfQuery } from '../src/app/core/api/sal
 import { messageOf } from '../src/app/core/api/errors.ts';
 import * as availability from '../src/app/features/sales/sales-line-availability.ts';
 import { customerMessageIsReadOnly } from '../src/app/features/sales/quote-status.ts';
+import { canReopenSalesDocument } from '../src/app/features/sales/sales-reopen.ts';
 
 async function isolate(file: string, name: string, names: string[], globals: Record<string, any> = {}) {
   const source = ts.createSourceFile(file, await readFile(new URL(`../src/app/${file}.ts`, import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
@@ -20,7 +21,7 @@ async function isolate(file: string, name: string, names: string[], globals: Rec
   const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, clearTimeout, Map, messageOf, withPaymentState, customerMessageIsReadOnly, ...availability, ...globals }); return exports[name];
 }
 const Editor = await isolate('features/sales/sales-editor', 'SalesEditor', [
-  'allProductsUnavailable', 'documentMutationBusy', 'mobileSplitBusy', 'mobileFinanciallyLocked', 'mobileAcceptsDraft', 'canEdit', 'canEditTerms', 'dirty', 'adopt', 'enqueue', 'save', 'paymentReceived', 'setLine', 'saveFreight',
+  'allProductsUnavailable', 'documentMutationBusy', 'mobileSplitBusy', 'mobileFinanciallyLocked', 'mobileAcceptsDraft', 'canEdit', 'canEditTerms', 'dirty', 'adopt', 'enqueue', 'save', 'paymentReceived', 'setLine', 'saveFreight', 'confirmReopen',
 ]);
 const Desk = await isolate('features/sales/sales-desk', 'SalesDesk', ['markSent', 'shipGoods']);
 Object.setPrototypeOf(Desk.prototype, Editor.prototype);
@@ -186,3 +187,51 @@ for (const [action, endpoint] of [['markSent', 'markInvoiceSent'], ['shipGoods',
     assert.deepEqual(toasts, []); assert.equal(screen.documentMutationBusy(), false);
   });
 }
+
+
+test('reopening an invoice adopts its saved baseline without emailing or writing a draft', async () => {
+  const { screen, calls } = harness(document('VERZONDEN', { sentAt: '2026-09-01T10:00:00Z' }));
+  Object.assign(screen, {
+    canReopen: canReopenSalesDocument, busy: signal(false), sending: signal(false), customerPortalLink: signal('history'),
+    loadCustomerPortalLink: async () => {}, work: { refresh: async () => {} },
+  });
+  screen.sales.reopenQuote = async (id: number) => { calls.push(`POST reopen ${id}`); return document('CONCEPT', { sentAt: '2026-09-01T10:00:00Z' }); };
+  await screen.confirmReopen(65);
+  assert.deepEqual(calls, ['POST reopen 65']);
+  assert.equal(screen.view().order.status, 'CONCEPT'); assert.equal(screen.dirty(), false);
+  assert.equal(screen.view().order.sentAt, '2026-09-01T10:00:00Z');
+  assert.equal(screen.documentMutationBusy(), false); assert.equal(screen.busy(), false);
+});
+
+test('a delayed reopen confirmation cannot overlap saving or sending, or apply to another document', async () => {
+  for (const flag of ['saving', 'sending'] as const) {
+    const { screen, calls } = harness(document('VERZONDEN'));
+    Object.assign(screen, { canReopen: canReopenSalesDocument, busy: signal(false), sending: signal(false) });
+    screen[flag].set(true); screen.sales.reopenQuote = async () => { calls.push('unexpected'); return document('CONCEPT'); };
+    await screen.confirmReopen(65); assert.deepEqual(calls, []);
+  }
+  const { screen, calls } = harness(document('VERZONDEN'));
+  Object.assign(screen, { canReopen: canReopenSalesDocument, busy: signal(false), sending: signal(false),
+    customerPortalLink: signal('keep-other-link'), work: { refresh: async () => { calls.push('refresh'); } },
+    loadCustomerPortalLink: async () => { calls.push('load link'); },
+  });
+  let finish!: (value: any) => void;
+  screen.sales.reopenQuote = () => new Promise(resolve => { finish = resolve; });
+  const pending = screen.confirmReopen(65);
+  assert.equal(screen.documentMutationBusy(), true);
+  const next = document('CONCEPT', { id: 66 }); screen.adopt(next);
+  finish(document('CONCEPT')); await pending;
+  assert.equal(screen.view().order.id, 66); assert.equal(screen.dirty(), false);
+  assert.equal(screen.customerPortalLink(), 'keep-other-link'); assert.deepEqual(calls, []);
+});
+
+test('reopen visibility never invents a way around receipts, shipment, signature or a converted quote', () => {
+  for (const status of ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'AFGEWEZEN', 'VERLOPEN', 'GEANNULEERD'])
+    assert.equal(canReopenSalesDocument(document(status) as any), true);
+  for (const status of ['CONCEPT', 'GEACCEPTEERD', 'BETAALD', 'WIJZIGINGEN_VOORGESTELD'])
+    assert.equal(canReopenSalesDocument(document(status) as any), false);
+  for (const key of ['paidAt', 'goodsShippedAt', 'archivedAt', 'signedByName'])
+    assert.equal(canReopenSalesDocument(document('VERZONDEN', { [key]: 'retained fact' }) as any), false);
+  assert.equal(canReopenSalesDocument({ ...document('UITGEREIKT'), paymentSummary: { payments: [{ id: 1 }] } } as any), false);
+  assert.equal(canReopenSalesDocument({ ...document('VERZONDEN', { docType: 'OFFERTE' }), invoicedAsId: 70 } as any), false);
+});
