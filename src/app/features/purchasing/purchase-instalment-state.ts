@@ -52,6 +52,6 @@ export function purchaseInstalmentState(
     left -= covered;
     const open = settled ? 0 : Math.max(0, full - covered);
     return { due: step.due, label: step.label, full: full / 100, covered: covered / 100,
-      amount: open / 100, settled: !!settled, state: open <= 5 ? 'paid' : reached(step.due) ? 'due' : 'later' };
+      amount: open / 100, settled: !!settled, state: open === 0 ? 'paid' : reached(step.due) ? 'due' : 'later' };
   });
 }

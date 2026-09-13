@@ -6,7 +6,7 @@
  */
 
 export type Currency = 'EUR' | 'USD' | 'CNY';
-export type MarkupMode = 'PRODUCT' | 'ORDER';
+export type MarkupMode = 'PRODUCT' | 'ORDER' | 'CONTAINER_COST';
 /** How a container-level cost is shared out; MANUAL is the buyer's own split per line, for the Enrosed kost only. */
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL' | 'SEPARATE';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
@@ -2090,6 +2090,8 @@ export interface FromPurchaseOrderRequest {
   customerId: number;
   pricing: 'CUSTOMER' | 'COST';
   markupPct: number;
+  /** Fixed markup per product unit, used instead of markupPct when present. */
+  markupEurPerUnit?: number | null;
   partner: boolean;
   sharePct: number | null;
   costPct: number | null;

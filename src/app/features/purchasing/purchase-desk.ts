@@ -11,8 +11,11 @@ import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
+import { PurchasePaymentOverview } from './purchase-payment-overview';
 import { PurchasePaymentResult } from './purchase-payment-result';
 import { PurchasePaymentScope } from './purchase-payment-scope';
+import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
+import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -54,7 +57,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentResult, PurchasePaymentScope, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, PurchasePaymentScope, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -453,21 +456,9 @@ type DeskRow =
                     </div>
                     <div class="field">
                       <label for="dk-terms">Betaalafspraak</label>
-                      <select class="select" id="dk-terms" [ngModel]="data.order.paymentTerms ?? 'THIRDS'" (ngModelChange)="patch({ paymentTerms: $event })">
-                        @for (terms of paymentTermOptions; track terms.value) { <option [value]="terms.value">{{ terms.label }}</option> }
-                      </select>
+                      <button class="btn purchase-payment-plan-trigger" id="dk-terms" type="button" [disabled]="saving() || payingBusy() || paymentPlanBusy()" (click)="openPaymentPlan()">{{ planLabel(data.order) }} <span>Wijzigen</span></button>
                     </div>
-                    @if ((data.order.paymentTerms ?? 'THIRDS') === 'CUSTOM') {
-                      <div class="field pay-split">
-                        <label>Eigen verdeling</label>
-                        <div class="pay-split__grid">
-                          <label><span>Bestelling</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctOrdered ?? ''" (ngModelChange)="patch({ payPctOrdered: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
-                          <label><span>Vertrek</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctShipped ?? ''" (ngModelChange)="patch({ payPctShipped: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
-                          <label><span>Aankomst</span><span class="input-affix"><input class="input num right" type="number" min="0" max="100" step="0.5" inputmode="decimal" [ngModel]="data.order.payPctArrived ?? ''" (ngModelChange)="patch({ payPctArrived: $event === '' || $event === null ? null : +$event })" /><i class="input-affix__suffix">%</i></span></label>
-                        </div>
-                        <span class="hint" [class.hint--warn]="splitTotalOf(data.order) !== 100">Samen {{ splitTotalOf(data.order) | num }} %{{ splitTotalOf(data.order) === 100 ? '' : ' · moet 100 % zijn' }}.</span>
-                      </div>
-                    }
+
                     @if (data.order.status !== 'CONCEPT') {
                       <div class="field">
                         <label for="dk-tracking">Track &amp; trace <span class="opt"></span></label>
@@ -609,7 +600,7 @@ type DeskRow =
                           <span class="input-affix__suffix">EUR</span>
                         </div>
                         <span class="hint">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="openManualSplit()">zelf verdelen per product</button> }</span>
-                        
+
                       </div>
                       <div class="field">
                         <label for="dk-inspection">Inspectiekost <span class="opt"></span></label>
@@ -709,8 +700,8 @@ type DeskRow =
 
                 @case ('pay') {
                   <div class="desk-pay-head">
-                    <strong>@if (paymentStateLoading()) { Betalingen laden… } @else if (paymentStateError()) { Betalingen niet actueel } @else if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }</strong>
-                    <small>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</small>
+                    <strong>@if (paymentStateLoading()) { Betalingen laden… } @else if (paymentStateError()) { Betalingen niet actueel } @else { Betalingen }</strong>
+                    <small>Afspraak, betalingen en resterend saldo per ontvanger.</small>
                   </div>
                   @if (paymentStateError()) {
                 <div class="alert alert--warn payment-refresh-error" role="alert">
@@ -721,130 +712,17 @@ type DeskRow =
               @if (!paymentStateError()) {
               <div class="payment-state-content" [class.is-loading]="paymentStateLoading()"
                    [attr.inert]="paymentStateLoading() ? '' : null" [attr.aria-busy]="paymentStateLoading()">
-              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
-                  <app-purchase-sales-links [documents]="relatedSalesDocs()" />
+              <app-purchase-payment-overview [view]="data" [payments]="payments()" [documents]="documents()" [editable]="true" [dirty]="dirty()"
+                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
+                (add)="openPayment($event.amount, $event.label, $event.payee, $event.due ?? null)"
+                (edit)="editPayment($event)" (proof)="attachProof($event)" (settle)="reviewPayment($event)" (download)="downloadDocument($event)" />
+              <app-purchase-payment-result [view]="data" [showManagement]="false" />
+              <details class="purchase-payment-details">
+                <summary>Kostprijs en nacalculatie <span>Berekening en PDF</span></summary>
+                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
+              </details>
+              <app-purchase-sales-links [documents]="relatedSalesDocs()" />
               <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
-                  <div class="pay-stream">
-                    <div class="pay-stream__head">
-                      <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht (in de prijs)' : 'de goederen' }}</small></span>
-                      <span class="num"><b>{{ paidTo('SUPPLIER') | eur }}</b><small>van {{ supplierOwed() | eur }}</small></span>
-                    </div>
-                    <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SUPPLIER'), supplierOwed())"></div></div>
-                    @if (plannedInstalments(); as plan) {
-                      @if (plan.length) {
-                        <ol class="instalments">
-                          @for (step of plan; track step.label) {
-                            <li [class.instalments__item--paid]="step.state === 'paid'" [class.instalments__item--due]="step.state === 'due'">
-                              <i aria-hidden="true">{{ step.state === 'paid' ? '✓' : (step.state === 'due' ? '!' : '·') }}</i>
-                              <span class="instalments__what"><b>{{ step.label }}</b>
-                                @if (step.state === 'paid') {
-                                  @if (step.settled && step.covered < step.full) {
-                                <small>{{ step.covered | eur }} betaald · <b>Afgerekend</b><br />Begroot {{ step.full | eur }}</small>
-                              } @else {
-                                <small>{{ step.full | eur }} · betaald</small>
-                              }
-                                } @else if (step.covered > 0) {
-                                  <small><s>{{ step.full | eur }}</s> nog {{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : ' · later' }}</small>
-                                } @else {
-                                  <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
-                                }</span>
-                              @if (step.state === 'due') { <button class="btn btn--sm" type="button" (click)="openPayment(step.amount, step.label, 'SUPPLIER', step.due)">Noteren</button> }
-                            </li>
-                          }
-                        </ol>
-                      }
-                    }
-                    @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
-                      <div class="pay-line">
-                        <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
-                          <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}@if (proofsOf(payment.id).length) { · {{ proofsOf(payment.id).length }} bewijs}</small></span>
-                        <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
-                        <span class="pay-line__actions">
-                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
-                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
-                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
-                        </span>
-                      </div>
-                    }
-                    @if (settledFor('SUPPLIER')) {
-                      <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
-                    } @else if (reconciliationStream('SUPPLIER')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('SUPPLIER')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('SUPPLIER') > 0) && supplierOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald{{ paidTo('SUPPLIER') < supplierOwed() - 0.005 ? ' · ' + ((supplierOwed() - paidTo('SUPPLIER')) | eur) + ' minder, binnen de marge van ' + (tolerance | eur: 0) : '' }}</p> }
-                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SUPPLIER')">+ Betaling aan de leverancier</button>
-                  </div>
-                  @if (!isDdp()) {
-                    <div class="pay-stream">
-                      <div class="pay-stream__head">
-                        <span><b>Douane &amp; transport</b><small>invoerrechten, {{ data.payable?.freightInSupplierPrice ? '' : 'zeevracht, ' }}lokale kosten · na aankomst</small></span>
-                        <span class="num"><b>{{ paidTo('LOGISTICS') | eur }}</b><small>van {{ logisticsOwed() | eur }}</small></span>
-                      </div>
-                      <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
-                      @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
-                        <div class="pay-line">
-                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
-                            <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
-                          <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
-                          <span class="pay-line__actions">
-                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
-                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
-                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
-                        </span>
-                        </div>
-                      }
-                      @if (settledFor('LOGISTICS')) {
-                        <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('LOGISTICS') === 0 ? '' : (notableDifferenceFor('LOGISTICS') > 0 ? ' · ' + (notableDifferenceFor('LOGISTICS') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('LOGISTICS') | eur) + ' minder betaald') }}</p>
-                      } @else if (reconciliationStream('LOGISTICS')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('LOGISTICS')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('LOGISTICS') > 0) && logisticsOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
-                      <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'LOGISTICS')">+ Betaling douane &amp; transport</button>
-                    </div>
-                  }
-                  <div class="pay-stream">
-                    <div class="pay-stream__head">
-                      <span><b>Inspectie &amp; andere kosten</b><small>{{ separateOwed() > 0 ? 'inspectie en de kosten op de order, apart betaald' : 'geen inspectie of andere kosten op de order' }}</small></span>
-                      <span class="num"><b>{{ paidTo('SEPARATE') | eur }}</b><small>van {{ separateOwed() | eur }}</small></span>
-                    </div>
-                    @if (separateOwed() > 0) { <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SEPARATE'), separateOwed())"></div></div> }
-                    @for (payment of paymentsTo('SEPARATE'); track payment.id) {
-                        <div class="pay-line">
-                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
-                            <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
-                          <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
-                          <span class="pay-line__actions">
-                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
-                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
-                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
-                        </span>
-                        </div>
-                    }
-                    @if (settledFor('SEPARATE')) {
-                      <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SEPARATE') === 0 ? '' : (notableDifferenceFor('SEPARATE') > 0 ? ' · ' + (notableDifferenceFor('SEPARATE') | eur) + ' meer betaald' : ' · ' + (-notableDifferenceFor('SEPARATE') | eur) + ' minder betaald') }}</p>
-                    } @else if (reconciliationStream('SEPARATE')?.status === 'OVERPAID') { <p class="pay-stream__review">{{ reconciliationStream('SEPARATE')?.overpaidEur | eur }} meer betaald. Controleer of er een correctie volgt of markeer de betaling als vereffend.</p> } @else if (!(openFor('SEPARATE') > 0) && separateOwed() > 0) { <p class="pay-stream__done">✓ Volledig betaald</p> }
-                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'SEPARATE')">+ Betaling inspectie of andere kost</button>
-                  </div>
-                  <div class="pay-stream">
-                    <div class="pay-stream__head">
-                      <span><b>Andere betalingen</b><small>bankkosten, koerier, wat de container verder kostte · niet afgesproken, wel geteld</small></span>
-                      <span class="num"><b>{{ paidTo('OTHER') | eur }}</b><small>extra</small></span>
-                    </div>
-                    @for (payment of paymentsTo('OTHER'); track payment.id) {
-                        <div class="pay-line">
-                          <span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b>
-                            <small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }}}</small></span>
-                          <span class="num pay-line__amount">{{ payment.amountEur | eur }}</span>
-                          <span class="pay-line__actions">
-                          @if (proofsOf(payment.id).length) { <small class="pay-line__proof" title="Betaalbewijs in het dossier">📎 {{ proofsOf(payment.id).length }}</small> }
-                          <button class="pay-line__btn" type="button" title="Aanpassen" aria-label="Betaling aanpassen" (click)="editPayment(payment)">✎</button>
-                          <button class="pay-line__btn" type="button" title="Bankafschrift toevoegen" aria-label="Bankafschrift toevoegen" (click)="attachProof(payment)">📎</button>
-                        </span>
-                        </div>
-                    }
-                    <button class="pay-stream__add" type="button" (click)="openPayment(undefined, undefined, 'OTHER')">+ Andere betaling</button>
-                  </div>
-                  @if (data.costing.totals.extraRevenueEur) {
-                    <div class="pay-note">
-                      <span><b>Enrosed kost</b><small>eigen opslag · geen betaling</small></span>
-                      <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span>
-                    </div>
-                  }
-                  <app-purchase-payment-result [view]="data" [editable]="true" [busy]="payingBusy() || saving() || payments() === null" (manage)="reviewPayment($event)" />
               </div>
               }
                 }
@@ -1059,8 +937,8 @@ type DeskRow =
         <app-file-picker title="Document uit de bibliotheek" (picked)="pickLibraryDocument($event)" (closed)="libraryOpen.set(false)" />
       }
       @if (addingDocument(); as doc) {
-        <app-sheet title="Document toevoegen" (closed)="addingDocument.set(null)">
-          <div body>
+        <app-sheet title="Document toevoegen" (closed)="closeDocument()">
+          <div body [attr.inert]="uploadingDocument() ? '' : null">
             <div class="form-grid">
               <div class="field">
                 <label for="dk-doc-kind">Soort</label>
@@ -1073,7 +951,7 @@ type DeskRow =
                 <input class="input" id="dk-doc-label" placeholder="bijv. KBC 23/08, factuur 2e helft"
                        [ngModel]="doc.label" (ngModelChange)="addingDocument.set({ ...doc, label: $event })" />
               </div>
-              @if (doc.kind === 'PAYMENT_PROOF' && paymentsTo('SUPPLIER').length + paymentsTo('LOGISTICS').length) {
+              @if (doc.kind === 'PAYMENT_PROOF' && (payments() ?? []).length) {
                 <div class="field span-2">
                   <label for="dk-doc-payment">Hoort bij betaling <span class="opt"></span></label>
                   <select class="select" id="dk-doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
@@ -1085,19 +963,24 @@ type DeskRow =
                 </div>
               }
               <div class="field span-2">
-                <label for="dk-doc-file">Bestand</label>
+                @if (doc.kind === 'PAYMENT_PROOF') {
+                  <app-payment-proof-picker [files]="doc.files ?? []" [maxFiles]="proofSlots(doc.paymentId)" [disabled]="uploadingDocument()"
+                    (filesChange)="addingDocument.set({ ...doc, files: $event, file: null })" />
+                } @else {
+                  <label for="dk-doc-file">Bestand</label>
                 <div class="doc-source">
                   <input class="input" id="dk-doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv"
                          (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
                   <button class="btn" type="button" (click)="libraryOpen.set(true)">Uit bibliotheek</button>
                 </div>
                 <span class="hint">{{ doc.file ? doc.file.name + ' · ' : '' }}PDF, foto of Office-bestand, tot 25 MB.</span>
+                }
               </div>
             </div>
           </div>
           <div foot style="display:contents">
-            <button class="btn" type="button" (click)="addingDocument.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="uploadingDocument() || !doc.file" (click)="confirmDocument()">
+            <button class="btn" type="button" (click)="closeDocument()">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="uploadingDocument() || !(doc.file || doc.files?.length)" (click)="confirmDocument()">
               {{ uploadingDocument() ? 'Bezig…' : 'Bewaren' }}
             </button>
           </div>
@@ -1144,36 +1027,41 @@ type DeskRow =
         </app-sheet>
       }
 
+      @if (paymentPlanOrder(); as agreement) {
+        <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
+          (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
+      }
       @if (paying(); as pay) {
-        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + paymentTitle(pay.payee)" (closed)="paying.set(null)">
-          <div body>
+        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + paymentTitle(pay.payee)" (closed)="closePayment()">
+          <div body [attr.inert]="payingBusy() ? '' : null">
             <!-- Deposits are fractions of the goods: one tap fills them in. -->
             <div class="pay-chips" role="group" aria-label="Snel invullen">
-              @for (chip of (pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
-                <button class="pay-chip" type="button" [disabled]="payingBusy() || paymentStateLoading()" (click)="paying.set({ ...pay, amount: chip.amount, currency: 'EUR', label: chip.label, instalmentDue: chip.due ?? null, settles: false })">
+              @for (chip of (!pay.id && pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
+                <button class="pay-chip" type="button" [disabled]="payingBusy() || paymentStateLoading()" (click)="paying.set({ ...pay, amount: chip.amount, amountInput: '' + chip.amount, currency: 'EUR', label: chip.label, instalmentDue: chip.due ?? null, settles: false })">
                   {{ chip.label }}<small>{{ chip.amount | eur }}</small>
                 </button>
               }
             </div>
             <div class="form-grid mt-12">
               <div class="field">
-                <label for="pay-amount">Bedrag</label>
+                <label for="pay-amount">Werkelijk betaald bedrag</label>
                 <div class="input-affix">
-                  <input class="input num right" id="pay-amount" type="number" min="0" step="0.01" inputmode="decimal"
-                         [ngModel]="pay.amount" (ngModelChange)="paying.set({ ...pay, amount: +$event })" />
+                  <input class="input num right" id="pay-amount" type="text" inputmode="decimal" autocomplete="off" [disabled]="payingBusy()"
+                         [ngModel]="pay.amountInput" (ngModelChange)="setPaymentAmount($event)" />
                   <select class="input-affix__suffix line-currency" aria-label="Munt"
-                          [ngModel]="pay.currency" (ngModelChange)="paying.set({ ...pay, currency: $event })">
+                          [disabled]="payingBusy()" [ngModel]="pay.currency" (ngModelChange)="paying.set({ ...pay, currency: $event })">
                     <option value="EUR">EUR</option>
                     <option value="USD">USD</option>
                     <option value="CNY">CNY</option>
                   </select>
                 </div>
-                @if (pay.currency !== 'EUR' && pay.amount > 0) {
-                  <span class="hint">≈ {{ eurOf(pay.amount, pay.currency) | eur }} aan de koers van deze order.</span>
+                @if (pay.amountInput && pay.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 1.046,95.</span> }
+                @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0) {
+                  <span class="hint">≈ {{ paymentDraftEur() | eur }} · EUR-bedrag van deze boeking; bij een bedragwijziging geldt de huidige orderkoers.</span>
                 }
                 @if (payingOverage() > 0) {
-                  <span class="hint hint--warn">Let op: dit gaat {{ payingOverage() | eur }} over het afgesproken bedrag heen (bijv. bankkosten of koersverschil). Bewaren kan gewoon.</span>
-                } @else if (pay.amount > 0 && openFor(pay.payee) > 0) {
+                  <span class="hint hint--warn">Na deze wijziging is er {{ payingOverage() | eur }} meer betaald dan verwacht. Controleer het bedrag; extra kosten kunnen apart worden genoteerd.</span>
+                } @else if ((pay.amount ?? 0) > 0 && openFor(pay.payee) > 0) {
                   <span class="hint">Nog open: {{ openFor(pay.payee) | eur }}.</span>
                 }
               </div>
@@ -1184,7 +1072,7 @@ type DeskRow =
               <div class="field span-2">
                 <label for="pay-label">Omschrijving <span class="opt"></span></label>
                 <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
-                       [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
+                       [disabled]="payingBusy()" [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
               </div>
               @if (pay.payee !== 'OTHER') {
               <div class="field span-2">
@@ -1199,17 +1087,15 @@ type DeskRow =
               </div>
               }
               <div class="field span-2">
-                <label for="pay-proof">Bankafschrift <span class="opt"></span></label>
-                <input class="input" id="pay-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" (change)="paying.set({ ...pay, files: pickProofFiles($event) })" />
-                <span class="hint">{{ pay.files.length ? pay.files.length + ' bestand(en) gekozen · ' : '' }}Tot 5 bestanden; ze komen bij Dossier als betaalbewijs bij deze betaling.</span>
+                <app-payment-proof-picker [files]="pay.files" [maxFiles]="proofSlots(pay.id)" [disabled]="payingBusy()" (filesChange)="paying.set({ ...pay, files: $event })" />
               </div>
             </div>
           </div>
           <div foot style="display:contents">
             @if (pay.id) { <button class="btn btn--danger" type="button" [disabled]="payingBusy()" (click)="removeEditing(pay.id)">Verwijderen</button> }
             <span class="spacer"></span>
-            <button class="btn" type="button" (click)="paying.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(pay.amount > 0)" (click)="confirmPayment()">
+            <button class="btn" type="button" (click)="closePayment()">Annuleren</button>
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots(pay.id) || !pay.paidOn" (click)="confirmPayment()">
               {{ payingBusy() ? 'Bezig…' : (pay.id ? 'Aanpassen' : 'Betaling bewaren') }}
             </button>
           </div>
@@ -1228,8 +1114,8 @@ type DeskRow =
               <div class="field">
                 <label for="first-amount">Betaald bedrag</label>
                 <div class="input-affix">
-                  <input class="input num right" id="first-amount" type="number" min="0" step="0.01" inputmode="decimal"
-                         [ngModel]="first.amount" (ngModelChange)="firstInstalmentPrompt.set({ ...first, amount: +$event })" />
+                  <input class="input num right" id="first-amount" type="text" inputmode="decimal" autocomplete="off" [disabled]="payingBusy()"
+                         [ngModel]="first.amountInput" (ngModelChange)="setFirstPaymentAmount($event)" />
                   <select class="input-affix__suffix line-currency" aria-label="Munt" [ngModel]="first.currency"
                           (ngModelChange)="firstInstalmentPrompt.set({ ...first, currency: $event })">
                     <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
@@ -1241,16 +1127,13 @@ type DeskRow =
                 <app-date-field fieldId="first-date" [value]="first.paidOn" (valueChange)="firstInstalmentPrompt.set({ ...first, paidOn: $event })" />
               </div>
               <div class="field span-2">
-                <label for="first-proof">Betalingsbewijs <span class="opt"></span></label>
-                <input class="input" id="first-proof" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
-                       (change)="firstInstalmentPrompt.set({ ...first, files: fileList($any($event.target).files) })" />
-                <span class="hint">Bijv. het KBC-afschrift; hoogstens vijf bestanden.</span>
+                <app-payment-proof-picker [files]="first.files" [disabled]="payingBusy()" (filesChange)="firstInstalmentPrompt.set({ ...first, files: $event })" />
               </div>
             </div>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="firstInstalmentPrompt.set(null)">Nog niet betaald</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !(first.amount > 0)" (click)="confirmFirstInstalment()">
+            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !((first.amount ?? 0) > 0)" (click)="confirmFirstInstalment()">
               {{ payingBusy() ? 'Bezig…' : 'Betaald - noteren' }}
             </button>
           </div>

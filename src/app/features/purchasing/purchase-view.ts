@@ -15,13 +15,14 @@ import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
+import { PurchasePaymentOverview } from './purchase-payment-overview';
 import { PurchasePaymentResult } from './purchase-payment-result';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
 import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
-import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
+import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe } from '../../shared/pipes';
 import {
   Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS, Payee,
 } from '../../core/api/models';
@@ -61,8 +62,8 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentResult, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
-            EurPipe, EurUpPipe, NumUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
+  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+            EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
       @if (desktop.active()) {
@@ -656,90 +657,18 @@ type PurchaseWorkspaceSectionId =
                      aria-labelledby="purchase-payments-title">
               <span class="section-kicker">Betalingen</span>
               <h2 id="purchase-payments-title">
-                @if (paidAll() > 0) { {{ paidAll() | eur }} betaald } @else { Nog niets betaald }
+                Betalingen
               </h2>
-              <p>De nacalculatie hieronder vergelijkt je betalingen met de begroting.</p>
+              <p>Afspraak, betalingen en resterend saldo per ontvanger.</p>
               <div class="purchase-payment-streams">
-              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" />
+              <app-purchase-payment-overview [view]="data" [payments]="payments()" [documents]="documents()" (download)="downloadDocument($event)" />
+              <app-purchase-payment-result [view]="data" />
+              <details class="purchase-payment-details">
+                <summary>Kostprijs en nacalculatie <span>Berekening en PDF</span></summary>
+                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" />
+              </details>
               <app-purchase-sales-links [documents]="relatedSalesDocs()" />
               <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="reloadPartnerDocs()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
-              <div class="pay-stream">
-                <div class="pay-stream__head">
-                  <span><b>Aan de leverancier</b><small>{{ data.payable?.freightInSupplierPrice ? 'goederen + zeevracht' : 'de goederen' }}</small></span>
-                  <span class="num"><b>{{ paidTo('SUPPLIER') | eur }}</b><small>van {{ supplierOwed() | eur }}</small></span>
-                </div>
-                <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SUPPLIER'), supplierOwed())"></div></div>
-                @if (plannedInstalments(); as plan) {
-                  @if (plan.length) {
-                    <ol class="instalments" aria-label="Betaalafspraak met de leverancier">
-                      @for (step of plan; track step.label) {
-                        <li [class.instalments__item--paid]="step.state === 'paid'" [class.instalments__item--due]="step.state === 'due'">
-                          <i aria-hidden="true">{{ step.state === 'paid' ? '✓' : (step.state === 'due' ? '!' : '·') }}</i>
-                          <span class="instalments__what">
-                            <b>{{ step.label }}</b>
-                            @if (step.state === 'paid') {
-                              @if (step.settled && step.covered < step.full) {
-                                <small>{{ step.covered | eur }} betaald · <b>Afgerekend</b><br />Begroot {{ step.full | eur }}</small>
-                              } @else {
-                                <small>{{ step.full | eur }} · betaald</small>
-                              }
-                            } @else if (step.covered > 0) {
-                              <small><s>{{ step.full | eur }}</s> nog {{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : ' · later' }}</small>
-                            } @else {
-                              <small>{{ step.amount | eur }}{{ step.state === 'due' ? ' · nu te betalen' : (step.state === 'later' ? ' · later' : '') }}</small>
-                            }
-                          </span>
-                        </li>
-                      }
-                    </ol>
-                  }
-                }
-                @if (settledFor('SUPPLIER')) {
-                  <p class="pay-stream__done">✓ Afgerekend{{ notableDifferenceFor('SUPPLIER') === 0 ? ' · precies volgens afspraak' + (smallChangeFor('SUPPLIER') !== 0 ? ' (' + ((smallChangeFor('SUPPLIER') > 0 ? smallChangeFor('SUPPLIER') : -smallChangeFor('SUPPLIER')) | eur) + (smallChangeFor('SUPPLIER') > 0 ? ' meer' : ' minder') + ', binnen de marge van ' + (tolerance | eur: 0) + ')' : '') : (notableDifferenceFor('SUPPLIER') > 0 ? ' · ' + (notableDifferenceFor('SUPPLIER') | eur) + ' meer betaald dan afgesproken' : ' · ' + (-notableDifferenceFor('SUPPLIER') | eur) + ' minder betaald dan afgesproken') }}</p>
-                }
-                @for (payment of paymentsTo('SUPPLIER'); track payment.id) {
-                  <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
-                }
-              </div>
-              @if (logisticsOwed() > 0 || paymentsTo('LOGISTICS').length) {
-                <div class="pay-stream">
-                  <div class="pay-stream__head">
-                    <span><b>Douane &amp; transport tot lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</b><small>invoerrechten, transport, aankomst · na aankomst</small></span>
-                    <span class="num"><b>{{ paidTo('LOGISTICS') | eur }}</b><small>van {{ logisticsOwed() | eur }}</small></span>
-                  </div>
-                  <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('LOGISTICS'), logisticsOwed())"></div></div>
-                  @for (payment of paymentsTo('LOGISTICS'); track payment.id) {
-                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }} }</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
-                  }
-                </div>
-              }
-              @if (separateOwed() > 0 || paymentsTo('SEPARATE').length) {
-                <div class="pay-stream">
-                  <div class="pay-stream__head">
-                    <span><b>Inspectie &amp; andere kosten</b><small>apart betaald</small></span>
-                    <span class="num"><b>{{ paidTo('SEPARATE') | eur }}</b><small>van {{ separateOwed() | eur }}</small></span>
-                  </div>
-                  <div class="payments-meter"><div class="payments-meter__fill" [style.width.%]="pct(paidTo('SEPARATE'), separateOwed())"></div></div>
-                  @for (payment of paymentsTo('SEPARATE'); track payment.id) {
-                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}@if (payment.settles) { <em class="pay-line__settles">{{ payment.instalmentDue ? 'slot termijn' : (payment.payee === 'SUPPLIER' || !payment.payee ? 'slot leverancier' : 'slot betaalgroep') }}</em> }</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
-                  }
-                </div>
-              }
-              @if (paymentsTo('OTHER').length) {
-                <div class="pay-stream">
-                  <div class="pay-stream__head">
-                    <span><b>Andere betalingen</b><small>bankkosten, koerier, wat de container verder kostte</small></span>
-                    <span class="num"><b>{{ paidTo('OTHER') | eur }}</b><small>extra</small></span>
-                  </div>
-                  @for (payment of paymentsTo('OTHER'); track payment.id) {
-                    <div class="pay-line"><span class="pay-line__what"><b>{{ payment.label || 'Betaling' }}</b><small>{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} }@if (payment.actor) { · {{ actorLabel(payment.actor) }}}</small></span><span class="num pay-line__amount">{{ payment.amountEur | eur }}</span></div>
-                  }
-                </div>
-              }
-              @if (data.costing.totals.extraRevenueEur) {
-                <p class="pay-ours">Enrosed kost {{ data.costing.totals.extraRevenueEur | eur }} is onze eigen opslag - geen betaling.</p>
-              }
-              <app-purchase-payment-result [view]="data" />
               </div>
             </section>
 

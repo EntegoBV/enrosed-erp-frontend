@@ -5,7 +5,7 @@ import { salesSplitBlockReason } from './sales-split-state';
 import type { SalesSplitResult } from '../../core/api/models';
 import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
-import { advanceInvoiceJourney } from './sales-invoice-journey';
+import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
@@ -94,7 +94,7 @@ interface JourneyStep {
             {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
           </button>
         }
-        @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD') {
+        @if (canReopen(data)) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="reopen()">Heropenen</button>
         } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
                    || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
@@ -136,7 +136,9 @@ interface JourneyStep {
                       [class.desk-status__step--now]="step.state === 'now'"
                       [class.desk-status__step--stop]="step.state === 'stop'"
                       [class.desk-status__step--wait]="step.state === 'wait'">
-                  <i aria-hidden="true">@switch (step.state) { @case ('done') { ✓ } @case ('stop') { × } @case ('wait') { ⇄ } @default { {{ $index + 1 }} } }</i>{{ step.label }}
+                  @if (step.label === 'Concept' && canReopen(data)) {
+                    <button class="status-reopen" type="button" [disabled]="busy() || dirty() || saving() || sending() || documentMutationBusy()" (click)="reopen()" aria-label="Heropenen als concept">↶ Concept</button>
+                  } @else {<i aria-hidden="true">@switch (step.state) { @case ('done') { ✓ } @case ('stop') { × } @case ('wait') { ⇄ } @default { {{ $index + 1 }} } }</i>{{ step.label }} }
                 </span>
                 @if (!last) { <span class="desk-status__line" [class.desk-status__line--done]="step.state === 'done'" aria-hidden="true"></span> }
               }
@@ -314,7 +316,7 @@ interface JourneyStep {
                     <th class="c-price">Stukprijs</th>
                     <th class="c-disc">Korting</th>
                     <th class="c-money">Netto</th>
-                    <th class="c-money">{{ profitPerPiece() ? 'Winst / stuk' : 'Winst / regel' }}</th>
+                    <th class="c-money" title="Productmarge na alle regel- en orderkortingen, exclusief btw en transport">{{ profitPerPiece() ? 'Marge / stuk' : 'Marge / regel' }}</th>
                     <th class="c-delivery">Levering</th>
                     @if (commercialEditable()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
                   </tr>
@@ -900,7 +902,7 @@ interface JourneyStep {
                             <button class="desk-action" type="button" (click)="copyLink()"><i aria-hidden="true">⧉</i><span><b>Klantlink kopiëren</b><small>De pagina waar de klant tekent</small></span></button>
                           }
                         }
-                        @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD') {
+                        @if (canReopen(data)) {
                           <button class="desk-action" type="button" [disabled]="busy()" (click)="reopen()"><i aria-hidden="true">↺</i><span><b>Heropenen</b><small>Terug naar concept om aan te passen</small></span></button>
                         }
                         @if (canCancel()) {
@@ -1128,6 +1130,7 @@ interface JourneyStep {
     @media(prefers-reduced-motion:reduce){.desk-availability{transition:none}}
 
     .desk-hero__link{color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:2px}.desk-hero__link:hover{opacity:.85}
+    .status-reopen{min-height:44px;padding:6px 10px;border:1px solid currentColor;border-radius:12px;background:transparent;color:inherit;font:inherit;cursor:pointer}.status-reopen:focus-visible{outline:2px solid currentColor;outline-offset:3px}
     :host{display:block;min-width:0}
     .desk-row--extra td{background:var(--surface-2)}.desk-extra{display:flex;align-items:center;gap:10px}.desk-extra__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose);font-weight:800}.desk-extra__what{flex:1;min-width:0;text-align:left}.desk-empty .btn+.btn{margin-left:8px}
     .desk-status__step--stop{color:#f6a3a3}.desk-status__step--stop i{background:#e05a4a;box-shadow:0 0 0 2px rgb(224 90 74/.3)}
@@ -1316,12 +1319,9 @@ export class SalesDesk extends SalesEditor {
       if (isAdvanceDocument(order)) {
         return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
       }
-      const flags = [true, order.status !== 'CONCEPT', !!order.goodsShippedAt, order.status === 'BETAALD'];
-      const now = flags.indexOf(false);
-      return ['Concept', 'Verstuurd', 'Bestelling verzonden', 'Betaald'].map((label, index) => ({
-        label, state: flags[index] ? 'done' : index === now ? 'now' : 'todo',
-      }));
+      return invoiceJourney(order, this.view()?.paymentSummary?.status);
     }
+    if (order.status === 'CONCEPT') return ['Concept', 'Verzonden', 'Bekeken', 'Geaccepteerd'].map((label, index) => ({ label, state: index === 0 ? 'now' : 'todo' }));
     const sent = !!order.sentAt || order.status === 'VERZONDEN' || order.status === 'BEKEKEN'
       || order.status === 'WIJZIGING_GEVRAAGD' || order.status === 'GEACCEPTEERD';
     const viewed = !!order.viewedAt || order.status === 'BEKEKEN'

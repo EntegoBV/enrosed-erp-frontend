@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { parseTemplate } from '@angular/compiler';
-import { advanceInvoiceJourney } from '../src/app/features/sales/sales-invoice-journey.ts';
+import { advanceInvoiceJourney, invoiceJourney } from '../src/app/features/sales/sales-invoice-journey.ts';
 import { isAdvanceDocument } from '../src/app/features/sales/sales-payment-state.ts';
 import type { SalesOrder } from '../src/app/core/api/models.ts';
 
@@ -71,7 +71,7 @@ for (const [file, className] of [['sales-view', 'SalesView'], ['sales-desk', 'Sa
 
   test(`${className} uses the same real-state journey for a never-issued partner invoice`, () => {
     const exports: any = {};
-    vm.runInNewContext(javascript, { exports, isAdvanceDocument, advanceInvoiceJourney });
+    vm.runInNewContext(javascript, { exports, isAdvanceDocument, advanceInvoiceJourney, invoiceJourney });
     const screen = new exports[className]();
     for (const status of ['CONCEPT', 'UITGEREIKT', 'BETAALD', 'GEANNULEERD'] as const) {
       const draft = order(status);
@@ -92,3 +92,25 @@ for (const [file, className] of [['sales-view', 'SalesView'], ['sales-desk', 'Sa
     assert.equal(parseTemplate(template, `${file}.html`).errors, null);
   });
 }
+
+
+test('ordinary invoices keep Concept current and distinguish issuance from sending', () => {
+  const draft = { ...order('CONCEPT'), purpose: 'STANDARD' as const, goodsShippedAt: null };
+  assert.deepEqual(invoiceJourney(draft).map(step => step.state), ['now', 'todo', 'todo', 'todo']);
+  const issued = invoiceJourney({ ...draft, status: 'UITGEREIKT' });
+  assert.equal(issued[1].state, 'now'); assert.equal(issued[1].label, 'Uitgereikt');
+  const sent = invoiceJourney({ ...draft, status: 'VERZONDEN' });
+  assert.equal(sent[1].state, 'now'); assert.equal(sent[1].label, 'Uitgereikt · verstuurd');
+  const reopened = invoiceJourney({ ...draft, sentAt: '2026-09-13T10:00:00Z' }, 'PAID');
+  assert.deepEqual(reopened.map(step => step.state), ['now', 'todo', 'todo', 'todo']);
+});
+
+test('receipts before delivery never mark goods shipped', () => {
+  const invoice = { ...order('VERZONDEN'), goodsShippedAt: null };
+  for (const status of ['PARTIAL', 'PAID', 'OVERPAID'] as const) {
+    const steps = invoiceJourney(invoice, status);
+    assert.equal(steps[3].state, 'now'); assert.equal(steps[2].state, 'todo');
+  }
+  const shipped = invoiceJourney({ ...invoice, goodsShippedAt: '2026-09-13T10:00:00Z' }, 'UNPAID');
+  assert.equal(shipped[2].state, 'now'); assert.equal(shipped[3].state, 'todo');
+});

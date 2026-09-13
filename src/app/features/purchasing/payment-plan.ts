@@ -15,7 +15,18 @@ export function withinTolerance(differenceEur: number): boolean {
   return Math.abs(differenceEur) <= PAYMENT_TOLERANCE_EUR + 0.005;
 }
 
-type PlanFields = Pick<PurchaseOrder, 'paymentTerms' | 'payPctOrdered' | 'payPctShipped' | 'payPctArrived'>;
+export type PaymentPlanFields = Pick<PurchaseOrder, 'paymentTerms' | 'payPctOrdered' | 'payPctShipped' | 'payPctArrived'>;
+type PlanFields = PaymentPlanFields;
+
+export function paymentPlanError(order: PaymentPlanFields): string | null {
+  if (order.paymentTerms !== 'CUSTOM') return null;
+  const values = [order.payPctOrdered, order.payPctShipped, order.payPctArrived];
+  if (values.some(value => value != null && (!Number.isFinite(value) || value < 0 || value > 100))) {
+    return 'Gebruik percentages tussen 0 en 100.';
+  }
+  return Math.abs(splitTotal(order.payPctOrdered, order.payPctShipped, order.payPctArrived) - 100) > 0.005
+    ? 'De drie percentages moeten samen 100% zijn.' : null;
+}
 
 /** The order's own split as percentages; zero and missing shares are left out. */
 export function splitInstalments(ordered: number | null | undefined, shipped: number | null | undefined,

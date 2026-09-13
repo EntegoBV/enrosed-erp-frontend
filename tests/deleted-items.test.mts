@@ -180,7 +180,8 @@ function purchaseHarness() {
   const page = new Purchase(), calls: string[] = [], messages: string[] = [];
   Object.assign(page, { view: signal({ order: { id: 50, number: 'PO <img src=x>', notes: 'Wijziging' } }),
     savedOrder: signal(JSON.stringify({ id: 50, number: 'PO <img src=x>', notes: '' })),
-    deletingOrder: signal(false), saving: signal(false), previewTimer: null, previewVersion: 0, isReceived: () => false,
+    deletingOrder: signal(false), saving: signal(false), payingBusy: signal(false), paymentPlanBusy: signal(false),
+    uploadingDocument: signal(false), previewTimer: null, previewVersion: 0, isReceived: () => false,
     ui: { confirmRequest: () => null, confirm: (options: any) => messages.push(options.message), toast: (text: string) => messages.push(text) },
     sourcing: { deletePurchaseOrder: async () => { calls.push('DELETE purchase'); } },
     router: { navigate: async () => { assert.equal(page.canDeactivate(), true); calls.push('navigate'); return true; } },
@@ -202,6 +203,17 @@ test('pending purchase deletion blocks duplicate DELETE and save; failures prese
   assert.equal(await page.save(), null); assert.equal(page.canDeactivate(), false);
   reject({ error: { message: 'Deze order kan niet worden verwijderd.' } }); await pending;
   assert.deepEqual(calls, ['DELETE']); assert.equal(page.dirty(), true); assert.equal(page.deletingOrder(), false);
+});
+
+test('active payment, agreement and document writes block leaving the purchase screen', () => {
+  const { page } = purchaseHarness();
+  page.savedOrder.set(JSON.stringify(page.view().order));
+  assert.equal(page.canDeactivate(), true);
+  for (const signalName of ['payingBusy', 'paymentPlanBusy', 'uploadingDocument']) {
+    page[signalName].set(true);
+    assert.equal(page.canDeactivate(), false, signalName);
+    page[signalName].set(false);
+  }
 });
 
 test('templates parse with read-only details, no direct attachment links, and all five confirmations use temporary-removal copy', async () => {

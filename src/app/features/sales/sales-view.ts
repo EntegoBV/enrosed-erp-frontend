@@ -1,3 +1,4 @@
+import { canReopenSalesDocument } from './sales-reopen';
 import { salesAllProductsUnavailable, salesLineUnavailable, salesLineRequestedQuantity, salesUnavailableLineCount } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
@@ -6,7 +7,7 @@ import type { SalesSplitResult } from '../../core/api/models';
 import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
-import { advanceInvoiceJourney } from './sales-invoice-journey';
+import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
@@ -244,8 +245,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                    [class.hero-stepper__step--danger]="step.kind === 'danger'"
                    [class.hero-stepper__step--gold]="step.kind === 'gold'"
                    [class.hero-stepper__step--muted]="step.kind === 'muted'">
-                <span class="stepper__dot" aria-hidden="true">{{ step.mark }}</span>
-                <span class="stepper__label">{{ step.label }}</span>
+                @if (step.label === 'Concept' && canReopen(data)) {
+                  <button class="status-reopen" type="button" [disabled]="invoiceBusy() || sendingQuote() || splitBusy()" (click)="reopen()" aria-label="Heropenen als concept">↶ Concept</button>
+                } @else {<span class="stepper__dot" aria-hidden="true">{{ step.mark }}</span>
+                <span class="stepper__label">{{ step.label }}</span>}
               </div>
               @if (!last) {
                 <span class="stepper__line" [class.stepper__line--done]="step.state === 'done'"></span>
@@ -1315,25 +1318,35 @@ export class SalesView {
     }
   }
 
+  readonly canReopen = canReopenSalesDocument;
+  reopen(): void {
+    const data = this.view();
+    if (!data || !this.canReopen(data) || this.invoiceBusy() || this.sendingQuote() || this.splitBusy()) return;
+    this.ui.confirm({ title: 'Terug naar concept',
+      message: `<b>${escapeHtml(data.order.number)}</b> wordt opnieuw bewerkbaar. De eerdere verzending blijft in de historiek. Er wordt geen e-mail verstuurd.`,
+      confirmLabel: 'Heropenen als concept',
+    }, () => { void this.confirmReopen(data.order.id); });
+  }
+  private async confirmReopen(orderId: number): Promise<void> {
+    const data = this.view();
+    if (!data || data.order.id !== orderId || !this.canReopen(data) || this.invoiceBusy() || this.sendingQuote() || this.splitBusy()) return;
+    this.invoiceBusy.set(true);
+    try {
+      const fresh = await this.sales.reopenQuote(orderId);
+      if (this.view()?.order.id !== orderId) return;
+      this.view.set(fresh); void this.work.refresh(true);
+      this.ui.toast(`${fresh.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} staat weer op concept`);
+    } catch (failure) { this.ui.toast(messageOf(failure, 'Heropenen mislukt'), 'err'); }
+    finally { this.invoiceBusy.set(false); }
+  }
+
   /** The quote's journey, or the invoice's shorter one. */
   journey(order: SalesOrder) {
     if ((order.docType ?? 'OFFERTE') !== 'FACTUUR') return this.quoteJourney(order.status);
     if (isAdvanceDocument(order)) {
       return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
     }
-    const flags = [true, order.status !== 'CONCEPT', !!order.goodsShippedAt,
-                   order.status === 'BETAALD'];
-    const now = flags.indexOf(false);
-    return [
-      { label: 'Concept', mark: '✓' },
-      { label: 'Verstuurd', mark: '✓' },
-      { label: 'Bestelling', mark: '✓' },
-      { label: 'Betaald', mark: '✓' },
-    ].map((step, index) => ({
-      ...step,
-      state: (flags[index] ? 'done' : index === now ? 'now' : 'todo') as 'done' | 'now' | 'todo',
-      kind: undefined as undefined,
-    }));
+    return invoiceJourney(order, this.view()?.paymentSummary?.status);
   }
 
   makeInvoice(data: SalesOrderView): void {

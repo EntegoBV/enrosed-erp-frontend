@@ -45,10 +45,10 @@ import { purchasePaymentResult } from './purchase-payment-result-metrics';
               @if (stream.plannedEur || stream.paidEur || stream.paymentCount) {
                 <article class="payment-result__stream">
                   <header><b>{{ stream.label }}</b><span [class.is-gain]="stream.netResultEur > 0" [class.is-loss]="stream.netResultEur < 0">{{ stream.netResultEur > 0 ? '+' : '' }}{{ stream.netResultEur | eur }}</span></header>
-                  <dl><div><dt>Begroot</dt><dd>{{ stream.plannedEur === null ? 'Onbekend' : (stream.plannedEur | eur) }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur === null ? 'Onbekend' : (stream.paidEur | eur) }}</dd></div></dl>
+                  <dl><div><dt>{{ stream.payee === 'SUPPLIER' ? 'Afgesproken bedrag' : 'Verwachte kosten' }}</dt><dd>{{ stream.plannedEur === null ? 'Onbekend' : (stream.plannedEur | eur) }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur === null ? 'Onbekend' : (stream.paidEur | eur) }}</dd></div></dl>
                   <div class="payment-result__stream-foot">
                     <small>{{ !amounts.eligible ? 'Telt nog niet mee' : stream.payee === 'OTHER' ? 'Extra uitgave' : stream.finalized ? 'Volledig afgerekend' : 'Nog niet volledig afgerekend' }}</small>
-                    @if (editable() && amounts.eligible && stream.payee !== 'OTHER' && stream.paymentCount > 0) {
+                    @if (showManagement() && editable() && amounts.eligible && stream.payee !== 'OTHER' && stream.paymentCount > 0) {
                       <button type="button" [disabled]="busy()" (click)="manage.emit(stream.payee)">{{ stream.finalized ? 'Afrekening aanpassen' : 'Volledig betaald' }}</button>
                     }
                   </div>
@@ -56,8 +56,10 @@ import { purchasePaymentResult } from './purchase-payment-result-metrics';
               }
             }
           </div>
-          <p class="payment-result__note">Deze knoppen rekenen de hele betaalgroep af. Alleen een leverancierstermijn afrekenen? Kies die termijn bij het aanpassen van de betaling.</p>
-          @if (!editable() && amounts.eligible) {
+          @if (showManagement() && editable()) {
+            <p class="payment-result__note">Deze knoppen rekenen de hele betaalgroep af. Alleen een leverancierstermijn afrekenen? Kies die termijn bij het aanpassen van de betaling.</p>
+          }
+          @if (showManagement() && !editable() && amounts.eligible) {
             <a class="payment-result__link" [routerLink]="['/purchasing', view().order.id, 'edit']" [queryParams]="{ section: 'payment-result' }">Betalingen beheren →</a>
           }
         </details>
@@ -105,6 +107,7 @@ import { purchasePaymentResult } from './purchase-payment-result-metrics';
 export class PurchasePaymentResult {
   readonly view = input.required<PurchaseOrderView>();
   readonly editable = input(false);
+  readonly showManagement = input(true);
   readonly busy = input(false);
   readonly manage = output<Payee>();
   readonly result = computed(() => purchasePaymentResult(this.view()));

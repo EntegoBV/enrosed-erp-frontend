@@ -156,3 +156,30 @@ test('all individually settled terms close the supplier even when the total savi
   view.reconciliation!.streams[0].finalized = false;
   assert.equal(purchaseGroupSettled(view, [payment()], 'SUPPLIER'), false, 'A reopened server stream wins immediately');
 });
+
+test('the current agreement and historical transfer amount stay distinct after changing percentages', () => {
+  const rows = terms();
+  rows[0] = { ...rows[0], label: '20% bij bestelling', plannedEur: 3887.10, paidEur: 4500,
+    remainingEur: 0, settledSavingEur: 0, overpaidEur: 612.90, explicitlySettled: false, finalized: false };
+  rows[1] = { ...rows[1], label: '50% bij vertrek', plannedEur: 16757.78, paidEur: 20289.56,
+    remainingEur: 0, settledSavingEur: 0, overpaidEur: 3531.78, explicitlySettled: true, finalized: true };
+  const ledger = [payment({ amountEur: 4500, label: '1/3 oude afspraak', settles: false })];
+  const state = purchaseInstalmentState(purchase(rows), plan, ledger);
+  assert.equal(state[0].label, '20% bij bestelling');
+  assert.equal(state[0].full, 3887.10);
+  assert.equal(state[0].covered, 4500);
+  assert.equal(state[0].settled, false);
+  assert.equal(state[1].full, 16757.78);
+  assert.equal(state[1].covered, 20289.56);
+  assert.equal(ledger[0].label, '1/3 oude afspraak');
+  assert.equal(ledger[0].amountEur, 4500);
+});
+
+test('legacy unpaid cents do not receive a paid badge without an explicit settlement', () => {
+  const view = purchase(); delete view.reconciliation!.supplierInstalments;
+  view.payable!.supplierEur = 100;
+  const state = purchaseInstalmentState(view, [{ due: 'ORDERED', label: 'Volledig', share: 1 }],
+    [payment({ amountEur: 99.98, instalmentDue: null, settles: false })]);
+  assert.equal(state[0].amount, 0.02);
+  assert.equal(state[0].state, 'due');
+});

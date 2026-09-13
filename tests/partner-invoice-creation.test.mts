@@ -37,7 +37,7 @@ function creationHarness(partner = true) {
     busy: signal(false), loading: signal(false), termsLoading: signal(false), termsError: signal(''), createError: signal(null),
     costKnown: signal(true), pricing: signal('COST'), chosenCosts: signal([]), terms: signal(schedulePreset('30_70', 5000)),
     agreementEur: signal(5000), savedTerms: signal(null), recalculateLegacyTerms: signal(false), order: signal({ id: 48 }),
-    costPct: signal(50), sharePct: signal(50), markupPct: signal(15), deliveryWeek: signal(''),
+    costPct: signal(50), sharePct: signal(50), markupUnit: signal('PERCENT'), markupValue: signal(15), markupValid: signal(true), deliveryWeek: signal(''),
     sales: { createFromPurchaseOrder: async (body: any) => { requests.push(body); return document; } },
     router: { navigate: async (...args: unknown[]) => { routes.push(args); return true; } },
     closed: { emit() {} }, ui: { toast(message: string) { toasts.push(message); } },
@@ -78,7 +78,21 @@ test('ordinary sales still create a regular quote and open its editor', async ()
   assert.equal(requests[0].purpose, 'STANDARD');
   assert.equal(requests[0].advanceSchedule, undefined);
   assert.equal(requests[0].costPct, null);
+  assert.equal(requests[0].markupPct, 15);
+  assert.equal(requests[0].markupEurPerUnit, null);
   assert.equal(JSON.stringify(routes), JSON.stringify([[['/sales', 71, 'edit']]]));
+});
+
+test('fixed per-piece markup is sent exclusively, and invalid markup cannot create a quote', async () => {
+  const { screen, requests } = creationHarness(false);
+  screen.markupUnit.set('EUR_PER_UNIT'); screen.markupValue.set(0.125);
+  await screen.create();
+  assert.equal(requests[0].markupPct, 0);
+  assert.equal(requests[0].markupEurPerUnit, 0.125);
+  screen.markupValid.set(false);
+  await screen.create();
+  assert.equal(requests.length, 1);
+  assert.match(screen.createError(), /geldige opslag/);
 });
 
 test('zero funding, invalid terms, unfinished loads and duplicate clicks cannot create documents', async () => {

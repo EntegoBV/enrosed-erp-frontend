@@ -23,13 +23,13 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
       </header>
       @if (data(); as result) {
         <div class="reconciliation__metrics">
-          <div><span>Begrote externe kost</span><b>{{ result.totals.plannedExternalEur | eur }}</b></div>
+          <div><span>Oorspronkelijk verwachte kosten</span><b>{{ result.totals.plannedExternalEur | eur }}</b></div>
           <div><span>Werkelijk betaald</span><b>{{ result.totals.paidEur | eur }}</b></div>
           <div><span>Nog te betalen</span><b>{{ result.totals.remainingEur | eur }}</b></div>
           <div class="reconciliation__forecast"><span>{{ result.totals.finalized ? 'Definitieve externe kost' : 'Verwachte externe kost' }}</span><b>{{ result.totals.forecastExternalEur | eur }}</b></div>
         </div>
         <div class="reconciliation__variance" [class.reconciliation__variance--higher]="result.totals.varianceEur > 0" [class.reconciliation__variance--lower]="result.totals.varianceEur < 0">
-          <span>{{ result.totals.finalized ? 'Verschil na afrekening' : 'Verwacht verschil met begroting' }}</span>
+          <span>{{ result.totals.finalized ? 'Verschil na afrekening' : 'Verwacht verschil met oorspronkelijke kostenraming' }}</span>
           <strong>{{ result.totals.varianceEur > 0 ? '+' : '' }}{{ result.totals.varianceEur | eur }}</strong>
         </div>
         <p class="reconciliation__explanation">{{ result.totals.finalized ? 'Alle bekende betaalstromen zijn afgerekend.' : 'Open bedragen blijven in de verwachte kost. Minder betalen telt pas als besparing zodra de betaalstroom is vereffend.' }}</p>
@@ -41,11 +41,11 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
               @if (stream.plannedEur || stream.paymentCount || stream.paidEur) {
                 <article class="stream">
                   <header><b>{{ stream.label }}</b><small>{{ statusLabel(stream) }}</small></header>
-                  <dl><div><dt>Begroot</dt><dd>{{ stream.plannedEur | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div><div><dt>Open</dt><dd>{{ stream.remainingEur | eur }}</dd></div></dl>
+                  <dl><div><dt>{{ stream.payee === 'SUPPLIER' ? 'Afgesproken bedrag' : 'Verwachte kosten' }}</dt><dd>{{ stream.plannedEur | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div><div><dt>Open</dt><dd>{{ stream.remainingEur | eur }}</dd></div></dl>
                   @if (stream.varianceEur !== 0) {
                     <p [class.higher]="stream.varianceEur > 0" [class.lower]="stream.varianceEur < 0">
                       {{ stream.varianceEur > 0 ? '+' : '' }}{{ stream.varianceEur | eur }}
-                      {{ stream.payee === 'OTHER' ? 'extra kosten' : stream.varianceEur < 0 ? 'na vereffening' : stream.finalized ? 'meer dan begroot' : 'meer betaald; beoordeel correctie of vereffening' }}
+                      {{ stream.payee === 'OTHER' ? 'extra kosten' : stream.varianceEur < 0 ? 'na vereffening' : stream.finalized ? 'meer dan verwacht' : 'meer betaald; beoordeel correctie of vereffening' }}
                     </p>
                   }
                 </article>
@@ -74,7 +74,7 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
                 <article class="product-cost">
                   @if (line.productId) { <a [routerLink]="['/products', line.productId]">{{ line.productName }}</a> } @else { <b>{{ line.productName }}</b> }
                   <small>{{ line.unitCostQuantity | num }} {{ line.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small>
-                  <dl><div><dt>Begrote externe kost</dt><dd>{{ line.plannedExternalEur | eur }}</dd></div><div><dt>{{ result.totals.finalized ? 'Externe kost' : 'Verwachte externe kost' }}</dt><dd>{{ line.forecastExternalEur | eur }}</dd></div><div><dt>Verschil</dt><dd [class.higher]="line.varianceEur > 0" [class.lower]="line.varianceEur < 0">{{ line.varianceEur > 0 ? '+' : '' }}{{ line.varianceEur | eur }}</dd></div><div><dt>Externe kost per stuk</dt><dd>{{ line.forecastExternalUnitEur === null ? '—' : (line.forecastExternalUnitEur | eur: 4) }}</dd></div><div><dt>Per stuk incl. interne opslag</dt><dd>{{ line.forecastPricingUnitEur === null ? '—' : (line.forecastPricingUnitEur | eur: 4) }}</dd></div></dl>
+                  <dl><div><dt>Oorspronkelijk verwachte kosten</dt><dd>{{ line.plannedExternalEur | eur }}</dd></div><div><dt>{{ result.totals.finalized ? 'Externe kost' : 'Verwachte externe kost' }}</dt><dd>{{ line.forecastExternalEur | eur }}</dd></div><div><dt>Verschil</dt><dd [class.higher]="line.varianceEur > 0" [class.lower]="line.varianceEur < 0">{{ line.varianceEur > 0 ? '+' : '' }}{{ line.varianceEur | eur }}</dd></div><div><dt>Externe kost per stuk</dt><dd>{{ line.forecastExternalUnitEur === null ? '—' : (line.forecastExternalUnitEur | eur: 4) }}</dd></div><div><dt>Per stuk incl. interne opslag</dt><dd>{{ line.forecastPricingUnitEur === null ? '—' : (line.forecastPricingUnitEur | eur: 4) }}</dd></div></dl>
                   @if (line.unitCostQuantity === 0) { <p class="higher">Geen bruikbare stuks: de kost blijft bij deze productregel, zonder stukprijs.</p> }
                 </article>
               }

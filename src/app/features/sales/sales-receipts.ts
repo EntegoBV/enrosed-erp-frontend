@@ -34,7 +34,7 @@ import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue, type
           <div class="receipts__trail">
             @for (payment of summary.payments; track payment.id) {
               <article><div><b>{{ payment.amountEur | eur }} {{ payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}@if (payment.legacy) { · historisch }</b><span>{{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.timeZone }}@if (payment.bankAccount) { · {{ payment.bankAccount }} }@if (payment.reference) { · {{ payment.reference }} }</small><small>Geregistreerd {{ stamp(payment.recordedAt, payment.timeZone) }}@if (payment.actor) { · {{ payment.actor }} }</small></div><button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="edit(payment)">Corrigeren</button></article>
-            } @empty { <p class="receipts__hint">Nog geen afzonderlijke ontvangsten geregistreerd.</p> }
+            } @empty { <p class="receipts__hint">{{ view().order.status === 'CONCEPT' ? 'Ontvangsten kun je na het uitreiken registreren.' : 'Nog geen ontvangsten geregistreerd. Het versturen van de factuur registreert geen betaling.' }}</p> }
           </div>
           @if (view().order.status === 'CONCEPT') { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || dirty() || allProductsUnavailable(view())" (click)="issue()">{{ summary.invoiceTotalEur > 0 ? 'Uitgeven zonder e-mail & ontvangst noteren' : 'Uitgeven zonder e-mail' }}</button><p class="receipts__hint">@if (allProductsUnavailable(view())) { Alle producten staan tijdelijk op 0. Herstel minstens één product voordat je deze factuur uitgeeft. } @else { Geef de factuur definitief uit om ontvangsten te registreren. De factuur wordt dan vastgezet. }</p> }
           @if (canRefund()) { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="refund()">Terugbetaling noteren · {{ summary.refundableEur | eur }}</button> }
@@ -111,7 +111,7 @@ export class SalesReceipts implements OnDestroy {
   readonly canRecord = computed(() => this.view().order.docType === 'FACTUUR'
     && !['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(this.view().order.status) && (this.summary()?.invoiceTotalEur ?? 0) > 0);
   readonly canRefund = computed(() => !['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(this.view().order.status) && (this.summary()?.refundableEur ?? 0) > 0);
-  readonly statusLabel = computed(() => ({ UNPAID: 'Nog te ontvangen', PARTIAL: 'Deels ontvangen', PAID: this.summary()?.invoiceTotalEur && this.summary()!.invoiceTotalEur < 0 ? 'Volledig afgehandeld' : 'Volledig ontvangen', OVERPAID: 'Te veel ontvangen', CREDIT: 'Credit' })[this.summary()?.status ?? 'UNPAID']);
+  readonly statusLabel = computed(() => this.view().order.status === 'CONCEPT' ? 'Concept' : ({ UNPAID: 'Nog te ontvangen', PARTIAL: 'Deels ontvangen', PAID: this.summary()?.invoiceTotalEur && this.summary()!.invoiceTotalEur < 0 ? 'Volledig afgehandeld' : 'Volledig ontvangen', OVERPAID: 'Te veel ontvangen', CREDIT: 'Credit' })[this.summary()?.status ?? 'UNPAID']);
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
 

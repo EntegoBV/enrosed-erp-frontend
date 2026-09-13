@@ -1,3 +1,4 @@
+import { canReopenSalesDocument } from './sales-reopen';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
 import { salesLineUnavailable, salesUnavailableLineCount, salesLineRequestedQuantity, salesLineWithAvailability, salesAvailabilityBlockReason, salesAllProductsUnavailable, salesFrozenLineChangeAllowed, salesPalletsWithoutUnavailable } from './sales-line-availability';
@@ -88,9 +89,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
           <button class="btn btn--sm quote-header-button quote-header-button--desktop" type="button"
                   (click)="openPdfSheet()">PDF</button>
-          @if (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD') {
+          @if (canReopen(data)) {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
-                    [disabled]="busy()" (click)="reopen()">Heropen</button>
+                    [disabled]="busy() || dirty() || documentMutationBusy()" style="min-height:44px" (click)="reopen()">Heropen</button>
           } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
                      || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
             <button class="btn btn--sm quote-header-button quote-header-button--send" type="button"
@@ -793,7 +794,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
                     <div class="line-internal__total">
                       <span>
-                        Totale regel{{ line.marginEur < 0 ? 'verlies' : 'winst' }}
+                        Marge na alle kortingen · {{ line.marginEur < 0 ? 'verlies' : 'winst' }}
                         <small>{{ line.quantity | num }} stuks, na regelkorting</small>
                       </span>
                       <strong [class.ok-text]="line.marginEur >= 0"
@@ -1338,9 +1339,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               {{ advanceAgreement() ? 'Voorschotten beheren' : invoiceConversionBusy() ? 'Factuur maken…' : 'Factuur maken' }}
             </button>
           } @else if (!dirty() && !isInvoiceDoc()
-                     && (data.order.status === 'AFGEWEZEN' || data.order.status === 'VERLOPEN' || data.order.status === 'GEANNULEERD')) {
+                     && canReopen(data)) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
-                    [disabled]="busy()" (click)="reopen()">Heropenen</button>
+                    [disabled]="busy() || dirty() || documentMutationBusy()" style="min-height:44px" (click)="reopen()">Heropenen</button>
           } @else if (!dirty() && !isInvoiceDoc() && !sendIssues().length) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     [disabled]="sending()" (click)="openSend()">Versturen</button>
@@ -3174,6 +3175,7 @@ export class SalesEditor {
   /** Price the picker shows: what THIS order would charge for that product. */
   readonly priceOf = (product: Product): number => {
     const order = this.view()?.order;
+    if (order?.markupMode === 'CONTAINER_COST') return product.landedCostEur ?? 0;
     if (order?.markupMode !== 'ORDER') return product.computedSalesPriceEur;
     const cost = product.landedCostEur ?? 0;
     const markup = order.orderMarkupPct ?? 0;
@@ -3282,20 +3284,30 @@ export class SalesEditor {
     }
   }
 
-  async reopen(): Promise<void> {
+  readonly canReopen = canReopenSalesDocument;
+  reopen(): void {
     const data = this.view();
-    if (!data || this.busy()) return;
-    this.busy.set(true);
-    this.customerPortalLink.set(null);
+    if (!data || !this.canReopen(data) || this.busy() || this.saving() || this.sending() || this.documentMutationBusy() || this.dirty()) return;
+    this.ui.confirm({ title: 'Terug naar concept',
+      message: `<b>${escapeHtml(data.order.number)}</b> wordt opnieuw bewerkbaar. De eerdere verzending blijft in de historiek. Er wordt geen e-mail verstuurd.`,
+      confirmLabel: 'Heropenen als concept',
+    }, () => { void this.confirmReopen(data.order.id); });
+  }
+  private async confirmReopen(orderId: number): Promise<void> {
+    const data = this.view();
+    if (!data || data.order.id !== orderId || !this.canReopen(data) || this.dirty() || this.busy() || this.documentMutationBusy()) return;
+    this.documentMutationBusy.set(true); this.busy.set(true);
     try {
-      this.adopt(await this.sales.reopenQuote(data.order.id));
-      void this.loadCustomerPortalLink(data.order.id);
-      this.ui.toast('Offerte staat weer op concept');
+      const fresh = await this.sales.reopenQuote(orderId);
+      if (this.view()?.order.id !== orderId) return;
+      this.customerPortalLink.set(null);
+      this.adopt(fresh);
+      void this.loadCustomerPortalLink(orderId);
+      void this.work.refresh(true);
+      this.ui.toast(`${fresh.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} staat weer op concept`);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Heropenen mislukt'), 'err');
-    } finally {
-      this.busy.set(false);
-    }
+    } finally { this.documentMutationBusy.set(false); this.busy.set(false); }
   }
 
   /** Partner claims must be managed on their schedule; regular sales can start a clean copy. */

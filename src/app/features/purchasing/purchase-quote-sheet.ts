@@ -9,6 +9,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { EurPipe, NumPipe, EurUpPipe, WeekNlPipe } from '../../shared/pipes';
 import { WeekField, isoWeekOf } from '../../shared/week-field';
 import { Sheet, Ui } from '../../shared/ui';
+import { ContainerMarkupUnit, containerQuoteSubtotal, containerQuoteUnitPrice, validContainerMarkup } from './purchase-quote-pricing';
 
 /** One product line of the container as it will land on the quote. */
 export interface PurchaseQuoteLine {
@@ -106,7 +107,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <button type="button" [class.on]="pricing() === 'COST'" [disabled]="!costKnown()" (click)="pricing.set('COST')">Kostprijs van deze container</button>
           </div>
           @if (pricing() === 'COST') {
-            <p class="pq__hint">Elke regel op de gelande kost per stuk van deze container: fabrieksprijs, zeevracht, invoerrechten en handling, tot op de cent zoals op de inkooporder. {{ costs().length ? 'Inspectie en andere kosten gaan als aparte regels mee.' : 'Inspectie en andere kosten zitten in die stukprijs.' }} De vracht op de offerte staat op nul, want die zit al in de kost.</p>
+            <p class="pq__hint">De gelande kostprijs van deze container is de basis. Zeevracht, invoerrechten en handling zitten daar al in. {{ costs().length ? 'De aangevinkte aparte kosten gaan als afzonderlijke regels mee.' : 'Inspectie en andere kosten zitten in de stukprijs.' }} Automatische klantkortingen worden hier niet toegepast.</p>
             @if (costs().length) {
               <ul class="pq__costs" aria-label="Aparte kosten die meegaan">
                 @for (cost of costs(); track cost.key) {
@@ -115,11 +116,18 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
                 }
               </ul>
             }
-            <div class="pq__markup">
-              <label for="pq-markup">Opslag op de kostprijs{{ partner() ? ' · partnerfinanciering zonder opslag' : '' }}</label>
-              <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" step="0.5" inputmode="decimal"
-                     [value]="partner() ? 0 : markupPct()" [disabled]="partner()" (input)="setMarkup($any($event.target).value)" /><i>%</i></span>
-            </div>
+            <section class="pq__markup-card" aria-label="Opslag op de kostprijs">
+              <div class="pq__markup-choice"><label for="pq-markup">Opslag op de kostprijs</label>
+                <div class="pq__markup-units" role="group" aria-label="Eenheid van de opslag">
+                  <button type="button" [attr.aria-pressed]="markupUnit() === 'PERCENT'" (click)="setMarkupUnit('PERCENT')">%</button>
+                  <button type="button" [attr.aria-pressed]="markupUnit() === 'EUR_PER_UNIT'" (click)="setMarkupUnit('EUR_PER_UNIT')">€ / stuk</button>
+                </div>
+              </div>
+              <span class="pq__markup-field"><input class="input num right" id="pq-markup" type="number" min="0" [step]="markupUnit() === 'PERCENT' ? 0.5 : 0.01" inputmode="decimal"
+                [value]="markupValue()" [attr.aria-invalid]="!markupValid()" aria-describedby="pq-markup-help" (input)="setMarkup($any($event.target).value)" /><i>{{ markupUnit() === 'PERCENT' ? '%' : '€ per stuk' }}</i></span>
+              <p class="pq__hint" id="pq-markup-help">{{ markupUnit() === 'PERCENT' ? 'Dit percentage komt bovenop de kostprijs van elk product.' : 'Dit eurobedrag komt bij elk product per stuk bovenop de kostprijs.' }} Aparte kosten blijven zonder opslag. Eventuele eigen kortingen kun je daarna op de offerte instellen.</p>
+              @if (!markupValid()) { <p class="pq__error" role="alert">Vul een bedrag vanaf nul in{{ markupUnit() === 'EUR_PER_UNIT' ? ', met maximaal vier decimalen' : '' }}.</p> }
+            </section>
             <div class="pq__partner">
               <label class="pq__partner-toggle">
                 <input type="checkbox" [checked]="partner()" (change)="setPurpose($any($event.target).checked)" />
@@ -145,7 +153,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
                 <p class="pq__hint">@if (costPct() === 0) { Wij financieren de container; de kost en onze winst rekenen we na de veiling af. } @else if (costPct() < 100) { De rest van de kost en onze winst volgen in de veilingafrekening. } @else { De partner betaalt de container vooraf; na de veiling volgt enkel onze winstdeling. }</p>
               }
             </div>
-            @if (separateCostsEur() > 0) {
+            @if (separateCostsEur() > 0 && !costs().length) {
               <p class="pq__hint">Inspectie en andere kosten ({{ separateCostsEur() | eur }}) zitten in de kostprijs per stuk verdeeld.</p>
             }
           } @else if (!costKnown()) {
@@ -163,7 +171,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
             <li class="pq__empty">Deze container heeft nog geen productregels.</li>
           }
           @if (!partner() && pricing() === 'COST') {
-            <li class="pq__total"><span>Goederen aan gelande kostprijs, excl. btw en levering</span><b>{{ previewTotal() | eur }}</b></li>
+            <li class="pq__total"><span>Totaal incl. gekozen kosten en opslag · excl. btw</span><b>{{ previewTotal() | eur }}</b></li>
           }
         </ul>
         <div class="pq__markup pq__week">
@@ -176,7 +184,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
         @if (createError(); as error) { <p class="pq__error pq__error--foot" role="alert">{{ error }}</p> }
         <span class="spacer"></span>
         <button class="btn" type="button" [disabled]="busy()" (click)="closed.emit()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || loading() || chosen() === null || !lines().length || (partner() && (termsLoading() || !!termsError() || agreementEur() <= 0))"
+        <button class="btn btn--primary" type="button" [disabled]="busy() || loading() || chosen() === null || !lines().length || (!partner() && pricing() === 'COST' && !markupValid()) || (partner() && (termsLoading() || !!termsError() || agreementEur() <= 0))"
                 (click)="create()">{{ busy() ? 'Bezig…' : partner() ? 'Conceptfacturen maken' : 'Offerte maken' }}</button>
       </div>
     </app-sheet>
@@ -216,6 +224,15 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
     .pq__markup-field { display: inline-flex; align-items: center; gap: 6px; }
     .pq__markup-field .input { width: 84px; min-height: 40px; }
     .pq__markup-field i { color: var(--muted); font-style: normal; }
+    .pq__markup-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--rose-line); border-radius: 20px; background: var(--surface-2); }
+    .pq__markup-choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+    .pq__markup-choice label { font-size: 13px; font-weight: 650; }
+    .pq__markup-units { display: flex; padding: 3px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+    .pq__markup-units button { min-width: 64px; min-height: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+    .pq__markup-units button[aria-pressed=true] { color: var(--rose-dark); background: var(--rose-soft); box-shadow: var(--sh-1); }
+    .pq__markup-units button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+    .pq__markup-card .input { width: 132px; min-height: 48px; font-size: 18px; }
+    .pq__markup-card i { font-size: 13px; }
     .pq__scope { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); }
     .pq__scope button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
     .pq__scope button.on { background: var(--surface); color: var(--ink); box-shadow: var(--sh-1); }
@@ -274,7 +291,9 @@ export class PurchaseQuoteSheet {
   /** Why the last attempt was refused, shown next to the button until the next try. */
   readonly createError = signal<string | null>(null);
   readonly pricing = signal<PurchaseQuotePricing>('CUSTOMER');
-  readonly markupPct = signal(0);
+  readonly markupUnit = signal<ContainerMarkupUnit>('PERCENT');
+  readonly markupValue = signal<number | null>(0);
+  readonly markupValid = computed(() => validContainerMarkup(this.markupValue(), this.markupUnit()));
   /** A partner deal: the customer sponsors the container and shares the auction profit with us. */
   readonly partner = signal(false);
   readonly sharePct = signal(50);
@@ -300,7 +319,7 @@ export class PurchaseQuoteSheet {
   /** Partner advances need the exact purchase total; ordinary cost quotes need each product unit cost. */
   readonly costKnown = computed(() => this.lines().length > 0 && (this.partner()
     ? this.advanceBasisEur() != null && Number.isFinite(this.advanceBasisEur()) && this.advanceBasisEur()! >= 0
-    : this.lines().every(line => line.landedUnitEur !== null)));
+    : this.lines().every(line => line.landedUnitEur !== null && Number.isFinite(line.landedUnitEur) && line.landedUnitEur >= 0)));
   /** The inspection and the named other costs, as lines of their own while they sit apart from the piece price; spread by a key they are already inside it. */
   readonly costs = computed<PurchaseQuoteCost[]>(() => {
     const order = this.order();
@@ -321,7 +340,7 @@ export class PurchaseQuoteSheet {
   /* Every separate cost travels along unless it is ticked off; a new container resets the ticks. */
   readonly includedCosts = linkedSignal<ReadonlySet<string>>(() => new Set(this.costs().map((cost) => cost.key)));
   readonly chosenCosts = computed(() => this.costs().filter((cost) => this.includedCosts().has(cost.key)));
-  readonly previewTotal = computed(() => this.lines().reduce((sum, line) => sum + this.unitPrice(line) * line.quantity, 0)
+  readonly previewTotal = computed(() => containerQuoteSubtotal(this.lines().map(line => ({ unitPrice: this.unitPrice(line), quantity: line.quantity })))
     + this.chosenCosts().reduce((sum, cost) => sum + this.costAmount(cost), 0));
 
   /** Every customer the search matches, the chosen one always among them. */
@@ -396,8 +415,13 @@ export class PurchaseQuoteSheet {
   }
 
   setMarkup(raw: string): void {
-    const value = Number(String(raw).replace(',', '.'));
-    this.markupPct.set(Number.isFinite(value) && value >= 0 ? value : 0);
+    this.markupValue.set(String(raw).trim() ? Number(String(raw).replace(',', '.')) : null);
+  }
+
+  setMarkupUnit(unit: ContainerMarkupUnit): void {
+    if (unit === this.markupUnit()) return;
+    this.markupUnit.set(unit);
+    this.markupValue.set(0);
   }
 
   toggleCost(key: string): void {
@@ -418,7 +442,8 @@ export class PurchaseQuoteSheet {
     const unit = this.partner() ? this.reconciliation()?.lines.find((cost) => cost.productId === line.productId)?.forecastExternalUnitEur : line.landedUnitEur;
     if (unit == null) return 0;
     const share = this.partner() ? this.costPct() / 100 : 1;
-    return Math.round(unit * (this.partner() ? 1 : 1 + this.markupPct() / 100) * share * 10000) / 10000;
+    return this.partner() ? Math.round(unit * share * 10000) / 10000
+      : containerQuoteUnitPrice(unit, this.markupValid() ? this.markupValue()! : 0, this.markupUnit());
   }
 
   async load(): Promise<void> {
@@ -491,6 +516,7 @@ export class PurchaseQuoteSheet {
       if (this.partner() && !this.costKnown()) throw new Error('Het inkooptotaal inclusief aparte kosten ontbreekt. Vernieuw de container voordat je de conceptfacturen maakt.');
       if (this.partner() && this.agreementEur() <= 0) throw new Error('Er is geen voorschot afgesproken. Bewaar de partnerafspraak op de inkooporder; de afrekening volgt na de veiling.');
       const atCost = (this.partner() || this.pricing() === 'COST') && this.costKnown();
+      if (atCost && !this.partner() && !this.markupValid()) throw new Error('Vul een geldige opslag in.');
       const partnerDeal = atCost && this.partner();
       const included = this.chosenCosts().map((cost) => cost.key);
       const advanceSchedule = partnerDeal
@@ -506,7 +532,8 @@ export class PurchaseQuoteSheet {
         purchaseOrderId: this.order().id,
         customerId: customer.id,
         pricing: atCost ? 'COST' : 'CUSTOMER',
-        markupPct: atCost && !this.partner() ? this.markupPct() : 0,
+        markupPct: atCost && !this.partner() && this.markupUnit() === 'PERCENT' ? this.markupValue()! : 0,
+        markupEurPerUnit: atCost && !this.partner() && this.markupUnit() === 'EUR_PER_UNIT' ? this.markupValue() : null,
         partner: partnerDeal,
         sharePct: partnerDeal ? this.sharePct() : null,
         costPct: partnerDeal ? this.costPct() : null,
