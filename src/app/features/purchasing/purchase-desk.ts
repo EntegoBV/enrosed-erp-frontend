@@ -715,7 +715,7 @@ type DeskRow =
               <app-purchase-payment-overview [view]="data" [payments]="payments()" [documents]="documents()" [editable]="true" [dirty]="dirty()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
                 (add)="openPayment($event.amount, $event.label, $event.payee, $event.due ?? null)"
-                (edit)="editPayment($event)" (proof)="attachProof($event)" (settle)="reviewPayment($event)" (download)="downloadDocument($event)" />
+                (edit)="editPayment($event)" (proof)="attachProof($event)" (settle)="reviewPayment($event)" (download)="downloadDocument($event)" (planChange)="openPaymentPlan()" />
               <app-purchase-payment-result [view]="data" [showManagement]="false" />
               <details class="purchase-payment-details">
                 <summary>Kostprijs en nacalculatie <span>Berekening en PDF</span></summary>

@@ -42,6 +42,10 @@ export interface PurchasePaymentAction {
                 <div><dt>{{ group.settled ? 'Resterend na afrekening' : 'Nog open' }}</dt><dd>{{ group.open | eur }}</dd></div>
               }
             </dl>
+            @if (group.payee === 'SUPPLIER' && editable()) {
+              <button class="payment-plan-edit" type="button" [disabled]="busy()" (click)="planChange.emit()">Betaalafspraak wijzigen <span aria-hidden="true">›</span></button>
+              @if (!terms().length) { <p class="payment-plan-hint">Er is nog geen termijnverdeling ingesteld.</p> }
+            }
             @if (group.payee === 'SUPPLIER' && terms().length) {
               <ol class="payment-terms" aria-label="Leverancierstermijnen">
                 @for (term of terms(); track term.due) {
@@ -148,6 +152,8 @@ export interface PurchasePaymentAction {
     .payment-group__actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
     .payment-group__actions > button:first-child { flex: 1; color: var(--rose-dark); border-color: var(--rose-line); background: var(--rose-soft); }
     .payment-group__settle { color: var(--muted); }
+    .payment-plan-edit { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; margin-top: 12px; color: var(--rose-dark); background: var(--surface-2); }
+    .payment-plan-hint { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
     .payment-ledger { margin-top: 14px; border-top: 1px solid var(--line); }
     summary { min-height: 44px; padding: 14px 0 8px; color: var(--ink); font-size: 12px; font-weight: 650; cursor: pointer; }
     summary > span { margin-left: 5px; color: var(--muted); font-size: 10px; font-weight: 400; }
@@ -182,6 +188,7 @@ export class PurchasePaymentOverview {
   readonly proof = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();
   readonly settle = output<Payee>();
+  readonly planChange = output<void>();
   readonly terms = computed(() => purchaseInstalmentState(this.view(), instalmentsOf(this.view().order, PAYMENT_TERMS), this.payments()));
   readonly groups = computed(() => {
     const view = this.view();
