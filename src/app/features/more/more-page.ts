@@ -12,26 +12,29 @@ import { THEMES, Theme } from '../../core/platform/theme';
   template: `
     <app-page-header title="Meer" [subtitle]="'Aangemeld als ' + (auth.username() ?? '')" />
 
-    <div class="content">
-      <!-- The workspaces everyone reaches for daily stand on top, not inside a group. -->
-      <a class="list-item card more-shortcut" routerLink="/files">
+    <div class="content more-content">
+      <div class="more-section-label">Snel naar</div>
+      <nav class="more-shortcuts" aria-label="Snel naar">
+      <a class="list-item card more-shortcut more-shortcut--media" routerLink="/files">
         <span class="thumb thumb--placeholder"><app-icon name="media" /></span>
         <div class="list-item__body"><div class="list-item__title">Documenten &amp; media</div>
           <div class="list-item__meta">Foto’s, PDF’s en bestanden beheren en delen</div></div>
         <span class="list-item__chev">›</span>
       </a>
-      <a class="list-item card more-shortcut" routerLink="/costs">
+      <a class="list-item card more-shortcut more-shortcut--finance" routerLink="/costs">
         <span class="thumb thumb--placeholder"><app-icon name="exchange" /></span>
         <div class="list-item__body"><div class="list-item__title">Kosten &amp; bank</div>
           <div class="list-item__meta">Kosten, vaste kosten, banksaldo en analyse</div></div>
         <span class="list-item__chev">›</span>
       </a>
 
+      </nav>
+      <div class="more-section-label">Werkruimtes</div>
       <details class="card more-group more-group--analyses" name="meer-groepen" open>
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
           <span class="more-group__copy"><strong>Analyses</strong>
-            <small>Overzicht · Verkoop · Voorraad · Inkoop · Markt</small></span>
+            <small>Verkoop, voorraad en resultaat in beeld</small></span>
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
@@ -59,6 +62,12 @@ import { THEMES, Theme } from '../../core/platform/theme';
               <div class="list-item__meta">Leveranciers, ontvangstkwaliteit, schade en tekort</div></div>
             <span class="list-item__chev">›</span>
           </a>
+          <a class="list-item" routerLink="/analyses/result">
+            <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
+            <div class="list-item__body"><div class="list-item__title">Resultaat</div>
+              <div class="list-item__meta">Omzet, marge en eigen kosten</div></div>
+            <span class="list-item__chev" aria-hidden="true">›</span>
+          </a>
           <a class="list-item" routerLink="/analyses/market">
             <span class="thumb thumb--placeholder"><app-icon name="exchange" /></span>
             <div class="list-item__body"><div class="list-item__title">Markt &amp; container</div>
@@ -77,7 +86,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
       <!-- One expander per domain: the menu stays one screen tall, and
            every drawer of the old settings page lives where you would
            actually look for it. -->
-      <details class="card more-group" name="meer-groepen">
+      <details class="card more-group more-group--sales" name="meer-groepen">
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="sales" /></span>
           <span class="more-group__copy"><strong>Verkoop</strong>
@@ -106,7 +115,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
         </div>
       </details>
 
-      <details class="card more-group" name="meer-groepen">
+      <details class="card more-group more-group--purchase" name="meer-groepen">
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="purchase" /></span>
           <span class="more-group__copy"><strong>Inkoop</strong>
@@ -129,7 +138,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
         </div>
       </details>
 
-      <details class="card more-group" name="meer-groepen">
+      <details class="card more-group more-group--inventory" name="meer-groepen">
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="stock" /></span>
           <span class="more-group__copy"><strong>Producten &amp; voorraad</strong>
@@ -182,7 +191,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
         </div>
       </details>
 
-      <details class="card more-group" name="meer-groepen">
+      <details class="card more-group more-group--company" name="meer-groepen">
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="settings" /></span>
           <span class="more-group__copy"><strong>Bedrijf</strong>
@@ -217,7 +226,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
         </div>
       </details>
 
-      <div class="section-title">App op dit toestel</div>
+      <div class="more-section-label">App op dit toestel</div>
       <div class="card"><div class="list">
         <a class="list-item" [routerLink]="['/settings']" [queryParams]="{ sectie: 'notifications' }">
           <span class="thumb thumb--placeholder"><app-icon name="bell" /></span>
@@ -234,7 +243,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
               <button class="more-theme__swatch" type="button" role="radio" [title]="option.label"
                       [class.more-theme__swatch--active]="theme.current() === option.key"
                       [attr.aria-checked]="theme.current() === option.key"
-                      [style.background]="option.swatch" (click)="theme.set(option.key)">
+                      [style.--swatch]="option.swatch" (click)="theme.set(option.key)">
                 <span class="sr-only">{{ option.label }}</span>
               </button>
             }
@@ -251,26 +260,77 @@ import { THEMES, Theme } from '../../core/platform/theme';
     </div>
   `,
   styles: `
-    .more-shortcut{display:flex;margin-bottom:12px;border-color:var(--rose-line)}
-    .more-group { margin-bottom: 10px; }
-    .more-group summary { display: flex; align-items: center; gap: 12px; padding: 13px 14px;
-      cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent; }
+    :host { display: block; min-width: 0; }
+    .more-content { max-width: 860px; margin-inline: auto; }
+    .more-section-label { margin: 20px 4px 10px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .more-section-label:first-child { margin-top: 0; }
+    .more-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .more-shortcut {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 13px;
+      min-width: 0;
+      margin: 0;
+      padding: 16px;
+      border-radius: 22px;
+      border-color: var(--line);
+      background: var(--surface);
+      text-decoration: none;
+      transition: transform .16s ease, border-color .16s ease;
+    }
+    .more-shortcut--media { --more-accent: #6654aa; --more-soft: #eeeaf7; }
+    .more-shortcut--finance { --more-accent: #26775d; --more-soft: #e7f2eb; }
+    .more-shortcut .list-item__body { flex: none; width: 100%; }
+    .more-shortcut .list-item__title { font-size: 15px; line-height: 1.3; white-space: normal; }
+    .more-shortcut .list-item__meta { margin-top: 5px; font-size: 11px; line-height: 1.5; white-space: normal; }
+    .more-shortcut .list-item__chev { position: absolute; top: 23px; right: 16px; }
+    .more-shortcut:active { transform: scale(.985); }
+    .thumb { display: grid; width: 40px; height: 40px; flex: 0 0 40px; place-items: center; border-radius: 13px; background: var(--more-soft, var(--rose-soft)); color: var(--more-accent, var(--rose-dark)); }
+    .more-group { margin-bottom: 10px; border-radius: 20px; overflow: hidden; box-shadow: 0 2px 8px rgb(20 35 30 / 2%); }
+    .more-group--analyses { --more-accent: #3d68a5; --more-soft: #eaf0f9; }
+    .more-group--sales { --more-accent: #a04661; --more-soft: #f8eaf0; }
+    .more-group--purchase { --more-accent: #946223; --more-soft: #f7efdf; }
+    .more-group--inventory { --more-accent: #26775d; --more-soft: #e7f2eb; }
+    .more-group--company { --more-accent: #6654aa; --more-soft: #eeeaf7; }
+    .more-group summary { display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 14px; cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent; }
     .more-group summary::-webkit-details-marker { display: none; }
     .more-group__copy { flex: 1; min-width: 0; }
-    .more-group__copy strong { display: block; font-size: 14.5px; }
-    .more-group__copy small { display: block; overflow: hidden; color: var(--muted);
-      font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-    .more-group__chev { color: var(--muted-2); font-size: 18px; transition: transform .15s ease; }
+    .more-group__copy strong { display: block; font-size: 15px; line-height: 1.4; }
+    .more-group__copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .more-group__chev { display: grid; width: 26px; height: 26px; flex: none; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 18px; transition: transform .18s ease; }
     .more-group[open] .more-group__chev { transform: rotate(90deg); }
-    .more-group__list { border-top: 1px solid var(--line); }
-    .more-group__list .list-item { padding-left: 22px; }
-    .more-theme { gap: 10px; }
-    .more-theme__row { display: flex; align-items: center; gap: 8px; }
-    .more-theme__swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent;
-      box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); cursor: pointer; padding: 0; transition: transform .12s ease; }
-    .more-theme__swatch--active { border-color: var(--ink); transform: scale(1.12); box-shadow: inset 0 0 0 2px #fff; }
-    .more-logout { width: 100%; border: 0; font: inherit; text-align: left; cursor: pointer; }
+    .more-group__list { padding: 0 12px 8px; border-top: 1px solid var(--line); }
+    .more-group__list .list-item { gap: 11px; min-height: 64px; padding: 11px 3px; }
+    .more-group__list .thumb { width: 32px; height: 32px; flex-basis: 32px; border-radius: 10px; }
+    .more-group__list .list-item__title { font-size: 13px; line-height: 1.4; white-space: normal; }
+    .more-group__list .list-item__meta { font-size: 11px; line-height: 1.45; white-space: normal; }
+    .more-group--analyses .more-group__list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+    .more-group--analyses .list-item { align-items: flex-start; }
+    .more-group--analyses .list-item__chev { display: none; }
+    .more-group--analyses .list-item__meta { margin-top: 3px; }
+    .more-theme { gap: 10px; flex-wrap: wrap; }
+    .more-theme__row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+    .more-theme__swatch { position: relative; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; cursor: pointer; padding: 0; }
+    .more-theme__swatch::before { position: absolute; inset: 9px; content: ''; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
+    .more-theme__swatch--active::before { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--swatch); }
+    .more-theme__swatch--active::after { position: absolute; inset: 0; display: grid; place-items: center; content: '✓'; color: #fff; font-size: 13px; font-weight: 750; }
+    .more-logout { min-height: 64px; width: 100%; border: 0; font: inherit; text-align: left; cursor: pointer; }
     .more-logout .list-item__title { color: var(--danger); }
+    .more-content > .card { border-radius: 20px; overflow: hidden; }
+    :is(a, summary, button):focus-visible { outline: 2px solid var(--rose); outline-offset: -3px; }
+    @media (max-width: 540px) {
+      .more-shortcuts { gap: 10px; }
+      .more-shortcut { padding: 14px; gap: 12px; }
+      .more-shortcut .list-item__title { font-size: 14px; }
+      .more-group--analyses .more-group__list { gap: 0 10px; }
+      .more-group--analyses .list-item { flex-wrap: wrap; align-content: flex-start; gap: 7px; padding-block: 12px; }
+      .more-group--analyses .list-item__body { flex: 1 1 100%; }
+      .more-theme__row { flex-basis: 100%; justify-content: space-between; }
+    }
+    @media (prefers-reduced-motion: reduce) { .more-shortcut, .more-group__chev { transition: none; } }
+
   `,
 })
 export class MorePage {

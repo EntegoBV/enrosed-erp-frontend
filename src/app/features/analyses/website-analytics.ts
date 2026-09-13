@@ -44,7 +44,7 @@ const RANGES: readonly Range[] = [
     <div class="wa__toolbar">
       <div class="wa__ranges" role="group" aria-label="Periode">
         @for (range of ranges; track range.days) {
-          <button type="button" [class.on]="days() === range.days" (click)="days.set(range.days)">{{ range.label }}</button>
+          <button type="button" [class.on]="days() === range.days" [attr.aria-pressed]="days() === range.days" (click)="days.set(range.days)">{{ range.label }}</button>
         }
       </div>
       <div class="wa__toolbar-side">
@@ -58,9 +58,9 @@ const RANGES: readonly Range[] = [
     </div>
 
     @if (loading() && !report()) {
-      <p class="wa__state">Bezoekcijfers laden…</p>
+      <p class="wa__state" role="status">Bezoekcijfers laden…</p>
     } @else if (error(); as error) {
-      <p class="wa__state wa__state--error">{{ error }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
+      <p class="wa__state wa__state--error" role="alert">{{ error }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
     } @else if (report(); as r) {
       <div class="wa__kpis" [class.wa__kpis--stale]="loading()">
         <div class="wa__kpi">
@@ -282,8 +282,8 @@ const RANGES: readonly Range[] = [
     .wa__card h4{margin:0 0 6px;color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
     .wa__card-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
     .wa__sub{margin:-4px 0 10px;color:var(--muted);font-size:12px}.wa__sub--after{margin:10px 0 0}
-    .wa__chart{display:flex;align-items:flex-end;gap:2px;height:150px}
-    .wa__bar{position:relative;flex:1 1 0;min-width:2px;height:100%;border-radius:3px 3px 0 0}
+    .wa__chart{display:flex;align-items:flex-end;gap:clamp(.2px,.15vw,2px);height:150px}
+    .wa__bar{position:relative;flex:1 1 0;min-width:0;height:100%;border-radius:3px 3px 0 0}
     .wa__bar--weekend{background:color-mix(in srgb,var(--surface-2) 70%,transparent)}
     .wa__bar--future{opacity:.35}
     .wa__bar i,.wa__bar em{position:absolute;bottom:0;left:0;right:0;border-radius:3px 3px 0 0}
@@ -319,6 +319,45 @@ const RANGES: readonly Range[] = [
     .wa__foot p{margin:0;line-height:1.5}.wa__foot small{font-size:11px}
     @media(max-width:860px){.wa__grid{grid-template-columns:1fr}.wa__toolbar{align-items:stretch}.wa__toolbar-side{justify-content:space-between}}
     @media(max-width:520px){.wa__duo{grid-template-columns:1fr}}
+    :host { min-width: 0; }
+    .wa__toolbar { gap: 10px 16px; margin-bottom: 16px; }
+    .wa__ranges { min-width: 0; padding: 4px; gap: 2px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%); scrollbar-width: none; }
+    .wa__ranges button { min-height: 44px; min-width: 44px; border-radius: 14px; padding-inline: 12px; }
+    .wa__ranges button.on { background: var(--surface); color: var(--rose-dark); box-shadow: 0 2px 7px rgb(25 35 30 / 10%); }
+    .wa__refresh { width: 44px; height: 44px; flex: none; border-radius: 15px; background: var(--surface); }
+    .wa__live { min-height: 36px; }
+    .wa__kpi { min-width: 0; gap: 7px; padding: 17px; border-radius: 20px; }
+    .wa__kpi span { font-size: 11px; line-height: 1.4; letter-spacing: 0; text-transform: none; }
+    .wa__kpi b { font-size: clamp(24px, 3vw, 30px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .wa__kpi small { font-size: 11px; line-height: 1.5; }
+    .wa__card { padding: 18px; border-radius: 22px; }
+    .wa__card h3 { font-size: 16px; line-height: 1.35; }
+    .wa__chart { min-width: 0; width: 100%; }
+    .wa__axis { gap: 8px; font-size: 10px; }
+    .wa__axis > span { min-width: 0; }
+    .wa__axis > span:nth-child(2) { text-align: center; }
+    .wa__axis > span:last-child { text-align: right; }
+    .wa__funnel-copy { align-items: baseline; flex-wrap: wrap; row-gap: 3px; }
+    .wa__funnel-copy > span { margin-left: auto; white-space: nowrap; }
+    .wa__list li { min-height: 44px; border-radius: 12px; }
+    .wa__hours { min-width: 0; }
+    .wa__foot { padding: 16px; border-radius: 20px; background: var(--surface-2); border-style: solid; }
+    .wa__foot .btn, .wa__state .linklike { min-height: 44px; }
+    button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+    @media (max-width: 679px) {
+      .wa__toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+      .wa__ranges { display: flex; width: 100%; }
+      .wa__ranges button { flex: 1 0 auto; padding-inline: 10px; font-size: 12px; }
+      .wa__toolbar-side { min-width: 0; justify-content: space-between; }
+      .wa__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .wa__kpi { padding: 14px; border-radius: 18px; }
+      .wa__kpi b { font-size: 24px; }
+      .wa__card { padding: 15px; border-radius: 20px; }
+      .wa__hours-head, .wa__hours-row { grid-template-columns: 22px repeat(24, minmax(0, 1fr)); gap: 1px; }
+    }
+    @media (max-width: 359px) { .wa__ranges button { padding-inline: 8px; font-size: 11px; } }
+    @media (prefers-reduced-motion: reduce) { .wa__kpis, .wa__funnel-track i { transition: none; } }
+
   `,
 })
 export class WebsiteAnalytics {

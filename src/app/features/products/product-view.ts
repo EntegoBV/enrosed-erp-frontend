@@ -12,6 +12,7 @@ import { Category, LandedCostLine, Product, ProductFamily, ProductSupplierAgreem
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
 import { PageHeader } from '../../shared/page-header';
+import { Icon } from '../../shared/icon';
 import {
   productCatalogNavigation,
   productVariantOptionLabel,
@@ -55,7 +56,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [KgPipe, Skeleton, ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
-    PageHeader, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    PageHeader, Icon, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -115,6 +116,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                           [attr.aria-label]="'Foto ' + ($index + 1) + ' van ' + product.photos.length + ' vergroten'">
                     <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + ($index + 1)"
                          draggable="false" loading="lazy" />
+                    @if (product.photos.length > 1) { <span class="phero__photo-position">{{ $index + 1 }} / {{ product.photos.length }}</span> }
                   </button>
                 }
               </div>
@@ -280,7 +282,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             </div>
           } @else if (variantMembers().length > 1) {
             <section class="variant-links" aria-labelledby="variant-links-title">
-              <b id="variant-links-title">Productreeks</b>
+              <b id="variant-links-title">Kies een variant <small>{{ variantMembers().length }}</small></b>
               <div>
                 @for (member of variantMembers(); track member.productId) {
                   @if (member.productId === product.id) {
@@ -305,19 +307,19 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 
           @if (!desktop.active()) {
             <nav class="product-phone-shortcuts" aria-label="Direct product bewerken">
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'identity' }"><span>Gegevens</span><small>Kleur &amp; maat <i aria-hidden="true">↗</i></small></a>
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'sales' }"><span>Verkoopprijs</span><small>Prijs aanpassen <i aria-hidden="true">↗</i></small></a>
-              <a [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'packaging' }"><span>Omdoos</span><small>Inhoud &amp; maten <i aria-hidden="true">↗</i></small></a>
+              <a data-tone="rose" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'identity' }"><app-icon name="products" [size]="20" /><span>Gegevens</span><small>Kleur &amp; maat</small></a>
+              <a data-tone="green" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'sales' }"><app-icon name="sales" [size]="20" /><span>Verkoopprijs</span><small>Prijs aanpassen</small></a>
+              <a data-tone="amber" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'packaging' }"><app-icon name="purchase" [size]="20" /><span>Omdoos</span><small>Inhoud &amp; maten</small></a>
             </nav>
           }
           <nav id="product-detail-navigation" class="subnav product-detail-nav workflow-nav workflow-nav--wide erp-workspace__nav" aria-label="Productonderdelen">
             <div class="subnav__rail erp-workspace__nav-rail workflow-nav__rail">
               @for (item of visibleDetailSections(); track item.id) {
-                <a class="erp-workspace__nav-item workflow-nav__item" [class.active]="activeDetailSection() === item.id"
+                <a class="erp-workspace__nav-item workflow-nav__item" [attr.data-tone]="item.tone" [class.active]="activeDetailSection() === item.id"
                    [class.workflow-nav__active]="activeDetailSection() === item.id"
                    [attr.aria-current]="activeDetailSection() === item.id ? 'location' : null"
                    [href]="'#' + item.id" (click)="scrollToDetailSection(item.id, $event)">
-                  <span class="workflow-nav__mark erp-workspace__nav-index">{{ $index + 1 }}</span>
+                  <span class="product-detail-nav-icon"><app-icon [name]="item.icon" [size]="17" /></span>
                   <span class="workflow-nav__copy"><b>{{ item.label }}</b></span>
                 </a>
               }
@@ -841,6 +843,52 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
     }
   `,
   styles: `
+    :host [data-tone] { --product-tone: var(--rose-dark); }
+    :host [data-tone='green'] { --product-tone: color-mix(in srgb, #218363 85%, var(--ink)); }
+    :host [data-tone='blue'] { --product-tone: color-mix(in srgb, #377ac5 85%, var(--ink)); }
+    :host [data-tone='amber'] { --product-tone: color-mix(in srgb, #bb761b 85%, var(--ink)); }
+    :host [data-tone='purple'] { --product-tone: color-mix(in srgb, #8859c5 85%, var(--ink)); }
+    .product-detail-nav-icon { display: grid; place-items: center; flex: none; width: 27px; height: 27px; border-radius: 9px;
+      background: color-mix(in srgb, var(--product-tone) 10%, var(--surface)); color: var(--product-tone); }
+    .phero__photo-position { position: absolute; right: 8px; bottom: 8px; padding: 4px 7px; border-radius: 99px;
+      background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-size: 9px; font-weight: 650; }
+    :host .variant-links > b > small { display: inline-grid; place-items: center; min-width: 23px; height: 23px; margin-left: 6px;
+      border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 10px; }
+    @media (max-width: 679px) {
+      :host #product-overview.phero.erp-workspace__hero { grid-template-columns: 108px minmax(0, 1fr); gap: 12px;
+        border-bottom: 1px solid var(--line); background: var(--surface); box-shadow: none; padding-bottom: 16px; }
+      :host #product-overview .phero__back { width: 44px; height: 44px; border: 1px solid var(--line); }
+      :host #product-overview .phero__shots { width: 108px; border: 1px solid var(--line); background: var(--surface-2); }
+      :host #product-overview .phero__shot { position: relative; flex-basis: 106px; width: 106px; height: 134px; border-radius: 21px; background: var(--surface-2); }
+      :host #product-overview .phero__photo-manage--mobile { min-height: 44px; display: grid; place-items: center; margin-top: -8px; padding: 0; font-size: 11px; }
+      :host #product-overview .erp-workspace__title { font-size: clamp(20px, 5.8vw, 24px); line-height: 1.1; letter-spacing: -.035em; }
+      :host #product-overview .phero__meta { gap: 7px; }
+      :host #product-overview .phero__facts.erp-workspace__facts { gap: 9px; }
+      :host #product-overview .phero__fact { padding: 13px; min-height: 80px; align-items: flex-start; border-color: var(--line); background: var(--surface-2); }
+      :host #product-overview .phero__fact small { font-size: 10px; text-transform: none; letter-spacing: 0; }
+      :host #product-overview .phero__fact strong { font-size: 21px; }
+      :host #product-overview .phero__fact > span { font-size: 10px; }
+      :host #product-overview .phero__expected { min-height: 44px; border: 1px solid var(--rose-line); border-radius: 14px; font-size: 11px; }
+      :host .variant-links { display: block; margin: 16px 0 0; padding: 0; border: 0; background: none; }
+      :host .variant-links > b { display: flex; align-items: center; padding: 0 2px; margin-bottom: 9px; font-size: 12px; color: var(--ink); }
+      :host .variant-links > div { display: flex; flex-wrap: nowrap; gap: 7px; padding: 1px 1px 6px; overflow-x: auto; scrollbar-width: none; }
+      :host .product-variant-link { flex: none; min-height: 44px; padding: 9px 12px; border-radius: 14px; background: var(--surface); font-size: 12px; }
+      :host .product-variant-link i { width: 18px; height: 18px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
+      :host .product-variant-link--current { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+      :host .product-phone-shortcuts { gap: 8px; margin: 14px 0 16px; }
+      :host .product-phone-shortcuts > a { gap: 6px; min-height: 104px; padding: 12px 10px; border-radius: 19px; }
+      :host .product-phone-shortcuts app-icon { display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 2px;
+        border-radius: 11px; background: color-mix(in srgb, var(--product-tone) 11%, var(--surface)); color: var(--product-tone); }
+      :host .product-phone-shortcuts span { font-size: 11px; }
+      :host .product-phone-shortcuts small { font-size: 9px; }
+      :host #product-detail-navigation.product-detail-nav { margin: 0 0 16px; border-radius: 19px; box-shadow: 0 2px 8px rgb(20 30 25 / 4%); }
+      :host #product-detail-navigation.product-detail-nav a { display: flex; align-items: center; gap: 7px; min-height: 46px; padding: 8px 11px; }
+      :host #product-detail-navigation.product-detail-nav a.active { color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+      :host #product-detail-navigation.product-detail-nav .workflow-nav__copy b { font-size: 11px; }
+      :host .product-view-dock { border-radius: 22px 22px 0 0; }
+      :host .product-view-dock .btn { min-height: 48px; border-radius: 16px; }
+      :host .product-phone-shortcuts > a:focus-visible, :host #product-detail-navigation a:focus-visible, :host #product-overview button:focus-visible { outline: 2px solid var(--rose); outline-offset: -3px; }
+    }
     .product-view-page { background: transparent; }
     .product-view-canvas { display: block; width: 100%; max-width: 1080px; margin: 0 auto; }
     .product-detail-nav { top: var(--appbar-h); margin-top: 10px; overflow: hidden;
@@ -1143,13 +1191,13 @@ export class ProductView {
   private galleryPointer: { id: number; x: number; y: number } | null = null;
   private gallerySuppressClickUntil = 0;
   readonly detailSections = [
-    { id: 'product-overview', label: 'Overzicht' },
-    { id: 'product-core', label: 'Product & prijs' },
-    { id: 'product-packaging', label: 'Omdoos' },
-    { id: 'stock-card', label: 'Voorraad' },
-    { id: 'product-media', label: 'Bestanden' },
-    { id: 'product-agreements', label: 'Afspraken' },
-    { id: 'product-publication', label: 'Website' },
+    { id: 'product-overview', label: 'Overzicht', icon: 'products', tone: 'rose' },
+    { id: 'product-core', label: 'Product & prijs', icon: 'sales', tone: 'green' },
+    { id: 'product-packaging', label: 'Omdoos', icon: 'purchase', tone: 'amber' },
+    { id: 'stock-card', label: 'Voorraad', icon: 'stock', tone: 'blue' },
+    { id: 'product-media', label: 'Bestanden', icon: 'media', tone: 'purple' },
+    { id: 'product-agreements', label: 'Afspraken', icon: 'pdf', tone: 'purple' },
+    { id: 'product-publication', label: 'Website', icon: 'countries', tone: 'blue' },
   ] as const;
   readonly visibleDetailSections = computed(() => this.desktop.active()
     ? this.detailSections

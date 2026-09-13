@@ -186,7 +186,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         <div class="product-mobile-variant">
           <strong>@if (draft().colourHex) { <i [style.background]="draft().colourHex"></i> }{{ draft().colour || 'Kleur nog kiezen' }}@if (draft().variantSize) { <small>· {{ draft().variantSize }}</small> }</strong>
           <span>{{ draft().sku || selectedCategoryName() || 'Nieuwe variant' }}</span>
-          <div class="product-mobile-metrics"><button type="button" (click)="showTab('sales')">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Prijs instellen' }}</button><span>·</span><button type="button" (click)="showTab('stock')">{{ workspaceStockLabel() }} op voorraad</button></div>
         </div>
         @if (!isNew() && variantNeighbours(); as around) {
           @if (around.total > 1) {
@@ -197,6 +196,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
           }
         }
+        <div class="product-mobile-metrics">
+          <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
+          <button type="button" (click)="showTab('stock')"><app-icon name="stock" [size]="17" /><span><small>Voorraad</small><b>{{ workspaceStockLabel() }} stuks</b></span><span aria-hidden="true">›</span></button>
+        </div>
       </section>
     }
     <div class="product-editor-lead erp-workspace erp-workspace--product erp-workspace--edit">
@@ -292,7 +295,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         @if (!desktop.active()) {
           <div class="product-mobile-tabs" role="group" aria-label="Bewerkonderdeel">
             @for (tab of mobilePrimaryTabs; track tab.id) {
-              <button type="button" [class.is-active]="activeTab() === tab.id" [attr.aria-pressed]="activeTab() === tab.id" [attr.aria-controls]="tab.id" (click)="showTab(tab.id)"><app-icon [name]="tabIcon(tab.id)" [size]="19" /><span>{{ tab.label }}</span></button>
+              <button type="button" [attr.data-section]="tab.id" [class.is-active]="activeTab() === tab.id" [attr.aria-pressed]="activeTab() === tab.id" [attr.aria-controls]="tab.id" (click)="showTab(tab.id)"><app-icon [name]="tabIcon(tab.id)" [size]="19" /><span>{{ tab.label }}</span></button>
             }
             <button type="button" [class.is-active]="mobileMoreActive()" [attr.aria-expanded]="mobileSectionsOpen()" aria-haspopup="dialog" (click)="mobileSectionsOpen.set(true)"><app-icon name="settings" [size]="19" /><span>{{ mobileMoreActive() ? mobileSectionLabel() : 'Meer' }}</span></button>
           </div>
@@ -1360,7 +1363,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       @if (mobileSectionsOpen()) {
         <app-sheet title="Productonderdelen" (closed)="mobileSectionsOpen.set(false)">
           <div body class="product-section-sheet"><p>Kies wat je wilt aanpassen.</p><div class="product-section-choices">
-            @for (tab of phoneTabs(); track tab.id) { <button type="button" [class.is-active]="activeTab() === tab.id" (click)="showTab(tab.id)"><span class="product-section-icon"><app-icon [name]="tabIcon(tab.id)" [size]="23" /></span><span><strong>{{ tab.label }}</strong><small>{{ tabDescription(tab.id) }}</small></span><span class="product-section-arrow" aria-hidden="true">{{ activeTab() === tab.id ? '✓' : '›' }}</span></button> }
+            @for (tab of phoneTabs(); track tab.id) {
+              <button type="button" [attr.data-section]="tab.id" [class.is-active]="activeTab() === tab.id"
+                      [attr.aria-pressed]="activeTab() === tab.id" (click)="showTab(tab.id)">
+                <span class="product-section-icon"><app-icon [name]="tabIcon(tab.id)" [size]="23" /></span>
+                <span class="product-section-copy"><strong>{{ tab.label }}</strong><small>{{ tabDescription(tab.id) }}</small></span>
+                <span class="product-section-arrow" aria-hidden="true">{{ activeTab() === tab.id ? '✓' : '›' }}</span>
+              </button>
+            }
           </div>@if (!isNew()) { <a class="product-section-translation" [routerLink]="['/products', draft().id, 'translations']"><app-icon name="countries" [size]="19" /> Namen &amp; vertalingen <span aria-hidden="true">↗</span></a> }</div>
         </app-sheet>
       }
@@ -1451,6 +1461,54 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
   `,
   styles: `
+    :host#product-editor-workspace [data-section] { --section-tone: var(--rose-dark); }
+    :host#product-editor-workspace [data-section='media'], :host#product-editor-workspace [data-section='agreements'] { --section-tone: color-mix(in srgb, #8859c5 85%, var(--ink)); }
+    :host#product-editor-workspace [data-section='sales'], :host#product-editor-workspace [data-section='stock'] { --section-tone: color-mix(in srgb, #218363 85%, var(--ink)); }
+    :host#product-editor-workspace [data-section='packaging'] { --section-tone: color-mix(in srgb, #bb761b 85%, var(--ink)); }
+    :host#product-editor-workspace [data-section='purchasing'] { --section-tone: color-mix(in srgb, #377ac5 85%, var(--ink)); }
+    :host#product-editor-workspace .product-section-sheet > p { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+    :host#product-editor-workspace .product-section-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    :host#product-editor-workspace .product-section-choices > button { position: relative; display: flex; flex-direction: column;
+      align-items: flex-start; gap: 13px; min-height: 132px; padding: 15px; border: 1px solid var(--line); border-radius: 21px;
+      background: var(--surface); color: var(--ink); text-align: left; transition: background 160ms ease, border-color 160ms ease; }
+    :host#product-editor-workspace .product-section-choices > button.is-active { background: color-mix(in srgb, var(--section-tone) 6%, var(--surface)); border-color: color-mix(in srgb, var(--section-tone) 48%, var(--line)); }
+    :host#product-editor-workspace .product-section-choices > button:active { background: var(--surface-2); }
+    :host#product-editor-workspace .product-section-choices > button:focus-visible { outline: 2px solid var(--section-tone); outline-offset: 3px; }
+    :host#product-editor-workspace .product-section-icon { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 14px;
+      background: color-mix(in srgb, var(--section-tone) 12%, var(--surface)); color: var(--section-tone); }
+    :host#product-editor-workspace .product-section-copy { display: grid; gap: 5px; min-width: 0; }
+    :host#product-editor-workspace .product-section-copy strong { font-size: 14px; line-height: 1.2; }
+    :host#product-editor-workspace .product-section-copy small { font-size: 11px; line-height: 1.35; color: var(--muted); }
+    :host#product-editor-workspace .product-section-arrow { position: absolute; right: 15px; top: 22px; color: var(--section-tone); }
+    :host#product-editor-workspace .product-section-translation { min-height: 48px; margin-top: 14px; border-radius: 16px; }
+    @media (max-width: 679px) {
+      :host#product-editor-workspace .product-mobile-header { background: color-mix(in srgb, var(--surface) 94%, transparent); }
+      :host#product-editor-workspace .product-mobile-back { min-width: 44px; }
+      :host#product-editor-workspace .product-mobile-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto;
+        gap: 12px; padding: 14px 16px 16px; }
+      :host#product-editor-workspace .product-mobile-photo { width: 64px; height: 74px; border-radius: 19px; }
+      :host#product-editor-workspace .product-mobile-variant { grid-column: 2; }
+      :host#product-editor-workspace .product-mobile-variant > strong { font-size: 15px; }
+      :host#product-editor-workspace .product-mobile-colours { grid-column: 3; grid-template-columns: 44px 44px; border-radius: 15px; background: var(--surface); border: 1px solid var(--line); }
+      :host#product-editor-workspace .product-mobile-colours > a { width: 44px; height: 44px; }
+      :host#product-editor-workspace .product-mobile-colours > small { padding-bottom: 7px; font-size: 10px; }
+      :host#product-editor-workspace .product-mobile-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+      :host#product-editor-workspace .product-mobile-metrics > button { display: flex; align-items: center; gap: 9px; min-width: 0;
+        min-height: 54px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--rose-dark); text-align: left; }
+      :host#product-editor-workspace .product-mobile-metrics > button > span:first-of-type { flex: 1; min-width: 0; display: grid; gap: 3px; }
+      :host#product-editor-workspace .product-mobile-metrics small { color: var(--muted); font-size: 10px; font-weight: 500; }
+      :host#product-editor-workspace .product-mobile-metrics b { color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
+      :host#product-editor-workspace .product-mobile-tabs button { min-height: 52px; color: var(--ink-2); }
+      :host#product-editor-workspace .product-mobile-tabs button > app-icon { color: var(--section-tone, var(--muted)); }
+      :host#product-editor-workspace .product-mobile-tabs button.is-active { background: var(--surface); color: var(--ink);
+        box-shadow: 0 1px 6px rgb(24 30 28 / 8%), inset 0 0 0 1px var(--line); }
+      :host#product-editor-workspace .section-head { align-items: center; }
+      :host#product-editor-workspace .product-editor-dock { border-radius: 22px 22px 0 0; }
+      :host#product-editor-workspace .product-editor-dock__save { min-height: 48px; border-radius: 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      :host#product-editor-workspace .product-section-choices > button { transition: none; }
+    }
     .product-editor-page { background: transparent; }
     .product-editor-lead { background: transparent; }
     .product-editor-lead__content { padding-bottom: 10px; }
@@ -1489,19 +1547,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .product-load-error > span { display: grid; gap: 2px; }
     .product-load-error small { font-size: 10px; }
     .editor-canvas { display: block; width: 100%; max-width: 920px; margin: 0 auto; }
-    /* Desktop: the section rail stands to the left of the form as a jump
-       list, the form itself gets the width a desk has. */
-    /* The rail lives inside the page container now, so on a phone it is
-       pulled back to the edges it always had. */
-    @media (max-width: 1099px) {
-      .product-editor-page > .subnav.erp-workspace__nav { width: auto; margin: -14px -12px 0; }
-    }
-    @media (min-width: 680px) and (max-width: 1023px) {
-      .product-editor-page > .subnav.erp-workspace__nav { margin: -18px -20px 0; }
-    }
-    @media (min-width: 1024px) and (max-width: 1099px) {
-      .product-editor-page > .subnav.erp-workspace__nav { margin: -22px -26px 0; }
-    }
     /* Desktop: the sections stand as a list on the left, the form takes the
        middle, and on a wide desk a summary rail on the right keeps the cost
        chain, the carton and what is still missing in view. */
@@ -1535,21 +1580,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .editor-rail__note { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; }
     .editor-rail .desk-chain__row b { font-variant-numeric: tabular-nums; }
     .editor-rail .desk-facts > div { grid-template-columns: 78px minmax(0, 1fr); }
-    @media (min-width: 1024px) {
-      .subnav.erp-workspace__nav .erp-workspace__nav-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 0; overflow: visible; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item { position: relative; width: 100%; min-width: 0; justify-content: center; gap: 8px;
-        min-height: 46px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); box-shadow: none; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item::before { display: none; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item:hover { background: var(--surface-2); }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item.active { background: var(--rose-soft); color: var(--rose-dark); }
-      .subnav.erp-workspace__nav .erp-workspace__nav-index { position: relative; z-index: 1; width: 24px; height: 24px; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 800; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-done .erp-workspace__nav-index { border-color: var(--ok); background: var(--ok); color: #fff; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-warn .erp-workspace__nav-index { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item.active .erp-workspace__nav-index { border-color: var(--rose); background: var(--rose); color: #fff; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child { display: grid; gap: 1px; min-width: 0; font-size: 12.5px; font-weight: 650; text-align: left; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item > span:last-child small { overflow: hidden; color: var(--muted); font-size: 10.5px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
-      .subnav.erp-workspace__nav .erp-workspace__nav-item.is-warn > span:last-child small { color: var(--warn); font-weight: 650; }
-    }
     .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
     .colour-control { display: flex; align-items: center; gap: 8px; }
     .colour-control .select { flex: 1; }
@@ -1565,14 +1595,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .fix-item__lang { display: flex; align-items: center; gap: 6px; font-size: 12px; }
     .fix-item__lang span { min-width: 22px; font-weight: 700; color: var(--muted); }
     .fix-note { font-size: 12.5px; color: var(--ink-2); padding: 6px 0; border-top: 1px solid var(--line); }
-    /* Phone: Volgende until the last step, then save; the header save
-       fades out while nothing changed. Desktop: always save. */
-    .editor-next { display: none; }
-    @media (max-width: 679px) {
-      /* Phone: Volgende until the last step; saving is the header's job. */
-      .editor-next { display: block; }
-      .editor-save { display: none; }
-    }
     .select--status {
       width: auto; min-height: 34px; padding: 4px 30px 4px 12px;
       font-size: 13px; font-weight: 650;
@@ -1598,11 +1620,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .editor-section { scroll-margin-top: calc(var(--appbar-h) + 12px); }
     .editor-section + .editor-section { margin-top: 16px; }
     .section-head { min-height: 66px; padding: 12px 14px; }
-    .section-head__number {
-      display: grid; flex: 0 0 auto; width: 34px; height: 34px; place-items: center;
-      border-radius: 11px; background: var(--rose-soft); color: var(--rose);
-      font: 760 10px/1 var(--mono); letter-spacing: .04em;
-    }
     .section-head h2 { font-size: 15px; line-height: 1.2; }
     .section-head p { margin-top: 2px; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
 
@@ -1806,21 +1823,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @media (max-width: 520px) {
       .variant-editor-card { align-items: stretch; flex-direction: column; }
       .variant-editor-card .btn { align-self: flex-start; }
-    }
-    @media (max-width: 679px) {
-      .product-editor-lead__content { padding-top: 10px; }
-      .product-editor-hero__actions { display: none; }
-      .product-editor-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 112px); }
-      /* The hero stays one glance: a smaller photo, the two numbers side by
-         side as one line each, so the first field is in view at once. */
-      .product-editor-hero { grid-template-columns: 56px minmax(0, 1fr); gap: 8px 10px; padding: 10px 12px; }
-      .product-editor-hero__media { width: 56px; height: 56px; border-radius: 12px; }
-      .product-editor-hero__placeholder { font-size: 18px; }
-      .product-editor-hero .erp-workspace__title { font-size: 15px; }
-      .product-editor-hero .erp-workspace__meta { font-size: 11px; }
-      .product-editor-hero .erp-workspace__fact { padding: 6px 8px; }
-      .product-editor-hero .erp-workspace__fact-value { font-size: 14px; }
-      .product-editor-hero .erp-workspace__fact-note { display: none; }
     }
     @media (min-width: 680px) {
       .product-editor-hero { grid-template-columns: 104px minmax(0, 1fr) auto;

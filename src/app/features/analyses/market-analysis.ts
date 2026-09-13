@@ -189,7 +189,7 @@ const STORAGE_KEY = 'enrosed.market';
               </ul>
               <div class="fx-insight__grid" role="group" aria-label="Koopkracht per periode">
                 @for (horizon of insight.horizons; track horizon.months) {
-                  <button type="button" [class.is-on]="months() === horizon.months" [disabled]="horizon.pct === null"
+                  <button type="button" [class.is-on]="months() === horizon.months" [attr.aria-pressed]="months() === horizon.months" [disabled]="horizon.pct === null"
                           (click)="setMonths(horizon.months)">
                     <span>{{ horizon.label }}</span>
                     @if (horizon.pct !== null) {
@@ -209,7 +209,7 @@ const STORAGE_KEY = 'enrosed.market';
                 <thead><tr><th>Week van</th>@for (pair of pairs; track pair.id) { <th>{{ pair.from }} → {{ pair.to }}</th> }</tr></thead>
                 <tbody>
                   @for (row of fxTable(); track row.date) {
-                    <tr><td>{{ shortDate(row.date) }}</td>@for (value of row.values; track $index) { <td>{{ value | num: 4 }}</td> }</tr>
+                    <tr><td data-label="Week van">{{ shortDate(row.date) }}</td>@for (value of row.values; track $index) { <td [attr.data-label]="pairs[$index].from + ' → ' + pairs[$index].to">{{ value | num: 4 }}</td> }</tr>
                   }
                 </tbody>
               </table>
@@ -356,11 +356,11 @@ const STORAGE_KEY = 'enrosed.market';
                     <tbody>
                       @for (row of visibleHistory(); track row.rate.id ?? row.rate.quotedOn) {
                         <tr>
-                          <td>{{ shortDate(row.rate.quotedOn) }}</td>
-                          <td class="num">{{ d.definition.unit === 'usd' ? '$ ' : '' }}{{ row.rate.usdPerContainer | num: d.definition.unit === 'usd' ? 0 : 1 }}</td>
-                          <td class="num">@if (row.stepPct !== null) { <b [class]="'tone-' + freightTone(row.stepPct)">{{ row.stepPct > 0 ? '+' : '' }}{{ row.stepPct | num: 1 }}%</b> } @else { <span class="tone-neutral">—</span> }</td>
+                          <td data-label="Datum">{{ shortDate(row.rate.quotedOn) }}</td>
+                          <td class="num" [attr.data-label]="d.definition.unit === 'usd' ? 'USD / 40ft' : 'Punten'">{{ d.definition.unit === 'usd' ? '$ ' : '' }}{{ row.rate.usdPerContainer | num: d.definition.unit === 'usd' ? 0 : 1 }}</td>
+                          <td class="num" data-label="Verschil">@if (row.stepPct !== null) { <b [class]="'tone-' + freightTone(row.stepPct)">{{ row.stepPct > 0 ? '+' : '' }}{{ row.stepPct | num: 1 }}%</b> } @else { <span class="tone-neutral">—</span> }</td>
                           @if (d.definition.group === 'own') {
-                            <td class="num"><button class="linklike" type="button" [disabled]="deletingId() === row.rate.id" (click)="remove(row.rate)">Verwijderen</button></td>
+                            <td class="num mk-table__action"><button class="linklike" type="button" [disabled]="deletingId() === row.rate.id" (click)="remove(row.rate)">Verwijderen</button></td>
                           }
                         </tr>
                       }
@@ -510,6 +510,67 @@ const STORAGE_KEY = 'enrosed.market';
     @media(max-width:679.98px){.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
       .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons,.fx-insight__grid{grid-template-columns:repeat(2,1fr)}
       .mk-toolbar .btn{order:-1;margin-left:auto}.mk-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.fx-pair__now strong{font-size:26px}.fr-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    :host, .mk { min-width: 0; }
+    .mk-toolbar { gap: 10px; }
+    .mk-seg { min-width: 0; padding: 4px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%); }
+    .mk-seg button { flex: none; min-height: 44px; min-width: 44px; border-radius: 14px; }
+    .mk-seg button.is-on { background: var(--surface); color: var(--rose-dark); box-shadow: 0 2px 7px rgb(25 35 30 / 10%); }
+    .mk-card { border-radius: 22px; box-shadow: 0 3px 12px rgb(25 35 30 / 3%); }
+    .mk-card__head { padding: 19px 20px; gap: 12px; }
+    .mk-card__head h2 { font-size: 20px; line-height: 1.3; }
+    .mk-card__head p { line-height: 1.5; }
+    .mk-eyebrow { font-size: 10px; }
+    .mk .btn, .mk .linklike, .mk-table summary, .fr-reference, .sheet-recent__row .linklike { min-height: 44px; }
+    .fx-pair { padding: 20px; gap: 12px; }
+    .fx-pair__flip { min-height: 44px; border-radius: 15px; }
+    .fx-pair__now strong { font-size: 32px; font-variant-numeric: tabular-nums; }
+    .mk-horizons button { min-height: 50px; border-radius: 13px; }
+    .fx-insight__grid button { min-height: 68px; border-radius: 15px; }
+    .fr-tile { padding: 14px; border-radius: 17px; }
+    .fr-tile strong { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .fr-horizon { min-width: 0; border-radius: 15px; }
+    .fr-horizon b { overflow-wrap: anywhere; }
+    .fr-source { border-radius: 16px; }
+    .fr-source__meta { align-items: center; }
+    .fr-source__meta a { display: inline-flex; align-items: center; min-height: 44px; }
+    .mk-table summary { list-style: none; }
+    .mk-table summary::-webkit-details-marker { display: none; }
+    .mk-table__scroll { min-width: 0; max-width: 100%; }
+    .market-sheet-foot .btn { min-height: 44px; }
+    :is(button, summary, a):focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+    @media (max-width: 679px) {
+      .mk { gap: 14px; }
+      .mk-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+      .mk-toolbar .btn { order: 0; margin: 0; padding-inline: 11px; }
+      .mk-seg { overflow-x: auto; border-radius: 17px; scrollbar-width: none; }
+      .mk-seg__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      .mk-seg button { flex: 1 0 auto; padding-inline: 10px; font-size: 11px; }
+      .mk-card__head, .fx-pair, .fx-insight, .fr-detail { padding: 16px; }
+      .mk-card__head h2 { font-size: 18px; }
+      .fx-grid { padding: 0 12px; }
+      .fx-pair { margin-block: 10px; border: 1px solid var(--line); border-radius: 18px; }
+      .fx-pair + .fx-pair { border-left: 1px solid var(--line); }
+      .fx-pair__now strong { font-size: 29px; }
+      .fr-group { padding-inline: 14px; }
+      .fr-tiles { gap: 8px; }
+      .fr-tile { padding: 12px; }
+      .fr-detail__head > div { min-width: 0; }
+      .fr-detail__now { justify-items: start; text-align: left; }
+      .fr-horizons { gap: 8px; }
+      .mk-table__scroll { overflow: visible; }
+      .mk-table__scroll table, .mk-table__scroll tbody { display: block; width: 100%; }
+      .mk-table__scroll thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      .mk-table__scroll tbody { display: grid; gap: 8px; padding: 10px 12px; }
+      .mk-table__scroll tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+      .mk-table__scroll td, .mk-table__scroll td:not(:first-child) { min-width: 0; padding: 0; border: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+      .mk-table__scroll td[data-label]::before { display: block; margin-bottom: 4px; content: attr(data-label); font-size: 10px; font-weight: 500; color: var(--muted); }
+      .mk-table__scroll .mk-table__action { display: flex; align-items: center; justify-content: flex-end; }
+      .fr-history .mk-table__scroll { border: 0; }
+      .fr-history .mk-table__scroll tbody { padding: 0; }
+      .market-sheet-foot .btn { flex: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) { .fx-pair__flip, .fr-tile { transition: none; } }
+
   `,
 })
 export class MarketAnalysis {

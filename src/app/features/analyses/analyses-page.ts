@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, afterRenderEffect, ElementRef, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -17,6 +17,7 @@ import {
 } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
@@ -35,14 +36,14 @@ import { incomingMoneyTotals } from '../finance/incoming-money';
 
 type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
-const ANALYSIS_TABS: ReadonlyArray<{ id: AnalysisSection; label: string }> = [
-  { id: 'overview', label: 'Overzicht' },
-  { id: 'sales', label: 'Verkoop' },
-  { id: 'inventory', label: 'Voorraad' },
-  { id: 'purchasing', label: 'Inkoop' },
-  { id: 'result', label: 'Resultaat' },
-  { id: 'market', label: 'Markt & container' },
-  { id: 'website', label: 'Website' },
+const ANALYSIS_TABS: ReadonlyArray<{ id: AnalysisSection; label: string; icon: string; tone: string }> = [
+  { id: 'overview', label: 'Overzicht', icon: 'analytics', tone: 'blue' },
+  { id: 'sales', label: 'Verkoop', icon: 'sales', tone: 'rose' },
+  { id: 'inventory', label: 'Voorraad', icon: 'stock', tone: 'green' },
+  { id: 'purchasing', label: 'Inkoop', icon: 'purchase', tone: 'amber' },
+  { id: 'result', label: 'Resultaat', icon: 'exchange', tone: 'purple' },
+  { id: 'market', label: 'Markt & container', icon: 'truck', tone: 'blue' },
+  { id: 'website', label: 'Website', icon: 'countries', tone: 'purple' },
 ];
 
 interface VarianceGroup {
@@ -98,7 +99,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
 @Component({
   selector: 'app-analyses-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [TrendChart, 
+  imports: [Icon, TrendChart,
     FormsModule,
     RouterLink,
     PageHeader,
@@ -118,10 +119,13 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
     </app-page-header>
 
     <main class="content analyses-page" [attr.aria-busy]="loading() || filtering()">
-      <nav class="analysis-tabs" aria-label="Analyseonderdelen">
+      <nav #analysisNavigation class="analysis-tabs" aria-label="Analyseonderdelen">
         @for (tab of analysisTabs; track tab.id) {
           <a [routerLink]="['/analyses', tab.id]" [class.active]="section() === tab.id"
-             [attr.aria-current]="section() === tab.id ? 'page' : null">{{ tab.label }}</a>
+             [attr.aria-current]="section() === tab.id ? 'page' : null">
+            <span class="analysis-tab-icon" [attr.data-tone]="tab.tone"><app-icon [name]="tab.icon" [size]="18" /></span>
+            <span>{{ tab.label }}</span>
+          </a>
         }
       </nav>
 
@@ -237,19 +241,22 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
           </div>
           <div class="period-chips" role="group" aria-label="Periode">
             @for (preset of salesPresets; track preset.id) {
-              <button class="chip" type="button" [class.active]="salesPreset() === preset.id"
+              <button class="chip" type="button" [class.active]="salesPreset() === preset.id" [attr.aria-pressed]="salesPreset() === preset.id"
                       (click)="applySalesPreset(preset.id)">{{ preset.label }}</button>
             }
           </div>
         </header>
 
-        <div class="card period-filter">
+        <details class="card analysis-filter-disclosure">
+          <summary><span><b>Periode aanpassen</b><small>{{ salesFromDate() ? (salesFromDate() | dateNl) : 'Alle jaren' }}{{ salesToDate() ? ' – ' + (salesToDate() | dateNl) : '' }}</small></span><span class="disclosure-chevron" aria-hidden="true">⌄</span></summary>
+          <div class="period-filter">
           <label><span>Van</span><app-date-field fieldId="sales-analysis-from" [value]="salesFromDate()"
             (valueChange)="salesFromDate.set($event)" /></label>
           <label><span>Tot en met</span><app-date-field fieldId="sales-analysis-to" [value]="salesToDate()"
             (valueChange)="salesToDate.set($event)" /></label>
           <p>Facturen volgen hun documentdatum; ontvangsten hun echte betaaldatum. Voorschotten blijven financiering tot de slotafrekening. Oude documenten kunnen nog actuele productprijzen gebruiken.</p>
-        </div>
+          </div>
+        </details>
 
         <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark">
@@ -493,9 +500,9 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <h2 id="result-analysis-title">Wat we overhouden</h2>
             <p>De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten. Verkoop telt op de factuurdatum, kosten op hun datum; alles excl. btw.</p>
           </div>
-          <div class="sales-presets" role="group" aria-label="Periode">
+          <div class="period-chips" role="group" aria-label="Periode">
             @for (preset of salesPresets; track preset.id) {
-              <button type="button" [class.on]="salesFromDate() === preset.from && salesToDate() === preset.to" (click)="applySalesPreset(preset.id)">{{ preset.label }}</button>
+              <button class="chip" type="button" [class.active]="salesPreset() === preset.id" [attr.aria-pressed]="salesPreset() === preset.id" (click)="applySalesPreset(preset.id)">{{ preset.label }}</button>
             }
           </div>
         </header>
@@ -516,12 +523,12 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
                   <tbody>
                     @for (row of result().byChannel; track row.channel) {
                       <tr>
-                        <td>{{ channelLabel(row.channel) }}</td>
-                        <td>{{ row.invoiceCount }}</td>
-                        <td>{{ row.revenueEur | eur: 0 }}</td>
-                        <td>{{ row.marginEur | eur: 0 }}</td>
-                        <td>{{ row.costsEur ? (row.costsEur | eur: 0) : '—' }}</td>
-                        <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
+                        <td data-label="Kanaal">{{ channelLabel(row.channel) }}</td>
+                        <td data-label="Facturen">{{ row.invoiceCount }}</td>
+                        <td data-label="Omzet">{{ row.revenueEur | eur: 0 }}</td>
+                        <td data-label="Marge">{{ row.marginEur | eur: 0 }}</td>
+                        <td data-label="Kosten">{{ row.costsEur ? (row.costsEur | eur: 0) : '—' }}</td>
+                        <td data-label="Resultaat" [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
                       </tr>
                     }
                   </tbody>
@@ -550,11 +557,11 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
                 <tbody>
                   @for (row of result().monthly; track row.month) {
                     <tr>
-                      <td>{{ row.month }}</td>
-                      <td>{{ row.revenueEur | eur: 0 }}</td>
-                      <td>{{ row.marginEur | eur: 0 }}</td>
-                      <td>{{ row.costsEur | eur: 0 }}</td>
-                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
+                      <td data-label="Maand">{{ row.month }}</td>
+                      <td data-label="Omzet">{{ row.revenueEur | eur: 0 }}</td>
+                      <td data-label="Marge">{{ row.marginEur | eur: 0 }}</td>
+                      <td data-label="Eigen kosten">{{ row.costsEur | eur: 0 }}</td>
+                      <td data-label="Resultaat" [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
                     </tr>
                   }
                 </tbody>
@@ -599,13 +606,13 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
                 <tbody>
                   @for (card of supplierCards(); track card.supplierId) {
                     <tr>
-                      <td><a [routerLink]="['/suppliers', card.supplierId]">{{ card.name }}</a></td>
-                      <td>{{ card.orders }}</td>
-                      <td>{{ card.totalEur | eur: 0 }}</td>
-                      <td [class.scorecard__warn]="card.perfectPct !== null && card.perfectPct < 80">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</td>
-                      <td [class.scorecard__warn]="card.onTimePct !== null && card.onTimePct < 80">{{ card.onTimePct === null ? '—' : (card.onTimePct | pct: 0) }}</td>
-                      <td>{{ card.avgLeadDays === null ? '—' : card.avgLeadDays + ' d' }}</td>
-                      <td>{{ card.latestReceivedOn | dateNl }}</td>
+                      <td data-label="Leverancier"><a [routerLink]="['/suppliers', card.supplierId]">{{ card.name }}</a></td>
+                      <td data-label="Orders">{{ card.orders }}</td>
+                      <td data-label="Waarde">{{ card.totalEur | eur: 0 }}</td>
+                      <td data-label="Perfect" [class.scorecard__warn]="card.perfectPct !== null && card.perfectPct < 80">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</td>
+                      <td data-label="Op tijd" [class.scorecard__warn]="card.onTimePct !== null && card.onTimePct < 80">{{ card.onTimePct === null ? '—' : (card.onTimePct | pct: 0) }}</td>
+                      <td data-label="Doorlooptijd">{{ card.avgLeadDays === null ? '—' : card.avgLeadDays + ' d' }}</td>
+                      <td data-label="Laatste ontvangst">{{ card.latestReceivedOn | dateNl }}</td>
                     </tr>
                   }
                 </tbody>
@@ -641,13 +648,13 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
                 <tbody>
                   @for (row of financing().rows; track row.purchaseOrderId) {
                     <tr>
-                      <td><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ row.alias || row.number }}</a>@if (row.alias) { <small class="muted"> {{ row.number }}</small> }</td>
-                      <td>{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
-                      <td>{{ row.landedEur | eur: 0 }}<small class="muted"> {{ row.costFinalized ? 'definitief' : 'verwacht' }}</small></td>
-                      <td>{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small>@if (row.unbilledAdvanceCount) { <a [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }">{{ row.unbilledAdvanceCount }} termijnen factureren · {{ row.unbilledAdvanceEur | eur: 0 }}</a>@if (row.nextAdvanceDueDate) { <small class="muted">volgende vervaldatum {{ row.nextAdvanceDueDate | dateNl }}</small> } }</td>
-                      <td [class.scorecard__warn]="row.openEur > 0">{{ row.openEur | eur: 0 }} open<small class="muted"> {{ row.ownExposureEur | eur: 0 }} eigen kasinleg</small></td>
-                      <td [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}<small class="muted"> {{ row.settled ? 'volledig afgerekend' : row.remainingQuantity > 0 ? (row.remainingQuantity | num) + ' stuks resteren' : 'afrekening nog uitgeven' }}</small>@if (row.creditEur) { <small class="muted"> {{ row.creditEur | eur: 0 }} credit</small> }</td>
-                      <td>@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'afrekening' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
+                      <td data-label="Container"><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ row.alias || row.number }}</a>@if (row.alias) { <small class="muted"> {{ row.number }}</small> }</td>
+                      <td data-label="Partner">{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
+                      <td data-label="Externe kost">{{ row.landedEur | eur: 0 }}<small class="muted"> {{ row.costFinalized ? 'definitief' : 'verwacht' }}</small></td>
+                      <td data-label="Ontvangen">{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small>@if (row.unbilledAdvanceCount) { <a [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }">{{ row.unbilledAdvanceCount }} termijnen factureren · {{ row.unbilledAdvanceEur | eur: 0 }}</a>@if (row.nextAdvanceDueDate) { <small class="muted">volgende vervaldatum {{ row.nextAdvanceDueDate | dateNl }}</small> } }</td>
+                      <td data-label="Open / eigen kas" [class.scorecard__warn]="row.openEur > 0">{{ row.openEur | eur: 0 }} open<small class="muted"> {{ row.ownExposureEur | eur: 0 }} eigen kasinleg</small></td>
+                      <td data-label="Resultaat" [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}<small class="muted"> {{ row.settled ? 'volledig afgerekend' : row.remainingQuantity > 0 ? (row.remainingQuantity | num) + ' stuks resteren' : 'afrekening nog uitgeven' }}</small>@if (row.creditEur) { <small class="muted"> {{ row.creditEur | eur: 0 }} credit</small> }</td>
+                      <td data-label="Documenten">@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'afrekening' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
                     </tr>
                   }
                 </tbody>
@@ -827,6 +834,24 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
     .trend-card{margin-top:10px}.trend-card__body{padding:10px 14px 14px}
     .capital-text{color:var(--ink-2)!important;font-weight:700}
     .scorecard-card{margin-top:10px}.scorecard-scroll{overflow-x:auto}.scorecard{width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px}.scorecard th{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.05em;text-align:left;text-transform:uppercase}.scorecard td{padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.scorecard tr:last-child td{border-bottom:0}.scorecard td a{color:inherit;font-weight:650;text-decoration:none}.scorecard td a:hover{color:var(--rose-dark);text-decoration:underline}.scorecard__warn{color:var(--warn);font-weight:700}
+
+    .analysis-tabs{top:var(--appbar-h);gap:4px;margin:-4px 0 20px;padding:6px;border:1px solid color-mix(in srgb,var(--line) 72%,transparent);border-radius:24px;background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:0 4px 18px rgb(25 35 45 / 5%);backdrop-filter:blur(16px);scroll-padding-inline:6px}
+    .analysis-tabs a{display:flex;align-items:center;gap:7px;min-height:44px;padding:5px 12px 5px 7px;border:1px solid transparent;background:transparent;font-size:12px;transition:background .18s,box-shadow .18s}
+    .analysis-tabs a.active{border-color:var(--line);background:var(--surface);color:var(--ink);box-shadow:0 2px 7px rgb(25 35 45 / 8%)}
+    .analysis-tab-icon{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:10px;color:#2365b5;background:#eaf2ff}
+    .analysis-tab-icon[data-tone=rose]{color:#b73568;background:#fdebf1}.analysis-tab-icon[data-tone=green]{color:#247656;background:#e6f5ee}.analysis-tab-icon[data-tone=amber]{color:#9b641b;background:#fff1dc}.analysis-tab-icon[data-tone=purple]{color:#7550bc;background:#f1eafd}
+    .analysis-filter-disclosure{margin-bottom:14px;border-radius:18px;overflow:hidden}.analysis-filter-disclosure>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:58px;padding:12px 15px;cursor:pointer;list-style:none}.analysis-filter-disclosure>summary::-webkit-details-marker{display:none}.analysis-filter-disclosure>summary>span:first-child{display:grid;gap:3px}.analysis-filter-disclosure b{font-size:13px}.analysis-filter-disclosure small{color:var(--muted);font-size:12px}.disclosure-chevron{transition:transform .18s}.analysis-filter-disclosure[open] .disclosure-chevron{transform:rotate(180deg)}.analysis-filter-disclosure .period-filter{margin:0;border-top:1px solid var(--line)}
+    .section-copy{margin-bottom:16px}.section-copy h2{font-size:24px;letter-spacing:-.035em;line-height:1.16}.section-copy p{line-height:1.55}.metric-card{border-radius:20px;box-shadow:0 2px 8px rgb(20 30 40 / 3%)}.metric-card>strong{font-variant-numeric:tabular-nums;letter-spacing:-.045em}.metric-card--dark{background:linear-gradient(135deg,#263d36,#172721);border-color:#2b443a}.metric-card--dark .metric-card__label,.metric-card--dark>p{color:#d3e5dc}.analysis-list,.attention-card,.variance-order{border-radius:20px}.analysis-list>header{padding:16px;background:transparent}.analysis-list>header h3{font-size:16px;letter-spacing:-.02em}.analysis-list>header span{font-size:10px}.period-chips .chip{min-height:44px;flex:none;padding-inline:14px;font-size:12px}.period-chips .chip:active,.analysis-tabs a:active{transform:scale(.97)}.rank-row,.stock-row,.attention-row,.capital-row{min-height:58px}.rank-row b,.stock-row b,.attention-row b,.capital-row b{font-size:13px}.rank-row small,.stock-row small,.attention-row small,.capital-row small{font-size:11px}.channel-row{padding:12px 15px}
+    @media(max-width:679px){
+      .analyses-page{padding-top:8px}.section-copy--split,.section-copy--receipt{align-items:stretch;flex-direction:column}.section-copy p{font-size:13px}.period-chips{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding:2px 0 4px;scrollbar-width:none}.period-chips::-webkit-scrollbar{display:none}
+      .analysis-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.metric-card{padding:14px 12px}.metric-card__label{font-size:10px;line-height:1.4;letter-spacing:.035em;min-height:28px}.metric-card>strong{font-size:clamp(20px,5.6vw,29px);line-height:1.18;overflow-wrap:anywhere}.metric-card>p{font-size:11px;line-height:1.45}.metric-card__sub{grid-template-columns:1fr;margin-top:10px;padding-top:8px}.metric-card__sub b{text-align:left;font-size:14px}.metric-card__sub small{font-size:10.5px}.metric-card--dark:last-child:nth-child(odd){grid-column:1/-1}
+      .attention-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.attention-card{padding:14px 12px}.attention-card>strong{font-size:14px}.attention-card>small{font-size:11px;line-height:1.45}.funnel-row{grid-template-columns:minmax(110px,1fr) minmax(45px,1fr) 32px;gap:8px}.funnel-row__label b{font-size:12px}.funnel-row__label small{font-size:11px}.analysis-list>header{align-items:start;flex-wrap:wrap;gap:5px}.analysis-list>header>small{text-align:left;font-size:11px}.capital-row{grid-template-columns:30px minmax(0,1fr) auto;gap:8px}.capital-row>small{grid-column:3;min-width:0}.channel-row{grid-template-columns:minmax(0,1fr) auto;gap:5px 10px}.channel-row__bar{grid-column:1;grid-row:2}.channel-row strong{grid-column:2;grid-row:1}.channel-row>small:last-child{grid-column:2;grid-row:2}
+      .scorecard-scroll{overflow:visible}.scorecard{display:block;min-width:0;width:100%}.scorecard thead{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.scorecard tbody{display:grid;gap:10px;padding:0 10px 10px}.scorecard tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}.scorecard td{display:flex;flex-direction:column;gap:3px;min-width:0;padding:0;border:0;white-space:normal;overflow-wrap:anywhere;font-size:13px;font-variant-numeric:tabular-nums}.scorecard td::before{content:attr(data-label);color:var(--muted);font-size:10px;font-weight:650}.scorecard td:first-child{grid-column:1/-1;font-size:15px;font-weight:750;padding-bottom:9px;border-bottom:1px solid var(--line)}.scorecard td a{display:inline-block;padding:4px 0;line-height:1.5}.scorecard td[data-label=Documenten]{grid-column:1/-1;gap:5px}.scorecard .muted{line-height:1.4}
+      .receipt-filters{grid-template-columns:repeat(2,minmax(0,1fr));border-radius:20px}.receipt-filters>label:nth-child(3),.receipt-filters__actions{grid-column:1/-1}.receipt-filters label>span{font-size:11px}.period-filter{grid-template-columns:repeat(2,minmax(0,1fr))}.period-filter p{grid-column:1/-1;font-size:11.5px;line-height:1.5}.variance-order__head{padding:14px}.variance-line__product>strong{white-space:normal}.variance-line__product>span{font-size:12px}
+    }
+    @media(min-width:680px){.analysis-tabs{top:var(--appbar-h);width:max-content;max-width:100%}.analysis-tabs a{font-size:13px}.period-chips{justify-content:flex-end}}
+    @media(prefers-reduced-motion:reduce){.analyses-page *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
     @keyframes pulse{50%{opacity:.48}}
     .section-copy--sub{margin-top:8px}.scorecard .muted{color:var(--muted);font-size:11px}
     .channel-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto 44px;align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}.channel-row:first-of-type{border-top:0}.channel-row b{display:block}.channel-row small{color:var(--muted);font-size:11px}.channel-row__bar{display:block;height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden}.channel-row__bar i{display:block;height:100%;border-radius:999px;background:var(--rose)}.channel-row strong{font-variant-numeric:tabular-nums}.channel-row>small:last-child{text-align:right}
@@ -840,6 +865,7 @@ export class AnalysesPage {
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
 
+  private readonly analysisNavigation = viewChild<ElementRef<HTMLElement>>('analysisNavigation');
   readonly analysisTabs = ANALYSIS_TABS;
   readonly section = toSignal(this.route.paramMap.pipe(map((params) =>
     analysisSection(params.get('section')))), { initialValue: 'overview' as AnalysisSection });
@@ -1030,6 +1056,14 @@ export class AnalysesPage {
   });
 
   constructor() {
+    afterRenderEffect(() => {
+      this.section();
+      const navigation = this.analysisNavigation()?.nativeElement;
+      const active = navigation?.querySelector<HTMLElement>('a.active');
+      if (navigation && active) {
+        navigation.scrollTo({ left: active.offsetLeft - navigation.clientWidth / 2 + active.offsetWidth / 2, behavior: 'instant' });
+      }
+    });
     const orderId = Number(this.route.snapshot.queryParamMap.get('orderId'));
     if (Number.isInteger(orderId) && orderId > 0) {
       this.focusedOrderId.set(orderId);

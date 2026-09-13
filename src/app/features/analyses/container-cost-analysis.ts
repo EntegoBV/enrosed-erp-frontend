@@ -20,7 +20,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
         <a class="btn btn--sm" routerLink="/costs">Kosten &amp; bank ›</a>
       </header>
       <div class="container-cost-analysis__filters">
-        <label><span>Containers</span><select class="select" [ngModel]="filter()" (ngModelChange)="filter.set($event)"><option value="active">Besteld, onderweg &amp; ontvangen</option><option value="all">Alle containers, inclusief concepten</option><option value="open">Nog niet volledig afgerekend</option><option value="finalized">Volledig afgerekend</option><option value="higher">Duurder dan begroot</option><option value="lower">Goedkoper dan begroot</option></select></label>
+        <label><span>Containers</span><select class="select" [ngModel]="filter()" (ngModelChange)="filter.set($event)"><option value="active">Actieve containers</option><option value="all">Alle containers · ook concepten</option><option value="open">Nog niet volledig afgerekend</option><option value="finalized">Volledig afgerekend</option><option value="higher">Duurder dan begroot</option><option value="lower">Goedkoper dan begroot</option></select></label>
         <label><span>Zoeken</span><input class="input" type="search" placeholder="Containernummer of naam" [ngModel]="search()" (ngModelChange)="search.set($event)" /></label>
       </div>
       @if (loading()) {
@@ -94,14 +94,14 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
               <tbody>
                 @for (row of rows(); track row.view.order.id) {
                   <tr [class.selected]="expandedId() === row.view.order.id">
-                    <td><a [routerLink]="['/purchasing', row.view.order.id]">{{ row.view.order.alias || row.view.order.number }}</a>@if (row.view.order.alias) { <small>{{ row.view.order.number }}</small> }<small>{{ orderStatus(row.view.order.status) }}</small></td>
-                    <td><span class="cost-state" [class.cost-state--final]="row.reconciliation.totals.finalized">{{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></td>
-                    <td>{{ row.reconciliation.totals.plannedExternalEur | eur }}</td>
-                    <td>{{ row.reconciliation.totals.paidEur | eur }}</td>
-                    <td>{{ row.reconciliation.totals.remainingEur | eur }}</td>
-                    <td><b>{{ row.reconciliation.totals.forecastExternalEur | eur }}</b></td>
-                    <td [class.higher]="row.reconciliation.totals.varianceEur > 0" [class.lower]="row.reconciliation.totals.varianceEur < 0">{{ row.reconciliation.totals.varianceEur > 0 ? '+' : '' }}{{ row.reconciliation.totals.varianceEur | eur }}</td>
-                    <td class="container-payment-result">
+                    <td class="container-cost-table__identity"><a [routerLink]="['/purchasing', row.view.order.id]">{{ row.view.order.alias || row.view.order.number }}</a>@if (row.view.order.alias) { <small>{{ row.view.order.number }}</small> }<small>{{ orderStatus(row.view.order.status) }}</small></td>
+                    <td class="container-cost-table__status"><span class="cost-state" [class.cost-state--final]="row.reconciliation.totals.finalized">{{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></td>
+                    <td data-label="Begroot">{{ row.reconciliation.totals.plannedExternalEur | eur }}</td>
+                    <td data-label="Betaald">{{ row.reconciliation.totals.paidEur | eur }}</td>
+                    <td data-label="Open">{{ row.reconciliation.totals.remainingEur | eur }}</td>
+                    <td data-label="Verwachte kost"><b>{{ row.reconciliation.totals.forecastExternalEur | eur }}</b></td>
+                    <td data-label="Verschil" [class.higher]="row.reconciliation.totals.varianceEur > 0" [class.lower]="row.reconciliation.totals.varianceEur < 0">{{ row.reconciliation.totals.varianceEur > 0 ? '+' : '' }}{{ row.reconciliation.totals.varianceEur | eur }}</td>
+                    <td class="container-payment-result" data-label="Betaalresultaat">
                       @if (row.paymentResult; as result) {
                         @if (result.eligible) {
                           <b [class.higher]="result.netResultEur < 0" [class.lower]="result.netResultEur > 0">{{ result.netResultEur | eur: 2 }}</b>
@@ -109,8 +109,8 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
                         } @else { <span>—</span><small>Niet meegeteld</small> }
                       } @else { <span>—</span><small>Niet beschikbaar</small> }
                     </td>
-                    <td>{{ row.reconciliation.totals.forecastExternalUnitEur === null ? '—' : (row.reconciliation.totals.forecastExternalUnitEur | eur: 4) }}<small>{{ row.reconciliation.totals.unitCostQuantity | num }} {{ row.reconciliation.totals.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small></td>
-                    <td><button class="btn btn--sm" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening ' + row.view.order.number" (click)="toggle(row.view.order.id)">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</button></td>
+                    <td data-label="Per stuk">{{ row.reconciliation.totals.forecastExternalUnitEur === null ? '—' : (row.reconciliation.totals.forecastExternalUnitEur | eur: 4) }}<small>{{ row.reconciliation.totals.unitCostQuantity | num }} {{ row.reconciliation.totals.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small></td>
+                    <td class="container-cost-table__actions"><button class="btn btn--sm" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening ' + row.view.order.number" (click)="toggle(row.view.order.id)">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</button></td>
                   </tr>
                 }
               </tbody>
@@ -267,6 +267,59 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
     .container-cost-table{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}table{width:100%;border-collapse:collapse}th,td{padding:12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line);font-size:12px;font-variant-numeric:tabular-nums}thead th{font-size:10px;color:var(--muted);font-weight:650;background:var(--surface-2)}th:first-child,td:first-child{text-align:left}td:first-child{min-width:150px;max-width:260px;white-space:normal;overflow-wrap:anywhere}td:first-child a{color:var(--rose-dark);font-weight:700;text-decoration:none}td small{display:block;margin-top:3px;font-size:10px;color:var(--muted)}tr:last-child td{border-bottom:0}.selected td{background:var(--rose-soft)}.cost-state{display:inline-block;padding:4px 7px;border-radius:999px;background:var(--warn-soft);color:var(--warn);font-size:10px}.cost-state--final{background:var(--ok-soft);color:var(--ok)}.container-cost-analysis__warning{padding:12px;border-radius:12px;background:var(--warn-soft);font-size:12px;line-height:1.5}.container-cost-analysis__empty{padding:20px;border:1px solid var(--line);border-radius:12px;color:var(--muted);font-size:12px;background:var(--surface)}
     .container-cost-detail{max-width:820px;margin-top:16px;padding:14px;border:1px solid var(--rose-line);border-radius:16px;background:var(--rose-soft)}.container-cost-detail>header{display:flex;justify-content:space-between;align-items:center;gap:12px}.container-cost-detail>header span,.container-cost-detail>header small{font-size:10px;color:var(--muted)}h3{font-size:17px;margin:4px 0}.container-cost-detail app-purchase-reconciliation{margin-bottom:0}
     @media(max-width:1050px){.container-cost-kpis,.container-cost-differences{grid-template-columns:repeat(2,minmax(0,1fr))}.container-cost-kpis strong{font-size:21px}}@media(max-width:540px){.container-cost-analysis__heading{flex-direction:column}.container-cost-analysis__filters{display:grid}.container-cost-kpis{gap:7px}.container-cost-kpis article{padding:12px}.container-cost-kpis strong{font-size:18px}.container-cost-differences{gap:14px}.container-cost-detail{padding:8px}.container-cost-detail>header{padding:4px}h2{font-size:19px}}
+    .container-cost-analysis__filters { padding: 13px; gap: 12px; border: 1px solid var(--line); border-radius: 20px; background: color-mix(in srgb, var(--surface) 92%, transparent); }
+    .container-cost-analysis__filters label { flex: 1 1 230px; }
+    .container-cost-analysis__filters span { color: var(--ink-2); font-weight: 650; }
+    .container-cost-analysis__filters :is(.select, .input) { min-height: 44px; border-radius: 13px; }
+    .container-cost-analysis .btn { min-height: 44px; }
+    .container-cost-kpis article { border-radius: 20px; padding: 17px; }
+    .container-cost-kpis span { line-height: 1.4; }
+    .container-cost-kpis strong { letter-spacing: -.025em; }
+    .container-cost-differences { border-radius: 20px; padding: 17px; }
+    .container-cost-differences b { overflow-wrap: anywhere; }
+    .container-cost-table { max-width: 100%; border-radius: 20px; }
+    .container-cost-table__identity a { display: inline-flex; align-items: center; min-height: 44px; }
+    .payment-result-analysis { border-radius: 22px; }
+    .payment-result-analysis__comparison > div, .payment-result-analysis__breakdown > div { flex-wrap: wrap; gap: 4px 14px; }
+    .payment-result-analysis__comparison dt, .payment-result-analysis__breakdown dt { flex: 1 1 150px; }
+    .payment-result-analysis__comparison dd, .payment-result-analysis__breakdown dd { margin-left: auto; max-width: 100%; overflow-wrap: anywhere; }
+    .container-cost-detail { border-radius: 20px; }
+    .container-cost-detail > header > div { min-width: 0; overflow-wrap: anywhere; }
+    :is(a, button, input, select):focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+    @media (max-width: 679px) {
+      :host { margin-top: 18px; }
+      .container-cost-analysis__heading { flex-direction: column; gap: 10px; }
+      .container-cost-analysis__heading h2 { font-size: 21px; line-height: 1.25; }
+      .container-cost-analysis__filters { display: grid; grid-template-columns: minmax(0, 1fr); padding: 12px; gap: 10px; }
+      .container-cost-analysis__filters :is(.select, .input) { font-size: 16px; }
+      .container-cost-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .container-cost-kpis article { padding: 14px; border-radius: 18px; }
+      .container-cost-kpis strong { font-size: 20px; }
+      .container-cost-kpis small { font-size: 11px; line-height: 1.5; }
+      .container-cost-differences { padding: 14px; gap: 15px 12px; }
+      .container-cost-differences small { font-size: 11px; }
+      .payment-result-analysis { padding: 17px; border-radius: 20px; }
+      .payment-result-analysis__heading h3 { font-size: 19px; }
+      .payment-result-analysis__comparison > div, .payment-result-analysis__breakdown > div { font-size: 12px; }
+      .container-cost-table { overflow: visible; border: 0; background: transparent; }
+      .container-cost-table table, .container-cost-table tbody { display: block; width: 100%; }
+      .container-cost-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      .container-cost-table tbody { display: grid; gap: 12px; }
+      .container-cost-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 14px; padding: 16px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+      .container-cost-table td { min-width: 0; max-width: none; padding: 0; border: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
+      .container-cost-table td[data-label]::before { display: block; margin-bottom: 4px; content: attr(data-label); color: var(--muted); font-size: 10px; font-weight: 500; }
+      .container-cost-table .container-cost-table__identity { grid-column: 1 / -1; min-width: 0; max-width: none; padding-right: 0; }
+      .container-cost-table__identity a { min-height: 44px; font-size: 16px; }
+      .container-cost-table__identity small { display: inline; margin-right: 8px; }
+      .container-cost-table .container-cost-table__status { grid-column: 1 / -1; margin-top: -5px; }
+      .container-cost-table .cost-state { padding: 5px 9px; }
+      .container-cost-table tr.selected { border-color: var(--rose-line); background: var(--rose-soft); }
+      .container-cost-table tr.selected td { background: transparent; }
+      .container-cost-table .container-cost-table__actions { grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid var(--line); }
+      .container-cost-table__actions .btn { width: 100%; justify-content: center; border-radius: 13px; }
+      .container-cost-detail { padding: 12px; }
+    }
+
   `,
 })
 export class ContainerCostAnalysis {
