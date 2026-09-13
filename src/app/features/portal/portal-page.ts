@@ -11,7 +11,7 @@ import { LANGUAGES, LanguageCode } from '../../core/api/models';
 
 const PORTAL_LOCALES: Record<LanguageCode, string> = {
   NL: 'nl-BE', FR: 'fr-BE', EN: 'en-GB', DE: 'de-DE',
-  ES: 'es-ES', PL: 'pl-PL', PT: 'pt-PT', TR: 'tr-TR',
+  ES: 'es-ES', PL: 'pl-PL', PT: 'pt-PT', TR: 'tr-TR', EL: 'el-GR',
 };
 
 type PortalFallback = 'chooseLanguage' | 'nameRequired' | 'genericError'
@@ -19,6 +19,14 @@ type PortalFallback = 'chooseLanguage' | 'nameRequired' | 'genericError'
   | 'notFound' | 'notFoundText' | 'loading';
 
 const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
+  EL: {
+    chooseLanguage: 'Επιλογή γλώσσας', nameRequired: 'Συμπληρώστε το όνομά σας για να υπογράψετε.',
+    genericError: 'Παρουσιάστηκε σφάλμα. Δοκιμάστε ξανά.', emptyTitle: 'Δεν βρέθηκαν είδη',
+    emptyText: 'Δοκιμάστε μέρος του ονόματος ή του χρώματος.', change: 'Αλλαγή',
+    addedByCustomer: 'Προστέθηκε από τον πελάτη', notFound: 'Η προσφορά δεν βρέθηκε',
+    notFoundText: 'Αυτός ο σύνδεσμος δεν ισχύει πλέον. Επικοινωνήστε μαζί μας για να σας στείλουμε νέο.',
+    loading: 'Φόρτωση…',
+  },
   NL: {
     chooseLanguage: 'Taal kiezen', nameRequired: 'Vul uw naam in om te tekenen.',
     genericError: 'Er ging iets mis. Probeer het opnieuw.', emptyTitle: 'Niets gevonden',

@@ -716,7 +716,7 @@ export interface Supplier {
 }
 
 /** The languages we communicate to a customer in. */
-export type LanguageCode = 'NL' | 'FR' | 'EN' | 'DE' | 'ES' | 'PL' | 'PT' | 'TR';
+export type LanguageCode = 'NL' | 'FR' | 'EN' | 'DE' | 'ES' | 'PL' | 'PT' | 'TR' | 'EL';
 
 export const LANGUAGES: { code: LanguageCode; label: string }[] = [
   { code: 'NL', label: 'Nederlands' },
@@ -727,6 +727,7 @@ export const LANGUAGES: { code: LanguageCode; label: string }[] = [
   { code: 'PL', label: 'Pools' },
   { code: 'PT', label: 'Portugees' },
   { code: 'TR', label: 'Turks' },
+  { code: 'EL', label: 'Grieks' },
 ];
 
 export interface Customer {

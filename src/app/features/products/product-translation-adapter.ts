@@ -8,7 +8,7 @@ import {
   ProductText,
 } from '../../core/api/models';
 
-const LANGUAGE_ORDER: LanguageCode[] = ['NL', 'EN', 'FR', 'DE', 'ES', 'PL', 'PT', 'TR'];
+const LANGUAGE_ORDER: LanguageCode[] = ['NL', 'EN', 'FR', 'DE', 'ES', 'PL', 'PT', 'TR', 'EL'];
 
 export const TRANSLATION_LANGUAGES = LANGUAGE_ORDER.map((code) =>
   LANGUAGES.find((language) => language.code === code)!,

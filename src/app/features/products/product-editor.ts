@@ -1877,7 +1877,7 @@ export class ProductEditor implements OnDestroy {
   /* ---- publication blockers, made fixable ------------------------ */
 
   readonly publishFix = signal<PublishFixPlan | null>(null);
-  readonly fixLanguages: LanguageCode[] = ['NL', 'FR', 'EN', 'DE', 'ES', 'PL', 'PT', 'TR'];
+  readonly fixLanguages: LanguageCode[] = ['NL', 'FR', 'EN', 'DE', 'ES', 'PL', 'PT', 'TR', 'EL'];
 
   /**
    * Turns the family guard's refusal ("...niet publiceerbaar: key; key")
