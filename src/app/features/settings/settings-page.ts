@@ -35,6 +35,7 @@ import {
 } from '../../shared/product-featured-eligibility';
 import { CategoryTranslationEditor } from './category-translation-editor';
 import { WebsiteSyncStatus } from './website-sync-status';
+import { WebsiteQuoteSettings } from './website-quote-settings';
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -73,6 +74,7 @@ const normalizeCategoryCode = (value: string): string => value
     ProductPicker,
     RouterLink,
     WebsiteSyncStatus,
+    WebsiteQuoteSettings,
   ],
   template: `
     <app-page-header
@@ -324,6 +326,13 @@ const normalizeCategoryCode = (value: string): string => value
           }
         </div>
       </div>
+
+      @if (!websiteCategoryMode) {
+        <div [class.settings-section--folded]="folded('website')" class="card settings-section" id="website">
+          <div (click)="toggleSection('website', $event)" class="card__head settings-head"><h2>Website · Offerteaanvraag</h2></div>
+          <div class="card__body"><app-website-quote-settings /></div>
+        </div>
+      }
 
       <div [class.settings-section--folded]="folded('categories')" class="card settings-section category-section" id="categories">
         <div (click)="toggleSection('categories', $event)" class="card__head settings-head category-section__head">
@@ -1328,6 +1337,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   readonly settingsSections = [
     { id: 'company', label: 'Bedrijf' },
+    { id: 'website', label: 'Website' },
     { id: 'categories', label: 'Categorieën' },
     { id: 'duties', label: 'Douane' },
     { id: 'discounts', label: 'Kortingen' },
@@ -2163,4 +2173,4 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 }
 
-type SettingsSectionId = 'company' | 'appearance' | 'catalog-data' | 'categories' | 'duties' | 'discounts' | 'notifications';
+type SettingsSectionId = 'company' | 'website' | 'appearance' | 'catalog-data' | 'categories' | 'duties' | 'discounts' | 'notifications';

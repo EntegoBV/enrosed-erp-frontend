@@ -12,6 +12,10 @@ import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
 } from './sales-pdf-options';
 
+export interface WebsiteQuoteSettings {
+  pricesVisible: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class SalesApi {
   private readonly http = inject(HttpClient);
@@ -42,6 +46,14 @@ export class SalesApi {
 
   saveCompany(profile: CompanyProfile): Promise<CompanyProfile> {
     return firstValueFrom(this.http.put<CompanyProfile>(api('/api/company'), profile));
+  }
+
+  websiteQuoteSettings(): Promise<WebsiteQuoteSettings> {
+    return firstValueFrom(this.http.get<WebsiteQuoteSettings>(api('/api/website/quote-settings')));
+  }
+
+  saveWebsiteQuoteSettings(settings: WebsiteQuoteSettings): Promise<WebsiteQuoteSettings> {
+    return firstValueFrom(this.http.put<WebsiteQuoteSettings>(api('/api/website/quote-settings'), settings));
   }
 
   /* ------------------------------------------------- landen en staffels */

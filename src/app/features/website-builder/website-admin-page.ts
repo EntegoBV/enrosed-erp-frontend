@@ -67,6 +67,11 @@ import { WebsiteTranslationQueue } from './website-translation-queue';
           <div><b>Publicatie &amp; synchronisatie</b><small>Controleer of opgeslagen wijzigingen al in Vercel zijn verwerkt en herstel een mislukte update.</small></div>
           <strong>Status bekijken →</strong>
         </a>
+        <a class="workspace-card" routerLink="/settings" [queryParams]="{ sectie: 'website' }">
+          <span aria-hidden="true">07</span>
+          <div><b>Offerteaanvraag</b><small>Kies of bezoekers prijzen zien bij het samenstellen van hun offerteaanvraag.</small></div>
+          <strong>Prijsweergave instellen →</strong>
+        </a>
       </section>
 
       <app-website-translation-queue />
