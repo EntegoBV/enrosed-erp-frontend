@@ -16,6 +16,13 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
          stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
          stroke-linejoin="round" aria-hidden="true">
       @switch (name()) {
+        @case ('folder') { <path d="M3 7V5.5A1.5 1.5 0 0 1 4.5 4H10l2 3h7.5A1.5 1.5 0 0 1 21 8.5v10a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z" /> }
+        @case ('search') { <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /> }
+        @case ('plus') { <path d="M12 5v14M5 12h14" /> }
+        @case ('check') { <circle cx="12" cy="12" r="8.5" /><path d="m8 12 2.5 2.5L16 9" /> }
+        @case ('download') { <path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4" /> }
+        @case ('move') { <path d="M3 7V5h7l2 3h9v12H3v-8m4 2h10m-3-3 3 3-3 3" /> }
+        @case ('close') { <path d="m6 6 12 12M6 18 18 6" /> }
         @case ('home') {
           <path d="M3.5 10.5 12 3.5l8.5 7" />
           <path d="M5.5 9.3V20h13V9.3" />

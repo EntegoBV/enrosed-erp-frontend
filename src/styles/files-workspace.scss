@@ -109,4 +109,78 @@ app-files-page#files-workspace {
   .fm__quick button { min-height: 68px; font-size: 11px; }
   @media (min-width: 600px) and (max-width: 819px) { .fm__grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
   @media (min-width: 820px) and (max-width: 1100px) { .fx { padding: 12px; gap: 10px; } .fx__main { padding: 14px; } }
+
+  @media (max-width: 819.98px) {
+    .fm { padding: calc(var(--safe-t) + 4px) 14px calc(var(--safe-b) + 116px); }
+    .fm__bar { gap: 8px; margin-bottom: 4px; }
+    .fm__app-back { display: inline-flex; align-items: center; gap: 3px; flex: none; min-height: 44px; padding-right: 8px; color: var(--rose-dark); font-size: 14px; font-weight: 650; text-decoration: none; }
+    .fm__app-back > span { font-size: 28px; line-height: 1; }
+    .fm__eyebrow { flex: 1; min-width: 0; font-size: 11px; text-align: center; }
+    .fm__bar .fm__iconbtn { background: transparent; }
+    .fm__back { display: block; max-width: 100%; min-height: 36px; padding: 4px 0; font-size: 12px; }
+    .fm-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .fm__title { min-width: 0; margin: 0; font-size: clamp(24px, 6.4vw, 30px); letter-spacing: -.035em; }
+    .fm-library-open, .fm-options-open { display: flex; align-items: center; justify-content: center; flex: none; min-width: 44px; min-height: 44px; padding: 9px; gap: 7px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink-2); cursor: pointer; }
+    .fm-search { display: flex; min-height: 48px; align-items: center; gap: 9px; margin-bottom: 10px; padding: 0 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); color: var(--muted); transition: border-color 160ms ease, box-shadow 160ms ease; }
+    .fm-search:focus-within { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-soft); }
+    .fm-search input { flex: 1; width: 100%; min-width: 0; min-height: 46px; padding: 10px 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 16px; }
+    .fm-search input::-webkit-search-cancel-button { display: none; }
+    .fm-search button { display: grid; place-items: center; flex: none; width: 44px; height: 44px; margin-right: -10px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); }
+    .fm-filter-row { display: flex; align-items: center; gap: 8px; }
+    .fm-filter-row .files-kinds { min-width: 0; flex: 1; border: 0; border-radius: 15px; }
+    .fm-filter-row .files-kinds button { min-width: 0; flex: 1; min-height: 40px; padding-inline: 6px; border-radius: 12px; font-size: 12px; }
+    .fm-pick-note { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--rose-soft); color: var(--rose-dark); font-size: 12px; font-weight: 650; }
+    .fm-pick-note small { font-weight: 450; }
+    .fm__h { margin: 18px 2px 10px; font-size: 13px; }
+    .fm__h small { display: inline-block; margin-left: 5px; padding: 2px 6px; border-radius: 6px; background: var(--surface-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .fm__row { min-height: 72px; padding: 10px; gap: 10px; }
+    .fm__row.fm__row--picked { background: var(--rose-soft); }
+    .fm__folderline .fm__row { min-height: 64px; }
+    .fm__copy b { font-size: 13px; }
+    .fm__thumb { width: 46px; height: 46px; border-radius: 11px; background: var(--surface-2); object-fit: contain; }
+    .fm__icon { border-radius: 12px; font-size: 11px; background: color-mix(in srgb, #487fbb 12%, var(--surface)); color: color-mix(in srgb, #487fbb 80%, var(--ink)); }
+    .fm__icon--folder { background: color-mix(in srgb, #bc8627 12%, var(--surface)); color: color-mix(in srgb, #bc8627 80%, var(--ink)); font-size: 20px; }
+    .fm__grid { gap: 14px 10px; }
+    .fm__tile { padding: 7px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+    .fm__tile img { border: 0; border-radius: 12px; background: var(--surface-2); }
+    .fm__tile > span, .fm__tile-meta { width: 100%; padding-inline: 3px; text-align: left; }
+    .fm__tile--picked { border-color: var(--rose); background: var(--rose-soft); }
+    .fm-dock { position: fixed; z-index: 45; bottom: calc(var(--safe-b) + 10px); left: calc(var(--safe-l) + 10px); right: calc(var(--safe-r) + 10px); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: stretch; gap: 3px; padding: 6px; border: 1px solid color-mix(in srgb, var(--surface) 80%, var(--line)); border-radius: 25px; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(22px) saturate(1.45); -webkit-backdrop-filter: blur(22px) saturate(1.45); box-shadow: 0 8px 32px rgb(0 0 0 / 13%), inset 0 1px 0 var(--surface); }
+    .fm-dock button { display: flex; min-width: 0; min-height: 54px; align-items: center; justify-content: center; flex-direction: column; gap: 4px; padding: 6px 2px; border: 0; border-radius: 19px; background: transparent; color: var(--ink-2); font: inherit; font-size: 10px; font-weight: 650; cursor: pointer; transition: transform 150ms ease, background 150ms ease; }
+    .fm-dock button:active:enabled { transform: scale(.94); background: var(--rose-soft); }
+    .fm-dock button:disabled { opacity: .4; cursor: default; }
+    .fm-dock button { position: relative; }
+    .fm-dock__badge { position: absolute; top: 1px; left: calc(50% + 5px); min-width: 17px; padding: 2px 4px; border: 2px solid var(--surface); border-radius: 8px; background: var(--rose); color: #fff; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .fm-dock .fm-dock__add { background: var(--rose); color: #fff; }
+    .fm-dock .fm-dock__add:active:enabled { background: var(--rose-dark); }
+    .fm-dock--picking button[aria-pressed=true] { background: var(--rose-soft); color: var(--rose-dark); }
+    .fm-library { display: grid; gap: 5px; }
+    .fm-library__base { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .fm-library__base button { display: flex; min-height: 66px; align-items: center; justify-content: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); color: var(--ink-2); font: inherit; font-size: 12px; font-weight: 650; }
+    .fm-sheet-label { margin: 18px 4px 4px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    .fm-library__item { display: flex; min-height: 62px; align-items: center; gap: 12px; width: 100%; padding: 8px; border: 0; border-radius: 14px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+    .fm-library__base button[aria-pressed=true], .fm-library__item[aria-pressed=true] { background: var(--rose-soft); color: var(--rose-dark); }
+    .fm-library__item > span:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
+    .fm-library__item b { font-size: 14px; font-weight: 650; }
+    .fm-library__item small { color: var(--muted); font-size: 12px; }
+    .fm-library__indicator { flex: none; margin-left: auto; color: var(--muted); }
+    .fm-library__icon { display: grid; width: 40px; height: 40px; place-items: center; flex: none; border-radius: 12px; background: var(--surface-2); color: var(--ink-2); }
+    .fm-library__icon[data-kind=product], .fm-library__icon[data-kind=family] { background: var(--rose-soft); color: var(--rose-dark); }
+    .fm-library__icon[data-kind=purchase], .fm-library__icon[data-kind=cost] { background: color-mix(in srgb, #487fbb 12%, var(--surface)); color: color-mix(in srgb, #487fbb 80%, var(--ink)); }
+    .fm-library__icon[data-kind=invoice], .fm-library__icon[data-kind=quote] { background: color-mix(in srgb, #bc8627 12%, var(--surface)); color: color-mix(in srgb, #bc8627 80%, var(--ink)); }
+    .fm-options { display: grid; gap: 18px; }
+    .fm-options p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+    .fm-options .field { display: grid; gap: 8px; }
+    .fm-options .field > span { font-size: 13px; }
+    .fm-options .select { min-height: 48px; width: 100%; font-size: 16px; }
+    .fm-options .files-view button { flex: 1; min-height: 44px; font-size: 14px; }
+    @media (prefers-reduced-motion: reduce) { .fm-search, .fm-dock button { transition: none; } }
+  }
+  @media (min-width: 680px) and (max-width: 819.98px) {
+    .fm-dock { left: calc(var(--safe-l) + 94px); }
+  }
+}
+
+@media (max-width: 679.98px) {
+  body:has(app-files-page) .tabbar { display: none; }
 }

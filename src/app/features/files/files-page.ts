@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, inject, OnDestroy, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, ParamMap, Router } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router, RouterLink } from '@angular/router';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MenuTrigger } from '../../shared/menu-trigger';
@@ -17,6 +17,7 @@ import {
 import { PlannerApi } from '../../core/api/planner-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PageHeader } from '../../shared/page-header';
+import { Icon } from '../../shared/icon';
 import { DateTimeNlPipe } from '../../shared/pipes';
 import { Ui, Sheet } from '../../shared/ui';
 import { isCurrentMediaDetailAction, type MediaDetailActionIdentity } from '../settings/media-action-identity';
@@ -69,38 +70,37 @@ export const COLLECTIONS: readonly Collection[] = [
   selector: 'app-files-page',
   host: { class: 'files-workspace', id: 'files-workspace' },
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MenuTrigger, FormsModule, NgTemplateOutlet, AuthImage, PageHeader, Sheet, DateTimeNlPipe],
+  imports: [MenuTrigger, FormsModule, NgTemplateOutlet, AuthImage, PageHeader, Icon, RouterLink, Sheet, DateTimeNlPipe],
   template: `
     @if (!wide() && selected(); as asset) { <app-sheet [title]="asset.name" (closed)="close()"><div body class="fm-sheet"><ng-container *ngTemplateOutlet="detailBody; context: { $implicit: asset }" /></div></app-sheet> }
     @if (phone()) {
       <!-- ============================ phone: a file browser, one screen at a time -->
       <div class="content fm">
         <header class="fm__bar">
-          @if (folder() !== 'root' || collection()) { <button class="fm__back" type="button" (click)="goUp()">‹ {{ parentTitle() }}</button> }
-          @else { <span class="fm__eyebrow">Documenten &amp; media</span> }
+          <a class="fm__app-back" routerLink="/more" aria-label="Terug naar de app"><span aria-hidden="true">‹</span> App</a>
+          <span class="fm__eyebrow">Documenten &amp; media</span>
           <button class="fm__iconbtn" type="button" aria-label="Meer bibliotheekacties" (click)="menuOpen.set(true)">⋯</button>
         </header>
-        <h1 class="fm__title">{{ phoneTitle() }}</h1>
-        <label class="fm__browse"><span>Bibliotheek</span><select class="select" [ngModel]="browseValue()" (ngModelChange)="browse($event)">
-          <option value="folders">Mappen</option><option value="all">Alle bestanden</option>
-          @for (item of collections; track item.key) { <option [value]="item.key">{{ item.label }}</option> }
-          <option value="archive">Archief</option>
-        </select></label>
-        <ng-container *ngTemplateOutlet="libraryTools" />
-
-        @if (selectedIds().size) {
-          <div class="fm__selection" role="status">
-            <b>{{ selectedIds().size }} geselecteerd</b>
-            <button class="btn btn--sm btn--primary" type="button" [disabled]="zipping()" (click)="downloadSelection('original')">{{ zipping() ? 'Bezig…' : '⤓ Downloaden' }}</button>
-            <select class="select fm__move" [ngModel]="''" (ngModelChange)="moveSelection($event === 'root' ? null : +$event)" aria-label="Verplaats naar">
-              <option value="" disabled>Verplaats…</option>
-              <option value="root">Zonder map</option>
-              @for (node of tree(); track node.id) { <option [value]="node.id">{{ '  '.repeat(node.depth) }}{{ node.name }}</option> }
-            </select>
-            <button class="linklike" type="button" (click)="clearSelection(); picking.set(false)">Klaar</button>
+        @if (folder() !== 'root' || collection()) { <button class="fm__back" type="button" (click)="goUp()">‹ {{ parentTitle() }}</button> }
+        <div class="fm-heading">
+          <h1 class="fm__title">{{ archived() ? 'Archief' : phoneTitle() }}</h1>
+          <button class="fm-library-open" type="button" aria-label="Andere bibliotheek kiezen" (click)="libraryOpen.set(true)"><app-icon name="folder" [size]="20" /><span aria-hidden="true">⌄</span></button>
+        </div>
+        <div class="fm-search">
+          <app-icon name="search" [size]="19" />
+          <input id="fm-search" type="search" autocomplete="off" placeholder="Zoek bestanden…" aria-label="Zoek bestanden" [ngModel]="query()" (ngModelChange)="changeQuery($event)" />
+          @if (query()) { <button type="button" aria-label="Zoekopdracht wissen" (click)="changeQuery('')"><app-icon name="close" [size]="16" /></button> }
+        </div>
+        <div class="fm-filter-row">
+          <div class="files-kinds" role="group" aria-label="Bestandstype">
+            <button type="button" [attr.aria-pressed]="kind() === null" (click)="setKind(null)">Alles</button>
+            <button type="button" [attr.aria-pressed]="kind() === 'IMAGE'" (click)="setKind('IMAGE')">Foto’s</button>
+            <button type="button" [attr.aria-pressed]="kind() === 'DOCUMENT'" (click)="setKind('DOCUMENT')">Documenten</button>
           </div>
-        } @else if (picking()) {
-          <div class="fm__selection" role="status"><span>Tik bestanden aan om ze te selecteren</span><button class="linklike" type="button" (click)="picking.set(false)">Klaar</button></div>
+          <button class="fm-options-open" type="button" aria-label="Weergave en sorteren" (click)="optionsOpen.set(true)"><app-icon name="settings" [size]="20" /></button>
+        </div>
+        @if (picking()) {
+          <p class="fm-pick-note" role="status">{{ selectedIds().size ? selectedIds().size + ' geselecteerd' : 'Tik bestanden aan om te selecteren' }}@if (hasMore()) { <small>Alleen geladen bestanden</small> }</p>
         }
 
         @if (loading()) {
@@ -111,14 +111,14 @@ export const COLLECTIONS: readonly Collection[] = [
             <ul class="fm__list">
               @for (node of childFolders(); track node.id) {
                 <li class="fm__folderline"><button class="fm__row" type="button" appMenuTrigger (menuTrigger)="folderMenu.set(node)" (click)="openFolder(node.id)">
-                  <i class="fm__icon fm__icon--folder" aria-hidden="true">▰</i>
+                  <i class="fm__icon fm__icon--folder" aria-hidden="true"><app-icon name="folder" [size]="22" /></i>
                   <span class="fm__copy"><b>{{ node.name }}</b><small>{{ node.assetCount }} bestand{{ node.assetCount === 1 ? '' : 'en' }}{{ childCount(node) ? ' · ' + childCount(node) + (childCount(node) === 1 ? ' map' : ' mappen') : '' }}</small></span>
                   <i class="fm__chev" aria-hidden="true">›</i>
                 </button><button class="fm__folder-actions" type="button" [attr.aria-label]="'Mapacties voor ' + node.name" (click)="folderMenu.set(node)">⋯</button></li>
               }
             </ul>
           }
-          <h2 class="fm__h">{{ collection() ? collection()!.label : query().trim() ? 'Gevonden' : folder() === null ? 'Alle bestanden' : 'Bestanden' }} <small>{{ assets().length }}{{ hasMore() ? '+' : '' }}</small></h2>
+          <h2 class="fm__h">{{ query().trim() ? 'Gevonden' : folder() === 'root' ? 'Zonder map' : 'Bestanden' }} <small>{{ assets().length }}{{ hasMore() ? '+' : '' }}</small></h2>
           @if (!assets().length) {
             <ng-container *ngTemplateOutlet="emptyLibrary" />
           } @else {
@@ -156,8 +156,58 @@ export const COLLECTIONS: readonly Collection[] = [
           }
         }
 
-        <button class="fm__fab" type="button" [class.fm__fab--busy]="uploading()" [attr.aria-label]="uploading() ? uploadProgress() : 'Bestanden toevoegen'" (click)="addMenu.set(true)"><span aria-hidden="true">+</span>{{ uploading() ? 'Uploaden…' : 'Toevoegen' }}</button>
+        <nav class="fm-dock" aria-label="Mediabeheer" [class.fm-dock--picking]="picking()">
+          @if (picking()) {
+            <button type="button" (click)="togglePicking()"><app-icon name="close" /><span>Klaar</span></button>
+            <button type="button" [disabled]="!assets().length || movingSelection()" [attr.aria-pressed]="allSelected()" [attr.aria-label]="allSelected() ? 'Selectie van alle geladen bestanden wissen' : 'Alle geladen bestanden selecteren'" (click)="toggleAll()"><app-icon name="check" /><span>{{ allSelected() ? 'Geen' : 'Alles' }}</span></button>
+            <button type="button" [disabled]="!selectedIds().size || zipping() || movingSelection()" (click)="downloadSelection('original')"><app-icon name="download" />@if (selectedIds().size) { <span class="fm-dock__badge" aria-hidden="true">{{ selectedIds().size }}</span> }<span>{{ zipping() ? 'Bezig…' : 'Download' }}</span></button>
+            <button type="button" [disabled]="!selectedIds().size || movingSelection()" (click)="moveOpen.set(true); moveTarget.set('')"><app-icon name="move" /><span>Verplaats</span></button>
+          } @else {
+            <button type="button" (click)="libraryOpen.set(true)"><app-icon name="folder" /><span>Bibliotheek</span></button>
+            <button type="button" (click)="focusSearch()"><app-icon name="search" /><span>Zoeken</span></button>
+            <button class="fm-dock__add" type="button" [disabled]="uploading()" (click)="addMenu.set(true)"><app-icon name="plus" /><span>{{ uploading() ? 'Uploaden…' : 'Toevoegen' }}</span></button>
+            <button type="button" [disabled]="!assets().length || loading()" (click)="togglePicking()"><app-icon name="check" /><span>Selecteren</span></button>
+          }
+        </nav>
       </div>
+
+      @if (libraryOpen()) {
+        <app-sheet title="Bibliotheek" (closed)="libraryOpen.set(false)">
+          <div body class="fm-library">
+            <div class="fm-library__base">
+              <button type="button" [attr.aria-pressed]="browseValue() === 'folders'" (click)="chooseLibrary('folders')"><app-icon name="folder" /><span>Mappen</span></button>
+              <button type="button" [attr.aria-pressed]="browseValue() === 'all'" (click)="chooseLibrary('all')"><app-icon name="media" /><span>Alle bestanden</span></button>
+            </div>
+            <p class="fm-sheet-label">Op gebruik</p>
+            @for (item of collections; track item.key) {
+              <button class="fm-library__item" type="button" [attr.aria-pressed]="browseValue() === item.key" (click)="chooseLibrary(item.key)">
+                <span class="fm-library__icon" [attr.data-kind]="item.key"><app-icon [name]="collectionIcon(item.key)" [size]="20" /></span><span><b>{{ item.label }}</b><small>{{ item.hint }}</small></span><span class="fm-library__indicator" aria-hidden="true">{{ browseValue() === item.key ? '✓' : '›' }}</span>
+              </button>
+            }
+            <button class="fm-library__item" type="button" [attr.aria-pressed]="archived()" (click)="chooseLibrary('archive')"><span class="fm-library__icon"><app-icon name="stock" [size]="20" /></span><span><b>Archief</b><small>Eerder opgeborgen bestanden</small></span><span class="fm-library__indicator" aria-hidden="true">›</span></button>
+          </div>
+        </app-sheet>
+      }
+      @if (optionsOpen()) {
+        <app-sheet title="Weergave en sorteren" (closed)="optionsOpen.set(false)">
+          <div body class="fm-options">
+            <div class="files-view" role="group" aria-label="Weergave"><button type="button" [attr.aria-pressed]="view() === 'list'" (click)="setView('list')">Lijst</button><button type="button" [attr.aria-pressed]="view() === 'grid'" (click)="setView('grid')">Tegels</button></div>
+            <label class="field"><span>Sorteren op</span><select class="select" [ngModel]="sort().key + ':' + sort().dir" (ngModelChange)="chooseSort($event)"><option value="updated:-1">Laatst gewijzigd</option><option value="updated:1">Oudste eerst</option><option value="name:1">Naam A–Z</option><option value="name:-1">Naam Z–A</option><option value="size:-1">Grootste eerst</option><option value="size:1">Kleinste eerst</option><option value="kind:1">Soort A–Z</option><option value="kind:-1">Soort Z–A</option><option value="links:-1">Meeste koppelingen</option><option value="links:1">Minste koppelingen</option><option value="by:1">Toegevoegd door A–Z</option><option value="by:-1">Toegevoegd door Z–A</option></select></label>
+            @if (hasMore()) { <p class="fx__hint">Sorteren geldt voor de {{ assets().length }} geladen bestanden. Laad meer bestanden om die ook mee te nemen.</p> }
+            @if (hasFilters()) { <button class="btn" type="button" (click)="resetFilters(); optionsOpen.set(false)">Filters wissen</button> }
+          </div>
+          <div foot><button class="btn btn--primary" type="button" (click)="optionsOpen.set(false)">Klaar</button></div>
+        </app-sheet>
+      }
+      @if (moveOpen()) {
+        <app-sheet title="Bestanden verplaatsen" (closed)="closeMove()">
+          <div body class="fm-options fm-move">
+            <p>{{ selectedIds().size }} bestand{{ selectedIds().size === 1 ? '' : 'en' }} geselecteerd. De bestaande koppelingen blijven behouden.</p>
+            <label class="field"><span>Verplaats naar</span><select class="select" [disabled]="movingSelection()" [ngModel]="moveTarget()" (ngModelChange)="moveTarget.set($event)"><option value="" disabled>Kies een map…</option><option value="root">Zonder map</option>@for (node of tree(); track node.id) { <option [value]="node.id">{{ '— '.repeat(node.depth) }}{{ node.name }}</option> }</select></label>
+          </div>
+          <div foot><button class="btn" type="button" [disabled]="movingSelection()" (click)="closeMove()">Annuleren</button><button class="btn btn--primary" type="button" [disabled]="!moveTarget() || movingSelection() || !selectedIds().size" (click)="movePhoneSelection()">{{ movingSelection() ? 'Verplaatsen…' : 'Verplaatsen' }}</button></div>
+        </app-sheet>
+      }
 
       @if (actionsFor(); as target) {
         <app-sheet [title]="target.asset.name" (closed)="actionsFor.set(null)">
@@ -195,17 +245,8 @@ export const COLLECTIONS: readonly Collection[] = [
             @if (currentFolderId() !== null) {
               <button class="fm__menu-item" type="button" (click)="menuOpen.set(false); editCurrentFolder()"><i aria-hidden="true">✎</i>Map hernoemen of verplaatsen</button>
             }
-            <button class="fm__menu-item" type="button" (click)="menuOpen.set(false); picking.set(true)"><i aria-hidden="true">☑</i>Selecteren</button>
             <button class="fm__menu-item" type="button" [disabled]="!assets().length || zipping()" (click)="menuOpen.set(false); downloadAll()"><i aria-hidden="true">⤓</i>Alles downloaden ({{ assets().length }})</button>
-            <button class="fm__menu-item" type="button" (click)="menuOpen.set(false); setArchived(!archived())"><i aria-hidden="true">▤</i>{{ archived() ? 'Archief verbergen' : 'Archief tonen' }}</button>
-            <div class="fm__menu-sort">
-              <span>Sorteren op</span>
-              <span class="per-toggle" role="group" aria-label="Sorteren op">
-                <button type="button" [class.on]="sort().key === 'name'" (click)="sortBy('name')">Naam {{ arrow('name') }}</button>
-                <button type="button" [class.on]="sort().key === 'size'" (click)="sortBy('size')">Grootte {{ arrow('size') }}</button>
-                <button type="button" [class.on]="sort().key === 'updated'" (click)="sortBy('updated')">Datum {{ arrow('updated') }}</button>
-              </span>
-            </div>
+            @if (hasMore()) { <p class="fx__hint">Alleen de {{ assets().length }} geladen bestanden worden gedownload.</p> }
           </div>
         </app-sheet>
       }
@@ -854,7 +895,11 @@ export class FilesPage implements OnDestroy {
   readonly phone = signal(typeof window === 'undefined' ? false : window.innerWidth < 820);
   readonly picking = signal(false);
   readonly menuOpen = signal(false);
-  readonly searchOpen = signal(false);
+  readonly libraryOpen = signal(false);
+  readonly optionsOpen = signal(false);
+  readonly moveOpen = signal(false);
+  readonly moveTarget = signal<string>('');
+  readonly movingSelection = signal(false);
   readonly linkFormOpen = signal(false);
   /** The file whose actions are open: a sheet on the phone, a menu at the cursor on desktop. */
   readonly actionsFor = signal<{ asset: MediaAssetSummary } | null>(null);
@@ -884,11 +929,41 @@ export class FilesPage implements OnDestroy {
   usageLabel(asset: MediaAssetSummary): string { return asset.links.find(link => link.targetLabel)?.targetLabel ?? this.folderLabel(asset) ?? '';  }
   chooseVersion(): void { if (!this.busy()) document.getElementById('files-replace-version')?.click(); }
 
-  toggleSearch(): void {
-    const open = !this.searchOpen();
-    this.searchOpen.set(open);
-    if (open) setTimeout(() => document.getElementById('fm-search')?.focus(), 50);
-    else if (this.query()) this.changeQuery('');
+  focusSearch(): void {
+    const input = document.getElementById('fm-search');
+    // Focus in the tap handler so iOS can open its keyboard immediately.
+    input?.focus({ preventScroll: true });
+    input?.scrollIntoView({ block: 'center', behavior: 'auto' });
+  }
+
+  chooseLibrary(value: string): void {
+    this.libraryOpen.set(false);
+    this.browse(value);
+  }
+
+  collectionIcon(key: string): string {
+    switch (key) {
+      case 'product': case 'family': return 'media';
+      case 'purchase': return 'purchase';
+      case 'quote': case 'invoice': return 'sales';
+      case 'cost': return 'pdf';
+      case 'planner': return 'activity';
+      default: return 'folder';
+    }
+  }
+
+  closeMove(): void { if (!this.movingSelection()) this.moveOpen.set(false); }
+
+  async movePhoneSelection(): Promise<void> {
+    const target = this.moveTarget();
+    if (!target || this.movingSelection() || !this.selectedIds().size) return;
+    this.movingSelection.set(true);
+    try {
+      await this.moveSelection(target === 'root' ? null : Number(target));
+      this.moveOpen.set(false);
+    } finally {
+      this.movingSelection.set(false);
+    }
   }
 
   /* ---- phone rows: swipe left to delete, hold for the actions */
