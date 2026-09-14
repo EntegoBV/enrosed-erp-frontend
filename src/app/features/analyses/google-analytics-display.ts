@@ -32,13 +32,13 @@ export function visibleGoogleData<T>(source: GoogleAnalyticsSource<T> | null | u
   return source.data ?? null;
 }
 
-/** Normalize display only. Query strings and any unexpected hosts never become clickable links. */
+/** Absolute Search Console URLs retain their host; relative Analytics paths stay compact. */
 export function googlePageLabel(value: string): string {
   if (!value) return 'Onbekende pagina';
   try {
     const url = new URL(value, 'https://enrosed.com');
-    return (url.hostname === 'enrosed.com' || url.hostname === 'www.enrosed.com')
-      ? url.pathname : `${url.hostname}${url.pathname}`;
+    const absolute = /^(?:[a-z][a-z\d+.-]*:)?\/\//i.test(value.trim());
+    return absolute ? `${url.hostname}${url.pathname}` : url.pathname;
   } catch { return value.split(/[?#]/, 1)[0] || 'Onbekende pagina'; }
 }
 

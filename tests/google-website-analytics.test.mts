@@ -35,8 +35,16 @@ test('report dates and retrieval timestamps remain separate and page queries are
   assert.match(googleDate('2026-09-14T08:15:00Z', true), /10:15/);
   assert.equal(googleDate(null), 'Niet beschikbaar');
   assert.equal(googleDate('invalid'), 'Niet beschikbaar');
-  assert.equal(googlePageLabel('https://enrosed.com/nl/quote/?email=private@example.com#notes'), '/nl/quote/');
+  assert.equal(googlePageLabel('https://enrosed.com/nl/quote/?email=private@example.com#notes'), 'enrosed.com/nl/quote/');
   assert.equal(googlePageLabel('/el/products/?utm_source=google'), '/el/products/');
+});
+
+test('Search Console homepage host variants remain distinguishable without exposing queries or fragments', () => {
+  const pages = ['https://enrosed.com/?email=private@example.com#notes', 'https://www.enrosed.com/?utm_source=google#top'];
+  assert.deepEqual(pages.map(googlePageLabel), ['enrosed.com/', 'www.enrosed.com/']);
+  assert.equal(googlePageLabel('//www.enrosed.com/nl/products/?private=value#notes'), 'www.enrosed.com/nl/products/');
+  assert.equal(googlePageLabel('/?private=value#notes'), '/');
+  assert.equal(googlePageLabel('/nl/products/?private=value#notes'), '/nl/products/');
 });
 
 test('daily bars use real values without manufacturing visible visits for zero or missing days', () => {
