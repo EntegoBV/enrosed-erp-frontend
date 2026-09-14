@@ -3548,12 +3548,12 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
 .erp-workspace__mobile-state strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 679px) {
-  /* Order editors keep their own step/save dock. Reclaim the app navigation
-     space for the form, dock and toasts only while an editor is mounted. */
-  body:has(app-purchase-editor, app-sales-editor) {
+  /* Editors and the catalogue studio have their own action dock. Reclaim
+     navigation space only while these workspaces are mounted. */
+  body:has(app-purchase-editor, app-sales-editor, app-catalog-export) {
     --tabbar-h: 0px;
   }
-  body:has(app-purchase-editor, app-sales-editor) .tabbar {
+  body:has(app-purchase-editor, app-sales-editor, app-catalog-export) .tabbar {
     display: none;
   }
   .content.erp-workspace { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 38px); }

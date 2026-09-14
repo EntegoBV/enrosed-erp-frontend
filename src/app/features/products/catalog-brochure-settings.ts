@@ -23,158 +23,104 @@ export interface CatalogBrochureDraft {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule],
   template: `
-    <section class="card" aria-labelledby="brochure-layout-title">
-        <div class="card__head">
-          <div>
-            <h2 id="brochure-layout-title">Opbouw handelscatalogus</h2>
-            <p>Een vaste, duidelijke B2B-flow die het overzicht automatisch over pagina’s verdeelt.</p>
-          </div>
-        </div>
-        <div class="card__body">
+    <section class="brochure-finish" aria-labelledby="brochure-layout-title">
+      <details>
+        <summary>
+          <span class="finish-mark" aria-hidden="true">04</span>
+          <span class="finish-title"><b id="brochure-layout-title">De finishing touch.</b><small>Cover, fotografie en extra pagina’s</small></span>
+          <span class="finish-plus" aria-hidden="true">+</span>
+        </summary>
+        <div class="finish-body">
           <div class="brochure-fields">
-            <label class="field">
-              <span>Titel op de cover <small>optioneel</small></span>
-              <input class="input" [ngModel]="settings().coverTitle"
-                     [disabled]="disabled()"
-                     (ngModelChange)="patch({ coverTitle: $event })"
-                     placeholder="Bijvoorbeeld: Wholesale Collection" />
+            <label class="field"><span>Titel op de cover <small>optioneel</small></span>
+              <input class="input" [ngModel]="settings().coverTitle" [disabled]="disabled()"
+                     (ngModelChange)="patch({ coverTitle: $event })" placeholder="Standaardtitel in de gekozen taal" />
             </label>
-            <label class="field">
-              <span>Ondertitel op de cover <small>optioneel</small></span>
-              <input class="input" [ngModel]="settings().coverSubtitle"
-                     [disabled]="disabled()"
-                     (ngModelChange)="patch({ coverSubtitle: $event })"
-                     placeholder="Bijvoorbeeld: Ready for retail" />
-            </label>
-            <label class="field">
-              <span>Foto’s per productgroep</span>
-              <select class="select" [ngModel]="settings().photosPerProduct"
-                      [disabled]="disabled() || !includePhotos()"
-                      (ngModelChange)="patch({ photosPerProduct: +$event })">
-                <option [ngValue]="1">1 foto</option>
-                <option [ngValue]="2">2 foto’s</option>
-                <option [ngValue]="3">3 foto’s</option>
-                <option [ngValue]="4">4 foto’s</option>
-              </select>
+            <label class="field"><span>Ondertitel <small>optioneel</small></span>
+              <input class="input" [ngModel]="settings().coverSubtitle" [disabled]="disabled()"
+                     (ngModelChange)="patch({ coverSubtitle: $event })" placeholder="Standaardondertitel in de gekozen taal" />
             </label>
           </div>
-
-          <div class="required-pages" aria-label="Vaste cataloguspagina’s">
-            <div>
-              <i aria-hidden="true">✓</i>
-              <span><b>Volledig productoverzicht</b><small>Alle gekozen producten worden automatisch over overzichtspagina’s verdeeld, met doorklik naar het juiste detail.</small></span>
-            </div>
-            <div>
-              <i aria-hidden="true">✓</i>
-              <span><b>Bestellen en offerte</b><small>Duidelijke afsluiting met de volgende stap voor de klant.</small></span>
+          <p class="cover-help">Eigen coverteksten worden letterlijk gebruikt. Schrijf ze in de documenttaal.</p>
+          <div class="photo-choice">
+            <span><b>Hoofdfoto’s per productgroep</b><small>Kleurfoto’s van geselecteerde varianten worden daarnaast getoond.</small></span>
+            <div class="photo-choice__segments" role="group" aria-label="Maximum hoofdfoto’s per productgroep">
+              @for (count of photoCounts; track count) {
+                <button type="button" [class.active]="settings().photosPerProduct === count"
+                        [attr.aria-pressed]="settings().photosPerProduct === count"
+                        [disabled]="disabled() || !includePhotos()"
+                        (click)="patch({ photosPerProduct: count })">{{ count }}</button>
+              }
             </div>
           </div>
-
-          <details class="extra-pages">
-            <summary>Extra pagina’s toevoegen <span>optioneel</span></summary>
-            <div class="page-toggles" aria-label="Optionele pagina's in de brochure">
-              <label>
-                <input type="checkbox" [ngModel]="settings().includeCategoryIntros"
-                       [disabled]="disabled()"
-                       (ngModelChange)="patch({ includeCategoryIntros: $event })" />
-                <span><b>Categorie-intro’s</b><small>Een extra opener voor elke productcategorie</small></span>
-              </label>
-              <label>
-                <input type="checkbox" [ngModel]="settings().includeCustomisation"
-                       [disabled]="disabled()"
-                       (ngModelChange)="patch({ includeCustomisation: $event })" />
-                <span><b>Maatwerk</b><small>Private label, afwerking en presentatiemogelijkheden</small></span>
-              </label>
-              <label>
-                <input type="checkbox" [ngModel]="settings().includeBackCover"
-                       [disabled]="disabled()"
-                       (ngModelChange)="patch({ includeBackCover: $event })" />
-                <span><b>Achterflap</b><small>Contact- en bedrijfsgegevens op een aparte slotpagina</small></span>
-              </label>
-            </div>
-          </details>
-        </div>
-    </section>
-
-    <section class="card page-plan" aria-labelledby="page-plan-title">
-        <div class="card__head">
-          <div>
-            <h2 id="page-plan-title">Zo wordt de PDF opgebouwd</h2>
-            <p>De lezer ziet eerst het volledige aanbod en gaat daarna pas naar de details.</p>
+          <div class="page-toggles" aria-label="Extra pagina’s">
+            <label><span><b>Categorie-intro’s</b><small>Een eigen opener voor iedere collectie</small></span>
+              <input type="checkbox" [ngModel]="settings().includeCategoryIntros" [disabled]="disabled()"
+                     (ngModelChange)="patch({ includeCategoryIntros: $event })" />
+            </label>
+            <label><span><b>Private label &amp; maatwerk</b><small>Laat uw personalisatiemogelijkheden zien</small></span>
+              <input type="checkbox" [ngModel]="settings().includeCustomisation" [disabled]="disabled()"
+                     (ngModelChange)="patch({ includeCustomisation: $event })" />
+            </label>
+            <label><span><b>Achterflap</b><small>Bedrijfsgegevens als afsluiting</small></span>
+              <input type="checkbox" [ngModel]="settings().includeBackCover" [disabled]="disabled()"
+                     (ngModelChange)="patch({ includeBackCover: $event })" />
+            </label>
           </div>
         </div>
+      </details>
+      <div class="page-plan" aria-label="Opbouw van uw PDF">
+        <div class="page-plan__label">UW CATALOGUS, VAN VOOR TOT ACHTER</div>
         <ol>
-          @for (page of pagePlan(); track page) {
-            <li><span>{{ $index + 1 }}</span>{{ page }}</li>
-          }
+          @for (page of pagePlan(); track page) { <li><span aria-hidden="true">{{ $index + 1 }}</span>{{ page }}</li> }
         </ol>
+        <p>Het aantal pagina’s volgt uit uw selectie, foto’s en teksten.</p>
+      </div>
     </section>
   `,
   styles: `
-    :host {
-      display: grid; min-width: 0; gap: 12px; container: brochure-settings / inline-size;
-    }
-    .card__head > div { min-width: 0; }
-    .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
-    .field > span { color: var(--ink-2); font-size: 14px; font-weight: 700; }
-    .field > span > small { color: var(--muted); font-size: 14px; font-weight: 500; }
-    .brochure-fields { display: grid; gap: 2px 12px; }
-    .brochure-fields .input, .brochure-fields .select { min-height: 48px; font-size: 16px; }
-    .required-pages { display: grid; gap: 8px; margin-top: 14px; }
-    .required-pages > div {
-      display: flex; min-height: 68px; align-items: flex-start; gap: 11px; padding: 13px;
-      border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--line));
-      border-radius: 12px; background: color-mix(in srgb, var(--ok) 7%, var(--surface));
-    }
-    .required-pages i {
-      display: grid; width: 24px; height: 24px; flex: none; place-items: center;
-      border-radius: 50%; background: var(--ok); color: #fff; font-size: 14px;
-      font-style: normal; font-weight: 800;
-    }
-    .required-pages span { display: grid; min-width: 0; gap: 3px; }
-    .required-pages b { color: var(--ink-2); font-size: 15px; }
-    .required-pages small { color: var(--muted); font-size: 14px; line-height: 1.4; }
-    .extra-pages {
-      margin-top: 12px; border: 1px solid var(--line); border-radius: 12px;
-      background: var(--surface-2);
-    }
-    .extra-pages summary {
-      min-height: 48px; padding: 14px; color: var(--ink-2); cursor: pointer;
-      font-size: 14px; font-weight: 700;
-    }
-    .extra-pages summary span { color: var(--muted); font-size: 14px; font-weight: 500; }
-    .page-toggles { display: grid; gap: 8px; padding: 0 12px 12px; }
-    .page-toggles > span {
-      margin: 4px 0 2px; color: var(--muted); font-size: 13px; font-weight: 750;
-      letter-spacing: .07em; text-transform: uppercase;
-    }
-    .page-toggles label {
-      display: flex; min-height: 64px; align-items: flex-start; gap: 11px; padding: 12px;
-      border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
-    }
-    .page-toggles input {
-      width: 22px; height: 22px; flex: none; accent-color: var(--rose);
-    }
-    .page-toggles label span { display: grid; gap: 3px; }
-    .page-toggles b { font-size: 15px; }
-    .page-toggles small { color: var(--muted); font-size: 14px; line-height: 1.4; }
-    .page-plan ol { display: grid; gap: 0; margin: 0; padding: 8px 16px 14px; list-style: none; }
-    .page-plan li {
-      display: flex; align-items: center; gap: 11px; min-height: 50px;
-      border-bottom: 1px solid var(--line); color: var(--ink-2); font-size: 14px;
-    }
-    .page-plan li:last-child { border-bottom: 0; }
-    .page-plan li span {
-      display: grid; width: 28px; height: 28px; flex: none; place-items: center;
-      border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 12px;
-    }
-    @container brochure-settings (min-width: 620px) {
-      .brochure-fields { grid-template-columns: 1fr 1fr; }
-      .brochure-fields .field:last-child { grid-column: 1 / -1; }
-    }
+    :host { display: block; min-width: 0; container: brochure-settings / inline-size; }
+    .brochure-finish { overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); }
+    summary { display: flex; min-height: 86px; align-items: center; gap: 12px; padding: 20px 22px; list-style: none; cursor: pointer; }
+    summary::-webkit-details-marker { display: none; }
+    .finish-mark { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 11px; background: var(--rose-soft); color: var(--rose-dark); font-size: 11px; font-weight: 800; }
+    .finish-title { display: grid; flex: 1; min-width: 0; gap: 4px; }
+    .finish-title b { font-size: 18px; font-weight: 720; letter-spacing: -.04em; }
+    .finish-title small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .finish-plus { color: var(--muted); font-size: 24px; font-weight: 400; transition: transform .2s; }
+    details[open] .finish-plus { transform: rotate(45deg); }
+    .finish-body { padding: 0 22px 18px; }
+    .brochure-fields { display: grid; gap: 12px; }
+    .field { margin: 0; }
+    .field > span { color: var(--ink-2); font-size: 12px; font-weight: 700; }
+    .field small { color: var(--muted); font-weight: 400; }
+    .field .input { min-height: 48px; font-size: 16px; border-radius: 12px; }
+    .cover-help { margin: 10px 0 18px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .photo-choice { display: grid; gap: 12px; padding: 16px 0; border-block: 1px solid var(--line); }
+    .photo-choice > span, .page-toggles label > span { display: grid; min-width: 0; gap: 3px; }
+    .photo-choice b, .page-toggles b { font-size: 14px; }
+    .photo-choice small, .page-toggles small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .photo-choice__segments { display: flex; padding: 4px; gap: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+    .photo-choice__segments button { flex: 1; min-height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .photo-choice__segments button.active { background: var(--surface); box-shadow: 0 2px 5px #0001; color: var(--rose-dark); }
+    .photo-choice__segments button:disabled { opacity: .5; cursor: default; }
+    .page-toggles { display: grid; }
+    .page-toggles label { display: flex; min-height: 72px; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+    .page-toggles label:last-child { border: 0; }
+    .page-toggles input { width: 23px; height: 23px; flex: none; accent-color: var(--rose); }
+    .page-plan { border-top: 1px solid var(--line); padding: 18px 22px; background: color-mix(in srgb, var(--surface-2) 70%, var(--surface)); }
+    .page-plan__label { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+    .page-plan ol { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; list-style: none; margin: 12px 0 0; padding: 0; }
+    .page-plan li { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 11px; }
+    .page-plan li span { display: grid; width: 19px; height: 24px; flex: none; place-items: center; border: 1px solid var(--line-strong); border-radius: 2px; background: var(--surface); color: var(--muted); font-size: 8px; }
+    .page-plan p { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    @container brochure-settings (min-width: 600px) { .brochure-fields { grid-template-columns: 1fr 1fr; } .photo-choice { grid-template-columns: 1fr 160px; align-items: center; } }
+    @media (max-width: 679px) { summary { padding: 18px; } .finish-body { padding-inline: 18px; } .page-plan { padding: 16px 18px; } }
+    @media (prefers-reduced-motion: reduce) { .finish-plus { transition: none; } }
   `,
 })
 export class CatalogBrochureSettings {
+  readonly photoCounts = [1, 2, 3, 4];
   readonly includePhotos = input(true);
   readonly selectedFamilyCount = input(0);
   readonly disabled = input(false);
@@ -184,13 +130,13 @@ export class CatalogBrochureSettings {
   readonly pagePlan = computed(() => {
     const settings = this.settings();
     const plan = ['Voorpagina'];
-    plan.push('Volledig productoverzicht · automatisch verdeeld');
-    if (settings.includeCategoryIntros) plan.push('Optionele categorie-intro’s');
+    plan.push('Assortiment');
+    if (settings.includeCategoryIntros) plan.push('Collecties');
     const families = this.selectedFamilyCount();
-    plan.push(`Productdetails · ${families} groep${families === 1 ? '' : 'en'}`);
-    if (settings.includeCustomisation) plan.push('Optionele maatwerkpagina');
+    plan.push(`${families} productgroepen`);
+    if (settings.includeCustomisation) plan.push('Maatwerk');
     plan.push('Bestellen & offerte');
-    if (settings.includeBackCover) plan.push('Optionele achterflap');
+    if (settings.includeBackCover) plan.push('Achterflap');
     return plan;
   });
 

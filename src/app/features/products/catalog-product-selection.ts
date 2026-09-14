@@ -10,11 +10,12 @@ import {
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Product } from '../../core/api/models';
+import { Category, Product, ProductFamily } from '../../core/api/models';
 import { ContextMenu, ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { Skeleton } from '../../shared/skeleton';
+import { catalogueFamilies, cataloguePhoto, CatalogueFamilySelection } from './catalog-studio';
 import {
   deselectProductIds,
   groupProductsByCategory,
@@ -39,22 +40,25 @@ type MenuSubject =
   imports: [AuthImage, FormsModule, Skeleton, ContextMenu, MenuTrigger],
   template: `
     <section class="card product-selector" aria-labelledby="catalog-products-title">
-      <div class="card__head product-selector__head">
-        <div>
-          <h2 id="catalog-products-title">Assortiment</h2>
-          <p>{{ selectedProductCount() }} van {{ selectableIds().length }} producten opgenomen
-            @if (selectedFamilyCount()) { · {{ selectedFamilyCount() }} families }</p>
-        </div>
-        <div class="selection-quick" role="group" aria-label="Snelle selectie">
-          <button class="btn btn--sm" type="button"
-                  [disabled]="disabled() || allSelected()"
-                  (click)="selectAll()">Alles</button>
-          <button class="btn btn--sm" type="button"
-                  [disabled]="disabled() || !selectedProductCount()"
-                  (click)="clearAll()">Niets</button>
+      <div class="product-selector__head">
+        <span class="selection-step" aria-hidden="true">03</span>
+        <div><h2 id="catalog-products-title">Uw collectie, compleet.</h2><p>{{ selectedFamilyCount() }} productgroepen · {{ selectedProductCount() }} varianten geselecteerd</p></div>
+      </div>
+      <div class="collection-scope">
+        <button class="collection-all" type="button" [class.collection-all--selected]="allSelected()"
+                [disabled]="disabled() || loading() || !selectableIds().length" (click)="selectAll()">
+          <span class="collection-all__mark" aria-hidden="true">{{ allSelected() ? '✓' : '+' }}</span>
+          <span><b>{{ loading() ? 'Assortiment laden…' : allSelected() ? 'Volledig assortiment opgenomen' : 'Volledig assortiment opnemen' }}</b><small>Alle {{ selectableIds().length }} varianten · ook zonder voorraad</small></span>
+        </button>
+        <div class="selected-categories" aria-label="Geselecteerde categorieën">
+          @for (category of categoryChips(); track category.id) {
+            @if (category.selected) { <span>{{ category.name }} <b>{{ category.selected }}</b></span> }
+          }
         </div>
       </div>
-
+      <details class="selection-editor" [open]="!!loadError()" (toggle)="selectionEditorOpen.set($any($event.target).open)">
+        <summary><span>Assortiment aanpassen<small>Kies productgroepen of afzonderlijke kleuren en maten</small></span><i aria-hidden="true">+</i></summary>
+      @if (selectionEditorOpen()) {
       <div class="selection-tools">
         <label class="product-search">
           <span class="sr-only">Producten zoeken</span>
@@ -70,7 +74,7 @@ type MenuSubject =
           <input type="checkbox" [ngModel]="selectedOnly()"
                  [disabled]="disabled()"
                  (ngModelChange)="selectedOnly.set($event)" />
-          Alleen opgenomen
+          Selectie
         </label>
       </div>
 
@@ -117,67 +121,75 @@ type MenuSubject =
         </div>
       } @else {
         <div class="product-choice-list">
-          @for (group of groups(); track group.key) {
+          @for (group of familyGroups(); track group.key) {
             <div class="group-head">
-              <div class="group-head__copy">
-                <b>{{ group.name }}</b>
-                <small>{{ groupSelectedCount(group.products) }} van {{ group.products.length }} opgenomen</small>
-              </div>
+              <div class="group-head__copy"><b>{{ group.name }}</b><small>{{ groupSelectedCount(group.products) }} / {{ group.products.length }} varianten</small></div>
               <span class="group-head__actions">
-                <button class="linklike" type="button" [disabled]="disabled() || groupAllSelected(group.products)"
-                        (click)="selectMany(group.products)">Alles</button>
-                <button class="linklike" type="button" [disabled]="disabled() || !groupSelectedCount(group.products)"
-                        (click)="clearMany(group.products)">Niets</button>
+                <button class="linklike" type="button" [disabled]="disabled() || groupAllSelected(group.products)" (click)="selectMany(group.products)">Alles</button>
+                <button class="linklike" type="button" [disabled]="disabled() || !groupSelectedCount(group.products)" (click)="clearMany(group.products)">Niets</button>
               </span>
             </div>
-            @for (product of group.products; track product.id) {
-              <label class="product-choice" [class.product-choice--selected]="isSelected(product)"
-                     appMenuTrigger [appMenuTriggerDisabled]="disabled()"
-                     (menuTrigger)="openProductMenu($event, product)"
-                     (click)="rowClicked($event, product)">
-                <input type="checkbox" [checked]="isSelected(product)"
-                       [disabled]="disabled()"
-                       [attr.aria-label]="product.name + ' opnemen'"
-                       (change)="toggle(product.id)" />
-                @if (product.photos[0]; as photo) {
-                  <img [appAuthSrc]="photo.url" [alt]="product.name" draggable="false" />
-                } @else {
-                  <span class="product-choice__empty" aria-hidden="true">◇</span>
+            @for (family of group.families; track family.key) {
+              <div class="family-card" [class.family-card--selected]="groupAllSelected(wholeFamily(family))">
+                <div class="family-card__head">
+                  <label class="family-card__select">
+                    <input type="checkbox" [checked]="groupAllSelected(wholeFamily(family))"
+                           [indeterminate]="groupSelectedCount(wholeFamily(family)) > 0 && !groupAllSelected(wholeFamily(family))"
+                           [disabled]="disabled()" [attr.aria-label]="'Alle varianten van ' + family.name + ' opnemen'"
+                           (change)="toggleFamily(family)" />
+                  </label>
+                  <button class="family-card__open" type="button" [disabled]="disabled()"
+                          [attr.aria-expanded]="expandedFamilies().has(family.key)"
+                          [attr.aria-controls]="'catalog-' + family.key" (click)="toggleFamilyOpen(family.key)">
+                    @if (family.photo; as photo) { <img [appAuthSrc]="photo.url" alt="" draggable="false" /> }
+                    @else { <span class="family-card__empty" aria-hidden="true">E</span> }
+                    <span class="family-card__copy"><b>{{ family.name }}</b>
+                      <small>{{ groupSelectedCount(wholeFamily(family)) }} van {{ wholeFamily(family).length }} varianten opgenomen</small>
+                      <span class="family-swatches" aria-hidden="true">
+                        @for (variant of wholeFamily(family).slice(0, 8); track variant.id) {
+                          @if (variant.colourHex) { <i [style.backgroundColor]="variant.colourHex" [class.family-swatches__muted]="!isSelected(variant)"></i> }
+                        }
+                      </span>
+                    </span>
+                    <span class="family-card__chevron" [class.family-card__chevron--open]="expandedFamilies().has(family.key)" aria-hidden="true">⌄</span>
+                  </button>
+                </div>
+                @if (expandedFamilies().has(family.key)) {
+                  <div class="family-card__variants" [id]="'catalog-' + family.key">
+                    @for (product of family.products; track product.id) {
+                      <div class="product-choice" [class.product-choice--selected]="isSelected(product)"
+                           appMenuTrigger [appMenuTriggerDisabled]="disabled()"
+                           (menuTrigger)="openProductMenu($event, product)" (click)="rowClicked($event, product)">
+                        <input type="checkbox" [id]="'catalog-product-' + product.id" [checked]="isSelected(product)"
+                               [disabled]="disabled()" [attr.aria-label]="product.name + ' opnemen'" (change)="toggle(product.id)" />
+                        <label class="product-choice__photo" [attr.for]="'catalog-product-' + product.id">
+                          @if (photoFor(product); as photo) { <img [appAuthSrc]="photo.url" alt="" draggable="false" /> }
+                          @else { <span class="product-choice__empty" aria-hidden="true">◇</span> }
+                        </label>
+                        <label class="product-choice__copy" [attr.for]="'catalog-product-' + product.id">
+                          <b>{{ variantLabel(product) }}</b><small>{{ product.sku || 'Zonder SKU' }}</small>
+                          @if (product.carton.piecesPerCarton; as carton) { <small>{{ carton }} stuks per omdoos</small> }
+                          @if (showReferencePrices()) {
+                            <span class="product-choice__price" [class.product-choice__price--missing]="!hasReferencePrice(product)"><b>{{ referencePrice(product) }}</b>@if (hasReferencePrice(product)) { <i> / stuk</i> }</span>
+                          }
+                        </label>
+                        <button class="product-choice__more" type="button" [disabled]="disabled()"
+                                [attr.aria-label]="'Meer keuzes voor ' + product.name" (click)="moreClicked($event, product)">⋯</button>
+                      </div>
+                    }
+                  </div>
                 }
-                <span class="product-choice__copy">
-                  <b>{{ product.name }}</b>
-                  <small>{{ productMeta(product) }}</small>
-                  @if (familySize(product) > 1) {
-                    <em class="product-choice__family">{{ familySelectedCount(product) }}/{{ familySize(product) }} van de familie</em>
-                  }
-                </span>
-                @if (showReferencePrices()) {
-                  <span class="product-choice__price"
-                        [class.product-choice__price--missing]="!hasReferencePrice(product)">
-                    <small>Referentieprijs</small>
-                    <b>{{ referencePrice(product) }}</b>
-                    <i>per stuk</i>
-                  </span>
-                } @else if (product.colourHex) {
-                  <i class="colour-dot" [style.backgroundColor]="product.colourHex"
-                     aria-hidden="true"></i>
-                }
-                <button class="product-choice__more" type="button" [disabled]="disabled()"
-                        [attr.aria-label]="'Meer keuzes voor ' + product.name"
-                        (click)="moreClicked($event, product)">⋯</button>
-              </label>
+              </div>
             }
           } @empty {
-            <div class="load-state">
-              <div>
-                <b>Geen producten in deze selectie</b>
-                <small>Pas je zoekopdracht of filters aan.</small>
-              </div>
-            </div>
+            <div class="load-state"><div><b>Geen producten in deze selectie</b><small>Pas je zoekopdracht of filters aan.</small></div></div>
           }
         </div>
         <p class="selection-hint">Tip: rechtermuisklik of lang drukken op een product of categorie voor hele families en categorieën; Shift+klik kiest een reeks.</p>
       }
+      <div class="selection-reset"><button class="linklike" type="button" [disabled]="disabled() || !selectedProductCount()" (click)="clearAll()">Selectie leegmaken</button></div>
+      }
+      </details>
     </section>
 
     @if (menu(); as subject) {
@@ -187,126 +199,105 @@ type MenuSubject =
   `,
   styles: `
     :host { display: block; min-width: 0; container: product-selector / inline-size; }
-    .card__head > div { min-width: 0; }
-    .card__head p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
-    .product-selector__head { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
-    .selection-quick { display: flex; gap: 6px; }
-    .selection-quick .btn { min-height: 40px; }
-    .selection-tools { display: grid; gap: 8px; padding: 14px 14px 10px; }
-    .product-search { position: relative; display: block; }
-    .product-search svg {
-      position: absolute; left: 12px; top: 50%; width: 17px; height: 17px;
-      transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8;
-      pointer-events: none;
-    }
-    .product-search .input { min-height: 48px; padding-left: 39px; font-size: 16px; }
-    .selected-only {
-      display: flex; min-height: 48px; align-items: center; gap: 9px;
-      color: var(--ink-2); font-size: 14px; font-weight: 700; cursor: pointer;
-    }
-    .selected-only input, .product-choice > input {
-      width: 22px; height: 22px; flex: none; accent-color: var(--rose);
-    }
-    .category-chips { margin: 0; padding: 0 14px 7px; }
-    .category-chips .chip {
-      min-height: 44px; padding-inline: 14px; font-size: 14px;
-      user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-    }
-    .chip--count i {
-      margin-left: 2px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2);
-      color: var(--muted); font-size: 11px; font-style: normal; font-weight: 700;
-    }
-    .chip--partial i { background: var(--warn-soft); color: var(--warn); }
-    .chip--full i { background: var(--ok-soft); color: var(--ok); }
-    .chip.active i { background: rgb(255 255 255 / 22%); color: #fff; }
-    .selection-summary {
-      display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 10px 14px;
-      border-block: 1px solid var(--line); color: var(--muted); font-size: 13.5px;
-    }
-    .selection-summary__actions { display: flex; gap: 14px; }
+    .product-selector { overflow: hidden; border-radius: 22px; box-shadow: none; }
+    .product-selector__head { display: flex; gap: 12px; align-items: flex-start; padding: 22px 22px 18px; }
+    .selection-step { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 11px; background: var(--rose-soft); color: var(--rose-dark); font-size: 11px; font-weight: 800; }
+    .product-selector__head h2 { margin: 0; font-size: 19px; font-weight: 720; letter-spacing: -.04em; }
+    .product-selector__head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .collection-scope { padding: 0 22px 20px; }
+    .collection-all { display: flex; width: 100%; min-height: 80px; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line-strong); border-radius: 15px; background: var(--surface-2); color: var(--ink); text-align: left; cursor: pointer; }
+    .collection-all--selected { border-color: var(--rose-line); background: color-mix(in srgb, var(--rose-soft) 50%, var(--surface)); }
+    .collection-all__mark { display: grid; width: 26px; height: 26px; flex: none; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; font-size: 15px; }
+    .collection-all--selected .collection-all__mark { background: var(--rose); border-color: var(--rose); color: #fff; }
+    .collection-all > span:last-child { display: grid; gap: 4px; }
+    .collection-all b { font-size: 14px; font-weight: 720; }
+    .collection-all small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .selected-categories { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .selected-categories > span { padding: 6px 9px; border-radius: 7px; background: var(--surface-2); color: var(--muted); font-size: 10px; }
+    .selected-categories b { margin-left: 4px; color: var(--ink-2); font-weight: 700; }
+    .selection-editor { border-top: 1px solid var(--line); }
+    .selection-editor > summary { display: flex; min-height: 75px; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 22px; cursor: pointer; list-style: none; }
+    .selection-editor > summary::-webkit-details-marker { display: none; }
+    .selection-editor > summary > span { display: grid; gap: 4px; font-size: 14px; font-weight: 700; }
+    .selection-editor > summary small { color: var(--muted); font-size: 12px; line-height: 1.4; font-weight: 400; }
+    .selection-editor > summary > i { font-size: 24px; font-weight: 400; font-style: normal; color: var(--muted); transition: transform .2s; }
+    .selection-editor[open] > summary > i { transform: rotate(45deg); }
+    .selection-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 0 18px 12px; }
+    .product-search { position: relative; display: block; flex: 1; min-width: 180px; }
+    .product-search svg { position: absolute; left: 12px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; pointer-events: none; }
+    .product-search .input { min-height: 46px; padding-left: 38px; border-radius: 12px; font-size: 16px; }
+    .selected-only { display: flex; min-height: 44px; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; cursor: pointer; }
+    .selected-only input { width: 20px; height: 20px; accent-color: var(--rose); }
+    .category-chips { flex-wrap: nowrap; gap: 6px; overflow-x: auto; margin: 0; padding: 0 18px 12px; scrollbar-width: none; }
+    .category-chips::-webkit-scrollbar { display: none; }
+    .category-chips .chip { flex: none; min-height: 40px; padding-inline: 12px; font-size: 12px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .chip--count i { margin-left: 4px; font-style: normal; opacity: .75; font-size: 10px; }
+    .selection-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 10px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .selection-summary__actions { display: flex; gap: 12px; }
+    .selection-summary__actions button { min-height: 36px; font-size: 11px; }
     .linklike:disabled { opacity: .4; cursor: default; text-decoration: none; }
-    .product-choice-list { display: grid; }
-    .group-head {
-      position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
-      gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line);
-      background: var(--surface-2);
-    }
-    .group-head__copy { display: grid; min-width: 0; }
-    .group-head__copy b { font-size: 13px; letter-spacing: .01em; }
-    .group-head__copy small { color: var(--muted); font-size: 12px; }
-    .group-head__actions { display: flex; flex: none; gap: 12px; font-size: 13px; }
-    .product-choice {
-      position: relative;
-      display: grid; grid-template-columns: 24px 60px minmax(0, 1fr) auto 32px;
-      min-width: 0; align-items: center; gap: 11px; min-height: 84px; padding: 10px 8px 10px 14px;
-      border-bottom: 1px solid var(--line); background: var(--surface); cursor: pointer;
-      user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y;
-    }
-    .product-choice:last-child { border-bottom: 0; }
-    .product-choice:hover { background: var(--surface-2); }
-    .product-choice--selected {
-      background: color-mix(in srgb, var(--rose-soft) 42%, var(--surface));
-      box-shadow: inset 3px 0 0 var(--rose);
-    }
-    .product-choice--selected:hover { background: color-mix(in srgb, var(--rose-soft) 60%, var(--surface)); }
-    .product-choice img, .product-choice__empty {
-      display: grid; width: 60px; height: 60px; place-items: center; border: 1px solid var(--line);
-      border-radius: 11px; background: var(--surface-2);
-    }
-    .product-choice img { box-sizing: border-box; padding: 5px; object-fit: contain; pointer-events: none; }
-    .product-choice__copy { display: grid; min-width: 0; gap: 2px; }
-    .product-choice__copy b, .product-choice__copy small {
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .product-choice__copy b { font-size: 15px; line-height: 1.3; }
-    .product-choice__copy small { color: var(--muted); font-size: 13.5px; line-height: 1.4; }
-    .product-choice__family { color: var(--rose-dark); font-size: 11.5px; font-style: normal; font-weight: 650; }
-    .product-choice__price {
-      display: grid; min-width: 92px; justify-items: end; gap: 1px; text-align: right;
-    }
-    .product-choice__price small {
-      color: var(--muted); font-size: 11px; font-weight: 700;
-      letter-spacing: .04em; text-transform: uppercase;
-    }
-    .product-choice__price b { color: var(--rose-dark); font-size: 16px; white-space: nowrap; }
-    .product-choice__price i { color: var(--muted); font-size: 11px; font-style: normal; }
-    .product-choice__price--missing b { color: var(--warn); font-size: 14px; }
-    .colour-dot {
-      width: 15px; height: 15px; border: 1px solid rgb(0 0 0 / 12%); border-radius: 50%;
-    }
-    .product-choice__more {
-      display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid transparent;
-      border-radius: 50%; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer;
-    }
-    .product-choice__more:hover, .product-choice__more:focus-visible { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
-    .selection-hint { margin: 0; padding: 10px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-    .load-state {
-      display: flex; min-height: 150px; align-items: center; justify-content: center;
-      gap: 14px; padding: 18px; color: var(--muted); text-align: center;
-    }
+    .product-choice-list { display: grid; padding: 0 12px 12px; background: var(--surface-2); }
+    .group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 6px 10px; }
+    .group-head__copy { display: grid; min-width: 0; gap: 2px; }
+    .group-head__copy b { font-size: 12px; }
+    .group-head__copy small { color: var(--muted); font-size: 10px; }
+    .group-head__actions { display: flex; flex: none; gap: 12px; font-size: 11px; }
+    .group-head__actions button { min-height: 36px; }
+    .family-card { margin-bottom: 7px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+    .family-card--selected { border-color: color-mix(in srgb, var(--rose-line) 55%, var(--line)); }
+    .family-card__head { display: flex; min-width: 0; align-items: stretch; }
+    .family-card__select { display: grid; width: 44px; flex: none; place-items: center; cursor: pointer; }
+    .family-card__select input { width: 21px; height: 21px; margin: 0; accent-color: var(--rose); }
+    .family-card__open { display: flex; width: 100%; min-width: 0; align-items: center; gap: 12px; padding: 12px 14px 12px 0; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+    .family-card__open > img, .family-card__empty { display: grid; width: 66px; height: 72px; flex: none; place-items: center; padding: 4px; box-sizing: border-box; border-radius: 9px; background: #fff; object-fit: contain; color: #bda292; font: 28px Georgia, serif; }
+    .family-card__copy { display: grid; flex: 1; min-width: 0; gap: 4px; }
+    .family-card__copy b { font-size: 14px; line-height: 1.3; font-weight: 700; overflow-wrap: anywhere; }
+    .family-card__copy small { color: var(--muted); font-size: 11px; }
+    .family-swatches { display: flex; gap: 3px; margin-top: 2px; }
+    .family-swatches i { width: 10px; height: 10px; border: 1px solid #0002; border-radius: 50%; }
+    .family-swatches__muted { opacity: .25; }
+    .family-card__chevron { flex: none; color: var(--muted); font-size: 19px; transition: transform .2s; }
+    .family-card__chevron--open { transform: rotate(180deg); }
+    .family-card__variants { border-top: 1px solid var(--line); }
+    .product-choice { display: grid; grid-template-columns: 22px 48px minmax(0, 1fr) 32px; align-items: center; gap: 10px; min-height: 80px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+    .product-choice:last-child { border: 0; }
+    .product-choice--selected { background: color-mix(in srgb, var(--rose-soft) 25%, var(--surface)); }
+    .product-choice > input { width: 20px; height: 20px; accent-color: var(--rose); }
+    .product-choice__photo { cursor: pointer; }
+    .product-choice img, .product-choice__empty { display: grid; width: 48px; height: 52px; place-items: center; box-sizing: border-box; padding: 3px; border-radius: 7px; background: #fff; object-fit: contain; pointer-events: none; }
+    .product-choice__copy { display: grid; min-width: 0; gap: 2px; cursor: pointer; }
+    .product-choice__copy > b { color: var(--ink); font-size: 13px; line-height: 1.4; }
+    .product-choice__copy > small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .product-choice__price { display: block; margin-top: 4px; color: var(--rose-dark); font-size: 12px; }
+    .product-choice__price i { color: var(--muted); font-size: 10px; font-style: normal; }
+    .product-choice__more { display: grid; width: 32px; height: 44px; place-items: center; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+    .selection-hint { margin: 0; padding: 12px 18px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .selection-reset { padding: 0 18px 14px; }
+    .selection-reset button { min-height: 40px; font-size: 12px; color: var(--muted); }
+    .load-state { display: flex; min-height: 150px; align-items: center; justify-content: center; gap: 14px; padding: 18px; color: var(--muted); text-align: center; }
     .load-state > div { display: grid; gap: 3px; }
-    .load-state b { color: var(--ink-2); font-size: 15px; }
-    .load-state small { font-size: 14px; }
+    .load-state b { color: var(--ink-2); font-size: 14px; }
+    .load-state small { font-size: 12px; }
     .load-state--error { border-top: 1px solid var(--line); color: var(--danger); }
-    @media (hover: hover) {
-      .product-choice__more { opacity: 0; transition: opacity .12s; }
-      .product-choice:hover .product-choice__more, .product-choice__more:focus-visible { opacity: 1; }
-    }
-    @container product-selector (min-width: 620px) {
-      .selection-tools { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-    }
-    @container catalog-page (min-width: 980px) {
-      .product-choice-list { max-height: 62dvh; overflow-y: auto; overscroll-behavior: contain; }
-    }
-    @container product-selector (max-width: 520px) {
-      .product-selector__head { display: grid; }
-      .product-choice { grid-template-columns: 24px 60px minmax(0, 1fr) 32px; }
-      .product-choice__price {
-        grid-column: 3; min-width: 0; justify-items: start; margin-top: 4px; text-align: left;
-      }
-      .colour-dot { display: none; }
+    @container product-selector (max-width: 420px) {
+      .product-selector__head { padding: 18px; }
+      .product-selector__head h2 { font-size: 18px; }
+      .collection-scope { padding: 0 18px 16px; }
+      .collection-all { padding: 12px; }
+      .collection-all b { font-size: 13px; }
+      .collection-all small { font-size: 11px; }
+      .selection-editor > summary { padding-inline: 18px; }
+      .family-card__open { gap: 8px; padding-right: 10px; }
+      .family-card__open > img, .family-card__empty { width: 54px; height: 64px; }
+      .family-card__copy b { font-size: 13px; }
+      .family-card__copy small { font-size: 10px; }
+      .family-card__select { width: 38px; }
+      .product-choice { grid-template-columns: 20px 44px minmax(0, 1fr) 28px; gap: 7px; padding-inline: 9px; }
+      .product-choice img { width: 44px; }
       .selection-hint { display: none; }
     }
+    @media (prefers-reduced-motion: reduce) { .family-card__chevron, .selection-editor > summary > i { transition: none; } }
+
   `,
 })
 export class CatalogProductSelection {
@@ -320,6 +311,10 @@ export class CatalogProductSelection {
 
   readonly products = input<Product[]>([]);
   readonly categories = input<Category[]>([]);
+  readonly families = input<ProductFamily[]>([]);
+  readonly expandedFamilies = signal<ReadonlySet<string>>(new Set());
+  readonly selectionEditorOpen = signal(false);
+  readonly photoFor = cataloguePhoto;
   readonly selected = input<ReadonlySet<number>>(new Set());
   readonly loading = input(false);
   readonly loadError = input<string | null>(null);
@@ -343,14 +338,7 @@ export class CatalogProductSelection {
   });
   readonly allSelected = computed(() =>
     this.selectableIds().length > 0 && this.selectedProductCount() === this.selectableIds().length);
-  readonly selectedFamilyCount = computed(() => {
-    const selected = this.selected();
-    const families = new Set<number>();
-    for (const product of this.products()) {
-      if (product.id !== null && product.familyId !== null && selected.has(product.id)) families.add(product.familyId);
-    }
-    return families.size;
-  });
+  readonly selectedFamilyCount = computed(() => catalogueFamilies(this.products().filter((product) => this.isSelected(product)), this.families()).length);
 
   /** Colour and size variants that share a family, so a menu can take them all at once. */
   private readonly familyMembers = computed(() => {
@@ -399,7 +387,32 @@ export class CatalogProductSelection {
 
   readonly groups = computed(() => groupProductsByCategory(this.visibleProducts(), this.categories()));
   /** The rows in the order they are on screen; a shift-click walks this list. */
-  private readonly orderedVisible = computed(() => this.groups().flatMap((group) => group.products));
+  readonly familyGroups = computed(() => this.groups().map((group) => ({ ...group, families: catalogueFamilies(group.products, this.families()) })));
+  private readonly orderedVisible = computed(() => this.familyGroups().flatMap((group) => group.families.flatMap((family) => this.expandedFamilies().has(family.key) ? family.products : [])));
+
+  wholeFamily(family: CatalogueFamilySelection): Product[] {
+    const first = family.products[0];
+    return first?.familyId !== null && first?.familyId !== undefined ? this.familyMembers().get(first.familyId) ?? family.products : family.products;
+  }
+
+  toggleFamily(family: CatalogueFamilySelection): void {
+    if (this.disabled()) return;
+    const products = this.wholeFamily(family);
+    if (this.groupAllSelected(products)) this.clearMany(products);
+    else this.selectMany(products);
+  }
+
+  toggleFamilyOpen(key: string): void {
+    const next = new Set(this.expandedFamilies());
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    this.expandedFamilies.set(next);
+    this.lastToggledIndex = null;
+  }
+
+  variantLabel(product: Product): string {
+    return [product.colour, product.variantSize].filter(Boolean).join(' · ') || product.name;
+  }
 
   readonly visibleSelectedCount = computed(() => {
     const selected = this.selected();
