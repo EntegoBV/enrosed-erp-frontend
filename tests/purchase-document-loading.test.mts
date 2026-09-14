@@ -3,7 +3,8 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { signal } from '@angular/core';
+import { signal, untracked } from '@angular/core';
+import { createWatch } from '@angular/core/primitives/signals';
 
 // Run both production methods: document responses can arrive while load() is
 // still waiting for catalogue context and has not published the new view.
@@ -12,8 +13,9 @@ const parsed = ts.createSourceFile('purchase-editor.ts', source, ts.ScriptTarget
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PurchaseEditor');
 assert.ok(original);
 const names = new Set(['load', 'loadDocuments']);
-const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
-assert.equal(members.length, names.size);
+const members = original.members.filter(member => ts.isConstructorDeclaration(member)
+  || (member.name && ts.isIdentifier(member.name) && names.has(member.name.text)));
+assert.equal(members.length, names.size + 1);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
   original.name, original.typeParameters, undefined, members);
 const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), {
@@ -39,7 +41,16 @@ function setup() {
     products: async () => [] as unknown[],
   };
   const exports: Record<string, new () => any> = {};
-  vm.runInNewContext(javascript, { exports });
+  // Real Angular signal dependency tracking, with a controlled scheduler rather
+  // than an application injector. This includes reads before load's first await.
+  const watches: ReturnType<typeof createWatch>[] = [];
+  let effectPending = false;
+  vm.runInNewContext(javascript, { exports, untracked, effect: (callback: () => void) => {
+    const watch = createWatch(callback, () => { effectPending = true; }, true);
+    watches.push(watch);
+    watch.notify();
+    return { destroy: () => watch.destroy() };
+  } });
   const editor = new exports['PurchaseEditor']();
   Object.assign(editor, {
     id: signal('50'), view: signal<ReturnType<typeof order> | null>(null),
@@ -59,8 +70,31 @@ function setup() {
       categories: async () => [], stockLocations: async () => [],
     },
   });
-  return { editor, api, calls };
+  return { editor, api, calls, effectPending: () => effectPending,
+    flushEffect: () => { effectPending = false; for (const watch of watches) watch.run(); },
+    destroy: () => { for (const watch of watches) watch.destroy(); } };
 }
+
+test('the route effect loads once and never subscribes to the order view or draft edits', async () => {
+  const state = setup();
+  try {
+    state.flushEffect();
+    await settle();
+    assert.equal(state.editor.view().order.id, 50);
+    assert.equal(state.effectPending(), false, 'Publishing the loaded view must not restart the route effect');
+    assert.deepEqual(state.calls, ['GET order 50', 'GET documents 50']);
+    const edited = { ...state.editor.view(), order: { ...state.editor.view().order, alias: 'Nog niet opgeslagen' } };
+    state.editor.view.set(edited);
+    assert.equal(state.effectPending(), false, 'Typing must not reload the server and discard the draft');
+    state.editor.id.set('51');
+    assert.equal(state.effectPending(), true, 'A real route change must still load the next container');
+    state.flushEffect();
+    await settle();
+    assert.equal(state.editor.view().order.id, 51);
+    assert.equal(state.effectPending(), false);
+    assert.deepEqual(state.calls, ['GET order 50', 'GET documents 50', 'GET order 51', 'GET documents 51']);
+  } finally { state.destroy(); }
+});
 
 test('first-open documents survive a response before the catalogue and order view are ready', async () => {
   const { editor, api, calls } = setup();

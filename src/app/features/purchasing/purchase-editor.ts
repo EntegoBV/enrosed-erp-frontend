@@ -1,6 +1,6 @@
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -3069,7 +3069,7 @@ export class PurchaseEditor {
   constructor() {
     effect(() => {
       const routeId = this.id();
-      if (routeId) void this.load(+routeId);
+      if (routeId) untracked(() => { void this.load(+routeId); });
     });
   }
 
