@@ -53,6 +53,58 @@ export interface WebsitePageRow {
 export type WebsitePageKind =
   | 'HOME' | 'PRODUCTS' | 'COLLECTION' | 'PRODUCT' | 'QUOTE' | 'CONTACT' | 'LEGAL' | 'OTHER';
 
+export type GoogleAnalyticsStatus = 'NOT_CONFIGURED' | 'CONNECTED' | 'NO_DATA' | 'ERROR' | 'STALE';
+
+export interface GoogleAnalyticsSource<T> {
+  status: GoogleAnalyticsStatus;
+  property: string;
+  from: string | null;
+  to: string | null;
+  fetchedAt: string | null;
+  errorCode: string | null;
+  message: string | null;
+  data: T | null;
+}
+
+export interface GoogleAnalyticsData {
+  totals: {
+    users: number; sessions: number; views: number; engagedSessions: number;
+    engagementRate: number; keyEvents: number; avgSessionDurationSeconds: number;
+  };
+  perDay: { date: string; users: number; sessions: number; views: number }[];
+  pages: { path: string; views: number; users: number }[];
+  channels: { channel: string; sessions: number; users: number }[];
+  events: { name: string; count: number }[];
+  timeZone: string | null;
+  availableThrough: string | null;
+  warnings: string[];
+}
+
+export interface SearchPerformance {
+  clicks: number; impressions: number; ctr: number; position: number;
+}
+
+export interface GoogleSearchData {
+  totals: SearchPerformance;
+  perDay: (SearchPerformance & { date: string })[];
+  queries: (SearchPerformance & { query: string })[];
+  pages: (SearchPerformance & { page: string })[];
+  dataState: 'final';
+  timeZone: string;
+  availableThrough: string | null;
+  warnings: string[];
+}
+
+export interface GoogleWebsiteReport {
+  days: number;
+  from: string;
+  to: string;
+  generatedAt: string;
+  googleAnalytics: GoogleAnalyticsSource<GoogleAnalyticsData>;
+  searchConsole: GoogleAnalyticsSource<GoogleSearchData>;
+  realtime: GoogleAnalyticsSource<{ activeUsers: number; windowMinutes: number }>;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnalyticsApi {
   private readonly http = inject(HttpClient);
@@ -60,5 +112,10 @@ export class AnalyticsApi {
   websiteReport(days: number): Promise<WebsiteAnalyticsReport> {
     return firstValueFrom(this.http.get<WebsiteAnalyticsReport>(
       api(`/api/analytics/website?days=${days}`)));
+  }
+
+  googleWebsiteReport(days: number): Promise<GoogleWebsiteReport> {
+    return firstValueFrom(this.http.get<GoogleWebsiteReport>(
+      api(`/api/analytics/website/google?days=${days}`)));
   }
 }

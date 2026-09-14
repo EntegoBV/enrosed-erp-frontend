@@ -3,6 +3,7 @@ import { AnalyticsApi, WebsiteAnalyticsReport, WebsitePageKind } from '../../cor
 import { messageOf } from '../../core/api/errors';
 import { NumPipe } from '../../shared/pipes';
 import { deltaOf, durationLabel } from './website-analytics-math';
+import { GoogleWebsiteAnalytics } from './google-website-analytics';
 
 const KIND_LABEL: Record<WebsitePageKind, string> = {
   HOME: 'Startpagina', PRODUCTS: 'Productoverzicht', COLLECTION: 'Collecties', PRODUCT: 'Productpagina’s',
@@ -11,7 +12,7 @@ const KIND_LABEL: Record<WebsitePageKind, string> = {
 const DEVICE_LABEL = { MOBILE: 'Telefoon', TABLET: 'Tablet', DESKTOP: 'Computer' } as const;
 const WEEKDAYS = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
 const LANGUAGE_LABEL: Record<string, string> = {
-  en: 'Engels', nl: 'Nederlands', fr: 'Frans', de: 'Duits', es: 'Spaans', pl: 'Pools', pt: 'Portugees', tr: 'Turks',
+  en: 'Engels', nl: 'Nederlands', fr: 'Frans', de: 'Duits', es: 'Spaans', pl: 'Pools', pt: 'Portugees', tr: 'Turks', el: 'Grieks',
 };
 /** The website's public address; opening it with ?intern=1 silences that browser's beacon. */
 const WEBSITE_OPT_OUT_URL = 'https://www.enrosed.com/?intern=1';
@@ -39,8 +40,14 @@ const RANGES: readonly Range[] = [
 @Component({
   selector: 'app-website-analytics',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NumPipe],
+  imports: [NumPipe, GoogleWebsiteAnalytics],
   template: `
+    <div class="wa__sources" role="group" aria-label="Bron van de websitecijfers">
+      @for (choice of sources; track choice.id) {
+        <button type="button" [attr.aria-pressed]="source() === choice.id" [class.on]="source() === choice.id" (click)="source.set(choice.id)">{{ choice.label }}</button>
+      }
+    </div>
+    <p class="wa__source-hint">{{ source() === 'INTERNAL' ? 'Eigen websitemeting. Google Analytics en zoekprestaties zijn afzonderlijk beschikbaar.' : 'Google gebruikt andere meetregels dan de eigen websitemeting; de aantallen worden niet samengevoegd.' }}</p>
     <div class="wa__toolbar">
       <div class="wa__ranges" role="group" aria-label="Periode">
         @for (range of ranges; track range.days) {
@@ -48,15 +55,18 @@ const RANGES: readonly Range[] = [
         }
       </div>
       <div class="wa__toolbar-side">
-        @if (report(); as r) {
+        @if (source() === 'INTERNAL') { @if (report(); as r) {
           <span class="wa__live" [class.wa__live--on]="r.totals.activeNow > 0" [title]="'Bezoekers gezien in het laatste half uur'">
             <i aria-hidden="true"></i>{{ r.totals.activeNow | num }} nu op de site
           </span>
-        }
-        <button class="wa__refresh" type="button" (click)="reload()" [disabled]="loading()" title="Vernieuwen" aria-label="Vernieuwen">↻</button>
+        } }
+        <button class="wa__refresh" type="button" (click)="reloadSelected()" [disabled]="source() === 'INTERNAL' ? loading() : googleBusy()" title="Vernieuwen" aria-label="Vernieuwen">↻</button>
       </div>
     </div>
 
+    @if (source() !== 'INTERNAL') {
+      <app-google-website-analytics [source]="source() === 'GA4' ? 'GA4' : 'SEARCH_CONSOLE'" [days]="days()" [refreshKey]="googleRefresh()" (loadingChanged)="googleBusy.set($event)" />
+    } @else {
     @if (loading() && !report()) {
       <p class="wa__state" role="status">Bezoekcijfers laden…</p>
     } @else if (error(); as error) {
@@ -253,9 +263,11 @@ const RANGES: readonly Range[] = [
         <small>Opent de website één keer met een merkteken; daarna telt deze browser nooit meer mee. Doe dit op elk toestel van het team.</small>
       </footer>
     }
+    }
   `,
   styles: `
     :host{display:block}
+    .wa__sources{display:flex;gap:4px;padding:4px;border-radius:18px;border:1px solid var(--line);background:var(--surface-2);width:max-content;max-width:100%}.wa__sources button{min-height:44px;min-width:0;padding:8px 16px;border:0;border-radius:14px;background:none;color:var(--muted);font:inherit;font-size:12px;font-weight:650;cursor:pointer}.wa__sources button.on{color:var(--rose-dark);background:var(--surface);box-shadow:0 2px 7px rgb(25 35 30 / 10%)}.wa__source-hint{margin:9px 0 18px;font-size:11px;color:var(--muted);line-height:1.6}@media(max-width:679px){.wa__sources{width:100%}.wa__sources button{flex:1;padding-inline:8px;font-size:11px}.wa__source-hint{margin-bottom:14px}}
     .wa__toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px}
     .wa__toolbar-side{display:flex;align-items:center;gap:8px}
     .wa__ranges{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--surface);max-width:100%;overflow-x:auto}
@@ -364,6 +376,13 @@ export class WebsiteAnalytics {
   private readonly analytics = inject(AnalyticsApi);
 
   readonly ranges = RANGES;
+  readonly sources = [
+    { id: 'INTERNAL', label: 'Eigen meting' }, { id: 'GA4', label: 'Google Analytics' },
+    { id: 'SEARCH_CONSOLE', label: 'Google zoeken' },
+  ] as const;
+  readonly source = signal<'INTERNAL' | 'GA4' | 'SEARCH_CONSOLE'>('INTERNAL');
+  readonly googleRefresh = signal(0);
+  readonly googleBusy = signal(false);
   readonly weekdays = WEEKDAYS;
   readonly hourTicks = [0, 6, 12, 18];
   readonly days = signal<number>(30);
@@ -401,8 +420,14 @@ export class WebsiteAnalytics {
   constructor() {
     effect(() => {
       this.days();
+      if (this.source() !== 'INTERNAL') return;
       untracked(() => void this.reload());
     });
+  }
+
+  reloadSelected(): void {
+    if (this.source() === 'INTERNAL') { if (!this.loading()) void this.reload(); }
+    else if (!this.googleBusy()) this.googleRefresh.update(value => value + 1);
   }
 
   async reload(): Promise<void> {

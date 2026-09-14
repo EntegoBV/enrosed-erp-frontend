@@ -112,7 +112,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
   ],
   template: `
     <app-page-header title="Analyses" [subtitle]="sectionSubtitle()">
-      @if (section() !== 'market') {
+      @if (section() !== 'market' && section() !== 'website') {
         <button class="btn btn--sm" type="button" [disabled]="loading() || refreshing()"
                 (click)="refresh()">{{ refreshing() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
       }
