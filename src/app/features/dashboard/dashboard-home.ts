@@ -22,6 +22,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { isWebsiteQuoteRequest } from '../sales/quote-status';
 import { PlannerCards, PlannerMilestone } from './planner-cards';
 import { incomingMoneyTotals, receivableTotals } from '../finance/incoming-money';
+import { DashboardSearchConsole } from './dashboard-search-console';
 
 /**
  * The operational front door: what needs an answer, the key figures - sales
@@ -36,7 +37,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
 @Component({
   selector: 'app-dashboard-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, PageHeader, Skeleton, PlannerCards, DateNlPipe, EurPipe, NumPipe],
+  imports: [RouterLink, Icon, PageHeader, Skeleton, PlannerCards, DateNlPipe, EurPipe, NumPipe, DashboardSearchConsole],
   template: `
     <app-page-header [title]="greeting()" [subtitle]="today()" />
 
@@ -234,6 +235,12 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
               }
             </a>
 
+            @defer (on viewport) {
+              <app-dashboard-search-console />
+            } @placeholder {
+              <div class="home-search-placeholder" aria-label="Search Console wordt geladen"><app-skeleton kind="card" [rows]="1" /></div>
+            }
+
             <a class="home-kpi home-kpi--dark" routerLink="/analyses/sales">
               <span class="home-kpi__icon"><app-icon name="sales" [size]="17" /></span>
               <span class="home-kpi__label">Verkooppijplijn</span>
@@ -401,6 +408,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
     .home-section__head>a { color: var(--rose-dark); font-size: 11.5px; font-weight: 700; text-decoration: none; }
     .home-section__head>a span { margin-left: 2px; font-size: 15px; }
     .home-kpis { display: grid; gap: 8px; }
+    .home-search-placeholder { grid-column: 1 / -1; min-width: 0; min-height: 250px; }
     .home-kpi { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
       gap: 2px 9px; min-width: 0; min-height: 83px; padding: 12px 13px; border: 1px solid var(--line);
       border-radius: var(--r); background: var(--surface); color: inherit; text-decoration: none; box-shadow: var(--sh-1); }
@@ -435,7 +443,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
     @media (min-width: 1000px) {
       .home-page { padding-bottom: 38px; }
       /* The figures take a fixed column so the agenda and its task list keep their width. */
-      .home-layout { grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
+      .home-layout { grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: min-content 1fr; gap: 16px; }
       .work-card { grid-column: 1; grid-row: 1; }
       .home-planner { grid-column: 1; grid-row: 2; }
       .home-side { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: calc(var(--appbar-h) + 14px); }

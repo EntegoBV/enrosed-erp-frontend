@@ -1,9 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, ParamMap } from '@angular/router';
 import { AnalyticsApi, WebsiteAnalyticsReport, WebsitePageKind } from '../../core/api/analytics-api';
 import { messageOf } from '../../core/api/errors';
 import { NumPipe } from '../../shared/pipes';
 import { deltaOf, durationLabel } from './website-analytics-math';
 import { GoogleWebsiteAnalytics } from './google-website-analytics';
+import { websiteAnalyticsRouteState, WebsiteAnalyticsSource } from './website-analytics-route';
 
 const KIND_LABEL: Record<WebsitePageKind, string> = {
   HOME: 'Startpagina', PRODUCTS: 'Productoverzicht', COLLECTION: 'Collecties', PRODUCT: 'Productpagina’s',
@@ -374,18 +377,20 @@ const RANGES: readonly Range[] = [
 })
 export class WebsiteAnalytics {
   private readonly analytics = inject(AnalyticsApi);
+  private readonly route = inject(ActivatedRoute);
+  private readonly initialRouteState = websiteAnalyticsRouteState(this.route.snapshot.queryParamMap);
 
   readonly ranges = RANGES;
   readonly sources = [
     { id: 'INTERNAL', label: 'Eigen meting' }, { id: 'GA4', label: 'Google Analytics' },
     { id: 'SEARCH_CONSOLE', label: 'Google zoeken' },
   ] as const;
-  readonly source = signal<'INTERNAL' | 'GA4' | 'SEARCH_CONSOLE'>('INTERNAL');
+  readonly source = signal<WebsiteAnalyticsSource>(this.initialRouteState.source);
   readonly googleRefresh = signal(0);
   readonly googleBusy = signal(false);
   readonly weekdays = WEEKDAYS;
   readonly hourTicks = [0, 6, 12, 18];
-  readonly days = signal<number>(30);
+  readonly days = signal<number>(this.initialRouteState.days);
   readonly report = signal<WebsiteAnalyticsReport | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -418,11 +423,18 @@ export class WebsiteAnalytics {
   private loadVersion = 0;
 
   constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe(params => this.applyRouteQuery(params));
     effect(() => {
       this.days();
       if (this.source() !== 'INTERNAL') return;
       untracked(() => void this.reload());
     });
+  }
+
+  applyRouteQuery(params: Pick<ParamMap, 'getAll'>): void {
+    const selection = websiteAnalyticsRouteState(params);
+    this.source.set(selection.source);
+    this.days.set(selection.days);
   }
 
   reloadSelected(): void {
