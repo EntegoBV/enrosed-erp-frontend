@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -15,6 +16,7 @@ import { FilesAdminNav } from './features/files/files-admin-nav';
 import { DesktopViewport } from './core/platform/desktop-viewport';
 import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
+import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
 
 /**
  * App shell.
@@ -376,6 +378,13 @@ export class App {
     const url = this.url();
     return url.startsWith('/login') || url.startsWith('/offerte')
         || url.startsWith('/voorwaarden');
+  });
+
+  private readonly document = inject(DOCUMENT);
+  private readonly syncStaffTouch = effect(onCleanup => {
+    if (this.auth.isLoggedIn() && !this.bare()) {
+      onCleanup(installStaffTouchPolicy(this.document));
+    }
   });
 
   /** Website editing is a separate desktop workspace, not an ERP submenu. */
