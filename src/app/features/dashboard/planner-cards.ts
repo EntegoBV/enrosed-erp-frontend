@@ -118,7 +118,7 @@ interface CompactAgendaEntry {
           <div class="cal-head">
             <button class="cal-nav" type="button" aria-label="Vorige maand"
                     (click)="shiftMonth(-1)">‹</button>
-            <strong class="cal-title">{{ monthLabel() }}</strong>
+            <strong class="cal-title" tabindex="-1">{{ monthLabel() }}</strong>
             <button class="cal-nav" type="button" aria-label="Volgende maand"
                     (click)="shiftMonth(1)">›</button>
           </div>
@@ -867,11 +867,11 @@ export class PlannerCards {
   }
 
   constructor() {
-    void this.reload();
+    if (!this.store.loaded() && !this.store.error()) void this.store.reload();
   }
 
   private reload(): Promise<void> {
-    return this.store.reload();
+    return this.store.reload(true);
   }
 
   readonly events = computed(() => this.items().filter((item) => item.kind === 'EVENT'));

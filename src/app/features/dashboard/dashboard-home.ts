@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Injector, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AnalyticsApi, WebsiteAnalyticsReport } from '../../core/api/analytics-api';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -20,9 +20,11 @@ import { PageHeader } from '../../shared/page-header';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { isWebsiteQuoteRequest } from '../sales/quote-status';
-import { PlannerCards, PlannerMilestone } from './planner-cards';
+import { PlannerCards } from './planner-cards';
 import { incomingMoneyTotals, receivableTotals } from '../finance/incoming-money';
 import { DashboardSearchConsole } from './dashboard-search-console';
+import { DashboardToday } from './dashboard-today';
+import { localPlannerDate, purchasePlannerMilestones, todayAgendaEntries, type TodayAgendaEntry } from './dashboard-today-state';
 
 /**
  * The operational front door: what needs an answer, the key figures - sales
@@ -30,14 +32,14 @@ import { DashboardSearchConsole } from './dashboard-search-console';
  * and what is planned next. On a wide screen the figures sit beside the work
  * so everything is on one screen; detailed analysis lives under /analyses.
  */
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
+const TODAY_ISO = localPlannerDate(new Date());
 const YEAR_START = TODAY_ISO.slice(0, 4) + '-01-01';
 const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
 
 @Component({
   selector: 'app-dashboard-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, PageHeader, Skeleton, PlannerCards, DateNlPipe, EurPipe, NumPipe, DashboardSearchConsole],
+  imports: [RouterLink, Icon, PageHeader, Skeleton, PlannerCards, DateNlPipe, EurPipe, NumPipe, DashboardSearchConsole, DashboardToday],
   template: `
     <app-page-header [title]="greeting()" [subtitle]="today()" />
 
@@ -89,16 +91,19 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
               <div>
                 <span class="home-eyebrow">Dagstart</span>
                 <h2 id="home-work-title">Nu doen</h2>
-                <p>Gegroepeerd per werkstroom, met maximaal vier regels.</p>
+                <p>Uw planning en open acties voor vandaag.</p>
               </div>
               @if (workGroupCount()) {
                 <span class="work-card__count" [attr.aria-label]="workGroupCount() + ' werkstromen met aandacht'">
                   {{ workGroupCount() }}
                 </span>
-              } @else if (workCoverageComplete()) {
+              } @else if (workCoverageComplete() && !todayAgenda().length && !agendaError() && !agendaLoading()) {
                 <span class="work-card__done" aria-label="Geen open aandachtspunten">✓</span>
               }
             </header>
+
+            <app-dashboard-today [entries]="todayAgenda()" [loading]="agendaLoading()" [error]="agendaError()"
+              (openEntry)="openTodayEntry($event)" (openAgenda)="openAgenda()" (retry)="load()" />
 
             <div class="work-list">
               @if (salesActionCount()) {
@@ -155,18 +160,6 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
                 <a class="work-row" routerLink="/sales" [queryParams]="{ scope: 'ALL', tab: 'FACTUUR', payment: 'open' }"><span class="work-row__icon"><app-icon name="sales" [size]="18" /></span><span class="work-row__copy"><b>Betalingen opvolgen</b><small>{{ receivables().totalEur | eur }} nog te ontvangen · {{ receivables().partialCount }} deels betaald</small></span><strong class="work-row__number">{{ receivables().count }}</strong><span class="work-row__chev" aria-hidden="true">›</span></a>
               }
 
-              @if (zeroStockCount()) {
-                <a class="work-row" routerLink="/stock">
-                  <span class="work-row__icon"><app-icon name="stock" [size]="18" /></span>
-                  <span class="work-row__copy">
-                    <b>Voorraad aanvullen</b>
-                    <small>Actieve artikelen met een bekende voorraad staan op nul.</small>
-                  </span>
-                  <strong class="work-row__number">{{ zeroStockCount() }}</strong>
-                  <span class="work-row__chev" aria-hidden="true">›</span>
-                </a>
-              }
-
               @if (catalogAttention()) {
                 <a class="work-row" routerLink="/website/products">
                   <span class="work-row__icon"><app-icon name="products" [size]="18" /></span>
@@ -182,7 +175,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
               @if (!workGroupCount() && workCoverageComplete()) {
                 <div class="work-empty">
                   <span aria-hidden="true">✓</span>
-                  <div><b>Alles voor nu bijgewerkt</b><p>Geen klantvragen of operationele blokkades die nu een antwoord vragen.</p></div>
+                  <div><b>Geen overige open acties</b><p>Geen klantvragen of operationele blokkades die nu een antwoord vragen.</p></div>
                 </div>
               } @else if (!workGroupCount()) {
                 <div class="work-empty work-empty--unknown">
@@ -470,6 +463,17 @@ export class DashboardHome {
   private readonly catalog = inject(CatalogApi);
   private readonly planner = inject(PlannerStore);
   private readonly analytics = inject(AnalyticsApi);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
+  private readonly plannerCards = viewChild(PlannerCards);
+  private readonly plannerHost = viewChild<PlannerCards, ElementRef<HTMLElement>>(PlannerCards, { read: ElementRef });
+  readonly todayDate = signal(localPlannerDate(new Date()));
+  readonly todayAgenda = computed(() => todayAgendaEntries(this.planner.items(), this.purchaseMilestones(), this.todayDate()));
+  readonly agendaLoading = computed(() => this.planner.loading() && !this.planner.loaded());
+  readonly agendaError = computed(() => [
+    this.planner.error() ? 'Afspraken en taken konden niet worden bijgewerkt.' : '',
+    this.dataWarnings().includes('inkoop') ? 'Containermomenten konden niet worden bijgewerkt.' : '',
+  ].filter(Boolean).join(' ') || null);
 
   readonly website = signal<WebsiteAnalyticsReport | null>(null);
   readonly salesOrders = signal<SalesOrderView[]>([]);
@@ -527,16 +531,14 @@ export class DashboardHome {
   readonly costsReady = signal(false);
   readonly yearResult = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), { from: YEAR_START, to: TODAY_ISO }));
   readonly monthCosts = computed(() => resultAnalysis([], [], this.costs(), { from: MONTH_START_ISO, to: TODAY_ISO }).costsEur);
-  readonly zeroStockCount = computed(() => this.products().filter((product) =>
-    product.active && !product.demo && product.inventoryKnown === true && product.stockQuantity <= 0).length);
   readonly workGroupCount = computed(() =>
     Number(this.salesActionCount() > 0)
     + Number(this.purchaseAttentionOrders().length > 0)
     + Number(this.financing().unbilledAdvanceCount > 0)
-    + Number(this.zeroStockCount() > 0) + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0)
+    + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0)
     + Number(this.catalogAttention() > 0));
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()
-    && this.purchasesReady() && this.productsReady() && this.catalogReady());
+    && this.purchasesReady() && this.catalogReady());
 
   readonly openSales = computed(() => this.salesOrders().filter((row) =>
     (row.order.docType ?? 'OFFERTE') === 'OFFERTE'
@@ -588,36 +590,49 @@ export class DashboardHome {
   });
 
   private readonly supplierNameById = computed(() =>
-    new Map(this.suppliers().map((supplier) => [supplier.id, supplier.name])));
-  readonly purchaseMilestones = computed(() => {
-    const milestones: PlannerMilestone[] = [];
-    for (const row of this.purchases()) {
-      const name = row.order.alias || row.order.number;
-      const supplier = this.supplierNameById().get(row.order.supplierId) ?? row.order.number;
-      if (row.order.orderDate && row.order.status !== 'CONCEPT') {
-        milestones.push({ date: row.order.orderDate, kind: 'ORDERED', icon: '🛒', title: `${name} besteld`,
-          sub: supplier, orderId: row.order.id });
-      }
-      if (row.order.shippedOn) {
-        milestones.push({ date: row.order.shippedOn, kind: 'SHIPPED', icon: '🚢', title: `${name} vertrokken`,
-          sub: row.order.trackingReference ? `T&T ${row.order.trackingReference}` : supplier,
-          orderId: row.order.id });
-      }
-      if (row.order.expectedArrival && row.order.status !== 'ONTVANGEN') {
-        milestones.push({ date: row.order.expectedArrival, kind: 'EXPECTED_ARRIVAL', icon: '📦', title: `${name} verwachte aankomst`,
-          sub: `${row.costing.totals.pieces.toLocaleString('nl-BE')} st · ${supplier}`,
-          orderId: row.order.id });
-      }
-      if (row.order.receivedOn) {
-        milestones.push({ date: row.order.receivedOn, kind: 'RECEIVED', icon: '✓', title: `${name} ontvangen`,
-          sub: supplier, orderId: row.order.id });
-      }
-    }
-    return milestones;
-  });
+    new Map(this.suppliers().flatMap((supplier) => supplier.id == null ? [] : [[supplier.id, supplier.name] as const])));
+  readonly purchaseMilestones = computed(() =>
+    purchasePlannerMilestones(this.purchases(), this.supplierNameById()));
 
   constructor() {
     void this.load();
+    // Keep a dashboard left open overnight on the current local calendar day.
+    const checkDay = (): void => {
+      const date = localPlannerDate(new Date());
+      if (date === this.todayDate()) return;
+      this.todayDate.set(date);
+      void this.load();
+    };
+    const timer = window.setInterval(checkDay, 60_000);
+    window.addEventListener('focus', checkDay);
+    this.destroyRef.onDestroy(() => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', checkDay);
+    });
+  }
+
+  openTodayEntry(entry: TodayAgendaEntry): void {
+    const planner = this.plannerCards();
+    if (!planner) return;
+    if (entry.item) {
+      if (entry.item.kind === 'EVENT') planner.openView(entry.item);
+      else planner.openEdit(entry.item);
+    } else if (entry.milestone) {
+      planner.openMilestone(entry.milestone);
+    }
+  }
+
+  openAgenda(): void {
+    const planner = this.plannerCards();
+    if (!planner) return;
+    planner.jumpToUpcoming({ onDate: this.todayDate() });
+    planner.expanded.set(true);
+    afterNextRender(() => {
+      const host = this.plannerHost()?.nativeElement;
+      if (!host) return;
+      host.querySelector<HTMLElement>('.cal-title')?.focus({ preventScroll: true });
+      host.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    }, { injector: this.injector });
   }
 
   salesActionLink(): string {
@@ -658,6 +673,7 @@ export class DashboardHome {
         this.analytics.websiteReport(7),
         this.finance.costs(),
         this.sales.incomingPayments(), this.sourcing.partnerFinancings(),
+        this.planner.reload(),
       ] as const);
 
       const warnings: string[] = [];

@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
+import { messageOf } from './errors';
 
 export type PlannerKind = 'EVENT' | 'TASK';
 
@@ -69,12 +70,25 @@ export class PlannerApi {
 export class PlannerStore {
   private readonly api = inject(PlannerApi);
   readonly items = signal<PlannerItem[]>([]);
+  readonly loading = signal(false);
+  readonly loaded = signal(false);
+  readonly error = signal<string | null>(null);
+  private pending: Promise<void> | null = null;
 
-  async reload(): Promise<void> {
-    try {
-      this.items.set(await this.api.list());
-    } catch {
-      this.items.set([]);
-    }
+  reload(afterMutation = false): Promise<void> {
+    // A read started before a write cannot confirm that write's result.
+    if (this.pending) return afterMutation ? this.pending.then(() => this.reload()) : this.pending;
+    this.loading.set(true);
+    this.error.set(null);
+    this.pending = this.api.list().then((items) => {
+      this.items.set(items);
+      this.loaded.set(true);
+    }).catch((failure: unknown) => {
+      this.error.set(messageOf(failure, 'De agenda kon niet worden bijgewerkt.'));
+    }).finally(() => {
+      this.loading.set(false);
+      this.pending = null;
+    });
+    return this.pending;
   }
 }
