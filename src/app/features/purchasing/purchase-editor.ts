@@ -2421,9 +2421,20 @@ export class PurchaseEditor {
     { value: 'CUSTOMS', label: 'Douanedocument' }, { value: 'OTHER', label: 'Andere' },
   ];
 
+  private documentLoadVersion = 0;
+
   protected async loadDocuments(orderId: number): Promise<void> {
-    try { const docs = await this.sourcing.documents(orderId); if (this.view()?.order.id === orderId) this.documents.set(docs); }
-    catch { if (this.view()?.order.id === orderId) this.documents.set([]); }
+    if (Number(this.id()) !== orderId) return;
+    const version = ++this.documentLoadVersion;
+    // The route is authoritative while catalogue context still holds back view.
+    // A later refresh or another visit must also invalidate this response.
+    const active = () => Number(this.id()) === orderId && version === this.documentLoadVersion;
+    try {
+      const docs = await this.sourcing.documents(orderId);
+      if (active()) this.documents.set(docs);
+    } catch {
+      if (active()) this.documents.set([]);
+    }
   }
 
   /* ---- partner container --------------------------------------------- */
@@ -3065,6 +3076,9 @@ export class PurchaseEditor {
   protected async load(orderId: number): Promise<void> {
     ++this.paymentRefreshVersion;
     ++this.previewVersion;
+    ++this.documentLoadVersion;
+    this.documents.set(null);
+    if (this.view()?.order.id !== orderId) this.view.set(null);
     this.paymentStateError.set(null);
     this.paymentStateLoading.set(false);
     this.payments.set(null);
