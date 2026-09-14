@@ -54,7 +54,7 @@ const RANGES: readonly Range[] = [
     <div class="wa__toolbar">
       <div class="wa__ranges" role="group" aria-label="Periode">
         @for (range of ranges; track range.days) {
-          <button type="button" [class.on]="days() === range.days" [attr.aria-pressed]="days() === range.days" (click)="days.set(range.days)">{{ range.label }}</button>
+          <button type="button" [class.on]="days() === range.days" [attr.aria-pressed]="days() === range.days" (click)="days.set(range.days)">{{ source() === 'SEARCH_CONSOLE' && range.days === 1 ? 'Laatste dag' : range.label }}</button>
         }
       </div>
       <div class="wa__toolbar-side">

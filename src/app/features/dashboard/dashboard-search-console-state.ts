@@ -1,7 +1,8 @@
-import type { GoogleAnalyticsSource, GoogleSearchData, GoogleWebsiteReport } from '../../core/api/analytics-api';
+import type { GoogleAnalyticsSource, GoogleSearchData, GoogleSearchConsoleReport } from '../../core/api/analytics-api';
+import type { SearchInsight } from '../analyses/search-console-insights';
 
 /** Only this provider determines the card state; an unrelated GA error must not hide it. */
-export function dashboardSearchSource(report: GoogleWebsiteReport): GoogleAnalyticsSource<GoogleSearchData> {
+export function dashboardSearchSource(report: GoogleSearchConsoleReport): GoogleAnalyticsSource<GoogleSearchData> {
   const source = report?.searchConsole;
   if (report?.days !== 30 || !source || !['CONNECTED', 'NO_DATA', 'STALE', 'ERROR', 'NOT_CONFIGURED'].includes(source.status)) {
     throw new Error('Search Console gaf een onvolledig rapport terug.');
@@ -14,4 +15,9 @@ export function dashboardSearchSource(report: GoogleWebsiteReport): GoogleAnalyt
     }
   }
   return source;
+}
+
+/** The compact card keeps the numerical evidence; full URLs and explanation remain in Analyses. */
+export function dashboardSearchEvidence(insight: SearchInsight): string {
+  return insight.evidence.find(line => !/^https?:\/\//i.test(line)) ?? insight.explanation;
 }

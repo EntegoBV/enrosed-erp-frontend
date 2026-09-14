@@ -1,12 +1,35 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { AnalyticsApi, GoogleWebsiteReport } from '../../core/api/analytics-api';
+import { AnalyticsApi, GoogleSearchConsoleReport, GoogleWebsiteReport } from '../../core/api/analytics-api';
 import { messageOf } from '../../core/api/errors';
+import { SearchConsoleReport } from './search-console-report';
 import { googleBarHeight, googleTimeline, googleLeadCount, googleDate, googleMetric, googlePageLabel, googlePercentage, googleSourceLabel, visibleGoogleData } from './google-analytics-display';
 
 @Component({
   selector: 'app-google-website-analytics',
+  imports: [SearchConsoleReport],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    @if (source() === 'SEARCH_CONSOLE') {
+      <section class="google-report" aria-label="Google Search Console" [attr.aria-busy]="loading()">
+        @if (loading()) {
+          <div class="google-state" role="status"><span class="google-state__loader" aria-hidden="true"></span>Zoekprestaties ophalen…</div>
+        } @else if (error(); as failure) {
+          <div class="google-state google-state--error" role="alert"><b>Search Console kon niet worden opgehaald</b><p>{{ failure }}</p><button class="btn btn--sm" type="button" (click)="reload()">Opnieuw proberen</button></div>
+        } @else if (searchReport()?.searchConsole; as provider) {
+          <header class="google-head"><div><span class="google-eyebrow">Vindbaarheid in Google</span><h3>Search Console</h3><p>{{ date(provider.from) }} – {{ date(provider.to) }}</p></div><span class="google-status" [class.google-status--warning]="provider.status === 'STALE' || provider.status === 'ERROR'" [class.google-status--ready]="provider.status === 'CONNECTED'">{{ status(provider.status) }}</span></header>
+          @if (provider.status === 'NOT_CONFIGURED') {
+            <div class="google-state"><b>Search Console is nog niet gekoppeld</b><p>{{ provider.message || 'De beveiligde serverkoppeling heeft nog geen toegang tot deze property.' }}</p><span class="google-property">{{ provider.property }}</span><button class="btn btn--sm" type="button" (click)="reload()">Koppeling opnieuw controleren</button></div>
+          } @else if (provider.status === 'ERROR') {
+            <div class="google-state google-state--error" role="alert"><b>Search Console is tijdelijk niet beschikbaar</b><p>{{ provider.message || 'Google heeft geen bruikbaar rapport teruggestuurd.' }}</p><button class="btn btn--sm" type="button" (click)="reload()">Opnieuw proberen</button></div>
+          } @else {
+            @if (provider.status === 'STALE') { <div class="google-notice google-notice--warning" role="status"><b>Je ziet eerder opgehaalde gegevens.</b> De laatste vernieuwing is niet gelukt. {{ provider.message }} <button type="button" (click)="reload()">Opnieuw proberen</button></div> }
+            @if (provider.status === 'NO_DATA') { <div class="google-notice"><b>Nog geen zoekresultaten voor deze periode.</b><p>Search Console verwerkt zoekgegevens met vertraging. Een ontbrekend deelrapport betekent geen gemeten nul.</p></div> }
+            <app-search-console-report [source]="provider" (reloadRequested)="reload()" />
+            <footer class="google-freshness">Opgehaald: {{ date(provider.fetchedAt, true) }} · Tijd weergegeven in België. Vernieuwen kan binnen de cacheperiode hetzelfde rapport opleveren.</footer>
+          }
+        }
+      </section>
+    } @else {
     <section class="google-report" [attr.aria-label]="source() === 'GA4' ? 'Google Analytics 4' : 'Google Search Console'" [attr.aria-busy]="loading()">
       @if (loading()) {
         <div class="google-state" role="status"><span class="google-state__loader" aria-hidden="true"></span>Google-rapport ophalen…</div>
@@ -61,35 +84,13 @@ import { googleBarHeight, googleTimeline, googleLeadCount, googleDate, googleMet
                 <div class="google-card google-leads"><div><h4>Ingediende aanvragen</h4><p>Succesvolle offerte- en contactaanvragen, gemeten door Google als generate_lead.</p></div><b>{{ metric(leadCount(data.events)) }}</b></div>
                 <details class="google-explanation"><summary>Over deze cijfers en de koppeling</summary><p>Google Analytics telt gebruikers en sessies volgens zijn eigen meetregels. Toestemming, advertentieblokkers en verwerkingstijd kunnen verschillen met de eigen websitemeting veroorzaken. Tel deze bronnen niet bij elkaar op.</p><p>Property: <b>{{ provider.property }}</b> · Rapporttijdzone: {{ data.timeZone || 'Niet beschikbaar' }}</p><p>Laatste dag met geretourneerde gegevens: {{ date(data.availableThrough) }}. Dit betekent niet dat die dag volledig verwerkt is.</p>@for (warning of data.warnings; track $index) { <p>{{ warning }}</p> }</details>
               }
-            } @else {
-              @if (searchData(); as data) {
-                <div class="google-kpis">
-                  <div><span>Klikken vanuit Google</span><b>{{ metric(data.totals.clicks) }}</b></div>
-                  <div><span>Vertoningen</span><b>{{ metric(data.totals.impressions) }}</b></div>
-                  <div><span>Klikratio (CTR)</span><b>{{ data.totals.impressions > 0 ? percentage(data.totals.ctr) : '—' }}</b></div>
-                  <div><span>Gemiddelde positie</span><b>{{ data.totals.impressions > 0 ? metric(data.totals.position, 1) : '—' }}</b><small>Lager is beter</small></div>
-                </div>
-                @if (clickTimeline().length) {
-                  <section class="google-card google-trend"><div class="google-card__head"><h4>Klikken per dag</h4><span>{{ metric(data.totals.clicks) }} totaal</span></div><div class="google-chart google-chart--search" role="img" aria-label="Klikken vanuit Google per dag">
-                    @for (day of clickTimeline(); track day.date) { <div [class.google-chart__missing]="day.value === null" [attr.title]="date(day.date) + ': ' + (day.value === null ? 'Geen gegevens' : metric(day.value) + ' klikken')"><i [style.height.%]="bar(day.value ?? 0, clickValues())"></i></div> }
-                  </div><div class="google-axis"><span>{{ date(provider.from) }}</span><span>{{ date(provider.to) }}</span></div></section>
-                }
-                <div class="google-grid">
-                  <details class="google-card google-breakdown"><summary>Zoekopdrachten</summary><ol class="google-list">
-                    @for (query of data.queries.slice(0, 10); track query.query) { <li><span>{{ query.query }}<small>{{ metric(query.impressions) }} vertoningen · positie {{ metric(query.position, 1) }}</small></span><b>{{ metric(query.clicks) }}<small>klikken</small></b></li> } @empty { <li class="google-empty">Google geeft voor deze periode geen afzonderlijke zoekopdrachten terug.</li> }
-                  </ol><p class="google-footnote">Google toont niet alle zoekopdrachten; deze lijst telt mogelijk niet op tot het totaal.</p></details>
-                  <details class="google-card google-breakdown"><summary>Pagina’s in Google</summary><ol class="google-list">
-                    @for (page of data.pages.slice(0, 10); track page.page) { <li><span class="google-path" [title]="pageLabel(page.page)">{{ pageLabel(page.page) }}<small>{{ metric(page.impressions) }} vertoningen · {{ percentage(page.ctr) }} CTR</small></span><b>{{ metric(page.clicks) }}<small>klikken</small></b></li> } @empty { <li class="google-empty">Nog geen paginagegevens</li> }
-                  </ol></details>
-                </div>
-                <details class="google-explanation"><summary>Over deze cijfers en de koppeling</summary><p>Dit zijn zoekprestaties, geen bezoekersaantallen. Google levert de definitieve beschikbare zoekgegevens; recente dagen kunnen nog ontbreken. Een gemiddelde positie is geen vaste ranking.</p><p>Property: <b>{{ provider.property }}</b> · Rapporttijdzone: {{ data.timeZone }}</p><p>Laatste dag met geretourneerde gegevens: {{ date(data.availableThrough) }}.</p>@for (warning of data.warnings; track $index) { <p>{{ warning }}</p> }</details>
-              }
             }
             <footer class="google-freshness">Opgehaald: {{ date(provider.fetchedAt, true) }} · Tijd weergegeven in België. Vernieuwen kan binnen de cacheperiode hetzelfde Google-rapport opleveren.</footer>
           }
         }
       }
     </section>
+    }
   `,
   styles: `
     :host{display:block;min-width:0}.google-report{display:grid;gap:14px;min-width:0}.google-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.google-head h3{font-size:clamp(22px,3vw,29px);letter-spacing:-.035em;margin:3px 0 6px}.google-head p{margin:0;color:var(--muted);font-size:12px}.google-eyebrow{font-size:11px;font-weight:700;color:var(--rose-dark)}.google-status{padding:7px 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700;flex:none}.google-status--ready{background:color-mix(in srgb,var(--ok) 9%,var(--surface));color:var(--ok)}.google-status--warning{color:var(--danger)}
@@ -108,19 +109,18 @@ export class GoogleWebsiteAnalytics {
   private readonly analytics = inject(AnalyticsApi);
   private readonly destroyRef = inject(DestroyRef);
   readonly report = signal<GoogleWebsiteReport | null>(null);
+  readonly searchReport = signal<GoogleSearchConsoleReport | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly selectedSource = computed(() => this.source() === 'GA4'
     ? this.report()?.googleAnalytics ?? null : this.report()?.searchConsole ?? null);
   readonly analyticsData = computed(() => visibleGoogleData(this.report()?.googleAnalytics));
-  readonly searchData = computed(() => visibleGoogleData(this.report()?.searchConsole));
   readonly realtimeData = computed(() => visibleGoogleData(this.report()?.realtime));
   readonly sessionTimeline = computed(() => googleTimeline(this.report()?.googleAnalytics.from, this.report()?.googleAnalytics.to, this.analyticsData()?.perDay ?? [], day => day.sessions));
-  readonly clickTimeline = computed(() => googleTimeline(this.report()?.searchConsole.from, this.report()?.searchConsole.to, this.searchData()?.perDay ?? [], day => day.clicks));
   readonly sessionValues = computed(() => this.analyticsData()?.perDay.map((day) => day.sessions) ?? []);
-  readonly clickValues = computed(() => this.searchData()?.perDay.map((day) => day.clicks) ?? []);
   private loadVersion = 0;
   private requestedDays: number | null = null;
+  private requestedSource: 'GA4' | 'SEARCH_CONSOLE' | null = null;
   readonly metric = googleMetric;
   readonly percentage = googlePercentage;
   readonly date = googleDate;
@@ -131,20 +131,48 @@ export class GoogleWebsiteAnalytics {
 
   constructor() {
     this.destroyRef.onDestroy(() => ++this.loadVersion);
-    effect(() => { this.days(); this.refreshKey(); untracked(() => void this.reload()); });
+    effect(() => { this.days(); this.source(); this.refreshKey(); untracked(() => void this.reload()); });
   }
 
   async reload(): Promise<void> {
     const days = this.days();
-    if (this.loading() && this.requestedDays === days) return;
+    const source = this.source();
+    if (this.loading() && this.requestedDays === days && this.requestedSource === source) return;
     const version = ++this.loadVersion;
     this.requestedDays = days;
+    this.requestedSource = source;
     this.loading.set(true);
     this.loadingChanged.emit(true);
     this.error.set(null);
     // Never label a report from the previous period with the newly selected dates.
     this.report.set(null);
+    this.searchReport.set(null);
     try {
+      if (source === 'SEARCH_CONSOLE') {
+        const report = await this.analytics.searchConsoleReport(days);
+        if (version !== this.loadVersion) return;
+        if (!report || report.days !== days || !report.searchConsole
+          || !['CONNECTED', 'NO_DATA', 'STALE', 'ERROR', 'NOT_CONFIGURED'].includes(report.searchConsole.status)
+          || (['CONNECTED', 'NO_DATA', 'STALE'].includes(report.searchConsole.status) && !report.searchConsole.data)) {
+          throw new Error('Google gaf een onvolledig rapport terug. Probeer het opnieuw.');
+        }
+        const data = report.searchConsole.data;
+        const validMetrics = (row: unknown): boolean => {
+          if (!row || typeof row !== 'object') return false;
+          const values = row as Record<string, unknown>;
+          return ['clicks', 'impressions', 'ctr', 'position'].every(key =>
+            typeof values[key] === 'number' && Number.isFinite(values[key]) && values[key] >= 0)
+            && (values['ctr'] as number) <= 1;
+        };
+        const validRows = (rows: unknown, key: string): boolean => Array.isArray(rows) && rows.every(row =>
+          validMetrics(row) && typeof row[key] === 'string' && row[key].trim().length > 0);
+        if (data && (!validMetrics(data.totals) || !validRows(data.perDay, 'date')
+          || !validRows(data.queries, 'query') || !validRows(data.pages, 'page') || !Array.isArray(data.warnings))) {
+          throw new Error('Google gaf een onvolledig rapport terug. Probeer het opnieuw.');
+        }
+        this.searchReport.set(report);
+        return;
+      }
       const report = await this.analytics.googleWebsiteReport(days);
       if (version !== this.loadVersion) return;
       if (!report || report.days !== days || !report.googleAnalytics || !report.searchConsole || !report.realtime) {

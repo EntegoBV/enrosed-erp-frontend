@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { dashboardSearchSource } from '../src/app/features/dashboard/dashboard-search-console-state.ts';
+import { dashboardSearchEvidence, dashboardSearchSource } from '../src/app/features/dashboard/dashboard-search-console-state.ts';
 import { visibleGoogleData } from '../src/app/features/analyses/google-analytics-display.ts';
 
 const source = (status = 'CONNECTED', totals = { clicks: 148, impressions: 1958, ctr: 148 / 1958, position: 12.75 }) => ({
@@ -63,7 +63,8 @@ function deferred() { let resolve!: (value: any) => void; let reject!: (reason: 
 function harness() {
   const requests: { days: number; task: ReturnType<typeof deferred> }[] = [];
   const state = { loadVersion: 0, source: signal<any>(null), error: signal<string | null>(null), loading: signal(false),
-    analytics: { googleWebsiteReport: (days: number) => { const task = deferred(); requests.push({ days, task }); return task.promise; } } };
+    analytics: { searchConsoleReport: (days: number) => { const task = deferred(); requests.push({ days, task }); return task.promise; },
+      googleWebsiteReport: () => { throw new Error('Dashboard must not fetch unrelated GA reports'); } } };
   return { state, requests, reload: () => reload.call(state) as Promise<void> };
 }
 
@@ -114,4 +115,15 @@ test('a request completed after the dashboard is destroyed cannot update its sta
     assert.equal(h.state.source(), null);
     assert.equal(h.state.error(), null);
   }
+});
+
+test('dashboard accepts the dedicated provider response and keeps evidence compact', () => {
+  assert.equal(dashboardSearchSource({ days: 30, generatedAt: '2026-09-14T09:00:00Z', searchConsole: source() } as any).data?.totals.clicks, 148);
+  const insight = { id: 'page', priority: 'focus', title: 'Controleer', explanation: 'Toelichting',
+    evidence: ['https://enrosed.com/nl/products/a/', '500 vertoningen · CTR 0,4 %.'], action: { routerLink: '/website/seo', label: 'Bekijken' } } as const;
+  assert.equal(dashboardSearchEvidence({ ...insight, evidence: [...insight.evidence] }), '500 vertoningen · CTR 0,4 %.');
+  assert.match(text, /insights\(\)\.insights\.slice\(0, 2\)/);
+  assert.match(text, /source: 'SEARCH_CONSOLE'/);
+  assert.match(text, /search\.periodBasis === 'GOOGLE_FINAL_BOUNDARY' \? 'Definitieve gegevens t\/m' : 'Laatste dag met gegevens'/);
+  assert.doesNotMatch(text, /<details[^>]+\bopen(?:[\s=>])/);
 });

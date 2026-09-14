@@ -94,11 +94,12 @@ function signal<T>(initial: T) { let value = initial; return Object.assign(() =>
 function deferred() { let resolve!: (value: any) => void; let reject!: (error: any) => void; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
 function report(days: number) { return { days, from: '2026-09-01', to: '2026-09-14', googleAnalytics: {}, searchConsole: {}, realtime: {} }; }
 function harness() {
-  const requests: { days: number; task: ReturnType<typeof deferred> }[] = [];
+  const requests: { days: number; source: 'GA4' | 'SEARCH_CONSOLE'; task: ReturnType<typeof deferred> }[] = [];
   const busy: boolean[] = [];
-  const state = { days: signal(30), loadVersion: 0, requestedDays: null, loading: signal(false), error: signal(null), report: signal<any>(null),
+  const state = { days: signal(30), source: signal<'GA4' | 'SEARCH_CONSOLE'>('GA4'), loadVersion: 0, requestedDays: null, requestedSource: null, loading: signal(false), error: signal(null), report: signal<any>(null), searchReport: signal<any>(null),
     loadingChanged: { emit: (value: boolean) => busy.push(value) },
-    analytics: { googleWebsiteReport: (days: number) => { const task = deferred(); requests.push({ days, task }); return task.promise; } } };
+    analytics: { googleWebsiteReport: (days: number) => { const task = deferred(); requests.push({ days, source: 'GA4', task }); return task.promise; },
+      searchConsoleReport: (days: number) => { const task = deferred(); requests.push({ days, source: 'SEARCH_CONSOLE', task }); return task.promise; } } };
   return { state, requests, busy, reload: () => reload.call(state) as Promise<void> };
 }
 
@@ -161,6 +162,74 @@ test('template keeps provider-specific periods, processing state, realtime and s
   assert.match(source, /Laatste dag met geretourneerde gegevens/);
   assert.match(source, /Dit betekent niet dat die dag volledig verwerkt is/);
   assert.doesNotMatch(source, /@if \(data.events.length\)/);
-  assert.equal((source.match(/<details class="google-card google-breakdown"><summary>/g) ?? []).length, 4);
+  assert.equal((source.match(/<details class="google-card google-breakdown"><summary>/g) ?? []).length, 2);
+  assert.match(source, /<app-search-console-report \[source\]="provider"/);
   assert.doesNotMatch(source, /<details[^>]+\bopen[ =]/);
+});
+
+function searchReport(days: number, status = 'CONNECTED') {
+  return { days, generatedAt: '2026-09-14T08:00:00Z', searchConsole: { status,
+    from: '2026-08-14', to: '2026-09-12', property: 'sc-domain:enrosed.com',
+    data: ['CONNECTED', 'NO_DATA', 'STALE'].includes(status) ? { totals: { clicks: 162, impressions: 2170, ctr: .07465, position: 9.56 }, perDay: [], queries: [], pages: [], warnings: [] } : null } };
+}
+
+test('Search Console uses its own endpoint and preserves its finalized provider dates', async () => {
+  const h = harness(); h.state.source.set('SEARCH_CONSOLE');
+  const first = h.reload(); await h.reload();
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests[0].source, 'SEARCH_CONSOLE');
+  h.requests[0].task.resolve(searchReport(30)); await first;
+  assert.equal(h.state.report(), null);
+  assert.equal(h.state.searchReport().searchConsole.to, '2026-09-12');
+  assert.deepEqual(h.busy, [true, false]);
+});
+
+test('switching Google source at the same period starts the correct request and ignores the old response', async () => {
+  const h = harness(); const ga = h.reload();
+  h.state.source.set('SEARCH_CONSOLE'); const search = h.reload();
+  assert.deepEqual(h.requests.map(request => request.source), ['GA4', 'SEARCH_CONSOLE']);
+  h.requests[0].task.resolve(report(30)); await ga;
+  assert.equal(h.state.report(), null); assert.equal(h.state.loading(), true);
+  h.requests[1].task.resolve(searchReport(30)); await search;
+  assert.equal(h.state.searchReport().searchConsole.status, 'CONNECTED');
+  h.state.source.set('GA4'); const back = h.reload();
+  assert.equal(h.state.searchReport(), null);
+  h.requests[2].task.resolve(report(30)); await back;
+  assert.equal(h.state.report().days, 30);
+});
+
+test('a failed Search Console period cannot overwrite a newer period and malformed sources stay errors', async () => {
+  const h = harness(); h.state.source.set('SEARCH_CONSOLE');
+  const old = h.reload(); h.state.days.set(7); const current = h.reload();
+  h.requests[0].task.reject(new Error('Old error')); await old;
+  assert.equal(h.state.error(), null); assert.equal(h.state.loading(), true);
+  h.requests[1].task.resolve(searchReport(7, 'NO_DATA')); await current;
+  assert.equal(h.state.searchReport().days, 7);
+  for (const invalid of [{ days: 7 }, searchReport(7, 'UNKNOWN'), { ...searchReport(7), searchConsole: { status: 'CONNECTED', data: null } }]) {
+    const pending = h.reload(); h.requests.at(-1)!.task.resolve(invalid); await pending;
+    assert.equal(h.state.searchReport(), null); assert.match(h.state.error()!, /onvolledig rapport/);
+  }
+});
+
+test('Search Console source-level errors and missing configuration remain explicit reports, not transport errors', async () => {
+  const h = harness(); h.state.source.set('SEARCH_CONSOLE');
+  for (const status of ['ERROR', 'NOT_CONFIGURED']) {
+    const pending = h.reload(); h.requests.at(-1)!.task.resolve(searchReport(30, status)); await pending;
+    assert.equal(h.state.searchReport().searchConsole.status, status);
+    assert.equal(h.state.error(), null);
+  }
+});
+
+test('Search Console NO_DATA still needs measured payload, and impossible rates or malformed rows are rejected', async () => {
+  const h = harness(); h.state.source.set('SEARCH_CONSOLE');
+  const valid = searchReport(30);
+  for (const invalid of [
+    { ...searchReport(30, 'NO_DATA'), searchConsole: { status: 'NO_DATA', data: null } },
+    { ...valid, searchConsole: { ...valid.searchConsole, data: { ...valid.searchConsole.data, totals: { clicks: 10, impressions: 1, ctr: 10, position: 3 } } } },
+    { ...valid, searchConsole: { ...valid.searchConsole, data: { ...valid.searchConsole.data, queries: [null] } } },
+    { ...valid, searchConsole: { ...valid.searchConsole, data: { ...valid.searchConsole.data, pages: [{ clicks: 1, impressions: 10, ctr: .1, position: 2, page: 42 }] } } },
+  ]) {
+    const pending = h.reload(); h.requests.at(-1)!.task.resolve(invalid); await pending;
+    assert.equal(h.state.searchReport(), null); assert.match(h.state.error()!, /onvolledig rapport/);
+  }
 });

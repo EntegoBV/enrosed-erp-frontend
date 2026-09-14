@@ -84,6 +84,28 @@ export interface SearchPerformance {
   clicks: number; impressions: number; ctr: number; position: number;
 }
 
+export interface GoogleSearchComparison {
+  status: GoogleAnalyticsStatus;
+  from: string | null;
+  to: string | null;
+  totals: SearchPerformance | null;
+  errorCode: string | null;
+  message: string | null;
+}
+
+export interface GoogleSearchDevices {
+  status: GoogleAnalyticsStatus;
+  rows: (SearchPerformance & { device: string })[] | null;
+  errorCode: string | null;
+  message: string | null;
+}
+
+export interface GoogleSearchIssue {
+  section: 'AVAILABILITY' | 'PER_DAY' | 'QUERIES' | 'PAGES';
+  errorCode: string;
+  message: string;
+}
+
 export interface GoogleSearchData {
   totals: SearchPerformance;
   perDay: (SearchPerformance & { date: string })[];
@@ -93,6 +115,18 @@ export interface GoogleSearchData {
   timeZone: string;
   availableThrough: string | null;
   warnings: string[];
+  /** Optional while the combined GA4 endpoint retains its existing report shape. */
+  comparison?: GoogleSearchComparison | null;
+  devices?: GoogleSearchDevices | null;
+  rowLimit?: number | null;
+  periodBasis?: 'GOOGLE_FINAL_BOUNDARY' | 'LATEST_REPORTED_FINAL_DAY' | 'UNCONFIRMED' | null;
+  issues?: GoogleSearchIssue[];
+}
+
+export interface GoogleSearchConsoleReport {
+  days: number;
+  generatedAt: string;
+  searchConsole: GoogleAnalyticsSource<GoogleSearchData>;
 }
 
 export interface GoogleWebsiteReport {
@@ -117,5 +151,10 @@ export class AnalyticsApi {
   googleWebsiteReport(days: number): Promise<GoogleWebsiteReport> {
     return firstValueFrom(this.http.get<GoogleWebsiteReport>(
       api(`/api/analytics/website/google?days=${days}`)));
+  }
+
+  searchConsoleReport(days: number): Promise<GoogleSearchConsoleReport> {
+    return firstValueFrom(this.http.get<GoogleSearchConsoleReport>(
+      api(`/api/analytics/website/search-console?days=${days}`)));
   }
 }

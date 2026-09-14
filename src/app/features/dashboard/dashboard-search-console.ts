@@ -4,7 +4,8 @@ import { AnalyticsApi, GoogleAnalyticsSource, GoogleSearchData } from '../../cor
 import { messageOf } from '../../core/api/errors';
 import { Icon } from '../../shared/icon';
 import { googleDate, googleMetric, googlePercentage, googleSourceLabel, visibleGoogleData } from '../analyses/google-analytics-display';
-import { dashboardSearchSource } from './dashboard-search-console-state';
+import { deriveSearchConsoleInsights } from '../analyses/search-console-insights';
+import { dashboardSearchEvidence, dashboardSearchSource } from './dashboard-search-console-state';
 
 @Component({
   selector: 'app-dashboard-search-console',
@@ -14,7 +15,7 @@ import { dashboardSearchSource } from './dashboard-search-console-state';
     <section class="search-summary" aria-labelledby="home-search-title" [attr.aria-busy]="loading()">
       <header class="search-summary__head">
         <span class="search-summary__icon"><app-icon name="analytics" [size]="18" /></span>
-        <div><h3 id="home-search-title">Search Console</h3><p>Google zoeken · afgelopen 30 dagen</p></div>
+        <div><h3 id="home-search-title">Search Console</h3><p>Google zoeken · rapport over 30 dagen</p></div>
       </header>
 
       @if (loading()) {
@@ -37,22 +38,31 @@ import { dashboardSearchSource } from './dashboard-search-console-state';
           } @else if (provider.status === 'NO_DATA') {
             <p class="search-summary__notice" role="status">Nog geen zoekgegevens gerapporteerd. Recente dagen kunnen nog ontbreken.</p>
           }
-          <dl class="search-summary__metrics">
-            <div><dt>Klikken</dt><dd>{{ metric(search.totals.clicks) }}</dd></div>
-            <div><dt>Vertoningen</dt><dd>{{ metric(search.totals.impressions) }}</dd></div>
-            <div><dt>Klikratio (CTR)</dt><dd>{{ search.totals.impressions > 0 ? percentage(search.totals.ctr) : '—' }}</dd></div>
-            <div><dt>Gemiddelde positie</dt><dd>{{ search.totals.impressions > 0 ? metric(search.totals.position, 1) : '—' }}</dd></div>
-          </dl>
+          <p class="search-summary__narrative">{{ insights().summary }}</p>
+          @if (insights().insights.length) {
+            <ul class="search-summary__insights" aria-label="Aandachtspunten uit zoekcijfers">
+              @for (insight of insights().insights.slice(0, 2); track insight.id) {
+                <li><b>{{ insight.title }}</b><p>{{ evidence(insight) }}</p></li>
+              }
+            </ul>
+          }
           <details class="search-summary__details">
-            <summary><span>Periode en actualiteit</span><small>{{ status(provider.status) }}</small></summary>
+            <summary><span>Cijfers, periode en actualiteit</span><small>{{ status(provider.status) }}</small></summary>
+            <dl class="search-summary__metrics">
+              <div><dt>Klikken</dt><dd>{{ metric(search.totals.clicks) }}</dd></div>
+              <div><dt>Vertoningen</dt><dd>{{ metric(search.totals.impressions) }}</dd></div>
+              <div><dt>Klikratio (CTR)</dt><dd>{{ search.totals.impressions > 0 ? percentage(search.totals.ctr) : '—' }}</dd></div>
+              <div><dt>Gemiddelde positie</dt><dd>{{ search.totals.impressions > 0 ? metric(search.totals.position, 1) : '—' }}</dd></div>
+            </dl>
             <p>{{ date(provider.from) }} – {{ date(provider.to) }} · {{ search.timeZone }}</p>
             <p>Opgehaald: {{ date(provider.fetchedAt, true) }}.</p>
-            <p>Laatste dag met gegevens: {{ date(search.availableThrough) }}. Recente dagen kunnen nog ontbreken.</p>
+            <p>{{ search.periodBasis === 'GOOGLE_FINAL_BOUNDARY' ? 'Definitieve gegevens t/m' : 'Laatste dag met gegevens' }}: {{ date(search.availableThrough) }}. Recente dagen kunnen nog ontbreken.</p>
             <p>Zoekprestaties zijn geen bezoekersaantallen. Een lagere gemiddelde positie is beter, maar is geen vaste ranking.</p>
           </details>
+          <p class="search-summary__freshness">Opgehaald {{ date(provider.fetchedAt, true) }}</p>
         }
       }
-      <a class="search-summary__link" routerLink="/analyses/website" [queryParams]="{ source: 'SEARCH_CONSOLE', days: 30 }">Bekijk websiteanalyse <span aria-hidden="true">›</span></a>
+      <a class="search-summary__link" routerLink="/analyses/website" [queryParams]="{ source: 'SEARCH_CONSOLE', days: 30 }">Bekijk Search Console en aanbevelingen <span aria-hidden="true">›</span></a>
     </section>
   `,
   styles: `
@@ -63,6 +73,12 @@ import { dashboardSearchSource } from './dashboard-search-console-state';
     .search-summary__head h3 { margin: 0; font-size: 14px; font-weight: 750; letter-spacing: -.02em; }
     .search-summary__head p { margin: 3px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.5; }
     .search-summary__icon { display: grid; place-items: center; flex: none; width: 33px; height: 33px; color: #386db2; border-radius: 11px; background: color-mix(in srgb, #497bc1 11%, var(--surface)); }
+    .search-summary__narrative { margin: 0; padding: 0 14px 12px; color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.55; overflow-wrap: anywhere; }
+    .search-summary__insights { display: grid; gap: 10px; margin: 0; padding: 0 14px 13px; list-style: none; }
+    .search-summary__insights li { padding-left: 10px; border-left: 2px solid color-mix(in srgb, #497bc1 30%, var(--line)); }
+    .search-summary__insights b { font-size: 11px; font-weight: 650; line-height: 1.5; }
+    .search-summary__insights p { margin: 3px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.5; overflow-wrap: anywhere; }
+    .search-summary__freshness { margin: 0; padding: 0 14px 10px; color: var(--muted); font-size: 10px; line-height: 1.5; }
     .search-summary__metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 0; padding: 2px 15px 15px; }
     .search-summary__metrics > div { min-width: 0; }
     .search-summary__metrics dt { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
@@ -93,6 +109,8 @@ export class DashboardSearchConsole {
   private loadVersion = 0;
   readonly source = signal<GoogleAnalyticsSource<GoogleSearchData> | null>(null);
   readonly data = computed(() => visibleGoogleData(this.source()));
+  readonly insights = computed(() => deriveSearchConsoleInsights(this.source()));
+  readonly evidence = dashboardSearchEvidence;
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly metric = googleMetric;
@@ -112,7 +130,7 @@ export class DashboardSearchConsole {
     this.error.set(null);
     this.source.set(null);
     try {
-      const report = await this.analytics.googleWebsiteReport(30);
+      const report = await this.analytics.searchConsoleReport(30);
       if (version !== this.loadVersion) return;
       this.source.set(dashboardSearchSource(report));
     } catch (failure: unknown) {
