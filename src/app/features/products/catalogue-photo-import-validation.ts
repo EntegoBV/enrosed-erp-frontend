@@ -124,9 +124,14 @@ export function verifyPhotoImportIdentity(item: CataloguePhotoImportItem, produc
   `${item.filename}: productnummer, reeks, SKU of kleur wijkt af van het ERP.`);
   requireValue(product.active && !product.demo && family.active, `${item.filename}: product/reeks is niet actief.`);
   requireValue(family.members.some(member => member.productId === item.productId), `${item.filename}: variant ontbreekt in de reeks.`);
-  requireValue(product.photos.some(photo => isOwnPhoto(photo) && photo.sizeBytes > 0
-    && (photo.widthPx ?? 0) > 0 && (photo.heightPx ?? 0) > 0 && photo.contentType?.startsWith('image/')),
-  `${item.filename}: geen bestaande bruikbare eigen foto; controleer de websitekeuze eerst handmatig.`);
+  const usableOwnPhoto = product.photos.some(photo => isOwnPhoto(photo) && photo.sizeBytes > 0
+    && (photo.widthPx ?? 0) > 0 && (photo.heightPx ?? 0) > 0 && photo.contentType?.startsWith('image/'));
+  // Without a usable own photo, the server's public primary can only be a matching/shared
+  // family image. That image suppresses an appended own fallback unless it has a WEBSITE role.
+  const protectedFamilyPhoto = family.members.some(member => member.productId === product.id
+    && member.hasPublicWebsiteImage === true);
+  requireValue(usableOwnPhoto || protectedFamilyPhoto,
+    `${item.filename}: geen bestaande bruikbare eigen of openbare reeksfoto; controleer de websitekeuze eerst handmatig.`);
 }
 
 export function isOwnPhoto(photo: PhotoDto): boolean { return photo.origin === 'PRODUCT' && !photo.readOnly; }
