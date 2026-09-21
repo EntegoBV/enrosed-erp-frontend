@@ -476,6 +476,8 @@ export interface ProductFamilyMember {
   size: string | null;
   position: number;
   active: boolean;
+  /** Server-owned photo eligibility; absent on older backends and drafts. */
+  hasPublicWebsiteImage?: boolean;
 }
 
 /** Optimistic identity precondition and target for one persisted family member. */

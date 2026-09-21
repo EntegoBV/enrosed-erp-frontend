@@ -1,4 +1,4 @@
-import { ProductFamily, ProductFamilyImage } from '../core/api/models';
+import { ProductFamily } from '../core/api/models';
 
 export interface FeaturedProductEligibility {
   active: boolean;
@@ -6,41 +6,15 @@ export interface FeaturedProductEligibility {
   eligible: boolean;
 }
 
-/** A legacy variant hint means the image is not safely family-wide. */
-export function isFamilyWideImage(image: ProductFamilyImage): boolean {
-  return image.variantProductId === null
-    && !image.variantExternalId?.trim()
-    && !image.variantColor?.trim();
-}
-
-export function isPublicReadyImage(image: ProductFamilyImage): boolean {
-  const renditionDimensions = [
-    image.smallWidthPx,
-    image.smallHeightPx,
-    image.largeWidthPx,
-    image.largeHeightPx,
-  ];
-  return Boolean(
-    image.sourceKey?.trim()
-      && image.smallUrl?.trim()
-      && image.largeUrl?.trim()
-      // A missing field is the legacy API contract: every valid image was public.
-      && (!Array.isArray(image.publishedChannels)
-        || image.publishedChannels.includes('WEBSITE')),
-  )
-    && renditionDimensions.every((dimension) =>
-      typeof dimension === 'number' && Number.isFinite(dimension) && dimension > 0)
-    && image.altTexts.some((text) => Boolean(text.alt?.trim()));
-}
-
 export function featuredProductEligibility(
   family: ProductFamily | null,
   productId: number,
   active: boolean,
 ): FeaturedProductEligibility {
-  const hasPublicImage = family?.images.some((image) =>
-    isPublicReadyImage(image)
-      && (isFamilyWideImage(image) || image.variantProductId === productId)) ?? false;
+  // The backend applies the same ERP-photo rules as the public catalogue. Drafts
+  // and older API responses stay unavailable until that authority is present.
+  const hasPublicImage = family?.members.find((member) => member.productId === productId)
+    ?.hasPublicWebsiteImage === true;
   return { active, hasPublicImage, eligible: active && hasPublicImage };
 }
 

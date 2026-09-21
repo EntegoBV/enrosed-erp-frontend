@@ -113,7 +113,9 @@ interface GalleryPointerReorder {
                                 (click)="togglePublicationChannel(image, option.channel)"><i aria-hidden="true">{{ isPublishedTo(image, option.channel) ? '✓' : '+' }}</i>{{ option.label }}</button>
                       }
                     </div>
-                    @if (!hasAltText(image)) { <p>Voeg een alt-tekst toe bij Website &amp; publicatie om deze foto te publiceren.</p> }
+                    @if (isHistoricalImage(image)) {
+                      <p>Historische importfoto. Deze foto wordt niet gepubliceerd. Beheer de actuele foto bij het product of voeg een nieuwe reeksfoto toe.</p>
+                    } @else if (!hasAltText(image)) { <p>Voeg een alt-tekst toe bij Website &amp; publicatie om deze foto te publiceren.</p> }
                   </fieldset>
                   @if (translationEditing()) {
                     <label class="alt-field"><span>Alt-tekst · {{ language() }}</span><input class="input" [ngModel]="imageAlt(image)" [disabled]="busy()" (ngModelChange)="patchImageAlt(image.id, $event)" placeholder="Beschrijf wat op deze foto staat" /></label>
@@ -636,6 +638,7 @@ export class ProductFamilyGallery {
   }
 
   publicationSummary(image: ProductFamilyImage): string {
+    if (this.isHistoricalImage(image)) return 'Historische importfoto · niet gepubliceerd';
     const channels = this.publishedChannels(image);
     return PUBLICATION_CHANNELS.filter(option => channels.includes(option.channel)).map(option => option.label).join(' · ') || 'Alleen intern';
   }
@@ -689,6 +692,7 @@ export class ProductFamilyGallery {
   }
 
   publishedChannels(image: ProductFamilyImage): CatalogChannel[] {
+    if (this.isHistoricalImage(image)) return [];
     // During a rolling deployment the old API omits the field; its implicit contract
     // made every valid image public on every channel, so preserve that projection.
     return Array.isArray(image.publishedChannels)
@@ -701,6 +705,7 @@ export class ProductFamilyGallery {
   }
 
   channelAriaLabel(image: ProductFamilyImage, channel: CatalogChannel, label: string): string {
+    if (this.isHistoricalImage(image)) return `${label}: historische importfoto, niet publiceerbaar`;
     if (!this.hasAltText(image) && !this.isPublishedTo(image, channel)) {
       return `${label}: voeg eerst een alt-tekst toe via Website en publicatie`;
     }
@@ -708,7 +713,8 @@ export class ProductFamilyGallery {
   }
 
   publicationControlDisabled(image: ProductFamilyImage, channel: CatalogChannel): boolean {
-    return this.busy() || (!this.hasAltText(image) && !this.isPublishedTo(image, channel));
+    return this.busy() || this.isHistoricalImage(image)
+      || (!this.hasAltText(image) && !this.isPublishedTo(image, channel));
   }
 
   publicationControlTitle(
@@ -716,6 +722,7 @@ export class ProductFamilyGallery {
     channel: CatalogChannel,
     description: string,
   ): string {
+    if (this.isHistoricalImage(image)) return 'Historische importfoto; beheer de actuele foto bij het product';
     return !this.hasAltText(image) && !this.isPublishedTo(image, channel)
       ? 'Voeg eerst een alt-tekst toe via Website & publicatie'
       : description;
@@ -723,6 +730,12 @@ export class ProductFamilyGallery {
 
   hasAltText(image: ProductFamilyImage): boolean {
     return image.altTexts.some((item) => Boolean(item.alt?.trim()));
+  }
+
+  isHistoricalImage(image: ProductFamilyImage): boolean {
+    // Match the backend's public photo projection while preserving historical records.
+    return [image.sourceUrl, image.sourceKey, image.sourceAssetId, image.altTextSource]
+      .some((value) => value?.toLowerCase().includes('shopify') === true);
   }
 
   togglePublicationChannel(image: ProductFamilyImage, channel: CatalogChannel): void {
