@@ -1,5 +1,6 @@
 import { Directive, ElementRef, OnDestroy, effect, inject, input } from '@angular/core';
 import { CatalogApi } from './catalog-api';
+import { DesktopViewport } from '../platform/desktop-viewport';
 
 /**
  * Shows a photo that sits behind the login.
@@ -13,6 +14,7 @@ import { CatalogApi } from './catalog-api';
 export class AuthImage implements OnDestroy {
   private readonly element = inject<ElementRef<HTMLImageElement>>(ElementRef);
   private readonly catalog = inject(CatalogApi);
+  private readonly desktop = inject(DesktopViewport);
 
   readonly source = input.required<string | null>({ alias: 'appAuthSrc' });
   /** Lists default to small; viewers opt into medium or the untouched original. */
@@ -23,7 +25,9 @@ export class AuthImage implements OnDestroy {
 
   constructor() {
     effect(() => {
-      const url = screenPhotoUrl(this.source(), this.rendition());
+      const requestedSize = this.rendition();
+      const size = requestedSize === 'medium' && !this.desktop.active() ? 'small' : requestedSize;
+      const url = screenPhotoUrl(this.source(), size);
       const version = ++this.requestVersion;
       this.release();
       if (!url) {
@@ -59,9 +63,9 @@ export class AuthImage implements OnDestroy {
 /** Only known ERP photo routes are transformed; downloads and unrelated media stay intact. */
 export function screenPhotoUrl(url: string | null, size: 'small' | 'medium' | 'original'): string | null {
   if (!url || size === 'original') return url;
-  const product = url.match(/^(.*\/api\/products\/\d+\/photos\/-?\d+)(\?[^#]*)?$/);
+  const product = url.match(/^(.*\/api\/products\/\d+\/photos\/-?\d+)(?:\/renditions\/(?:small|medium))?(\?[^#]*)?$/);
   if (product) return `${product[1]}/renditions/${size}${product[2] ?? ''}`;
-  const family = url.match(/^(.*\/api\/product-families\/\d+\/images\/\d+)\/(?:large|original)(\?[^#]*)?$/);
+  const family = url.match(/^(.*\/api\/product-families\/\d+\/images\/\d+)\/(?:small|medium|large|original)(\?[^#]*)?$/);
   if (family) return `${family[1]}/${size}${family[2] ?? ''}`;
   return url;
 }
