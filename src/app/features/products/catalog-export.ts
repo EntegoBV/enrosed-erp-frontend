@@ -11,6 +11,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { AuthImage } from '../../core/api/auth-image';
 import { catalogueFamilies } from './catalog-studio';
 import { CataloguePhotoSelectionChange } from './catalogue-photo-selection';
+import { CataloguePhotoImport } from './catalogue-photo-import';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
@@ -65,6 +66,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     AuthImage,
     CatalogBrochureSettings,
     CatalogProductSelection,
+    CataloguePhotoImport,
     FormsModule,
     PageHeader,
     RouterLink,
@@ -79,6 +81,8 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
 
     <div class="content content--with-action-bar catalog-page"
          [attr.aria-busy]="busy() || loading()">
+      <app-catalogue-photo-import [disabled]="downloading() || savingPhotos() || loading()"
+        (workingChange)="importingPhotos.set($event)" (completed)="load()" />
       <fieldset class="catalog-workspace" [disabled]="busy()">
         <legend class="sr-only">Catalogus samenstellen</legend>
 
@@ -518,14 +522,16 @@ export class CatalogExport {
   readonly dataReady = signal(false);
   readonly downloading = signal(false);
   readonly savingPhotos = signal(false);
+  readonly importingPhotos = signal(false);
   readonly renderError = signal<string | null>(null);
   readonly renderTranslationError = signal(false);
   readonly missingTranslationPaths = signal<string[]>([]);
 
-  readonly busy = computed(() => this.downloading() || this.savingPhotos());
+  readonly busy = computed(() => this.downloading() || this.savingPhotos() || this.importingPhotos());
   readonly canExport = computed(() =>
     this.dataReady() && this.selected().size > 0 && !this.loadError());
   readonly actionStatus = computed(() => {
+    if (this.importingPhotos()) return 'Catalogusfoto’s worden gecontroleerd of toegevoegd.';
     if (this.savingPhotos()) return 'Fotokeuzes worden opgeslagen.';
     if (this.downloading()) return 'PDF wordt gemaakt. Dit kan enkele minuten duren.';
     return this.renderError() ?? '';
