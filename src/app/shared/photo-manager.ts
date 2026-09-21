@@ -19,6 +19,7 @@ import { MediaApi } from '../core/api/media-api';
 import { MediaAssetSummary } from '../core/api/media-models';
 import { FilePicker } from './file-picker';
 import { Ui } from './ui';
+import { PhotoRenditionControls } from './photo-rendition-controls';
 
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
 const PHOTO_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -63,7 +64,7 @@ export interface PendingPhotoUploadResult {
 @Component({
   selector: 'app-photo-manager',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, FilePicker],
+  imports: [AuthImage, FilePicker, PhotoRenditionControls],
   template: `
     <!-- Files dragged in from the desktop land anywhere on the manager;
          several at once queue in the order they were dropped. -->
@@ -274,6 +275,9 @@ export interface PendingPhotoUploadResult {
           </div>
           <p>Geen voorkeur? Dan wordt de eerste beschikbare foto gebruikt. Dit wijzigt de publicatie niet.</p>
         </fieldset>
+        @if (productId() !== null) {
+          <app-photo-rendition-controls [endpoint]="'/api/products/' + productId() + '/photos/' + photo.id + '/renditions'" [filename]="photo.originalFilename" [disabled]="interactionDisabled()" />
+        }
         <div class="photo-details__actions">
           <button class="btn btn--sm" type="button" [disabled]="interactionDisabled()" (click)="download(photo)">Download origineel</button>
           @if (isOwnPhoto(photo)) { <button class="photo-delete" type="button" [disabled]="interactionDisabled()" (click)="remove(photo)">Foto verwijderen</button> }

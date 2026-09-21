@@ -15,7 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
+import { CataloguePhotoSelection, Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
@@ -209,7 +209,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         <section class="erp-workspace__hero product-editor-hero" aria-label="Product in één oogopslag">
           <div class="erp-workspace__media product-editor-hero__media">
             @if (draft().photos[0]; as cover) {
-              <img [appAuthSrc]="cover.url" [alt]="(draft().name || 'Nieuw product') + ' — hoofdfoto'"
+              <img [appAuthSrc]="cover.mediumUrl || cover.url" appAuthSize="medium" [alt]="(draft().name || 'Nieuw product') + ' — hoofdfoto'"
                    loading="lazy" />
               @if (photoCount() > 1) {
                 <span class="product-editor-hero__photo-count">+{{ photoCount() - 1 }}</span>
@@ -680,6 +680,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 (imageDeleteRequested)="removeFamilyImage($event)"
                 (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
                 (imagePublicationChangeRequested)="setFamilyImagePublication($event)"
+                (catalogueSelectionRequested)="setCataloguePhotos($event)"
               />
               </div>
             }
@@ -3295,6 +3296,22 @@ export class ProductEditor implements OnDestroy {
           /* The publication error above remains the useful feedback. */
         }
       }
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async setCataloguePhotos(selection: CataloguePhotoSelection): Promise<void> {
+    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
+    this.saving.set(true);
+    try {
+      await this.persistFamilyDraft();
+      const id = this.family()?.id;
+      if (id === null || id === undefined) throw new Error('Sla de productreeks eerst op');
+      this.replaceFamily(await this.catalog.updateCataloguePhotos(id, selection));
+      this.ui.toast('Fotokeuzes voor de catalogus opgeslagen');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Fotokeuzes opslaan mislukt'), 'err');
     } finally {
       this.saving.set(false);
     }

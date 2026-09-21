@@ -174,11 +174,45 @@ export interface PhotoDto {
   position: number;
   url: string;
   downloadUrl: string;
+  /** Screen renditions; original download remains unchanged. */
+  smallUrl?: string;
+  mediumUrl?: string;
   /** The channels this photo opens; the first of the series is the internal lead. */
   leadFor?: PhotoRole[];
 }
 
 export type PhotoRole = 'WEBSITE' | 'CATALOGUE';
+
+export interface PhotoRendition {
+  url: string;
+  widthPx: number | null;
+  heightPx: number | null;
+  sizeBytes: number;
+  contentType: string;
+}
+
+export interface PhotoRenditions {
+  original: PhotoRendition;
+  small: PhotoRendition;
+  medium: PhotoRendition;
+  custom?: PhotoRendition | null;
+}
+
+export interface CataloguePhotoOption {
+  /** Positive: family image. Negative: product-owned image. */
+  id: number;
+  productId: number | null;
+  originalFilename: string;
+  source: 'FAMILY' | 'PRODUCT';
+  smallUrl: string;
+  largeUrl: string;
+}
+
+export interface CataloguePhotoSelection {
+  catalogueOverviewPhotoId: number | null;
+  catalogueDetailPhotoId: number | null;
+  catalogueDetailSize: 'STANDARD' | 'LARGE';
+}
 
 
 /**
@@ -327,6 +361,9 @@ export interface ProductFamilyImage {
   originalHeightPx: number | null;
   smallUrl: string;
   largeUrl: string;
+  mediumUrl?: string;
+  originalSizeBytes?: number;
+  smallSizeBytes?: number;
   smallSha256: string;
   smallWidthPx: number | null;
   smallHeightPx: number | null;
@@ -515,6 +552,11 @@ export interface ProductFamily {
   productPosition: number;
   /** Variant whose image represents this family on listing cards. */
   cardFeaturedProductId: number | null;
+  /** Independent print choices; empty means the catalogue's automatic selection. */
+  catalogueOverviewPhotoId?: number | null;
+  catalogueDetailPhotoId?: number | null;
+  catalogueDetailSize?: 'STANDARD' | 'LARGE';
+  cataloguePhotoOptions?: CataloguePhotoOption[];
   tags: string[];
   websiteStatus: PublicationStatus;
   orderAppStatus: PublicationStatus;

@@ -15,13 +15,15 @@ export class AuthImage implements OnDestroy {
   private readonly catalog = inject(CatalogApi);
 
   readonly source = input.required<string | null>({ alias: 'appAuthSrc' });
+  /** Lists default to small; viewers opt into medium or the untouched original. */
+  readonly rendition = input<'small' | 'medium' | 'original'>('small', { alias: 'appAuthSize' });
 
   private objectUrl: string | null = null;
   private requestVersion = 0;
 
   constructor() {
     effect(() => {
-      const url = this.source();
+      const url = screenPhotoUrl(this.source(), this.rendition());
       const version = ++this.requestVersion;
       this.release();
       if (!url) {
@@ -52,4 +54,14 @@ export class AuthImage implements OnDestroy {
       this.objectUrl = null;
     }
   }
+}
+
+/** Only known ERP photo routes are transformed; downloads and unrelated media stay intact. */
+export function screenPhotoUrl(url: string | null, size: 'small' | 'medium' | 'original'): string | null {
+  if (!url || size === 'original') return url;
+  const product = url.match(/^(.*\/api\/products\/\d+\/photos\/-?\d+)(\?[^#]*)?$/);
+  if (product) return `${product[1]}/renditions/${size}${product[2] ?? ''}`;
+  const family = url.match(/^(.*\/api\/product-families\/\d+\/images\/\d+)\/(?:large|original)(\?[^#]*)?$/);
+  if (family) return `${family[1]}/${size}${family[2] ?? ''}`;
+  return url;
 }

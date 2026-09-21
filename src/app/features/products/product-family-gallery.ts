@@ -13,10 +13,13 @@ import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
 import {
   CatalogChannel,
+  CataloguePhotoSelection,
   LanguageCode,
   ProductFamily,
   ProductFamilyImage,
 } from '../../core/api/models';
+import { CataloguePhotoSelectionEditor } from './catalogue-photo-selection';
+import { PhotoRenditionControls } from '../../shared/photo-rendition-controls';
 
 export interface ProductFamilyImageVariantChange {
   imageId: number;
@@ -51,7 +54,7 @@ interface GalleryPointerReorder {
 @Component({
   selector: 'app-product-family-gallery',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, AuthImage],
+  imports: [FormsModule, AuthImage, CataloguePhotoSelectionEditor, PhotoRenditionControls],
   template: `
     <section class="family-gallery" aria-label="Foto’s van de productreeks" [attr.aria-busy]="busy()">
       <div class="section-head">
@@ -60,6 +63,9 @@ interface GalleryPointerReorder {
         <input #imageInput class="file-input" type="file" [disabled]="busy()"
                accept="image/jpeg,image/png,image/webp,image/gif" (change)="pickImageFile($event)" />
       </div>
+      @if (family().cataloguePhotoOptions) {
+        <app-catalogue-photo-selection class="catalogue-photo-choices" [family]="family()" [disabled]="busy()" (saveRequested)="catalogueSelectionRequested.emit($event)" />
+      }
       @if (!currentProductIsMember() && currentProductId() !== null) {
         <p class="membership-hint" role="note">Sla de variant eerst op in deze reeks om er een foto aan te koppelen.</p>
       }
@@ -118,6 +124,7 @@ interface GalleryPointerReorder {
                   @if (translationEditing()) {
                     <label class="alt-field"><span>Alt-tekst · {{ language() }}</span><input class="input" [ngModel]="imageAlt(image)" [disabled]="busy()" (ngModelChange)="patchImageAlt(image.id, $event)" placeholder="Beschrijf wat op deze foto staat" /></label>
                   }
+                  <app-photo-rendition-controls class="image-renditions" [endpoint]="'/api/product-families/' + family().id + '/images/' + image.id + '/renditions'" [filename]="image.originalFilename" [disabled]="busy()" />
                   <div class="image-settings__foot"><small>De volgorde geldt voor de hele reeks.</small><button class="image-delete" type="button" [disabled]="busy()" (click)="imageDeleteRequested.emit(image.id)">Verwijder uit reeks</button></div>
                 </div>
               }
@@ -154,6 +161,7 @@ interface GalleryPointerReorder {
       font-size: 12px;
       line-height: 1.5;
     }
+    .catalogue-photo-choices { margin-bottom: 16px; }
     .section-head .btn {
       flex: none;
       min-height: 42px;
@@ -442,6 +450,7 @@ interface GalleryPointerReorder {
       justify-content: space-between;
       gap: 12px;
     }
+    .image-renditions { grid-column: 1 / -1; }
     .image-settings__foot small {
       color: var(--muted);
       font-size: 11px;
@@ -587,6 +596,7 @@ export class ProductFamilyGallery {
   readonly imageDeleteRequested = output<number>();
   readonly imageVariantChangeRequested = output<ProductFamilyImageVariantChange>();
   readonly imagePublicationChangeRequested = output<ProductFamilyImagePublicationChange>();
+  readonly catalogueSelectionRequested = output<CataloguePhotoSelection>();
 
   readonly selectedImageId = signal<number | null>(null);
   readonly draggingIndex = signal<number | null>(null);

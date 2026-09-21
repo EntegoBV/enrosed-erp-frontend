@@ -5,6 +5,7 @@ import { api } from './api.config';
 import {
   CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSharedFieldsApplyRequest, ProductSharedFieldsApplyResult, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
   PhotoRole, ProductCostHistoryEntry,
+  CataloguePhotoSelection, PhotoRenditions,
 } from './models';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -233,6 +234,17 @@ export class CatalogApi {
       api(`/api/product-families/${familyId}/images/${imageId}/publication`),
       { channels },
     ));
+  }
+
+  updateCataloguePhotos(familyId: number, selection: CataloguePhotoSelection): Promise<ProductFamily> {
+    return firstValueFrom(this.http.put<ProductFamily>(
+      api(`/api/product-families/${familyId}/catalogue-photos`), selection));
+  }
+
+  photoRenditions(endpoint: string, custom?: { width: number; quality: number }): Promise<PhotoRenditions> {
+    return firstValueFrom(this.http.get<PhotoRenditions>(api(endpoint), {
+      params: custom ? { width: custom.width, quality: custom.quality } : {},
+    }));
   }
 
   productPublicTranslations(productId: number): Promise<ProductPublicTranslationsSnapshot> {

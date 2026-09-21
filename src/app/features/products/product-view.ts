@@ -127,7 +127,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                         (keydown.arrowleft)="stepGallery(-1, product.photos.length); $event.preventDefault()" (keydown.arrowright)="stepGallery(1, product.photos.length); $event.preventDefault()"
                         (keydown.home)="selectGalleryPhoto(0); $event.preventDefault()" (keydown.end)="selectGalleryPhoto(product.photos.length - 1); $event.preventDefault()"
                         aria-keyshortcuts="ArrowLeft ArrowRight Home End" [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
-                  <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
+                  <img [appAuthSrc]="photo.mediumUrl || photo.url" appAuthSize="medium" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
                   <span class="pd-photo-count">{{ galleryIndex() + 1 }} / {{ product.photos.length }} <span aria-hidden="true">⤢</span></span>
                 </button>
                 @if (product.photos.length > 1) {

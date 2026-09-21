@@ -10,6 +10,7 @@ import {
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { AuthImage } from '../../core/api/auth-image';
 import { catalogueFamilies } from './catalog-studio';
+import { CataloguePhotoSelectionChange } from './catalogue-photo-selection';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
@@ -183,6 +184,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
             [products]="products()" [families]="families()" [categories]="categories()" [selected]="selected()"
             [loading]="loading()" [loadError]="loadError()" [disabled]="busy()"
             [showReferencePrices]="includePrices()" (selectedChange)="selected.set($event)" (retry)="load()"
+            (cataloguePhotosRequested)="saveCataloguePhotos($event)"
           />
 
           @if (layout() === 'BROCHURE') {
@@ -200,7 +202,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
           </details>
 
           <div class="catalog-output">
-          @if (busy()) {
+          @if (downloading()) {
             <section class="card render-status" role="status" aria-live="polite">
               <span class="render-status__mark" aria-hidden="true"></span>
               <div>
@@ -515,14 +517,16 @@ export class CatalogExport {
   readonly loadError = signal<string | null>(null);
   readonly dataReady = signal(false);
   readonly downloading = signal(false);
+  readonly savingPhotos = signal(false);
   readonly renderError = signal<string | null>(null);
   readonly renderTranslationError = signal(false);
   readonly missingTranslationPaths = signal<string[]>([]);
 
-  readonly busy = computed(() => this.downloading());
+  readonly busy = computed(() => this.downloading() || this.savingPhotos());
   readonly canExport = computed(() =>
     this.dataReady() && this.selected().size > 0 && !this.loadError());
   readonly actionStatus = computed(() => {
+    if (this.savingPhotos()) return 'Fotokeuzes worden opgeslagen.';
     if (this.downloading()) return 'PDF wordt gemaakt. Dit kan enkele minuten duren.';
     return this.renderError() ?? '';
   });
@@ -736,6 +740,20 @@ export class CatalogExport {
           }
         : undefined,
     };
+  }
+
+  async saveCataloguePhotos(change: CataloguePhotoSelectionChange): Promise<void> {
+    if (this.busy()) return;
+    this.savingPhotos.set(true);
+    try {
+      const saved = await this.catalog.updateCataloguePhotos(change.familyId, change.selection);
+      this.families.update(families => families.map(family => family.id === saved.id ? saved : family));
+      this.ui.toast('Fotokeuzes opgeslagen · de volgende PDF gebruikt deze foto’s');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Fotokeuzes opslaan mislukt'), 'err');
+    } finally {
+      this.savingPhotos.set(false);
+    }
   }
 
   private async handleRenderFailure(failure: unknown, toastFallback: string): Promise<void> {

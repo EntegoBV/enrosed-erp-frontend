@@ -16,6 +16,7 @@ import type { MenuPoint } from '../../shared/context-menu-position';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { Skeleton } from '../../shared/skeleton';
 import { catalogueFamilies, cataloguePhoto, CatalogueFamilySelection } from './catalog-studio';
+import { CataloguePhotoSelectionChange, CataloguePhotoSelectionEditor } from './catalogue-photo-selection';
 import {
   deselectProductIds,
   groupProductsByCategory,
@@ -37,7 +38,7 @@ type MenuSubject =
 @Component({
   selector: 'app-catalog-product-selection',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, FormsModule, Skeleton, ContextMenu, MenuTrigger],
+  imports: [AuthImage, FormsModule, Skeleton, ContextMenu, MenuTrigger, CataloguePhotoSelectionEditor],
   template: `
     <section class="card product-selector" aria-labelledby="catalog-products-title">
       <div class="product-selector__head">
@@ -156,6 +157,12 @@ type MenuSubject =
                 </div>
                 @if (expandedFamilies().has(family.key)) {
                   <div class="family-card__variants" [id]="'catalog-' + family.key">
+                    @if (familyMetadata(family); as metadata) {
+                      @if (metadata.cataloguePhotoOptions) {
+                        <app-catalogue-photo-selection [family]="metadata" [disabled]="disabled()"
+                          (saveRequested)="cataloguePhotosRequested.emit({familyId: metadata.id!, selection: $event})" />
+                      }
+                    }
                     @for (product of family.products; track product.id) {
                       <div class="product-choice" [class.product-choice--selected]="isSelected(product)"
                            appMenuTrigger [appMenuTriggerDisabled]="disabled()"
@@ -322,6 +329,11 @@ export class CatalogProductSelection {
   readonly showReferencePrices = input(true);
   readonly selectedChange = output<Set<number>>();
   readonly retry = output<void>();
+  readonly cataloguePhotosRequested = output<CataloguePhotoSelectionChange>();
+
+  familyMetadata(group: CatalogueFamilySelection): ProductFamily | undefined {
+    return this.families().find(family => family.id !== null && family.id === group.products[0]?.familyId);
+  }
 
   readonly categoryFilter = signal<number | null>(null);
   readonly query = signal('');

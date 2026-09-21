@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, signal } from '@angular/core';
 import { CatalogApi } from '../core/api/catalog-api';
 import { AuthImage } from '../core/api/auth-image';
 import { saveBlob } from '../core/api/download';
@@ -24,9 +24,10 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
           <span class="lightbox__count">{{ index() + 1 }} / {{ photos().length }}</span>
           @if (meta(photo); as meta) { <span class="lightbox__meta" [title]="photo.originalFilename">{{ meta }}</span> }
           <span class="spacer"></span>
+          <button class="lightbox__btn" type="button" (click)="showOriginal.set(!showOriginal())" [attr.aria-pressed]="showOriginal()">{{ showOriginal() ? 'Schermversie' : 'Toon origineel' }}</button>
           <button class="lightbox__btn" type="button" [disabled]="downloading()"
                   (click)="download(photo)">
-            {{ downloading() ? 'Bezig…' : 'Downloaden' }}
+            {{ downloading() ? 'Bezig…' : 'Download origineel' }}
           </button>
           <button class="lightbox__btn" type="button" (click)="close()" aria-label="Sluiten">✕</button>
         </header>
@@ -36,7 +37,7 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
             <button class="lightbox__nav lightbox__nav--prev" type="button"
                     (click)="step(-1)" aria-label="Vorige">‹</button>
           }
-          <img class="lightbox__img" [appAuthSrc]="photo.url" [alt]="photo.originalFilename" />
+          <img class="lightbox__img" [appAuthSrc]="showOriginal() ? photo.url : (photo.mediumUrl || photo.url)" [appAuthSize]="showOriginal() ? 'original' : 'medium'" [alt]="photo.originalFilename" />
           @if (photos().length > 1) {
             <button class="lightbox__nav lightbox__nav--next" type="button"
                     (click)="step(1)" aria-label="Volgende">›</button>
@@ -65,7 +66,7 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
     }
     @keyframes lightbox-in { from { opacity: 0; } }
     .lightbox__bar {
-      display: flex; align-items: center; gap: 8px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
       padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
     }
     .lightbox__count { color: #cfc4bf; font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
@@ -108,6 +109,13 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
       background: rgb(255 255 255 / 30%); cursor: pointer; padding: 0;
     }
     .lightbox__dot.on { background: #fff; }
+    @media(max-width: 560px) {
+      .lightbox__bar { gap: 6px; padding-inline: 10px; }
+      .lightbox__count { margin-right: auto; font-size: 12px; }
+      .lightbox__meta { order: 5; flex: 1 1 100%; font-size: 11px; }
+      .lightbox__meta::before, .lightbox__bar .spacer { display: none; }
+      .lightbox__btn { min-height: 44px; padding: 8px 10px; font-size: 12px; }
+    }
   `,
 })
 export class PhotoLightbox {
@@ -118,8 +126,11 @@ export class PhotoLightbox {
   readonly index = model(-1);
 
   readonly downloading = signal(false);
+  readonly showOriginal = signal(false);
   readonly open = computed(() => this.index() >= 0);
   readonly current = computed(() => this.photos()[this.index()] ?? null);
+
+  constructor() { effect(() => { this.current(); this.showOriginal.set(false); }); }
 
   close(): void {
     this.index.set(-1);
@@ -128,7 +139,7 @@ export class PhotoLightbox {
   /** "4000 × 3000 px · 2,4 MB · JPG": what you are looking at, and what the download weighs. */
   meta(photo: PhotoDto): string {
     return [
-      photo.widthPx && photo.heightPx ? `${photo.widthPx} × ${photo.heightPx} px` : '',
+      'Origineel', photo.widthPx && photo.heightPx ? `${photo.widthPx} × ${photo.heightPx} px` : '',
       formatBytes(photo.sizeBytes),
       fileTypeLabel(photo.originalFilename, photo.contentType),
     ].filter(Boolean).join(' · ');

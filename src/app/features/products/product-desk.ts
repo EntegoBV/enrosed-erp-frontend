@@ -189,7 +189,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                   <button class="pd-gallery__main" type="button" (click)="lightbox.set(galleryIndex())"
                           (keydown.arrowleft)="stepGallery(-1, product.photos.length)" (keydown.arrowright)="stepGallery(1, product.photos.length)"
                           [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
-                    <img [appAuthSrc]="photo.url" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
+                    <img [appAuthSrc]="photo.mediumUrl || photo.url" appAuthSize="medium" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
                   </button>
                   @if (product.photos.length > 1) {
                     <button class="pd-gallery__step pd-gallery__step--prev" type="button" (click)="stepGallery(-1, product.photos.length)" aria-label="Vorige foto">‹</button>

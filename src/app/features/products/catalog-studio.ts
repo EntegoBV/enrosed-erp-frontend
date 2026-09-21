@@ -14,13 +14,13 @@ export interface CatalogueFamilySelection {
   key: string;
   name: string;
   products: Product[];
-  photo: PhotoDto | null;
+  photo: Pick<PhotoDto, 'url' | 'smallUrl' | 'leadFor'> | null;
 }
 
 /** Keep catalogue order; unlinked products each remain an independent group. */
 export function catalogueFamilies(
   products: readonly Product[],
-  families: readonly Pick<ProductFamily, 'id' | 'name'>[],
+  families: readonly Pick<ProductFamily, 'id' | 'name' | 'catalogueOverviewPhotoId' | 'cataloguePhotoOptions'>[],
 ): CatalogueFamilySelection[] {
   const names = new Map(families.map((family) => [family.id, family.name]));
   const groups = new Map<string, CatalogueFamilySelection>();
@@ -41,6 +41,11 @@ export function catalogueFamilies(
         photo: cataloguePhoto(product),
       });
     }
+  }
+  for (const group of groups.values()) {
+    const family = families.find(row => row.id !== null && row.id === group.products[0]?.familyId);
+    const selected = family?.cataloguePhotoOptions?.find(photo => photo.id === family.catalogueOverviewPhotoId);
+    if (selected) group.photo = { url: selected.largeUrl, smallUrl: selected.smallUrl, leadFor: ['CATALOGUE'] };
   }
   return [...groups.values()];
 }
