@@ -138,7 +138,8 @@ export function productFamilySharedFieldValue(
       const size = [box.lengthCm, box.widthCm, box.heightCm]
         .map((part) => number(part)).join(' × ');
       const hc = box.piecesPerHc ?? box.hcCapacity;
-      return `${size} cm · ${box.piecesPerCarton ?? '—'} stuks · ${number(box.weightKg)} kg${hc ? ` · ${number(hc, 0)}/40' HC` : ''}`;
+      const gp20 = box.piecesPer20Ft;
+      return `${size} cm · ${box.piecesPerCarton ?? '—'} stuks · ${number(box.weightKg)} kg${gp20 ? ` · ${number(gp20, 0)}/20ft GP` : ''}${hc ? ` · ${number(hc, 0)}/40' HC` : ''}`;
     }
     case 'PURCHASE_PRICE':
       return `${product.exwCurrency} ${number(product.exwPrice)} · extra ${number(product.extraUnitCost)}`;

@@ -752,6 +752,13 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               }
             </div>
             <div class="field">
+              <label for="p-20ft">Stuks per 20ft GP <span class="opt"></span></label>
+              <input class="input num right" id="p-20ft" type="number" min="1" max="2147483647" step="1"
+                     inputmode="numeric" [ngModel]="draft().carton.piecesPer20Ft ?? null"
+                     (ngModelChange)="patchCarton({ piecesPer20Ft: $event === null || $event === '' ? null : Math.max(1, Math.round(+$event)) })" />
+              <span class="hint">Handmatig bevestigd aantal producteenheden in een 20ft standaardcontainer. Dezelfde eenheid als stuks per omdoos. Leeg = onbekend.</span>
+            </div>
+            <div class="field">
               <label for="p-hc">Stuks per 40' HC <span class="opt"></span></label>
               <input class="input num right" id="p-hc" type="number" min="1" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPerHc ?? null"
@@ -1330,6 +1337,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div><dt>Inhoud</dt><dd>{{ (draft().carton.piecesPerCarton || autoCartonPieces()) ? ((draft().carton.piecesPerCarton || autoCartonPieces()) | num) + ' stuks' : '—' }}@if (!draft().carton.piecesPerCarton && autoCartonPieces()) { <small>automatisch uit de maten</small> }</dd></div>
             <div><dt>Maat</dt><dd>{{ draft().carton.lengthCm && draft().carton.widthCm && draft().carton.heightCm ? (draft().carton.lengthCm | num) + ' × ' + (draft().carton.widthCm | num) + ' × ' + (draft().carton.heightCm | num) + ' cm' : '—' }}<small>{{ cartonCbm() | cbm }} per doos · {{ pieceCbm() | cbm }} per stuk</small></dd></div>
             <div><dt>Gewicht</dt><dd>{{ draft().carton.weightKg ? (draft().carton.weightKg | kg) : (autoCartonWeight() ? (autoCartonWeight() | kg) : '—') }}@if (!draft().carton.weightKg && autoCartonWeight()) { <small>uit het stukgewicht</small> }</dd></div>
+            <div><dt>20ft GP</dt><dd>{{ draft().carton.piecesPer20Ft ? (draft().carton.piecesPer20Ft | num) + ' stuks' : '—' }}<small>{{ draft().carton.piecesPer20Ft ? 'handmatig bevestigd' : 'nog niet ingevuld' }}</small></dd></div>
             <div><dt>40' HC</dt><dd>{{ (draft().carton.piecesPerHc || autoHcCapacity()) ? ((draft().carton.piecesPerHc || autoHcCapacity()) | num) + ' stuks' : '—' }}</dd></div>
           </dl>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('packaging')">Omdoos aanpassen ›</button>

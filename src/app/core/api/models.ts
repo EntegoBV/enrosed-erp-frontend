@@ -157,6 +157,8 @@ export interface CartonDto {
   piecesPerHc?: number | null;
   /** What fits a 40' HC: the hand count, or full cartons by volume. */
   hcCapacity?: number | null;
+  /** Manually confirmed product units per 20ft GP; null means unknown. */
+  piecesPer20Ft?: number | null;
 }
 
 export interface PhotoDto {

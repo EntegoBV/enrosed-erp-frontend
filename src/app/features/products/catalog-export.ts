@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { AuthImage } from '../../core/api/auth-image';
-import { catalogueFamilies } from './catalog-studio';
+import { catalogueFamilies, cataloguePhoto } from './catalog-studio';
 import { CataloguePhotoSelectionChange } from './catalogue-photo-selection';
 import { CataloguePhotoImport } from './catalogue-photo-import';
 import { FormsModule } from '@angular/forms';
@@ -59,6 +59,20 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
   includeBackCover: true,
 };
 
+const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
+  title: string; product: string; logistics: string; perBox: string; onRequest: string; empty: string;
+}> = {
+  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.' },
+  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.' },
+  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.' },
+  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.' },
+  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.' },
+  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.' },
+  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.' },
+  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.' },
+  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.' },
+};
+
 @Component({
   selector: 'app-catalog-export',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -89,33 +103,62 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
         <aside class="studio-preview" aria-labelledby="studio-preview-title">
           <div class="studio-preview__heading">
             <span>ENROSED · CATALOGUSSTUDIO</span>
-            <span class="studio-preview__format">{{ layout() === 'BROCHURE' ? 'A4 · Brochure' : 'A4 · Prijslijst' }}</span>
+            <span class="studio-preview__format">{{ layout() === 'BROCHURE' ? 'A4 · Brochure' : includePrices() ? 'A4 · Prijslijst' : 'A4 · Overzicht' }}</span>
           </div>
-          <div class="cover-stage">
-            <div class="cover-sheet" [class.cover-sheet--simple]="layout() === 'SIMPLE'">
+          <div class="cover-stage" [class.cover-stage--compact]="layout() === 'SIMPLE'">
+            @if (layout() === 'BROCHURE') {
+            <div class="cover-sheet">
               <div class="cover-sheet__copy">
-                <img class="cover-sheet__brand" [src]="layout() === 'BROCHURE' ? '/catalog-logo-gold.png' : '/logo-ui.png'" alt="ENROSED" />
+                <img class="cover-sheet__brand" src="/catalog-logo-gold.png" alt="ENROSED" />
                 <span class="cover-sheet__edition">WHOLESALE COLLECTION</span>
                 <h2 id="studio-preview-title">{{ previewTitle() }}<em>{{ previewSubtitle() }}</em></h2>
                 <span class="cover-sheet__rule"></span>
-                @if (layout() === 'SIMPLE') {
-                  <span class="cover-sheet__language">{{ languageLabel() }} · {{ selectedFamilyCount() }} productgroepen</span>
-                }
               </div>
-              @if (layout() === 'SIMPLE') {
-              <div class="cover-sheet__image">
-                @if (includePhotos() && coverPhoto(); as photo) {
-                  <img [appAuthSrc]="photo.url" [alt]="photo.alt" (error)="coverImageFailed(photo.url)" />
-                } @else {
-                  <span class="cover-sheet__monogram" aria-hidden="true">E</span>
-                }
-                @if (layout() === 'SIMPLE') {
-                  <div class="cover-sheet__lines" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-                }
-              </div>
-              }
               <div class="cover-sheet__foot"><span>ENROSED.COM</span><span>{{ language() }}</span></div>
             </div>
+            } @else {
+              <div class="compact-sheet" [class.compact-sheet--without-photos]="!includePhotos()">
+                <header class="compact-sheet__head">
+                  <img src="/logo-ui.png" alt="ENROSED" />
+                  <h2 id="studio-preview-title">{{ compactCopy().title }}</h2>
+                  <span>{{ languageLabel() }}</span>
+                </header>
+                <div class="compact-sheet__columns" aria-hidden="true">
+                  <b>{{ compactCopy().product }}</b><b>{{ compactCopy().logistics }}</b>
+                </div>
+                <div class="compact-sheet__rows">
+                  @for (row of compactRows(); track row.id) {
+                    <div class="compact-sheet__row">
+                      @if (includePhotos()) {
+                        <div class="compact-sheet__photo">
+                          @if (row.photoUrl) { <img [appAuthSrc]="row.photoUrl" [alt]="row.name" /> }
+                        </div>
+                      }
+                      <div class="compact-sheet__identity">
+                        <b>{{ row.name }}</b>
+                        @if (row.sku) { <span class="compact-sheet__sku">{{ row.sku }}</span> }
+                        @if (row.variant) { <span>{{ row.variant }}</span> }
+                        @if (row.dimensions) { <span>{{ row.dimensions }}</span> }
+                      </div>
+                      <div class="compact-sheet__logistics">
+                        @if (row.perBox) { <span>{{ row.perBox }} {{ compactCopy().perBox }}</span> }
+                        @if (row.ean) { <span class="compact-sheet__ean">EAN {{ row.ean }}</span> }
+                        <span>HS {{ row.hsCode ?? '-' }}</span>
+                        <span>20ft: {{ row.per20Ft ?? '-' }}</span>
+                        @if (includePrices()) { <strong>{{ row.price }}</strong> }
+                      </div>
+                    </div>
+                  } @empty {
+                    <p class="compact-sheet__empty">{{ compactCopy().empty }}</p>
+                  }
+                </div>
+                <footer class="compact-sheet__foot">
+                  <span>ENROSED.COM</span>
+                  @if (selectedProducts().length > compactRows().length) { <span>+ {{ selectedProducts().length - compactRows().length }}</span> }
+                  <span>{{ language() }}</span>
+                </footer>
+              </div>
+            }
           </div>
           <p class="preview-caption">Opmaakimpressie · de PDF gebruikt uw gekozen teksten en foto’s.</p>
           <div class="studio-totals" aria-label="Inhoud van de catalogus">
@@ -123,7 +166,7 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
             <span><b>{{ selected().size }}</b><small>varianten</small></span>
             <span><b>{{ selectedCategoryCount() }}</b><small>categorieën</small></span>
           </div>
-          @if (desktop.active() && previewProducts().length && includePhotos()) {
+          @if (layout() === 'BROCHURE' && desktop.active() && previewProducts().length && includePhotos()) {
             <div class="preview-range" aria-label="Een blik op uw selectie">
               @for (family of previewProducts(); track family.key) {
                 @if (family.photo; as photo) {
@@ -337,10 +380,6 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     .cover-sheet h2 { margin: 6% 0 5%; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(22px, 3vw, 32px); font-weight: 400; line-height: 1.08; letter-spacing: -.025em; overflow-wrap: anywhere; }
     .cover-sheet h2 em { display: block; color: #e8c8be; font-weight: 400; }
     .cover-sheet__rule { height: 1px; width: 28px; background: #d8ae9e; margin: auto 0 5%; }
-    .cover-sheet__language { font-size: 8px; letter-spacing: .04em; opacity: .8; }
-    .cover-sheet__image { position: relative; display: grid; flex: 1 1 auto; min-height: 0; place-items: center; background: #f5f0e8; overflow: hidden; }
-    .cover-sheet__image > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-    .cover-sheet__monogram { font-family: Georgia, serif; font-size: 90px; color: #c7a895; }
     .cover-sheet__foot { display: flex; justify-content: space-between; padding: 5% 9%; color: #641c32; font-size: 7px; letter-spacing: .15em; }
     .cover-sheet:not(.cover-sheet--simple) { position: relative; background: #651629; }
     .cover-sheet:not(.cover-sheet--simple)::before { content: ''; position: absolute; inset: 4%; border: 1px solid #a97f72; pointer-events: none; }
@@ -351,13 +390,24 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
     .cover-sheet:not(.cover-sheet--simple) h2 em { margin-top: 8px; color: #e7cba6; font-size: .82em; }
     .cover-sheet:not(.cover-sheet--simple) .cover-sheet__rule { position: absolute; top: 38%; left: 44%; width: 12%; margin: 0; background: #cbb07b; }
     .cover-sheet:not(.cover-sheet--simple) .cover-sheet__foot { position: absolute; bottom: 10%; left: 12%; width: 76%; padding: 0; color: #d6b783; }
-    .cover-sheet--simple .cover-sheet__copy { flex-basis: 37%; background: #f7f3eb; color: #641c32; }
-    .cover-sheet--simple .cover-sheet__brand { filter: brightness(0); }
-    .cover-sheet--simple h2 { font-size: 25px; }
-    .cover-sheet--simple h2 em { color: #916b73; }
-    .cover-sheet--simple .cover-sheet__image > img { inset: 0 0 auto; height: 55%; }
-    .cover-sheet__lines { position: absolute; inset: 59% 9% 1%; display: grid; gap: 9px; }
-    .cover-sheet__lines i { border-block: 1px solid #d8cfc7; }
+    .cover-stage.cover-stage--compact { padding: 22px 0; }
+    .compact-sheet { display: flex; flex-direction: column; box-sizing: border-box; width: min(100%, 360px); min-width: 0; aspect-ratio: 210 / 297; padding: 7%; background: #fff; color: #39282d; box-shadow: 0 12px 26px -12px rgb(45 17 22 / 28%); }
+    .compact-sheet__head { padding-bottom: 12px; }
+    .compact-sheet__head img { width: 77px; height: 27px; object-fit: contain; object-position: left; }
+    .compact-sheet__head h2 { margin: 8px 0 4px; color: var(--studio-bordeaux); font-family: Georgia, 'Times New Roman', serif; font-size: clamp(16px, 2.3vw, 22px); font-weight: 400; line-height: 1.15; overflow-wrap: anywhere; }
+    .compact-sheet__head > span { font-size: 8px; color: #80676d; }
+    .compact-sheet__columns { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 8px; border-block: 1px solid #cbb4ba; padding: 6px 0; color: var(--studio-bordeaux); font-size: 7px; }
+    .compact-sheet__rows { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .compact-sheet__row { display: grid; grid-template-columns: 38px minmax(0, 1fr) minmax(0, .85fr); gap: 7px; align-items: center; min-height: 46px; padding: 7px 0; border-bottom: 1px solid #e9dfe2; }
+    .compact-sheet__photo { width: 38px; height: 48px; }
+    .compact-sheet__photo img { width: 100%; height: 100%; object-fit: contain; }
+    .compact-sheet__identity, .compact-sheet__logistics { display: grid; min-width: 0; gap: 3px; font-size: 7px; line-height: 1.3; overflow-wrap: anywhere; }
+    .compact-sheet__identity b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 8px; font-weight: 650; }
+    .compact-sheet__sku, .compact-sheet__ean { font-size: 6px; color: #745c63; }
+    .compact-sheet__logistics strong { color: var(--studio-bordeaux); font-size: 8px; }
+    .compact-sheet--without-photos .compact-sheet__row { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+    .compact-sheet__empty { margin: 18px 0; font-size: 10px; color: #80676d; line-height: 1.5; }
+    .compact-sheet__foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; color: #80676d; font-size: 6px; letter-spacing: .08em; }
     .preview-caption { margin: 0; color: var(--muted); font-size: 11px; text-align: center; line-height: 1.5; }
     .studio-totals { display: grid; grid-template-columns: repeat(3, 1fr); margin: 22px 0 18px; }
     .studio-totals > span { display: grid; gap: 3px; text-align: center; border-right: 1px solid var(--line); }
@@ -561,19 +611,29 @@ export class CatalogExport {
   readonly selectedProducts = computed(() => this.products().filter((product) => product.id !== null && this.selected().has(product.id)));
   readonly selectedCategoryCount = computed(() => new Set(this.selectedProducts().map((product) => product.categoryId).filter((id) => id !== null)).size);
   readonly previewProducts = computed(() => catalogueFamilies(this.selectedProducts(), this.families()).filter((family) => family.photo).slice(0, 4));
-  private readonly failedCoverPhotos = signal<ReadonlySet<string>>(new Set());
-  readonly coverPhoto = computed(() => {
-    for (const product of this.selectedProducts()) {
-      const lead = product.photos.find((photo) => photo.leadFor?.includes('CATALOGUE') && !this.failedCoverPhotos().has(photo.url));
-      if (lead) return { url: lead.url, alt: product.name };
-    }
-    const category = this.categories().find((row) => this.selectedProducts().some((product) => product.categoryId === row.id) && row.photos?.length);
-    if (category?.id !== null && category?.id !== undefined && category.photos?.[0]) {
-      const url = this.catalog.categoryPhotoUrl(category.id, category.photos[0].id);
-      if (!this.failedCoverPhotos().has(url)) return { url, alt: category.name };
-    }
-    const family = this.previewProducts().find((group) => group.photo && !this.failedCoverPhotos().has(group.photo.url));
-    return family?.photo ? { url: family.photo.url, alt: family.name } : null;
+  readonly compactCopy = computed(() => COMPACT_PREVIEW_COPY[this.language()]);
+  readonly compactRows = computed(() => {
+    const language = this.language();
+    const currency = new Intl.NumberFormat(language.toLowerCase(), { style: 'currency', currency: 'EUR' });
+    return this.selectedProducts().slice(0, 4).map(product => {
+      const text = product.texts.find(row => row.language === language);
+      const photo = cataloguePhoto(product);
+      const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
+      return {
+        id: product.id,
+        name: text?.name?.trim() || product.name,
+        sku: product.sku,
+        variant: [text?.colour?.trim() || product.colour, text?.variantSize?.trim() || product.variantSize].filter(Boolean).join(' · '),
+        dimensions: dimensions.every(value => value !== null && value > 0) ? `${dimensions.join(' × ')} cm` : null,
+        photoUrl: photo?.smallUrl || photo?.url || null,
+        perBox: product.carton.piecesPerCarton,
+        ean: product.barcodeInner?.trim() || product.canonicalBarcode?.trim() || null,
+        hsCode: product.hsCode?.trim() || null,
+        per20Ft: product.carton.piecesPer20Ft ?? null,
+        price: Number.isFinite(product.computedSalesPriceEur) && product.computedSalesPriceEur > 0
+          ? currency.format(product.computedSalesPriceEur) : this.compactCopy().onRequest,
+      };
+    });
   });
   readonly previewTitle = computed(() => this.brochure().coverTitle.trim() || ({
     NL: 'Gepreserveerde rozen,', EN: 'Preserved roses,', FR: 'Roses préservées,', DE: 'Konservierte Rosen,',
@@ -818,10 +878,6 @@ export class CatalogExport {
       .filter((path): path is string => typeof path === 'string')
       .map((path) => path.trim())
       .filter(Boolean))];
-  }
-
-  coverImageFailed(url: string): void {
-    this.failedCoverPhotos.update((current) => new Set([...current, url]));
   }
 
   languageLabel(): string {

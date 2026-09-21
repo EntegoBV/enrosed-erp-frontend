@@ -407,6 +407,11 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 <div class="tile"><span>Volume</span><b class="num">
                   @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
                 </b></div>
+                <div class="tile"><span>Per 20ft GP</span><b class="num">
+                  @if (product.carton.piecesPer20Ft; as capacity) {
+                    {{ capacity | num }} stuks <small class="muted">handmatig bevestigd</small>
+                  } @else { — }
+                </b></div>
                 <div class="tile"><span>Per 40' HC</span><b class="num">
                   @if (product.carton.hcCapacity; as hc) {
                     @if (!product.carton.piecesPerHc) { <small class="muted">auto</small> }
