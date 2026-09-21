@@ -254,7 +254,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 <div><dt>Inhoud</dt><dd>{{ product.carton.piecesPerCarton | num }} stuks<small>{{ cartonPiecesAuto(product) ? 'berekend uit de maten' : 'per omdoos' }}</small></dd></div>
                 <div><dt>Gewicht</dt><dd>@if (product.carton.weightKg) { {{ product.carton.weightKg | num }} kg } @else { — }<small>{{ product.carton.weightKg && cartonWeightAuto(product) ? 'berekend uit de stuks' : 'per omdoos' }}</small></dd></div>
                 <div><dt>Volume</dt><dd>@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }@if (product.pieceCbm) { <small>{{ product.pieceCbm | cbm }} per stuk</small> }</dd></div>
-                <div><dt>Per 20ft GP</dt><dd>@if (product.carton.piecesPer20Ft; as capacity) { {{ capacity | num }} stuks<small>handmatig bevestigd</small> } @else { —<small>nog niet ingevuld</small> }</dd></div>
+                <div><dt>Per 20ft GP</dt><dd>@if (gpCapacity().value !== null) { {{ gpCapacity().value | num }} stuks<small [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig bevestigd' }}</small> } @else { —<small>onvoldoende gegevens</small> }</dd></div>
                 <div><dt>Per 40' HC</dt><dd>@if (product.carton.hcCapacity; as hc) { {{ hc | num }} stuks } @else { — }@if (product.carton.hcCapacity) { <small>{{ product.carton.piecesPerHc ? 'handmatig geteld' : 'volle dozen op volume' }}</small> }</dd></div>
                 <div><dt>Omdoosbarcode</dt><dd class="mono">
                   @if (product.barcodeOuter; as code) {

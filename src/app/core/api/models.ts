@@ -147,6 +147,8 @@ export interface Packaging {
   piecesPerUnit?: number | null;
 }
 
+export type GpCapacitySource = 'MANUAL' | 'CARTON' | 'HC_RATIO' | 'UNKNOWN';
+
 export interface CartonDto {
   lengthCm: number | null;
   widthCm: number | null;
@@ -157,8 +159,11 @@ export interface CartonDto {
   piecesPerHc?: number | null;
   /** What fits a 40' HC: the hand count, or full cartons by volume. */
   hcCapacity?: number | null;
-  /** Manually confirmed product units per 20ft GP; null means unknown. */
+  /** Manually confirmed product units per 20ft GP; null keeps automatic calculation active. */
   piecesPer20Ft?: number | null;
+  /** Effective 20ft GP capacity, calculated by the API; never a manual input. */
+  readonly gpCapacity?: number | null;
+  readonly gpCapacitySource?: GpCapacitySource;
 }
 
 export interface PhotoDto {

@@ -19,6 +19,7 @@ import {
   productVariantOptionLabel,
 } from './product-variant-navigation';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
+import { gpCapacityHint, isAutoGpCapacity, readGpCapacity } from './carton-capacity';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -408,8 +409,9 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                   @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
                 </b></div>
                 <div class="tile"><span>Per 20ft GP</span><b class="num">
-                  @if (product.carton.piecesPer20Ft; as capacity) {
-                    {{ capacity | num }} stuks <small class="muted">handmatig bevestigd</small>
+                  @if (gpCapacity().value !== null) {
+                    {{ gpCapacity().value | num }} stuks
+                    <small class="muted" [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig bevestigd' }}</small>
                   } @else { — }
                 </b></div>
                 <div class="tile"><span>Per 40' HC</span><b class="num">
@@ -927,6 +929,12 @@ export class ProductView {
   protected readonly ui = inject(Ui);
 
   readonly product = signal<Product | null>(null);
+  readonly gpCapacity = computed(() => {
+    const product = this.product();
+    return product ? readGpCapacity(product.carton) : { value: null, source: 'UNKNOWN' as const };
+  });
+  readonly isAutoGpCapacity = isAutoGpCapacity;
+  readonly gpCapacityHint = gpCapacityHint;
   readonly agreementPhotos = signal<ProductSupplierAgreementPhoto[]>([]);
   readonly supplierAgreement = signal<ProductSupplierAgreement | null>(null);
   readonly agreementVariantNames = computed(() => this.supplierAgreement()?.variants.map((variant) => variant.color || variant.name || variant.sku).join(', ') ?? '');

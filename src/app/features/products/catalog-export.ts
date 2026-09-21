@@ -10,6 +10,7 @@ import {
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { AuthImage } from '../../core/api/auth-image';
 import { catalogueFamilies, cataloguePhoto } from './catalog-studio';
+import { gpCapacityHint, isAutoGpCapacity, readGpCapacity } from './carton-capacity';
 import { CataloguePhotoSelectionChange } from './catalogue-photo-selection';
 import { CataloguePhotoImport } from './catalogue-photo-import';
 import { FormsModule } from '@angular/forms';
@@ -144,7 +145,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                         @if (row.perBox) { <span>{{ row.perBox }} {{ compactCopy().perBox }}</span> }
                         @if (row.ean) { <span class="compact-sheet__ean">EAN {{ row.ean }}</span> }
                         <span>HS {{ row.hsCode ?? '-' }}</span>
-                        <span>20ft: {{ row.per20Ft ?? '-' }}</span>
+                        <span>20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> }</span>
                         @if (includePrices()) { <strong>{{ row.price }}</strong> }
                       </div>
                     </div>
@@ -618,6 +619,7 @@ export class CatalogExport {
     return this.selectedProducts().slice(0, 4).map(product => {
       const text = product.texts.find(row => row.language === language);
       const photo = cataloguePhoto(product);
+      const gp = readGpCapacity(product.carton);
       const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
       return {
         id: product.id,
@@ -629,7 +631,9 @@ export class CatalogExport {
         perBox: product.carton.piecesPerCarton,
         ean: product.barcodeInner?.trim() || product.canonicalBarcode?.trim() || null,
         hsCode: product.hsCode?.trim() || null,
-        per20Ft: product.carton.piecesPer20Ft ?? null,
+        per20Ft: gp.value,
+        per20FtAuto: isAutoGpCapacity(gp),
+        per20FtHint: gpCapacityHint(gp, product.carton),
         price: Number.isFinite(product.computedSalesPriceEur) && product.computedSalesPriceEur > 0
           ? currency.format(product.computedSalesPriceEur) : this.compactCopy().onRequest,
       };

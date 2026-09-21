@@ -5,6 +5,9 @@ import type {
   ProductSharedFieldsApplyRequest,
 } from '../../core/api/models';
 
+import { autoPiecesPerCarton } from './carton-auto';
+import { calculateGpCapacity, isAutoGpCapacity } from './carton-capacity';
+
 export type ProductFamilySharedField = ProductSharedField;
 export type ProductFamilySharedFieldsApply = ProductSharedFieldsApplyRequest;
 
@@ -66,7 +69,7 @@ export const PRODUCT_FAMILY_SHARED_FIELD_GROUPS: readonly ProductFamilySharedFie
       {
         key: 'CARTON',
         label: 'Volledige omdoosspecificatie',
-        summary: "Afmetingen, stuks, gewicht en 40' HC-capaciteit; de omdoos-EAN blijft apart.",
+        summary: "Afmetingen, stuks, gewicht en handmatige 20ft GP-/40' HC-aantallen; automatische capaciteiten worden opnieuw berekend en de omdoos-EAN blijft apart.",
       },
     ],
   },
@@ -138,8 +141,12 @@ export function productFamilySharedFieldValue(
       const size = [box.lengthCm, box.widthCm, box.heightCm]
         .map((part) => number(part)).join(' × ');
       const hc = box.piecesPerHc ?? box.hcCapacity;
-      const gp20 = box.piecesPer20Ft;
-      return `${size} cm · ${box.piecesPerCarton ?? '—'} stuks · ${number(box.weightKg)} kg${gp20 ? ` · ${number(gp20, 0)}/20ft GP` : ''}${hc ? ` · ${number(hc, 0)}/40' HC` : ''}`;
+      // The source can be an unsaved editor draft; do not display its old API projection.
+      const gp20 = calculateGpCapacity({
+        ...box,
+        piecesPerCarton: (box.piecesPerCarton ?? 0) > 0 ? box.piecesPerCarton : autoPiecesPerCarton(product),
+      });
+      return `${size} cm · ${box.piecesPerCarton ?? '—'} stuks · ${number(box.weightKg)} kg${gp20.value !== null ? ` · ${number(gp20.value, 0)}/20ft GP${isAutoGpCapacity(gp20) ? ' (Auto)' : ''}` : ''}${hc ? ` · ${number(hc, 0)}/40' HC` : ''}`;
     }
     case 'PURCHASE_PRICE':
       return `${product.exwCurrency} ${number(product.exwPrice)} · extra ${number(product.extraUnitCost)}`;

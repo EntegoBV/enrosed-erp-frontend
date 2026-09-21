@@ -21,6 +21,7 @@ import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
+import { calculateGpCapacity, gpCapacityHint, isAutoGpCapacity } from './carton-capacity';
 import { PhotoManager } from '../../shared/photo-manager';
 import { DecimalInput } from '../../shared/decimal-input';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -755,8 +756,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <label for="p-20ft">Stuks per 20ft GP <span class="opt"></span></label>
               <input class="input num right" id="p-20ft" type="number" min="1" max="2147483647" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPer20Ft ?? null"
+                     [placeholder]="isAutoGpCapacity(gpCapacity()) ? 'Auto: ' + (gpCapacity().value | num) : ''"
                      (ngModelChange)="patchCarton({ piecesPer20Ft: $event === null || $event === '' ? null : Math.max(1, Math.round(+$event)) })" />
-              <span class="hint">Handmatig bevestigd aantal producteenheden in een 20ft standaardcontainer. Dezelfde eenheid als stuks per omdoos. Leeg = onbekend.</span>
+              <span class="hint">Vul alleen een handmatig bevestigd aantal producteenheden in. Leeg = automatisch uit de omdoos of het bevestigde 40’ HC-aantal.</span>
+              @if (isAutoGpCapacity(gpCapacity())) {
+                <span class="hint"><b>Auto</b> · {{ gpCapacity().value | num }} stuks. {{ gpCapacityHint(gpCapacity(), draft().carton) }}</span>
+              }
             </div>
             <div class="field">
               <label for="p-hc">Stuks per 40' HC <span class="opt"></span></label>
@@ -1337,7 +1342,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div><dt>Inhoud</dt><dd>{{ (draft().carton.piecesPerCarton || autoCartonPieces()) ? ((draft().carton.piecesPerCarton || autoCartonPieces()) | num) + ' stuks' : '—' }}@if (!draft().carton.piecesPerCarton && autoCartonPieces()) { <small>automatisch uit de maten</small> }</dd></div>
             <div><dt>Maat</dt><dd>{{ draft().carton.lengthCm && draft().carton.widthCm && draft().carton.heightCm ? (draft().carton.lengthCm | num) + ' × ' + (draft().carton.widthCm | num) + ' × ' + (draft().carton.heightCm | num) + ' cm' : '—' }}<small>{{ cartonCbm() | cbm }} per doos · {{ pieceCbm() | cbm }} per stuk</small></dd></div>
             <div><dt>Gewicht</dt><dd>{{ draft().carton.weightKg ? (draft().carton.weightKg | kg) : (autoCartonWeight() ? (autoCartonWeight() | kg) : '—') }}@if (!draft().carton.weightKg && autoCartonWeight()) { <small>uit het stukgewicht</small> }</dd></div>
-            <div><dt>20ft GP</dt><dd>{{ draft().carton.piecesPer20Ft ? (draft().carton.piecesPer20Ft | num) + ' stuks' : '—' }}<small>{{ draft().carton.piecesPer20Ft ? 'handmatig bevestigd' : 'nog niet ingevuld' }}</small></dd></div>
+            <div><dt>20ft GP</dt><dd>{{ gpCapacity().value !== null ? (gpCapacity().value | num) + ' stuks' : '—' }}<small [title]="gpCapacityHint(gpCapacity(), draft().carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : gpCapacity().source === 'MANUAL' ? 'handmatig bevestigd' : 'onvoldoende gegevens' }}</small></dd></div>
             <div><dt>40' HC</dt><dd>{{ (draft().carton.piecesPerHc || autoHcCapacity()) ? ((draft().carton.piecesPerHc || autoHcCapacity()) | num) + ' stuks' : '—' }}</dd></div>
           </dl>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('packaging')">Omdoos aanpassen ›</button>
@@ -2958,6 +2963,15 @@ export class ProductEditor implements OnDestroy {
   /** Pieces (typed or derived) times the piece's own weight. */
   readonly autoCartonWeight = computed(() => autoCartonWeightKg(this.draft(),
     this.draft().carton.piecesPerCarton ?? this.autoCartonPieces()));
+
+  /** Preview only: derived 20ft values never enter the manual draft field. */
+  readonly gpCapacity = computed(() => calculateGpCapacity({
+    ...this.draft().carton,
+    piecesPerCarton: (this.draft().carton.piecesPerCarton ?? 0) > 0
+      ? this.draft().carton.piecesPerCarton : this.autoCartonPieces(),
+  }));
+  readonly isAutoGpCapacity = isAutoGpCapacity;
+  readonly gpCapacityHint = gpCapacityHint;
 
   /** Full cartons that fit 68 m³, times the carton's content; null without sizes. */
   readonly autoHcCapacity = computed(() => {
