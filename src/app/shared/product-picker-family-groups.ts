@@ -1,5 +1,6 @@
 import type { Category, Product, ProductFamily } from '../core/api/models';
 import type { ProductPickerCategoryKey } from './product-picker-filters';
+import { salesPhotoUrl } from './sales-photo';
 
 const UNCATEGORISED_PICKER_CATEGORY = '__uncategorised__' as const;
 
@@ -87,7 +88,7 @@ export function productPickerFamilySections(
       groups.set(key, group);
     }
     group.products.push(product);
-    if (!group.photo && product.photos?.length) group.photo = product.photos[0].url;
+    if (!group.photo) group.photo = salesPhotoUrl(product);
   }
 
   const needle = normalize(filter.query);
@@ -130,7 +131,7 @@ export function productPickerFamilySections(
       ?? group.products.find((product) => isRed(product.colour))
       ?? group.products[0];
     group.lead = canonicalLead;
-    if (canonicalLead.photos?.length) group.photo = canonicalLead.photos[0].url;
+    group.photo = salesPhotoUrl(canonicalLead);
   }
 
   const categoryById = new Map(categories.flatMap((category) =>

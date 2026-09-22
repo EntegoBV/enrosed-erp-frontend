@@ -53,7 +53,7 @@ export function salesLineSections(
         key: group.key,
         familyId: group.family?.id ?? group.lead.familyId,
         label: group.name,
-        photoUrl: group.photo ?? groupLines.find((line) => line.photoUrl)?.photoUrl ?? null,
+        photoUrl: groupLines.find((line) => line.photoUrl)?.photoUrl ?? group.photo ?? null,
         lines: groupLines,
         swatches: group.colours.map((colour) => ({
           key: colour.name.toLocaleLowerCase('nl-BE'),

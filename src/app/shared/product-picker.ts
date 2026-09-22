@@ -24,6 +24,7 @@ import {
   productPickerVariantLabel,
   toggleProductPickerFamilySelection,
 } from './product-picker-family-groups';
+import { salesPhotoUrl } from './sales-photo';
 
 /**
  * Picking a product with a search field instead of a dropdown.
@@ -189,8 +190,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
         } @else if (chosen(); as product) {
           <div class="picker-chosen">
             <div class="row">
-              @if (product.photos.length) {
-                <img class="thumb" [appAuthSrc]="product.photos[0].url" [alt]="product.name" />
+              @if (salesPhotoUrl(product); as photo) {
+                <img class="thumb" [appAuthSrc]="photo" [alt]="product.name" />
               } @else {
                 <div class="thumb thumb--placeholder">◈</div>
               }
@@ -289,8 +290,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                     @for (product of group.products; track product.id) {
                       @if (batchEntry(product.id); as entry) {
                       <div class="picker-batch__row picker-batch__row--nested">
-                        @if (entry.product.photos.length) {
-                          <img class="thumb thumb--variant" [appAuthSrc]="entry.product.photos[0].url" [alt]="entry.product.name" />
+                        @if (salesPhotoUrl(entry.product); as photo) {
+                          <img class="thumb thumb--variant" [appAuthSrc]="photo" [alt]="entry.product.name" />
                         } @else {
                           <div class="thumb thumb--variant thumb--placeholder">◈</div>
                         }
@@ -332,8 +333,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
           <div class="picker-batch">
             @for (entry of batch(); track entry.product.id) {
               <div class="picker-batch__row">
-                @if (entry.product.photos.length) {
-                  <img class="thumb" [appAuthSrc]="entry.product.photos[0].url" [alt]="entry.product.name" />
+                @if (salesPhotoUrl(entry.product); as photo) {
+                  <img class="thumb" [appAuthSrc]="photo" [alt]="entry.product.name" />
                 } @else {
                   <div class="thumb thumb--placeholder">◈</div>
                 }
@@ -431,8 +432,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                             @if (mode() === 'multi') {
                               <span class="picker-item__check" aria-hidden="true">{{ isSelected(product) ? '✓' : '' }}</span>
                             }
-                            @if (product.photos.length) {
-                              <img class="thumb thumb--variant" [appAuthSrc]="product.photos[0].url" [alt]="product.name" />
+                            @if (salesPhotoUrl(product); as photo) {
+                              <img class="thumb thumb--variant" [appAuthSrc]="photo" [alt]="product.name" />
                             } @else {
                               <span class="thumb thumb--variant thumb--placeholder" aria-hidden="true">◈</span>
                             }
@@ -491,8 +492,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                 @if (mode() === 'multi') {
                   <span class="picker-item__check" aria-hidden="true">{{ isSelected(product) ? '✓' : '' }}</span>
                 }
-                @if (product.photos.length) {
-                  <img class="thumb" [appAuthSrc]="product.photos[0].url" [alt]="product.name" />
+                @if (salesPhotoUrl(product); as photo) {
+                  <img class="thumb" [appAuthSrc]="photo" [alt]="product.name" />
                 } @else {
                   <div class="thumb thumb--placeholder">◈</div>
                 }
@@ -746,6 +747,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
   `,
 })
 export class ProductPicker implements OnDestroy {
+  readonly salesPhotoUrl = salesPhotoUrl;
   readonly heading = input('Product toevoegen');
   readonly products = input.required<Product[]>();
   readonly categories = input<readonly Category[]>([]);
