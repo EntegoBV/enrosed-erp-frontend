@@ -1,4 +1,4 @@
-import { portalDisplayPieces, portalPriceUnitKey, portalQuantityUnitKey, portalSecondaryPrice, PortalSalesUnit } from './portal-sales-unit';
+import { portalDisplayPieces, portalPrimaryPrice, portalPriceUnitKey, portalQuantityUnitKey, portalSecondaryPrice, PortalSalesUnit } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal,
 } from '@angular/core';
@@ -266,7 +266,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                       </div>
                       @if (!data.advanceAgreement) {
                       <div class="list-item__meta list-item__meta--wrap">
-                        {{ line.unitPrice | eur: 3: locale() }} {{ t(priceUnitKey(line)) }}
+                        @if (primaryPrice(line); as primary) { {{ primary.price | eur: 3: locale() }} {{ t(primary.labelKey) }} }
                         @if (secondaryPrice(line); as equivalent) {
                           · {{ equivalent.approximate ? '≈ ' : '' }}{{ equivalent.price | eur: 3: locale() }} {{ t(equivalent.labelKey) }}
                         }
@@ -669,6 +669,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
 export class PortalPage implements OnDestroy {
   readonly quantityUnitKey = portalQuantityUnitKey;
   readonly priceUnitKey = portalPriceUnitKey;
+  readonly primaryPrice = portalPrimaryPrice;
   readonly secondaryPrice = portalSecondaryPrice;
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);

@@ -1,4 +1,4 @@
-import { productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
+import { primarySalesPrice, productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
@@ -711,8 +711,11 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 </div>
                 @if (lineQuantityDetail(line); as detail) {
                   <p class="line-unit-context">{{ detail }}.
+                    @if (linePrimaryPrice(line); as primary) {
+                      {{ primary.price | eur: 2 }} per {{ primary.singular }}
+                    }
                     @if (lineSecondaryPrice(line); as equivalent) {
-                      {{ equivalent.price | eur: 2 }} {{ equivalent.label }} · vóór korting.
+                      · {{ equivalent.price | eur: 2 }} {{ equivalent.label }} · vóór korting.
                     }
                   </p>
                 }
@@ -1008,7 +1011,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   }
                   <span class="check-lines__what">
                     <b>{{ line.description }}</b>
-                    <small>{{ line.quantity | num }} {{ lineUnit(line.productId).short }} × {{ line.unitPrice | eur: 2 }}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
+                    <small>{{ line.quantity | num }} {{ lineUnit(line.productId).short }} × @if (linePrimaryPrice(line); as primary) { {{ primary.price | eur: 2 }} per {{ primary.singular }} } @else { {{ line.unitPrice | eur: 2 }} }@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
                       · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}}</small>
                   </span>
                   <span class="num check-lines__amount">{{ line.net | eur }}</span>
@@ -2811,6 +2814,10 @@ export class SalesEditor {
 
   lineSecondaryPrice(line: PricedLine) {
     return secondarySalesPrice(this.products().find((product) => product.id === line.productId), line.unitPrice);
+  }
+
+  linePrimaryPrice(line: PricedLine) {
+    return primarySalesPrice(this.products().find((product) => product.id === line.productId), line.unitPrice);
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {

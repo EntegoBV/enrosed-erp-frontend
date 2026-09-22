@@ -433,11 +433,11 @@ interface JourneyStep {
                               </div>
                             }
                           } @else {
-                            <b>{{ line.unitPrice | eur: 2 }}</b>
+                            @if (linePrimaryPrice(line); as primary) { <b>{{ primary.price | eur: 2 }}</b> } @else { <b>{{ line.unitPrice | eur: 2 }}</b> }
                             @if (line.discountPct) { <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small> }
                           }
                           @if (line.tierPercent) { <small>staffel −{{ line.tierPercent | pct: 1 }}</small> }
-                          <small>per {{ lineUnit(line.productId).singular }}</small>
+                          @if (linePrimaryPrice(line); as primary) { <small>per {{ primary.singular }}</small> } @else { <small>per {{ lineUnit(line.productId).singular }}</small> }
                           @if (lineSecondaryPrice(line); as equivalent) {
                             <small class="desk-unit-equivalent">{{ equivalent.price | eur: 2 }} {{ equivalent.label }}<br />vóór korting</small>
                           }

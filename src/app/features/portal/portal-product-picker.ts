@@ -1,4 +1,4 @@
-import { portalPriceUnitKey, portalQuantityUnitKey } from './portal-sales-unit';
+import { portalPriceUnitKey, portalPrimaryPrice, portalQuantityUnitKey } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, input, output, signal,
 } from '@angular/core';
@@ -44,7 +44,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
               <div class="grow">
                 <div class="strong">{{ item.description }}</div>
                 <div class="small muted">
-                  {{ item.unitPrice | eur: 2: locale() }} {{ t()(priceUnitKey(item)) }} ·
+                  @if (primaryPrice(item); as primary) { {{ primary.price | eur: 2: locale() }} {{ t()(primary.labelKey) }} } ·
                   {{ item.piecesPerCarton }} {{ t()('portalPerBox') }}
                 </div>
               </div>
@@ -110,7 +110,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
                       ? t()('portalInStock') : t()('portalTermToBeDetermined') }}</span>
                   </div>
                 </div>
-                <div class="picker-item__end">{{ item.unitPrice | eur: 2: locale() }}<small>{{ t()(priceUnitKey(item)) }}</small></div>
+                @if (primaryPrice(item); as primary) { <div class="picker-item__end">{{ primary.price | eur: 2: locale() }}<small>{{ t()(primary.labelKey) }}</small></div> }
               </button>
             } @empty {
               <div class="empty">
@@ -162,6 +162,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
 export class PortalProductPicker implements OnDestroy {
   readonly quantityUnitKey = portalQuantityUnitKey;
   readonly priceUnitKey = portalPriceUnitKey;
+  readonly primaryPrice = portalPrimaryPrice;
   readonly items = input.required<PortalCatalogItem[]>();
   /**
    * Translated texts, handed down from the portal page.

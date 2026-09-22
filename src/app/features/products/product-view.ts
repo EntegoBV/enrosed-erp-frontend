@@ -1,4 +1,4 @@
-import { productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
+import { primarySalesPrice, productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
 import { ProductCostHistory } from './product-cost-history';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -175,8 +175,8 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               </div>
               <div class="pd-fact pd-fact--price">
                 <small>Catalogusprijs</small>
-                @if (displayPrice() !== null) { <strong class="num">{{ displayPrice() | eur: 2 }}</strong> } @else { <strong>—</strong> }
-                <span>per {{ salesUnit(product).singular }} · excl. btw</span>
+                @if (primaryPrice(product, displayPrice()); as primary) { <strong class="num">{{ primary.price | eur: 2 }}</strong> } @else { <strong>—</strong> }
+                @if (primaryPrice(product, displayPrice()); as primary) { <span>per {{ primary.singular }} · excl. btw</span> }
                 @if (secondaryPrice(product, displayPrice()); as equivalent) {
                   <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.piecesPerDisplay }} stuks/display</span>
                 }
@@ -916,6 +916,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 })
 export class ProductView {
   readonly salesUnit = productSalesUnit;
+  readonly primaryPrice = primarySalesPrice;
   readonly secondaryPrice = secondarySalesPrice;
   readonly quantityDetail = salesQuantityDetail;
   readonly lightbox = signal(-1);

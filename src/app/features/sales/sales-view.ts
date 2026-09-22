@@ -1,4 +1,4 @@
-import { productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
+import { primarySalesPrice, productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
 import { salesAllProductsUnavailable, salesLineUnavailable, salesLineRequestedQuantity, salesUnavailableLineCount } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
@@ -520,7 +520,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
                     @if (lineQuantityDetail(line); as detail) {
                       <p class="line-unit-context">{{ detail }}.
-                        {{ line.unitPrice | eur: 2 }} per {{ lineUnit(line.productId).singular }}
+                        @if (linePrimaryPrice(line); as primary) { {{ primary.price | eur: 2 }} per {{ primary.singular }} }
                         @if (lineSecondaryPrice(line); as equivalent) { · {{ equivalent.price | eur: 2 }} {{ equivalent.label }} }
                         · vóór korting.
                       </p>
@@ -1576,6 +1576,10 @@ export class SalesView {
 
   lineSecondaryPrice(line: PricedLine) {
     return secondarySalesPrice(this.productFor(line.productId), line.unitPrice);
+  }
+
+  linePrimaryPrice(line: PricedLine) {
+    return primarySalesPrice(this.productFor(line.productId), line.unitPrice);
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {

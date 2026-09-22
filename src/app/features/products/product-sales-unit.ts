@@ -10,11 +10,25 @@ export function productSalesUnit(product: ProductWithPackaging) {
   const piecesPerDisplay = count != null && Number.isSafeInteger(count) && count > 1 ? count : null;
   return {
     isDisplay,
+    hasSet: piecesPerDisplay !== null,
     singular: isDisplay ? 'display' : 'stuk',
     plural: isDisplay ? 'displays' : 'stuks',
     short: isDisplay ? 'display' : 'st',
     priceLabel: isDisplay ? 'Displayprijs' : 'Stukprijs',
+    setPriceLabel: 'Setprijs',
     piecesPerDisplay,
+  };
+}
+
+/** The customer-facing price basis: a confirmed display/set is the primary figure. */
+export function primarySalesPrice(product: ProductWithPackaging, unitPrice: number | null | undefined) {
+  const unit = productSalesUnit(product);
+  if (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice <= 0) return null;
+  if (!unit.piecesPerDisplay) return { price: unitPrice, label: unit.priceLabel, singular: unit.singular };
+  return {
+    price: unit.isDisplay ? unitPrice : unitPrice * unit.piecesPerDisplay,
+    label: unit.setPriceLabel,
+    singular: 'set',
   };
 }
 
@@ -23,8 +37,8 @@ export function secondarySalesPrice(product: ProductWithPackaging, unitPrice: nu
   const unit = productSalesUnit(product);
   if (!unit.piecesPerDisplay || unitPrice == null || !Number.isFinite(unitPrice) || unitPrice <= 0) return null;
   return {
-    price: unit.isDisplay ? unitPrice / unit.piecesPerDisplay : unitPrice * unit.piecesPerDisplay,
-    label: unit.isDisplay ? 'circa per stuk' : 'per display',
+    price: unit.isDisplay ? unitPrice / unit.piecesPerDisplay : unitPrice,
+    label: 'per stuk',
     piecesPerDisplay: unit.piecesPerDisplay,
   };
 }
