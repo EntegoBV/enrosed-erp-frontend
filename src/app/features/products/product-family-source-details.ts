@@ -5,6 +5,7 @@ import {
   ProductPackage,
   ProductPriceObservation,
 } from '../../core/api/models';
+import { sourceLabel, sourceRecordLabel } from './product-family-source-labels';
 
 @Component({
   selector: 'app-product-family-source-details',
@@ -52,14 +53,14 @@ import {
         <dl class="technical-list">
           @for (item of priceRows(); track item.id) {
             <div>
-              <dt>{{ priceContext(item.context) }} · {{ item.sourceType || 'bron' }}</dt>
+              <dt>{{ priceContext(item.context) }} · {{ sourceLabel(item.sourceType) || 'bron' }}</dt>
               <dd>
                 <b class="num">{{ priceAmount(item) }}</b>
                 @if (item.incoterm) { · {{ item.incoterm }} }
                 @if (item.market) { · {{ item.market }} }
                 @if (item.taxContext) { · belasting {{ item.taxContext }} }
                 @if (item.sourceLocation) {
-                  <small class="source-location">{{ item.sourceLocation }}</small>
+                  <small class="source-location">{{ sourceRecordLabel(item.sourceLocation) }}</small>
                 }
               </dd>
             </div>
@@ -90,7 +91,7 @@ import {
             track identifier.source + identifier.identifierType + identifier.value
           ) {
             <div>
-              <dt>{{ identifier.source }} · {{ identifier.identifierType }}</dt>
+              <dt>{{ sourceLabel(identifier.source) }} · {{ identifier.identifierType }}</dt>
               <dd class="mono">{{ identifier.value }}</dd>
             </div>
           } @empty {
@@ -124,9 +125,9 @@ import {
             <div>
               <dt>{{ item.fieldName }}</dt>
               <dd>
-                {{ item.source }}
+                {{ sourceLabel(item.source) }}
                 @if (item.sourceRecordKey) {
-                  · <span class="mono">{{ item.sourceRecordKey }}</span>
+                  · <span class="mono">{{ sourceRecordLabel(item.sourceRecordKey) }}</span>
                 }
               </dd>
             </div>
@@ -158,6 +159,9 @@ import {
 export class ProductFamilySourceDetails {
   readonly product = input.required<Product>();
   readonly family = input.required<ProductFamily>();
+  /** Display-only: stored source codes and archived URLs stay untouched. */
+  readonly sourceLabel = sourceLabel;
+  readonly sourceRecordLabel = sourceRecordLabel;
 
   sourceDimensions(): string {
     const value = this.family().dimensions;
