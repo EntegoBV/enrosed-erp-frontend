@@ -1,3 +1,4 @@
+import { productSalesUnit } from './product-sales-unit';
 import type {
   Product,
   ProductFamily,
@@ -119,7 +120,7 @@ export function productFamilySharedFieldValue(
   const dimensions = (value: Product['dimensions']) => {
     const size = [value.lengthCm, value.widthCm, value.heightCm]
       .map((part) => number(part)).join(' × ');
-    return `${size} cm${value.weightKg == null ? '' : ` · ${number(value.weightKg)} kg`}`;
+    return `${size} cm${value.weightKg == null ? '' : ` · ${number(value.weightKg, 3)} kg`}`;
   };
 
   switch (field) {
@@ -134,7 +135,7 @@ export function productFamilySharedFieldValue(
       const kind = product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking';
       const pieces = product.packaging.piecesPerUnit && product.packaging.piecesPerUnit > 1
         ? ` · ${product.packaging.piecesPerUnit} stuks` : '';
-      return `${kind} · ${dimensions(product.packaging.dimensions)}${pieces}`;
+      return `${kind} · ${dimensions(product.packaging.dimensions)}${pieces} · prijs en aantal per ${productSalesUnit(product).singular}`;
     }
     case 'CARTON': {
       const box = product.carton;
@@ -146,7 +147,7 @@ export function productFamilySharedFieldValue(
         ...box,
         piecesPerCarton: (box.piecesPerCarton ?? 0) > 0 ? box.piecesPerCarton : autoPiecesPerCarton(product),
       });
-      return `${size} cm · ${box.piecesPerCarton ?? '—'} stuks · ${number(box.weightKg)} kg${gp20.value !== null ? ` · ${number(gp20.value, 0)}/20ft GP${isAutoGpCapacity(gp20) ? ' (Auto)' : ''}` : ''}${hc ? ` · ${number(hc, 0)}/40' HC` : ''}`;
+      return `${size} cm · ${box.piecesPerCarton ?? '—'} ${productSalesUnit(product).plural} · ${number(box.weightKg, 3)} kg${gp20.value !== null ? ` · ${number(gp20.value, 0)}/20ft GP${isAutoGpCapacity(gp20) ? ' (Auto)' : ''}` : ''}${hc ? ` · ${number(hc, 0)}/40' HC` : ''}`;
     }
     case 'PURCHASE_PRICE':
       return `${product.exwCurrency} ${number(product.exwPrice)} · extra ${number(product.extraUnitCost)}`;

@@ -145,6 +145,8 @@ export interface Packaging {
   barcode: string | null;
   /** Pieces one display holds; null or 1 for a gift box around a single piece. */
   piecesPerUnit?: number | null;
+  /** Basis of stored prices, order quantities and stock; omitted means PIECE. */
+  salesUnit?: 'PIECE' | 'DISPLAY' | null;
 }
 
 export type GpCapacitySource = 'MANUAL' | 'CARTON' | 'HC_RATIO' | 'UNKNOWN';
@@ -1839,6 +1841,8 @@ export interface PortalLine {
   description: string;
   photoUrl: string | null;
   quantity: number;
+  salesUnit?: 'PIECE' | 'DISPLAY' | null;
+  piecesPerDisplay?: number | null;
   unavailable?: boolean | null;
   requestedQuantity?: number | null;
   cartons: number;
@@ -1864,6 +1868,8 @@ export interface PortalCatalogItem {
   photoUrl: string | null;
   piecesPerCarton: number;
   unitPrice: number;
+  salesUnit?: 'PIECE' | 'DISPLAY' | null;
+  piecesPerDisplay?: number | null;
   /** Available from stock, or do we have to order it first? */
   inventoryKnown: boolean;
   inStock: boolean;

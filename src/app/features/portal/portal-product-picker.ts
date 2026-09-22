@@ -1,3 +1,4 @@
+import { portalPriceUnitKey, portalQuantityUnitKey } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, input, output, signal,
 } from '@angular/core';
@@ -43,7 +44,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
               <div class="grow">
                 <div class="strong">{{ item.description }}</div>
                 <div class="small muted">
-                  {{ item.unitPrice | eur: 2: locale() }} {{ t()('portalPerPiece') }} ·
+                  {{ item.unitPrice | eur: 2: locale() }} {{ t()(priceUnitKey(item)) }} ·
                   {{ item.piecesPerCarton }} {{ t()('portalPerBox') }}
                 </div>
               </div>
@@ -52,7 +53,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
             </div>
 
             <div class="field mt-12" style="margin-bottom:0">
-              <label class="req" for="portal-qty">{{ t()('quantity') }}</label>
+              <label class="req" for="portal-qty">{{ t()('quantity') }} · {{ t()(quantityUnitKey(item)) }}</label>
               <input class="input num right" id="portal-qty" type="number" min="0" step="1"
                      inputmode="numeric" [ngModel]="carton.value()"
                      (ngModelChange)="carton.set(+$event)" />
@@ -69,7 +70,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
               } @else {
                 <span class="hint">
                   {{ t()('portalPerBox') }}: {{ item.piecesPerCarton }}
-                  {{ t()('portalPieces') }}.
+                  {{ t()(quantityUnitKey(item)) }}.
                 </span>
               }
             </div>
@@ -109,7 +110,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
                       ? t()('portalInStock') : t()('portalTermToBeDetermined') }}</span>
                   </div>
                 </div>
-                <div class="picker-item__end">{{ item.unitPrice | eur: 2: locale() }}</div>
+                <div class="picker-item__end">{{ item.unitPrice | eur: 2: locale() }}<small>{{ t()(priceUnitKey(item)) }}</small></div>
               </button>
             } @empty {
               <div class="empty">
@@ -143,6 +144,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
     .picker-item__title { font-size: 14.5px; font-weight: 620; }
     .picker-item__meta { font-size: 12px; color: var(--muted); }
     .picker-item__end { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .picker-item__end small { display:block;font-size:11px;font-weight:400;color:var(--muted);white-space:normal }
     .picker-photo {
       width: 48px; height: 48px; flex: none; object-fit: cover;
       border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
@@ -158,6 +160,8 @@ import { CartonQuantity } from '../../shared/carton-quantity';
   `,
 })
 export class PortalProductPicker implements OnDestroy {
+  readonly quantityUnitKey = portalQuantityUnitKey;
+  readonly priceUnitKey = portalPriceUnitKey;
   readonly items = input.required<PortalCatalogItem[]>();
   /**
    * Translated texts, handed down from the portal page.

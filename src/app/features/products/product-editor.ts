@@ -1,3 +1,4 @@
+import { productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -55,7 +56,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
-    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null },
+    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null, salesUnit: 'PIECE' },
     colour: null, colourHex: null, variantSize: null,
     description: null, categoryId: null, supplierId, supplierNote: null, active: true, demo: false,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -201,7 +202,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         }
         <div class="product-mobile-metrics">
           <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
-          <button type="button" (click)="showTab('stock')"><app-icon name="stock" [size]="17" /><span><small>Voorraad</small><b>{{ workspaceStockLabel() }} stuks</b></span><span aria-hidden="true">›</span></button>
+          <button type="button" (click)="showTab('stock')"><app-icon name="stock" [size]="17" /><span><small>Voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></span><span aria-hidden="true">›</span></button>
         </div>
       </section>
     }
@@ -594,7 +595,19 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   <input class="input num right" id="p-packaging-pieces" type="number" min="1" step="1" inputmode="numeric"
                          [ngModel]="draft().packaging.piecesPerUnit" placeholder="bijv. 12"
                          (ngModelChange)="patchPackaging({ piecesPerUnit: num($event) })" />
-                  <span class="hint">Hoeveel stuks één volle display bevat - de catalogus kan daarmee ook een prijs per display tonen.</span>
+                  <span class="hint">Hoeveel losse stuks één volle display bevat.</span>
+                </div>
+                <div class="field mt-8">
+                  <label for="p-packaging-sales-unit">Prijs en orderaantal gelden per</label>
+                  <select class="select" id="p-packaging-sales-unit"
+                          [ngModel]="draft().packaging.salesUnit ?? 'PIECE'"
+                          (ngModelChange)="patchPackaging({ salesUnit: $event })">
+                    <option value="PIECE">Los stuk</option>
+                    <option value="DISPLAY">Volledig display (set)</option>
+                  </select>
+                  <span class="hint">{{ draft().packaging.salesUnit === 'DISPLAY'
+                    ? 'De opgeslagen prijs en één eenheid in orders, voorraad en omdozen gelden voor één volledig display.'
+                    : 'De opgeslagen prijs en één eenheid in orders, voorraad en omdozen gelden voor één los stuk.' }} Bestaande bedragen en aantallen worden niet omgerekend.</span>
                 </div>
               }
               <div class="field mt-8">
@@ -743,7 +756,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </fieldset>
           <div class="form-grid">
             <div class="field">
-              <label class="req" for="p-ppc">Stuks per karton</label>
+              <label class="req" for="p-ppc">{{ salesUnit(draft()).isDisplay ? 'Displays' : 'Stuks' }} per karton</label>
               <input class="input num right" id="p-ppc" type="number" min="1" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPerCarton"
                      [placeholder]="autoCartonPieces() !== null ? 'auto: ' + autoCartonPieces() : ''"
@@ -751,38 +764,39 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               @if (autoCartonPieces() !== null) {
                 <span class="hint">Leeg = automatisch uit de product- en kartonafmetingen.</span>
               }
+              @if (quantityDetail(draft(), draft().carton.piecesPerCarton ?? autoCartonPieces() ?? 0); as detail) { <span class="hint">{{ detail }} per omdoos.</span> }
             </div>
             <div class="field">
               <label for="p-weight">Gewicht per karton <span class="opt"></span></label>
               <div class="input-affix">
                 <input class="input num right" id="p-weight" appDecimal
                        inputmode="decimal" [ngModel]="draft().carton.weightKg"
-                       [placeholder]="autoCartonWeight() !== null ? 'auto: ' + (autoCartonWeight() | num) : ''"
+                       [placeholder]="autoCartonWeight() !== null ? 'auto: ' + (autoCartonWeight() | num: 3) : ''"
                        (ngModelChange)="patchCarton({ weightKg: num($event) })" />
                 <span class="input-affix__suffix">kg</span>
               </div>
               @if (autoCartonWeight() !== null) {
-                <span class="hint">Leeg = stuks per karton × gewicht per stuk{{ draft().packaging.kind !== 'NONE' ? ' in zijn verpakking' : '' }}.</span>
+                <span class="hint">Leeg = aantal verkoopeenheden per karton × verpakt gewicht per eenheid.</span>
               }
             </div>
             <div class="field">
-              <label for="p-20ft">Stuks per 20ft GP <span class="opt"></span></label>
+              <label for="p-20ft">{{ salesUnit(draft()).isDisplay ? 'Displays' : 'Stuks' }} per 20ft GP <span class="opt"></span></label>
               <input class="input num right" id="p-20ft" type="number" min="1" max="2147483647" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPer20Ft ?? null"
                      [placeholder]="isAutoGpCapacity(gpCapacity()) ? 'Auto: ' + (gpCapacity().value | num) : ''"
                      (ngModelChange)="patchCarton({ piecesPer20Ft: $event === null || $event === '' ? null : Math.max(1, Math.round(+$event)) })" />
               <span class="hint">Vul alleen een handmatig bevestigd aantal producteenheden in. Leeg = automatisch uit de omdoos of het bevestigde 40’ HC-aantal.</span>
               @if (isAutoGpCapacity(gpCapacity())) {
-                <span class="hint"><b>Auto</b> · {{ gpCapacity().value | num }} stuks. {{ gpCapacityHint(gpCapacity(), draft().carton) }}</span>
+                <span class="hint"><b>Auto</b> · {{ gpCapacity().value | num }} {{ salesUnit(draft()).plural }}. {{ gpCapacityHint(gpCapacity(), draft().carton) }}</span>
               }
             </div>
             <div class="field">
-              <label for="p-hc">Stuks per 40' HC <span class="opt"></span></label>
+              <label for="p-hc">{{ salesUnit(draft()).isDisplay ? 'Displays' : 'Stuks' }} per 40' HC <span class="opt"></span></label>
               <input class="input num right" id="p-hc" type="number" min="1" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPerHc ?? null"
                      [placeholder]="autoHcCapacity() !== null ? 'auto: ' + (autoHcCapacity() | num) : ''"
                      (ngModelChange)="patchCarton({ piecesPerHc: $event === null || $event === '' ? null : Math.max(1, Math.round(+$event)) })" />
-              <span class="hint">Handmatig geteld. Leeg = automatisch uit de kartonafmetingen en stuks per karton.</span>
+              <span class="hint">Handmatig geteld. Leeg = automatisch uit de kartonafmetingen en verkoopeenheden per karton.</span>
             </div>
             <div class="field">
               <label for="p-outer">Omdoosbarcode <span class="opt"></span></label>
@@ -803,7 +817,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <div class="alert alert--info mt-8">
             <span class="alert__icon">◈</span>
             <div>
-              <b>{{ cartonCbm() | cbm }} per doos</b> ({{ pieceCbm() | num: 5 }} m³ per stuk).
+              <b>{{ cartonCbm() | cbm }} per doos</b> ({{ pieceCbm() | num: 5 }} m³ per {{ salesUnit(draft()).singular }}).
             </div>
           </div>
 
@@ -834,14 +848,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </select>
           </div>
           <div class="field">
-            <label for="p-extra">Extra kost per stuk (bijvoorbeeld display, geschenkverpakking) <span class="opt"></span></label>
+            <label for="p-extra">Extra kost per {{ salesUnit(draft()).singular }} (bijvoorbeeld display, geschenkverpakking) <span class="opt"></span></label>
             <div class="input-affix">
               <input class="input num right" id="p-extra" appDecimal
                      inputmode="decimal" [ngModel]="draft().extraUnitCost"
                      (ngModelChange)="patch({ extraUnitCost: +$event })" />
               <span class="input-affix__suffix">{{ draft().exwCurrency }}</span>
             </div>
-            <span class="hint">Wat de leverancier per stuk extra rekent bovenop de EXW-prijs: een display, een giftbox, een inlay. Telt mee in de kostprijs.</span>
+            <span class="hint">Wat de leverancier per {{ salesUnit(draft()).singular }} extra rekent bovenop de EXW-prijs: een display, een giftbox, een inlay. Telt mee in de kostprijs.</span>
           </div>
           <div class="field">
             <label for="p-hs">HS-code <span class="opt"></span></label>
@@ -890,7 +904,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                       [class.price-method__active]="priceStrategy() === 'FIXED'"
                       [attr.aria-pressed]="priceStrategy() === 'FIXED'"
                       (click)="setPriceStrategy('FIXED')">
-                <b>Vaste verkoopprijs per stuk</b>
+                <b>Vaste verkoopprijs per {{ salesUnit(draft()).singular }}</b>
                 <small>Blijft hetzelfde bedrag</small>
               </button>
               <button type="button"
@@ -916,7 +930,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
           } @else {
             <div class="field">
-              <label class="req" for="p-price">Vaste verkoopprijs per stuk</label>
+              <label class="req" for="p-price">Vaste verkoopprijs per {{ salesUnit(draft()).singular }}</label>
               <div class="input-affix">
                 <input class="input num right" id="p-price" appDecimal
                        inputmode="decimal" [ngModel]="draft().fixedSalesPriceEur"
@@ -935,7 +949,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     @if (fixed < landed) {
                       deze prijs ligt <b>onder kostprijs</b>
                     } @else {
-                      marge {{ fixed - landed | eur: 2 }} per stuk
+                      marge {{ fixed - landed | eur: 2 }} per {{ salesUnit(draft()).singular }}
                     }
                   </span>
                 } @else {
@@ -948,9 +962,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           }
           <div class="price-preview">
             <div>
-              <span class="price-preview__label">Catalogusprijs per stuk</span>
+              <span class="price-preview__label">Catalogusprijs per {{ salesUnit(draft()).singular }}</span>
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
+              @if (secondaryPrice(draft(), salesPrice()); as equivalent) {
+                <small>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.piecesPerDisplay }} stuks/display</small>
+              }
             </div>
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
             <dl class="price-preview__meta">
@@ -958,7 +975,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <dd class="num">
                 @if (draft().inventoryKnown) { {{ draft().stockQuantity | num }} } @else { onbekend }
               </dd>
-              <dt>Marge per stuk</dt>
+              <dt>Marge per {{ salesUnit(draft()).singular }}</dt>
               <dd class="num">{{ unitMargin() | eur }}</dd>
             </dl>
           </div>
@@ -975,7 +992,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <div><h2 id="stock-title">Voorraad</h2><p>Locaties, correcties, schade en bewegingen</p></div>
           <span class="spacer"></span>
           @if (!isNew() && stockLevels(); as levels) {
-            <strong class="num stock-now">{{ stockTotal() | num }} stuks</strong>
+            <strong class="num stock-now">{{ stockTotal() | num }} {{ salesUnit(draft()).plural }}</strong>
           }
         </div>
         <div class="card__body">
@@ -1341,7 +1358,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         <section class="editor-rail__card">
           <h3>Kostprijs &amp; marge</h3>
           <div class="desk-chain">
-            <div class="desk-chain__row"><i></i><span>Fabrieksprijs <small>{{ draft().exwCurrency || 'USD' }}@if (draft().extraUnitCost) { · + {{ draft().extraUnitCost | num: 2 }} extra per stuk }</small></span><b>{{ draft().exwPrice !== null && draft().exwPrice !== undefined ? (draft().exwPrice | num: 2) : '—' }}</b></div>
+            <div class="desk-chain__row"><i></i><span>Fabrieksprijs <small>{{ draft().exwCurrency || 'USD' }}@if (draft().extraUnitCost) { · + {{ draft().extraUnitCost | num: 2 }} extra per {{ salesUnit(draft()).singular }} }</small></span><b>{{ draft().exwPrice !== null && draft().exwPrice !== undefined ? (draft().exwPrice | num: 2) : '—' }}</b></div>
             <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Gelande kost <small>{{ draft().landedCostSource ? 'uit ' + draft().landedCostSource : 'nog geen calculatie' }}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
             <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de gelande kost' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
             <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
@@ -1352,11 +1369,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         <section class="editor-rail__card">
           <h3>Omdoos</h3>
           <dl class="desk-facts">
-            <div><dt>Inhoud</dt><dd>{{ (draft().carton.piecesPerCarton || autoCartonPieces()) ? ((draft().carton.piecesPerCarton || autoCartonPieces()) | num) + ' stuks' : '—' }}@if (!draft().carton.piecesPerCarton && autoCartonPieces()) { <small>automatisch uit de maten</small> }</dd></div>
-            <div><dt>Maat</dt><dd>{{ draft().carton.lengthCm && draft().carton.widthCm && draft().carton.heightCm ? (draft().carton.lengthCm | num) + ' × ' + (draft().carton.widthCm | num) + ' × ' + (draft().carton.heightCm | num) + ' cm' : '—' }}<small>{{ cartonCbm() | cbm }} per doos · {{ pieceCbm() | cbm }} per stuk</small></dd></div>
+            <div><dt>Inhoud</dt><dd>{{ (draft().carton.piecesPerCarton || autoCartonPieces()) ? ((draft().carton.piecesPerCarton || autoCartonPieces()) | num) + ' ' + salesUnit(draft()).plural : '—' }}@if (!draft().carton.piecesPerCarton && autoCartonPieces()) { <small>automatisch uit de maten</small> }</dd></div>
+            <div><dt>Maat</dt><dd>{{ draft().carton.lengthCm && draft().carton.widthCm && draft().carton.heightCm ? (draft().carton.lengthCm | num) + ' × ' + (draft().carton.widthCm | num) + ' × ' + (draft().carton.heightCm | num) + ' cm' : '—' }}<small>{{ cartonCbm() | cbm }} per doos · {{ pieceCbm() | cbm }} per {{ salesUnit(draft()).singular }}</small></dd></div>
             <div><dt>Gewicht</dt><dd>{{ draft().carton.weightKg ? (draft().carton.weightKg | kg) : (autoCartonWeight() ? (autoCartonWeight() | kg) : '—') }}@if (!draft().carton.weightKg && autoCartonWeight()) { <small>uit het stukgewicht</small> }</dd></div>
-            <div><dt>20ft GP</dt><dd>{{ gpCapacity().value !== null ? (gpCapacity().value | num) + ' stuks' : '—' }}<small [title]="gpCapacityHint(gpCapacity(), draft().carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : gpCapacity().source === 'MANUAL' ? 'handmatig bevestigd' : 'onvoldoende gegevens' }}</small></dd></div>
-            <div><dt>40' HC</dt><dd>{{ (draft().carton.piecesPerHc || autoHcCapacity()) ? ((draft().carton.piecesPerHc || autoHcCapacity()) | num) + ' stuks' : '—' }}</dd></div>
+            <div><dt>20ft GP</dt><dd>{{ gpCapacity().value !== null ? (gpCapacity().value | num) + ' ' + salesUnit(draft()).plural : '—' }}<small [title]="gpCapacityHint(gpCapacity(), draft().carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : gpCapacity().source === 'MANUAL' ? 'handmatig bevestigd' : 'onvoldoende gegevens' }}</small></dd></div>
+            <div><dt>40' HC</dt><dd>{{ (draft().carton.piecesPerHc || autoHcCapacity()) ? ((draft().carton.piecesPerHc || autoHcCapacity()) | num) + ' ' + salesUnit(draft()).plural : '—' }}</dd></div>
           </dl>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('packaging')">Omdoos aanpassen ›</button>
         </section>
@@ -1865,6 +1882,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   `,
 })
 export class ProductEditor implements OnDestroy {
+  readonly salesUnit = productSalesUnit;
+  readonly secondaryPrice = secondarySalesPrice;
+  readonly quantityDetail = salesQuantityDetail;
   /** The selected editor section, shared by desktop navigation and the mobile picker. */
   readonly activeTab = signal('identity');
   readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy());

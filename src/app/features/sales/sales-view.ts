@@ -1,3 +1,4 @@
+import { productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
 import { salesAllProductsUnavailable, salesLineUnavailable, salesLineRequestedQuantity, salesUnavailableLineCount } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
@@ -188,7 +189,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             } @else {<div>
               <span>Producten</span>
               <strong>{{ data.priced.lines.length }}</strong>
-              <small>{{ data.priced.totals.pieces | num }} stuks</small>
+              <small>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }}</small>
             </div>
             <div>
               <span>Levering</span>
@@ -342,9 +343,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <h2 id="sales-lines-title">Producten</h2>
                 </div>
                 <div class="line-head-tools">
-                  <div class="profit-mode" role="group" aria-label="Winstbedrag tonen per stuk of per regel">
+                  <div class="profit-mode" role="group" aria-label="Winstbedrag tonen per verkoopeenheid of per regel">
                     <button type="button" [class.profit-mode__active]="profitMode() === 'UNIT'"
-                            (click)="profitMode.set('UNIT')">Per stuk</button>
+                            (click)="profitMode.set('UNIT')">Per eenheid</button>
                     <button type="button" [class.profit-mode__active]="profitMode() === 'LINE'"
                             (click)="profitMode.set('LINE')">Hele regel</button>
                   </div>
@@ -403,12 +404,12 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                               }
                             </span>
                             <span class="purchase-model__totals">
-                              <strong>{{ group.pieces | num }} st</strong>
+                              <strong>{{ group.pieces | num }} {{ quantityLabel(group.lines) }}</strong>
                               <small>{{ group.cartons | num }} dozen · {{ group.cbm | cbm }}</small>
                               @if (unavailableLineCount(group.lines) === group.lines.length) {
                                 <small class="purchase-model__cost-label">Niet meegerekend</small><b>—</b>
                               } @else {
-                                <small class="purchase-model__cost-label">{{ profitMode() === 'UNIT' ? 'Gem. netto / stuk' : 'Netto verkoop' }}</small>
+                                <small class="purchase-model__cost-label">{{ profitMode() === 'UNIT' ? 'Gem. netto / eenheid' : 'Netto verkoop' }}</small>
                                 <b>{{ profitMode() === 'UNIT' ? (averageGroupUnitPrice(group.totalEur, group.pieces) | eur: 2) : (group.totalEur | eur) }}</b>
                               }
                             </span>
@@ -502,11 +503,11 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                       <div class="line-unavailable">
                         <strong>Tijdelijk niet beschikbaar</strong>
                         <span>0 st · Niet meegerekend</span>
-                        @if (lineRequestedQuantity(line); as requested) { <small>Oorspronkelijk aangevraagd: {{ requested | num }} st</small> }
+                        @if (lineRequestedQuantity(line); as requested) { <small>Oorspronkelijk aangevraagd: {{ requested | num }} {{ lineUnit(line.productId).short }}</small> }
                       </div>
                     } @else {
                     <div class="line-facts">
-                      <span><small>Aantal</small><strong>{{ line.quantity | num }} st</strong></span>
+                      <span><small>Aantal</small><strong>{{ line.quantity | num }} {{ lineUnit(line.productId).short }}</strong></span>
                       <span><small>Dozen</small><strong>{{ line.cartons | num }}</strong></span>
                       <button type="button"
                               [class.line-facts__ok]="!deliveryOpen(line, data)"
@@ -517,13 +518,21 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                       </button>
                     </div>
 
+                    @if (lineQuantityDetail(line); as detail) {
+                      <p class="line-unit-context">{{ detail }}.
+                        {{ line.unitPrice | eur: 2 }} per {{ lineUnit(line.productId).singular }}
+                        @if (lineSecondaryPrice(line); as equivalent) { · {{ equivalent.price | eur: 2 }} {{ equivalent.label }} }
+                        · vóór korting.
+                      </p>
+                    }
+
                     <button class="line-breakdown-toggle" type="button"
                             [attr.aria-expanded]="openLine() === line.productId"
                             [attr.aria-controls]="linePanelId(line.productId)"
                             (click)="toggleLine(line.productId)">
                       <span>
                         <small>Prijsopbouw</small>
-                        <strong>{{ profitMode() === 'UNIT' ? 'Per stuk bekijken' : 'Hele regel bekijken' }}</strong>
+                        <strong>{{ profitMode() === 'UNIT' ? 'Per ' + lineUnit(line.productId).singular + ' bekijken' : 'Hele regel bekijken' }}</strong>
                       </span>
                       <span class="line-breakdown-toggle__total">
                         {{ profitMode() === 'UNIT' ? (line.netUnitPrice | eur: 2) : (line.net | eur) }}
@@ -760,7 +769,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     }
                     <div class="ship-line__copy">
                       <strong>{{ row.name }}</strong>
-                      <span>−{{ row.qty | num }} stuks</span>
+                      <span>−{{ row.qty | num }} {{ row.unitLabel }}</span>
                     </div>
                     <div class="ship-line__stock"
                          [class.ship-line__stock--negative]="row.after !== null && row.after < 0">
@@ -821,12 +830,12 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <p>{{ deliveryText(line, data) }}</p>
               }
               <dl class="delivery-sheet__facts">
-                <div><dt>Besteld</dt><dd>{{ line.quantity | num }} st</dd></div>
+                <div><dt>Besteld</dt><dd>{{ line.quantity | num }} {{ lineUnit(line.productId).short }}</dd></div>
                 @if (line.inventoryKnown) {
-                  <div><dt>Op voorraad</dt><dd>{{ (line.stockQuantity ?? 0) | num }} st</dd></div>
+                  <div><dt>Op voorraad</dt><dd>{{ (line.stockQuantity ?? 0) | num }} {{ lineUnit(line.productId).short }}</dd></div>
                 }
                 @if (line.shortfall) {
-                  <div><dt>Tekort</dt><dd>{{ line.shortfall | num }} st</dd></div>
+                  <div><dt>Tekort</dt><dd>{{ line.shortfall | num }} {{ lineUnit(line.productId).short }}</dd></div>
                 }
                 @if (line.deliveryWeek) {
                   <div><dt>Leverweek</dt><dd>{{ line.deliveryWeek | weekNl }}</dd></div>
@@ -948,6 +957,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .sales-line__copy strong { overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap }
     .sales-line__copy>span { overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap }
     .line-facts { display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--line);overflow:hidden }
+    .line-unit-context { margin:8px 0 0;color:var(--muted);font-size:11px;line-height:1.45;overflow-wrap:anywhere }
     .line-facts>span,.line-facts>button { display:flex;min-width:0;flex-direction:column;padding:7px 8px;background:var(--surface-2);border:0;font:inherit;text-align:left;color:inherit }
     .line-facts>button { cursor:pointer }
     .line-facts>button strong { display:flex;align-items:center;gap:3px }
@@ -1405,7 +1415,7 @@ export class SalesView {
   }
 
   readonly shipSheet = signal<{
-    rows: { name: string; photoUrl: string | null; qty: number;
+    rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string;
             before: number | null; after: number | null }[];
     pieces: number; number: string;
   } | null>(null);
@@ -1425,7 +1435,7 @@ export class SalesView {
     } catch { /* stock preview is best-effort; the rows then say "onbekend" */ }
     const rows = data.priced.lines.filter(line => !salesLineUnavailable(line) && line.quantity > 0).map(line => {
       const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
-      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity,
+      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity, unitLabel: this.lineUnit(line.productId).plural,
                before, after: before === null ? null : before - line.quantity };
     });
     this.shipSheet.set({ rows, pieces: data.priced.totals.pieces, number: data.order.number });
@@ -1558,6 +1568,20 @@ export class SalesView {
     return this.productsById().get(productId) ?? null;
   }
 
+  lineUnit(productId: number) { return productSalesUnit(this.productFor(productId)); }
+
+  lineQuantityDetail(line: PricedLine): string | null {
+    return salesQuantityDetail(this.productFor(line.productId), line.quantity);
+  }
+
+  lineSecondaryPrice(line: PricedLine) {
+    return secondarySalesPrice(this.productFor(line.productId), line.unitPrice);
+  }
+
+  quantityLabel(lines: readonly PricedLine[]): string {
+    return lines.some((line) => this.lineUnit(line.productId).isDisplay) ? 'verkoopeenheden' : 'stuks';
+  }
+
   salesVariantTitle(productId: number, fallback: string): string {
     const product = this.productFor(productId);
     if (!product) return fallback;
@@ -1623,7 +1647,7 @@ export class SalesView {
     if (line.deliveryExplanation) return line.deliveryExplanation;
     if (data.order.deliveryTerms === 'TE_BEPALEN') return 'Nog te bepalen';
     if (!line.inventoryKnown) return 'Voorraad nog niet bevestigd';
-    if ((line.shortfall ?? 0) > 0) return `${line.shortfall} stuks tekort`;
+    if ((line.shortfall ?? 0) > 0) return `${line.shortfall} ${this.lineUnit(line.productId).plural} tekort`;
     if (line.inStock) return 'Op voorraad';
     return 'Volgens afspraak';
   }

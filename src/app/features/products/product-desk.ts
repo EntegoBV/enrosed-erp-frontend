@@ -7,7 +7,7 @@ import { messageOf } from '../../core/api/errors';
 import { Product } from '../../core/api/models';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { PageHeader } from '../../shared/page-header';
-import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe } from '../../shared/pipes';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
 import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
@@ -34,7 +34,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ProductCostHistory, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, PageHeader,
-    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -93,7 +93,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 <span>{{ stockSummary() }}</span>
               } @else if (product.inventoryKnown) {
                 <strong [class.is-bad]="product.stockQuantity <= 0">{{ product.stockQuantity | num }}</strong>
-                <span>stuks</span>
+                <span>{{ salesUnit(product).plural }}</span>
               } @else {
                 <strong>—</strong>
                 <span>nog niet bevestigd</span>
@@ -124,17 +124,18 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               }
             </button>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="openPriceDetail()">
-              <small>Catalogusprijs</small>
+              <small>Catalogusprijs per {{ salesUnit(product).singular }}</small>
               @if (displayPrice(); as price) {
                 <strong>{{ price | eur: 2 }}</strong>
                 <span>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs' : '+ ' + (product.markupPct | num) + ' % op de kostprijs' }}</span>
+                @if (secondaryPrice(product, price); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }}</span> }
               } @else {
                 <strong>—</strong>
                 <span>nog geen prijs</span>
               }
             </button>
             <button class="desk-kpi desk-kpi--button desk-kpi--total" type="button" (click)="openPriceDetail()">
-              <small>Marge per stuk</small>
+              <small>Marge per {{ salesUnit(product).singular }}</small>
               @if (margin(); as value) {
                 <strong [class.is-bad]="value.eur < 0">{{ value.eur | eur: 2 }}</strong>
                 <span>{{ value.pct }} % van de prijs</span>
@@ -221,7 +222,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <div class="pd-kicker">Identificatie</div>
               <dl class="desk-facts pd-facts">
                 <div><dt>Afmeting</dt><dd>{{ size(product.dimensions) }}<small>B × D × H</small></dd></div>
-                <div><dt>Gewicht</dt><dd>{{ product.dimensions.weightKg ? (product.dimensions.weightKg | num) + ' kg' : '—' }}<small>per stuk</small></dd></div>
+                <div><dt>Gewicht</dt><dd>{{ product.dimensions.weightKg ? (product.dimensions.weightKg | kg) : '—' }}<small>per stuk</small></dd></div>
                 <div><dt>Barcode stuk</dt><dd class="mono">
                   @if (product.barcodeInner; as code) {
                     <button class="pd-barcode" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code" (click)="downloadBarcode(code)">{{ code }} <i aria-hidden="true">▥</i></button>
@@ -230,7 +231,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 @if (product.packaging.kind !== 'NONE') {
                   <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }}</dt><dd>
                     {{ size(product.packaging.dimensions) }}
-                    <small>{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | num) + ' kg' : 'gewicht onbekend' }}@if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) { · {{ product.packaging.piecesPerUnit | num }} stuks per display }</small>
+                    <small>{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | kg) : 'gewicht onbekend' }}@if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) { · {{ product.packaging.piecesPerUnit | num }} stuks per display }</small>
                   </dd></div>
                   @if (product.packaging.barcode; as code) {
                     <div><dt>Barcode verpakking</dt><dd class="mono">
@@ -251,11 +252,11 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <div class="pd-kicker">Omdoos &amp; logistiek</div>
               <dl class="desk-facts pd-facts">
                 <div><dt>Karton</dt><dd>{{ size(product.carton) }}<small>B × D × H</small></dd></div>
-                <div><dt>Inhoud</dt><dd>{{ product.carton.piecesPerCarton | num }} stuks<small>{{ cartonPiecesAuto(product) ? 'berekend uit de maten' : 'per omdoos' }}</small></dd></div>
-                <div><dt>Gewicht</dt><dd>@if (product.carton.weightKg) { {{ product.carton.weightKg | num }} kg } @else { — }<small>{{ product.carton.weightKg && cartonWeightAuto(product) ? 'berekend uit de stuks' : 'per omdoos' }}</small></dd></div>
-                <div><dt>Volume</dt><dd>@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }@if (product.pieceCbm) { <small>{{ product.pieceCbm | cbm }} per stuk</small> }</dd></div>
-                <div><dt>Per 20ft GP</dt><dd>@if (gpCapacity().value !== null) { {{ gpCapacity().value | num }} stuks<small [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig bevestigd' }}</small> } @else { —<small>onvoldoende gegevens</small> }</dd></div>
-                <div><dt>Per 40' HC</dt><dd>@if (product.carton.hcCapacity; as hc) { {{ hc | num }} stuks } @else { — }@if (product.carton.hcCapacity) { <small>{{ product.carton.piecesPerHc ? 'handmatig geteld' : 'volle dozen op volume' }}</small> }</dd></div>
+                <div><dt>Inhoud</dt><dd>{{ product.carton.piecesPerCarton | num }} {{ salesUnit(product).plural }}<small>{{ cartonPiecesAuto(product) ? 'berekend uit de maten' : 'per omdoos' }}</small>@if (quantityDetail(product, product.carton.piecesPerCarton ?? 0); as detail) { <small>{{ detail }}</small> }</dd></div>
+                <div><dt>Gewicht</dt><dd>@if (product.carton.weightKg) { {{ product.carton.weightKg | kg }} } @else { — }<small>{{ product.carton.weightKg && cartonWeightAuto(product) ? 'berekend uit de stuks' : 'per omdoos' }}</small></dd></div>
+                <div><dt>Volume</dt><dd>@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }@if (product.pieceCbm) { <small>{{ product.pieceCbm | cbm }} per {{ salesUnit(product).singular }}</small> }</dd></div>
+                <div><dt>Per 20ft GP</dt><dd>@if (gpCapacity().value !== null) { {{ gpCapacity().value | num }} {{ salesUnit(product).plural }}<small [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig bevestigd' }}</small> } @else { —<small>onvoldoende gegevens</small> }</dd></div>
+                <div><dt>Per 40' HC</dt><dd>@if (product.carton.hcCapacity; as hc) { {{ hc | num }} {{ salesUnit(product).plural }} } @else { — }@if (product.carton.hcCapacity) { <small>{{ product.carton.piecesPerHc ? 'handmatig geteld' : 'volle dozen op volume' }}</small> }</dd></div>
                 <div><dt>Omdoosbarcode</dt><dd class="mono">
                   @if (product.barcodeOuter; as code) {
                     <button class="pd-barcode" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code" (click)="downloadBarcode(code)">{{ code }} <i aria-hidden="true">▥</i></button>
@@ -294,13 +295,14 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             </div>
             <i aria-hidden="true">→</i>
             <div class="pd-flow__step pd-flow__step--price">
-              <small>Catalogusprijs</small>
+              <small>Catalogusprijs per {{ salesUnit(product).singular }}</small>
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
+              @if (secondaryPrice(product, displayPrice()); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.piecesPerDisplay }} stuks/display</span> }
             </div>
             <i aria-hidden="true">=</i>
             <div class="pd-flow__step pd-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">
-              <small>Marge per stuk</small>
+              <small>Marge per {{ salesUnit(product).singular }}</small>
               @if (margin(); as value) {
                 <b>{{ value.eur | eur: 2 }}</b>
                 <span>{{ value.pct }} % van de prijs</span>
@@ -371,7 +373,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
         <div class="pd-duo">
           <section class="pd-card" id="pd-stock" aria-labelledby="pd-stock-title">
             <div class="pd-card__head">
-              <div><h2 id="pd-stock-title">Voorraad</h2><p>Per locatie, in stuks · klik een locatie voor een hertelling</p></div>
+              <div><h2 id="pd-stock-title">Voorraad</h2><p>Per locatie, in {{ salesUnit(product).plural }} · klik een locatie voor een hertelling</p></div>
               <b class="pd-total" [class.is-bad]="stockTotal() <= 0">{{ stockLevels() ? (stockTotal() | num) : '—' }}</b>
             </div>
             @if (stockLevels(); as levels) {
@@ -424,7 +426,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                     </div>
                   }
                   <div class="field">
-                    <label class="req" for="pd-book-qty">{{ book.kind === 'RECOUNT' ? 'Geteld' : 'Aantal stuks' }}</label>
+                    <label class="req" for="pd-book-qty">{{ book.kind === 'RECOUNT' ? 'Geteld' : 'Aantal' }} {{ salesUnit(product).plural }}</label>
                     <input class="input num right" id="pd-book-qty" type="number" min="0" step="1" inputmode="numeric" autofocus
                            [value]="book.quantity ?? ''" (input)="setBookingQuantity($any($event.target).value)" />
                   </div>
@@ -462,7 +464,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             }
             @if (expected(); as exp) {
               <a class="pd-expected" [routerLink]="['/purchasing', exp.orderIds[0]]">
-                <b>+{{ exp.quantity | num }} stuks onderweg</b>
+                <b>+{{ exp.quantity | num }} {{ salesUnit(product).plural }} onderweg</b>
                 <small>{{ exp.orderNumbers.join(', ') }}{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›</small>
               </a>
             }

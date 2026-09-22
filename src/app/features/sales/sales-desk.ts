@@ -291,10 +291,10 @@ interface JourneyStep {
             <div class="desk-table-bar">
               <div>
                 <h2>Producten</h2>
-                <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' stuks · ' + (data.priced.totals.cartons | num) + ' dozen · ' + (data.priced.totals.cbm | cbm) : 'Bouw het document regel voor regel op' }}</p>
+                <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' ' + quantityLabel(data.priced.lines) + ' · ' + (data.priced.totals.cartons | num) + ' dozen · ' + (data.priced.totals.cbm | cbm) : 'Bouw het document regel voor regel op' }}</p>
               </div>
               <span class="per-toggle" role="group" aria-label="Winst tonen per">
-                <button type="button" [class.on]="profitPerPiece()" [attr.aria-pressed]="profitPerPiece()" (click)="profitPerPiece.set(true)">Per stuk</button>
+                <button type="button" [class.on]="profitPerPiece()" [attr.aria-pressed]="profitPerPiece()" (click)="profitPerPiece.set(true)">Per eenheid</button>
                 <button type="button" [class.on]="!profitPerPiece()" [attr.aria-pressed]="!profitPerPiece()" (click)="profitPerPiece.set(false)">Per regel</button>
               </span>
               <button class="btn btn--primary btn--sm" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">
@@ -313,10 +313,10 @@ interface JourneyStep {
                   <tr>
                     <th class="c-product">Product</th>
                     <th class="c-qty">Aantal</th>
-                    <th class="c-price">Stukprijs</th>
+                    <th class="c-price">Eenheidsprijs</th>
                     <th class="c-disc">Korting</th>
                     <th class="c-money">Netto</th>
-                    <th class="c-money" title="Productmarge na alle regel- en orderkortingen, exclusief btw en transport">{{ profitPerPiece() ? 'Marge / stuk' : 'Marge / regel' }}</th>
+                    <th class="c-money" title="Productmarge na alle regel- en orderkortingen, exclusief btw en transport">{{ profitPerPiece() ? 'Marge / eenheid' : 'Marge / regel' }}</th>
                     <th class="c-delivery">Levering</th>
                     @if (commercialEditable()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
                   </tr>
@@ -371,14 +371,15 @@ interface JourneyStep {
                               <div class="desk-product__meta">
                                 <span>{{ line.sku }}</span>
                                 @if (lineUnavailable(line.productId)) {
-                                  @if (lineRequestedQuantity(line.productId); as requested) { <span>{{ requested | num }} st aangevraagd</span> }
+                                  @if (lineRequestedQuantity(line.productId); as requested) { <span>{{ requested | num }} {{ lineUnit(line.productId).short }} aangevraagd</span> }
                                 } @else {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
+                                @if (lineQuantityDetail(line); as detail) { <span>{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
-                                  <span class="is-warn" role="status">Volle doos: wordt {{ to | num }} st</span>
+                                  <span class="is-warn" role="status">Volle doos: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
                                 }
                                 @if (line.nextTierAtQuantity) {
-                                  <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} st voor {{ line.nextTierPercent | pct: 0 }}</span>
+                                  <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} {{ lineUnit(line.productId).short }} voor {{ line.nextTierPercent | pct: 0 }}</span>
                                 }
                                 }
                               </div>
@@ -386,7 +387,7 @@ interface JourneyStep {
                           </div>
                         </td>
                         @if (lineUnavailable(line.productId)) {
-                          <td class="c-qty num"><b>0</b><small>stuks</small></td>
+                          <td class="c-qty num"><b>0</b><small>{{ lineUnit(line.productId).plural }}</small></td>
                           <td colspan="5">
                             <div class="desk-unavailable">
                               <span><b>Tijdelijk niet beschikbaar</b><small>Niet meegerekend in bedrag of levering</small>
@@ -396,7 +397,7 @@ interface JourneyStep {
                                 <button class="desk-availability desk-availability--restore" type="button"
                                   [attr.aria-label]="line.description + ' opnieuw beschikbaar maken'"
                                   (click)="toggleLineAvailability(line.productId)">
-                                  @if (lineRequestedQuantity(line.productId); as requested) { Herstel {{ requested | num }} st } @else { Aantal kiezen }
+                                  @if (lineRequestedQuantity(line.productId); as requested) { Herstel {{ requested | num }} {{ lineUnit(line.productId).short }} } @else { Aantal kiezen }
                                 </button>
                               }
                             </div>
@@ -410,12 +411,13 @@ interface JourneyStep {
                           } @else {
                             <b>{{ line.quantity | num }}</b>
                           }
+                          <small>{{ lineUnit(line.productId).plural }}</small>
                         </td>
                         <td class="c-price num">
                           @if (commercialEditable()) {
                             <div class="desk-price">
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
-                                     [attr.aria-label]="'Stukprijs ' + line.description"
+                                     [attr.aria-label]="lineUnit(line.productId).priceLabel + ' ' + line.description"
                                      [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
                               <button class="desk-disc-pill" type="button" [class.is-on]="line.manualPercent"
                                       [attr.aria-expanded]="discOpen() === line.productId" [attr.aria-label]="'Extra korting ' + line.description"
@@ -435,6 +437,10 @@ interface JourneyStep {
                             @if (line.discountPct) { <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small> }
                           }
                           @if (line.tierPercent) { <small>staffel −{{ line.tierPercent | pct: 1 }}</small> }
+                          <small>per {{ lineUnit(line.productId).singular }}</small>
+                          @if (lineSecondaryPrice(line); as equivalent) {
+                            <small class="desk-unit-equivalent">{{ equivalent.price | eur: 2 }} {{ equivalent.label }}<br />vóór korting</small>
+                          }
                         </td>
                         <td class="c-disc num">
                           @if (commercialEditable()) {
@@ -469,8 +475,8 @@ interface JourneyStep {
                                 [class.desk-delivery--bad]="line.inventoryKnown && !line.inStock && !line.deliveryWeek">
                             @if (!line.inventoryKnown) { <b>Voorraad onbevestigd</b> }
                             @else if (line.inStock) { <b>Op voorraad</b><small>vanaf {{ line.deliveryDate | dateNl }}</small> }
-                            @else if (line.deliveryWeek) { <b>{{ line.deliveryWeek | weekNl: 'short' }}</b><small>{{ line.shortfall ?? 0 | num }} st te leveren</small> }
-                            @else { <b>Levertermijn nodig</b><small>{{ line.shortfall ?? 0 | num }} st niet op voorraad</small> }
+                            @else if (line.deliveryWeek) { <b>{{ line.deliveryWeek | weekNl: 'short' }}</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} te leveren</small> }
+                            @else { <b>Levertermijn nodig</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} niet op voorraad</small> }
                           </span>
                           @if (canEditTerms()) {
                             <button class="desk-product__link" type="button" (click)="toggleDelivery(line.productId)"
@@ -738,7 +744,7 @@ interface JourneyStep {
                     }
                     <p class="desk-form__group">Prijsopbouw</p>
                     <div class="desk-chain">
-                      <div class="desk-chain__row"><i></i><span>Bruto @if (!isAdvanceInvoice(data)) { <small>{{ data.priced.totals.pieces | num }} stuks</small> }</span><b>{{ data.priced.totals.gross | eur }}</b></div>
+                      <div class="desk-chain__row"><i></i><span>Bruto @if (!isAdvanceInvoice(data)) { <small>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }}</small> }</span><b>{{ data.priced.totals.gross | eur }}</b></div>
                       @if (data.priced.totals.lineDiscountTotal) {
                         <div class="desk-chain__row"><i>−</i><span>Kortingen op regels <small>staffel en extra</small></span><b>{{ data.priced.totals.lineDiscountTotal | eur }}</b></div>
                       }
@@ -1048,7 +1054,7 @@ interface JourneyStep {
                 <li>
                   @if (row.photoUrl) { <img class="desk-ship__photo" [appAuthSrc]="row.photoUrl" alt="" /> }
                   @else { <span class="desk-ship__photo desk-ship__photo--empty" aria-hidden="true">◈</span> }
-                  <span class="desk-ship__copy"><strong>{{ row.name }}</strong><small>−{{ row.qty | num }} stuks</small></span>
+                  <span class="desk-ship__copy"><strong>{{ row.name }}</strong><small>−{{ row.qty | num }} {{ row.unitLabel }}</small></span>
                   <span class="desk-ship__stock" [class.is-bad]="row.after !== null && row.after < 0">
                     @if (row.before !== null) { {{ row.before | num }} → {{ row.after | num }} } @else { onbekend }
                   </span>
@@ -1115,6 +1121,7 @@ interface JourneyStep {
     .desk-table td.c-act{padding-left:0;padding-right:8px;text-align:right}
     .c-money--total b{color:var(--rose-dark);font-weight:750}
     .c-money small,.c-price small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
+    .c-qty small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px}.c-price .desk-unit-equivalent{white-space:normal;overflow-wrap:anywhere;line-height:1.4}
     .c-qty b,.c-price>b,.c-disc>b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
@@ -1174,7 +1181,7 @@ interface JourneyStep {
       .desk-table td.c-money--total{grid-area:net}.desk-table td.c-money:not(.c-money--total){grid-area:profit}.desk-table td.c-delivery{grid-area:delivery}
       .desk-table td.c-act{position:absolute;top:8px;right:8px;display:block;width:auto}
       .desk-table td.c-qty::before,.desk-table td.c-price::before,.desk-table td.c-disc::before,.desk-table td.c-money::before,.desk-table td.c-delivery::before{display:block;margin-bottom:3px;color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
-      .desk-table td.c-qty::before{content:'Aantal'}.desk-table td.c-price::before{content:'Stukprijs'}.desk-table td.c-disc::before{content:'Korting'}
+      .desk-table td.c-qty::before{content:'Aantal'}.desk-table td.c-price::before{content:'Eenheidsprijs'}.desk-table td.c-disc::before{content:'Korting'}
       .desk-table td.c-money--total::before{content:'Netto'}.desk-table td.c-money:not(.c-money--total)::before{content:'Winst'}.desk-table td.c-delivery::before{content:'Levering'}
       .desk-group td.c-money--total::before{content:'Netto reeks'}
       .desk-row--extra td.c-disc,.desk-row--extra td.c-money:not(.c-money--total){display:none}
@@ -1185,7 +1192,7 @@ interface JourneyStep {
       .desk-table tfoot th{display:block;padding:0;border:0;text-align:left;white-space:normal}
       .desk-table tfoot th:empty{display:none}
       .desk-table tfoot th.c-product{grid-column:1/-1}
-      .desk-table tfoot th.c-qty::before{content:'Stuks · '}.desk-table tfoot th.c-disc::before{content:'Korting · '}
+      .desk-table tfoot th.c-qty::before{content:'Eenheden · '}.desk-table tfoot th.c-disc::before{content:'Korting · '}
       .desk-table tfoot th.c-money:nth-of-type(5)::before{content:'Subtotaal · '}.desk-table tfoot th.c-money:nth-of-type(6)::before{content:'Winst · '}
       .desk-table tfoot th::before{color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
     }
@@ -1396,7 +1403,7 @@ export class SalesDesk extends SalesEditor {
   }
 
   readonly shipSheet = signal<{
-    rows: { name: string; photoUrl: string | null; qty: number; before: number | null; after: number | null }[];
+    rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string; before: number | null; after: number | null }[];
     pieces: number; number: string;
   } | null>(null);
 
@@ -1411,7 +1418,7 @@ export class SalesDesk extends SalesEditor {
     } catch { /* the stock preview is best-effort; the rows then say "onbekend" */ }
     const rows = data.priced.lines.filter(line => !this.lineUnavailable(line.productId) && line.quantity > 0).map((line) => {
       const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
-      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity,
+      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity, unitLabel: this.lineUnit(line.productId).plural,
                before, after: before === null ? null : before - line.quantity };
     });
     this.shipSheet.set({ rows, pieces: data.priced.totals.pieces, number: data.order.number });

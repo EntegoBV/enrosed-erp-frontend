@@ -1,3 +1,4 @@
+import { portalDisplayPieces, portalPriceUnitKey, portalQuantityUnitKey, portalSecondaryPrice, PortalSalesUnit } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal,
 } from '@angular/core';
@@ -254,8 +255,8 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                         <div class="list-item__meta list-item__meta--wrap warn-text strong">{{ t('lineUnavailable') }}</div>
                         <div class="list-item__meta list-item__meta--wrap">{{ requestedQuantityText(line) }}</div>
                       } @else {
-                      <div class="list-item__meta">
-                        {{ line.quantity | num: 0: locale() }} {{ t('portalPieces') }} ·
+                      <div class="list-item__meta list-item__meta--wrap">
+                        {{ line.quantity | num: 0: locale() }} {{ t(quantityUnitKey(line)) }} ·
                         {{ line.cartons | num: 0: locale() }} {{ t('portalBoxes') }}
                         @if (data.loadMode === 'LOOSE_CARTONS') {
                           · {{ (line.cbm ?? 0) | cbm: 3: locale() }}
@@ -264,13 +265,17 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                         }
                       </div>
                       @if (!data.advanceAgreement) {
-                      <div class="list-item__meta">
-                        {{ line.unitPrice | eur: 3: locale() }} {{ t('portalPerPiece') }}
+                      <div class="list-item__meta list-item__meta--wrap">
+                        {{ line.unitPrice | eur: 3: locale() }} {{ t(priceUnitKey(line)) }}
+                        @if (secondaryPrice(line); as equivalent) {
+                          · {{ equivalent.approximate ? '≈ ' : '' }}{{ equivalent.price | eur: 3: locale() }} {{ t(equivalent.labelKey) }}
+                        }
                         @if (line.discountPct) {
                           · {{ t('portalDiscount') }} {{ line.discountPct | pct: 1: locale() }}
                         }
                       </div>
                       }
+                      @if (quantityDetail(line); as detail) { <div class="list-item__meta list-item__meta--wrap">{{ detail }}</div> }
                       <div class="list-item__meta list-item__meta--wrap">
                         @if (line.inStock) {
                           <span class="ok-text"><span class="stock-dot stock-dot--ok"></span>
@@ -476,7 +481,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 <div class="hint warn-text strong">{{ t('lineUnavailable') }}</div>
                 <div class="hint">{{ requestedQuantityText(line) }}</div>
               } @else {
-              <label [attr.for]="'prop-' + line.productId">{{ line.description }}</label>
+              <label [attr.for]="'prop-' + line.productId">{{ line.description }} · {{ t(quantityUnitKey(line)) }}</label>
               <input class="input num right" [id]="'prop-' + line.productId" type="number"
                      min="0" step="1" inputmode="numeric" [ngModel]="line.quantity"
                      (ngModelChange)="setProposal(line.productId, +$event)" />
@@ -504,7 +509,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 <div>
                   <div class="small strong">{{ entry.description }}</div>
                   <div class="tiny muted">
-                    {{ entry.quantity | num: 0: locale() }} {{ t('portalPieces') }}
+                    {{ entry.quantity | num: 0: locale() }} {{ t(quantityUnitKey(entry)) }}
                   </div>
                 </div>
                 <button class="btn btn--sm btn--danger" type="button"
@@ -662,6 +667,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
   `,
 })
 export class PortalPage implements OnDestroy {
+  readonly quantityUnitKey = portalQuantityUnitKey;
+  readonly priceUnitKey = portalPriceUnitKey;
+  readonly secondaryPrice = portalSecondaryPrice;
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
 
@@ -683,13 +691,14 @@ export class PortalPage implements OnDestroy {
   readonly proposalLines = signal<{
     productId: number; description: string; quantity: number; piecesPerCarton: number;
     unavailable: boolean; requestedQuantity: number | null;
+    salesUnit?: 'PIECE' | 'DISPLAY' | null; piecesPerDisplay?: number | null;
   }[]>([]);
   /** Quantities about to snap to a full carton; visible now, not yet applied. */
   readonly pendingRound = signal<Record<number, number>>({});
   private roundTimers = new Map<number, ReturnType<typeof setTimeout>>();
   /** Products not on the quote yet that the customer can add. */
   readonly catalog = signal<PortalCatalogItem[]>([]);
-  readonly additions = signal<Map<number, { description: string; quantity: number }>>(new Map());
+  readonly additions = signal<Map<number, { description: string; quantity: number } & PortalSalesUnit>>(new Map());
   readonly proposeBy = signal('');
   readonly proposeMessage = signal('');
 
@@ -887,10 +896,29 @@ export class PortalPage implements OnDestroy {
     }
   }
 
-  requestedQuantityText(line: { requestedQuantity?: number | null }): string {
+  requestedQuantityText(line: PortalSalesUnit & { requestedQuantity?: number | null }): string {
     const quantity = line.requestedQuantity;
     return quantity != null && Number.isFinite(quantity) && quantity > 0
-      ? this.t('lineRequestedQuantity').replace('%s', new Intl.NumberFormat(this.locale()).format(quantity)) : '';
+      ? this.t('salesRequestedUnits').replace('%s', `${new Intl.NumberFormat(this.locale()).format(quantity)} ${this.t(this.quantityUnitKey(line))}`) : '';
+  }
+
+  quantityDetail(line: PortalSalesUnit & { quantity: number }): string | null {
+    const pieces = portalDisplayPieces(line);
+    if (!pieces) return null;
+    const format = (key: string, value: number) => this.t(key).replace('%s', new Intl.NumberFormat(this.locale()).format(value));
+    const parts = [format('salesPiecesPerDisplay', pieces)];
+    if (Number.isSafeInteger(line.quantity) && line.quantity > 0) {
+      if (line.salesUnit === 'DISPLAY') {
+        const total = line.quantity * pieces;
+        if (Number.isSafeInteger(total)) parts.push(format('salesTotalInnerPieces', total));
+      } else {
+        const count = Math.floor(line.quantity / pieces);
+        const remainder = line.quantity % pieces;
+        if (count) parts.push(format('salesDisplayCount', count));
+        if (remainder) parts.push(format('salesLoosePieces', remainder));
+      }
+    }
+    return parts.join(' · ');
   }
 
   openProposal(): void {
@@ -899,6 +927,7 @@ export class PortalPage implements OnDestroy {
     this.proposalLines.set(quote.lines.map((line) => ({
       productId: line.productId, description: line.description, quantity: line.quantity,
       piecesPerCarton: Math.max(1, line.piecesPerCarton || 1),
+      salesUnit: line.salesUnit, piecesPerDisplay: line.piecesPerDisplay,
       unavailable: line.unavailable === true, requestedQuantity: line.requestedQuantity ?? null,
     })));
     this.pendingRound.set({});
@@ -932,7 +961,8 @@ export class PortalPage implements OnDestroy {
     this.additions.update((current) => {
       const next = new Map(current);
       next.set(choice.item.productId,
-        { description: choice.item.description, quantity: choice.quantity });
+        { description: choice.item.description, quantity: choice.quantity,
+          salesUnit: choice.item.salesUnit, piecesPerDisplay: choice.item.piecesPerDisplay });
       return next;
     });
   }

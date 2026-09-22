@@ -1,3 +1,4 @@
+import { productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
@@ -159,7 +160,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             } @else {<div class="hero-fact">
               <span class="hero-fact__label">Producten</span>
               <strong>{{ data.priced.lines.length }}</strong>
-              <span>{{ data.priced.totals.pieces | num }} stuks</span>
+              <span>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }}</span>
             </div>
             <div class="hero-fact">
               <span class="hero-fact__label">Levering</span>
@@ -283,7 +284,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <div class="website-review__grid">
               <button type="button" (click)="scrollToSection('order-lines')">
                 <span class="website-review__step">1 · Producten, dozen &amp; prijzen</span>
-                <strong>{{ data.priced.totals.pieces | num }} stuks · {{ data.priced.totals.cartons | num }} dozen</strong>
+                <strong>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }} · {{ data.priced.totals.cartons | num }} dozen</strong>
                 <small>Huidig offertetotaal {{ data.priced.totals.total | eur }} · controleer de stukprijzen.</small>
                 @if (websiteCartons(data.order).length) {
                   <em class="website-review__warning">
@@ -560,7 +561,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <span class="section-heading__number">2</span>
               <div>
                 <h2 id="order-lines-title">Producten</h2>
-                <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' stuks in deze offerte' : 'Bouw de offerte regel voor regel op' }}</p>
+                <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' ' + quantityLabel(data.priced.lines) + ' in deze offerte' : 'Bouw de offerte regel voor regel op' }}</p>
               </div>
             </div>
             @if (data.priced.lines.length) {
@@ -605,7 +606,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                       @if (unavailableLineCount(familyGroup.lines) === familyGroup.lines.length) {
                         <small>Tijdelijk niet beschikbaar</small><b>—</b>
                       } @else {
-                        <small>{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen · {{ familyGroup.cbm | cbm }}</small>
+                        <small>{{ familyGroup.pieces | num }} {{ quantityLabel(familyGroup.lines) }} · {{ familyGroup.cartons | num }} dozen · {{ familyGroup.cbm | cbm }}</small>
                         @if (unavailableLineCount(familyGroup.lines); as unavailable) { <small>{{ unavailable }} niet beschikbaar</small> }
                         <b>{{ familyGroup.totalEur | eur }}</b>
                       }
@@ -650,24 +651,24 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 </div>
 
                 @if (lineUnavailable(line.productId)) {
-                  <div class="line-availability line-availability--paused"><div><b>Tijdelijk niet beschikbaar · 0 st</b><span>Niet meegerekend in deze order.@if (lineRequestedQuantity(line.productId); as requested) { Bewaard: {{ requested | num }} stuks. }</span>@if (lineAvailabilityRestoreHint(line.productId); as hint) { <span>{{ hint }}</span> }</div>
-                    @if (canToggleLineAvailability(line.productId)) { <button class="btn btn--sm" type="button" (click)="toggleLineAvailability(line.productId)">Herstel@if (lineRequestedQuantity(line.productId); as requested) { {{ requested | num }} st }</button> }
+                  <div class="line-availability line-availability--paused"><div><b>Tijdelijk niet beschikbaar · 0 st</b><span>Niet meegerekend in deze order.@if (lineRequestedQuantity(line.productId); as requested) { Bewaard: {{ requested | num }} {{ lineUnit(line.productId).plural }}. }</span>@if (lineAvailabilityRestoreHint(line.productId); as hint) { <span>{{ hint }}</span> }</div>
+                    @if (canToggleLineAvailability(line.productId)) { <button class="btn btn--sm" type="button" (click)="toggleLineAvailability(line.productId)">Herstel@if (lineRequestedQuantity(line.productId); as requested) { {{ requested | num }} {{ lineUnit(line.productId).short }} }</button> }
                   </div>
                 } @else {
                 <!-- Three fields in one calm row: nothing folds, nothing jumps. -->
                 <div class="line-fields">
                   <div class="field">
-                    <label [attr.for]="'q-' + line.productId">Aantal</label>
+                    <label [attr.for]="'q-' + line.productId">Aantal {{ lineUnit(line.productId).plural }}</label>
                     <input class="input num" [id]="'q-' + line.productId" type="number"
                            min="0" step="1" inputmode="numeric" [disabled]="!mobileCommercialEditable()"
                            [ngModel]="line.quantity"
                            (ngModelChange)="setLineQuantity(line.productId, $event)" />
                     @if (linePending()[line.productId]; as to) {
-                      <span class="hint warn-text" role="status">Volle doos: wordt <b>{{ to | num }} st</b></span>
+                      <span class="hint warn-text" role="status">Volle doos: wordt <b>{{ to | num }} {{ lineUnit(line.productId).short }}</b></span>
                     }
                   </div>
                   <div class="field">
-                    <label [attr.for]="'p-' + line.productId">Stukprijs</label>
+                    <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>
                     <div class="input-affix">
                       <input class="input num" [id]="'p-' + line.productId" type="number"
                              min="0" step="0.01" inputmode="decimal" [disabled]="!mobileCommercialEditable()"
@@ -708,10 +709,17 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   </div>
                   }
                 </div>
+                @if (lineQuantityDetail(line); as detail) {
+                  <p class="line-unit-context">{{ detail }}.
+                    @if (lineSecondaryPrice(line); as equivalent) {
+                      {{ equivalent.price | eur: 2 }} {{ equivalent.label }} · vóór korting.
+                    }
+                  </p>
+                }
                 @if (line.nextTierAtQuantity) {
                   <div class="tier-nudge">
                     <span aria-hidden="true">↗</span>
-                    <span>Nog <b>{{ line.nextTierAtQuantity - line.quantity | num }}</b> stuks voor {{ line.nextTierPercent | pct: 0 }} korting</span>
+                    <span>Nog <b>{{ line.nextTierAtQuantity - line.quantity | num }}</b> {{ lineUnit(line.productId).plural }} voor {{ line.nextTierPercent | pct: 0 }} korting</span>
                   </div>
                 }
 
@@ -730,10 +738,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                         <span>Leverbaar vanaf {{ line.deliveryDate | dateNl }}@if (line.deliveryWeek) { · {{ line.deliveryWeek | weekNl: 'short' }} }</span>
                       } @else if (line.deliveryWeek) {
                         <b>Levering {{ line.deliveryWeek | weekNl }}</b>
-                        <span>{{ line.shortfall ?? 0 | num }} stuks niet op voorraad</span>
+                        <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
                       } @else {
                         <b class="danger-text">Levertermijn nodig</b>
-                        <span>{{ line.shortfall ?? 0 | num }} stuks niet op voorraad</span>
+                        <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
                       }
                     </span>
                     <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
@@ -770,12 +778,12 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 } @else { <details class="line-internal">
                   <summary class="line-internal__summary">
                     <span class="line-internal__title">
-                      <strong>Rendabiliteit per stuk</strong>
+                      <strong>Rendabiliteit per {{ lineUnit(line.productId).singular }}</strong>
                     </span>
                     <span class="line-internal__profit"
                           [class.line-internal__profit--negative]="marginPerUnit(line) < 0">
                       {{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }}
-                      {{ absolute(marginPerUnit(line)) | eur: 2 }} / stuk
+                      {{ absolute(marginPerUnit(line)) | eur: 2 }} / {{ lineUnit(line.productId).singular }}
                     </span>
                   </summary>
 
@@ -785,18 +793,18 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                       <button class="line-internal__unit line-internal__unit--btn" type="button"
                               (click)="openCostSheet(line)">
                         <dt>Gelande kost <i class="stock-tile__chev" aria-hidden="true"></i></dt>
-                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ stuk</small></dd>
+                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ {{ lineUnit(line.productId).singular }}</small></dd>
                       </button>
                       <div class="line-internal__unit">
                         <dt>Netto verkoop</dt>
-                        <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ stuk</small></dd>
+                        <dd>{{ line.netUnitPrice | eur: 2 }}<small>/ {{ lineUnit(line.productId).singular }}</small></dd>
                       </div>
                     </dl>
 
                     <div class="line-internal__total">
                       <span>
                         Marge na alle kortingen · {{ line.marginEur < 0 ? 'verlies' : 'winst' }}
-                        <small>{{ line.quantity | num }} stuks, na regelkorting</small>
+                        <small>{{ line.quantity | num }} {{ lineUnit(line.productId).plural }}, na regelkorting</small>
                       </span>
                       <strong [class.ok-text]="line.marginEur >= 0"
                               [class.danger-text]="line.marginEur < 0">
@@ -1000,7 +1008,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   }
                   <span class="check-lines__what">
                     <b>{{ line.description }}</b>
-                    <small>{{ line.quantity | num }} st × {{ line.unitPrice | eur: 2 }}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
+                    <small>{{ line.quantity | num }} {{ lineUnit(line.productId).short }} × {{ line.unitPrice | eur: 2 }}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
                       · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}}</small>
                   </span>
                   <span class="num check-lines__amount">{{ line.net | eur }}</span>
@@ -1741,6 +1749,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .receipt__row--total { margin-top:8px;padding-top:11px;border-top:2px solid var(--ink);font-size:15px;font-weight:800 }
     .receipt__note { margin:9px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5 }
     .line-fields { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px }
+    .line-unit-context { margin:8px 0 0;color:var(--muted);font-size:11px;line-height:1.45;overflow-wrap:anywhere }
     @media (min-width:680px) { .line-fields { grid-template-columns:110px 130px minmax(150px,220px) } }
     .receipt__min { position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px;
       margin:4px 0 6px;padding:8px 11px 12px;border:1px solid #eddcb9;border-radius:11px;background:var(--warn-soft);
@@ -2139,7 +2148,7 @@ export class SalesEditor {
         if (costingLine && costingLine.quantity > 0) {
           found = true;
           const per = (total: number) => total / costingLine.quantity;
-          rows.push({ label: 'Inkoopprijs (EXW)', hint: `${costingLine.quantity.toLocaleString('nl-BE')} stuks in ${source}`, eur: per(costingLine.goodsEur) });
+          rows.push({ label: 'Inkoopprijs (EXW)', hint: `${costingLine.quantity.toLocaleString('nl-BE')} ${this.lineUnit(line.productId).plural} in ${source}`, eur: per(costingLine.goodsEur) });
           if (costingLine.originEur) rows.push({ label: '+ Lokale kosten bij vertrek', eur: per(costingLine.originEur) });
           if (costingLine.freightEur) rows.push({ label: '+ Zeevracht', eur: per(costingLine.freightEur) });
           if (costingLine.dutyEur) rows.push({ label: `+ Invoerrechten ${costingLine.dutyRatePct} %`, eur: per(costingLine.dutyEur) });
@@ -2147,16 +2156,16 @@ export class SalesEditor {
           if (costingLine.extraRevenueEur) rows.push({ label: '+ Enrosed kost', eur: per(costingLine.extraRevenueEur) });
         }
       }
-      rows.push({ label: 'Gelande kost per stuk', hint: found ? undefined : 'incl. transport en rechten',
+      rows.push({ label: `Gelande kost per ${this.lineUnit(line.productId).singular}`, hint: found ? undefined : 'incl. transport en rechten',
         eur: line.landedUnitCost, sum: true });
       const advance = this.view()?.order && isAdvanceDocument(this.view()!.order);
-      rows.push({ label: advance ? 'Voorschot per stuk' : 'Netto verkoop', eur: line.netUnitPrice });
-      if (!advance) rows.push({ label: this.marginPerUnit(line) < 0 ? 'Verlies per stuk' : 'Winst per stuk',
+      rows.push({ label: advance ? `Voorschot per ${this.lineUnit(line.productId).singular}` : 'Netto verkoop', eur: line.netUnitPrice });
+      if (!advance) rows.push({ label: `${this.marginPerUnit(line) < 0 ? 'Verlies' : 'Winst'} per ${this.lineUnit(line.productId).singular}`,
         eur: this.marginPerUnit(line), sum: true });
       this.costSheet.set({ title: line.description, source: source ?? null, rows });
     } catch {
       this.costSheet.update((sheet) => sheet && { ...sheet,
-        rows: [{ label: 'Gelande kost per stuk', eur: line.landedUnitCost, sum: true }] });
+        rows: [{ label: `Gelande kost per ${this.lineUnit(line.productId).singular}`, eur: line.landedUnitCost, sum: true }] });
     }
   }
 
@@ -2790,6 +2799,22 @@ export class SalesEditor {
   productName(productId: number): string {
     return this.products().find((product) => product.id === productId)?.describedAs
       ?? '#' + productId;
+  }
+
+  lineUnit(productId: number) {
+    return productSalesUnit(this.products().find((product) => product.id === productId));
+  }
+
+  lineQuantityDetail(line: PricedLine): string | null {
+    return salesQuantityDetail(this.products().find((product) => product.id === line.productId), line.quantity);
+  }
+
+  lineSecondaryPrice(line: PricedLine) {
+    return secondarySalesPrice(this.products().find((product) => product.id === line.productId), line.unitPrice);
+  }
+
+  quantityLabel(lines: readonly PricedLine[]): string {
+    return lines.some((line) => this.lineUnit(line.productId).isDisplay) ? 'verkoopeenheden' : 'stuks';
   }
 
   currentQuantity(productId: number): number {

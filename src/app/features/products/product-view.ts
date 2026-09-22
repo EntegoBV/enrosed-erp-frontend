@@ -1,3 +1,4 @@
+import { productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
 import { ProductCostHistory } from './product-cost-history';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -168,18 +169,21 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             <div class="pd-facts">
               <div class="pd-fact">
                 <small>Voorraad</small>
-                @if (stockLevels()) { <strong class="num" [class.warn-text]="stockTotal() < 0">{{ stockTotal() | num }} <em>st.</em></strong><span>{{ stockSummary() === 'stuks' ? 'in voorraad' : stockSummary() }}</span> }
-                @else if (product.inventoryKnown) { <strong class="num" [class.warn-text]="product.stockQuantity < 0">{{ product.stockQuantity | num }} <em>st.</em></strong><span>in voorraad</span> }
+                @if (stockLevels()) { <strong class="num" [class.warn-text]="stockTotal() < 0">{{ stockTotal() | num }} <em>{{ salesUnit(product).short }}</em></strong><span>{{ stockSummary() === salesUnit(product).plural ? 'in voorraad' : stockSummary() }}</span> }
+                @else if (product.inventoryKnown) { <strong class="num" [class.warn-text]="product.stockQuantity < 0">{{ product.stockQuantity | num }} <em>{{ salesUnit(product).short }}</em></strong><span>in voorraad</span> }
                 @else { <strong>—</strong><span>Nog niet bevestigd</span> }
               </div>
               <div class="pd-fact pd-fact--price">
                 <small>Catalogusprijs</small>
                 @if (displayPrice() !== null) { <strong class="num">{{ displayPrice() | eur: 2 }}</strong> } @else { <strong>—</strong> }
-                <span>per stuk · excl. btw</span>
+                <span>per {{ salesUnit(product).singular }} · excl. btw</span>
+                @if (secondaryPrice(product, displayPrice()); as equivalent) {
+                  <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.piecesPerDisplay }} stuks/display</span>
+                }
               </div>
             </div>
             @if (expected(); as exp) {
-              <a class="pd-expected" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')"><span>{{ exp.quantity | num }} stuks onderweg</span><small>{{ exp.expectedArrival ? 'Verwacht ' + (exp.expectedArrival | dateNl) : 'Bekijk inkooporder' }} ›</small></a>
+              <a class="pd-expected" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')"><span>{{ exp.quantity | num }} {{ salesUnit(product).plural }} onderweg</span><small>{{ exp.expectedArrival ? 'Verwacht ' + (exp.expectedArrival | dateNl) : 'Bekijk inkooporder' }} ›</small></a>
             }
             <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
           </section>
@@ -272,7 +276,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 <div class="tile"><span>EXW-prijs</span><b class="num">
                   @if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }
                 </b><small>fabrieksprijs, excl. transport</small></div>
-                <div class="tile"><span>Extra kost per stuk</span><b class="num">
+                <div class="tile"><span>Extra kost per {{ salesUnit(product).singular }}</span><b class="num">
                   @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
                 </b><small>bv. display of giftbox</small></div>
                 <button class="tile tile--price" type="button" (click)="openPriceInfo(product)">
@@ -282,7 +286,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 </b><small>geland: mét transport en invoer</small></button>
                 <button class="tile tile--price" type="button" (click)="openPriceInfo(product)">
                   <i class="tile-chev" aria-hidden="true"></i>
-                  <span>Catalogusprijs</span><b class="num">
+                  <span>Catalogusprijs per {{ salesUnit(product).singular }}</span><b class="num">
                   @if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }
                 </b><small>{{ hasFixedSalesPrice(product)
                   ? 'vaste verkoopprijs'
@@ -297,7 +301,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 }
                 <button class="tile tile--price tile--price-result" type="button" (click)="openPriceInfo(product)">
                   <i class="tile-chev" aria-hidden="true"></i>
-                  <span>Marge per stuk</span>
+                  <span>Marge per {{ salesUnit(product).singular }}</span>
                   @if (margin(); as value) {
                     <b class="num" [class.warn-text]="value.eur < 0">{{ value.eur | eur: 2 }} · {{ value.pct }} %</b>
                   } @else {
@@ -398,7 +402,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 <div class="tile"><span>Karton B × D × H</span><b class="num">{{ size(product.carton) }}</b></div>
                 <div class="tile"><span>Inhoud</span><b class="num">
                   @if (cartonPiecesAuto(product)) { <small class="muted">auto</small> }
-                  {{ product.carton.piecesPerCarton | num }} stuks</b></div>
+                  {{ product.carton.piecesPerCarton | num }} {{ salesUnit(product).plural }}</b>@if (quantityDetail(product, product.carton.piecesPerCarton ?? 0); as detail) { <small>{{ detail }}</small> }</div>
                 <div class="tile"><span>Gewicht</span><b class="num">
                   @if (product.carton.weightKg) {
                     @if (cartonWeightAuto(product)) { <small class="muted">auto</small> }
@@ -410,14 +414,14 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 </b></div>
                 <div class="tile"><span>Per 20ft GP</span><b class="num">
                   @if (gpCapacity().value !== null) {
-                    {{ gpCapacity().value | num }} stuks
+                    {{ gpCapacity().value | num }} {{ salesUnit(product).plural }}
                     <small class="muted" [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig bevestigd' }}</small>
                   } @else { — }
                 </b></div>
                 <div class="tile"><span>Per 40' HC</span><b class="num">
                   @if (product.carton.hcCapacity; as hc) {
                     @if (!product.carton.piecesPerHc) { <small class="muted">auto</small> }
-                    {{ hc | num }} stuks
+                    {{ hc | num }} {{ salesUnit(product).plural }}
                   } @else { — }
                 </b></div>
                 <div class="tile"><span>Omdoosbarcode</span><b class="mono">
@@ -911,6 +915,9 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
   `,
 })
 export class ProductView {
+  readonly salesUnit = productSalesUnit;
+  readonly secondaryPrice = secondarySalesPrice;
+  readonly quantityDetail = salesQuantityDetail;
   readonly lightbox = signal(-1);
   readonly galleryIndex = signal(0);
   readonly agreementLightbox = signal(-1);
@@ -954,7 +961,7 @@ export class ProductView {
   /** "stuks" alone with one location; otherwise "9.400 magazijn · 600 TICA". */
   readonly stockSummary = computed(() => {
     const levels = this.stockLevels() ?? [];
-    if (levels.length <= 1) return 'stuks';
+    if (levels.length <= 1) return productSalesUnit(this.product()).plural;
     return levels.map((level) => `${level.quantity.toLocaleString('nl-BE')} ${level.name}`).join(' · ');
   });
 
@@ -1086,7 +1093,7 @@ export class ProductView {
     const rows: PriceRow[] = [];
     const per = (total: number, quantity: number) => quantity > 0 ? total / quantity : 0;
     if (line && line.quantity > 0) {
-      rows.push({ label: 'Inkoopprijs (EXW)', hint: `${line.quantity.toLocaleString('nl-BE')} stuks in ${source}`, eur: per(line.goodsEur, line.quantity) });
+      rows.push({ label: 'Inkoopprijs (EXW)', hint: `${line.quantity.toLocaleString('nl-BE')} ${productSalesUnit(product).plural} in ${source}`, eur: per(line.goodsEur, line.quantity) });
       if (line.originEur) {
         rows.push({ label: `+ ${labels?.originCostsLabel || 'Lokale kosten bij vertrek'}`,
           hint: `${labels?.originRoute ? labels.originRoute + ' · ' : ''}vervoer naar de haven, export, laden`,
@@ -1111,9 +1118,9 @@ export class ProductView {
         rows.push({ label: '+ Enrosed kost', hint: 'vast bedrag per container, verdeeld over de stuks',
           eur: per(line.extraRevenueEur, line.quantity) });
       }
-      rows.push({ label: 'Kostprijs per stuk', eur: product.landedCostEur ?? line.landedUnitEur, sum: true });
+      rows.push({ label: `Kostprijs per ${productSalesUnit(product).singular}`, eur: product.landedCostEur ?? line.landedUnitEur, sum: true });
     } else if (product.landedCostEur) {
-      rows.push({ label: 'Kostprijs per stuk', hint: 'incl. transport en rechten', eur: product.landedCostEur, sum: true });
+      rows.push({ label: `Kostprijs per ${productSalesUnit(product).singular}`, hint: 'incl. transport en rechten', eur: product.landedCostEur, sum: true });
     }
     const price = this.displayPrice();
     if (price !== null) {
@@ -1122,21 +1129,14 @@ export class ProductView {
       } else if (product.landedCostEur) {
         rows.push({ label: `+ Opslag ${product.markupPct ?? 0} %`, eur: price - product.landedCostEur });
       }
-      rows.push({ label: 'Catalogusprijs', eur: price, sum: true });
+      rows.push({ label: `Catalogusprijs per ${productSalesUnit(product).singular}`, eur: price, sum: true });
       const margin = this.margin();
-      if (margin) rows.push({ label: `Marge per stuk · ${margin.pct} %`, eur: margin.eur, note: true });
+      if (margin) rows.push({ label: `Marge per ${productSalesUnit(product).singular} · ${margin.pct} %`, eur: margin.eur, note: true });
     }
-    /* Sold as a display: the same figures once more for a full display,
-       quietly under the per-piece sum. */
-    const pieces = product.packaging?.kind === 'DISPLAY' ? (product.packaging.piecesPerUnit ?? 0) : 0;
-    if (pieces > 1) {
-      if (product.landedCostEur) {
-        rows.push({ label: `Kostprijs per display · ${pieces} stuks`, eur: product.landedCostEur * pieces, aside: true });
-      }
-      if (price !== null) {
-        rows.push({ label: `Catalogusprijs per display · ${pieces} stuks`, eur: price * pieces, aside: true });
-      }
-    }
+    const costEquivalent = secondarySalesPrice(product, product.landedCostEur);
+    if (costEquivalent) rows.push({ label: `Kostprijs ${costEquivalent.label} · ${costEquivalent.piecesPerDisplay} stuks/display`, eur: costEquivalent.price, aside: true });
+    const priceEquivalent = secondarySalesPrice(product, price);
+    if (priceEquivalent) rows.push({ label: `Catalogusprijs ${priceEquivalent.label} · ${priceEquivalent.piecesPerDisplay} stuks/display`, eur: priceEquivalent.price, aside: true });
     this.priceBuild.set({ rows, source, sourceFound: line !== null });
   }
 
