@@ -2045,6 +2045,39 @@ export interface CatalogImportResult {
   problems: string[];
 }
 
+/**
+ * Which products go into the photo ZIP. ACTIVE = active, non-demo products;
+ * WEBSITE = active products whose series is published on the website;
+ * ALL = every product including inactive ones (demo pieces never).
+ */
+export type ProductPhotoExportScope = 'ACTIVE' | 'WEBSITE' | 'ALL';
+
+/** ALL = every photo of the SKU as the ERP carousel shows it; WEBSITE = the public gallery only. */
+export type ProductPhotoExportPhotos = 'ALL' | 'WEBSITE';
+
+/** POST /api/products/photo-export */
+export interface ProductPhotoExportRequest {
+  scope: ProductPhotoExportScope;
+  photos: ProductPhotoExportPhotos;
+  /** Language of the LEESMIJ/README file inside the ZIP. */
+  language: LanguageCode;
+}
+
+/**
+ * A prepared, not yet downloaded ZIP. `downloadUrl` is relative to the API
+ * and carries a short-lived token as its only authorization, so the browser
+ * can download it natively (no Authorization header, nothing held in memory).
+ */
+export interface ProductPhotoExportResult {
+  downloadUrl: string;
+  fileName: string;
+  /** ISO-8601; the link may be used more than once until then. */
+  expiresAt: string;
+  productCount: number;
+  photoCount: number;
+  totalBytes: number;
+}
+
 /** Notification for the bell in the top right. */
 export interface AppNotification {
   kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL'

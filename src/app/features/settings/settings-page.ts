@@ -35,6 +35,7 @@ import {
   productBelongsToCategory,
 } from '../../shared/product-featured-eligibility';
 import { CategoryTranslationEditor } from './category-translation-editor';
+import { PhotoExportSheet } from '../products/photo-export-sheet';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
 
@@ -72,6 +73,7 @@ const normalizeCategoryCode = (value: string): string => value
     CategoryTranslationEditor,
     FormsModule,
     PageHeader,
+    PhotoExportSheet,
     ProductPicker,
     RouterLink,
     WebsiteSyncStatus,
@@ -851,6 +853,18 @@ const normalizeCategoryCode = (value: string): string => value
               </div>
             </div>
           }
+
+          <!-- Photos are not master data, but they are exported from the
+               same place: one ZIP with a folder per product. -->
+          <button class="photo-export-row" type="button" aria-haspopup="dialog"
+                  (click)="photoExportOpen.set(true)">
+            <span class="photo-export-row__badge" aria-hidden="true">ZIP</span>
+            <span class="photo-export-row__copy">
+              <b>Productfoto’s exporteren (ZIP)</b>
+              <small>Originele foto’s per product in een eigen map, met een LEESMIJ-bestand. Zonder prijzen.</small>
+            </span>
+            <i aria-hidden="true">›</i>
+          </button>
         </div>
       </div>
 
@@ -958,6 +972,10 @@ const normalizeCategoryCode = (value: string): string => value
         (picked)="chooseDiscountProduct($event.product)"
         (cancelled)="lineDiscountPicker.set(false)"
       />
+    }
+
+    @if (photoExportOpen()) {
+      <app-photo-export-sheet (closed)="photoExportOpen.set(false)" />
     }
   `,
   styles: `
@@ -1069,6 +1087,17 @@ const normalizeCategoryCode = (value: string): string => value
       border-radius: 8px; background: #16845b; color: #fff; font-weight: 800; }
     .workbook-selection__actions { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px; }
     .workbook-result { margin-top: 12px; }
+    .photo-export-row { display: flex; align-items: center; gap: 11px; width: 100%; margin-top: 16px;
+      padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
+      color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+    .photo-export-row:hover { background: var(--surface); border-color: var(--line-strong); }
+    .photo-export-row:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+    .photo-export-row__badge { flex: none; padding: 4px 7px; border-radius: 5px; background: var(--ink-2);
+      color: #fff; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+    .photo-export-row__copy { display: grid; flex: 1; gap: 2px; min-width: 0; }
+    .photo-export-row__copy b { font-size: 13px; }
+    .photo-export-row__copy small { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+    .photo-export-row > i { flex: none; color: var(--muted); font-size: 18px; font-style: normal; }
     .workbook-result__summary { margin-top: 3px; }
     .workbook-problems { margin-top: 8px; }
     .workbook-problems summary { cursor: pointer; font-size: 12px; font-weight: 650; }
@@ -1255,6 +1284,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly selectedWorkbook = signal<File | null>(null);
   readonly exportingWorkbook = signal(false);
   readonly importingWorkbook = signal(false);
+  /** The product photo ZIP sheet; the same sheet opens from the product list. */
+  readonly photoExportOpen = signal(false);
   readonly websiteSyncRefresh = signal(0);
   readonly loadingSettings = signal(true);
   readonly settingsLoadError = signal<string | null>(null);

@@ -7,6 +7,7 @@ import {
   PhotoRole, ProductCostHistoryEntry,
   CataloguePhotoSelection, PhotoRenditions,
   ProductPhotoOverview, ProductPhotoRoleKey, ProductPhotoScope, UnitName,
+  ProductPhotoExportRequest, ProductPhotoExportResult,
 } from './models';
 import { rememberUnitNames } from '../../features/products/product-sales-unit';
 
@@ -500,6 +501,16 @@ export class CatalogApi {
     form.append('file', file);
     return firstValueFrom(
       this.http.post<CatalogImportResult>(api('/api/products/workbook'), form));
+  }
+
+  /**
+   * Prepares the product photo ZIP. The answer only describes it and carries a
+   * short-lived download link; the ZIP itself is streamed by the browser from
+   * that link, so hundreds of megabytes never pass through this app's memory.
+   */
+  preparePhotoExport(body: ProductPhotoExportRequest): Promise<ProductPhotoExportResult> {
+    return firstValueFrom(
+      this.http.post<ProductPhotoExportResult>(api('/api/products/photo-export'), body));
   }
 
   /** The catalogue as a PDF, with a hand-picked selection. */

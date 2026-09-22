@@ -15,6 +15,7 @@ import { COLOUR_SWATCHES } from '../../core/api/geo';
 import { Icon } from '../../shared/icon';
 import { describePublicationIssues } from './publication-issues';
 import { salesPhotoUrl } from '../../shared/sales-photo';
+import { PhotoExportSheet } from './photo-export-sheet';
 
 /**
  * One row in the list: a product on its own, or a series (family) that
@@ -65,12 +66,17 @@ interface ProductSwipe {
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet],
+  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet,
+    PhotoExportSheet],
   template: `
     <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
       <a class="btn btn--sm btn--icon-mobile" routerLink="/catalog-export" title="Catalogus PDF" aria-label="Catalogus PDF">
         <app-icon name="pdf" [size]="18" /><span class="hide-mobile">Catalogus PDF</span>
       </a>
+      <button class="btn btn--sm btn--icon-mobile" type="button" title="Foto’s exporteren"
+              aria-label="Foto’s exporteren" aria-haspopup="dialog" (click)="photoExportOpen.set(true)">
+        <app-icon name="media" [size]="18" /><span class="hide-mobile">Foto’s exporteren</span>
+      </button>
       <a class="btn btn--primary btn--sm hide-mobile" routerLink="/products/new">+ Nieuw</a>
     </app-page-header>
 
@@ -438,6 +444,10 @@ interface ProductSwipe {
     </ng-template>
 
     <a class="fab" routerLink="/products/new">+ Product</a>
+
+    @if (photoExportOpen()) {
+      <app-photo-export-sheet (closed)="photoExportOpen.set(false)" />
+    }
   `,
   styles: `
     .catalog-tools {
@@ -653,7 +663,8 @@ interface ProductSwipe {
     /* Phone: "te verwachten" wraps instead of running into the colour dots. */
     @media (max-width: 679px) {
       .stock-expected { white-space: normal; max-width: 82px; text-align: right; line-height: 1.2; }
-      .btn--icon-mobile { min-width: 40px; padding: 0 10px; }
+      /* Two icon actions plus the bell: 36 px each keeps "Catalogus" whole at 375 px. */
+      .btn--icon-mobile { min-width: 36px; padding: 0 8px; }
     }
   `,
 })
@@ -669,6 +680,8 @@ export class ProductList {
   readonly statusFilter = signal<'ALL' | 'NEEDS_WORK' | 'WEBSITE' | 'ORDER_APP' | 'INACTIVE'>('ALL');
   readonly sortKey = signal<SortKey>('STOCK_SMART');
   readonly filtersOpen = signal(false);
+  /** The photo ZIP export sheet (also reachable from Instellingen → Catalogusdata). */
+  readonly photoExportOpen = signal(false);
   /** How many of category, status and sorting stand off their default. */
   readonly activeFilterCount = computed(() =>
     (this.categoryFilter() !== null ? 1 : 0)
