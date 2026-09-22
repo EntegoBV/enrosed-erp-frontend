@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE, api } from './api.config';
+import { ShippingUpdate } from './sales-shipping';
 import {
   CompanyProfile, Country, Customer, CustomerPortalLink, DiscountTier, FreightPricingStrategy, LanguageCode,
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
@@ -237,6 +238,10 @@ export class SalesApi {
       api(`/api/sales-orders/${id}/freight`), {
         state, manualFreightEur, freightPricingStrategy, freightRatePerCbmEur, freightCarrierId,
       }));
+  }
+
+  updateShipping(id: number, shipping: ShippingUpdate): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/shipping`), shipping));
   }
 
   duplicateOrder(id: number): Promise<SalesOrderView> {

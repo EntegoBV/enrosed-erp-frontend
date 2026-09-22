@@ -154,6 +154,12 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 </div>
                 <span class="badge" [class]="'badge--' + badge(data)">{{ statusLabel(data) }}</span>
               </div>
+              <div class="portal__document-actions">
+                <a class="btn btn--primary portal__pdf" [href]="pdfUrl()" target="_blank" rel="noopener">
+                  <span aria-hidden="true">↓</span> {{ t('portalPdf') }}
+                </a>
+                <p class="small muted portal__version-note">{{ t('portalOnlineQuoteText') }}</p>
+              </div>
             </div>
           </div>
 
@@ -190,7 +196,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
             <div class="alert alert--ok mt-12">
               <span class="alert__icon">✓</span>
               <div>
-                <b>{{ t('freight') }}.</b> {{ t('portalFreightPendingText') }}
+                <b>{{ t('portalFreightAddedTitle') }}.</b> {{ t('portalFreightAddedText') }}
               </div>
             </div>
           }
@@ -360,7 +366,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 </span></div>
               <div class="stat-row"><span>{{ t('handling') }}</span>
                 <span class="num">{{ data.totals.handling | eur: 2: locale() }}</span></div>
-              <div class="stat-row stat-row--total"><span>{{ t('total') }}</span>
+              <div class="stat-row stat-row--total"><span>{{ t(freightPending() ? 'portalTotalWithoutFreight' : 'total') }}</span>
                 <span class="num">{{ data.totals.total | eur: 2: locale() }}</span></div>
               @if (data.totals.vatLegalMention) {
                 <div class="stat-row stat-row--muted">
@@ -370,7 +376,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 <div class="stat-row stat-row--muted">
                   <span>{{ t('vat') }} {{ data.totals.vatRatePct | pct: 1: locale() }}</span>
                   <span class="num">{{ data.totals.vatAmount | eur: 2: locale() }}</span></div>
-                <div class="stat-row stat-row--muted"><span>{{ t('totalInclVat') }}</span>
+                <div class="stat-row stat-row--muted"><span>{{ t(freightPending() ? 'portalTotalInclVatWithoutFreight' : 'totalInclVat') }}</span>
                   <span class="num">{{ data.totals.totalInclVat | eur: 2: locale() }}</span></div>
               }
             </div>
@@ -383,10 +389,6 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
               <div>{{ data.totals.vatLegalMention }}</div>
             </div>
           }
-
-          <a class="btn btn--block mt-12" [href]="pdfUrl()" target="_blank" rel="noopener">
-            {{ t('portalPdf') }}
-          </a>
 
           @if (data.canRespond) {
             <div class="card mt-16">
@@ -575,6 +577,30 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
   styles: `
     .portal-agreement{margin-top:16px}.portal-agreement p{margin:0;line-height:1.6}.portal-agreement__rows{display:grid;gap:8px;list-style:none;margin:16px 0;padding:0}.portal-agreement__rows li{display:flex;align-items:start;justify-content:space-between;gap:16px;padding:13px;border:1px solid var(--line);border-radius:10px}.portal-agreement__rows li>div{min-width:0}.portal-agreement__rows b{overflow-wrap:anywhere}.portal-agreement__rows small{display:block;color:var(--muted);margin-top:4px;font-size:12px}.portal-agreement__rows strong{white-space:nowrap;font-variant-numeric:tabular-nums}.portal-agreement__final{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.portal-agreement__final p{margin-top:6px;font-size:13px}@media(max-width:430px){.portal-agreement__rows li{display:grid;gap:8px}}
     .portal { min-height: 100dvh; background: var(--bg); }
+    .portal__document-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+    .portal__pdf {
+      flex: 0 1 auto;
+      min-height: 44px;
+      white-space: normal;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+    .portal__version-note { flex: 1 1 320px; margin: 0; line-height: 1.6; }
+    .portal .stat-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    .portal .stat-row--total > .num,
+    .portal .stat-row--muted > .num { flex-shrink: 0; white-space: nowrap; }
+    @media (max-width: 600px) {
+      .portal__pdf { width: 100%; }
+      .portal__version-note { flex-basis: 100%; }
+    }
     .portal__bar {
       background: #17120f;
       padding: 16px 20px;

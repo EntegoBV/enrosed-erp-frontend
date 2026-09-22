@@ -26,6 +26,7 @@ import { isSettlementInvoice, separateCostPerPiece, salesDocumentKind } from './
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
+import { mergeOrderAfterSave, shippingSnapshot, withoutShipping } from '../../core/api/sales-shipping';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
@@ -81,13 +82,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
           <!-- One primary at a time: with unsaved changes the only next
                step is saving; once saved, sending takes the spot. -->
-          @if (canEdit() && (dirty() || saving())) {
+          @if (canEdit() && documentDirty() && !transportSaving()) {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
                     [disabled]="saving()" (click)="save()">
               {{ saving() ? 'Bezig…' : 'Opslaan' }}
             </button>
           }
-          <button class="btn btn--sm quote-header-button quote-header-button--desktop" type="button"
+          <button class="btn btn--sm quote-header-button" type="button"
                   (click)="openPdfSheet()">PDF</button>
           @if (canReopen(data)) {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
@@ -339,7 +340,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <b>Deze {{ data.order.docType === 'FACTUUR' ? 'factuur' : 'offerteversie' }} staat vast</b>
               <div class="small">
                 Klant, aantallen en prijzen veranderen niet meer via dit scherm.
-                Leverweken en vracht kun je nog veilig aanvullen.
+                {{ canEditTerms() ? 'Transport en leverweken kun je aanpassen zolang de offerte nog openstaat. Transport wordt automatisch opgeslagen.' : 'Deze offerte is afgesloten; transport kan niet meer worden aangepast.' }}
               </div>
             </div>
             <button class="btn btn--sm" type="button" [disabled]="busy()"
@@ -930,80 +931,15 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 {{ data.priced.totals.unassignedCartons | num }} dozen zijn nog niet aan een pallet toegewezen.
               </div>
             }
-            <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditTerms() || (mobileFinanciallyLocked() && !canEdit())"
-                    (click)="canEdit() ? palletSheet.set(true) : freightOpen.set(!freightOpen())"
-                    [attr.aria-expanded]="canEdit() ? palletSheet() : freightOpen()"
-                    [attr.aria-haspopup]="canEdit() ? 'dialog' : null"
-                    [attr.aria-controls]="canEdit() ? null : 'freight-options'">
-              {{ canEdit() ? 'Transport & levering aanpassen' : (freightOpen() ? 'Sluiten' : 'Vracht aanvullen') }}
+            <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditShipping()"
+                    (click)="palletSheet.set(true)" aria-haspopup="dialog">
+              Transport &amp; levering aanpassen
             </button>
-            @if (!canEdit() && !mobileFinanciallyLocked() && freightOpen()) {
-                <div class="freight-options" id="freight-options">
-                  <label class="check-option">
-                    <input type="checkbox" [checked]="data.order.freight === 'TE_BEPALEN'"
-                           (change)="setFreightPending($any($event.target).checked)" />
-                    <span>
-                      <strong>Later bepalen</strong>
-                      <small>De klant ziet geen bedrag; vracht telt nog niet mee.</small>
-                    </span>
-                  </label>
-                  <div class="field">
-                    <label for="so-freight-strategy">Prijsstrategie</label>
-                    <select class="select" id="so-freight-strategy"
-                            [value]="effectiveFreightStrategy(data)"
-                            (change)="setLockedFreightStrategy($any($event.target).value)">
-                      @if (!isLooseCartons(data)) {
-                        <option value="COUNTRY_PALLET">Landentarief per pallet</option>
-                      }
-                      @if (!isLooseCartons(data) && carriers().length) {
-                        <option value="CARRIER">Verzendorganisatie (staffel)</option>
-                      }
-                      @if (effectiveFreightStrategy(data) === 'PER_CBM') {
-                        <option value="PER_CBM">Tarief per m³</option>
-                      }
-                      <option value="FIXED">Vast bedrag</option>
-                      <option value="PICKUP">Afhalen in het magazijn</option>
-                    </select>
-                  </div>
-                  @if (effectiveFreightStrategy(data) === 'CARRIER') {
-                    <div class="field">
-                      <label for="so-freight-carrier">Verzendorganisatie</label>
-                      <select class="select" id="so-freight-carrier"
-                              [value]="data.order.freightCarrierId ?? ''"
-                              (change)="setLockedCarrier($any($event.target).value)">
-                        @for (carrier of carriers(); track carrier.id) {
-                          <option [value]="carrier.id">{{ carrier.name }}</option>
-                        }
-                      </select>
-                    </div>
-                  }
-                  @if (effectiveFreightStrategy(data) === 'PER_CBM') {
-                    <div class="field">
-                      <label for="so-freight-cbm">Tarief per m³</label>
-                      <div class="input-prefix">
-                        <span>€</span>
-                        <input class="input num" id="so-freight-cbm" type="number" min="0"
-                               step="0.01" inputmode="decimal"
-                               [value]="data.order.freightRatePerCbmEur ?? ''"
-                               (change)="setFreightCbmRate($any($event.target).value)" />
-                      </div>
-                    </div>
-                  } @else if (effectiveFreightStrategy(data) === 'FIXED') {
-                    <div class="field">
-                      <label for="so-freight">Vast vrachtbedrag</label>
-                      <div class="input-prefix">
-                        <span>€</span>
-                        <input class="input num" id="so-freight" type="number" min="0"
-                               step="0.01" inputmode="decimal"
-                               [value]="data.order.manualFreightEur ?? ''"
-                               (change)="setManualFreight($any($event.target).value)" />
-                      </div>
-                    </div>
-                  }
-                  @if (data.order.freight === 'TE_BEPALEN') {
-                    <span class="hint">Vul de prijs in en zet ‘Later bepalen’ uit wanneer hij klaar is.</span>
-                  }
-                </div>
+            @if (canEditShipping()) {
+              <p class="hint" role="status">{{ transportSaveStatus() }}</p>
+              @if (data.order.sentAt) {
+                <p class="hint">Wijzigingen staan na opslaan in de online offerte en een nieuwe PDF. De eerdere e-mailbijlage blijft gelijk; gebruik ‘Opnieuw versturen’ als je de klant wilt verwittigen.</p>
+              }
             }
           </div>
         </section>
@@ -1320,11 +1256,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <small>Stap {{ phoneStep() + 1 }} van 4</small>
             <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
           </span>
-          <button class="btn sales-mobile-dock__save" type="button"
-                  [class.btn--primary]="dirty()"
-                  [disabled]="saving() || !dirty()" (click)="save()">
-            {{ saving() ? 'Opslaan…' : 'Opslaan' }}
-          </button>
+          @if (canEdit() && documentDirty() && !transportSaving()) {
+            <button class="btn btn--primary sales-mobile-dock__save" type="button" [disabled]="saving()" (click)="save()">
+              {{ saving() ? 'Opslaan…' : 'Opslaan' }}
+            </button>
+          } @else if (shippingDirty() || transportSaving()) {
+            <span class="tiny muted" role="status">{{ saveError() ? 'Niet opgeslagen' : 'Opslaan…' }}</span>
+          }
           @if (phoneStep() < 3) {
             <button class="sales-mobile-dock__next" type="button" (click)="nextPhoneStep()"
                     [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">
@@ -1402,15 +1340,15 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       }
 
       @if (palletSheet()) {
-        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="palletSheet.set(false)">
+        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="closeShipping()">
           <div body>
             @if (mobileFinanciallyLocked() && canEdit()) {
-              <div class="field"><label for="mobile-split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="mobile-split-manual-freight" type="number" inputmode="decimal" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="patch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
+              <div class="field"><label for="mobile-split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="mobile-split-manual-freight" type="number" inputmode="decimal" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="applyShippingPatch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
             }
             @if (view(); as data) {
               <app-shipping-planner
                 [view]="data"
-                [canEdit]="mobileCommercialEditable()"
+                [canEdit]="canEditShipping() && !mobileFinanciallyLocked()"
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
                 [countryName]="orderCountryName()"
@@ -1420,8 +1358,12 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             }
           </div>
           <div foot style="display:contents">
-            <button class="btn btn--primary btn--block" type="button"
-                    (click)="palletSheet.set(false)">Klaar</button>
+            <div role="status" class="small grow">{{ transportSaveStatus() }}
+              @if (shippingDirty() && saveError()) {
+                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" (click)="flushTransport()">Opnieuw proberen</button>
+              }
+            </div>
+            <button class="btn btn--primary" type="button" [disabled]="transportSaving()" (click)="closeShipping()">Klaar</button>
           </div>
         </app-sheet>
       }
@@ -1875,7 +1817,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
     .sales-mobile-dock .btn { min-height:42px;margin:0;padding-inline:11px }
     .sales-mobile-dock__save:disabled { opacity:.58 }
     .sales-mobile-dock__primary { flex:none }
-    @media(max-width:390px) { .sales-mobile-dock__context { display:none }.sales-mobile-dock__primary { flex:1 }.sales-mobile-dock__save { padding-inline:9px!important } }
+    @media(max-width:390px) { .sales-mobile-dock__primary { flex:1 }.sales-mobile-dock__save { padding-inline:9px!important } }
     @media (min-width:680px) { .sales-mobile-dock { display:none } }
     .products-empty { padding:38px 18px 42px;text-align:center }
     .products-empty__art { width:64px;height:64px;margin:0 auto 12px;display:grid;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px }
@@ -2576,8 +2518,6 @@ export class SalesEditor {
   });
   readonly sendMessage = signal('');
   readonly sending = signal(false);
-  /** The freight tweak panel, folded away until asked for. */
-  readonly freightOpen = signal(false);
 
   /** Pallet management opens as a sheet: full height, scrollable, phone-first. */
   readonly palletSheet = signal(false);
@@ -2622,6 +2562,8 @@ export class SalesEditor {
       window.removeEventListener('scroll', scheduleSectionUpdate);
       window.removeEventListener('resize', scheduleSectionUpdate);
       if (this.sectionFrame !== null) cancelAnimationFrame(this.sectionFrame);
+      if (this.shippingTimer !== null) clearTimeout(this.shippingTimer);
+      if (this.previewTimer !== null) clearTimeout(this.previewTimer);
     });
     effect(() => {
       if (this.view()) this.scheduleSectionUpdate();
@@ -2731,6 +2673,13 @@ export class SalesEditor {
     if (this.documentMutationBusy() || this.mobileSplitBusy() || this.advanceAgreement() || this.view()?.order.archivedAt) return false;
     const status = this.view()?.order.status;
     return status === 'CONCEPT' || status === 'VERZONDEN' || status === 'BEKEKEN';
+  });
+
+  readonly canEditShipping = computed(() => {
+    const data = this.view();
+    return !!data && this.canEditTerms() && !data.invoicedAsId && !data.order.paidAt
+      && !data.order.signedByName && !data.order.goodsShippedAt
+      && (data.order.docType !== 'FACTUUR' || data.order.status === 'CONCEPT');
   });
 
   /** The same preflight the server enforces, phrased before the user taps send. */
@@ -2865,15 +2814,31 @@ export class SalesEditor {
 
   /* ---- draft, preview, save ---------------------------------------- */
 
-  /* The quote on screen is a draft: every edit lands here at once and the
-     server re-prices it without saving. Only Opslaan - or an action such as
-     Verstuur, which saves first - writes the quote. */
+  /* Commercial edits remain a draft. Transport saves automatically through
+     the same serial writer, with a narrow endpoint for already-sent quotes. */
   private readonly savedOrder = signal<string>('');
   readonly saving = signal(false);
   readonly dirty = computed(() => {
     const data = this.view();
     return !!data && JSON.stringify(data.order) !== this.savedOrder();
   });
+  readonly documentDirty = computed(() => {
+    const order = this.view()?.order;
+    return !!order && !!this.savedOrder()
+      && JSON.stringify(withoutShipping(order)) !== JSON.stringify(withoutShipping(JSON.parse(this.savedOrder())));
+  });
+  readonly shippingDirty = computed(() => {
+    const order = this.view()?.order;
+    return !!order && !!this.savedOrder()
+      && JSON.stringify(shippingSnapshot(order)) !== JSON.stringify(shippingSnapshot(JSON.parse(this.savedOrder())));
+  });
+  readonly transportSaving = signal(false);
+  readonly transportSaveStatus = computed(() => this.shippingDirty() && this.saveError()
+    ? 'Transport niet opgeslagen'
+    : this.shippingDirty() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen');
+  private shippingTimer: ReturnType<typeof setTimeout> | null = null;
+  private saveOperation: Promise<boolean> | null = null;
+  private transportOperation: Promise<boolean> | null = null;
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
   private previewVersion = 0;
 
@@ -2949,24 +2914,42 @@ export class SalesEditor {
     void this.preview();
   }
 
-  /** Writes the draft. Returns false when it could not be written. */
-  async save(): Promise<boolean> {
-    const data = this.view();
-    if (!data || this.saving()) return false;
+  /** Serialize writes; a second click or autosave waits instead of silently doing nothing. */
+  save(): Promise<boolean> {
+    if (this.saveOperation) {
+      return this.saveOperation.then(saved => saved && this.dirty() ? this.save() : saved);
+    }
+    const operation = this.persistOrder();
+    this.saveOperation = operation;
+    return operation.finally(() => { if (this.saveOperation === operation) this.saveOperation = null; });
+  }
+
+  private async persistOrder(): Promise<boolean> {
+    const current = this.view();
+    if (!current) return false;
     if (!this.dirty()) return true;
-    if (!this.canEdit()) {
+    const fullDraft = this.canEdit();
+    if (!fullDraft && (!this.canEditShipping() || this.documentDirty())) {
       this.saveError.set(this.documentMutationBusy()
         ? 'Wacht tot de huidige factuuractie is afgerond. Je wijzigingen blijven in dit scherm staan.'
         : 'Deze documentversie staat vast. Je lokale wijzigingen blijven in dit scherm staan; ze kunnen niet over de uitgegeven versie worden opgeslagen.');
       return false;
     }
+    const data = { ...current, order: structuredClone(current.order) };
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
     this.saveError.set(null);
     const sentQuantities = new Map(data.order.lines.map((line) => [line.productId, line.quantity]));
     try {
-      const saved = await this.sales.updateOrder(data.order.id, data.order);
+      const saved = fullDraft
+        ? await this.sales.updateOrder(data.order.id, data.order)
+        : await this.sales.updateShipping(data.order.id, shippingSnapshot(data.order));
+      const latest = this.view();
+      if (!latest || latest.order.id !== data.order.id) return true;
+      const merged = mergeOrderAfterSave(saved.order, data.order, latest.order);
       this.adopt(saved);
+      this.view.set({ ...saved, order: merged });
+      if (this.dirty()) this.schedulePreview();
       /* The server rounds up to whole cartons; when it did, say so - a
          silently changed number reads as a bug. */
       const rounded = saved.order.lines.filter((line) =>
@@ -2975,7 +2958,7 @@ export class SalesEditor {
         const parts = rounded.map((line) =>
           `${sentQuantities.get(line.productId)} → ${line.quantity} st`);
         this.ui.toast(`Opgeslagen — aantal afgerond op volle dozen: ${parts.join(' · ')}`);
-      } else {
+      } else if (!this.transportSaving()) {
         this.ui.toast('Opgeslagen');
       }
       this.linePending.set({});
@@ -2994,6 +2977,9 @@ export class SalesEditor {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
+    if (this.transportSaving() || this.shippingDirty()) {
+      return this.flushTransport().then(saved => saved ? this.canDeactivate() : false);
+    }
     if (this.saving() || this.mobileSplitBusy()) return false;
     if (!this.dirty()) return true;
     return new Promise<boolean>((resolve) => {
@@ -3093,7 +3079,11 @@ export class SalesEditor {
   /** Saves the draft before an action reads the order on the server. */
   private async flushPendingEdits(): Promise<boolean> {
     this.linePending.set({});
-    return this.save();
+    if (!(await this.flushTransport())) return false;
+    do {
+      if (!(await this.save())) return false;
+    } while (this.dirty());
+    return true;
   }
 
   private piecesPerCarton(productId: number): number {
@@ -3109,18 +3099,7 @@ export class SalesEditor {
       const deliveryOnly = Object.keys(changes).length === 1
           && Object.prototype.hasOwnProperty.call(changes, 'deliveryWeek');
       if (deliveryOnly && this.canEditTerms()) {
-        void (async () => {
-          const data = this.view();
-          if (!data) return;
-          try {
-            this.adopt(await this.sales.updateDeliveryTerms(data.order.id, [{
-              productId,
-              deliveryWeek: changes.deliveryWeek?.trim() || null,
-            }]));
-          } catch (failure: unknown) {
-            this.ui.toast(messageOf(failure, 'Leverweek opslaan mislukt'), 'err');
-          }
-        })();
+        void this.saveDeliveryWeek(productId, changes.deliveryWeek?.trim() || null);
       }
       return;
     }
@@ -3129,6 +3108,37 @@ export class SalesEditor {
       lines: order.lines.map((line) =>
         line.productId === productId ? { ...line, ...changes } : line),
     }));
+  }
+
+  private async saveDeliveryWeek(productId: number, deliveryWeek: string | null): Promise<void> {
+    if (!(await this.flushTransport())) return;
+    while (this.saveOperation) {
+      if (!(await this.saveOperation)) return;
+    }
+    const current = this.view();
+    if (!current || !this.canEditTerms()) return;
+    const submitted = structuredClone(current.order);
+    const operation = (async (): Promise<boolean> => {
+      this.saving.set(true);
+      this.saveError.set(null);
+      try {
+        const saved = await this.sales.updateDeliveryTerms(submitted.id, [{ productId, deliveryWeek }]);
+        const latest = this.view();
+        if (!latest || latest.order.id !== submitted.id) return true;
+        const merged = mergeOrderAfterSave(saved.order, submitted, latest.order);
+        this.adopt(saved);
+        this.view.set({ ...saved, order: merged });
+        if (this.dirty()) this.schedulePreview();
+        return true;
+      } catch (failure: unknown) {
+        const message = messageOf(failure, 'Leverweek opslaan mislukt');
+        this.saveError.set(message);
+        this.ui.toast(message, 'err');
+        return false;
+      } finally { this.saving.set(false); }
+    })();
+    this.saveOperation = operation;
+    await operation.finally(() => { if (this.saveOperation === operation) this.saveOperation = null; });
   }
 
   removeLine(productId: number): void {
@@ -3332,113 +3342,6 @@ export class SalesEditor {
     }
   }
 
-  /**
-   * Sets the freight to "to be determined" or back.
-   *
-   * On the way back the state jumps to AANGEVULD, not BEREKEND, when the
-   * quote already left with an open item: the customer is waiting on that
-   * amount and should read that it is now there.
-   */
-  setFreightPending(pending: boolean): void {
-    const data = this.view();
-    if (!data || !this.canEditTerms()) return;
-    const wasPending = data.order.freight === 'TE_BEPALEN';
-    const state = pending ? 'TE_BEPALEN' : wasPending ? 'AANGEVULD' : 'BEREKEND';
-    const strategy = this.effectiveFreightStrategy(data);
-    if (!pending && strategy === 'PER_CBM' && !(data.order.freightRatePerCbmEur! > 0)) {
-      this.ui.toast('Vul eerst een vrachttarief per m³ in', 'err');
-      return;
-    }
-    if (!pending && strategy === 'FIXED' && data.order.manualFreightEur == null) {
-      this.ui.toast('Vul eerst het vaste vrachtbedrag in', 'err');
-      return;
-    }
-    if (!pending && strategy === 'COUNTRY_PALLET' && this.isLooseCartons(data)) {
-      this.ui.toast('Kies voor losse dozen een m³-tarief of vast bedrag', 'err');
-      return;
-    }
-    this.saveFreight(state, data.order.manualFreightEur, strategy,
-      data.order.freightRatePerCbmEur ?? null);
-  }
-
-  setManualFreight(raw: string): void {
-    const data = this.view();
-    if (!data || !this.canEditTerms()) return;
-    const amount = raw.trim() === '' ? null : Number(raw);
-    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-      this.ui.toast('Vul een geldig vrachtbedrag in', 'err');
-      return;
-    }
-    if (amount === null && this.isLooseCartons(data)
-        && data.order.freight !== 'TE_BEPALEN') {
-      this.ui.toast('Losse dozen hebben een m³-tarief of vast vrachtbedrag nodig', 'err');
-      return;
-    }
-    const strategy = amount === null
-      ? data.order.freight === 'TE_BEPALEN' ? 'FIXED' : 'COUNTRY_PALLET'
-      : 'FIXED';
-    this.saveFreight(data.order.freight ?? 'BEREKEND', amount, strategy, null);
-  }
-
-  setFreightCbmRate(raw: string): void {
-    const data = this.view();
-    if (!data || !this.canEditTerms()) return;
-    const rate = raw.trim() === '' ? null : Number(raw);
-    if (rate === null || !Number.isFinite(rate) || rate <= 0) {
-      this.ui.toast('Vul een vrachttarief groter dan € 0 per m³ in', 'err');
-      return;
-    }
-    this.saveFreight(data.order.freight ?? 'BEREKEND', null, 'PER_CBM', rate);
-  }
-
-  setLockedFreightStrategy(strategy: FreightPricingStrategy): void {
-    const data = this.view();
-    if (!data || !this.canEditTerms()) return;
-    if ((strategy === 'COUNTRY_PALLET' || strategy === 'CARRIER')
-        && this.isLooseCartons(data)) return;
-    const manual = strategy === 'FIXED' ? data.order.manualFreightEur : null;
-    const rate = strategy === 'PER_CBM' ? data.order.freightRatePerCbmEur ?? null : null;
-    const carrierId = strategy === 'CARRIER'
-      ? data.order.freightCarrierId ?? this.carriers()[0]?.id ?? null
-      : null;
-    const incomplete = (strategy === 'FIXED' && manual == null)
-      || (strategy === 'PER_CBM' && !(rate! > 0))
-      || (strategy === 'CARRIER' && carrierId == null);
-    const state = incomplete ? 'TE_BEPALEN' : data.order.freight ?? 'BEREKEND';
-    this.saveFreight(state, manual, strategy, rate, carrierId);
-  }
-
-  setLockedCarrier(raw: string): void {
-    const data = this.view();
-    const id = Number(raw);
-    if (!data || !this.canEditTerms() || !Number.isInteger(id) || id <= 0) return;
-    this.saveFreight(data.order.freight ?? 'BEREKEND', null, 'CARRIER', null, id);
-  }
-
-  private saveFreight(state: 'BEREKEND' | 'TE_BEPALEN' | 'AANGEVULD',
-                      manualFreightEur: number | null,
-                      freightPricingStrategy: SalesOrder['freightPricingStrategy'],
-                      freightRatePerCbmEur: number | null,
-                      freightCarrierId: number | null = null): void {
-    if (!this.canEditTerms()) return;
-    if (this.mobileFinanciallyLocked()) {
-      this.ui.toast('Pas voor dit deel het vaste transportbedrag aan; de vrachtstrategie staat vast.', 'err'); return;
-    }
-    void (async () => {
-      /* The freight endpoint answers with the saved quote: write the draft
-         first, or the answer would undo what was typed since. */
-      if (this.dirty() && !(await this.save())) return;
-      const data = this.view();
-      if (!data || !this.canEditTerms()) return;
-      try {
-        this.adopt(await this.sales.updateFreight(data.order.id, state, manualFreightEur,
-          freightPricingStrategy ?? null, freightRatePerCbmEur, freightCarrierId));
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Vracht opslaan mislukt'), 'err');
-      }
-    })();
-  }
-
   effectiveFreightStrategy(data: SalesOrderView): FreightPricingStrategy {
     return data.order.freightPricingStrategy
       ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
@@ -3473,7 +3376,8 @@ export class SalesEditor {
    * someone passing it around internally, without touching the language on
    * the customer file.
    */
-  openPdfSheet(): void {
+  async openPdfSheet(): Promise<void> {
+    if (!(await this.flushTransport())) return;
     this.pdfLanguage.set(this.customerLanguage());
     const data = this.view();
     /* Prefilled with number and customer: recognisable in any download
@@ -3703,7 +3607,39 @@ export class SalesEditor {
   /* ---------------------------------------------------------- pallets */
 
   applyShippingPatch(changes: ShippingOrderPatch): void {
-    this.patch(changes);
+    this.enqueueShipping(order => ({ ...order, ...changes }));
+  }
+
+  private enqueueShipping(make: (order: SalesOrder) => SalesOrder | null): void {
+    const data = this.view();
+    if (!data || !this.canEditShipping()) return;
+    const next = make(data.order);
+    if (!next || !this.mobileAcceptsDraft(data, next)) return;
+    this.view.set({ ...data, order: next });
+    this.saveError.set(null);
+    this.schedulePreview();
+    if (this.shippingTimer !== null) clearTimeout(this.shippingTimer);
+    this.shippingTimer = setTimeout(() => { this.shippingTimer = null; void this.flushTransport(); }, 300);
+  }
+
+  flushTransport(): Promise<boolean> {
+    if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
+    if (this.transportOperation) return this.transportOperation;
+    const operation = (async () => {
+      this.transportSaving.set(true);
+      try {
+        while (this.shippingDirty()) {
+          if (!(await this.save())) return false;
+        }
+        return true;
+      } finally { this.transportSaving.set(false); }
+    })();
+    this.transportOperation = operation;
+    return operation.finally(() => { if (this.transportOperation === operation) this.transportOperation = null; });
+  }
+
+  async closeShipping(): Promise<void> {
+    if (await this.flushTransport()) this.palletSheet.set(false);
   }
 
   handlePalletAction(event: ShippingPalletAction): void {
@@ -3824,7 +3760,7 @@ export class SalesEditor {
    * taps on "remove" all removed the same pallet from the same copy.
    */
   private mutatePallets(mutate: (pallets: OrderPallet[]) => OrderPallet[]): void {
-    this.enqueue((order) => ({
+    this.enqueueShipping((order) => ({
       ...order,
       pallets: mutate(order.pallets.map((pallet) => ({
         ...pallet,
@@ -3836,7 +3772,7 @@ export class SalesEditor {
 
   /** Starts from the calculator's strict stacking, ready to rearrange. */
   autoLayout(): void {
-    this.enqueue((order) => {
+    this.enqueueShipping((order) => {
       const lines = this.view()?.priced.lines ?? [];
       const invalid = lines.find((line) =>
         line.cartons > 0 && line.cartonsPerPallet <= 0);
@@ -3940,7 +3876,7 @@ export class SalesEditor {
   }
 
   clearPallets(): void {
-    this.patch({ pallets: [] });
+    this.applyShippingPatch({ pallets: [] });
   }
 
   private palletTypeForProfile(profile: SalesOrder['palletProfile']): string {

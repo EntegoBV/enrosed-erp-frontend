@@ -81,7 +81,7 @@ interface JourneyStep {
             @if (data.order.partnerPurchaseOrderId) {
           <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" title="Partnercontainer openen">Partner {{ data.order.partnerSharePct | num }} %</a>
         }
-        @if (canEdit() && (dirty() || saving())) {
+        @if (canEdit() && documentDirty() && !transportSaving()) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="save()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
@@ -279,7 +279,7 @@ interface JourneyStep {
         } @else if (!canEdit()) {
           <div class="desk-lock" role="status">
             <span aria-hidden="true">✓</span>
-            <span><b>Deze versie staat vast.</b> Klant, aantallen en prijzen veranderen niet meer; leverweken en vracht kun je nog aanvullen.</span>
+            <span><b>Deze versie staat vast.</b> Klant, aantallen en prijzen veranderen niet meer. {{ canEditTerms() ? 'Transport en leverweken kun je aanpassen zolang de offerte nog openstaat; transport wordt automatisch opgeslagen.' : 'Deze offerte is afgesloten; transport kan niet meer worden aangepast.' }}</span>
             <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="duplicate()">{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</button>
           </div>
         }
@@ -700,50 +700,11 @@ interface JourneyStep {
                     @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
                       <p class="hint hint--warn">{{ data.priced.totals.unassignedCartons }} dozen zijn nog niet aan een pallet toegewezen.</p>
                     }
-                    @if (canEdit()) {
+                    @if (canEditShipping()) {
                       <button class="btn btn--block" type="button" (click)="palletSheet.set(true)">Transport &amp; levering aanpassen</button>
-                    } @else if (canEditTerms()) {
-                      <p class="desk-form__group">Vracht aanvullen</p>
-                      <label class="check-option">
-                        <input type="checkbox" [checked]="data.order.freight === 'TE_BEPALEN'" (change)="setFreightPending($any($event.target).checked)" />
-                        <span><strong>Later bepalen</strong><small>De klant ziet geen bedrag; vracht telt nog niet mee.</small></span>
-                      </label>
-                      <div class="field">
-                        <label for="sd-freight-strategy">Prijsstrategie</label>
-                        <select class="select" id="sd-freight-strategy" [value]="effectiveFreightStrategy(data)" (change)="setLockedFreightStrategy($any($event.target).value)">
-                          @if (!isLooseCartons(data)) { <option value="COUNTRY_PALLET">Landentarief per pallet</option> }
-                          @if (!isLooseCartons(data) && carriers().length) { <option value="CARRIER">Verzendorganisatie (staffel)</option> }
-                          @if (effectiveFreightStrategy(data) === 'PER_CBM') { <option value="PER_CBM">Tarief per m³</option> }
-                          <option value="FIXED">Vast bedrag</option>
-                          <option value="PICKUP">Afhalen in het magazijn</option>
-                        </select>
-                      </div>
-                      @if (effectiveFreightStrategy(data) === 'CARRIER') {
-                        <div class="field">
-                          <label for="sd-freight-carrier">Verzendorganisatie</label>
-                          <select class="select" id="sd-freight-carrier" [value]="data.order.freightCarrierId ?? ''" (change)="setLockedCarrier($any($event.target).value)">
-                            @for (carrier of carriers(); track carrier.id) { <option [value]="carrier.id">{{ carrier.name }}</option> }
-                          </select>
-                        </div>
-                      }
-                      @if (effectiveFreightStrategy(data) === 'PER_CBM') {
-                        <div class="field">
-                          <label for="sd-freight-cbm">Tarief per m³</label>
-                          <div class="input-affix">
-                            <input class="input num right" id="sd-freight-cbm" type="number" min="0" step="0.01" inputmode="decimal"
-                                   [value]="data.order.freightRatePerCbmEur ?? ''" (change)="setFreightCbmRate($any($event.target).value)" />
-                            <span class="input-affix__suffix">EUR</span>
-                          </div>
-                        </div>
-                      } @else if (effectiveFreightStrategy(data) === 'FIXED') {
-                        <div class="field">
-                          <label for="sd-freight">Vast vrachtbedrag</label>
-                          <div class="input-affix">
-                            <input class="input num right" id="sd-freight" type="number" min="0" step="0.01" inputmode="decimal"
-                                   [value]="data.order.manualFreightEur ?? ''" (change)="setManualFreight($any($event.target).value)" />
-                            <span class="input-affix__suffix">EUR</span>
-                          </div>
-                        </div>
+                      <p class="hint" role="status">{{ transportSaveStatus() }}</p>
+                      @if (data.order.sentAt) {
+                        <p class="hint">De online offerte en een nieuwe PDF gebruiken het opgeslagen transport. De eerdere e-mailbijlage blijft gelijk. Gebruik ‘Opnieuw versturen’ om de klant te verwittigen.</p>
                       }
                     }
                   </div>
@@ -979,17 +940,22 @@ interface JourneyStep {
       }
 
       @if (palletSheet()) {
-        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="palletSheet.set(false)">
+        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="closeShipping()">
           <div body>
             @if (financiallyLocked() && canEdit()) {
-              <div class="field"><label for="split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="split-manual-freight" type="number" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="patch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
+              <div class="field"><label for="split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="split-manual-freight" type="number" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="applyShippingPatch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
             }
-            <app-shipping-planner [view]="data" [canEdit]="commercialEditable()" [carriers]="carriers()"
+            <app-shipping-planner [view]="data" [canEdit]="canEditShipping() && !financiallyLocked()" [carriers]="carriers()"
                                   [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()"
                                   (patch)="applyShippingPatch($event)" (action)="handlePalletAction($event)" />
           </div>
           <div foot style="display:contents">
-            <button class="btn btn--primary btn--block" type="button" (click)="palletSheet.set(false)">Klaar</button>
+            <div role="status" class="small grow">{{ transportSaveStatus() }}
+              @if (shippingDirty() && saveError()) {
+                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" (click)="flushTransport()">Opnieuw proberen</button>
+              }
+            </div>
+            <button class="btn btn--primary" type="button" [disabled]="transportSaving()" (click)="closeShipping()">Klaar</button>
           </div>
         </app-sheet>
       }
