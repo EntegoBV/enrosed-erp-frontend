@@ -82,15 +82,15 @@ export function planProductFamilyIdentityFinalization(
 
     const expectedCanonicalVariantKey = optionalTechnicalKey(
       member.canonicalVariantKey,
-      `De bestaande canonieke variantcode van SKU ${sku}`,
+      `De bestaande interne variantcode van SKU ${sku}`,
     );
     const canonicalVariantKey = requiredTechnicalKey(
       wanted.canonicalVariantKey,
-      `De canonieke variantcode van SKU ${sku}`,
+      `De interne variantcode van SKU ${sku}`,
     );
     if (seenTargetKeys.has(canonicalVariantKey)) {
       throw new ProductFamilyIdentityFinalizationError(
-        `De canonieke variantcode ${canonicalVariantKey} is meer dan één keer ingevuld.`,
+        `De interne variantcode ${canonicalVariantKey} is meer dan één keer ingevuld.`,
       );
     }
     seenTargetKeys.add(canonicalVariantKey);

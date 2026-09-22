@@ -71,17 +71,17 @@ import {
           }
         </dl>
 
-        <h4>Externe identificaties</h4>
+        <h4>Artikelcodes en externe referenties</h4>
         <dl class="technical-list">
           @if (product().canonicalVariantKey) {
             <div>
-              <dt>Canonieke variant</dt>
+              <dt>Interne variantcode</dt>
               <dd class="mono">{{ product().canonicalVariantKey }}</dd>
             </div>
           }
           @if (product().canonicalBarcode) {
             <div>
-              <dt>Canonieke barcode</dt>
+              <dt>Artikelbarcode</dt>
               <dd class="mono">{{ product().canonicalBarcode }}</dd>
             </div>
           }

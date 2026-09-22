@@ -349,6 +349,8 @@ export interface ProductFamilyText {
   description: string | null;
   format: string | null;
   highlights: string[];
+  /** Shared by every variant; an empty list uses the public language fallback. */
+  tags?: string[] | null;
   seoTitle: string | null;
   seoDescription: string | null;
 }

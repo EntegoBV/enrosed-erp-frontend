@@ -159,6 +159,7 @@ export function blankFamilyText(language: LanguageCode): ProductFamilyText {
     description: null,
     format: null,
     highlights: [],
+    tags: [],
     seoTitle: null,
     seoDescription: null,
   };

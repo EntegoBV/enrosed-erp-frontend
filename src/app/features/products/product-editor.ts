@@ -365,6 +365,19 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <input class="input" id="p-name" [ngModel]="draft().name"
                      (ngModelChange)="patch({ name: $event })" />
             </div>
+            <div class="field span-2">
+              <label for="p-sku">Artikelcode (SKU)</label>
+              <input class="input mono" id="p-sku" maxlength="255" spellcheck="false"
+                     [ngModel]="draft().sku" placeholder="BOWL-M-RD"
+                     (ngModelChange)="patch({ sku: emptyToNull($event) })"
+                     aria-describedby="p-sku-hint" />
+              <span class="hint" id="p-sku-hint">Unieke code: model–maat–kleur, bijvoorbeeld DOM-12X25-RD of BOWL-M-RD.</span>
+              <details class="hint">
+                <summary>Kleur- en formaatcodes</summary>
+                <p>RD rood · PK roze · CP kersenroze · WH wit · BL blauw · NV marineblauw · LB lichtblauw · MX gemengd · PD panda.</p>
+                <p>DOM stolp · BOWL bowl · M/XL maat · 12X25 afmeting in cm · NB zonder geschenkdoos.</p>
+              </details>
+            </div>
                 <div class="field identity-colour">
                   <label class="req" for="p-colour">Kleur</label>
                   <!-- Compact: a dropdown with the current swatch dot in
@@ -3124,6 +3137,7 @@ export class ProductEditor implements OnDestroy {
       description: null,
       format: null,
       highlights: [],
+      tags: [],
       seoTitle: null,
       seoDescription: null,
     };

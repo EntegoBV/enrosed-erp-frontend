@@ -51,7 +51,7 @@ import {
         <div>
           <h3 id="product-translations-title">Productvertalingen</h3>
           <p>{{ familyDraft()
-            ? 'Publieke naam, product- en familietekst, variantkleur en -maat, SEO en foto-alt worden samen opgeslagen.'
+            ? 'Publieke naam, product- en familietekst, tags, variantkleur en -maat, SEO en foto-alt worden samen opgeslagen.'
             : 'Publieke naam, klantbeschrijving en varianttekst voor dit losse product worden samen opgeslagen.' }}</p>
         </div>
         @if (snapshot()) {
@@ -189,7 +189,7 @@ import {
             <div class="translation-group__head">
               <div>
                 <h4 id="shared-translation-title">Product- en familietekst</h4>
-                <p>Naam, samenvatting en beschrijving die alle gekoppelde kleuren en maten delen.</p>
+                <p>Naam, teksten en tags die alle gekoppelde kleuren en maten delen.</p>
               </div>
               <span>Productreeks</span>
             </div>
@@ -226,6 +226,22 @@ import {
                           rows="3" [ngModel]="highlightsText()"
                           (ngModelChange)="patchHighlights($event)"
                           placeholder="Eén voordeel per regel"></textarea>
+              </label>
+              <label class="field span-2">
+                <span>Tags in {{ languageLabel() }}</span>
+                <input class="input" id="product-translation-family-tags"
+                       [ngModel]="tagsText()"
+                       (ngModelChange)="patchTags($event)"
+                       aria-describedby="product-translation-family-tags-hint" />
+                <small class="field__hint" id="product-translation-family-tags-hint">
+                  Scheid tags met komma's. Alle kleuren en maten van deze productreeks gebruiken dezelfde tags.
+                  @if (inheritedTags(); as fallback) {
+                    Nu gebruikt: {{ fallback.value }} ({{ fallback.label }}).
+                  } @else if (!tagsText()) {
+                    Nog geen tags beschikbaar. U kunt dit veld leeg laten.
+                  }
+                  Leeg laten gebruikt eerst een Engelse of Nederlandse vertaling en anders de standaardtags.
+                </small>
               </label>
             </div>
           </section>
@@ -551,6 +567,20 @@ export class ProductTranslationEditor {
       ?? '';
   });
   readonly highlightsText = computed(() => this.sharedText().highlights.join('\n'));
+  readonly tagsText = computed(() => (this.sharedText().tags ?? []).join(', '));
+  readonly inheritedTags = computed(() => {
+    const family = this.familyDraft();
+    if (!family || (this.sharedText().tags ?? []).some((tag) => !!tag.trim())) return null;
+    for (const language of ['EN', 'NL'] as const) {
+      if (language === this.language()) continue;
+      const tags = family.texts.find((text) => text.language === language)?.tags ?? [];
+      if (tags.length) return {
+        value: tags.join(', '),
+        label: this.languages.find((option) => option.code === language)?.label ?? language,
+      };
+    }
+    return family.tags.length ? { value: family.tags.join(', '), label: 'standaardtags' } : null;
+  });
   readonly gaps = computed(() => {
     const family = this.familyDraft();
     const product = this.productDraft();
@@ -707,6 +737,12 @@ export class ProductTranslationEditor {
     });
   }
 
+  patchTags(value: string): void {
+    this.patchFamily({
+      tags: [...new Set(value.split(',').map((tag) => tag.trim()).filter(Boolean))],
+    });
+  }
+
   imageAlt(image: ProductFamilyImage): string {
     return image.altTexts.find((item) => item.language === this.language())?.alt ?? '';
   }
@@ -748,6 +784,7 @@ export class ProductTranslationEditor {
       `familyKey: ${family?.familyKey ?? product.familyKey ?? 'standalone'}`,
       `snapshotRevision: ${snapshot.revision}`,
       `doeltalen: ${this.languages.map((language) => language.code).join(', ')}`,
+      `standaardtags als vertaalbron: ${JSON.stringify(family?.tags ?? [])}`,
       '',
     ];
     for (const language of this.languages) {
@@ -763,6 +800,7 @@ export class ProductTranslationEditor {
         `familiebeschrijving: ${this.promptValue(familyText?.description)}`,
         `formaat: ${this.promptValue(familyText?.format)}`,
         `highlights: ${JSON.stringify(familyText?.highlights ?? [])}`,
+        `familietags: ${JSON.stringify(familyText?.tags ?? [])}`,
         `SEO-titel: ${this.promptValue(familyText?.seoTitle)}`,
         `SEO-beschrijving: ${this.promptValue(familyText?.seoDescription)}`,
         `variantnaam documenten: ${this.promptValue(productText?.name)}`,

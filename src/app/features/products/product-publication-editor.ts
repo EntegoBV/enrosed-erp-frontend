@@ -289,8 +289,8 @@ interface FamilyFeaturedOption {
             @if (family.members.length) {
               <div class="identity-variants">
                 <div class="identity-variants__head">
-                  <span>Canonieke variantcodes</span>
-                  <small>Een vaste technische code per SKU.</small>
+                  <span>Interne variantcodes</span>
+                  <small>Vaste ENROSED-code per variant. De SKU is de korte artikelcode.</small>
                 </div>
                 <div class="identity-variants__list">
                   @for (member of family.members; track member.productId) {
@@ -365,13 +365,14 @@ interface FamilyFeaturedOption {
                 />
               </label>
               <label class="field">
-                <span>Tags</span>
+                <span>Standaardtags (zonder vertaling)</span>
                 <input
                   class="input"
                   [ngModel]="family.tags.join(', ')"
                   (ngModelChange)="patchTags($event)"
                   placeholder="gift, preserved, premium"
                 />
+                <small class="field__hint">Voor alle varianten. Stel vertaalde tags per taal in onder Productvertalingen; deze standaardtags blijven beschikbaar als terugval.</small>
               </label>
             </div>
           </section>
