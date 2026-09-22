@@ -1,3 +1,11 @@
+/** The noun after a count; a product's own unit ("bowl" / "bowls") when it has one. */
+export interface CartonNoticeUnit {
+  singular: string;
+  plural: string;
+}
+
+const PIECES: CartonNoticeUnit = { singular: 'stuk', plural: 'stuks' };
+
 /**
  * Quiet purchasing guidance for quantities that do not fill an outer carton.
  *
@@ -7,6 +15,7 @@
 export function cartonQuantityNotice(
   quantity: number,
   piecesPerCarton: number | null | undefined,
+  unit: CartonNoticeUnit = PIECES,
 ): string | null {
   if (!Number.isInteger(quantity) || quantity <= 0) return null;
   if (!Number.isInteger(piecesPerCarton) || (piecesPerCarton ?? 0) <= 1) return null;
@@ -19,14 +28,11 @@ export function cartonQuantityNotice(
   const upperQuantity = lowerQuantity + perCarton;
   const remove = remainder;
   const add = perCarton - remainder;
-  const addAdvice = `${add} ${pieceLabel(add)} meer = ${upperQuantity}`;
+  const label = (count: number) => (count === 1 ? unit.singular : unit.plural);
+  const addAdvice = `${add} ${label(add)} meer = ${upperQuantity}`;
   const nearest = lowerQuantity > 0
-    ? `${remove} ${pieceLabel(remove)} minder = ${lowerQuantity}, of ${addAdvice}`
+    ? `${remove} ${label(remove)} minder = ${lowerQuantity}, of ${addAdvice}`
     : addAdvice;
 
   return `Geen volle omdoos (${perCarton}/doos) · ${nearest}.`;
-}
-
-function pieceLabel(quantity: number): string {
-  return quantity === 1 ? 'stuk' : 'stuks';
 }

@@ -173,11 +173,10 @@ function buildFamilyGroup(
   const preferredPhoto = family?.cardFeaturedProductId === null
     || family?.cardFeaturedProductId === undefined
     ? null
-    : productsById.get(family.cardFeaturedProductId)?.photos?.[0]?.url ?? null;
+    : hoofdfotoUrl(productsById.get(family.cardFeaturedProductId));
   const familyPhoto = [...(family?.images ?? [])]
     .sort((left, right) => left.position - right.position)[0]?.smallUrl ?? null;
-  const variantPhoto = ordered.find((entry) => entry.product?.photos?.[0]?.url)
-    ?.product?.photos?.[0]?.url ?? null;
+  const variantPhoto = ordered.map((entry) => hoofdfotoUrl(entry.product)).find((url) => url !== null) ?? null;
 
   return {
     key,
@@ -191,6 +190,18 @@ function buildFamilyGroup(
     entries,
     totals: sumTotals(entries.map((entry) => entry.line)),
   };
+}
+
+/**
+ * The Hoofdfoto rule of shared/sales-photo.ts: website lead, else the first
+ * series projection, else the first photo. Repeated here because this module
+ * stays import-free for the node tests.
+ */
+function hoofdfotoUrl(product: Product | null | undefined): string | null {
+  const photos = product?.photos ?? [];
+  return (photos.find((photo) => photo.leadFor?.includes('WEBSITE'))
+    ?? photos.find((photo) => photo.familyPhotoId !== null && photo.familyPhotoId !== undefined)
+    ?? photos[0])?.url ?? null;
 }
 
 function purchaseFamilyGroupKey(product: Product | null, line: LandedCostLine): string {

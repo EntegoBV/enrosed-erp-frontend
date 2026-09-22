@@ -41,6 +41,7 @@ import { PAYMENT_TOLERANCE_EUR, instalmentsOf, withinTolerance } from './payment
 import { purchaseGroupSettled, purchaseInstalmentState } from './purchase-instalment-state';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
+import { productSalesUnit } from '../products/product-sales-unit';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 
@@ -1299,6 +1300,8 @@ export class PurchaseView {
   readonly openProductGroups = signal<ReadonlySet<string>>(new Set());
 
   constructor() {
+    /* Carton notices speak the product's unit ("1 bowl meer"); "stuks" until the list arrives. */
+    void this.catalog.unitNames().catch(() => undefined);
     effect(() => {
       const orderId = Number(this.id());
       if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
@@ -1420,7 +1423,7 @@ export class PurchaseView {
 
   cartonNotice(quantity: number, productId: number): string | null {
     const product = this.products().find((candidate) => candidate.id === productId);
-    return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton);
+    return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton, productSalesUnit(product));
   }
 
   stepIndex(status: string): number {

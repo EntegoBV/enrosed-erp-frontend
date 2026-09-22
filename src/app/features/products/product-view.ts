@@ -1,4 +1,4 @@
-import { primarySalesPrice, productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
+import { capitalize, primarySalesPrice, productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
 import { ProductCostHistory } from './product-cost-history';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -9,7 +9,9 @@ import { ProductSupplierAgreementApi, type ProductSupplierAgreement } from '../.
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, LandedCostLine, Product, ProductFamily, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
+import { Category, LandedCostLine, Product, ProductFamily, ProductPhotoOverview, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
+import { salesPhoto } from '../../shared/sales-photo';
+import { hoofdfotoFirst, slideBadges } from './product-photos-state';
 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
@@ -123,27 +125,32 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             </div>
 
             <div class="pd-gallery" role="region" aria-roledescription="carousel" [attr.aria-label]="'Foto’s van ' + product.name">
-              @if (product.photos[galleryIndex()] || product.photos[0]; as photo) {
+              @let photos = galleryPhotos();
+              @if (photos[galleryIndex()] || photos[0]; as photo) {
                 <button class="pd-photo" type="button" (click)="openCurrentGalleryPhoto()"
-                        (pointerdown)="startGallerySwipe($event, product.photos.length)" (pointerup)="finishGallerySwipe($event, product.photos.length)" (pointercancel)="cancelGallerySwipe()"
-                        (keydown.arrowleft)="stepGallery(-1, product.photos.length); $event.preventDefault()" (keydown.arrowright)="stepGallery(1, product.photos.length); $event.preventDefault()"
-                        (keydown.home)="selectGalleryPhoto(0); $event.preventDefault()" (keydown.end)="selectGalleryPhoto(product.photos.length - 1); $event.preventDefault()"
-                        aria-keyshortcuts="ArrowLeft ArrowRight Home End" [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
+                        (pointerdown)="startGallerySwipe($event, photos.length)" (pointerup)="finishGallerySwipe($event, photos.length)" (pointercancel)="cancelGallerySwipe()"
+                        (keydown.arrowleft)="stepGallery(-1, photos.length); $event.preventDefault()" (keydown.arrowright)="stepGallery(1, photos.length); $event.preventDefault()"
+                        (keydown.home)="selectGalleryPhoto(0); $event.preventDefault()" (keydown.end)="selectGalleryPhoto(photos.length - 1); $event.preventDefault()"
+                        aria-keyshortcuts="ArrowLeft ArrowRight Home End" [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + photos.length + (currentSlideBadges().length ? ' (' + currentSlideBadges().join(', ') + ')' : '') + ' vergroten'">
                   <img [appAuthSrc]="photo.mediumUrl || photo.url" appAuthSize="medium" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
-                  <span class="pd-photo-count">{{ galleryIndex() + 1 }} / {{ product.photos.length }} <span aria-hidden="true">⤢</span></span>
+                  @if (currentSlideBadges().length) {
+                    <span class="pd-photo-badges" aria-hidden="true">@for (badge of currentSlideBadges(); track badge) { <span [class.is-main]="badge === 'Hoofdfoto'">{{ badge }}</span> }</span>
+                  }
+                  <span class="pd-photo-count">{{ galleryIndex() + 1 }} / {{ photos.length }} <span aria-hidden="true">⤢</span></span>
                 </button>
-                @if (product.photos.length > 1) {
+                @if (photos.length > 1) {
                   <div class="pd-thumbnails" aria-label="Kies een foto, dezelfde variant">
-                    @for (item of product.photos; track item.id) {
+                    @for (item of photos; track item.id) {
                       <button type="button" [class.is-selected]="$index === galleryIndex()" [attr.aria-pressed]="$index === galleryIndex()" [attr.aria-label]="'Toon foto ' + ($index + 1)" (click)="selectGalleryPhoto($index)">
                         <img [appAuthSrc]="item.url" alt="" draggable="false" loading="lazy" />
                       </button>
                     }
                   </div>
                 }
-                <span class="sr-only" role="status" aria-live="polite">Foto {{ galleryIndex() + 1 }} van {{ product.photos.length }}</span>
+                <a class="pd-photo-manage" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">Foto’s beheren ›</a>
+                <span class="sr-only" role="status" aria-live="polite">Foto {{ galleryIndex() + 1 }} van {{ photos.length }}</span>
               } @else {
-                <div class="pd-no-photo"><app-icon name="media" [size]="30" /><span>Nog geen foto</span><small>Toevoegen via Bewerken</small></div>
+                <a class="pd-no-photo" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }"><app-icon name="media" [size]="30" /><span>Nog geen foto</span><small>Foto’s toevoegen ›</small></a>
               }
             </div>
 
@@ -178,14 +185,14 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 @if (primaryPrice(product, displayPrice()); as primary) { <strong class="num">{{ primary.price | eur: 2 }}</strong> } @else { <strong>—</strong> }
                 @if (primaryPrice(product, displayPrice()); as primary) { <span>per {{ primary.singular }} · excl. btw</span> }
                 @if (secondaryPrice(product, displayPrice()); as equivalent) {
-                  <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.piecesPerDisplay }} stuks/display</span>
+                  <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</span>
                 }
               </div>
             </div>
             @if (expected(); as exp) {
               <a class="pd-expected" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')"><span>{{ exp.quantity | num }} {{ salesUnit(product).plural }} onderweg</span><small>{{ exp.expectedArrival ? 'Verwacht ' + (exp.expectedArrival | dateNl) : 'Bekijk inkooporder' }} ›</small></a>
             }
-            <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
+            <app-photo-lightbox [photos]="galleryPhotos()" [(index)]="lightbox" />
           </section>
 
           <!-- Desktop: the build-up or the stock book unfolds in its own
@@ -232,13 +239,13 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               <div class="tiles-kicker tiles-kicker--first">Identificatie</div>
               <div class="tiles">
                 <div class="tile"><span>Afmeting B × D × H</span><b class="num">{{ size(product.dimensions) }}</b></div>
-                <div class="tile"><span>Gewicht per stuk</span>
+                <div class="tile"><span>Gewicht per {{ salesUnit(product).piece.one }}</span>
                   <b class="num">{{ product.dimensions.weightKg ? (product.dimensions.weightKg | kg) : '—' }}</b></div>
                 @if (product.packaging.kind !== 'NONE') {
                   <div class="tile"><span>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} B × D × H</span>
                     <b class="num">{{ size(product.packaging.dimensions) }}</b></div>
                   @if (product.packaging.piecesPerUnit) {
-                    <div class="tile"><span>Stuks in de {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
+                    <div class="tile"><span>{{ capitalize(salesUnit(product).piece.other) }} in de {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
                       <b class="num">{{ product.packaging.piecesPerUnit | num }}</b></div>
                   }
                   <div class="tile"><span>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
@@ -919,6 +926,7 @@ export class ProductView {
   readonly primaryPrice = primarySalesPrice;
   readonly secondaryPrice = secondarySalesPrice;
   readonly quantityDetail = salesQuantityDetail;
+  readonly capitalize = capitalize;
   readonly lightbox = signal(-1);
   readonly galleryIndex = signal(0);
   readonly agreementLightbox = signal(-1);
@@ -937,6 +945,19 @@ export class ProductView {
   protected readonly ui = inject(Ui);
 
   readonly product = signal<Product | null>(null);
+  /** The carousel opens on the Hoofdfoto, the photo lists, quotes and invoices show as well. */
+  readonly galleryPhotos = computed(() => {
+    const product = this.product();
+    return product ? hoofdfotoFirst(product.photos, salesPhoto(product)) : [];
+  });
+  /** Where each photo is used, for the badges on the current slide; optional enhancement. */
+  readonly photoOverview = signal<ProductPhotoOverview | null>(null);
+  readonly currentSlideBadges = computed(() => {
+    const product = this.product();
+    const photo = this.galleryPhotos()[this.galleryIndex()];
+    if (!product || !photo) return [];
+    return slideBadges(photo, photo.id === salesPhoto(product)?.id, this.photoOverview());
+  });
   readonly gpCapacity = computed(() => {
     const product = this.product();
     return product ? readGpCapacity(product.carton) : { value: null, source: 'UNKNOWN' as const };
@@ -959,7 +980,7 @@ export class ProductView {
   readonly stockHistory = signal<StockMovement[] | null>(null);
   readonly stockLevels = signal<ProductStock[] | null>(null);
   readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
-  /** "stuks" alone with one location; otherwise "9.400 magazijn · 600 TICA". */
+  /** The unit ("stuks", "bowls") alone with one location; otherwise "9.400 magazijn · 600 TICA". */
   readonly stockSummary = computed(() => {
     const levels = this.stockLevels() ?? [];
     if (levels.length <= 1) return productSalesUnit(this.product()).plural;
@@ -983,7 +1004,7 @@ export class ProductView {
   }
 
   selectGalleryPhoto(index: number): void {
-    const total = this.product()?.photos.length ?? 0;
+    const total = this.galleryPhotos().length;
     if (!total) return;
     this.galleryIndex.set(Math.max(0, Math.min(index, total - 1)));
   }
@@ -1135,9 +1156,9 @@ export class ProductView {
       if (margin) rows.push({ label: `Marge per ${productSalesUnit(product).singular} · ${margin.pct} %`, eur: margin.eur, note: true });
     }
     const costEquivalent = secondarySalesPrice(product, product.landedCostEur);
-    if (costEquivalent) rows.push({ label: `Kostprijs ${costEquivalent.label} · ${costEquivalent.piecesPerDisplay} stuks/display`, eur: costEquivalent.price, aside: true });
+    if (costEquivalent) rows.push({ label: `Kostprijs ${costEquivalent.label} · ${costEquivalent.perDisplay}`, eur: costEquivalent.price, aside: true });
     const priceEquivalent = secondarySalesPrice(product, price);
-    if (priceEquivalent) rows.push({ label: `Catalogusprijs ${priceEquivalent.label} · ${priceEquivalent.piecesPerDisplay} stuks/display`, eur: priceEquivalent.price, aside: true });
+    if (priceEquivalent) rows.push({ label: `Catalogusprijs ${priceEquivalent.label} · ${priceEquivalent.perDisplay}`, eur: priceEquivalent.price, aside: true });
     this.priceBuild.set({ rows, source, sourceFound: line !== null });
   }
 
@@ -1292,6 +1313,8 @@ export class ProductView {
   });
 
   constructor() {
+    /* Names the product's unit ("bowls") in every label; "stuks" until it arrives. */
+    void this.catalog.unitNames().catch(() => undefined);
     afterRenderEffect(() => {
       this.product()?.id;
       this.desktop.active();
@@ -1346,6 +1369,7 @@ export class ProductView {
     this.familyLoading.set(false);
     this.lightbox.set(-1);
     this.galleryIndex.set(0);
+    this.photoOverview.set(null);
     this.cancelGallerySwipe();
     this.gallerySuppressClickUntil = 0;
     this.agreementLightbox.set(-1);
@@ -1373,6 +1397,8 @@ export class ProductView {
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
     if (version !== this.loadVersion) return;
     this.product.set(product);
+    /* Website and quote badges only exist for a series; a loose product needs no extra request. */
+    if (product.id !== null && product.familyId != null && product.photos.length) void this.loadPhotoOverview(product.id, version);
     this.stockLevels.set(null);
     if (product.id !== null) {
       this.catalog.productStock(product.id).then((levels) => this.stockLevels.set(levels)).catch(() => this.stockLevels.set([]));
@@ -1427,6 +1453,15 @@ export class ProductView {
         failure, 'De leveranciersafspraak kon niet worden geladen.'));
     } finally {
       if (version === this.loadVersion) this.agreementLoading.set(false);
+    }
+  }
+
+  private async loadPhotoOverview(productId: number, version: number): Promise<void> {
+    try {
+      const overview = await this.catalog.productPhotoOverview(productId);
+      if (version === this.loadVersion) this.photoOverview.set(overview);
+    } catch {
+      /* The badges are a bonus; the carousel itself never waits for them. */
     }
   }
 

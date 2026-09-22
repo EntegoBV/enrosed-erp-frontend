@@ -1,4 +1,4 @@
-import { primarySalesPrice, productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
+import { primarySalesPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
 import { salesAllProductsUnavailable, salesLineUnavailable, salesLineRequestedQuantity, salesUnavailableLineCount } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
@@ -502,7 +502,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     @if (lineUnavailable(line)) {
                       <div class="line-unavailable">
                         <strong>Tijdelijk niet beschikbaar</strong>
-                        <span>0 st · Niet meegerekend</span>
+                        <span>0 {{ lineUnit(line.productId).short }} · Niet meegerekend</span>
                         @if (lineRequestedQuantity(line); as requested) { <small>Oorspronkelijk aangevraagd: {{ requested | num }} {{ lineUnit(line.productId).short }}</small> }
                       </div>
                     } @else {
@@ -1506,6 +1506,8 @@ export class SalesView {
   }
 
   constructor() {
+    /* Lines name each product's unit ("16 bowls"); "stuks" until the list arrives. */
+    void this.catalog.unitNames().catch(() => undefined);
     effect(() => {
       const orderId = Number(this.id());
       if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
@@ -1583,7 +1585,7 @@ export class SalesView {
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {
-    return lines.some((line) => this.lineUnit(line.productId).isDisplay) ? 'verkoopeenheden' : 'stuks';
+    return salesQuantityLabel(lines.map((line) => this.productFor(line.productId)));
   }
 
   salesVariantTitle(productId: number, fallback: string): string {

@@ -78,18 +78,10 @@
   .select { text-overflow: ellipsis; }
   .product-editor-page > .editor-rail { display: none; }
   .photo-workspace { display: grid; gap: 18px; min-width: 0; }
-  .photo-workspace app-photo-manager, .photo-scope-panel { min-width: 0; }
-  .photo-workspace .family-gallery > .section-head { padding: 0; }
+  .photo-workspace :is(app-photo-manager, app-product-photos-panel), .photo-scope-panel { min-width: 0; }
   .photo-scope-panel[hidden] { display: none; }
-  .photo-workspace :is(.photo-details, .image-settings) { scroll-margin-block: 90px 24px; }
-  .photo-scopes { display: flex; gap: 4px; width: min(100%, 420px); padding: 4px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); }
-  .photo-scopes button { display: flex; align-items: center; justify-content: center; flex: 1; gap: 7px; min-height: 44px; min-width: 0; padding: 8px 10px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; transition: background .18s, color .18s, box-shadow .18s; }
-  .photo-scopes button[aria-pressed=true] { background: var(--surface); color: var(--ink); box-shadow: 0 2px 6px rgb(25 36 32 / 8%); }
-  .photo-scopes button span { display: grid; place-items: center; min-width: 21px; min-height: 21px; padding-inline: 5px; border-radius: 7px; background: color-mix(in srgb, var(--line) 55%, transparent); font-size: 11px; }
-  .photo-scopes button[aria-pressed=true] span { color: var(--rose); background: var(--rose-soft); }
-  .photo-scopes button:focus-visible, .photo-scope-hint button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+  .photo-workspace .photo-details { scroll-margin-block: 90px 24px; }
   .photo-scope-hint { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-  .photo-scope-hint button { min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--rose); font: inherit; font-weight: 650; cursor: pointer; }
   @media (max-width: 360px) {
     .photo-workspace .photo-details__actions { flex-direction: column; align-items: stretch; }
   }
@@ -236,7 +228,7 @@
 
   @media (max-width: 679px) {
     --product-header-h: calc(64px + var(--safe-t));
-    .photo-workspace :is(.photo-details, .image-settings) { scroll-margin-block: calc(var(--product-header-h) + 90px) calc(110px + var(--safe-b)); }
+    .photo-workspace .photo-details { scroll-margin-block: calc(var(--product-header-h) + 90px) calc(110px + var(--safe-b)); }
     background: color-mix(in srgb, var(--bg) 65%, var(--surface));
     .product-mobile-header { position: sticky; top: 0; z-index: 42; display: flex; align-items: center; gap: 10px; min-height: var(--product-header-h); padding: calc(8px + var(--safe-t)) 14px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent); background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); }
     .product-mobile-back { display: grid; place-items: center; flex: none; width: 40px; height: 44px; border-radius: 50%; color: var(--rose-dark); text-decoration: none; font-size: 32px; background: var(--surface); box-shadow: 0 1px 5px rgb(25 36 32 / 5%); }
@@ -323,7 +315,7 @@
 @media (max-width: 679px) { body:has(app-product-editor) .tabbar { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   #product-editor-workspace .editor-section { animation: none; }
-  #product-editor-workspace :is(.product-mobile-tabs button, .product-editor-dock__save, .identity-extra > summary > span, .photo-scopes button) { transition: none; }
+  #product-editor-workspace :is(.product-mobile-tabs button, .product-editor-dock__save, .identity-extra > summary > span) { transition: none; }
 }
 
 @media (max-width: 679px) {

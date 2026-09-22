@@ -7,6 +7,7 @@ import { AuthImage } from '../../core/api/auth-image';
 import { messageOf } from '../../core/api/errors';
 import { Category, Product, ProductFamily } from '../../core/api/models';
 import { Sheet, Ui } from '../../shared/ui';
+import { salesPhoto } from '../../shared/sales-photo';
 
 /**
  * Daily product-to-product variant workflow. ProductFamily remains the
@@ -25,7 +26,7 @@ import { Sheet, Ui } from '../../shared/ui';
           <p>
             @if (family(); as group) {
               {{ siblings().length ? siblings().length + ' andere actieve variant' + (siblings().length === 1 ? '' : 'en') : 'Reeks zonder andere actieve varianten' }}
-              · voorraad, kleur, EAN's en foto's blijven per variant
+              · voorraad, kleur en EAN's blijven per variant; reeksfoto's kunnen voor alle kleuren gelden
             } @else {
               Nog geen andere kleur- of maatvariant gekoppeld.
             }
@@ -101,7 +102,7 @@ import { Sheet, Ui } from '../../shared/ui';
       @if (peekId(); as id) {
         <div class="variant-peek" role="region" aria-label="Variant in het kort">
           @if (peek().get(id); as sibling) {
-            @if (sibling.photos[0]; as photo) {
+            @if (salesPhoto(sibling); as photo) {
               <img class="variant-peek__photo" [appAuthSrc]="photo.url" alt="" />
             } @else {
               <div class="variant-peek__photo variant-peek__photo--empty">◈</div>
@@ -160,7 +161,7 @@ import { Sheet, Ui } from '../../shared/ui';
                         [attr.aria-pressed]="selected()?.id === candidate.id"
                         [disabled]="!!reason || linking() || disabled()"
                         (click)="selected.set(candidate)">
-                  @if (candidate.photos[0]; as photo) {
+                  @if (salesPhoto(candidate); as photo) {
                     <img [appAuthSrc]="photo.url" [alt]="candidate.name" />
                   } @else {
                     <span class="candidate__empty" aria-hidden="true">◇</span>
@@ -324,6 +325,7 @@ import { Sheet, Ui } from '../../shared/ui';
 export class ProductVariantGroup {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
+  readonly salesPhoto = salesPhoto;
 
   readonly product = input.required<Product>();
   readonly family = input<ProductFamily | null>(null);

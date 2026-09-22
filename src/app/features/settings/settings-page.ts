@@ -20,6 +20,7 @@ import {
   Product, ProductFamily, Supplier,
 } from '../../core/api/models';
 import { AuthImage } from '../../core/api/auth-image';
+import { salesPhotoUrl } from '../../shared/sales-photo';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
 import { Ui } from '../../shared/ui';
@@ -663,9 +664,9 @@ const normalizeCategoryCode = (value: string): string => value
             @for (group of lineDiscountGroups(); track group.productId) {
               <article class="discount-product" [id]="'line-discount-' + group.productId">
                 <header class="discount-product__head">
-                  @if (group.product?.photos?.length) {
+                  @if (discountPhotoUrl(group.product); as photo) {
                     <img class="discount-product__photo"
-                         [appAuthSrc]="group.product!.photos[0].url"
+                         [appAuthSrc]="photo"
                          [alt]="group.product!.name" />
                   } @else {
                     <span class="discount-product__photo discount-product__photo--empty" aria-hidden="true">◈</span>
@@ -1410,6 +1411,10 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   });
   readonly discountSupplierNameOf = (product: Product): string | null =>
     this.supplierName(product);
+  /** The product's Hoofdfoto, the same photo quotes and invoices print. */
+  discountPhotoUrl(product: Product | null): string | null {
+    return product?.photos?.length ? salesPhotoUrl(product) : null;
+  }
 
   constructor() { void this.load(); }
 

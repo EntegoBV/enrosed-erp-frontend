@@ -6,7 +6,9 @@ import {
   CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSharedFieldsApplyRequest, ProductSharedFieldsApplyResult, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
   PhotoRole, ProductCostHistoryEntry,
   CataloguePhotoSelection, PhotoRenditions,
+  ProductPhotoOverview, ProductPhotoRoleKey, ProductPhotoScope, UnitName,
 } from './models';
+import { rememberUnitNames } from '../../features/products/product-sales-unit';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
 
@@ -56,8 +58,28 @@ export class CatalogApi {
    * the server can never leave a stale image for the lifetime of this app.
    */
   private readonly pendingPhotoBlobs = new Map<string, Promise<Blob>>();
+  /** The unit list is fixed server data (a CSV), so one answer serves the whole session. */
+  private unitNamesRequest: Promise<UnitName[]> | null = null;
 
   /* ---------------------------------------------------------- producten */
+
+  /**
+   * The units a product can be sold in ("stuk", "bowl", …), in Dutch. Cached;
+   * the answer also feeds productSalesUnit(), so every screen that names a
+   * product's unit follows. A failed request is forgotten and retried next time.
+   */
+  unitNames(): Promise<UnitName[]> {
+    this.unitNamesRequest ??= firstValueFrom(this.http.get<UnitName[]>(api('/api/products/unit-names')))
+      .then((names) => {
+        rememberUnitNames(names);
+        return names;
+      })
+      .catch((failure: unknown) => {
+        this.unitNamesRequest = null;
+        throw failure;
+      });
+    return this.unitNamesRequest;
+  }
 
   products(supplierId?: number): Promise<Product[]> {
     const query = supplierId ? `?supplierId=${supplierId}` : '';
@@ -379,6 +401,35 @@ export class CatalogApi {
   reorderPhotos(productId: number, photoIds: number[]): Promise<Product> {
     return firstValueFrom(
       this.http.put<Product>(api(`/api/products/${productId}/photos/order`), photoIds));
+  }
+
+  /** Own photos, the series photos of every colour and the resolved photo choices of one product. */
+  productPhotoOverview(productId: number): Promise<ProductPhotoOverview> {
+    return firstValueFrom(this.http.get<ProductPhotoOverview>(
+      api(`/api/products/${productId}/photo-overview`)));
+  }
+
+  /**
+   * Chooses the photo for one role, or hands the role back to the automatic rule with null.
+   * The server publishes a series photo to the channel the role needs first.
+   */
+  setProductPhotoRole(
+    productId: number,
+    role: ProductPhotoRoleKey,
+    photoKey: string | null,
+  ): Promise<ProductPhotoOverview> {
+    return firstValueFrom(this.http.put<ProductPhotoOverview>(
+      api(`/api/products/${productId}/photo-roles`), { role, photoKey }));
+  }
+
+  /** Turns an own photo into a series photo; an identical series photo is reused, the copy removed. */
+  promoteProductPhoto(
+    productId: number,
+    photoKey: string,
+    scope: Exclude<ProductPhotoScope, 'OTHER_VARIANT'>,
+  ): Promise<ProductPhotoOverview> {
+    return firstValueFrom(this.http.post<ProductPhotoOverview>(
+      api(`/api/products/${productId}/photos/promote`), { photoKey, scope }));
   }
 
   /* ------------------------------------------ leveranciersafspraakfoto's */

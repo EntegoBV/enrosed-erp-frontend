@@ -66,6 +66,7 @@ import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
+import { productSalesUnit } from '../products/product-sales-unit';
 import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from './purchase-price-context';
 import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -2876,6 +2877,9 @@ export class PurchaseEditor {
   protected readonly sourcing = inject(SourcingApi);
   protected readonly sales = inject(SalesApi);
   private readonly catalog = inject(CatalogApi);
+  /* Warms the unit names so carton notices say "1 bowl meer"; "stuks" until they
+     arrive. A field rather than constructor work: the constructor only wires the route. */
+  private readonly unitNamesLoad = this.catalog.unitNames().catch(() => undefined);
 
   /** Active stock locations; the container is unloaded at one of them. */
   readonly stockLocations = signal<StockLocation[]>([]);
@@ -3273,7 +3277,7 @@ export class PurchaseEditor {
 
   cartonNotice(quantity: number, productId: number): string | null {
     const product = this.products().find((candidate) => candidate.id === productId);
-    return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton);
+    return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton, productSalesUnit(product));
   }
 
   stockOf(productId: number): number {

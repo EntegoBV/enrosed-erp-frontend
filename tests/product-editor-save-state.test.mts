@@ -48,7 +48,7 @@ function harness() {
     family: signal(family()), savedFamily: signal(family()), familyLoading: signal(false), familyLoadError: signal(false),
     saving: signal(false), photoUploading: signal(false), translationSaving: signal(false), translationDirty: signal(false),
     agreementBusy: signal(false), agreementDirty: signal(false), sharedFieldsBusy: signal(false),
-    leaveQuestion: signal(null), readinessIssues: signal([]), pendingPhotos: signal(0),
+    leaveQuestion: signal(null), readinessIssues: signal([]), pendingPhotos: signal(0), photoRevision: signal(0),
     save: async () => {},
     editorReady: signal(true), autoCartonPieces: signal(null), autoCartonWeight: signal(null), missingFields: signal([]),
     saveError: signal(null), savedProductFamilyId: signal(null), savedSupplierId: signal(null), savedHere: signal(false),

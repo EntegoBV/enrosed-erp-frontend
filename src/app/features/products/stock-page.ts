@@ -12,6 +12,7 @@ import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { DateNlPipe, DateTimeNlPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
+import { salesPhotoUrl } from '../../shared/sales-photo';
 
 interface StockRow {
   product: Product;
@@ -240,8 +241,8 @@ interface StockGroup {
       <div class="list-item stock-row" [class.list-item--nested]="nested">
         <!-- The name opens the product's stock sheet: figures, moving, the book. -->
         <button class="stock-row__product" type="button" (click)="openBook(row)">
-          @if (row.product.photos.length) {
-            <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="row.product.photos[0].url" alt="" />
+          @if (salesPhotoUrl(row.product); as photo) {
+            <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="photo" alt="" />
           } @else {
             <span class="thumb thumb--placeholder" [class.thumb--sm]="nested">◈</span>
           }
@@ -700,6 +701,8 @@ export class StockPage {
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
+  /** Thumbnails follow the Hoofdfoto rule, the same photo quotes and invoices print. */
+  readonly salesPhotoUrl = salesPhotoUrl;
 
   readonly loading = signal(true);
   readonly saving = signal(false);
@@ -798,7 +801,7 @@ export class StockPage {
         byKey.set(key, group);
       }
       group.rows.push(row);
-      if (!group.photo && product.photos.length) group.photo = product.photos[0].url;
+      if (!group.photo) group.photo = salesPhotoUrl(product);
       const colour = product.colour?.trim();
       if (colour && !group.colours.some((item) => item.name === colour)) group.colours.push({ name: colour, hex: this.colourHex(product) });
       for (const [locationId, quantity] of row.byLocation) group.byLocation.set(locationId, (group.byLocation.get(locationId) ?? 0) + quantity);

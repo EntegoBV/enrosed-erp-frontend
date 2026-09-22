@@ -4,13 +4,15 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { signal } from '@angular/core';
+import * as portalUnits from '../src/app/features/portal/portal-sales-unit.ts';
 
 // Execute the real portal proposal methods without the unrelated router/DOM constructor.
 const source = await readFile(new URL('../src/app/features/portal/portal-page.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('portal-page.ts', source, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PortalPage');
 assert.ok(original);
-const names = new Set(['openProposal', 'setProposal', 'addFromCatalog', 'propose', 'requestedQuantityText']);
+const names = new Set(['openProposal', 'setProposal', 'addFromCatalog', 'propose', 'requestedQuantityText',
+  'quantityUnitKey', 'quantityUnit', 'quantityDetail', 'cartonContents']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)), original.name, original.typeParameters, undefined, members);
@@ -18,10 +20,20 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 
+// The Dutch document-text.csv values the portal reads through t().
+const TEXT: Record<string, string> = {
+  salesRequestedUnits: 'Oorspronkelijk aangevraagd: %s', portalPieces: 'stuks', portalPerBox: 'per doos',
+  unitsPerCarton: '%s per doos', salesPiecesPerDisplay: '%s stuks/display', salesUnitsPerDisplay: '%s per display',
+  salesTotalInnerPieces: 'Totaal: %s stuks', salesTotalUnits: 'Totaal: %s', salesDisplayCount: 'Displays: %s',
+  salesLoosePieces: 'Losse stuks: %s', salesLooseUnits: 'Buiten display: %s',
+};
+const BOWL = { key: 'bowl', one: 'bowl', few: 'bowls', many: 'bowls', other: 'bowls', short: 'bowls', per: 'per bowl' };
+
 function harness() {
   const timers: (() => void)[] = [];
   const exports: { PortalPage?: new () => any } = {};
-  vm.runInNewContext(javascript, { exports, Intl, setTimeout: (fn: () => void) => { timers.push(fn); return timers.length; }, clearTimeout: () => {} });
+  vm.runInNewContext(javascript, { exports, Intl, ...portalUnits,
+    setTimeout: (fn: () => void) => { timers.push(fn); return timers.length; }, clearTimeout: () => {} });
   const page = new exports.PortalPage!();
   const submissions: any[] = [];
   Object.assign(page, {
@@ -32,7 +44,7 @@ function harness() {
     proposalLines: signal([]), proposalSheet: signal(false), pendingRound: signal({}), roundTimers: new Map(),
     additions: signal(new Map()), catalogSheet: signal(true), catalog: signal([]),
     token: () => 'fixture', proposeBy: () => 'Customer', proposeMessage: () => '', locale: () => 'nl-BE',
-    t: (key: string) => key === 'lineRequestedQuantity' ? 'Oorspronkelijk aangevraagd: %s stuks' : key,
+    t: (key: string) => TEXT[key] ?? key,
     local: (key: string) => key,
     sales: { portalPropose: async (_token: string, _by: string, _message: string, lines: any[]) => { submissions.push(lines); return page.quote(); }, portalCatalog: async () => [] },
     language: () => 'NL', run: async (action: () => Promise<any>) => { await action(); },
@@ -91,4 +103,29 @@ test('agreement quotation cannot open or submit quantity changes', async () => {
   assert.equal(page.proposalSheet(), false);
   await page.propose();
   assert.equal(submissions.length, 0);
+});
+
+test('a line with a named unit reads that unit everywhere, older lines keep the generic words', () => {
+  const { page } = harness();
+  const bowl = { productId: 3, quantity: 20, piecesPerCarton: 40, salesUnit: 'PIECE', piecesPerDisplay: 8, unit: BOWL, requestedQuantity: 1 };
+  assert.equal(page.requestedQuantityText(bowl), 'Oorspronkelijk aangevraagd: 1 bowl');
+  assert.equal(page.requestedQuantityText({ ...bowl, requestedQuantity: 48 }), 'Oorspronkelijk aangevraagd: 48 bowls');
+  assert.equal(page.quantityUnit(bowl), 'bowls');
+  assert.equal(page.cartonContents(bowl), '40 bowls per doos');
+  assert.equal(page.quantityDetail(bowl), '8 bowls per display · Displays: 2 · Buiten display: 4 bowls');
+  assert.equal(page.quantityDetail({ ...bowl, salesUnit: 'DISPLAY', quantity: 3 }), '8 bowls per display · Totaal: 24 bowls');
+  const legacy = { ...bowl, unit: undefined };
+  assert.equal(page.quantityUnit(legacy), 'stuks');
+  assert.equal(page.cartonContents(legacy), '40 per doos');
+  assert.equal(page.quantityDetail(legacy), '8 stuks/display · Displays: 2 · Losse stuks: 4');
+});
+
+test('opening a proposal keeps the unit of each quote line', () => {
+  const { page } = harness();
+  page.quote.update((q: any) => ({ ...q, lines: q.lines.map((l: any) => l.productId === 1 ? { ...l, unit: BOWL } : l) }));
+  page.openProposal();
+  assert.equal(page.proposalLines()[0].unit, BOWL);
+  assert.equal(page.proposalLines()[1].unit, null);
+  page.addFromCatalog({ item: { productId: 3, description: 'Bowl', unit: BOWL }, quantity: 40 });
+  assert.equal(page.additions().get(3).unit, BOWL);
 });

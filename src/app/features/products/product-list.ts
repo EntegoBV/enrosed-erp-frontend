@@ -14,6 +14,7 @@ import { messageOf } from '../../core/api/errors';
 import { COLOUR_SWATCHES } from '../../core/api/geo';
 import { Icon } from '../../shared/icon';
 import { describePublicationIssues } from './publication-issues';
+import { salesPhotoUrl } from '../../shared/sales-photo';
 
 /**
  * One row in the list: a product on its own, or a series (family) that
@@ -343,8 +344,8 @@ interface ProductSwipe {
          (pointercancel)="cancelSwipe($event)"
          (dragstart)="$event.preventDefault()"
          (click)="blockWhenSwiped($event, product.id)">
-        @if (product.photos.length) {
-          <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="product.photos[0].url"
+        @if (salesPhotoUrl(product); as photo) {
+          <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="photo"
                [alt]="product.name" draggable="false" />
         } @else {
           <div class="thumb thumb--placeholder" [class.thumb--sm]="nested">◈</div>
@@ -660,6 +661,8 @@ export class ProductList {
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
+  /** Thumbnails follow the Hoofdfoto rule, the same photo quotes and invoices print. */
+  readonly salesPhotoUrl = salesPhotoUrl;
 
   readonly query = signal('');
   readonly categoryFilter = signal<number | null>(null);
@@ -795,7 +798,7 @@ export class ProductList {
         byKey.set(key, group);
       }
       group.products.push(product);
-      if (!group.photo && product.photos.length) group.photo = product.photos[0].url;
+      if (!group.photo) group.photo = salesPhotoUrl(product);
       const colour = product.colour?.trim();
       if (colour && !group.colours.some((item) => item.name === colour)) {
         group.colours.push({ name: colour, hex: this.colourHex(product) });
@@ -817,7 +820,7 @@ export class ProductList {
       group.lead = group.products.find((p) => p.id === group.family?.cardFeaturedProductId)
         ?? byPosition.find((p) => isRed(p.colour))
         ?? byPosition[0];
-      if (group.lead.photos.length) group.photo = group.lead.photos[0].url;
+      group.photo = salesPhotoUrl(group.lead) ?? group.photo;
       group.priceVaries = group.products.some((p) => this.salesPrice(p) !== this.salesPrice(group.lead));
       group.costVaries = group.products.some((p) => this.purchasePrice(p) !== this.purchasePrice(group.lead));
     }

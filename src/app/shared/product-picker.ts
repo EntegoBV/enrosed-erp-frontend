@@ -7,6 +7,7 @@ import { Sheet } from './ui';
 import { CurPipe, NumPipe } from './pipes';
 import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
 import { cartonQuantityNotice } from './carton-quantity-notice';
+import { productSalesUnit } from '../features/products/product-sales-unit';
 import { COLOUR_SWATCHES, STANDARD_COLOURS } from '../core/api/geo';
 import {
   ProductPickerCategoryKey,
@@ -201,7 +202,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                   <span class="row wrap" style="gap:5px">
                     <span>
                       {{ categoryName(product) }} · {{ product.sku }}
-                      · {{ product.carton.piecesPerCarton }} per doos
+                      · {{ product.carton.piecesPerCarton }} {{ salesUnit(product).plural }} per doos
                       @if (supplierName(product)) { · {{ supplierName(product) }} }
                     </span>
                     @if (stockAware()) {
@@ -217,7 +218,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
 
             @if (!selectionOnly()) {
             <div class="field mt-12">
-              <label class="req" for="pick-qty">Aantal stuks</label>
+              <label class="req" for="pick-qty">Aantal {{ salesUnit(product).plural }}</label>
               <input
                 class="input num right"
                 id="pick-qty"
@@ -234,7 +235,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                     Wordt zo <b>{{ note.to | num }}</b> — er gaan er
                     {{ product.carton.piecesPerCarton }} in een doos.
                   </span>
-                } @else if (cartonNotice(carton.value(), product.carton.piecesPerCarton); as cartonNote) {
+                } @else if (cartonNotice(carton.value(), product); as cartonNote) {
                   <span class="hint carton-quantity-note" role="status">{{ cartonNote }}</span>
                 }
               } @else if (carton.applied(); as note) {
@@ -262,7 +263,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                 <span class="alert__icon">!</span>
                 <div>
                   <b>Onvoldoende voorraad.</b>
-                  Er ligt {{ product.stockQuantity | num }} van de {{ carton.value() | num }} stuks.
+                  Er ligt {{ product.stockQuantity | num }} van de {{ carton.value() | num }} {{ salesUnit(product).plural }}.
                   Deze regel kan pas mee zodra er een container binnen is — spreek de
                   levertermijn af met de klant.
                 </div>
@@ -311,12 +312,12 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                               · {{ entry.quantity / (entry.product.carton.piecesPerCarton ?? 1) | num: 1 }} doos(en)
                             }
                           </div>
-                          @if (cartonNotice(entry.quantity, entry.product.carton.piecesPerCarton); as cartonNote) {
+                          @if (cartonNotice(entry.quantity, entry.product); as cartonNote) {
                             <div class="carton-quantity-note" role="status">{{ cartonNote }}</div>
                           }
                         </div>
                         <input class="input num right picker-batch__qty" type="number" min="0" step="1" inputmode="numeric"
-                               [attr.aria-label]="'Aantal stuks ' + variantLabel(entry.product) + ' van ' + group.name"
+                               [attr.aria-label]="'Aantal ' + salesUnit(entry.product).plural + ' ' + variantLabel(entry.product) + ' van ' + group.name"
                                [ngModel]="entry.quantity" (ngModelChange)="setBatchQuantity(entry.product.id!, +$event)" />
                         <button class="picker-batch__remove" type="button"
                                 [attr.aria-label]="variantLabel(entry.product) + ' van ' + group.name + ' weglaten'"
@@ -347,12 +348,12 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                       · {{ entry.quantity / (entry.product.carton.piecesPerCarton ?? 1) | num: 1 }} doos(en)
                     }
                   </div>
-                  @if (cartonNotice(entry.quantity, entry.product.carton.piecesPerCarton); as cartonNote) {
+                  @if (cartonNotice(entry.quantity, entry.product); as cartonNote) {
                     <div class="carton-quantity-note" role="status">{{ cartonNote }}</div>
                   }
                 </div>
                 <input class="input num right picker-batch__qty" type="number" min="0" step="1" inputmode="numeric"
-                       [attr.aria-label]="'Aantal stuks ' + entry.product.name"
+                       [attr.aria-label]="'Aantal ' + salesUnit(entry.product).plural + ' ' + entry.product.name"
                        [ngModel]="entry.quantity" (ngModelChange)="setBatchQuantity(entry.product.id!, +$event)" />
                 <button class="picker-batch__remove" type="button" [attr.aria-label]="entry.product.name + ' weglaten'"
                         (click)="toggle(entry.product)">×</button>
@@ -748,6 +749,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
 })
 export class ProductPicker implements OnDestroy {
   readonly salesPhotoUrl = salesPhotoUrl;
+  /** The product's own unit ("Aantal bowls"); the host screen loads the unit names. */
+  readonly salesUnit = productSalesUnit;
   readonly heading = input('Product toevoegen');
   readonly products = input.required<Product[]>();
   readonly categories = input<readonly Category[]>([]);
@@ -808,8 +811,9 @@ export class ProductPicker implements OnDestroy {
     }));
   readonly batchReady = computed(() => this.batch().length > 0 && this.batch().every((entry) => entry.quantity > 0));
 
-  cartonNotice(quantity: number, piecesPerCarton: number | null | undefined): string | null {
-    return cartonQuantityNotice(quantity, piecesPerCarton);
+  /** "1 bowl meer = 16": the notice in the product's own unit. */
+  cartonNotice(quantity: number, product: Product): string | null {
+    return cartonQuantityNotice(quantity, product.carton.piecesPerCarton, productSalesUnit(product));
   }
 
   isSelected(product: Product): boolean {
@@ -1011,7 +1015,7 @@ export class ProductPicker implements OnDestroy {
   stockLabel(product: Product): string {
     if (!product.inventoryKnown) return 'voorraad nog niet bevestigd';
     if (product.stockQuantity <= 0) return 'geen voorraad — op bestelling';
-    return `${product.stockQuantity.toLocaleString('nl-BE')} op voorraad`;
+    return `${product.stockQuantity.toLocaleString('nl-BE')} ${productSalesUnit(product).plural} op voorraad`;
   }
 
   readonly cartons = computed(() => {

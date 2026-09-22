@@ -60,7 +60,7 @@ test('shipping preview only shows products with an active positive quantity on d
     const component = new Constructor();
     Object.assign(component, { invoiceBusy: () => false, shipSheet: signal(null),
       catalog: { products: async () => [{ id: 1, stockQuantity: 30 }, { id: 2, stockQuantity: 50 }] },
-      lineUnavailable: (id: number) => id === 2 });
+      lineUnavailable: (id: number) => id === 2, lineUnit: () => ({ plural: 'stuks' }) });
     await component.openShipSheet(document);
     assert.equal(component.shipSheet().rows.length, 1);
     assert.equal(component.shipSheet().rows[0].name, 'Beschikbaar');

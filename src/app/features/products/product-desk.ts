@@ -185,22 +185,26 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
           </div>
           <div class="pd-product">
             <div class="pd-gallery">
-              @if (product.photos[galleryIndex()] || product.photos[0]; as photo) {
+              @let photos = galleryPhotos();
+              @if (photos[galleryIndex()] || photos[0]; as photo) {
                 <div class="pd-gallery__stage">
                   <button class="pd-gallery__main" type="button" (click)="lightbox.set(galleryIndex())"
-                          (keydown.arrowleft)="stepGallery(-1, product.photos.length)" (keydown.arrowright)="stepGallery(1, product.photos.length)"
-                          [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + product.photos.length + ' vergroten'">
+                          (keydown.arrowleft)="stepGallery(-1, photos.length)" (keydown.arrowright)="stepGallery(1, photos.length)"
+                          [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + photos.length + (currentSlideBadges().length ? ' (' + currentSlideBadges().join(', ') + ')' : '') + ' vergroten'">
                     <img [appAuthSrc]="photo.mediumUrl || photo.url" appAuthSize="medium" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
                   </button>
-                  @if (product.photos.length > 1) {
-                    <button class="pd-gallery__step pd-gallery__step--prev" type="button" (click)="stepGallery(-1, product.photos.length)" aria-label="Vorige foto">‹</button>
-                    <button class="pd-gallery__step pd-gallery__step--next" type="button" (click)="stepGallery(1, product.photos.length)" aria-label="Volgende foto">›</button>
-                    <span class="pd-gallery__count">{{ galleryIndex() + 1 }} / {{ product.photos.length }}</span>
+                  @if (currentSlideBadges().length) {
+                    <span class="pd-gallery__badges" aria-hidden="true">@for (badge of currentSlideBadges(); track badge) { <span [class.is-main]="badge === 'Hoofdfoto'">{{ badge }}</span> }</span>
+                  }
+                  @if (photos.length > 1) {
+                    <button class="pd-gallery__step pd-gallery__step--prev" type="button" (click)="stepGallery(-1, photos.length)" aria-label="Vorige foto">‹</button>
+                    <button class="pd-gallery__step pd-gallery__step--next" type="button" (click)="stepGallery(1, photos.length)" aria-label="Volgende foto">›</button>
+                    <span class="pd-gallery__count">{{ galleryIndex() + 1 }} / {{ photos.length }}</span>
                   }
                 </div>
-                @if (product.photos.length > 1) {
+                @if (photos.length > 1) {
                   <div class="pd-gallery__thumbs" aria-label="Kies een productfoto">
-                    @for (item of product.photos; track item.id) {
+                    @for (item of photos; track item.id) {
                       <button type="button" [class.on]="$index === galleryIndex()" (click)="selectGalleryPhoto($index)"
                               [attr.aria-label]="'Toon foto ' + ($index + 1)">
                         <img [appAuthSrc]="item.url" alt="" draggable="false" loading="lazy" />
@@ -209,7 +213,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                   </div>
                 }
                 <a class="pd-gallery__manage" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
-                  {{ product.photos.length }} foto{{ product.photos.length === 1 ? '' : '’s' }} · beheren ›
+                  {{ photos.length }} foto{{ photos.length === 1 ? '' : '’s' }} · beheren ›
                 </a>
               } @else {
                 <a class="pd-gallery__empty" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
@@ -222,7 +226,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <div class="pd-kicker">Identificatie</div>
               <dl class="desk-facts pd-facts">
                 <div><dt>Afmeting</dt><dd>{{ size(product.dimensions) }}<small>B × D × H</small></dd></div>
-                <div><dt>Gewicht</dt><dd>{{ product.dimensions.weightKg ? (product.dimensions.weightKg | kg) : '—' }}<small>per stuk</small></dd></div>
+                <div><dt>Gewicht</dt><dd>{{ product.dimensions.weightKg ? (product.dimensions.weightKg | kg) : '—' }}<small>per {{ salesUnit(product).piece.one }}</small></dd></div>
                 <div><dt>Barcode stuk</dt><dd class="mono">
                   @if (product.barcodeInner; as code) {
                     <button class="pd-barcode" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code" (click)="downloadBarcode(code)">{{ code }} <i aria-hidden="true">▥</i></button>
@@ -231,7 +235,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 @if (product.packaging.kind !== 'NONE') {
                   <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }}</dt><dd>
                     {{ size(product.packaging.dimensions) }}
-                    <small>{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | kg) : 'gewicht onbekend' }}@if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) { · {{ product.packaging.piecesPerUnit | num }} stuks per display }</small>
+                    <small>{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | kg) : 'gewicht onbekend' }}@if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) { · {{ product.packaging.piecesPerUnit | num }} {{ salesUnit(product).piece.other }} per display }</small>
                   </dd></div>
                   @if (product.packaging.barcode; as code) {
                     <div><dt>Barcode verpakking</dt><dd class="mono">
@@ -270,7 +274,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
         <!-- ============================ price: one line from factory to margin; the build-up on request -->
         <section class="pd-card" id="pd-price" aria-labelledby="pd-price-title">
           <div class="pd-card__head">
-            <div><h2 id="pd-price-title">Prijs &amp; marge</h2><p>Per stuk, van fabrieksprijs tot wat er overblijft</p></div>
+            <div><h2 id="pd-price-title">Prijs &amp; marge</h2><p>Per {{ salesUnit(product).singular }}, van fabrieksprijs tot wat er overblijft</p></div>
             <button class="linklike" type="button" [attr.aria-expanded]="priceOpen()" (click)="priceOpen.set(!priceOpen())">
               {{ priceOpen() ? 'Opbouw verbergen' : 'Opbouw tonen ›' }}
             </button>
@@ -298,7 +302,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <small>Catalogusprijs per {{ salesUnit(product).singular }}</small>
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
-              @if (secondaryPrice(product, displayPrice()); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.piecesPerDisplay }} stuks/display</span> }
+              @if (secondaryPrice(product, displayPrice()); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</span> }
             </div>
             <i aria-hidden="true">=</i>
             <div class="pd-flow__step pd-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">
@@ -352,7 +356,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                     @if (sourceOrderId(); as orderId) { <a [routerLink]="['/purchasing', orderId]">{{ product.landedCostSource }} ›</a> }
                     @else { {{ product.landedCostSource || 'Handmatig' }} }
                     <small>{{ product.landedCostSource ? 'de inkoopcalculatie: transport, rechten en Enrosed kost per stuk' : 'nog geen ontvangen container achter deze kostprijs' }}</small></dd></div>
-                  <div><dt>Extra kost</dt><dd>@if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }<small>per stuk, bv. display of giftbox, telt mee in de kostprijs</small></dd></div>
+                  <div><dt>Extra kost</dt><dd>@if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }<small>per {{ salesUnit(product).singular }}, bv. display of giftbox, telt mee in de kostprijs</small></dd></div>
                   <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? (product.fixedSalesPriceEur | eur: 2) : (product.markupPct | num) + ' % opslag' }}<small>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs, los van de kostprijs' : 'op de gelande kostprijs; de marge is wat overblijft' }}</small></dd></div>
                 </dl>
                 <div class="desk-actions pd-links">
@@ -631,7 +635,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
         }
       </ng-template>
 
-      <app-photo-lightbox [photos]="product.photos" [(index)]="lightbox" />
+      <app-photo-lightbox [photos]="galleryPhotos()" [(index)]="lightbox" />
       <app-product-supplier-agreement-photo-viewer [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
     }
   `,
@@ -682,12 +686,14 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-gallery{display:grid;gap:6px}
     .pd-gallery__stage{position:relative}
     .pd-gallery__main{display:block;width:100%;aspect-ratio:1;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);overflow:hidden;cursor:zoom-in}
-    .pd-gallery__main img{display:block;width:100%;height:100%;object-fit:cover}
+    .pd-gallery__main img{display:block;width:100%;height:100%;object-fit:contain}
     .pd-gallery__step{position:absolute;top:50%;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:rgb(255 255 255/.85);color:var(--ink);font-size:18px;line-height:1;box-shadow:var(--sh-1);cursor:pointer;transform:translateY(-50%);opacity:0;transition:opacity .12s}
     .pd-gallery__step--prev{left:8px}.pd-gallery__step--next{right:8px}.pd-gallery__stage:hover .pd-gallery__step,.pd-gallery__step:focus-visible{opacity:1}
+    .pd-gallery__badges{position:absolute;top:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;max-width:calc(100% - 16px);pointer-events:none}
+    .pd-gallery__badges span{padding:2px 8px;border-radius:999px;background:var(--surface);color:var(--ink-2);box-shadow:0 1px 3px rgb(0 0 0/.12);font-size:10.5px;font-weight:700}.pd-gallery__badges .is-main{background:var(--rose);color:#fff}
     .pd-gallery__count{position:absolute;right:8px;bottom:8px;padding:2px 8px;border-radius:999px;background:rgb(16 13 12/.62);color:#fff;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums}
     .pd-gallery__thumbs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}.pd-gallery__thumbs button{flex:none;width:48px;height:48px;padding:0;border:2px solid transparent;border-radius:10px;background:var(--surface-2);overflow:hidden;cursor:pointer}
-    .pd-gallery__thumbs button.on{border-color:var(--rose)}.pd-gallery__thumbs img{display:block;width:100%;height:100%;object-fit:cover}
+    .pd-gallery__thumbs button.on{border-color:var(--rose)}.pd-gallery__thumbs img{display:block;width:100%;height:100%;object-fit:contain}
     .pd-gallery__manage{color:var(--muted);font-size:11.5px;text-decoration:none}.pd-gallery__manage:hover{color:var(--rose-dark);text-decoration:underline}
     .pd-gallery__empty{display:grid;place-content:center;gap:2px;aspect-ratio:1;border:1px dashed var(--line-strong);border-radius:14px;color:var(--muted);text-align:center;text-decoration:none}.pd-gallery__empty b{color:var(--ink-2);font-size:13px}.pd-gallery__empty small{font-size:11.5px}
 
@@ -773,7 +779,7 @@ export class ProductDesk extends ProductView {
     return rows.map((row, index) => ({
       mark: row.note ? '◆' : row.sum ? '=' : row.label.startsWith('+') ? '+' : '·',
       label: row.label.replace(/^\+\s*/, ''),
-      hint: row.note ? 'catalogusprijs min kostprijs, wat er per stuk overblijft' : row.hint,
+      hint: row.note ? `catalogusprijs min kostprijs, wat er per ${this.salesUnit(this.product()).singular} overblijft` : row.hint,
       eur: row.eur,
       sum: !!row.sum,
       last: index === lastSum,
@@ -790,7 +796,7 @@ export class ProductDesk extends ProductView {
     if (!packaging || packaging.kind === 'NONE') return null;
     if (packaging.kind === 'DISPLAY') {
       const pieces = packaging.piecesPerUnit ?? 0;
-      return pieces > 1 ? `Display van ${pieces.toLocaleString('nl-BE')} stuks` : 'Display';
+      return pieces > 1 ? `Display van ${pieces.toLocaleString('nl-BE')} ${this.salesUnit(product).piece.other}` : 'Display';
     }
     return 'Geschenkverpakking';
   }

@@ -459,7 +459,7 @@ interface JourneyStep {
                         </td>
                         <td class="c-money num c-money--total">
                           <b>{{ line.net | eur }}</b>
-                          <small>{{ line.netUnitPrice | eur: 2 }} / st</small>
+                          <small>{{ line.netUnitPrice | eur: 2 }} / {{ lineUnit(line.productId).singular }}</small>
                         </td>
                         <td class="c-money num">
                           <button class="desk-total desk-total--profit" type="button" (click)="openCostSheet(line)"

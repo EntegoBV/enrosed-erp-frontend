@@ -60,7 +60,7 @@ export const PRODUCT_FAMILY_SHARED_FIELD_GROUPS: readonly ProductFamilySharedFie
       {
         key: 'PACKAGING',
         label: 'Geschenkverpakking of display',
-        summary: 'Type, afmetingen, gewicht en inhoud; de barcode wordt niet overgenomen.',
+        summary: 'Type, afmetingen, gewicht, inhoud en de eenheid op documenten (stuk, bowl, …); de barcode wordt niet overgenomen.',
       },
     ],
   },
@@ -131,11 +131,14 @@ export function productFamilySharedFieldValue(
     }
     case 'DIMENSIONS': return dimensions(product.dimensions);
     case 'PACKAGING': {
-      if (product.packaging.kind === 'NONE') return 'Geen verkoopverpakking';
+      // The unit travels with the packaging bundle, also for a loose article.
+      const unit = productSalesUnit(product);
+      const named = `eenheid ${unit.piece.one}`;
+      if (product.packaging.kind === 'NONE') return `Geen verkoopverpakking · ${named}`;
       const kind = product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking';
       const pieces = product.packaging.piecesPerUnit && product.packaging.piecesPerUnit > 1
-        ? ` · ${product.packaging.piecesPerUnit} stuks` : '';
-      return `${kind} · ${dimensions(product.packaging.dimensions)}${pieces} · prijs en aantal per ${productSalesUnit(product).singular}`;
+        ? ` · ${product.packaging.piecesPerUnit} ${unit.piece.other}` : '';
+      return `${kind} · ${dimensions(product.packaging.dimensions)}${pieces} · ${named} · prijs en aantal per ${unit.singular}`;
     }
     case 'CARTON': {
       const box = product.carton;

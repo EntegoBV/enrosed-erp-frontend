@@ -30,3 +30,15 @@ test('stays silent for a full carton or unusable input', () => {
   assert.equal(cartonQuantityNotice(5, 1), null);
   assert.equal(cartonQuantityNotice(5, 2.5), null);
 });
+
+test('speaks the product unit when one is given', () => {
+  const bowls = { singular: 'bowl', plural: 'bowls' };
+  assert.equal(
+    cartonQuantityNotice(5, 6, bowls),
+    'Geen volle omdoos (6/doos) · 1 bowl meer = 6.',
+  );
+  assert.equal(
+    cartonQuantityNotice(8, 6, { singular: 'display', plural: 'displays' }),
+    'Geen volle omdoos (6/doos) · 2 displays minder = 6, of 4 displays meer = 12.',
+  );
+});

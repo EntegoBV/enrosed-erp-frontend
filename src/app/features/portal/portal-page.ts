@@ -1,4 +1,4 @@
-import { portalDisplayPieces, portalPrimaryPrice, portalPriceUnitKey, portalQuantityUnitKey, portalSecondaryPrice, PortalSalesUnit } from './portal-sales-unit';
+import { portalCartonContents, portalDisplayPieces, portalPrimaryPrice, portalPriceUnitKey, portalQuantityUnit, portalQuantityUnitKey, portalSecondaryPrice, PortalSalesUnit, portalUnitNoun } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal,
 } from '@angular/core';
@@ -256,7 +256,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                         <div class="list-item__meta list-item__meta--wrap">{{ requestedQuantityText(line) }}</div>
                       } @else {
                       <div class="list-item__meta list-item__meta--wrap">
-                        {{ line.quantity | num: 0: locale() }} {{ t(quantityUnitKey(line)) }} ·
+                        {{ line.quantity | num: 0: locale() }} {{ quantityUnit(line, line.quantity) }} ·
                         {{ line.cartons | num: 0: locale() }} {{ t('portalBoxes') }}
                         @if (data.loadMode === 'LOOSE_CARTONS') {
                           · {{ (line.cbm ?? 0) | cbm: 3: locale() }}
@@ -266,9 +266,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                       </div>
                       @if (!data.advanceAgreement) {
                       <div class="list-item__meta list-item__meta--wrap">
-                        @if (primaryPrice(line); as primary) { {{ primary.price | eur: 3: locale() }} {{ t(primary.labelKey) }} }
+                        @if (primaryPrice(line); as primary) { {{ primary.price | eur: 2: locale() }} {{ primary.label ?? t(primary.labelKey) }} }
                         @if (secondaryPrice(line); as equivalent) {
-                          · {{ equivalent.approximate ? '≈ ' : '' }}{{ equivalent.price | eur: 3: locale() }} {{ t(equivalent.labelKey) }}
+                          · {{ equivalent.approximate ? '≈ ' : '' }}{{ equivalent.price | eur: 2: locale() }} {{ equivalent.label ?? t(equivalent.labelKey) }}
                         }
                         @if (line.discountPct) {
                           · {{ t('portalDiscount') }} {{ line.discountPct | pct: 1: locale() }}
@@ -481,18 +481,18 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 <div class="hint warn-text strong">{{ t('lineUnavailable') }}</div>
                 <div class="hint">{{ requestedQuantityText(line) }}</div>
               } @else {
-              <label [attr.for]="'prop-' + line.productId">{{ line.description }} · {{ t(quantityUnitKey(line)) }}</label>
+              <label [attr.for]="'prop-' + line.productId">{{ line.description }} · {{ quantityUnit(line) }}</label>
               <input class="input num right" [id]="'prop-' + line.productId" type="number"
                      min="0" step="1" inputmode="numeric" [ngModel]="line.quantity"
                      (ngModelChange)="setProposal(line.productId, +$event)" />
               @if (pendingRound()[line.productId]; as to) {
                 <span class="hint warn-text">
                   {{ t('portalRoundingNotice') }} <b>{{ to | num: 0: locale() }}</b>
-                  ({{ line.piecesPerCarton }} {{ t('portalPerBox') }})
+                  ({{ cartonContents(line) }})
                 </span>
               } @else {
                 <span class="hint">
-                  {{ line.piecesPerCarton }} {{ t('portalPerBox') }}
+                  {{ cartonContents(line) }}
                 </span>
               }
               }
@@ -509,7 +509,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                 <div>
                   <div class="small strong">{{ entry.description }}</div>
                   <div class="tiny muted">
-                    {{ entry.quantity | num: 0: locale() }} {{ t(quantityUnitKey(entry)) }}
+                    {{ entry.quantity | num: 0: locale() }} {{ quantityUnit(entry, entry.quantity) }}
                   </div>
                 </div>
                 <button class="btn btn--sm btn--danger" type="button"
@@ -689,11 +689,10 @@ export class PortalPage implements OnDestroy {
   readonly signNote = signal('');
 
   readonly proposalSheet = signal(false);
-  readonly proposalLines = signal<{
+  readonly proposalLines = signal<({
     productId: number; description: string; quantity: number; piecesPerCarton: number;
     unavailable: boolean; requestedQuantity: number | null;
-    salesUnit?: 'PIECE' | 'DISPLAY' | null; piecesPerDisplay?: number | null;
-  }[]>([]);
+  } & PortalSalesUnit)[]>([]);
   /** Quantities about to snap to a full carton; visible now, not yet applied. */
   readonly pendingRound = signal<Record<number, number>>({});
   private roundTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -900,23 +899,43 @@ export class PortalPage implements OnDestroy {
   requestedQuantityText(line: PortalSalesUnit & { requestedQuantity?: number | null }): string {
     const quantity = line.requestedQuantity;
     return quantity != null && Number.isFinite(quantity) && quantity > 0
-      ? this.t('salesRequestedUnits').replace('%s', `${new Intl.NumberFormat(this.locale()).format(quantity)} ${this.t(this.quantityUnitKey(line))}`) : '';
+      ? this.t('salesRequestedUnits').replace('%s', `${new Intl.NumberFormat(this.locale()).format(quantity)} ${this.quantityUnit(line, quantity)}`) : '';
+  }
+
+  /**
+   * The word after a quantity: the product's own unit when the server named
+   * it ("16 bowls", Polish plural rules included), else the translated key.
+   */
+  quantityUnit(line: PortalSalesUnit, count: number | null = null): string {
+    return portalQuantityUnit(line, count, this.locale()) ?? this.t(this.quantityUnitKey(line));
+  }
+
+  /** "16 bowls per doos"; older servers without a unit keep "16 per doos". */
+  cartonContents(line: PortalSalesUnit & { piecesPerCarton: number }): string {
+    return portalCartonContents(line, (key) => this.t(key), this.locale());
   }
 
   quantityDetail(line: PortalSalesUnit & { quantity: number }): string | null {
     const pieces = portalDisplayPieces(line);
     if (!pieces) return null;
-    const format = (key: string, value: number) => this.t(key).replace('%s', new Intl.NumberFormat(this.locale()).format(value));
-    const parts = [format('salesPiecesPerDisplay', pieces)];
+    const number = (value: number) => new Intl.NumberFormat(this.locale()).format(value);
+    const format = (key: string, value: number) => this.t(key).replace('%s', number(value));
+    /* A named unit puts its noun next to the count ("8 bowls per display");
+       older servers keep the keys that say "stuks" themselves. */
+    const unit = line.unit;
+    const counted = (unitKey: string, pieceKey: string, value: number) => unit
+      ? this.t(unitKey).replace('%s', `${number(value)} ${portalUnitNoun(unit, value, this.locale())}`)
+      : format(pieceKey, value);
+    const parts = [counted('salesUnitsPerDisplay', 'salesPiecesPerDisplay', pieces)];
     if (Number.isSafeInteger(line.quantity) && line.quantity > 0) {
       if (line.salesUnit === 'DISPLAY') {
         const total = line.quantity * pieces;
-        if (Number.isSafeInteger(total)) parts.push(format('salesTotalInnerPieces', total));
+        if (Number.isSafeInteger(total)) parts.push(counted('salesTotalUnits', 'salesTotalInnerPieces', total));
       } else {
         const count = Math.floor(line.quantity / pieces);
         const remainder = line.quantity % pieces;
         if (count) parts.push(format('salesDisplayCount', count));
-        if (remainder) parts.push(format('salesLoosePieces', remainder));
+        if (remainder) parts.push(counted('salesLooseUnits', 'salesLoosePieces', remainder));
       }
     }
     return parts.join(' · ');
@@ -928,7 +947,7 @@ export class PortalPage implements OnDestroy {
     this.proposalLines.set(quote.lines.map((line) => ({
       productId: line.productId, description: line.description, quantity: line.quantity,
       piecesPerCarton: Math.max(1, line.piecesPerCarton || 1),
-      salesUnit: line.salesUnit, piecesPerDisplay: line.piecesPerDisplay,
+      salesUnit: line.salesUnit, piecesPerDisplay: line.piecesPerDisplay, unit: line.unit ?? null,
       unavailable: line.unavailable === true, requestedQuantity: line.requestedQuantity ?? null,
     })));
     this.pendingRound.set({});
@@ -963,7 +982,7 @@ export class PortalPage implements OnDestroy {
       const next = new Map(current);
       next.set(choice.item.productId,
         { description: choice.item.description, quantity: choice.quantity,
-          salesUnit: choice.item.salesUnit, piecesPerDisplay: choice.item.piecesPerDisplay });
+          salesUnit: choice.item.salesUnit, piecesPerDisplay: choice.item.piecesPerDisplay, unit: choice.item.unit ?? null });
       return next;
     });
   }

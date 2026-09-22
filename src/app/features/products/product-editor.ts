@@ -1,4 +1,4 @@
-import { productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
+import { capitalize, customerUnitPreview, DEFAULT_UNIT_KEY, productSalesUnit, secondarySalesPrice, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -16,7 +16,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { CataloguePhotoSelection, Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
@@ -32,11 +32,8 @@ import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
 import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
-import {
-  ProductFamilyGallery,
-  ProductFamilyImagePublicationChange,
-  ProductFamilyImageVariantChange,
-} from './product-family-gallery';
+import { ProductPhotosPanel } from './product-photos-panel';
+import { salesPhoto } from '../../shared/sales-photo';
 import { ProductVariantGroup } from './product-variant-group';
 import {
   ProductFamilySharedFieldsApply,
@@ -56,7 +53,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
-    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null, salesUnit: 'PIECE' },
+    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null, salesUnit: 'PIECE', unitKey: 'stuk' },
     colour: null, colourHex: null, variantSize: null,
     description: null, categoryId: null, supplierId, supplierNote: null, active: true, demo: false,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -82,7 +79,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   host: { id: 'product-editor-workspace' },
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [KgPipe, 
-    FormsModule, PageHeader, PhotoManager, ProductFamilyGallery, ProductPublicationEditor, ProductSupplierAgreementEditor,
+    FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu,
   ],
@@ -183,7 +180,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @if (!desktop.active()) {
       <section class="product-mobile-identity" aria-label="Huidige productvariant">
         <button class="product-mobile-photo" type="button" (click)="showTab('media')" aria-label="Productfoto’s bewerken">
-          @if (draft().photos[0]; as photo) { <img [appAuthSrc]="photo.url" [alt]="draft().name" /> }
+          @if (heroPhoto(); as photo) { <img [appAuthSrc]="photo.url" [alt]="draft().name" /> }
           @else { <app-icon name="media" [size]="24" /> }
           <span><app-icon name="media" [size]="12" /></span>
         </button>
@@ -210,11 +207,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <div class="content product-editor-lead__content">
         <section class="erp-workspace__hero product-editor-hero" aria-label="Product in één oogopslag">
           <div class="erp-workspace__media product-editor-hero__media">
-            @if (draft().photos[0]; as cover) {
+            @if (heroPhoto(); as cover) {
               <img [appAuthSrc]="cover.mediumUrl || cover.url" appAuthSize="medium" [alt]="(draft().name || 'Nieuw product') + ' — hoofdfoto'"
                    loading="lazy" />
-              @if (photoCount() > 1) {
-                <span class="product-editor-hero__photo-count">+{{ photoCount() - 1 }}</span>
+              @if (mediaPhotoCount() > 1) {
+                <span class="product-editor-hero__photo-count">+{{ mediaPhotoCount() - 1 }}</span>
               }
             } @else {
               <span class="product-editor-hero__placeholder" aria-hidden="true">✦</span>
@@ -591,23 +588,23 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat. Het gewicht is dat van de {{ draft().packaging.kind === 'DISPLAY' ? 'gevulde display' : 'geschenkverpakking mét het product erin' }}; daarmee rekent de omdoos.</p>
               @if (draft().packaging.kind === 'DISPLAY') {
                 <div class="field mt-8">
-                  <label class="req" for="p-packaging-pieces">Stuks in de display</label>
+                  <label class="req" for="p-packaging-pieces">{{ capitalize(salesUnit(draft()).piece.other) }} in de display</label>
                   <input class="input num right" id="p-packaging-pieces" type="number" min="1" step="1" inputmode="numeric"
                          [ngModel]="draft().packaging.piecesPerUnit" placeholder="bijv. 12"
                          (ngModelChange)="patchPackaging({ piecesPerUnit: num($event) })" />
-                  <span class="hint">Hoeveel losse stuks één volle display bevat.</span>
+                  <span class="hint">Hoeveel losse {{ salesUnit(draft()).piece.other }} één volle display bevat.</span>
                 </div>
                 <div class="field mt-8">
                   <label for="p-packaging-sales-unit">Prijs en orderaantal gelden per</label>
                   <select class="select" id="p-packaging-sales-unit"
                           [ngModel]="draft().packaging.salesUnit ?? 'PIECE'"
                           (ngModelChange)="patchPackaging({ salesUnit: $event })">
-                    <option value="PIECE">Los stuk</option>
+                    <option value="PIECE">Eén {{ salesUnit(draft()).piece.one }}</option>
                     <option value="DISPLAY">Volledig display (set)</option>
                   </select>
                   <span class="hint">{{ draft().packaging.salesUnit === 'DISPLAY'
                     ? 'De opgeslagen prijs en één eenheid in orders, voorraad en omdozen gelden voor één volledig display.'
-                    : 'De opgeslagen prijs en één eenheid in orders, voorraad en omdozen gelden voor één los stuk.' }} Bestaande bedragen en aantallen worden niet omgerekend.</span>
+                    : 'De opgeslagen prijs en één eenheid in orders, voorraad en omdozen gelden voor één ' + salesUnit(draft()).piece.one + ', los verkocht.' }} Bestaande bedragen en aantallen worden niet omgerekend.</span>
                 </div>
               }
               <div class="field mt-8">
@@ -657,61 +654,35 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <span class="badge badge--neutral">{{ mediaPhotoCount() }}</span>
         </div>
         <div class="card__body photo-workspace">
-          @if (family()) {
-            <div class="photo-scopes" role="group" aria-label="Welke foto’s wil je beheren?">
-              <button type="button" [attr.aria-pressed]="activePhotoScope() === 'variant'"
-                      aria-controls="variant-photo-panel" (click)="photoScope.set('variant')">
-                Eigen foto’s <span>{{ variantPhotoCount() }}</span>
-              </button>
-              <button type="button" [attr.aria-pressed]="activePhotoScope() === 'family'"
-                      aria-controls="family-photo-panel" (click)="photoScope.set('family')">
-                Reeksfoto’s <span>{{ family()!.images.length }}</span>
-              </button>
-            </div>
-          }
-          <!-- Keep the manager mounted: a hidden upload queue must still be saved. -->
-          <div id="variant-photo-panel" class="photo-scope-panel" [hidden]="activePhotoScope() !== 'variant'">
-          <app-photo-manager
-            [productId]="draft().id"
-            [photos]="draft().photos"
-            [showInherited]="family() === null"
-            [disabled]="saving() || translationSaving() || translationDirty()"
-            (changed)="onPhotosChanged($event)"
-          />
-          @if (family() && !variantPhotoCount() && draft().photos.length) {
-            <p class="photo-scope-hint">Dit product gebruikt een foto uit de reeks.
-              <button type="button" (click)="photoScope.set('family')">Bekijk reeksfoto’s →</button>
-            </p>
-          }
-          </div>
-
-          @if (!isNew()) {
-            @if (familyLoading()) {
-              <p class="media-gallery-state">Gedeelde galerij laden…</p>
-            } @else if (familyLoadError()) {
-              <div class="media-gallery-state media-gallery-state--error" role="alert">
-                <span>Gedeelde galerij kon niet worden geladen.</span>
-                <button type="button" (click)="retryFamily()">Opnieuw</button>
-              </div>
-            } @else if (family(); as mediaFamily) {
-              <div id="family-photo-panel" class="photo-scope-panel" [hidden]="activePhotoScope() !== 'family'">
-              <app-product-family-gallery
-                class="media-family-gallery"
-                [family]="mediaFamily"
-                language="NL"
-                [translationEditing]="false"
-                [currentProductId]="draft().id"
-                [busy]="saving() || photoUploading() || translationDirty() || translationSaving()"
-                (familyChange)="onFamilyChange($event)"
-                (imageUploadRequested)="uploadFamilyImage($event)"
-                (imageDeleteRequested)="removeFamilyImage($event)"
-                (imageVariantChangeRequested)="linkFamilyImageVariant($event)"
-                (imagePublicationChangeRequested)="setFamilyImagePublication($event)"
-                (catalogueSelectionRequested)="setCataloguePhotos($event)"
-              />
-              </div>
+          @if (photoWorkspace() === 'series') {
+            <!-- Series photos are part of the translation revision: a photo change under
+                 unsaved or saving translations would make that save fail. -->
+            <app-product-photos-panel
+              [product]="draft()"
+              [members]="family()?.members ?? []"
+              [revision]="photoRevision()"
+              [disabled]="saving() || sharedFieldsBusy() || translationSaving() || translationDirty()"
+              (changed)="refreshPhotoState()"
+            />
+            @if (translationDirty() || translationSaving()) {
+              <p class="photo-scope-hint">Bewaar eerst de vertalingen; daarna pas je de foto’s weer aan.</p>
             }
           }
+          <!-- Products outside a saved series keep the own-photo manager. It stays mounted
+               so a queue picked before the first save survives the switch to the series panel. -->
+          <div class="photo-scope-panel" [hidden]="photoWorkspace() === 'series'">
+            <app-photo-manager
+              [productId]="draft().id"
+              [photos]="photoWorkspace() === 'series' ? [] : draft().photos"
+              [disabled]="saving() || translationSaving() || translationDirty()"
+              (changed)="onPhotosChanged($event)"
+            />
+            @if (family()) {
+              <p class="photo-scope-hint">{{ isNew()
+                ? 'Na het aanmaken beheer je hier ook de reeksfoto’s en kies je de hoofdfoto per kleur.'
+                : 'Sla het product op in deze reeks; daarna beheer je hier ook de reeksfoto’s.' }}</p>
+            }
+          </div>
         </div>
       </section>
 
@@ -756,7 +727,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </fieldset>
           <div class="form-grid">
             <div class="field">
-              <label class="req" for="p-ppc">{{ salesUnit(draft()).isDisplay ? 'Displays' : 'Stuks' }} per karton</label>
+              <label class="req" for="p-ppc">{{ salesUnit(draft()).pluralLabel }} per karton</label>
               <input class="input num right" id="p-ppc" type="number" min="1" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPerCarton"
                      [placeholder]="autoCartonPieces() !== null ? 'auto: ' + autoCartonPieces() : ''"
@@ -780,7 +751,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               }
             </div>
             <div class="field">
-              <label for="p-20ft">{{ salesUnit(draft()).isDisplay ? 'Displays' : 'Stuks' }} per 20ft GP <span class="opt"></span></label>
+              <label for="p-20ft">{{ salesUnit(draft()).pluralLabel }} per 20ft GP <span class="opt"></span></label>
               <input class="input num right" id="p-20ft" type="number" min="1" max="2147483647" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPer20Ft ?? null"
                      [placeholder]="isAutoGpCapacity(gpCapacity()) ? 'Auto: ' + (gpCapacity().value | num) : ''"
@@ -791,7 +762,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               }
             </div>
             <div class="field">
-              <label for="p-hc">{{ salesUnit(draft()).isDisplay ? 'Displays' : 'Stuks' }} per 40' HC <span class="opt"></span></label>
+              <label for="p-hc">{{ salesUnit(draft()).pluralLabel }} per 40' HC <span class="opt"></span></label>
               <input class="input num right" id="p-hc" type="number" min="1" step="1"
                      inputmode="numeric" [ngModel]="draft().carton.piecesPerHc ?? null"
                      [placeholder]="autoHcCapacity() !== null ? 'auto: ' + (autoHcCapacity() | num) : ''"
@@ -897,6 +868,23 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <div><h2 id="sales-title">Verkoop</h2><p>Catalogusprijs, marge en prijsstrategie</p></div>
         </div>
         <div class="card__body">
+          <!-- What one piece is called on quotes, invoices, the portal, the
+               catalogue and the website: "€ 3,95 per bowl". Stored in
+               packaging.unitKey; the price basis (piece or display) stays apart. -->
+          <div class="field">
+            <label id="p-unit-label">Eenheid</label>
+            <div class="chips filter-rail" role="group" aria-labelledby="p-unit-label">
+              @for (unit of unitChoiceList(); track unit.key) {
+                <button type="button" class="chip"
+                        [class.active]="selectedUnitKey() === unit.key"
+                        [attr.aria-pressed]="selectedUnitKey() === unit.key"
+                        [disabled]="formWriteBusy()"
+                        (click)="chooseUnit(unit.key)">{{ capitalize(unit.one) }}</button>
+              }
+            </div>
+            <span class="hint" aria-live="polite">{{ unitPreview() }}</span>
+          </div>
+
           <fieldset class="price-method">
             <legend>Catalogusprijs</legend>
             <div class="price-method__options" role="group" aria-label="Prijsstrategie">
@@ -966,7 +954,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
               @if (secondaryPrice(draft(), salesPrice()); as equivalent) {
-                <small>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.piecesPerDisplay }} stuks/display</small>
+                <small>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</small>
               }
             </div>
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
@@ -1885,6 +1873,7 @@ export class ProductEditor implements OnDestroy {
   readonly salesUnit = productSalesUnit;
   readonly secondaryPrice = secondarySalesPrice;
   readonly quantityDetail = salesQuantityDetail;
+  readonly capitalize = capitalize;
   /** The selected editor section, shared by desktop navigation and the mobile picker. */
   readonly activeTab = signal('identity');
   readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy());
@@ -2086,7 +2075,7 @@ export class ProductEditor implements OnDestroy {
   sectionSaveHint(id: string): string {
     if (id === 'media') return this.isNew()
       ? 'Foto’s worden samen met het nieuwe product opgeslagen.'
-      : 'Variantfoto’s worden direct verwerkt. De volgorde van de gedeelde galerij bevestig je met Opslaan; die geldt voor de hele reeks.';
+      : 'Foto’s, fotokeuzes en de volgorde worden meteen bewaard; Opslaan is daarvoor niet nodig.';
     if (id === 'stock') return 'Een aangepast voorraadaantal wordt direct geboekt zodra je het veld verlaat. Verplaatsen en stuk/demo bevestig je apart.';
     if (id === 'agreements') return 'Sla je notitie op met Opslaan. Fotoacties worden apart verwerkt; controleer ook de opslagstatus bij de bijlagen.';
     if (id === 'publication') return 'Publicatie-instellingen sla je bovenaan op. Vertalingen hebben een eigen opslagknop. Reeksteksten gelden voor alle varianten.';
@@ -2387,7 +2376,8 @@ export class ProductEditor implements OnDestroy {
         this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
       }
       this.takeOutDraft.set(null);
-      this.ui.toast(out.kind === 'DAMAGED' ? `${out.quantity} stuks als beschadigd afgeboekt` : `${out.quantity} stuks als demo afgeboekt`, 'ok');
+      const taken = unitCount(productSalesUnit(this.draft()), out.quantity);
+      this.ui.toast(out.kind === 'DAMAGED' ? `${taken} als beschadigd afgeboekt` : `${taken} als demo afgeboekt`, 'ok');
       void this.loadStockHistory(id);
       void this.loadStockLevels(id);
     } catch (failure: unknown) {
@@ -2413,7 +2403,7 @@ export class ProductEditor implements OnDestroy {
         this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
       }
       this.transferDraft.set(null);
-      this.ui.toast(`${move.quantity} stuks verplaatst`, 'ok');
+      this.ui.toast(`${unitCount(productSalesUnit(this.draft()), move.quantity)} verplaatst`, 'ok');
       void this.loadStockHistory(id);
       void this.loadStockLevels(id);
     } catch (failure: unknown) {
@@ -2571,26 +2561,28 @@ export class ProductEditor implements OnDestroy {
   readonly outerCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly packagingCheck = signal<{ valid: boolean; message: string } | null>(null);
   readonly photoManager = viewChild(PhotoManager);
+  readonly photosPanel = viewChild(ProductPhotosPanel);
   readonly photoUploading = computed(() => {
     const manager = this.photoManager();
-    return !!manager && (manager.busy() || manager.roleBusy() !== null);
+    return (!!manager && (manager.busy() || manager.roleBusy() !== null))
+      || (this.photosPanel()?.busy() ?? false);
   });
-  readonly photoCount = computed(() =>
-    this.draft().photos.length + (this.photoManager()?.pendingCount() ?? 0));
-  readonly photoScope = signal<'variant' | 'family' | null>(null);
-  readonly variantPhotoCount = computed(() =>
-    this.draft().photos.filter(photo => photo.origin === 'PRODUCT').length
-      + (this.photoManager()?.pendingCount() ?? 0));
-  readonly activePhotoScope = computed(() => !this.family() ? 'variant'
-    : this.photoScope() ?? (!this.variantPhotoCount() && this.family()!.images.length ? 'family' : 'variant'));
-  readonly mediaPhotoCount = computed(() => {
+  /**
+   * Series photos need the product saved in its series: the photo overview and
+   * every photo command work on the server's membership, not on an unsaved move.
+   */
+  readonly photoWorkspace = computed<'series' | 'own'>(() => {
     const product = this.draft();
-    const family = this.family();
-    const savedCount = family
-      ? product.photos.filter((photo) => photo.origin === 'PRODUCT').length + family.images.length
-      : product.photos.length;
-    return savedCount + (this.photoManager()?.pendingCount() ?? 0);
+    const familyId = this.savedProductFamilyId();
+    return product.id !== null && familyId !== null && (product.familyId ?? null) === familyId ? 'series' : 'own';
   });
+  /** Own photos plus the series photos of this colour: exactly what the product view shows. */
+  readonly mediaPhotoCount = computed(() =>
+    this.draft().photos.length + (this.photoManager()?.pendingCount() ?? 0));
+  /** The Hoofdfoto rule shared with lists and documents, never simply photos[0]. */
+  readonly heroPhoto = computed(() => salesPhoto(this.draft()));
+  /** Tells the photo panel to fetch its overview again after saves outside it. */
+  readonly photoRevision = signal(0);
   readonly agreementEditor = viewChild(ProductSupplierAgreementEditor);
   readonly agreementBusy = computed(() => this.agreementEditor()?.busy() ?? false);
   readonly agreementDirty = computed(() => this.agreementEditor()?.dirty() ?? false);
@@ -2714,6 +2706,7 @@ export class ProductEditor implements OnDestroy {
     });
     void this.loadReference();
     void this.loadFamilies();
+    void this.catalog.unitNames().then((names) => this.unitNames.set(names)).catch(() => undefined);
     /* React to the route id only. Everything else runs untracked: loadProduct
        reads and writes draft/translation signals synchronously, and with
        those as dependencies the effect re-ran on its own writes before
@@ -2760,7 +2753,6 @@ export class ProductEditor implements OnDestroy {
     this.productLoading.set(true);
     this.productLoadError.set(null);
     if (this.draft().id !== productId) {
-      this.photoScope.set(null);
       ++this.familyLoadVersion;
       this.setFamilyDraft(null);
       this.savedProductFamilyId.set(null);
@@ -2907,6 +2899,24 @@ export class ProductEditor implements OnDestroy {
 
   readonly unitMargin = computed(() =>
     Math.round((this.salesPrice() - (this.draft().landedCostEur ?? 0)) * 100) / 100);
+
+  /** The server's unit list ("Stuk", "Bowl", "Stolp", …); empty until it arrives. */
+  readonly unitNames = signal<UnitName[]>([]);
+  /** The stored key as the server reads it: blank means "stuk". */
+  readonly selectedUnitKey = computed(() =>
+    this.draft().packaging?.unitKey?.trim().toLowerCase() || DEFAULT_UNIT_KEY);
+  /** Without the list (still loading, or an older server) only the current unit is shown. */
+  readonly unitChoiceList = computed(() => {
+    const names = this.unitNames();
+    return names.length ? names : [unitName(this.selectedUnitKey())];
+  });
+  /** "Klant leest: € 8,95 per stolp · 10 stolpen per doos". */
+  readonly unitPreview = computed(() => customerUnitPreview(this.draft(), this.salesPrice(),
+    this.draft().carton.piecesPerCarton || this.autoCartonPieces()));
+
+  chooseUnit(key: string): void {
+    if (key !== this.selectedUnitKey()) this.patchPackaging({ unitKey: key });
+  }
 
   /** The margin as a share of the sales price, for the rail. */
   marginPercent(): number {
@@ -3074,6 +3084,7 @@ export class ProductEditor implements OnDestroy {
         cartonCbm: serverProduct.cartonCbm,
         pieceCbm: serverProduct.pieceCbm,
       }));
+      this.photoRevision.update((revision) => revision + 1);
     } catch {
       this.ui.toast('Variant gekoppeld, maar de bijgewerkte productgegevens konden niet worden geladen.', 'err');
     } finally {
@@ -3238,148 +3249,6 @@ export class ProductEditor implements OnDestroy {
     };
   }
 
-  async uploadFamilyImage(file: File): Promise<void> {
-    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
-    this.saving.set(true);
-    try {
-      await this.persistFamilyDraft();
-      const familyId = this.family()?.id;
-      if (familyId === null || familyId === undefined) {
-        throw new Error('Gedeelde productgegevens konden niet worden aangemaakt');
-      }
-      const saved = await this.catalog.uploadProductFamilyImage(
-        familyId,
-        file,
-        this.currentFamilyMemberId(),
-      );
-      this.replaceFamily(saved);
-      this.ui.toast('Productfoto toegevoegd · alleen intern');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Productfoto toevoegen mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  removeFamilyImage(imageId: number): void {
-    const family = this.family();
-    if (!family?.id || this.saving() || this.photoUploading()
-        || this.translationDirty() || this.translationSaving()) return;
-    this.ui.confirm(
-      {
-        title: 'Productfoto verwijderen',
-        message: 'Deze foto definitief uit het product en alle publicatiekanalen verwijderen?',
-        confirmLabel: 'Verwijderen',
-        danger: true,
-      },
-      async () => {
-        this.saving.set(true);
-        try {
-          await this.persistFamilyDraft();
-          const saved = await this.catalog.deleteProductFamilyImage(family.id!, imageId);
-          this.replaceFamily(saved);
-          this.ui.toast('Productfoto verwijderd');
-        } catch (failure: unknown) {
-          this.ui.toast(messageOf(failure, 'Productfoto verwijderen mislukt'), 'err');
-        } finally {
-          this.saving.set(false);
-        }
-      },
-    );
-  }
-
-  async linkFamilyImageVariant(change: ProductFamilyImageVariantChange): Promise<void> {
-    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
-    this.saving.set(true);
-    try {
-      await this.persistFamilyDraft();
-      const familyId = this.family()?.id;
-      if (familyId === null || familyId === undefined) {
-        throw new Error('Sla de gedeelde websitegegevens eerst op');
-      }
-      const saved = await this.catalog.updateProductFamilyImageVariant(
-        familyId,
-        change.imageId,
-        change.variantProductId,
-      );
-      this.replaceFamily(saved);
-      this.ui.toast(change.variantProductId === null
-        ? 'Foto geldt nu voor alle varianten'
-        : 'Foto aan variant gekoppeld');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Foto koppelen aan variant mislukt'), 'err');
-      const familyId = this.family()?.id;
-      if (familyId !== null && familyId !== undefined) {
-        try {
-          this.replaceFamily(await this.catalog.productFamily(familyId));
-        } catch {
-          /* The save error above remains the useful feedback. */
-        }
-      }
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  async setFamilyImagePublication(change: ProductFamilyImagePublicationChange): Promise<void> {
-    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
-    this.saving.set(true);
-    try {
-      await this.persistFamilyDraft();
-      const familyId = this.family()?.id;
-      if (familyId === null || familyId === undefined) {
-        throw new Error('Sla de gedeelde productgegevens eerst op');
-      }
-      const saved = await this.catalog.updateProductFamilyImagePublication(
-        familyId,
-        change.imageId,
-        change.channels,
-      );
-      this.replaceFamily(saved);
-      this.ui.toast(change.channels.length
-        ? `Foto gepubliceerd naar ${this.publicationChannelLabels(change.channels)}`
-        : 'Foto is nu alleen intern');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(
-        failure,
-        'Publicatie kon niet worden aangepast. Controleer de alt-tekst en variantkoppeling.',
-      ), 'err');
-      const familyId = this.family()?.id;
-      if (familyId !== null && familyId !== undefined) {
-        try {
-          this.replaceFamily(await this.catalog.productFamily(familyId));
-        } catch {
-          /* The publication error above remains the useful feedback. */
-        }
-      }
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  async setCataloguePhotos(selection: CataloguePhotoSelection): Promise<void> {
-    if (this.saving() || this.photoUploading() || this.translationDirty() || this.translationSaving()) return;
-    this.saving.set(true);
-    try {
-      await this.persistFamilyDraft();
-      const id = this.family()?.id;
-      if (id === null || id === undefined) throw new Error('Sla de productreeks eerst op');
-      this.replaceFamily(await this.catalog.updateCataloguePhotos(id, selection));
-      this.ui.toast('Fotokeuzes voor de catalogus opgeslagen');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Fotokeuzes opslaan mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private publicationChannelLabels(
-    channels: ProductFamilyImagePublicationChange['channels'],
-  ): string {
-    const labels = { WEBSITE: 'website', CATALOGUE: 'catalogus', ORDER_APP: 'bestelapp' } as const;
-    return channels.map((channel) => labels[channel]).join(', ');
-  }
-
   private replaceFamily(family: ProductFamily): void {
     this.setFamilyDraft(family);
     this.families.update((families) => families.some((item) => item.id === family.id)
@@ -3390,15 +3259,6 @@ export class ProductEditor implements OnDestroy {
       familyKey: family.familyKey,
       ...this.variantPublicationFields(),
     });
-  }
-
-  /** Never attach an upload to a SKU until the family projection confirms membership. */
-  private currentFamilyMemberId(): number | null {
-    const productId = this.draft().id;
-    if (productId === null) return null;
-    return this.family()?.members.some((member) => member.productId === productId)
-      ? productId
-      : null;
   }
 
   private slug(value: string): string {
@@ -3467,14 +3327,75 @@ export class ProductEditor implements OnDestroy {
   /** Photo endpoints return a full server product; keep concurrent form edits intact. */
   onPhotosChanged(serverProduct: Product): void {
     if (serverProduct.id !== this.draft().id) return;
-    this.draft.update((current) => ({
+    const withServerMedia = (current: Product): Product => ({
       ...current,
       photos: serverProduct.photos,
       publicationIssues: serverProduct.publicationIssues,
       describedAs: serverProduct.describedAs,
       cartonCbm: serverProduct.cartonCbm,
       pieceCbm: serverProduct.pieceCbm,
-    }));
+    });
+    this.draft.update(withServerMedia);
+    /* Photos are already saved on the server: they must not read as an unsaved product edit. */
+    this.baseline.update((saved) => {
+      try {
+        return saved ? JSON.stringify(withServerMedia(JSON.parse(saved) as Product)) : saved;
+      } catch {
+        return saved;
+      }
+    });
+  }
+
+  /**
+   * The photo panel saved something on the server. Series photos change the
+   * product's projections and the family's images, choices and publication
+   * issues, so both are fetched again; unsaved form edits stay untouched.
+   */
+  async refreshPhotoState(): Promise<void> {
+    const productId = this.draft().id;
+    const familyId = this.savedProductFamilyId();
+    if (productId === null) return;
+    const version = this.productLoadVersion;
+    try {
+      const [product, family] = await Promise.all([
+        this.catalog.product(productId),
+        familyId === null ? Promise.resolve(null) : this.catalog.productFamily(familyId),
+      ]);
+      if (version !== this.productLoadVersion || this.draft().id !== productId) return;
+      this.onPhotosChanged(product);
+      if (family) this.mergeFamilyPhotoState(family);
+    } catch {
+      this.ui.toast('De foto is bewaard, maar het product kon niet worden ververst. Herlaad de pagina.', 'err');
+    }
+  }
+
+  /**
+   * Takes the photo-owned part of a fresh family. Without unsaved family edits
+   * the whole family is replaced; with them, only the photo fields move into
+   * both the draft and its baseline, so the pending edits stay pending. The
+   * product draft is left alone: photo work never changes its membership.
+   */
+  private mergeFamilyPhotoState(fresh: ProductFamily): void {
+    if (this.family()?.id !== fresh.id) return;
+    this.families.update((families) => families.map((item) => item.id === fresh.id ? fresh : item));
+    if (!this.familyDirty()) {
+      this.setFamilyDraft(fresh);
+      return;
+    }
+    const withPhotoState = (family: ProductFamily | null): ProductFamily | null => family && {
+      ...family,
+      images: structuredClone(fresh.images),
+      cataloguePhotoOptions: structuredClone(fresh.cataloguePhotoOptions),
+      catalogueOverviewPhotoId: fresh.catalogueOverviewPhotoId,
+      catalogueDetailPhotoId: fresh.catalogueDetailPhotoId,
+      catalogueDetailSize: fresh.catalogueDetailSize,
+      websiteQuotePhotoId: fresh.websiteQuotePhotoId,
+      effectiveWebsiteQuotePhotoId: fresh.effectiveWebsiteQuotePhotoId,
+      members: structuredClone(fresh.members),
+      publicationIssues: [...fresh.publicationIssues],
+    };
+    this.family.update(withPhotoState);
+    this.savedFamily.update(withPhotoState);
   }
 
   setSupplier(supplierId: number): void {
@@ -3655,10 +3576,10 @@ export class ProductEditor implements OnDestroy {
     if (!draft.name.trim()) missing.push({ tab: 'identity', field: 'p-name', label: 'productnaam' });
     if (!(draft.colour ?? '').trim()) missing.push({ tab: 'identity', field: 'p-colour', label: 'kleur' });
     if ((draft.carton.piecesPerCarton ?? 0) <= 0 && this.autoCartonPieces() === null) {
-      missing.push({ tab: 'packaging', field: 'p-ppc', label: 'stuks per karton (of vul de afmetingen in)' });
+      missing.push({ tab: 'packaging', field: 'p-ppc', label: `${productSalesUnit(draft).plural} per karton (of vul de afmetingen in)` });
     }
     if (draft.packaging.kind === 'DISPLAY' && !((draft.packaging.piecesPerUnit ?? 0) >= 1)) {
-      missing.push({ tab: 'identity', field: 'p-packaging-pieces', label: 'stuks in de display' });
+      missing.push({ tab: 'identity', field: 'p-packaging-pieces', label: `${productSalesUnit(draft).piece.other} in de display` });
     }
     if (this.priceStrategy() === 'FIXED' && (draft.fixedSalesPriceEur ?? 0) <= 0) {
       missing.push({ tab: 'sales', field: 'p-price', label: 'vaste verkoopprijs (hoger dan € 0)' });
@@ -3719,6 +3640,8 @@ export class ProductEditor implements OnDestroy {
         ? null
         : await this.agreementEditor()?.flush(saved.id) ?? null;
       this.markClean();
+      /* Colour, activity and membership shape the photo overview too. */
+      this.photoRevision.update((revision) => revision + 1);
       const agreementRemaining = agreementResult?.remaining ?? 0;
       if (this.agreementDirty() || agreementRemaining > 0 || agreementResult?.groupPending) {
         const partialMessage = agreementResult?.groupPending

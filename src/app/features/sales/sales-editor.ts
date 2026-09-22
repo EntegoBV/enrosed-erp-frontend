@@ -1,4 +1,4 @@
-import { primarySalesPrice, productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
+import { primarySalesPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
@@ -651,7 +651,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 </div>
 
                 @if (lineUnavailable(line.productId)) {
-                  <div class="line-availability line-availability--paused"><div><b>Tijdelijk niet beschikbaar · 0 st</b><span>Niet meegerekend in deze order.@if (lineRequestedQuantity(line.productId); as requested) { Bewaard: {{ requested | num }} {{ lineUnit(line.productId).plural }}. }</span>@if (lineAvailabilityRestoreHint(line.productId); as hint) { <span>{{ hint }}</span> }</div>
+                  <div class="line-availability line-availability--paused"><div><b>Tijdelijk niet beschikbaar · 0 {{ lineUnit(line.productId).short }}</b><span>Niet meegerekend in deze order.@if (lineRequestedQuantity(line.productId); as requested) { Bewaard: {{ requested | num }} {{ lineUnit(line.productId).plural }}. }</span>@if (lineAvailabilityRestoreHint(line.productId); as hint) { <span>{{ hint }}</span> }</div>
                     @if (canToggleLineAvailability(line.productId)) { <button class="btn btn--sm" type="button" (click)="toggleLineAvailability(line.productId)">Herstel@if (lineRequestedQuantity(line.productId); as requested) { {{ requested | num }} {{ lineUnit(line.productId).short }} }</button> }
                   </div>
                 } @else {
@@ -2556,6 +2556,8 @@ export class SalesEditor {
 
   constructor() {
     this.referenceLoad = this.loadReference();
+    /* Lines name each product's unit ("16 bowls"); "stuks" until the list arrives. */
+    void this.catalog.unitNames().catch(() => undefined);
     effect(() => {
       const rawId = this.id();
       const routeId = Number(rawId);
@@ -2821,7 +2823,7 @@ export class SalesEditor {
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {
-    return lines.some((line) => this.lineUnit(line.productId).isDisplay) ? 'verkoopeenheden' : 'stuks';
+    return salesQuantityLabel(lines.map((line) => this.products().find((product) => product.id === line.productId)));
   }
 
   currentQuantity(productId: number): number {
@@ -2988,7 +2990,7 @@ export class SalesEditor {
         sentQuantities.has(line.productId) && sentQuantities.get(line.productId) !== line.quantity);
       if (rounded.length) {
         const parts = rounded.map((line) =>
-          `${sentQuantities.get(line.productId)} → ${line.quantity} st`);
+          `${sentQuantities.get(line.productId)} → ${line.quantity} ${this.lineUnit(line.productId).short}`);
         this.ui.toast(`Opgeslagen — aantal afgerond op volle dozen: ${parts.join(' · ')}`);
       } else if (!this.transportSaving()) {
         this.ui.toast('Opgeslagen');

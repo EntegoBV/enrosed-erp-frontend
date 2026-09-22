@@ -1,4 +1,4 @@
-import { portalPriceUnitKey, portalPrimaryPrice, portalQuantityUnitKey } from './portal-sales-unit';
+import { portalCartonContents, portalPriceUnitKey, portalPrimaryPrice, portalQuantityUnit, portalQuantityUnitKey } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, input, output, signal,
 } from '@angular/core';
@@ -44,8 +44,8 @@ import { CartonQuantity } from '../../shared/carton-quantity';
               <div class="grow">
                 <div class="strong">{{ item.description }}</div>
                 <div class="small muted">
-                  @if (primaryPrice(item); as primary) { {{ primary.price | eur: 2: locale() }} {{ t()(primary.labelKey) }} } ·
-                  {{ item.piecesPerCarton }} {{ t()('portalPerBox') }}
+                  @if (primaryPrice(item); as primary) { {{ primary.price | eur: 2: locale() }} {{ primary.label ?? t()(primary.labelKey) }} } ·
+                  {{ cartonContents(item) }}
                 </div>
               </div>
               <button class="btn btn--sm" type="button"
@@ -53,24 +53,24 @@ import { CartonQuantity } from '../../shared/carton-quantity';
             </div>
 
             <div class="field mt-12" style="margin-bottom:0">
-              <label class="req" for="portal-qty">{{ t()('quantity') }} · {{ t()(quantityUnitKey(item)) }}</label>
+              <label class="req" for="portal-qty">{{ t()('quantity') }} · {{ quantityUnit(item) }}</label>
               <input class="input num right" id="portal-qty" type="number" min="0" step="1"
                      inputmode="numeric" [ngModel]="carton.value()"
                      (ngModelChange)="carton.set(+$event)" />
               @if (carton.pending(); as note) {
                 <span class="hint warn-text">
                   {{ t()('portalRoundingNotice') }} <b>{{ note.to | num: 0: locale() }}</b>
-                  ({{ item.piecesPerCarton }} {{ t()('portalPerBox') }})
+                  ({{ cartonContents(item) }})
                 </span>
               } @else if (carton.applied(); as note) {
                 <span class="hint warn-text">
                   {{ note.from | num: 0: locale() }} → <b>{{ note.to | num: 0: locale() }}</b>
-                  ({{ item.piecesPerCarton }} {{ t()('portalPerBox') }})
+                  ({{ cartonContents(item) }})
                 </span>
               } @else {
                 <span class="hint">
-                  {{ t()('portalPerBox') }}: {{ item.piecesPerCarton }}
-                  {{ t()(quantityUnitKey(item)) }}.
+                  {{ t()('portalPerBox') }}: {{ item.piecesPerCarton | num: 0: locale() }}
+                  {{ quantityUnit(item, item.piecesPerCarton) }}.
                 </span>
               }
             </div>
@@ -99,7 +99,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
                 <div class="picker-item__body">
                   <div class="picker-item__title">{{ item.description }}</div>
                   <div class="picker-item__meta">
-                    {{ item.piecesPerCarton }} {{ t()('portalPerBox') }}
+                    {{ cartonContents(item) }}
                   </div>
                   <div class="picker-item__meta row" style="gap:5px">
                     <span class="stock-dot"
@@ -110,7 +110,7 @@ import { CartonQuantity } from '../../shared/carton-quantity';
                       ? t()('portalInStock') : t()('portalTermToBeDetermined') }}</span>
                   </div>
                 </div>
-                @if (primaryPrice(item); as primary) { <div class="picker-item__end">{{ primary.price | eur: 2: locale() }}<small>{{ t()(primary.labelKey) }}</small></div> }
+                @if (primaryPrice(item); as primary) { <div class="picker-item__end">{{ primary.price | eur: 2: locale() }}<small>{{ primary.label ?? t()(primary.labelKey) }}</small></div> }
               </button>
             } @empty {
               <div class="empty">
@@ -191,6 +191,16 @@ export class PortalProductPicker implements OnDestroy {
       .filter((item) => item.description.toLowerCase().includes(needle))
       .slice(0, 50);
   });
+
+  /** The word after a quantity: the product's own unit when the server named it. */
+  quantityUnit(item: PortalCatalogItem, count: number | null = null): string {
+    return portalQuantityUnit(item, count, this.locale()) ?? this.t()(this.quantityUnitKey(item));
+  }
+
+  /** "16 bowls per doos"; older servers without a unit keep "16 per doos". */
+  cartonContents(item: PortalCatalogItem): string {
+    return portalCartonContents(item, this.t(), this.locale());
+  }
 
   choose(item: PortalCatalogItem): void {
     this.chosen.set(item);

@@ -147,6 +147,33 @@ export interface Packaging {
   piecesPerUnit?: number | null;
   /** Basis of stored prices, order quantities and stock; omitted means PIECE. */
   salesUnit?: 'PIECE' | 'DISPLAY' | null;
+  /**
+   * What one piece is called on customer documents ("stuk", "bowl", …; a key of
+   * `GET /api/products/unit-names`). Also names the pieces inside a display.
+   * Omitted or null on a write keeps the stored unit; the server reads null as "stuk".
+   */
+  unitKey?: string | null;
+}
+
+/** One entry of the unit pick-list, in Dutch: "bowl" / "bowls" / "per bowl". */
+export interface UnitName {
+  key: string;
+  one: string;
+  other: string;
+  /** The complete price phrase, e.g. "per bowl". */
+  per: string;
+  /** Compact form after a number in tables ("st." for stuk, otherwise the plural). */
+  short: string;
+}
+
+/**
+ * A product's unit in the language of a customer document. The plural forms
+ * travel separately so the client applies its own plural rules; few and many
+ * only differ from other in Polish.
+ */
+export interface LocalizedUnit extends UnitName {
+  few: string;
+  many: string;
 }
 
 export type GpCapacitySource = 'MANUAL' | 'CARTON' | 'HC_RATIO' | 'UNKNOWN';
@@ -221,6 +248,84 @@ export interface CataloguePhotoSelection {
   catalogueOverviewPhotoId: number | null;
   catalogueDetailPhotoId: number | null;
   catalogueDetailSize: 'STANDARD' | 'LARGE';
+}
+
+/** SERIES = a family photo ("reeksfoto"); OWN = a legacy upload that belongs to one product only. */
+export type ProductPhotoKind = 'SERIES' | 'OWN';
+/** Which colours a photo applies to, seen from the product the overview was asked for. */
+export type ProductPhotoScope = 'THIS_VARIANT' | 'ALL_VARIANTS' | 'OTHER_VARIANT';
+/**
+ * The choices the owner makes per colour (MAIN, CATALOGUE_VARIANT) or per series (the others).
+ * MAIN is the website lead of this SKU and therefore also the photo on quotes and invoices.
+ */
+export type ProductPhotoRoleKey = 'MAIN' | 'QUOTE' | 'CATALOGUE_VARIANT' | 'CATALOGUE_OVERVIEW' | 'CATALOGUE_DETAIL';
+
+/** Effective public visibility after the projection rules, not merely the selected channels. */
+export interface ProductPhotoVisibility {
+  website: boolean;
+  catalogue: boolean;
+  orderApp: boolean;
+}
+
+export interface ProductPhotoOverviewPhoto {
+  /** "F<familyPhotoId>" for series photos, "P<productPhotoId>" for own photos. */
+  key: string;
+  kind: ProductPhotoKind;
+  familyPhotoId: number | null;
+  /** OWN: the own row; SERIES: this product's projection row, or null for other colours. */
+  productPhotoId: number | null;
+  scope: ProductPhotoScope;
+  variantProductId: number | null;
+  variantLabel: string | null;
+  originalFilename: string;
+  contentType: string;
+  widthPx: number | null;
+  heightPx: number | null;
+  sizeBytes: number;
+  smallUrl: string;
+  mediumUrl: string;
+  largeUrl: string;
+  downloadUrl: string;
+  visibility: ProductPhotoVisibility;
+  /**
+   * SERIES: the channels stored on the series photo, which can hold more than
+   * `visibility` shows (for instance on an inactive colour). Null for OWN
+   * photos; absent from older servers.
+   */
+  publishedChannels?: CatalogChannel[] | null;
+  /** Why the website shows it: selected for the website, this SKU's lead, or the no-series fallback. */
+  websiteReason: 'PUBLISHED' | 'LEAD' | 'FALLBACK' | null;
+  /** SERIES: the channels can be toggled; OWN: always false. */
+  publishable: boolean;
+  /** Effective roles, explicit or automatic. */
+  roles: ProductPhotoRoleKey[];
+  /** OWN only: the series photo with the same file size, dimensions and type ("Dubbel"). */
+  duplicateOfKey: string | null;
+  familyPosition: number | null;
+  ownPosition: number | null;
+}
+
+export interface ProductPhotoChoice {
+  key: string;
+  /** True when the owner chose it; false when the automatic rule picked it. */
+  explicit: boolean;
+}
+
+/** Everything the redesigned photo section shows, resolved by the server for one product. */
+export interface ProductPhotoOverview {
+  productId: number;
+  familyId: number | null;
+  familyName: string | null;
+  variantLabel: string | null;
+  familyWebsiteStatus: PublicationStatus | null;
+  photos: ProductPhotoOverviewPhoto[];
+  main: ProductPhotoChoice | null;
+  quote: ProductPhotoChoice | null;
+  catalogueVariant: ProductPhotoChoice | null;
+  catalogueOverview: ProductPhotoChoice | null;
+  catalogueDetail: ProductPhotoChoice | null;
+  /** Null for a product outside a series: the size is a series choice. */
+  catalogueDetailSize: 'STANDARD' | 'LARGE' | null;
 }
 
 
@@ -568,6 +673,10 @@ export interface ProductFamily {
   catalogueDetailPhotoId?: number | null;
   catalogueDetailSize?: 'STANDARD' | 'LARGE';
   cataloguePhotoOptions?: CataloguePhotoOption[];
+  /** Stored "Vraag een offerte" photo (signed id like the catalogue choices); null = automatic. */
+  websiteQuotePhotoId?: number | null;
+  /** The photo the quote page really shows after resolving a stale or automatic choice. */
+  effectiveWebsiteQuotePhotoId?: number | null;
   tags: string[];
   websiteStatus: PublicationStatus;
   orderAppStatus: PublicationStatus;
@@ -1843,6 +1952,8 @@ export interface PortalLine {
   quantity: number;
   salesUnit?: 'PIECE' | 'DISPLAY' | null;
   piecesPerDisplay?: number | null;
+  /** The product's piece noun in the quote language; absent from older servers. */
+  unit?: LocalizedUnit | null;
   unavailable?: boolean | null;
   requestedQuantity?: number | null;
   cartons: number;
@@ -1870,6 +1981,8 @@ export interface PortalCatalogItem {
   unitPrice: number;
   salesUnit?: 'PIECE' | 'DISPLAY' | null;
   piecesPerDisplay?: number | null;
+  /** The product's piece noun in the portal language; absent from older servers. */
+  unit?: LocalizedUnit | null;
   /** Available from stock, or do we have to order it first? */
   inventoryKnown: boolean;
   inStock: boolean;

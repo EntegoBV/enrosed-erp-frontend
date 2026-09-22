@@ -107,6 +107,30 @@ weekly by the backend's Drewry scrape).
   piece EAN with the product, outer ITF-14 with the carton.
 - Editor behind Bewerken; EXW price with currency select; CSV
   master-data and translations import/export live in Settings.
+- Photos (editor section "Foto's", 2026-09-22): a product saved in a
+  series uses `product-photos-panel.ts`, driven entirely by
+  `GET /api/products/{id}/photo-overview` plus `PUT …/photo-roles` and
+  `POST …/photos/promote`. Card "Waar staat welke foto?" (Hoofdfoto per
+  kleur = website lead = quote/invoice photo; "Vraag een offerte" per
+  reeks; catalogue choices), grid "Deze kleur / Hele reeks", one photo
+  sheet (Gebruik als, Zichtbaar op, Geldt voor, Zet in de reeks /
+  Dubbele foto opruimen). Every change saves at once; the editor then
+  refreshes product and family (`refreshPhotoState`) without making the
+  form dirty. Family-less or unsaved products keep `PhotoManager`. The
+  rules live import-free in `product-photos-state.ts` (node tests).
+  Every ERP thumbnail follows the Hoofdfoto rule of `shared/sales-photo.ts`
+  (website lead → first series projection → first photo), never photos[0].
+- Unit (2026-09-22): `packaging.unitKey` names what one piece is called on
+  documents ("stuk", "bowl", "stolp", …; list from the cached
+  `CatalogApi.unitNames()` = `GET /api/products/unit-names`, Dutch). Chips
+  "Eenheid" at the top of section Verkoop with a "Klant leest: …" preview.
+  `product-sales-unit.ts` resolves it (a module signal filled by
+  `unitNames()`, fallback "stuk"), so product, sales and purchase screens,
+  the picker and carton notices say "bowls" for a piece basis; a display
+  basis keeps display/set wording and names the pieces inside with the unit.
+  Screens that print units call `catalog.unitNames()` once. The portal uses
+  the localized `line.unit` / `item.unit` (UnitDto) when present, else the
+  old `stuks` keys.
 
 ### Translation workspace (Codex, 2026-08-21)
 - Settings → translation workspace (`content-translation-workspace.ts`):

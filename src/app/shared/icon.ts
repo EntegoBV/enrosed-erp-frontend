@@ -106,6 +106,36 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <circle cx="11.8" cy="7.6" r="1.2" />
           <path d="M9 18.5h11v-11h-2.5" />
         }
+        @case ('globe') {
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M3.5 12h17" />
+          <path d="M12 3.5c2.3 2.3 3.4 5.2 3.4 8.5s-1.1 6.2-3.4 8.5c-2.3-2.3-3.4-5.2-3.4-8.5s1.1-6.2 3.4-8.5z" />
+        }
+        @case ('book') {
+          <path d="M4 5.5c2.9-1 5.6-.8 8 .8v13c-2.4-1.6-5.1-1.8-8-.8z" />
+          <path d="M20 5.5c-2.9-1-5.6-.8-8 .8v13c2.4-1.6 5.1-1.8 8-.8z" />
+        }
+        @case ('chevron') { <path d="m9.5 5.5 6.5 6.5-6.5 6.5" /> }
+        @case ('grip') {
+          <circle cx="9" cy="6.5" r="1.1" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="6.5" r="1.1" fill="currentColor" stroke="none" />
+          <circle cx="9" cy="12" r="1.1" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="12" r="1.1" fill="currentColor" stroke="none" />
+          <circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none" />
+        }
+        @case ('trash') {
+          <path d="M4.5 7h15" /><path d="M9.5 7V4.5h5V7" />
+          <path d="M6.5 7l1 13h9l1-13" /><path d="M10.5 11v5.5M13.5 11v5.5" />
+        }
+        @case ('alert') {
+          <path d="M12 4 21 19.5H3z" /><path d="M12 10v4" />
+          <circle cx="12" cy="16.8" r=".9" fill="currentColor" stroke="none" />
+        }
+        @case ('auto') {
+          <path d="M12 3.5 13.6 9l5.4 1.6-5.4 1.6L12 17.5l-1.6-5.3L5 10.6 10.4 9z" />
+          <path d="M18.5 16v4M16.5 18h4" />
+        }
       }
     </svg>
   `,

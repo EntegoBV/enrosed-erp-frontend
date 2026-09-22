@@ -2374,16 +2374,6 @@ app-product-view .gallery__dot.active::before {
   app-product-view .gallery__dot::before { transition: none; }
 }
 
-app-product-editor .media-gallery-state {
-  margin: 16px 0 0; padding: 11px 12px; border-radius: 11px; background: var(--surface-2);
-  color: var(--muted); font-size: 11px;
-}
-app-product-editor .media-gallery-state--error {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--danger);
-}
-app-product-editor .media-gallery-state button {
-  padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer;
-}
 @media (max-width: 679px) {
   app-product-editor .product-editor-hero__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -6,12 +6,14 @@ import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 import { parseSupplierNote } from '../src/app/features/products/supplier-note.ts';
 import { orderedSupplierAgreementPhotos } from '../src/app/features/products/product-supplier-agreement-state.ts';
+import { hoofdfotoFirst, slideBadges } from '../src/app/features/products/product-photos-state.ts';
+import { salesPhoto } from '../src/app/shared/sales-photo.ts';
 
 const source = await readFile(new URL('../src/app/features/products/product-view.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('product-view.ts', source, ts.ScriptTarget.Latest, true);
 const viewClass = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'ProductView');
 assert.ok(viewClass);
-const names = new Set(['lightbox', 'galleryIndex', 'galleryPointer', 'gallerySuppressClickUntil', 'selectGalleryPhoto', 'stepGallery', 'openCurrentGalleryPhoto', 'startGallerySwipe', 'finishGallerySwipe', 'cancelGallerySwipe', 'scrollToDetailSection', 'revealSelectedVariant', 'supplierAgreement', 'agreementPhotos', 'agreementLoading', 'agreementLoadError', 'supplierNoteBlocks', 'loadSupplierAgreement']);
+const names = new Set(['galleryPhotos', 'photoOverview', 'currentSlideBadges', 'lightbox', 'galleryIndex', 'galleryPointer', 'gallerySuppressClickUntil', 'selectGalleryPhoto', 'stepGallery', 'openCurrentGalleryPhoto', 'startGallerySwipe', 'finishGallerySwipe', 'cancelGallerySwipe', 'scrollToDetailSection', 'revealSelectedVariant', 'supplierAgreement', 'agreementPhotos', 'agreementLoading', 'agreementLoadError', 'supplierNoteBlocks', 'loadSupplierAgreement']);
 const members = viewClass.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const selectedClass = ts.factory.updateClassDeclaration(viewClass, viewClass.modifiers?.filter(modifier => !ts.isDecorator(modifier)), viewClass.name, viewClass.typeParameters, undefined, members);
@@ -24,7 +26,7 @@ function harness() {
   const hashes: string[] = [];
   const target = { scrollIntoView: (value: unknown) => scrolls.push(value) };
   const window = { matchMedia: () => ({ matches: true }), location: { href: 'http://fixture/products/45' }, history: { state: {}, replaceState: (_state: unknown, _title: string, url: URL) => hashes.push(url.hash) } };
-  vm.runInNewContext(code, { exports, signal, computed, parseSupplierNote, orderedSupplierAgreementPhotos, messageOf: (failure: Error) => failure.message, performance: { now: () => now }, window, URL, HTMLDetailsElement: class {}, document: { getElementById: (id: string) => id === 'stock-card' ? target : null } });
+  vm.runInNewContext(code, { exports, signal, computed, parseSupplierNote, orderedSupplierAgreementPhotos, hoofdfotoFirst, slideBadges, salesPhoto, messageOf: (failure: Error) => failure.message, performance: { now: () => now }, window, URL, HTMLDetailsElement: class {}, document: { getElementById: (id: string) => id === 'stock-card' ? target : null } });
   const view = new exports.ProductView!();
   view.loadVersion = 1;
   view.product = signal({ id: 45, supplierNote: 'Old local instruction must not leak', photos: [{ id: 1 }, { id: 2 }, { id: 3 }] });
@@ -48,6 +50,28 @@ test('photo controls stay inside the selected product and magnify the displayed 
   view.selectGalleryPhoto(1);
   view.stepGallery(1, 0);
   assert.equal(view.galleryIndex(), 0);
+});
+
+test('the carousel opens on the Hoofdfoto and badges the current slide with where it is used', () => {
+  const { view } = harness();
+  const own = { id: 5501, familyPhotoId: null, leadFor: [] };
+  const shared = { id: 9001, familyPhotoId: 229, leadFor: [] };
+  const red = { id: 9002, familyPhotoId: 221, leadFor: ['WEBSITE'] };
+  view.product.set({ id: 53, photos: [own, shared, red] });
+  assert.deepEqual(view.galleryPhotos().map((photo: any) => photo.id), [9002, 5501, 9001], 'The website lead opens the carousel');
+  assert.deepEqual(view.currentSlideBadges(), ['Hoofdfoto']);
+  view.photoOverview.set({ photos: [
+    { key: 'F221', visibility: { website: true }, roles: ['MAIN', 'QUOTE'] },
+    { key: 'F229', visibility: { website: true }, roles: [] },
+    { key: 'P5501', visibility: { website: false }, roles: [] },
+  ] });
+  assert.deepEqual(view.currentSlideBadges(), ['Hoofdfoto', 'Website', 'Offerte']);
+  view.stepGallery(1, 3);
+  assert.deepEqual(view.currentSlideBadges(), [], 'The old own cut-out is neither online nor the quote photo');
+  view.stepGallery(1, 3);
+  assert.deepEqual(view.currentSlideBadges(), ['Website']);
+  view.openCurrentGalleryPhoto();
+  assert.equal(view.lightbox(), 2, 'The lightbox follows the same order as the carousel');
 });
 
 test('a horizontal swipe changes the photo and suppresses its generated zoom click', () => {
