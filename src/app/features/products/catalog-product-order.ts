@@ -6,7 +6,7 @@ const catalogueCollator = new Intl.Collator('nl-BE', {
 });
 
 /**
- * One deterministic order for the catalogue picker and the export request.
+ * The default order for the catalogue picker and a new document.
  * Categories follow their configured rank; variants stay together by family
  * and then use the server-owned variant position before stable text fallbacks.
  */
@@ -33,6 +33,54 @@ export function orderCatalogProducts(
         compareProducts(left.product, right.product, categoryRank) || left.index - right.index,
     )
     .map(({ product }) => product);
+}
+
+/** Restore explicit order, drop unavailable IDs and append new products; keep families together. */
+export function applyCatalogProductOrder(
+  products: readonly Product[],
+  orderedIds: readonly number[],
+): Product[] {
+  const byId = new Map(products.flatMap(product => product.id === null ? [] : [[product.id, product] as const]));
+  const ordered: Product[] = [];
+  for (const id of orderedIds) {
+    const product = byId.get(id);
+    if (!product) continue;
+    ordered.push(product);
+    byId.delete(id);
+  }
+  ordered.push(...byId.values());
+  return [...familyBlocks(ordered).values()].flat();
+}
+
+/** Change selected rows only, retaining excluded families and variants in their saved slots. */
+export function reorderCatalogSelection(
+  products: readonly Product[],
+  selected: ReadonlySet<number>,
+  orderedSelectedIds: readonly number[],
+): Product[] {
+  const selectedProducts = products.filter(product => product.id !== null && selected.has(product.id));
+  const selectedBlocks = familyBlocks(applyCatalogProductOrder(selectedProducts, orderedSelectedIds));
+  const allBlocks = familyBlocks(products);
+  const nextFamilyKeys = [...selectedBlocks.keys()];
+  let familyIndex = 0;
+  return [...allBlocks.keys()].flatMap(key => {
+    const nextKey = selectedBlocks.has(key) ? nextFamilyKeys[familyIndex++] : key;
+    const selectedVariants = selectedBlocks.get(nextKey) ?? [];
+    let variantIndex = 0;
+    return (allBlocks.get(nextKey) ?? []).map(product =>
+      product.id !== null && selected.has(product.id) ? selectedVariants[variantIndex++] : product);
+  });
+}
+
+function familyBlocks(products: readonly Product[]): Map<string, Product[]> {
+  const groups = new Map<string, Product[]>();
+  for (const product of products) {
+    const key = product.familyId === null ? `product:${product.id}` : `family:${product.familyId}`;
+    const members = groups.get(key);
+    if (members) members.push(product);
+    else groups.set(key, [product]);
+  }
+  return groups;
 }
 
 function compareProducts(

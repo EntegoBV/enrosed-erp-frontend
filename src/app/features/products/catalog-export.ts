@@ -30,23 +30,27 @@ import {
   CatalogBrochureSettings,
 } from './catalog-brochure-settings';
 import { CatalogProductSelection } from './catalog-product-selection';
+import { CatalogProductArrangement } from './catalog-product-arrangement';
 import {
   catalogTranslationAffectedProductIds,
   catalogTranslationLinks,
 } from './catalog-translation-issues';
-import { orderCatalogProducts } from './catalog-product-order';
+import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection } from './catalog-product-order';
 import { deselectProductIds } from './catalog-product-selection-state';
 
-const STATE_KEY = 'enrosed.catalogBuilder.v2';
+const STATE_KEY = 'enrosed.catalogBuilder.v3';
+const LEGACY_STATE_KEY = 'enrosed.catalogBuilder.v2';
 
 interface CatalogBuilderState extends CatalogBrochureDraft {
-  version: 2;
+  version: 2 | 3;
   layout: CatalogLayout;
   language: LanguageCode;
   intro: string;
   includePrices: boolean;
   includePhotos: boolean;
   selectedIds: number[];
+  /** All available products, so deselecting and reselecting retains their position. */
+  orderedIds?: number[];
 }
 
 const DEFAULT_BROCHURE: CatalogBrochureDraft = {
@@ -81,6 +85,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     AuthImage,
     CatalogBrochureSettings,
     CatalogProductSelection,
+    CatalogProductArrangement,
     CataloguePhotoImport,
     FormsModule,
     PageHeader,
@@ -176,7 +181,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               }
             </div>
           }
-          <p class="studio-note">Uw selectie blijft bewaard terwijl u verder werkt. De vertalingen worden gecontroleerd vóór het downloaden.</p>
+          <p class="studio-note">{{ draftPersistence() === 'DEVICE' ? 'Uw selectie en volgorde blijven bewaard op dit apparaat.' : draftPersistence() === 'SESSION' ? 'Uw selectie en volgorde blijven bewaard in dit tabblad.' : 'Uw selectie en volgorde blijven actief zolang dit scherm open is.' }} De vertalingen worden gecontroleerd vóór het downloaden.</p>
         </aside>
 
         <div class="catalog-settings">
@@ -233,6 +238,12 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
             [loading]="loading()" [loadError]="loadError()" [disabled]="busy()"
             [showReferencePrices]="includePrices()" (selectedChange)="selected.set($event)" (retry)="load()"
             (cataloguePhotosRequested)="saveCataloguePhotos($event)"
+          />
+
+          <app-catalog-product-arrangement
+            [products]="selectedProducts()" [families]="families()" [categories]="categories()"
+            [disabled]="busy() || loading()" [canReset]="hasCustomOrder()"
+            (orderChange)="reorderProducts($event)" (resetRequested)="resetProductOrder()"
           />
 
           @if (layout() === 'BROCHURE') {
@@ -554,6 +565,7 @@ export class CatalogExport {
   private readonly ui = inject(Ui);
   private readonly destroyRef = inject(DestroyRef);
   private storedSelection: number[] | null = null;
+  private storedOrder: number[] | null = null;
   private selectionInitialized = false;
   private destroyed = false;
 
@@ -568,6 +580,8 @@ export class CatalogExport {
   readonly categories = signal<Category[]>([]);
   readonly families = signal<ProductFamily[]>([]);
   readonly selected = signal<Set<number>>(new Set());
+  readonly orderedIds = signal<number[]>([]);
+  readonly draftPersistence = signal<'DEVICE' | 'SESSION' | 'NONE'>('NONE');
   readonly loading = signal(true);
   readonly loadError = signal<string | null>(null);
   readonly dataReady = signal(false);
@@ -609,7 +623,12 @@ export class CatalogExport {
     }
     return groups.size;
   });
-  readonly selectedProducts = computed(() => this.products().filter((product) => product.id !== null && this.selected().has(product.id)));
+  readonly orderedProducts = computed(() => applyCatalogProductOrder(this.products(), this.orderedIds()));
+  readonly selectedProducts = computed(() => this.orderedProducts().filter((product) => product.id !== null && this.selected().has(product.id)));
+  readonly hasCustomOrder = computed(() => {
+    const defaults = applyCatalogProductOrder(this.products(), []);
+    return this.orderedProducts().some((product, index) => product.id !== defaults[index]?.id);
+  });
   readonly selectedCategoryCount = computed(() => new Set(this.selectedProducts().map((product) => product.categoryId).filter((id) => id !== null)).size);
   readonly previewProducts = computed(() => catalogueFamilies(this.selectedProducts(), this.families()).filter((family) => family.photo).slice(0, 4));
   readonly compactCopy = computed(() => COMPACT_PREVIEW_COPY[this.language()]);
@@ -657,20 +676,17 @@ export class CatalogExport {
       if (!this.dataReady()) return;
       const brochure = this.brochure();
       const state: CatalogBuilderState = {
-        version: 2,
+        version: 3,
         layout: this.layout(),
         language: this.language(),
         intro: this.intro(),
         includePrices: this.includePrices(),
         includePhotos: this.includePhotos(),
-        selectedIds: [...this.selected()].sort((a, b) => a - b),
+        selectedIds: this.selectedProducts().map(product => product.id!),
+        orderedIds: this.orderedProducts().map(product => product.id!),
         ...brochure,
       };
-      try {
-        sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
-      } catch {
-        /* The builder remains usable when session storage is blocked. */
-      }
+      this.persistState(state);
     });
 
     let previousRequest = '';
@@ -711,6 +727,9 @@ export class CatalogExport {
       this.families.set(families);
       const available = new Set(customerCatalogue.flatMap((product) =>
         product.id === null ? [] : [product.id]));
+      const ordered = applyCatalogProductOrder(customerCatalogue,
+        this.selectionInitialized ? this.orderedIds() : this.storedOrder ?? []);
+      this.orderedIds.set(ordered.map(product => product.id!));
       if (!this.selectionInitialized) {
         const initial = this.storedSelection === null
           ? available
@@ -782,12 +801,23 @@ export class CatalogExport {
     );
   }
 
+  reorderProducts(orderedSelectedIds: number[]): void {
+    if (this.busy() || this.loading()) return;
+    this.orderedIds.set(reorderCatalogSelection(this.orderedProducts(), this.selected(), orderedSelectedIds)
+      .map(product => product.id!));
+  }
+
+  resetProductOrder(): void {
+    if (this.busy() || this.loading()) return;
+    this.orderedIds.set(applyCatalogProductOrder(this.products(), []).map(product => product.id!));
+    this.ui.toast('Standaardvolgorde hersteld');
+  }
+
   private buildRequest(): CatalogExportRequest {
     const brochure = this.brochure();
     return {
-      productIds: this.products()
-        .filter((product) => product.id !== null && this.selected().has(product.id))
-        .map((product) => product.id!),
+      productIds: this.selectedProducts().map(product => product.id!),
+      preserveProductOrder: true,
       includePrices: this.includePrices(),
       includePhotos: this.includePhotos(),
       strictLanguage: true,
@@ -889,11 +919,34 @@ export class CatalogExport {
       ?? this.language();
   }
 
-  private restoreState(): void {
+  private persistState(state: CatalogBuilderState): void {
+    const serialized = JSON.stringify(state);
+    let persistence: 'DEVICE' | 'SESSION' | 'NONE' = 'NONE';
     try {
-      const parsed = JSON.parse(sessionStorage.getItem(STATE_KEY) ?? 'null') as
-        Partial<CatalogBuilderState> | null;
-      if (parsed?.version !== 2) return;
+      localStorage.setItem(STATE_KEY, serialized);
+      persistence = 'DEVICE';
+    } catch {
+      /* Try tab storage if persistent storage is unavailable. */
+    }
+    try {
+      sessionStorage.setItem(STATE_KEY, serialized);
+      if (persistence !== 'DEVICE') persistence = 'SESSION';
+    } catch {
+      /* The in-memory document remains usable when browser storage is blocked. */
+    }
+    this.draftPersistence.set(persistence);
+  }
+
+  private restoreState(): void {
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(STATE_KEY); } catch { /* Try this tab's draft next. */ }
+    if (stored === null) {
+      try { stored = sessionStorage.getItem(STATE_KEY) ?? sessionStorage.getItem(LEGACY_STATE_KEY); }
+      catch { /* Storage is optional; the default collection still loads. */ }
+    }
+    try {
+      const parsed = JSON.parse(stored ?? 'null') as Partial<CatalogBuilderState> | null;
+      if (parsed?.version !== 2 && parsed?.version !== 3) return;
       if (parsed.layout === 'SIMPLE' || parsed.layout === 'BROCHURE') {
         this.layout.set(parsed.layout);
       }
@@ -907,6 +960,9 @@ export class CatalogExport {
         this.storedSelection = parsed.selectedIds.filter(
           (id): id is number => Number.isInteger(id) && id > 0,
         );
+      }
+      if (parsed.version === 3 && Array.isArray(parsed.orderedIds)) {
+        this.storedOrder = parsed.orderedIds.filter((id): id is number => Number.isInteger(id) && id > 0);
       }
       this.brochure.set({
         photosPerProduct: this.clampPhotoCount(parsed.photosPerProduct),

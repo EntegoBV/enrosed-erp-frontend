@@ -22,6 +22,8 @@ export interface CatalogBrochureOptions {
 
 export interface CatalogExportRequest {
   productIds: number[];
+  /** Follow the supplied family/variant order instead of automatic category sorting. */
+  preserveProductOrder?: boolean;
   includePrices: boolean;
   includePhotos: boolean;
   /** Refuse incomplete customer copy instead of silently mixing fallback languages. */
