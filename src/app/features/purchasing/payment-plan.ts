@@ -59,6 +59,21 @@ export function paymentPlanLabel(order: PlanFields, presets: readonly PaymentPla
   return presets.find((item) => item.value === terms)?.label ?? '—';
 }
 
+/**
+ * What each instalment asks in euro, the way the server splits the goods:
+ * every term but the last is rounded to the cent and never exceeds what is
+ * left, the last term takes the rest, so the terms always add up exactly.
+ */
+export function planPreview(agreedEur: number, instalments: readonly Instalment[]): { due: Instalment['due']; label: string; share: number; amountEur: number }[] {
+  const agreed = Math.max(0, Math.round((Number.isFinite(agreedEur) ? agreedEur : 0) * 100));
+  let left = agreed;
+  return instalments.map((step, index) => {
+    const amount = index === instalments.length - 1 ? left : Math.min(Math.round(agreed * step.share), left);
+    left -= amount;
+    return { due: step.due, label: step.label, share: step.share, amountEur: amount / 100 };
+  });
+}
+
 /** What the three shares add up to; 100 is the only right answer once anything is filled in. */
 export function splitTotal(ordered: number | null | undefined, shipped: number | null | undefined,
                            arrived: number | null | undefined): number {

@@ -24,7 +24,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe } from '../../shared/pipes';
 import {
-  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS, Payee,
+  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -37,7 +37,9 @@ import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptMetrics } from '../analyses/receipt-metrics';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { isSettlementInvoice, partnerDocumentKind, separateCostPerPiece } from '../sales/partner-settlement';
-import { PAYMENT_TOLERANCE_EUR, instalmentsOf, withinTolerance } from './payment-plan';
+import { PAYMENT_TOLERANCE_EUR, instalmentsOf, paymentPlanLabel } from './payment-plan';
+import { purchasePaymentLedger, type PurchasePaymentAction } from './purchase-payment-ledger';
+import { paymentsNavLabel } from './purchase-payment-menus';
 import { purchaseGroupSettled, purchaseInstalmentState } from './purchase-instalment-state';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
@@ -225,7 +227,7 @@ type PurchaseWorkspaceSectionId =
                   [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
                   (click)="jumpToSection('purchase-payments-section')">
             <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">4</span>
-            <span class="workflow-nav__copy"><b>Betalingen</b><small>{{ openAll() | eur }} open</small></span>
+            <span class="workflow-nav__copy"><b>Betalingen</b><small>{{ paymentNavLabel() }}</small></span>
           </button>
           <button class="erp-workspace__nav-item workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
@@ -337,7 +339,7 @@ type PurchaseWorkspaceSectionId =
 
         <div class="view-layout erp-workspace__layout">
           <main class="view-main erp-workspace__main">
-            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-payments-section')" (unlink)="unlinkPartnerDoc($event)" />
+            <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLinesOf(data).length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="scrollToCard('purchase-partner-section', 'purchase-payments-section')" (unlink)="unlinkPartnerDoc($event)" />
             <section class="card products-card erp-workspace__section"
                      id="purchase-products-section" tabindex="-1"
                      aria-labelledby="purchase-products-title">
@@ -650,27 +652,32 @@ type PurchaseWorkspaceSectionId =
               </div>
             </section>
 
-            <!-- Two streams of money: the factory for the goods, the forwarder
-                 and customs for the road. The Enrosed kost is ours. -->
-            <section class="card payments-card purchase-payments-card erp-workspace__section"
+            <!-- Nacalculatie: what the container really cost, right under the calculation. -->
+            <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
+              <app-purchase-payment-result [view]="data" />
+              <details class="purchase-result-disclosure">
+                <summary>Kostprijs per product en PDF</summary>
+                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [showStreams]="false" />
+              </details>
+            </section>
+
+            <!-- Money out, per payee: supplier, forwarder and customs, inspection,
+                 and the bijkomende kosten of paying. Recording opens the editor. -->
+            <section class="card erp-workspace__section purchase-payments-plain"
                      id="purchase-payments-section" tabindex="-1"
                      aria-labelledby="purchase-payments-title">
-              <span class="section-kicker">Betalingen</span>
-              <h2 id="purchase-payments-title">
-                Betalingen
-              </h2>
-              <p>Afspraak, betalingen en resterend saldo per ontvanger.</p>
-              <div class="purchase-payment-streams">
-              <app-purchase-payment-overview [view]="data" [payments]="payments()" [documents]="documents()" (download)="downloadDocument($event)" />
-              <app-purchase-payment-result [view]="data" />
-              <details class="purchase-payment-details">
-                <summary>Kostprijs en nacalculatie <span>Berekening en PDF</span></summary>
-                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" />
-              </details>
-              <app-purchase-sales-links [documents]="relatedSalesDocs()" />
-              <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="reloadPartnerDocs()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
-              </div>
+              <app-purchase-payment-overview mode="read" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentsError()"
+                [planLabel]="planLabel()" [supplierName]="supplierName()"
+                (add)="recordPayment($event)" (download)="downloadDocument($event)" (refresh)="reloadPayments()"
+                (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
             </section>
+
+            <!-- Money in: a partner who co-finances the container. -->
+            @if (data.order.partnerCustomerId != null) {
+              <section class="erp-workspace__section purchase-partner-card" id="purchase-partner-section" tabindex="-1" aria-label="Partnerfinanciering">
+                <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="reloadPartnerDocs()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
+              </section>
+            }
 
             <div class="purchase-dossier erp-workspace__support-group" id="purchase-files-section" tabindex="-1">
             @if (data.order.notes) {
@@ -709,6 +716,7 @@ type PurchaseWorkspaceSectionId =
                          aria-label="Documenten">
                   <span class="section-kicker">Bestanden</span>
                   <h2>{{ docs.length }} document{{ docs.length === 1 ? '' : 'en' }}</h2>
+                  <a class="linklike" routerLink="/files" [queryParams]="{ view: 'purchase', doel: data.order.id }">In Documenten &amp; media ›</a>
                   <ul class="doc-list">
                     @for (doc of docs; track doc.id) {
                       <li>
@@ -721,6 +729,7 @@ type PurchaseWorkspaceSectionId =
               }
             }
 
+            <app-purchase-sales-links [documents]="relatedSalesDocs()" [excludePartner]="data.order.partnerCustomerId != null" />
             <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
             </div>
 
@@ -755,63 +764,10 @@ type PurchaseWorkspaceSectionId =
               <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
                                             [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                             [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
-                                            (funding)="jumpToSection('purchase-payments-section')" (closed)="auctionOpen.set(false)" />
+                                            (funding)="scrollToCard('purchase-partner-section', 'purchase-payments-section')" (closed)="auctionOpen.set(false)" />
             }
           </main>
 
-          @if (desktop.active()) {
-            <aside class="purchase-control-rail erp-workspace__rail" aria-label="Order in één oogopslag">
-              <section class="card purchase-control-card">
-                <header class="purchase-control-card__head">
-                  <span>
-                    <small>Orderoverzicht</small>
-                    <strong>{{ data.order.number }}</strong>
-                  </span>
-                  <span class="status-pill" [class.status-pill--done]="data.order.status === 'ONTVANGEN'">
-                    <span class="status-pill__dot" aria-hidden="true"></span>
-                    {{ statusLabel(data.order.status) }}
-                  </span>
-                </header>
-
-                <div class="purchase-control-card__total">
-                  <small>Totaal geland</small>
-                  <strong>{{ data.costing.totals.totalEur | eur }}</strong>
-                  <span>{{ data.costing.totals.pieces | num }} st · {{ data.costing.totals.cartons | num }} dozen</span>
-                </div>
-
-                <div class="purchase-control-card__facts">
-                  <span>
-                    <small>Betaald</small>
-                    <strong>{{ paidAll() | eur }}</strong>
-                    <em>{{ openAll() | eur }} open</em>
-                  </span>
-                  <span>
-                    <small>{{ isDdp() ? 'Lading' : 'Containervulling' }}</small>
-                    @if (data.costing.containerFill; as fill) {
-                      <strong>{{ fill.fillPercent | pct: 0 }}</strong>
-                    } @else {
-                      <strong>{{ data.costing.totals.cbm | cbm }}</strong>
-                    }
-                    <em>{{ containerLabel(data.order.containerType) }}</em>
-                  </span>
-                </div>
-
-                <div class="purchase-control-card__next">
-                  <small>Volgende stap</small>
-                  <h2>{{ actionTitle(data.order.status, data.costing.lines.length) }}</h2>
-                  <p>{{ actionDescription(data.order.status, data.costing.lines.length) }}</p>
-                </div>
-
-                <div class="purchase-control-card__buttons">
-                  <a class="btn btn--primary btn--block"
-                     [routerLink]="['/purchasing', data.order.id, 'edit']">
-                    {{ data.costing.lines.length ? 'Order bewerken' : 'Producten toevoegen' }}
-                  </a>
-                  <button class="btn btn--block" type="button" (click)="pdfOpen.set(true)">PDF downloaden</button>
-                </div>
-              </section>
-            </aside>
-          }
         </div>
       </div>
       @if (pdfOpen()) {
@@ -867,10 +823,8 @@ type PurchaseWorkspaceSectionId =
     }
   `,
   styles: [`
-    .pay-line__settles{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10px;font-style:normal;font-weight:700;vertical-align:middle}.pay-stream__done{margin:6px 0 0;color:var(--ok);font-size:12px;font-weight:650}.pay-diff--over{color:var(--danger)}.pay-diff--under{color:var(--ok)}
-    .instalments{list-style:none;margin:8px 0 4px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what > b{color:var(--muted);text-decoration:line-through}.instalments__what s{opacity:.6}
     .purchase-line__issue{display:inline-block;margin-top:6px;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}.purchase-line__issue:active{color:var(--rose-dark)}
-    :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}.privacy-notice{margin-bottom:12px}
+    :host{display:block;min-width:0}.purchase-view-page{max-width:1180px}
 
     .journey-hero{position:relative;margin-bottom:12px;padding:16px;border-radius:22px;background:linear-gradient(145deg,#27211f,#151210);color:#fff;box-shadow:var(--sh-2);overflow:hidden}
     .journey-hero .eyebrow{color:#efb8c4}
@@ -923,8 +877,8 @@ type PurchaseWorkspaceSectionId =
     .route-strip__line{height:1px;min-width:18px;flex:1;background:linear-gradient(90deg,var(--rose-line),var(--rose))}
     .journey-stepper{margin:0 0 15px}.overview-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
     .overview-fact--total strong{color:var(--rose-dark)}
-    .payments-card{padding:14px 16px}.payments-card h2{margin-top:2px;font-size:16px}.payments-card p{margin-top:4px;color:var(--muted);font-size:12px}.payments-meter{height:6px;margin:10px 0;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px}.payments-list{list-style:none;margin:6px 0 0;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list li:last-child{border-bottom:0}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}
-    .pay-stream{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-ours{margin-top:10px;color:var(--muted);font-size:11.5px}.doc-list{list-style:none;margin:8px 0 0;padding:0;border-top:1px solid var(--line)}.doc-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.doc-list li:last-child{border-bottom:0}
+    .payments-card{padding:14px 16px}.payments-card h2{margin-top:2px;font-size:16px}.payments-card p{margin-top:4px;color:var(--muted);font-size:12px}.payments-card .linklike{display:inline-block;margin-top:4px;font-size:12px}
+    .pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.doc-list{list-style:none;margin:8px 0 0;padding:0;border-top:1px solid var(--line)}.doc-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.doc-list li:last-child{border-bottom:0}
 .po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}
     .capacity-card__percentage.fill-pct--full{color:var(--ok)}
     .capacity-card__percentage.fill-pct--over{color:var(--warn)}.capacity-card__percentage.fill-pct--danger{color:var(--danger)}.capacity-state--tight{color:var(--warn);font-weight:650}.meter__fill--danger{background:var(--danger)}
@@ -935,8 +889,7 @@ type PurchaseWorkspaceSectionId =
     .capacity-card{margin-bottom:12px;padding:14px;overflow:hidden}.capacity-card__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.capacity-card h2{font-size:16px}.capacity-card__top p{color:var(--muted);font-size:11px}.capacity-card__percentage{color:var(--rose);font-size:25px;line-height:1}.capacity-card__percentage--over{color:var(--danger)}
     .capacity-meter{height:11px;margin-top:13px}.capacity-card__footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-top:9px;color:var(--muted);font-size:11px}.capacity-state{display:flex;align-items:center;gap:5px;font-weight:680}.capacity-state--ok{color:var(--ok)}.capacity-state--danger{color:var(--danger)}
   `, `
-    :is(.view-main,.purchase-control-rail){min-width:0}.view-layout{grid-template-columns:minmax(0,1fr)}
-    .purchase-control-rail{display:none}
+    .view-main{min-width:0}.view-layout{grid-template-columns:minmax(0,1fr)}
     :is(.products-card,.details-card,.cost-card,.action-card){overflow:hidden}.section-heading{display:flex;min-height:76px;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
     .section-number{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:760}
     .section-heading__copy{display:block;min-width:0;flex:1}.section-heading h2{font-size:15px}.section-heading__copy>span:last-child{display:block;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
@@ -955,13 +908,12 @@ type PurchaseWorkspaceSectionId =
     .cost-card{border-color:var(--rose-line)}.cost-card__head{display:flex;min-height:76px;align-items:center;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid var(--rose-line);background:linear-gradient(145deg,var(--surface),var(--rose-soft))}.cost-card h2{font-size:16px}.internal-badge{padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:10px;font-weight:760;text-transform:uppercase}.cost-card__body{padding:14px}.cost-card .cost-hero{margin-top:0}.cost-stage{padding:8px 0}.cost-stage+.cost-stage{border-top:1px solid var(--line)}.cost-stage__label{display:block;margin-bottom:3px;color:var(--rose);font-size:9px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.cost-stage .stat-row{padding:4px 0;font-size:11.5px}.cost-stage__subtotal{border-top:1px solid var(--line);font-weight:680}
     .safe-card{display:flex;align-items:flex-start;gap:10px;padding:14px}.safe-card__icon{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px;background:var(--ok-soft);color:var(--ok);font-weight:760}.safe-card h2{font-size:14px}.safe-card p{color:var(--muted);font-size:11px}
     .action-card{padding:14px}.action-card h2{margin-top:2px;font-size:16px}.action-card>p{margin-top:3px;color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:13px}
-    .purchase-control-card{overflow:hidden}.purchase-control-card__head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px;border-bottom:1px solid var(--line)}.purchase-control-card__head>span:first-child{display:grid;min-width:0}.purchase-control-card__head small,.purchase-control-card__total small,.purchase-control-card__facts small,.purchase-control-card__next>small{color:var(--muted);font-size:9px;font-style:normal;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.purchase-control-card__head strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.purchase-control-card__total{display:grid;padding:18px 16px 15px;background:linear-gradient(145deg,var(--rose-soft),var(--surface))}.purchase-control-card__total strong{margin-top:2px;color:var(--rose-dark);font-size:25px;letter-spacing:-.025em}.purchase-control-card__total span{color:var(--muted);font-size:11px}.purchase-control-card__facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line)}.purchase-control-card__facts>span{display:grid;min-width:0;padding:12px;background:var(--surface)}.purchase-control-card__facts strong{margin-top:2px;font-size:14px}.purchase-control-card__facts em{overflow:hidden;color:var(--muted);font-size:10px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.purchase-control-card__next{padding:16px;border-top:1px solid var(--line)}.purchase-control-card__next>small{color:var(--rose)}.purchase-control-card__next h2{margin-top:3px;font-size:15px}.purchase-control-card__next p{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.45}.purchase-control-card__buttons{display:grid;gap:7px;padding:0 16px 16px}
 
     @media(min-width:560px){.overview-facts{grid-template-columns:repeat(3,1fr)}.line-facts--purchase{grid-template-columns:repeat(5,minmax(0,1fr))}.line-facts--purchase>.line-fact--total{grid-column:auto}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item--wide{grid-column:1/-1}.purchase-line__identity{grid-template-columns:52px minmax(0,1fr)}.receipt-summary__head{grid-template-columns:auto minmax(0,1fr) auto}.receipt-summary__link{grid-column:auto;min-height:0;padding:0;border:0;text-align:right}.receipt-summary__metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
     .report-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.report-list li{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.report-list__later{border-color:var(--rose-line);background:var(--rose-soft)}.report-list__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.report-list__later .report-list__tag{background:var(--rose);color:#fff}.report-list__what{display:grid;min-width:0}.report-list__what b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.report-list__what small{color:var(--muted);font-size:11px}.report-list__count{grid-column:2;color:var(--danger);font-size:12px;font-weight:650}.report-list__count b{font-size:14px}.report-list__note{grid-column:2;color:var(--ink-2);font-size:12px}.report-list__hint{margin:8px 0 0;color:var(--muted);font-size:11.5px}
     .partner-list__lead{margin:6px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.45}.partner-list{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none}.partner-list li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.partner-list__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.partner-list__what b{font-size:13px}.partner-list__what small{color:var(--muted);font-size:11px}.partner-list__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}.partner-list__unlink{flex:none;width:28px;height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:16px;line-height:1}.partner-list__buttons{display:grid;gap:8px;margin-top:12px}
-    @media(min-width:680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}.purchase-payment-streams{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}.purchase-payment-streams .pay-stream{margin-top:0}.purchase-payment-streams .pay-ours{grid-column:1/-1;margin-top:0}.purchase-dossier{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}.purchase-dossier app-purchase-activity{margin:0}.purchase-final-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:24px}.purchase-final-action .action-card__buttons{grid-column:2;grid-row:1/span 3;min-width:250px;margin-top:0}}
-    @media(min-width:1024px){#purchase-overview,#purchase-products-section,#purchase-costs-section,#purchase-payments-section,#purchase-files-section,#purchase-actions-section{scroll-margin-top:calc(var(--appbar-h) + 90px)}.purchase-section-nav.erp-workspace__nav{display:grid;width:100%;max-width:none;grid-template-columns:repeat(6,minmax(0,1fr));margin:14px 0;overflow:visible}.purchase-section-nav .erp-workspace__nav-item{width:100%;min-width:0;border-radius:13px;justify-content:flex-start}.purchase-section-nav .erp-workspace__nav-item--action:not(.erp-workspace__nav-item--active){background:rgb(255 255 255 / 82%);color:var(--muted)}.purchase-section-nav .erp-workspace__nav-item>span:last-child,.purchase-section-nav .erp-workspace__nav-item small{overflow:hidden;text-overflow:ellipsis}.view-layout{grid-template-columns:minmax(0,1fr) 292px;gap:18px;align-items:start}.purchase-control-rail.erp-workspace__rail{display:grid;position:sticky;top:calc(var(--appbar-h) + 88px);max-height:none;overflow:visible;overscroll-behavior:auto;padding-bottom:0;scrollbar-width:auto}.cost-card__body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:0}.cost-card__body>.cost-hero{grid-column:1/-1;margin:0;padding:18px;border-width:0 0 1px;border-radius:0}.cost-card__body>.cost-stage{padding:18px}.cost-card__body>.cost-stage+.cost-stage{border-top:0;border-left:1px solid var(--line)}}
+    @media(min-width:680px){.journey-hero,.capacity-card{padding:18px}.section-heading{padding-inline:18px}.purchase-line{padding:16px 18px}.cost-card__head,.cost-card__body,.action-card{padding:18px}.route-stop strong{max-width:220px}.purchase-dossier{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}.purchase-dossier app-purchase-activity{margin:0}.purchase-final-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:24px}.purchase-final-action .action-card__buttons{grid-column:2;grid-row:1/span 3;min-width:250px;margin-top:0}}
+    @media(min-width:1024px){#purchase-overview,#purchase-products-section,#purchase-costs-section,#purchase-payments-section,#purchase-files-section,#purchase-actions-section{scroll-margin-top:calc(var(--appbar-h) + 90px)}.purchase-section-nav.erp-workspace__nav{display:grid;width:100%;max-width:none;grid-template-columns:repeat(6,minmax(0,1fr));margin:14px 0;overflow:visible}.purchase-section-nav .erp-workspace__nav-item{width:100%;min-width:0;border-radius:13px;justify-content:flex-start}.purchase-section-nav .erp-workspace__nav-item--action:not(.erp-workspace__nav-item--active){background:rgb(255 255 255 / 82%);color:var(--muted)}.purchase-section-nav .erp-workspace__nav-item>span:last-child,.purchase-section-nav .erp-workspace__nav-item small{overflow:hidden;text-overflow:ellipsis}.view-layout{grid-template-columns:minmax(0,1fr) 292px;gap:18px;align-items:start}.cost-card__body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:0}.cost-card__body>.cost-hero{grid-column:1/-1;margin:0;padding:18px;border-width:0 0 1px;border-radius:0}.cost-card__body>.cost-stage{padding:18px}.cost-card__body>.cost-stage+.cost-stage{border-top:0;border-left:1px solid var(--line)}}
   `],
 })
 export class PurchaseView {
@@ -1102,7 +1054,10 @@ export class PurchaseView {
       && data.order.lines.every((line) => line.orderedQuantity != null);
   });
   readonly payments = signal<PurchasePayment[] | null>(null);
+  readonly paymentsError = signal<string | null>(null);
   readonly documents = signal<PurchaseDocument[] | null>(null);
+  /** The document request failed: proof coverage is unknown, not missing. */
+  readonly documentsFailed = signal(false);
   /** Sales documents of a partner who co-orders this container at our landed cost. */
   readonly partnerDocs = signal<SalesOrderView[]>([]);
   readonly relatedSalesDocs = signal<SalesOrderView[]>([]);
@@ -1176,7 +1131,6 @@ export class PurchaseView {
     });
   }
   readonly statusLabel$ = STATUS_LABEL;
-  readonly supplierOwed = computed(() => this.reconciliationStream('SUPPLIER')?.plannedEur ?? this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
 
   /**
    * The plan's instalments against what was paid, as the editor shows them:
@@ -1188,67 +1142,63 @@ export class PurchaseView {
     if (!data) return [];
     return purchaseInstalmentState(data, instalmentsOf(data.order, PAYMENT_TERMS), this.payments());
   });
-  readonly logisticsOwed = computed(() => this.reconciliationStream('LOGISTICS')?.plannedEur ?? this.view()?.payable?.logisticsEur ?? 0);
-  readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed() + this.separateOwed());
-  readonly paidAll = computed(() => this.view()?.reconciliation?.totals.paidEur ?? (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
-  /** A stream is settled once a payment on it says so: nothing stays open, the difference is ours. */
-  reconciliationStream(payee: Payee) {
-    return this.view()?.reconciliation?.streams.find((stream) => stream.payee === payee);
+
+  /** The same money-out picture as the editor and the desk, read-only here. */
+  readonly paymentLedger = computed(() => {
+    const data = this.view();
+    if (!data || this.paymentsError()) return null;
+    const totals = data.costing.totals;
+    return purchasePaymentLedger({
+      view: data, payments: this.payments(), documents: this.documentsFailed() ? null : this.documents(), terms: this.plannedInstalments(),
+      settled: (payee) => purchaseGroupSettled(data, this.payments(), payee), toleranceEur: PAYMENT_TOLERANCE_EUR,
+      totalLabel: totals.separateCostsEur ? separateCostsTotalLabel(totals) : 'Totaal geland',
+      planLabel: this.planLabel(),
+    });
+  });
+  readonly paymentState = computed<'loading' | 'error' | 'ready'>(() => this.paymentsError() ? 'error' : this.payments() === null ? 'loading' : 'ready');
+  readonly paymentNavLabel = computed(() => paymentsNavLabel(this.paymentLedger(), {
+    error: !!this.paymentsError(), loading: this.payments() === null, concept: this.view()?.order.status === 'CONCEPT',
+  }));
+  readonly planLabel = computed(() => {
+    const order = this.view()?.order;
+    return order ? paymentPlanLabel(order, PAYMENT_TERMS) : '';
+  });
+
+  /** Recording happens in the editor: it opens on the payment sheet and returns here once it closes. */
+  recordPayment(action: PurchasePaymentAction): void {
+    const id = this.view()?.order.id;
+    if (id == null) return;
+    void this.routerNav.navigate(['/purchasing', id, 'edit'], {
+      queryParams: { section: 'pay', payee: action.payee, due: action.due ?? null }, replaceUrl: true,
+    });
   }
 
-  settledFor(payee: Payee): boolean {
-    return purchaseGroupSettled(this.view(), this.payments(), payee);
+  /** Scrolls to a card that is not a navigation stop of its own, marking the stop it belongs to. */
+  scrollToCard(elementId: string, nav: PurchaseWorkspaceSectionId): void {
+    this.workspaceSection.set(nav);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(elementId);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.focus({ preventScroll: true });
+    });
   }
 
-  /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */
-  readonly separateOwed = computed(() => this.reconciliationStream('SEPARATE')?.plannedEur ?? this.view()?.costing.totals.separateCostsEur ?? 0);
+  reloadPayments(): void {
+    const id = this.view()?.order.id;
+    if (id != null) void this.loadPayments(id);
+  }
 
-  owedFor(payee: Payee): number {
-    switch (payee) {
-      case 'SUPPLIER': return this.supplierOwed();
-      case 'LOGISTICS': return this.logisticsOwed();
-      case 'SEPARATE': return this.separateOwed();
-      default: return 0;
+  private async loadPayments(id: number): Promise<void> {
+    this.paymentsError.set(null);
+    this.payments.set(null);
+    try {
+      const list = await this.sourcing.payments(id);
+      if (Number(this.id()) === id) this.payments.set(list);
+    } catch (failure: unknown) {
+      if (Number(this.id()) === id) this.paymentsError.set(messageOf(failure, 'De betalingen konden niet worden geladen.'));
     }
   }
 
-  differenceFor(payee: Payee): number {
-    if (!this.settledFor(payee) || payee === 'OTHER') return 0;
-    return Math.round((this.paidTo(payee) - this.owedFor(payee)) * 100) / 100;
-  }
-
-  openFor(payee: Payee): number {
-    const stream = this.reconciliationStream(payee);
-    if (stream) return stream.remainingEur;
-    if (this.settledFor(payee) || payee === 'OTHER') return 0;
-    const owed = this.owedFor(payee);
-    const open = Math.round(Math.max(0, owed - this.paidTo(payee)) * 100) / 100;
-    return this.paidTo(payee) > 0 && open <= PAYMENT_TOLERANCE_EUR ? 0 : open;
-  }
-
-  /** The difference worth mentioning: beyond the small change of paying. */
-  notableDifferenceFor(payee: Payee): number {
-    const difference = this.differenceFor(payee);
-    return this.reconciliationStream(payee) ? difference : withinTolerance(difference) ? 0 : difference;
-  }
-
-  smallChangeFor(payee: Payee): number {
-    const difference = this.differenceFor(payee);
-    return this.reconciliationStream(payee) ? 0 : withinTolerance(difference) ? difference : 0;
-  }
-
-  readonly tolerance = PAYMENT_TOLERANCE_EUR;
-  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS') + this.notableDifferenceFor('SEPARATE')) * 100) / 100);
-  readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS') + this.openFor('SEPARATE'));
-  paymentsTo(payee: Payee): PurchasePayment[] {
-    return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
-  }
-  paidTo(payee: Payee): number {
-    return this.reconciliationStream(payee)?.paidEur ?? this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
-  }
-  pct(paid: number, owed: number): number {
-    return owed > 0 ? Math.min(100, Math.round((paid / owed) * 100)) : 0;
-  }
   async downloadDocument(doc: PurchaseDocument): Promise<void> {
     try { saveBlob(await this.sourcing.documentFile(doc.orderId, doc.id), doc.originalFilename); }
     catch { this.ui.toast('Document openen mislukt', 'err'); }
@@ -1318,8 +1268,17 @@ export class PurchaseView {
     this.workspaceSection.set('purchase-overview');
     this.openLine.set(null);
     this.openProductGroups.set(new Set());
-    void this.sourcing.payments(id).then((list) => this.payments.set(list)).catch(() => this.payments.set([]));
-    void this.sourcing.documents(id).then((list) => this.documents.set(list)).catch(() => this.documents.set([]));
+    void this.loadPayments(id);
+    // Unknown until they arrive, so the ledger never warns about proofs of the previous order.
+    this.documents.set(null);
+    this.documentsFailed.set(false);
+    void this.sourcing.documents(id).then((list) => {
+      if (Number(this.id()) === id) this.documents.set(list);
+    }).catch(() => {
+      if (Number(this.id()) !== id) return;
+      this.documents.set([]);
+      this.documentsFailed.set(true);
+    });
     void this.loadPartnerDocs(id);
     /* The families decide how the product list groups and sorts, so they arrive
        with the order: the list must not paint and then jump into its groups. A

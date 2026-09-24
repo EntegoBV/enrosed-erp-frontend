@@ -54,7 +54,7 @@ function setup() {
   const editor = new exports['PurchaseEditor']();
   Object.assign(editor, {
     id: signal('50'), view: signal<ReturnType<typeof order> | null>(null),
-    documents: signal<ReturnType<typeof document>[] | null>(null), documentLoadVersion: 0,
+    documents: signal<ReturnType<typeof document>[] | null>(null), documentsFailed: signal(false), documentLoadVersion: 0,
     paymentRefreshVersion: 0, previewVersion: 0,
     paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null),
     families: signal([]), products: signal([]), categories: signal([]), freightRates: signal([]),
@@ -173,8 +173,22 @@ for (const outcome of ['success', 'failure'] as const) {
     if (outcome === 'success') old.resolve([document(999)]); else old.reject(new Error('Old request failed'));
     await request;
     assert.deepEqual(editor.documents(), [document(150)]);
+    assert.equal(editor.documentsFailed(), false, 'A stale answer says nothing about the current proofs');
   });
 }
+
+test('a failed document request leaves an empty dossier but marks the proofs unknown until a list arrives', async () => {
+  const { editor, api } = setup();
+  editor.view.set(order());
+  api.documents = async () => { throw new Error('Documenten niet bereikbaar'); };
+  await editor.loadDocuments(50);
+  assert.equal(editor.documents().length, 0, 'The dossier shows no files');
+  assert.equal(editor.documentsFailed(), true, 'The payments ledger must not read the failure as missing proofs');
+  api.documents = async () => [document(150)];
+  await editor.loadDocuments(50);
+  assert.deepEqual(editor.documents(), [document(150)]);
+  assert.equal(editor.documentsFailed(), false);
+});
 
 test('a newer same-order refresh wins over a delayed list from before a document upload', async () => {
   const { editor, api } = setup();

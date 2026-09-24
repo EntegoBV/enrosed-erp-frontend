@@ -50,9 +50,13 @@ test('offsetting supplier, customs and extra payments retain gross differences',
 });
 
 test('overpayment status does not suggest final agreement until the stream is settled', () => {
-  assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID' })), 'Meer betaald · te beoordelen');
-  assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID', finalized: true })), 'Meer betaald · vereffend');
-  assert.equal(reconciliationStatusLabel(stream({ status: 'SETTLED_LOWER' })), 'Minder betaald · vereffend');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID' })), 'Te veel betaald · nakijken');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID', finalized: true })), 'Afgerekend · meer betaald');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'SETTLED_LOWER' })), 'Afgerekend · minder betaald');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'PAID' })), 'Betaald');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'UNPAID' })), 'Open');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'ADDITIONAL', payee: 'OTHER' })), 'Bijkomend');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'ADDITIONAL', payee: 'SEPARATE' })), 'Niet begroot');
 });
 
 test('unavailable calculations are omitted and concept containers only enter the all filter', () => {

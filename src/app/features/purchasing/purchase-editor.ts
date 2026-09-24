@@ -27,10 +27,17 @@ import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
 import { PurchasePaymentResult } from './purchase-payment-result';
-import { PurchasePaymentScope } from './purchase-payment-scope';
+import { PurchasePaymentSheet } from './purchase-payment-sheet';
+import { PurchaseSettleSheet } from './purchase-settle-sheet';
+import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
+import { ContextMenu } from '../../shared/context-menu';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
+import {
+  PAYEE_LABEL, paymentOptionParts, purchasePaymentLedger, settleCarriers, type Due, type PurchasePaymentAction, type PurchaseSettleRequest,
+} from './purchase-payment-ledger';
+import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-menus';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
@@ -47,7 +54,7 @@ import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, escapeHtml } from '../../shared/ui';
-import { PAYMENT_TOLERANCE_EUR, instalmentsOf, paymentPlanLabel, splitTotal, withinTolerance, paymentPlanError, type PaymentPlanFields } from './payment-plan';
+import { PAYMENT_TOLERANCE_EUR, instalmentsOf, paymentPlanLabel, splitTotal, paymentPlanError, type PaymentPlanFields } from './payment-plan';
 import { purchaseGroupSettled, purchaseInstalmentState } from './purchase-instalment-state';
 import { preservePurchaseDraft } from './purchase-payment-refresh';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe, ceilTo } from '../../shared/pipes';
@@ -105,7 +112,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, PurchasePaymentScope, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -262,7 +269,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
                   (click)="jumpToSection('purchase-payments-section')">
             <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">4</span>
-            <span class="workflow-nav__copy"><b>Betalingen</b><small>@if (paymentStateError()) { Opnieuw laden } @else if (paymentStateLoading()) { Bijwerken… } @else { {{ openAll() | eur }} open }</small></span>
+            <span class="workflow-nav__copy"><b>Betalingen</b><small>{{ paymentNavLabel() }}</small></span>
           </button>
           <button class="erp-workspace__nav-item workflow-nav__item" type="button"
                   [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
@@ -349,9 +356,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       </div>
                     }
                     <div class="field">
-                      <label for="po-terms">Betaalafspraak</label>
+                      <label for="po-terms">Betaalplan</label>
                       <button class="btn purchase-payment-plan-trigger" id="po-terms" type="button" [disabled]="saving() || payingBusy() || paymentPlanBusy()" (click)="openPaymentPlan()">{{ planLabel(data.order) }} <span>Wijzigen</span></button>
-                      <span class="hint">De betalingen rechts volgen dit plan: per termijn zie je wat open staat.</span>
+                      <span class="hint">Bij Betalingen (stap 4) zie je per termijn wat open staat.</span>
                     </div>
 
                     @if (data.order.status !== 'CONCEPT') {
@@ -446,7 +453,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </div>
                 </div>
               }
-              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-payments-section')" (unlink)="unlinkPartnerDoc($event)" />
+              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-partner-section')" (unlink)="unlinkPartnerDoc($event)" />
             </section>
 
             <section class="card flow-card products-card erp-workspace__section"
@@ -1116,44 +1123,36 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
             </section>
 
-            <!-- Money goes two ways. To the factory for the goods (and the
-                 sea freight when the price is CIF), in the agreed instalments;
-                 to the forwarder and customs for the road, once the box is
-                 here. The Enrosed kost is ours and nobody's invoice. -->
-            <section class="card payments-card erp-workspace__section"
+            <!-- Nacalculatie: what the container really cost, under Kosten. -->
+            <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
+              <app-purchase-payment-result [view]="data" />
+              <details class="purchase-result-disclosure">
+                <summary>Kostprijs per product en PDF</summary>
+                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" />
+              </details>
+            </section>
+
+            <!-- Money out, per payee: the supplier for the goods in its planned
+                 terms, the forwarder and customs, the inspection and other named
+                 costs, and the bijkomende kosten of paying. The Enrosed kost is
+                 ours and nobody's invoice. -->
+            <section class="card erp-workspace__section purchase-payments-plain"
                      id="purchase-payments-section" tabindex="-1"
                      aria-labelledby="purchase-payments-title">
-              <div class="action-card__head">
-                <span class="po-eyebrow">Betalingen</span>
-                <h2 id="purchase-payments-title">
-                  @if (paymentStateLoading()) { Betalingen laden… } @else if (paymentStateError()) { Betalingen niet actueel } @else { Betalingen }
-                </h2>
-                <p>Afspraak, betalingen en resterend saldo per ontvanger.</p>
-              </div>
-
-              @if (paymentStateError()) {
-                <div class="alert alert--warn payment-refresh-error" role="alert">
-                  <span>{{ paymentStateError() }}</span>
-                  <button class="btn btn--sm" type="button" [disabled]="paymentStateLoading()" (click)="refreshPaymentState()">Opnieuw laden</button>
-                </div>
-              }
-              @if (!paymentStateError()) {
-              <div class="payment-state-content" [class.is-loading]="paymentStateLoading()"
-                   [attr.inert]="paymentStateLoading() ? '' : null" [attr.aria-busy]="paymentStateLoading()">
-              <app-purchase-payment-overview [view]="data" [payments]="payments()" [documents]="documents()" [editable]="true" [dirty]="dirty()"
-                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
-                (add)="openPayment($event.amount, $event.label, $event.payee, $event.due ?? null)"
-                (edit)="editPayment($event)" (proof)="attachProof($event)" (settle)="reviewPayment($event)" (download)="downloadDocument($event)" (planChange)="openPaymentPlan()" />
-              <app-purchase-payment-result [view]="data" [showManagement]="false" />
-              <details class="purchase-payment-details">
-                <summary>Kostprijs en nacalculatie <span>Berekening en PDF</span></summary>
-                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
-              </details>
-              <app-purchase-sales-links [documents]="relatedSalesDocs()" />
-              <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
-              </div>
-              }
+              <app-purchase-payment-overview mode="edit" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
+                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()"
+                [planLabel]="planLabel(data.order)" [supplierName]="supplierName()"
+                (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
+                (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
+                (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')" />
             </section>
+
+            <!-- Money in: a partner who co-finances the container. -->
+            @if (data.order.partnerCustomerId != null) {
+              <section class="erp-workspace__section purchase-partner-card" id="purchase-partner-section" tabindex="-1" aria-label="Partnerfinanciering">
+                <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
+              </section>
+            }
 
             <!-- The container's diary: agreements, then the receipt, the
                  booking and every payment write themselves in here. -->
@@ -1226,6 +1225,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <div class="action-card__buttons">
                 <button class="btn btn--block" type="button" (click)="openDocument()">Document toevoegen</button>
               </div>
+              <div class="files-card__links"><app-purchase-sales-links [documents]="relatedSalesDocs()" [excludePartner]="data.order.partnerCustomerId != null" /></div>
             </section>
 
             <app-purchase-activity class="purchase-activity-step"
@@ -1318,11 +1318,16 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             <small>Stap {{ phoneStep() + 1 }} van {{ phoneStepLabels.length }}</small>
             <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
           </span>
-          <button class="btn purchase-mobile-dock__pdf" type="button"
-                  (click)="pdfOpen.set(true)"
-                  [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
-            PDF
-          </button>
+          @if (phoneStep() === 3) {
+            <button class="btn purchase-mobile-dock__pdf" type="button" aria-label="Betaling noteren"
+                    [disabled]="payingBusy() || paymentStateLoading() || payments() === null" (click)="payeeMenuOpen.set(true)">＋ Betaling</button>
+          } @else {
+            <button class="btn purchase-mobile-dock__pdf" type="button"
+                    (click)="pdfOpen.set(true)"
+                    [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
+              PDF
+            </button>
+          }
           <button class="btn purchase-mobile-dock__save" type="button"
                   [class.btn--primary]="dirty()"
                   [disabled]="saving() || !dirty() || negativeExtra()" (click)="save()">
@@ -1359,7 +1364,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
                                       [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                       [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
-                                      (funding)="jumpToSection('purchase-payments-section')" (closed)="auctionOpen.set(false)" />
+                                      (funding)="jumpToSection('purchase-partner-section')" (closed)="auctionOpen.set(false)" />
       }
 
       @if (picking()) {
@@ -1427,77 +1432,29 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
       @if (paymentPlanOrder(); as agreement) {
         <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
+          [agreedEur]="supplierOwed()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
       @if (paying(); as pay) {
-        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + paymentTitle(pay.payee)" (closed)="closePayment()">
-          <div body [attr.inert]="payingBusy() ? '' : null">
-            <!-- Deposits are fractions of the goods: one tap fills them in. -->
-            <div class="pay-chips" role="group" aria-label="Snel invullen">
-              @for (chip of (!pay.id && pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
-                <button class="pay-chip" type="button" [disabled]="payingBusy() || paymentStateLoading()" (click)="paying.set({ ...pay, amount: chip.amount, amountInput: '' + chip.amount, currency: 'EUR', label: chip.label, instalmentDue: chip.due ?? null, settles: false })">
-                  {{ chip.label }}<small>{{ chip.amount | eur }}</small>
-                </button>
-              }
-            </div>
-            <div class="form-grid mt-12">
-              <div class="field">
-                <label for="pay-amount">Werkelijk betaald bedrag</label>
-                <div class="input-affix">
-                  <input class="input num right" id="pay-amount" type="text" inputmode="decimal" autocomplete="off" [disabled]="payingBusy()"
-                         [ngModel]="pay.amountInput" (ngModelChange)="setPaymentAmount($event)" />
-                  <select class="input-affix__suffix line-currency" aria-label="Munt"
-                          [disabled]="payingBusy()" [ngModel]="pay.currency" (ngModelChange)="paying.set({ ...pay, currency: $event })">
-                    <option value="EUR">EUR</option>
-                    <option value="USD">USD</option>
-                    <option value="CNY">CNY</option>
-                  </select>
-                </div>
-                @if (pay.amountInput && pay.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 1.046,95.</span> }
-                @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0) {
-                  <span class="hint">≈ {{ paymentDraftEur() | eur }} · EUR-bedrag van deze boeking; bij een bedragwijziging geldt de huidige orderkoers.</span>
-                }
-                @if (payingOverage() > 0) {
-                  <span class="hint hint--warn">Na deze wijziging is er {{ payingOverage() | eur }} meer betaald dan verwacht. Controleer het bedrag; extra kosten kunnen apart worden genoteerd.</span>
-                } @else if ((pay.amount ?? 0) > 0 && openFor(pay.payee) > 0) {
-                  <span class="hint">Nog open: {{ openFor(pay.payee) | eur }}.</span>
-                }
-              </div>
-              <div class="field">
-                <label for="pay-date">Betaald op</label>
-                <app-date-field fieldId="pay-date" [value]="pay.paidOn" (valueChange)="paying.set({ ...pay, paidOn: $event })" />
-              </div>
-              <div class="field span-2">
-                <label for="pay-label">Omschrijving <span class="opt"></span></label>
-                <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
-                       [disabled]="payingBusy()" [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
-              </div>
-              @if (pay.payee !== 'OTHER') {
-              <div class="field span-2">
-                <app-purchase-payment-scope
-                  [payee]="pay.payee"
-                  [instalmentDue]="pay.instalmentDue ?? null"
-                  [settles]="pay.settles"
-                  [options]="paymentInstalmentOptions()"
-                  [groupLabel]="paymentGroupLabel(pay.payee)"
-                  [busy]="payingBusy() || paymentStateLoading()"
-                  (changed)="paying.set({ ...pay, ...$event })" />
-              </div>
-              }
-              <div class="field span-2">
-                <app-payment-proof-picker [files]="pay.files" [maxFiles]="proofSlots(pay.id)" [disabled]="payingBusy()" (filesChange)="paying.set({ ...pay, files: $event })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            @if (pay.id) { <button class="btn btn--danger" type="button" [disabled]="payingBusy()" (click)="removeEditing(pay.id)">Verwijderen</button> }
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="closePayment()">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots(pay.id) || !pay.paidOn" (click)="confirmPayment()">
-              {{ payingBusy() ? 'Bezig…' : (pay.id ? 'Aanpassen' : 'Betaling bewaren') }}
-            </button>
-          </div>
-        </app-sheet>
+        <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
+          [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()"
+          [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
+          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
+          (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (payeeChange)="setPaymentPayee($event)"
+          (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
+      }
+      @if (settling(); as settle) {
+        @if (settlePayee(); as payee) {
+          <app-purchase-settle-sheet [draft]="settle" [payee]="payee" [carriers]="settleCarrierOptions().options"
+            [canonical]="!!paymentLedger()?.canonical" [busy]="payingBusy()"
+            (scope)="setSettleScope($event.scope, $event.due)" (carrier)="settling.set({ ...settle, paymentId: $event })"
+            (confirm)="confirmSettle()" (undo)="settling.set(null); requestUndoSettle(settle.payee, settle.scope === 'TERM' ? settle.due : undefined)"
+            (cancel)="closeSettle()" (editCarrier)="settling.set(null); requestEdit($event)" />
+        }
+      }
+      @if (payeeMenuOpen()) {
+        <app-context-menu title="Betaling aan…" variant="ios" cancelLabel="Annuleren" [items]="payeeActionItems()"
+          (pick)="payeeMenuOpen.set(false); requestPayment({ payee: $any($event.id) })" (closed)="payeeMenuOpen.set(false)" />
       }
 
       @if (libraryOpen()) {
@@ -1524,7 +1481,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <select class="select" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
                     <option value="">— geen —</option>
                     @for (payment of payments() ?? []; track payment.id) {
-                      <option [value]="payment.id">{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} } · {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option>
+                      <option [value]="payment.id">{{ paymentOptionLabel(payment) }}</option>
                     }
                   </select>
                 </div>
@@ -1555,41 +1512,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
 
       @if (firstInstalmentPrompt(); as first) {
-        <!-- Just ordered: the first instalment falls due now. Ask once, with
-             room for the bank statement. -->
-        <app-sheet title="Eerste betaling" (closed)="firstInstalmentPrompt.set(null)">
-          <div body>
-            <p>De bestelling staat vast. Volgens de betaalafspraak is nu <b>{{ first.label }}</b> aan de beurt:
-              <b>{{ first.amount | eur }}</b> aan {{ supplierName() }}.</p>
-            <p class="hint mt-8">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 5 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
-            <div class="form-grid mt-12">
-              <div class="field">
-                <label for="first-amount">Betaald bedrag</label>
-                <div class="input-affix">
-                  <input class="input num right" id="first-amount" type="text" inputmode="decimal" autocomplete="off" [disabled]="payingBusy()"
-                         [ngModel]="first.amountInput" (ngModelChange)="setFirstPaymentAmount($event)" />
-                  <select class="input-affix__suffix line-currency" aria-label="Munt" [ngModel]="first.currency"
-                          (ngModelChange)="firstInstalmentPrompt.set({ ...first, currency: $event })">
-                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field">
-                <label for="first-date">Betaald op</label>
-                <app-date-field fieldId="first-date" [value]="first.paidOn" (valueChange)="firstInstalmentPrompt.set({ ...first, paidOn: $event })" />
-              </div>
-              <div class="field span-2">
-                <app-payment-proof-picker [files]="first.files" [disabled]="payingBusy()" (filesChange)="firstInstalmentPrompt.set({ ...first, files: $event })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <button class="btn" type="button" (click)="firstInstalmentPrompt.set(null)">Nog niet betaald</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !((first.amount ?? 0) > 0)" (click)="confirmFirstInstalment()">
-              {{ payingBusy() ? 'Bezig…' : 'Betaald - noteren' }}
-            </button>
-          </div>
-        </app-sheet>
+        <app-purchase-first-instalment-sheet [prompt]="first" [supplierName]="supplierName()" [busy]="payingBusy()"
+          (patch)="firstInstalmentPrompt.set({ ...first, ...$event })" (amountInput)="setFirstPaymentAmount($event)"
+          (confirm)="confirmFirstInstalment()" (dismiss)="firstInstalmentPrompt.set(null)" />
       }
 
       @if (receiving(); as draft) {
@@ -1647,19 +1572,17 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               }
             </div>
 
-            <div class="receive-balance mt-12">
-              <div>
-                <b>Betaald tot nu: {{ paidTotalEur() | eur }}</b>
-                <small>Goederenwaarde {{ data.costing.totals.goodsEur | eur }} · totaal geland {{ data.costing.totals.totalEur | eur }}</small>
-              </div>
+            <div class="receive-balance mt-12" aria-label="Betalingen bij ontvangst">
+              <b>Betalingen bij ontvangst</b>
+              <small>Leverancier: {{ paidTotalEur() | eur }} betaald van {{ supplierOwed() | eur }} · {{ remainingEur() | eur }} open</small>
+              @for (open of receiveOpenPayees(); track open.label) { <small>{{ open.label }}: {{ open.openEur | eur }} open</small> }
               @if (remainingEur() > 0.005) {
                 <label class="receive-balance__final">
                   <input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" />
-                  <span>Slotbetaling van <b>{{ remainingEur() | eur }}</b> meteen noteren</span>
+                  <span>Slotbetaling van <b>{{ remainingEur() | eur }}</b> aan de leverancier noteren en de leverancier afrekenen</span>
                 </label>
-              } @else {
-                <span class="hint">Volledig betaald volgens de betalingen hierboven.</span>
               }
+              <span class="hint">Douane, transport en inspectie noteer je apart bij Betalingen.</span>
             </div>
 
             <div class="field mt-12">
@@ -1714,11 +1637,6 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   `,
   styles: [`
 
-    .payment-refresh-error { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-    .payment-refresh-error > span { flex: 1 1 220px; min-width: 0; line-height: 1.5; }
-    .payment-refresh-error > .btn { flex-shrink: 0; min-height: 44px; }
-    .payment-state-content { min-width: 0; }
-    .payment-state-content.is-loading { opacity: .45; pointer-events: none; }
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
     :host{display:block;min-width:0}.po-page{max-width:1180px}.po-notice{margin-bottom:12px}
     .po-overview{position:relative;margin-bottom:14px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
@@ -1752,6 +1670,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       .purchase-grid[data-phone-step="2"] #purchase-costs-section,
       .purchase-grid[data-phone-step="2"] #purchase-summary-section,
       .purchase-grid[data-phone-step="3"] #purchase-payments-section,
+      .purchase-grid[data-phone-step="3"] #purchase-partner-section,
+      .purchase-grid[data-phone-step="2"] #purchase-result-section,
       .purchase-grid[data-phone-step="4"] #purchase-notes-section,
       .purchase-grid[data-phone-step="4"] #purchase-files-section,
       .purchase-grid[data-phone-step="4"] .purchase-activity-step,
@@ -1781,21 +1701,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     .po-lines{padding:12px;border-radius:16px;background:var(--surface-2)}
     .po-line__index{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}.po-line__photo{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
     .purchase-summary .cost-hero{grid-template-columns:1fr;gap:8px}.purchase-summary .cost-hero__unit{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line);text-align:left;align-self:auto}
-    .pay-stream__head{flex-wrap:wrap}.pay-stream__head>span:last-child{text-align:right;margin-left:auto}
     .po-line__link{display:flex;flex:1;min-width:0;align-items:center;gap:inherit;color:inherit;text-decoration:none}.po-line__link:hover strong{color:var(--rose-dark);text-decoration:underline}
     .line-issue{display:block;padding:4px 0 0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;text-align:left;cursor:pointer}.line-issue:hover{color:var(--rose-dark)}.issue-kind{margin-top:2px}
-    .payments-card .action-card__head,.files-card .action-card__head,.note-card .action-card__head{padding:14px 18px 10px}.note-card__field{display:block;width:100%;padding:0 18px 14px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box}.note-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.note-card__head .linklike{flex:none;margin-top:2px}.note-card__diary{padding:0 18px 12px}.note-card__empty{margin:0;padding:0 18px 14px;color:var(--muted);font-size:12px}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.payments-card .action-card__head h2{font-size:16px}.field .hint--warn{color:var(--danger);font-weight:650}.pay-stream__review{margin:8px 0 2px;color:var(--warn);font-size:12px;line-height:1.4}.pay-stream__done{margin:8px 0 2px;color:var(--ok,#2e7d4f);font-size:12.5px;font-weight:650}.payments-meter{height:6px;margin:0 18px 12px;border-radius:999px;background:var(--line);overflow:hidden}.payments-meter__fill{height:100%;background:var(--ok,#2e7d4f);border-radius:999px;transition:width .2s ease}.payments-list{list-style:none;margin:0 18px;padding:0;border-top:1px solid var(--line)}.payments-list li{display:grid;grid-template-columns:minmax(0,1fr) auto 28px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.payments-list__what{display:grid;min-width:0}.payments-list__what b{font-size:12.5px;font-weight:650}.payments-list__what small{color:var(--muted);font-size:11px}.payments-list__amount{font-weight:700;font-size:13px}.payments-list__remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}.payments-list__remove:hover{background:var(--danger-soft);color:var(--danger)}
-    .instalments{list-style:none;margin:0 18px 6px;padding:0}.instalments li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0}.instalments i{display:grid;width:20px;height:20px;place-items:center;border-radius:50%;background:var(--line);color:var(--muted);font-size:11px;font-style:normal;font-weight:800}.instalments__item--paid i{background:var(--ok-soft);color:var(--ok)}.instalments__item--due i{background:var(--warn-soft);color:var(--warn)}.instalments__what{display:grid;min-width:0}.instalments__what b{font-size:12.5px;font-weight:650}.instalments__what small{color:var(--muted);font-size:11px}.instalments__item--due .instalments__what small{color:var(--warn);font-weight:650}.instalments__item--paid .instalments__what > b{color:var(--muted);text-decoration:line-through}
-    .instalments__item--paid .instalments__what > b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
-    .pay-line__actions{display:inline-flex;align-items:center;gap:2px}.pay-line__btn{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;cursor:pointer}.pay-line__btn:hover{background:var(--surface-3)}.pay-line__proof{color:var(--muted);font-size:11px;margin-right:2px}
-    .pay-split__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pay-split__grid label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
-    .pay-line__settles{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10px;font-style:normal;font-weight:700;vertical-align:middle}
-    .pay-settle{display:flex;align-items:flex-start;gap:10px;font-size:12.5px}.pay-settle input{margin-top:3px}.pay-settle span{display:grid;gap:2px}.pay-settle small{color:var(--muted);font-size:11px}
-    .pay-diff--over{color:var(--danger)}.pay-diff--under{color:var(--ok)}
-    .pay-stream{margin:0 18px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pay-stream__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.pay-stream__head>span{display:grid;min-width:0}.pay-stream__head b{font-size:13px}.pay-stream__head small{color:var(--muted);font-size:11px}.pay-stream__head .num{text-align:right}.pay-stream .payments-meter{margin:8px 0 4px}.pay-stream .instalments{margin:0}.pay-line{display:grid;grid-template-columns:minmax(0,1fr) auto 24px;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.pay-line__what{display:grid;min-width:0}.pay-line__what b{font-size:12.5px;font-weight:650}.pay-line__what small{color:var(--muted);font-size:11px}.pay-line__amount{font-weight:700;font-size:13px}.pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}.pay-stream__add{display:block;width:100%;margin-top:6px;padding:7px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;text-align:left;cursor:pointer}.pay-ours{margin:0 18px 14px;color:var(--muted);font-size:11.5px}
+    .files-card .action-card__head,.note-card .action-card__head{padding:14px 18px 10px}.note-card__field{display:block;width:100%;padding:0 18px 14px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box}.note-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.note-card__head .linklike{flex:none;margin-top:2px}.note-card__diary{padding:0 18px 12px}.note-card__empty{margin:0;padding:0 18px 14px;color:var(--muted);font-size:12px}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.files-card__links{padding:0 18px 6px}
+    .pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}
     .files-list__actions{display:flex;align-items:center;gap:6px}
     .files-list{list-style:none;margin:0 18px 4px;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-card__hint{padding:6px 18px 14px}.files-list__rename{flex:1;min-width:0}.files-list__pencil{display:inline-grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}.files-list__pencil:hover{background:var(--surface-2);color:var(--ink)}.files-list__pencil svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-    .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
     .receive-balance{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-balance b{font-size:13px}.receive-balance small{display:block;color:var(--muted);font-size:11.5px}.receive-balance__final{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.receive-balance__final input{width:18px;height:18px;accent-color:var(--rose)}
     .receive-preview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}.receive-preview>span{display:grid;padding:9px 10px;background:var(--surface)}.receive-preview small{color:var(--muted);font-size:9px;text-transform:uppercase}.receive-preview b{font-size:12.5px}.receive-preview>p{grid-column:1/-1;padding:8px 10px;background:var(--warn-soft);color:var(--ink-2);font-size:10.5px}
     .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
@@ -1884,6 +1795,15 @@ export class PurchaseEditor {
     this.jumpToSection(this.phoneStepIds[next], disclosure);
   }
 
+  /** The phone step that shows a section: a step of its own, or a card living on one. */
+  private phoneStepFor(sectionId: string): number {
+    const index = (this.phoneStepIds as readonly string[]).indexOf(sectionId);
+    if (index >= 0) return index;
+    if (sectionId === 'purchase-result-section') return 2;
+    if (sectionId === 'purchase-partner-section') return 3;
+    return -1;
+  }
+
   /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
   jumpToSection(sectionId: string, disclosure?: 'order' | 'costs', scroll = true): void {
     if (disclosure && !this.sectionOpen(disclosure)) {
@@ -1891,13 +1811,21 @@ export class PurchaseEditor {
       next.add(disclosure);
       this.openSections.set(next);
     }
-    this.workspaceSection.set(sectionId);
     if (!this.desktop.active()) {
-      const phoneStep = this.phoneStepIds.indexOf(sectionId as (typeof this.phoneStepIds)[number]);
+      const phoneStep = this.phoneStepFor(sectionId);
       if (phoneStep >= 0) this.phoneStep.set(phoneStep);
-      if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+      this.workspaceSection.set(phoneStep >= 0 ? this.phoneStepIds[phoneStep] : sectionId);
+      if (!scroll) return;
+      /* A step starts at the top; a card further down a step is scrolled to. */
+      if (this.phoneStepIds[phoneStep] === sectionId) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      requestAnimationFrame(() => {
+        const target = document.getElementById(sectionId);
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target?.focus({ preventScroll: true });
+      });
       return;
     }
+    this.workspaceSection.set(sectionId);
     if (!scroll) return;
     requestAnimationFrame(() => {
       const target = document.getElementById(sectionId);
@@ -2042,29 +1970,6 @@ export class PurchaseEditor {
     return purchaseGroupSettled(this.view(), this.payments(), payee);
   }
 
-  /** Paid minus agreed on a settled stream: above zero we paid too much, below zero too little. */
-  differenceFor(payee: Payee): number {
-    if (!this.settledFor(payee) || payee === 'OTHER') return 0;
-    return Math.round((this.paidTo(payee) - this.owedFor(payee)) * 100) / 100;
-  }
-
-  /** The difference worth mentioning: beyond the small change of paying. */
-  notableDifferenceFor(payee: Payee): number {
-    const difference = this.differenceFor(payee);
-    return this.reconciliationStream(payee) ? difference : withinTolerance(difference) ? 0 : difference;
-  }
-
-  /** The small change a settled stream came out under or over, when it stayed within the margin. */
-  smallChangeFor(payee: Payee): number {
-    const difference = this.differenceFor(payee);
-    return this.reconciliationStream(payee) ? 0 : withinTolerance(difference) ? difference : 0;
-  }
-
-  readonly tolerance = PAYMENT_TOLERANCE_EUR;
-
-  /** The differences of every settled stream together: what the order cost more or less than agreed. */
-  readonly paymentDifference = computed(() => Math.round((this.notableDifferenceFor('SUPPLIER') + this.notableDifferenceFor('LOGISTICS') + this.notableDifferenceFor('SEPARATE')) * 100) / 100);
-
   /** The inspection and the other named costs on the order: paid apart, to whoever did the work. */
   readonly separateOwed = computed(() => this.reconciliationStream('SEPARATE')?.plannedEur ?? this.view()?.costing.totals.separateCostsEur ?? 0);
 
@@ -2075,15 +1980,6 @@ export class PurchaseEditor {
       case 'LOGISTICS': return this.logisticsOwed();
       case 'SEPARATE': return this.separateOwed();
       default: return 0;
-    }
-  }
-
-  paymentTitle(payee: Payee): string {
-    switch (payee) {
-      case 'LOGISTICS': return 'Betaling douane & transport';
-      case 'SEPARATE': return 'Betaling inspectie & andere kosten';
-      case 'OTHER': return 'Andere betaling · bankkosten, koerier, …';
-      default: return 'Betaling aan de leverancier';
     }
   }
 
@@ -2152,20 +2048,7 @@ export class PurchaseEditor {
   }
 
   paymentGroupLabel(payee: Payee): string {
-    return { SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport', SEPARATE: 'Inspectie & andere kosten', OTHER: 'Andere betalingen' }[payee];
-  }
-
-  /** Confirm the existing payment, preserving its amount and original recorded FX. */
-  reviewPayment(payee: Payee): void {
-    if (this.payingBusy() || this.paymentStateLoading() || this.saving() || this.paying() || payee === 'OTHER') return;
-    const payments = this.paymentsTo(payee);
-    const payment = payments.find(item => item.settles && item.instalmentDue == null)
-      ?? [...payments].sort((a, b) => b.paidOn.localeCompare(a.paidOn) || b.id - a.id)[0];
-    if (!payment || payment.orderId !== this.view()?.order.id) return;
-    this.editPayment(payment);
-    if (!this.reconciliationStream(payee)?.finalized) {
-      this.paying.update(current => current ? { ...current, settles: true, instalmentDue: null } : current);
-    }
+    return PAYEE_LABEL[payee];
   }
 
   /** Attaches the bank statement to a payment that was noted without one. */
@@ -2184,17 +2067,11 @@ export class PurchaseEditor {
   /** What the supplier is owed: goods, plus the sea freight when it is in the price. */
   readonly supplierOwed = computed(() => this.reconciliationStream('SUPPLIER')?.plannedEur ?? this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
   readonly logisticsOwed = computed(() => this.reconciliationStream('LOGISTICS')?.plannedEur ?? this.view()?.payable?.logisticsEur ?? 0);
-  readonly owedAll = computed(() => this.supplierOwed() + this.logisticsOwed() + this.separateOwed());
   paymentsTo(payee: Payee): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
   }
   paidTo(payee: Payee): number {
     return this.reconciliationStream(payee)?.paidEur ?? this.paymentsTo(payee).reduce((sum, payment) => sum + payment.amountEur, 0);
-  }
-  readonly paidAll = computed(() => this.view()?.reconciliation?.totals.paidEur ?? (this.payments() ?? []).reduce((sum, payment) => sum + payment.amountEur, 0));
-  readonly openAll = computed(() => this.openFor('SUPPLIER') + this.openFor('LOGISTICS') + this.openFor('SEPARATE'));
-  pct(paid: number, owed: number): number {
-    return owed > 0 ? Math.min(100, Math.round((paid / owed) * 100)) : 0;
   }
   /* The supplier stream, as the plan and the balance see it. */
   readonly paidTotalEur = computed(() => this.paidTo('SUPPLIER'));
@@ -2411,8 +2288,275 @@ export class PurchaseEditor {
       });
   }
 
+  /* ---- the money-out picture and its actions ----------------------- */
+
+  /** Betalingen as one server-derived view model: per payee, due now or later, the ledger and what to do. */
+  readonly paymentLedger = computed(() => {
+    const data = this.view();
+    if (!data || this.paymentStateError()) return null;
+    const totals = data.costing.totals;
+    return purchasePaymentLedger({
+      view: data, payments: this.payments(), documents: this.documentsFailed() ? null : this.documents(), terms: this.plannedInstalments(),
+      settled: payee => purchaseGroupSettled(data, this.payments(), payee), toleranceEur: PAYMENT_TOLERANCE_EUR,
+      totalLabel: totals.separateCostsEur ? separateCostsTotalLabel(totals) : 'Totaal geland',
+      planLabel: this.planLabel(data.order),
+    });
+  });
+  readonly paymentState = computed<'loading' | 'refreshing' | 'error' | 'ready'>(() => this.paymentStateError() ? 'error'
+    : this.payments() === null ? 'loading' : this.paymentStateLoading() ? 'refreshing' : 'ready');
+  readonly paymentNavLabel = computed(() => paymentsNavLabel(this.paymentLedger(), {
+    error: !!this.paymentStateError(), loading: this.paymentStateLoading() || this.payments() === null,
+    concept: this.view()?.order.status === 'CONCEPT',
+  }));
+
+  /** What is still open for the term or payee the payment sheet is filled in for. */
+  readonly payingOpenHint = computed(() => {
+    const pay = this.paying();
+    if (!pay) return null;
+    if (pay.payee === 'SUPPLIER' && pay.instalmentDue) {
+      const term = this.plannedInstalments().find(step => step.due === pay.instalmentDue);
+      return term ? { label: term.label, amountEur: term.amount } : null;
+    }
+    return { label: PAYEE_LABEL[pay.payee], amountEur: this.openFor(pay.payee) };
+  });
+
+  /** The stored payment the sheet corrects, to warn when it moves to another payee. */
+  readonly payingOriginal = computed(() => {
+    const id = this.paying()?.id;
+    const stored = id ? (this.payments() ?? []).find(payment => payment.id === id) : undefined;
+    return stored ? { payee: stored.payee ?? 'SUPPLIER', settles: !!stored.settles } : null;
+  });
+
+  /**
+   * Every payment write also rewrites the order's diary on the server, so it
+   * never lands on top of unsaved order edits: save first, then go on.
+   */
+  whenSaved(run: () => void): void {
+    if (!this.dirty()) { run(); return; }
+    if (this.saving() || this.payingBusy() || this.paymentPlanBusy()) return;
+    this.ui.confirm({
+      title: 'Eerst opslaan?',
+      message: 'De order heeft niet-opgeslagen wijzigingen. Die worden eerst opgeslagen; daarna ga je verder.',
+      confirmLabel: 'Opslaan en verder',
+    }, async () => {
+      const saved = await this.save();
+      if (saved && !this.dirty() && this.view()?.order.id === saved.order.id) run();
+    });
+  }
+
+  requestPayment(action: PurchasePaymentAction): void {
+    this.whenSaved(() => this.openPayment(action.amount, action.label, action.payee, action.due ?? null));
+  }
+
+  requestEdit(payment: PurchasePayment): void { this.whenSaved(() => this.editPayment(payment)); }
+
+  requestSettle(request: PurchaseSettleRequest): void { this.whenSaved(() => this.openSettle(request)); }
+
+  requestUndoSettle(payee: Payee, due?: Due | null): void { this.whenSaved(() => this.undoSettle(payee, due)); }
+
+  requestMove(payment: PurchasePayment, payee: Payee): void { this.whenSaved(() => this.movePayment(payment, payee)); }
+
+  requestRemove(payment: PurchasePayment): void { this.whenSaved(() => this.removePayment(payment)); }
+
+  /** Afrekenen: one existing payment gets the settles mark; no money moves. */
+  readonly settling = signal<{ payee: Payee; scope: 'GROUP' | 'TERM'; due: Due | null; paymentId: number | null } | null>(null);
+  readonly settleCarrierOptions = computed(() => {
+    const draft = this.settling();
+    return draft ? settleCarriers(this.payments() ?? [], draft.payee, draft.scope, draft.due) : { options: [], defaultId: null };
+  });
+  readonly settlePayee = computed(() => {
+    const payee = this.settling()?.payee;
+    return payee ? this.paymentLedger()?.payees.find(item => item.payee === payee) ?? null : null;
+  });
+
+  openSettle(request: PurchaseSettleRequest): void {
+    if (this.payingBusy() || this.paymentStateLoading() || this.paymentStateError() || this.paymentPlanBusy() || this.dirty()
+      || this.payments() === null || request.payee === 'OTHER') return;
+    const scope = request.payee === 'SUPPLIER' && request.scope === 'TERM' && request.due ? 'TERM' : 'GROUP';
+    const due = scope === 'TERM' ? request.due : null;
+    const carriers = settleCarriers(this.payments() ?? [], request.payee, scope, due);
+    const paymentId = carriers.options.some(option => option.id === request.paymentId) ? request.paymentId ?? null : carriers.defaultId;
+    this.settling.set({ payee: request.payee, scope, due, paymentId });
+  }
+
+  setSettleScope(scope: 'GROUP' | 'TERM', due: Due | null): void {
+    const draft = this.settling();
+    if (!draft || this.payingBusy()) return;
+    const next = draft.payee === 'SUPPLIER' && scope === 'TERM' ? 'TERM' : 'GROUP';
+    const nextDue = next === 'TERM' ? due : null;
+    this.settling.set({ payee: draft.payee, scope: next, due: nextDue,
+      paymentId: settleCarriers(this.payments() ?? [], draft.payee, next, nextDue).defaultId });
+  }
+
+  closeSettle(): void { if (!this.payingBusy()) this.settling.set(null); }
+
+  async confirmSettle(): Promise<void> {
+    const data = this.view();
+    const draft = this.settling();
+    if (!data || !draft || this.payingBusy() || this.paymentStateLoading() || this.paymentStateError() || this.paymentPlanBusy()
+      || this.dirty() || this.payments() === null || draft.payee === 'OTHER') return;
+    if (draft.scope === 'TERM' && !Array.isArray(data.reconciliation?.supplierInstalments)) {
+      this.ui.toast('Laad de order opnieuw voordat je een betaling aan een termijn koppelt.', 'err');
+      return;
+    }
+    const carrier = (this.payments() ?? []).find(payment => payment.id === draft.paymentId);
+    if (!carrier || carrier.orderId !== data.order.id || (carrier.payee ?? 'SUPPLIER') !== draft.payee) return;
+    const term = draft.scope === 'TERM' ? data.reconciliation?.supplierInstalments?.find(item => item.due === draft.due)?.label : undefined;
+    this.payingBusy.set(true);
+    try {
+      // Amount and currency are sent back unchanged, so the server keeps the booked euro value.
+      await this.sourcing.updatePayment(data.order.id, carrier.id, {
+        paidOn: carrier.paidOn, amount: carrier.amount, currency: carrier.currency, label: carrier.label ?? null,
+        payee: carrier.payee ?? 'SUPPLIER', settles: true,
+        instalmentDue: draft.payee === 'SUPPLIER' && draft.scope === 'TERM' ? draft.due : null,
+      });
+      if (this.view()?.order.id !== data.order.id) return;
+      await this.refreshPaymentState(data.order.id);
+      if (this.view()?.order.id !== data.order.id) return;
+      this.settling.set(null);
+      this.ui.toast(`${term ?? PAYEE_LABEL[draft.payee]} afgerekend`, 'ok');
+    } catch (failure: unknown) {
+      if (this.view()?.order.id === data.order.id) this.ui.toast(messageOf(failure, 'Afrekenen mislukt'), 'err');
+    } finally {
+      this.payingBusy.set(false);
+    }
+  }
+
+  /** Takes the settles mark off again, one payment at a time; what is unpaid is open again. */
+  undoSettle(payee: Payee, due?: Due | null): void {
+    const data = this.view();
+    if (!data || this.payingBusy() || this.paymentStateLoading() || this.paymentStateError() || this.paymentPlanBusy()
+      || this.dirty() || this.payments() === null) return;
+    const targets = (this.payments() ?? []).filter(payment => (payment.payee ?? 'SUPPLIER') === payee && payment.settles
+      && (due === undefined || (due === null ? payment.instalmentDue == null : payment.instalmentDue === due)));
+    if (!targets.length) return;
+    const label = (due && data.reconciliation?.supplierInstalments?.find(term => term.due === due)?.label) || PAYEE_LABEL[payee];
+    this.ui.confirm({
+      title: 'Afrekening ongedaan maken',
+      message: `<b>${escapeHtml(label)}</b> weer openzetten? Wat nog niet betaald is, staat daarna opnieuw open.`,
+      confirmLabel: 'Openzetten',
+    }, async () => {
+      if (this.payingBusy() || this.view()?.order.id !== data.order.id) return;
+      this.payingBusy.set(true);
+      let failure: unknown = null;
+      try {
+        for (const payment of targets) {
+          try {
+            await this.sourcing.updatePayment(data.order.id, payment.id, {
+              paidOn: payment.paidOn, amount: payment.amount, currency: payment.currency, label: payment.label ?? null,
+              payee: payment.payee ?? 'SUPPLIER', settles: false,
+              instalmentDue: (payment.payee ?? 'SUPPLIER') === 'SUPPLIER' ? payment.instalmentDue ?? null : null,
+            });
+          } catch (error: unknown) {
+            failure = error;
+            break;
+          }
+          if (this.view()?.order.id !== data.order.id) return;
+        }
+        if (this.view()?.order.id !== data.order.id) return;
+        await this.refreshPaymentState(data.order.id);
+        if (this.view()?.order.id !== data.order.id) return;
+        if (failure) { this.ui.toast(messageOf(failure, 'Afrekening ongedaan maken mislukt'), 'err'); return; }
+        this.settling.set(null);
+        this.ui.toast('Afrekening ongedaan gemaakt', 'ok');
+      } finally {
+        this.payingBusy.set(false);
+      }
+    });
+  }
+
+  /** 'Aan wie?' in the payment sheet: a new payee drops the term and the settlement, and an untouched prefill follows. */
+  setPaymentPayee(payee: Payee): void {
+    const pay = this.paying();
+    if (!pay || this.payingBusy() || pay.payee === payee) return;
+    // Back to the stored payee of an edited payment: its term and settlement come back with it.
+    const stored = pay.id ? (this.payments() ?? []).find(item => item.id === pay.id) : undefined;
+    const restore = stored && (stored.payee ?? 'SUPPLIER') === payee ? stored : null;
+    const next = { ...pay, payee, instalmentDue: restore?.instalmentDue ?? null, settles: !!restore?.settles };
+    const prefill = Math.round(Math.max(0, this.openFor(pay.payee)) * 100);
+    if (!pay.id && (pay.amount === null || Math.round(pay.amount * 100) === prefill)) {
+      const rest = Math.round(Math.max(0, this.openFor(payee)) * 100) / 100;
+      next.amount = rest > 0 ? rest : null;
+      next.amountInput = rest > 0 ? String(rest).replace('.', ',') : '';
+      if (['', 'Saldo', 'Douane & transport', 'Inspectie'].includes(pay.label)) {
+        next.label = payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '')
+          : payee === 'LOGISTICS' ? 'Douane & transport' : payee === 'SEPARATE' ? 'Inspectie' : '';
+      }
+    }
+    this.paying.set(next);
+  }
+
+  /** From the desk menu: the same payment, booked at another payee. */
+  movePayment(payment: PurchasePayment, payee: Payee): void {
+    const data = this.view();
+    if (!data || payment.orderId !== data.order.id || (payment.payee ?? 'SUPPLIER') === payee || this.payingBusy()
+      || this.paymentStateLoading() || this.paymentStateError() || this.paymentPlanBusy() || this.dirty() || this.payments() === null) return;
+    const amount = payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' });
+    this.ui.confirm({
+      title: 'Betaling verplaatsen',
+      message: `Betaling van <b>${escapeHtml(amount)}</b> verplaatsen naar <b>${escapeHtml(PAYEE_LABEL[payee])}</b>? Een afrekening op deze betaling vervalt.`,
+      confirmLabel: 'Verplaatsen',
+    }, async () => {
+      if (this.payingBusy() || this.view()?.order.id !== data.order.id) return;
+      this.payingBusy.set(true);
+      try {
+        await this.sourcing.updatePayment(data.order.id, payment.id, {
+          paidOn: payment.paidOn, amount: payment.amount, currency: payment.currency, label: payment.label ?? null,
+          payee, settles: false, instalmentDue: null,
+        });
+        if (this.view()?.order.id !== data.order.id) return;
+        await this.refreshPaymentState(data.order.id);
+        if (this.view()?.order.id !== data.order.id) return;
+        this.ui.toast(`Betaling verplaatst naar ${PAYEE_LABEL[payee]}`, 'ok');
+      } catch (failure: unknown) {
+        if (this.view()?.order.id === data.order.id) this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
+      } finally {
+        this.payingBusy.set(false);
+      }
+    });
+  }
+
+  /** A payment in a picker: date, payee, term, amount and description, so two alike payments differ. */
+  paymentOptionLabel(payment: PurchasePayment): string {
+    const parts = paymentOptionParts(payment, this.view()?.reconciliation?.supplierInstalments);
+    return [parts.paidOn.split('-').reverse().join('-'), parts.payeeLabel, parts.termLabel,
+      Number.isFinite(parts.amountEur) ? formatEur(parts.amountEur) : null, parts.label].filter(Boolean).join(' · ');
+  }
+
+  /** Moments that supplier payments are tied to; the plan may not drop them. */
+  readonly scopedSupplierDues = computed(() => [...new Set((this.payments() ?? [])
+    .filter(payment => (payment.payee ?? 'SUPPLIER') === 'SUPPLIER' && payment.instalmentDue)
+    .map(payment => payment.instalmentDue!))]);
+
+  readonly paymentsPdfBusy = signal(false);
+
+  /** The same PDF as in the Nacalculatie; only of what is saved. */
+  async downloadPaymentsPdf(): Promise<void> {
+    const data = this.view();
+    if (!data || this.dirty() || this.paymentsPdfBusy()) return;
+    this.paymentsPdfBusy.set(true);
+    try {
+      saveBlob(await this.sourcing.purchasePaymentsPdf(data.order.id), `${data.order.number.replace(/[^\p{L}\p{N}._-]/gu, '-')}-betalingen-kostprijs.pdf`);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'PDF maken mislukt'), 'err');
+    } finally {
+      this.paymentsPdfBusy.set(false);
+    }
+  }
+
+  /** 'Betaling aan…' from the phone dock. */
+  readonly payeeMenuOpen = signal(false);
+  readonly payeeActionItems = computed(() => payeeMenuItems(this.paymentLedger()));
+
+  /** Transport and inspection still open when the container comes in; they are paid apart. */
+  readonly receiveOpenPayees = computed(() => (this.paymentLedger()?.payees ?? [])
+    .filter(item => (item.payee === 'LOGISTICS' || item.payee === 'SEPARATE') && item.openEur > 0)
+    .map(item => ({ label: item.label, openEur: item.openEur })));
+
   /* ---- documents ---------------------------------------------------- */
   readonly documents = signal<PurchaseDocument[] | null>(null);
+  /** The last document request failed: proof coverage is unknown, not missing. */
+  readonly documentsFailed = signal(false);
   readonly addingDocument = signal<{ kind: DocumentKind; label: string; paymentId: number | null; file: File | null; files?: File[] } | null>(null);
   readonly uploadingDocument = signal(false);
   readonly documentKinds: { value: DocumentKind; label: string }[] = [
@@ -2431,9 +2575,10 @@ export class PurchaseEditor {
     const active = () => Number(this.id()) === orderId && version === this.documentLoadVersion;
     try {
       const docs = await this.sourcing.documents(orderId);
-      if (active()) this.documents.set(docs);
+      if (active()) { this.documents.set(docs); this.documentsFailed.set(false); }
     } catch {
-      if (active()) this.documents.set([]);
+      // The dossier shows an empty list; the payments ledger treats the proofs as unknown.
+      if (active()) { this.documents.set([]); this.documentsFailed.set(true); }
     }
   }
 
@@ -2745,14 +2890,18 @@ export class PurchaseEditor {
         productId: line.productId, received: line.received, damaged: line.damaged,
         unitValueEur: line.unitValueEur,
         issueNote: line.received !== line.ordered || line.damaged > 0 ? (line.note.trim() || null) : null }));
+      // Supplier-only, taken before any write; the reconciliation read later would miss the final payment.
+      let supplierPaidCents = Math.round(this.paidTotalEur() * 100);
       if (draft.finalPayment && this.remainingEur() > 0.005) {
+        const amount = Math.round(this.remainingEur() * 100) / 100;
         await this.sourcing.addPayment(data.order.id, {
-          paidOn: new Date().toISOString().slice(0, 10), amount: Math.round(this.remainingEur() * 100) / 100,
+          paidOn: new Date().toISOString().slice(0, 10), amount,
           currency: 'EUR', label: 'Slotbetaling', payee: 'SUPPLIER', settles: true });
+        supplierPaidCents += Math.round(amount * 100);
         await this.loadPayments(data.order.id);
       }
       const result = await this.sourcing.receivePurchaseOrder(data.order.id, {
-        lines, bookStock: draft.bookStock, paidTotalEur: this.paidTotalEur() || null,
+        lines, bookStock: draft.bookStock, paidTotalEur: (supplierPaidCents / 100) || null,
         receivedOn: null, note: draft.note || null,
       });
       ++this.previewVersion;
@@ -2760,6 +2909,7 @@ export class PurchaseEditor {
       this.savedOrder.set(JSON.stringify(result.order));
       this.receiving.set(null);
       this.statusCelebration.set('RECEIVED');
+      void this.refreshPaymentState(result.order.id);
       this.products.set(await this.catalog.products(result.order.supplierId));
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Ontvangen mislukt'), 'err');

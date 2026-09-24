@@ -20,10 +20,11 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 
-function harness(kind: 'desk' | 'editor' | 'viewer', loaded = true) {
+function harness(kind: 'desk' | 'editor' | 'viewer', loaded = true, partner = false) {
   const calls: unknown[] = [];
   const child = {
     view: signal(loaded ? { order: { id: 50 } } : null), railTab: signal('order'), workspaceSection: signal('purchase-overview'),
+    mainView: signal('products'), costsPane: signal('plan'), hasPartnerTab: signal(partner),
     jumpToSection: (...args: unknown[]) => calls.push(['step', ...args]),
   };
   const dom = { activeElement: null as any, termsReady: true };
@@ -59,7 +60,7 @@ for (const kind of ['desk', 'editor', 'viewer'] as const) {
     assert.equal(state.screen.pendingPaymentsFocus, null, 'A stale previous order must not consume it either');
     state.child.view.set({ order: { id: 50 } });
     state.screen.openRequestedSection();
-    if (kind === 'desk') assert.equal(state.child.railTab(), 'pay');
+    if (kind === 'desk') assert.equal(state.child.mainView(), 'payments', 'Without a partner the financing link means the payments');
     if (kind === 'viewer') assert.equal(state.child.workspaceSection(), 'purchase-payments-section');
     if (kind === 'editor') assert.deepEqual(state.calls, [['step', 'purchase-payments-section', undefined, false]], 'Selecting the phone step must not schedule a competing scroll to the top');
     assert.ok(state.screen.pendingPaymentsFocus);
@@ -120,11 +121,27 @@ test('a late response cannot steal focus after the user leaves the waiting payme
   assert.equal(state.screen.pendingPaymentsFocus, null);
 });
 
+test('a desk with a partner opens the financing link on the Partner drawer beside the products', () => {
+  const state = harness('desk', true, true);
+  state.child.mainView.set('payments');
+  state.screen.openRequestedSection();
+  assert.equal(state.child.mainView(), 'products');
+  assert.equal(state.child.railTab(), 'partner');
+  state.flush();
+  assert.deepEqual(state.calls.slice(-3), [['target', 'purchase-advance-invoices'], ['scroll'], ['focus']]);
+});
+
 for (const kind of ['desk', 'editor', 'viewer'] as const) {
   test(`${kind} opens the payment-result link at its own card, preserving the financing link`, () => {
     const state = harness(kind);
+    state.child.mainView.set('payments');
     state.screen.section.set('payment-result');
     state.screen.openRequestedSection();
+    if (kind === 'desk') {
+      assert.deepEqual([state.child.mainView(), state.child.railTab(), state.child.costsPane()], ['products', 'costs', 'actual']);
+    }
+    if (kind === 'editor') assert.deepEqual(state.calls, [['step', 'purchase-costs-section', 'costs', false]]);
+    if (kind === 'viewer') assert.equal(state.child.workspaceSection(), 'purchase-costs-section');
     state.flush();
     assert.deepEqual(state.calls.slice(-3), [['target', 'purchase-payment-result'], ['scroll'], ['focus']]);
     assert.equal(state.screen.pendingPaymentsFocus, null);
@@ -134,3 +151,27 @@ for (const kind of ['desk', 'editor', 'viewer'] as const) {
     assert.deepEqual(state.calls.slice(-3), [['target', 'purchase-advance-invoices'], ['scroll'], ['focus']]);
   });
 }
+
+for (const kind of ['desk', 'editor', 'viewer'] as const) {
+  test(`${kind} opens the ledger link straight at the payments, skipping partner financing`, () => {
+    const state = harness(kind, true, true);
+    state.screen.section.set('ledger');
+    state.screen.openRequestedSection();
+    if (kind === 'desk') assert.equal(state.child.mainView(), 'payments', 'Money out, even when a partner exists');
+    if (kind === 'editor') assert.deepEqual(state.calls, [['step', 'purchase-payments-section', undefined, false]]);
+    if (kind === 'viewer') assert.equal(state.child.workspaceSection(), 'purchase-payments-section');
+    state.flush();
+    assert.deepEqual(state.calls.slice(-3), [['target', 'purchase-payments-section'], ['scroll'], ['focus']]);
+    assert.equal(state.calls.some(call => (call as string[])[1] === 'purchase-advance-invoices'), false);
+    assert.equal(state.screen.pendingPaymentsFocus, null);
+  });
+}
+
+test('an unknown section leaves every screen as it was', () => {
+  const state = harness('desk');
+  state.screen.section.set('pay');
+  state.screen.openRequestedSection();
+  assert.equal(state.screen.pendingPaymentsFocus, null);
+  assert.equal(state.child.mainView(), 'products');
+  assert.equal(state.calls.length, 0);
+});

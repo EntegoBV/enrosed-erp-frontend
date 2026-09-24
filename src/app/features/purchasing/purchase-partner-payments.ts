@@ -18,11 +18,11 @@ import { STATUS_LABEL } from '../sales/quote-status';
   template: `
     @if (order().partnerCustomerId != null) {
       <section class="partner-money" aria-label="Partnerfinanciering en ontvangsten">
-        <header class="partner-money__head"><div><span class="eyebrow">Partnerfinanciering</span><h3>{{ summary()?.partnerName || 'Samen inkopen' }}</h3></div><button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">Vernieuwen</button></header>
+        <header class="partner-money__head"><div><span class="eyebrow">Partnerfinanciering · inkomend</span><h3>{{ summary()?.partnerName || 'Samen inkopen' }}</h3></div><button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">Vernieuwen</button></header>
         @if (error()) { <p class="partner-money__error" role="alert">{{ error() }}</p> }
         @if (summary(); as summary) {
           <section class="money-section" aria-label="Financieringsafspraak">
-            <h4><span class="step">1</span> De afspraak</h4>
+            <h4><span class="step">1</span> Financieringsafspraak</h4>
             <div class="agreement-grid">
               <div><small>Partner financiert</small><strong>{{ summary.costPct | num }}%</strong><b>{{ summary.committedAdvanceEur | eur }}</b><span>{{ summary.financingBasis === 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' ? 'van het inkooptotaal incl. aparte kosten, excl. btw' : summary.financingBasis === 'EXTERNAL_FORECAST' ? 'volgens de opgeslagen historische externe kostenbasis, excl. btw' : 'volgens de opgeslagen financieringsafspraak, excl. btw' }}</span></div>
               <div><small>Veilingresultaat voor ENROSED</small><strong>{{ summary.profitSharePct | num }}%</strong><b>{{ 100 - summary.profitSharePct | num }}% voor de partner</b><span>Verdeling van winst of verlies na de veiling</span></div>

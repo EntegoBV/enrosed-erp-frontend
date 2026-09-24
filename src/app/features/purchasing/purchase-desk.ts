@@ -1,5 +1,5 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, computed, input, linkedSignal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, inject, input, linkedSignal, signal } from '@angular/core';
 import { LandedCostLine, Product } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -11,9 +11,13 @@ import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
-import { PurchasePaymentOverview } from './purchase-payment-overview';
+import { PurchasePaymentWorkbench } from './purchase-payment-workbench';
 import { PurchasePaymentResult } from './purchase-payment-result';
-import { PurchasePaymentScope } from './purchase-payment-scope';
+import { PurchasePaymentSheet } from './purchase-payment-sheet';
+import { PurchaseSettleSheet } from './purchase-settle-sheet';
+import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { keyContext } from '../../shared/key-context';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { Diary } from './diary';
@@ -36,7 +40,7 @@ import { stripColour } from './purchase-desk-format';
 import { messageOf } from '../../core/api/errors';
 import { STATUS_LABEL } from '../sales/quote-status';
 
-type RailTab = 'order' | 'costs' | 'pay' | 'files' | 'done';
+type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
 
 type DeskRow =
   | { kind: 'section'; key: string; label: string; count: number }
@@ -49,15 +53,16 @@ type DeskRow =
  *
  * A phone walks a buyer through steps; a desk shows the whole container at
  * once. The command bar keeps status, next step and the live figures in
- * view, the products are a real table you can key through, and everything
- * else - order facts, cost mechanics, payments, the dossier, closing the
- * container - lives in one tabbed rail beside it. The logic is the phone
- * editor's, untouched: only the room it gets is different.
+ * view. The main pane switches between the products, a real table you can
+ * key through, and the payments workbench (⌥1 / ⌥2); everything else -
+ * order facts, cost mechanics, partner financing, the dossier, closing the
+ * container - lives in one tabbed rail beside the products. The logic is
+ * the phone editor's: only the room it gets is different.
  */
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, PurchasePaymentScope, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentWorkbench, PurchasePaymentResult, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -133,10 +138,11 @@ type DeskRow =
               <strong>{{ data.costing.totals.totalEur | eur: 0 }}</strong>
               <span>{{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk@if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) { · waarvan {{ data.costing.totals.separateCostsEur | eur: 0 }} inspectie &amp; andere }</span>
             </div>
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('pay')" [class.is-warn]="openAll() > 0">
-              <small>Te betalen</small>
-              <strong>@if (paymentStateError()) { — } @else { {{ openAll() | eur: 0 }} }</strong>
-              <span>@if (paymentStateError()) { Opnieuw laden } @else if (paymentStateLoading()) { Bijwerken… } @else { {{ paidAll() | eur: 0 }} betaald }</span>
+            @let money = paymentLedger()?.summary;
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showPayments()" [class.is-warn]="(money?.dueNowEur ?? 0) > 0">
+              <small>Nu te betalen</small>
+              <strong>@if (paymentStateError()) { — } @else { {{ (money?.dueNowEur ?? 0) | eur: 0 }} }</strong>
+              <span>@if (paymentStateError()) { Opnieuw laden } @else if (paymentStateLoading() || !money) { Bijwerken… } @else if (data.order.status === 'CONCEPT') { Nog niet besteld } @else if (money.openEur === 0 && money.paidTotalEur > 0) { Alles betaald } @else { {{ money.openEur | eur: 0 }} open · {{ money.paidTotalEur | eur: 0 }} betaald }</span>
             </button>
             @if (nextStep(); as step) {
               <button class="desk-kpi desk-kpi--go" type="button" (click)="advanceStatus()">
@@ -164,13 +170,28 @@ type DeskRow =
           <div class="desk-attention" role="status">
             <b>{{ data.attention!.length }}</b>
             <span>@for (item of data.attention; track item; let last = $last) {{{ item }}@if (!last) { · }}</span>
-            <button class="linklike" type="button" (click)="railTab.set('done')">Bekijken ›</button>
+            @if (paymentAttention()) { <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button> }
+            <button class="linklike" type="button" (click)="showRail('done')">Bekijken ›</button>
           </div>
         }
 
-        <div class="desk-body">
+        <div class="desk-body" [class.desk-body--payments]="mainView() === 'payments'">
           <!-- ============================ the table: every line, keyed through -->
           <main class="desk-main">
+            <div class="desk-viewbar">
+              <app-segmented label="Weergave" semantics="tabs" [options]="viewOptions()" [value]="mainView()" (changed)="mainView.set($event === 'payments' ? 'payments' : 'products')" />
+              <span class="desk-viewbar__hint" aria-hidden="true"><kbd class="wk-kbd">⌥1</kbd> / <kbd class="wk-kbd">⌥2</kbd></span>
+            </div>
+            @if (mainView() === 'payments') {
+              <app-purchase-payment-workbench id="purchase-payments-section" tabindex="-1"
+                [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
+                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [saving]="saving()"
+                [pdfBusy]="paymentsPdfBusy()" [orderId]="data.order.id" [planLabel]="planLabel(data.order)"
+                (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
+                (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
+                (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
+                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" />
+            } @else {
             <div class="desk-table-bar">
               <div>
                 <h2>Producten</h2>
@@ -393,22 +414,23 @@ type DeskRow =
                 </div>
               }
             }
+            }
           </main>
 
           <!-- ============================ the rail: everything else, one tab away -->
           <aside class="desk-rail" aria-label="Order, kosten, betalingen en dossier">
             <nav class="desk-tabs" role="tablist">
-              <button type="button" role="tab" [class.on]="railTab() === 'order'" [attr.aria-selected]="railTab() === 'order'" (click)="railTab.set('order')">Order</button>
-              <button type="button" role="tab" [class.on]="railTab() === 'costs'" [attr.aria-selected]="railTab() === 'costs'" (click)="railTab.set('costs')">Kosten</button>
-              <button type="button" role="tab" [class.on]="railTab() === 'pay'" [attr.aria-selected]="railTab() === 'pay'" (click)="railTab.set('pay')">
-                Betalingen @if (openAll() > 0) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
-              </button>
-              <button type="button" role="tab" [class.on]="railTab() === 'files'" [attr.aria-selected]="railTab() === 'files'" (click)="railTab.set('files')">Dossier</button>
-              <button type="button" role="tab" [class.on]="railTab() === 'done'" [attr.aria-selected]="railTab() === 'done'" (click)="railTab.set('done')">Afronden</button>
+              <button type="button" role="tab" [class.on]="activeRailTab() === 'order'" [attr.aria-selected]="activeRailTab() === 'order'" (click)="railTab.set('order')">Order</button>
+              <button type="button" role="tab" [class.on]="activeRailTab() === 'costs'" [attr.aria-selected]="activeRailTab() === 'costs'" (click)="railTab.set('costs')">Kosten</button>
+              @if (hasPartnerTab()) {
+                <button type="button" role="tab" [class.on]="activeRailTab() === 'partner'" [attr.aria-selected]="activeRailTab() === 'partner'" (click)="railTab.set('partner')">Partner</button>
+              }
+              <button type="button" role="tab" [class.on]="activeRailTab() === 'files'" [attr.aria-selected]="activeRailTab() === 'files'" (click)="railTab.set('files')">Dossier</button>
+              <button type="button" role="tab" [class.on]="activeRailTab() === 'done'" [attr.aria-selected]="activeRailTab() === 'done'" (click)="railTab.set('done')">Afronden</button>
             </nav>
 
             <div class="desk-panel">
-              @switch (railTab()) {
+              @switch (activeRailTab()) {
                 @case ('order') {
                   @if (!editing()) {
                     <div class="desk-panel__head"><strong>Ordergegevens</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
@@ -427,7 +449,7 @@ type DeskRow =
                       <div><dt>Orderdatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
                       @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
                       @else { <div><dt>Verwacht op</dt><dd>{{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : '—' }}</dd></div> }
-                      <div><dt>Betaalafspraak</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
+                      <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
                       @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>{{ data.order.trackingReference || '—' }}@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
                       <div><dt>Container</dt><dd>{{ containerLabel(data.order.containerType) }}</dd></div>
                       <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
@@ -455,7 +477,7 @@ type DeskRow =
                       }
                     </div>
                     <div class="field">
-                      <label for="dk-terms">Betaalafspraak</label>
+                      <label for="dk-terms">Betaalplan</label>
                       <button class="btn purchase-payment-plan-trigger" id="dk-terms" type="button" [disabled]="saving() || payingBusy() || paymentPlanBusy()" (click)="openPaymentPlan()">{{ planLabel(data.order) }} <span>Wijzigen</span></button>
                     </div>
 
@@ -517,10 +539,16 @@ type DeskRow =
                     </div>
                   </div>
                   }
-                  <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="railTab.set('pay')" (unlink)="unlinkPartnerDoc($event)" />
+                  <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="openPartner()" (unlink)="unlinkPartnerDoc($event)" />
                 }
 
                 @case ('costs') {
+                  <div class="desk-costs-switch"><app-segmented label="Kosten" [options]="costsOptions" [value]="costsPane()" (changed)="costsPane.set($event === 'actual' ? 'actual' : 'plan')" /></div>
+                  @if (costsPane() === 'actual') {
+                    <app-purchase-payment-result [view]="data" />
+                    <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" />
+                    <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button>
+                  } @else {
                   @if (!editing()) {
                     <div class="desk-panel__head"><strong>Kosten &amp; koersen</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
                     <div class="desk-rates">
@@ -697,34 +725,10 @@ type DeskRow =
                     }
                   </div>
                 }
+                }
 
-                @case ('pay') {
-                  <div class="desk-pay-head">
-                    <strong>@if (paymentStateLoading()) { Betalingen laden… } @else if (paymentStateError()) { Betalingen niet actueel } @else { Betalingen }</strong>
-                    <small>Afspraak, betalingen en resterend saldo per ontvanger.</small>
-                  </div>
-                  @if (paymentStateError()) {
-                <div class="alert alert--warn payment-refresh-error" role="alert">
-                  <span>{{ paymentStateError() }}</span>
-                  <button class="btn btn--sm" type="button" [disabled]="paymentStateLoading()" (click)="refreshPaymentState()">Opnieuw laden</button>
-                </div>
-              }
-              @if (!paymentStateError()) {
-              <div class="payment-state-content" [class.is-loading]="paymentStateLoading()"
-                   [attr.inert]="paymentStateLoading() ? '' : null" [attr.aria-busy]="paymentStateLoading()">
-              <app-purchase-payment-overview [view]="data" [payments]="payments()" [documents]="documents()" [editable]="true" [dirty]="dirty()"
-                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
-                (add)="openPayment($event.amount, $event.label, $event.payee, $event.due ?? null)"
-                (edit)="editPayment($event)" (proof)="attachProof($event)" (settle)="reviewPayment($event)" (download)="downloadDocument($event)" (planChange)="openPaymentPlan()" />
-              <app-purchase-payment-result [view]="data" [showManagement]="false" />
-              <details class="purchase-payment-details">
-                <summary>Kostprijs en nacalculatie <span>Berekening en PDF</span></summary>
-                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" />
-              </details>
-              <app-purchase-sales-links [documents]="relatedSalesDocs()" />
-              <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
-              </div>
-              }
+                @case ('partner') {
+                  <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
                 }
 
                 @case ('files') {
@@ -761,7 +765,8 @@ type DeskRow =
                     </section>
                     <section>
                       <header class="desk-dossier__head"><strong>Documenten <small>{{ (documents() ?? []).length }}</small></strong>
-                        <button class="btn btn--sm" type="button" (click)="openDocument()">+ Document</button></header>
+                        <span class="desk-dossier__head-actions"><a class="linklike" routerLink="/files" [queryParams]="{ view: 'purchase', doel: data.order.id }">In Documenten &amp; media ›</a>
+                        <button class="btn btn--sm" type="button" (click)="openDocument()">+ Document</button></span></header>
                       <button class="desk-drop" type="button" (click)="openDocument()" (dragover)="$event.preventDefault()" (drop)="dropDocument($event)">
                         <b>Sleep een bestand hierheen</b><small>of klik om te kiezen · PDF, foto of Office, tot 25 MB</small>
                       </button>
@@ -792,6 +797,7 @@ type DeskRow =
                         }
                       }
                     </section>
+                    <app-purchase-sales-links [documents]="relatedSalesDocs()" [excludePartner]="data.order.partnerCustomerId != null" />
                     <section>
                       <header class="desk-dossier__head"><strong>Logboek</strong></header>
                       <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
@@ -870,7 +876,7 @@ type DeskRow =
           <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
                                         [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                         [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
-                                        (funding)="railTab.set('pay')" (closed)="auctionOpen.set(false)" />
+                                        (funding)="openPartner()" (closed)="auctionOpen.set(false)" />
         }
       }
 
@@ -897,7 +903,7 @@ type DeskRow =
                 <label for="step-tracking">Track &amp; trace <span class="opt"></span></label>
                 <input class="input" id="step-tracking" placeholder="Containernummer of link van de rederij"
                        [ngModel]="prompt.tracking" (ngModelChange)="stepPrompt.set({ ...prompt, tracking: $event })" />
-                <span class="hint">De vertrekdatum wordt vandaag; volgens de betaalafspraak valt nu de volgende termijn.</span>
+                <span class="hint">De vertrekdatum wordt vandaag; volgens het betaalplan valt nu de volgende termijn.</span>
               </div>
               <div class="form-grid mt-12">
                 <div class="field">
@@ -918,7 +924,7 @@ type DeskRow =
                 <div><dt>Producten</dt><dd>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen</dd></div>
                 <div><dt>Goederen</dt><dd>{{ data.costing.totals.goodsEur | eur }} <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small></dd></div>
                 <div><dt>Totaal geland</dt><dd>{{ data.costing.totals.totalEur | eur }} <small>{{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk</small></dd></div>
-                <div><dt>Betaalafspraak</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
+                <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
               </dl>
               @if (dirty()) { <p class="hint mt-8">Je openstaande wijzigingen worden hierbij mee opgeslagen.</p> }
             }
@@ -957,7 +963,7 @@ type DeskRow =
                   <select class="select" id="dk-doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
                     <option value="">— geen —</option>
                     @for (payment of payments() ?? []; track payment.id) {
-                      <option [value]="payment.id">{{ payment.paidOn | dateNl }}@if (payment.instalmentDue) { · {{ payment.instalmentDue === 'ORDERED' ? 'termijn bij bestelling' : (payment.instalmentDue === 'SHIPPED' ? 'termijn bij vertrek' : 'termijn bij aankomst') }} } · {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option>
+                      <option [value]="payment.id">{{ paymentOptionLabel(payment) }}</option>
                     }
                   </select>
                 </div>
@@ -1029,115 +1035,30 @@ type DeskRow =
 
       @if (paymentPlanOrder(); as agreement) {
         <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
+          [agreedEur]="supplierOwed()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
       @if (paying(); as pay) {
-        <app-sheet [title]="(pay.id ? 'Betaling aanpassen · ' : '') + paymentTitle(pay.payee)" (closed)="closePayment()">
-          <div body [attr.inert]="payingBusy() ? '' : null">
-            <!-- Deposits are fractions of the goods: one tap fills them in. -->
-            <div class="pay-chips" role="group" aria-label="Snel invullen">
-              @for (chip of (!pay.id && pay.payee === 'SUPPLIER' ? payChips() : []); track chip.label) {
-                <button class="pay-chip" type="button" [disabled]="payingBusy() || paymentStateLoading()" (click)="paying.set({ ...pay, amount: chip.amount, amountInput: '' + chip.amount, currency: 'EUR', label: chip.label, instalmentDue: chip.due ?? null, settles: false })">
-                  {{ chip.label }}<small>{{ chip.amount | eur }}</small>
-                </button>
-              }
-            </div>
-            <div class="form-grid mt-12">
-              <div class="field">
-                <label for="pay-amount">Werkelijk betaald bedrag</label>
-                <div class="input-affix">
-                  <input class="input num right" id="pay-amount" type="text" inputmode="decimal" autocomplete="off" [disabled]="payingBusy()"
-                         [ngModel]="pay.amountInput" (ngModelChange)="setPaymentAmount($event)" />
-                  <select class="input-affix__suffix line-currency" aria-label="Munt"
-                          [disabled]="payingBusy()" [ngModel]="pay.currency" (ngModelChange)="paying.set({ ...pay, currency: $event })">
-                    <option value="EUR">EUR</option>
-                    <option value="USD">USD</option>
-                    <option value="CNY">CNY</option>
-                  </select>
-                </div>
-                @if (pay.amountInput && pay.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 1.046,95.</span> }
-                @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0) {
-                  <span class="hint">≈ {{ paymentDraftEur() | eur }} · EUR-bedrag van deze boeking; bij een bedragwijziging geldt de huidige orderkoers.</span>
-                }
-                @if (payingOverage() > 0) {
-                  <span class="hint hint--warn">Na deze wijziging is er {{ payingOverage() | eur }} meer betaald dan verwacht. Controleer het bedrag; extra kosten kunnen apart worden genoteerd.</span>
-                } @else if ((pay.amount ?? 0) > 0 && openFor(pay.payee) > 0) {
-                  <span class="hint">Nog open: {{ openFor(pay.payee) | eur }}.</span>
-                }
-              </div>
-              <div class="field">
-                <label for="pay-date">Betaald op</label>
-                <app-date-field fieldId="pay-date" [value]="pay.paidOn" (valueChange)="paying.set({ ...pay, paidOn: $event })" />
-              </div>
-              <div class="field span-2">
-                <label for="pay-label">Omschrijving <span class="opt"></span></label>
-                <input class="input" id="pay-label" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
-                       [disabled]="payingBusy()" [ngModel]="pay.label" (ngModelChange)="paying.set({ ...pay, label: $event })" />
-              </div>
-              @if (pay.payee !== 'OTHER') {
-              <div class="field span-2">
-                <app-purchase-payment-scope
-                  [payee]="pay.payee"
-                  [instalmentDue]="pay.instalmentDue ?? null"
-                  [settles]="pay.settles"
-                  [options]="paymentInstalmentOptions()"
-                  [groupLabel]="paymentGroupLabel(pay.payee)"
-                  [busy]="payingBusy() || paymentStateLoading()"
-                  (changed)="paying.set({ ...pay, ...$event })" />
-              </div>
-              }
-              <div class="field span-2">
-                <app-payment-proof-picker [files]="pay.files" [maxFiles]="proofSlots(pay.id)" [disabled]="payingBusy()" (filesChange)="paying.set({ ...pay, files: $event })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            @if (pay.id) { <button class="btn btn--danger" type="button" [disabled]="payingBusy()" (click)="removeEditing(pay.id)">Verwijderen</button> }
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="closePayment()">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots(pay.id) || !pay.paidOn" (click)="confirmPayment()">
-              {{ payingBusy() ? 'Bezig…' : (pay.id ? 'Aanpassen' : 'Betaling bewaren') }}
-            </button>
-          </div>
-        </app-sheet>
+        <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
+          [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()"
+          [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
+          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
+          (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (payeeChange)="setPaymentPayee($event)"
+          (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
       }
-
+      @if (settling(); as settle) {
+        @if (settlePayee(); as payee) {
+          <app-purchase-settle-sheet [draft]="settle" [payee]="payee" [carriers]="settleCarrierOptions().options"
+            [canonical]="!!paymentLedger()?.canonical" [busy]="payingBusy()"
+            (scope)="setSettleScope($event.scope, $event.due)" (carrier)="settling.set({ ...settle, paymentId: $event })"
+            (confirm)="confirmSettle()" (undo)="settling.set(null); requestUndoSettle(settle.payee, settle.scope === 'TERM' ? settle.due : undefined)"
+            (cancel)="closeSettle()" (editCarrier)="settling.set(null); requestEdit($event)" />
+        }
+      }
       @if (firstInstalmentPrompt(); as first) {
-        <!-- Just ordered: the first instalment falls due now. Ask once, with
-             room for the bank statement. -->
-        <app-sheet title="Eerste betaling" (closed)="firstInstalmentPrompt.set(null)">
-          <div body>
-            <p>De bestelling staat vast. Volgens de betaalafspraak is nu <b>{{ first.label }}</b> aan de beurt:
-              <b>{{ first.amount | eur }}</b> aan {{ supplierName() }}.</p>
-            <p class="hint mt-8">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 5 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
-            <div class="form-grid mt-12">
-              <div class="field">
-                <label for="first-amount">Betaald bedrag</label>
-                <div class="input-affix">
-                  <input class="input num right" id="first-amount" type="text" inputmode="decimal" autocomplete="off" [disabled]="payingBusy()"
-                         [ngModel]="first.amountInput" (ngModelChange)="setFirstPaymentAmount($event)" />
-                  <select class="input-affix__suffix line-currency" aria-label="Munt" [ngModel]="first.currency"
-                          (ngModelChange)="firstInstalmentPrompt.set({ ...first, currency: $event })">
-                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field">
-                <label for="first-date">Betaald op</label>
-                <app-date-field fieldId="first-date" [value]="first.paidOn" (valueChange)="firstInstalmentPrompt.set({ ...first, paidOn: $event })" />
-              </div>
-              <div class="field span-2">
-                <app-payment-proof-picker [files]="first.files" [disabled]="payingBusy()" (filesChange)="firstInstalmentPrompt.set({ ...first, files: $event })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <button class="btn" type="button" (click)="firstInstalmentPrompt.set(null)">Nog niet betaald</button>
-            <button class="btn btn--primary" type="button" [disabled]="payingBusy() || !((first.amount ?? 0) > 0)" (click)="confirmFirstInstalment()">
-              {{ payingBusy() ? 'Bezig…' : 'Betaald - noteren' }}
-            </button>
-          </div>
-        </app-sheet>
+        <app-purchase-first-instalment-sheet [prompt]="first" [supplierName]="supplierName()" [busy]="payingBusy()"
+          (patch)="firstInstalmentPrompt.set({ ...first, ...$event })" (amountInput)="setFirstPaymentAmount($event)"
+          (confirm)="confirmFirstInstalment()" (dismiss)="firstInstalmentPrompt.set(null)" />
       }
 
       @if (receiving(); as draft) {
@@ -1172,11 +1093,14 @@ type DeskRow =
                 </div>
               }
             </div>
-            <div class="receive-balance mt-12">
-              <div><b>Betaald tot nu: {{ paidTotalEur() | eur }}</b><small>Goederenwaarde {{ data.costing.totals.goodsEur | eur }} · totaal geland {{ data.costing.totals.totalEur | eur }}</small></div>
+            <div class="receive-balance mt-12" aria-label="Betalingen bij ontvangst">
+              <b>Betalingen bij ontvangst</b>
+              <small>Leverancier: {{ paidTotalEur() | eur }} betaald van {{ supplierOwed() | eur }} · {{ remainingEur() | eur }} open</small>
+              @for (open of receiveOpenPayees(); track open.label) { <small>{{ open.label }}: {{ open.openEur | eur }} open</small> }
               @if (remainingEur() > 0.005) {
-                <label class="receive-balance__final"><input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" /><span>Slotbetaling van <b>{{ remainingEur() | eur }}</b> meteen noteren</span></label>
-              } @else { <span class="hint">Volledig betaald volgens de betalingen hierboven.</span> }
+                <label class="receive-balance__final"><input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" /><span>Slotbetaling van <b>{{ remainingEur() | eur }}</b> aan de leverancier noteren en de leverancier afrekenen</span></label>
+              }
+              <span class="hint">Douane, transport en inspectie noteer je apart bij Betalingen.</span>
             </div>
             <div class="field mt-12">
               <label for="rc-note">Opmerking bij de ontvangst <span class="opt"></span></label>
@@ -1218,24 +1142,12 @@ type DeskRow =
   `,
   styles: [`
 
-    .payment-refresh-error { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-    .payment-refresh-error > span { flex: 1 1 220px; min-width: 0; line-height: 1.5; }
-    .payment-refresh-error > .btn { flex-shrink: 0; min-height: 44px; }
-    .payment-state-content { min-width: 0; }
-    .payment-state-content.is-loading { opacity: .45; pointer-events: none; }
-    .pay-line__settles{margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10px;font-style:normal;font-weight:700;vertical-align:middle}.pay-settle{display:flex;align-items:flex-start;gap:10px;font-size:12.5px}.pay-settle input{margin-top:3px}.pay-settle span{display:grid;gap:2px}.pay-settle small{color:var(--muted);font-size:11px}.pay-diff--over{color:var(--danger)}.pay-diff--under{color:var(--ok)}
-    .instalments__item--paid .instalments__what > b{text-decoration:line-through;opacity:.65}.instalments__what s{opacity:.6}
-    .pay-line__actions{display:inline-flex;align-items:center;gap:2px}.pay-line__btn{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;cursor:pointer}.pay-line__btn:hover{background:var(--surface-3)}.pay-line__proof{color:var(--muted);font-size:11px;margin-right:2px}
-    .pay-split__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pay-split__grid label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
-    /* Sheets shared with the editor: note a payment, report damage, first instalment. */
-    .pay-chips{display:flex;flex-wrap:wrap;gap:6px}.pay-chip{display:grid;min-width:72px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:pointer}.pay-chip small{color:var(--muted);font-size:11px;font-weight:500}.pay-chip:hover{border-color:var(--rose-line);background:var(--rose-soft)}
-    .issue-kind{margin-top:2px}.line-currency{min-width:74px;border-radius:0}.field .hint--warn{color:var(--danger);font-weight:650}
+    /* Sheets of the desk template: report damage, add a document, receive. */
+    .issue-kind{margin-top:2px}
     :host{display:block;min-width:0}
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
 
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
-    .pay-note{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted)}
-    .pay-note>span:first-child{display:grid}.pay-note b{color:var(--ink-2);font-size:12.5px}.pay-note small{font-size:11px}.pay-note .num{font-weight:700}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
     .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
@@ -1338,7 +1250,6 @@ type DeskRow =
     .desk-sum{padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .desk-sum .stat-row{padding:4px 0;font-size:12px}.desk-sum .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}
     .desk-sum__sub{border-top:1px solid var(--line);font-weight:650}.desk-sum__total{border-top:2px solid var(--line-strong);font-size:13px}.desk-sum__total strong{color:var(--rose-dark)}
-    .desk-pay-head{display:grid;gap:2px;margin-bottom:10px}.desk-pay-head strong{font-size:15px}.desk-pay-head small{color:var(--muted);font-size:11.5px}
     .desk-done{display:grid;gap:12px}
     .desk-done__attention{margin:0;padding:8px 12px 8px 26px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
     .desk-rates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}
@@ -1377,6 +1288,71 @@ export class PurchaseDesk extends PurchaseEditor {
 
   /** Which drawer of the rail is open; the order facts first, as on paper. */
   readonly railTab = signal<RailTab>('order');
+  /** The main pane: the products table, or the payments workbench across the full width. */
+  readonly mainView = signal<'products' | 'payments'>('products');
+  /** Kosten shows the calculation or, once paying, the Nacalculatie. */
+  readonly costsPane = signal<'plan' | 'actual'>('plan');
+  readonly hasPartnerTab = computed(() => this.view()?.order.partnerCustomerId != null);
+  /** A partner that was unlinked takes its tab along; the rail falls back to the order. */
+  readonly activeRailTab = computed<RailTab>(() => this.railTab() === 'partner' && !this.hasPartnerTab() ? 'order' : this.railTab());
+  readonly viewOptions = computed<SegmentOption[]>(() => [
+    { id: 'products', label: 'Producten' },
+    { id: 'payments', label: 'Betalingen', dot: (this.paymentLedger()?.summary.dueNowEur ?? 0) > 0 ? 'warn' : null },
+  ]);
+  readonly costsOptions: SegmentOption[] = [{ id: 'plan', label: 'Calculatie' }, { id: 'actual', label: 'Nacalculatie' }];
+  /** The server's attention list names a payment: offer the way there. */
+  readonly paymentAttention = computed(() => (this.view()?.attention ?? [])
+    .some((item) => item.startsWith('Betaling open') || item === 'Nog geen betaling genoteerd'));
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /** The payments workbench, scrolled into view below the app bar. */
+  showPayments(): void {
+    this.mainView.set('payments');
+    requestAnimationFrame(() => {
+      const target = document.getElementById('purchase-payments-section');
+      target?.scrollIntoView({ block: 'start' });
+      target?.focus({ preventScroll: true });
+    });
+  }
+
+  /** A rail drawer lives beside the products; opening one leaves the payments view. */
+  showRail(tab: RailTab): void {
+    this.mainView.set('products');
+    this.railTab.set(tab);
+  }
+
+  /** Partner financing (money in) has its own drawer; without a partner the link means the payments. */
+  openPartner(): void {
+    if (this.hasPartnerTab()) this.showRail('partner');
+    else this.showPayments();
+  }
+
+  showCosts(): void {
+    this.showRail('costs');
+    this.costsPane.set('plan');
+  }
+
+  showNacalculatie(): void {
+    this.showRail('costs');
+    this.costsPane.set('actual');
+    requestAnimationFrame(() => {
+      const target = document.getElementById('purchase-payment-result');
+      target?.scrollIntoView({ block: 'start' });
+      target?.focus({ preventScroll: true });
+    });
+  }
+
+  /** ⌥1 products, ⌥2 payments; on a Mac ⌥1 types '¡', so the physical key counts. */
+  @HostListener('document:keydown', ['$event'])
+  onDeskKey(event: KeyboardEvent): void {
+    if (!event.altKey || event.metaKey || event.ctrlKey || !this.view()) return;
+    if (event.code !== 'Digit1' && event.code !== 'Digit2') return;
+    const context = keyContext(event, this.host.nativeElement);
+    if (context.typing || context.overlayOpen || !context.inScope) return;
+    event.preventDefault();
+    if (event.code === 'Digit2') this.showPayments();
+    else this.mainView.set('products');
+  }
 
   /** Series folded shut; a long container reads by series first. */
   private readonly foldedFamilies = signal<Set<string>>(new Set());
@@ -1560,12 +1536,14 @@ export class PurchaseDesk extends PurchaseEditor {
       return;
     }
     this.startEdit();
-    this.railTab.set('order');
+    this.showRail('order');
     setTimeout(() => document.getElementById('dk-tracking')?.focus(), 150);
   }
 
+  /** The fields live in the products table and the rail, so editing leaves the payments view. */
   startEdit(): void {
     this.editing.set(true);
+    this.mainView.set('products');
   }
 
   /** Back to reading; an unsaved draft is dropped after a word of warning. */

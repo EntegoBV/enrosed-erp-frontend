@@ -6,6 +6,7 @@ import type { PurchaseReconciliation as Reconciliation } from '../../core/api/mo
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
+import { PAYEE_LABEL } from './purchase-payment-ledger';
 import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
 
 /** The same server-owned settlement picture in the desk, phone and container analysis. */
@@ -14,38 +15,39 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, EurPipe, NumPipe],
   template: `
-    <section class="reconciliation" aria-label="Betalingen en werkelijke containerkost">
+    <section class="reconciliation" aria-label="Nacalculatie: werkelijke containerkost">
       <header class="reconciliation__head">
-        <div><span class="eyebrow">Betalingen &amp; kostprijs</span><h3>Nacalculatie container</h3></div>
+        <div><span class="eyebrow">Kostprijs</span><h3>Nacalculatie</h3></div>
         @if (data(); as result) {
-          <span class="state" [class.state--final]="result.totals.finalized">{{ result.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span>
+          <span class="state" [class.state--final]="result.totals.finalized">{{ result.totals.finalized ? 'Definitief' : 'Voorlopig' }}</span>
         }
       </header>
       @if (data(); as result) {
         <div class="reconciliation__metrics">
-          <div><span>Oorspronkelijk verwachte kosten</span><b>{{ result.totals.plannedExternalEur | eur }}</b></div>
-          <div><span>Werkelijk betaald</span><b>{{ result.totals.paidEur | eur }}</b></div>
-          <div><span>Nog te betalen</span><b>{{ result.totals.remainingEur | eur }}</b></div>
-          <div class="reconciliation__forecast"><span>{{ result.totals.finalized ? 'Definitieve externe kost' : 'Verwachte externe kost' }}</span><b>{{ result.totals.forecastExternalEur | eur }}</b></div>
+          <div><span>Afspraak (begroot)</span><b>{{ result.totals.plannedExternalEur | eur }}</b></div>
+          <div><span>Betaald</span><b>{{ result.totals.paidEur | eur }}</b></div>
+          <div><span>Open</span><b>{{ result.totals.remainingEur | eur }}</b></div>
+          <div class="reconciliation__forecast"><span>{{ result.totals.finalized ? 'Definitieve eindkost' : 'Verwachte eindkost' }}</span><b>{{ result.totals.forecastExternalEur | eur }}</b></div>
         </div>
         <div class="reconciliation__variance" [class.reconciliation__variance--higher]="result.totals.varianceEur > 0" [class.reconciliation__variance--lower]="result.totals.varianceEur < 0">
           <span>{{ result.totals.finalized ? 'Verschil na afrekening' : 'Verwacht verschil met oorspronkelijke kostenraming' }}</span>
           <strong>{{ result.totals.varianceEur > 0 ? '+' : '' }}{{ result.totals.varianceEur | eur }}</strong>
         </div>
-        <p class="reconciliation__explanation">{{ result.totals.finalized ? 'Alle bekende betaalstromen zijn afgerekend.' : 'Open bedragen blijven in de verwachte kost. Minder betalen telt pas als besparing zodra de betaalstroom is vereffend.' }}</p>
+        <p class="reconciliation__explanation">{{ result.totals.finalized ? 'Alle bekende ontvangers zijn afgerekend.' : 'Open bedragen blijven in de verwachte kost. Minder betalen telt pas als voordeel zodra de ontvanger is afgerekend.' }}</p>
 
+        @if (showStreams()) {
         <details class="reconciliation__details">
-          <summary>Per betaalstroom <span>leverancier, douane &amp; extra kosten</span></summary>
+          <summary>Per betaalstroom <span>leverancier, douane &amp; transport, inspectie en bijkomende kosten</span></summary>
           <div class="reconciliation__streams">
             @for (stream of result.streams; track stream.payee) {
               @if (stream.plannedEur || stream.paymentCount || stream.paidEur) {
                 <article class="stream">
-                  <header><b>{{ stream.label }}</b><small>{{ statusLabel(stream) }}</small></header>
-                  <dl><div><dt>{{ stream.payee === 'SUPPLIER' ? 'Afgesproken bedrag' : 'Verwachte kosten' }}</dt><dd>{{ stream.plannedEur | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div><div><dt>Open</dt><dd>{{ stream.remainingEur | eur }}</dd></div></dl>
+                  <header><b>{{ payeeLabel[stream.payee] }}</b><small>{{ statusLabel(stream) }}</small></header>
+                  <dl><div><dt>Afspraak</dt><dd>{{ stream.plannedEur | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div><div><dt>Open</dt><dd>{{ stream.remainingEur | eur }}</dd></div></dl>
                   @if (stream.varianceEur !== 0) {
                     <p [class.higher]="stream.varianceEur > 0" [class.lower]="stream.varianceEur < 0">
                       {{ stream.varianceEur > 0 ? '+' : '' }}{{ stream.varianceEur | eur }}
-                      {{ stream.payee === 'OTHER' ? 'extra kosten' : stream.varianceEur < 0 ? 'na vereffening' : stream.finalized ? 'meer dan verwacht' : 'meer betaald; beoordeel correctie of vereffening' }}
+                      {{ stream.payee === 'OTHER' ? 'bijkomende kosten' : stream.varianceEur < 0 ? 'na afrekening' : stream.finalized ? 'meer dan verwacht' : 'meer betaald; kijk de correctie of afrekening na' }}
                     </p>
                   }
                 </article>
@@ -53,6 +55,7 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
             }
           </div>
         </details>
+        }
 
         <div class="reconciliation__unit">
           <div><span>{{ result.totals.finalized ? 'Externe kost per stuk' : 'Verwachte externe kost per stuk' }}</span><b>{{ result.totals.forecastExternalUnitEur === null ? '—' : (result.totals.forecastExternalUnitEur | eur: 4) }}</b></div>
@@ -74,7 +77,7 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
                 <article class="product-cost">
                   @if (line.productId) { <a [routerLink]="['/products', line.productId]">{{ line.productName }}</a> } @else { <b>{{ line.productName }}</b> }
                   <small>{{ line.unitCostQuantity | num }} {{ line.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small>
-                  <dl><div><dt>Oorspronkelijk verwachte kosten</dt><dd>{{ line.plannedExternalEur | eur }}</dd></div><div><dt>{{ result.totals.finalized ? 'Externe kost' : 'Verwachte externe kost' }}</dt><dd>{{ line.forecastExternalEur | eur }}</dd></div><div><dt>Verschil</dt><dd [class.higher]="line.varianceEur > 0" [class.lower]="line.varianceEur < 0">{{ line.varianceEur > 0 ? '+' : '' }}{{ line.varianceEur | eur }}</dd></div><div><dt>Externe kost per stuk</dt><dd>{{ line.forecastExternalUnitEur === null ? '—' : (line.forecastExternalUnitEur | eur: 4) }}</dd></div><div><dt>Per stuk incl. interne opslag</dt><dd>{{ line.forecastPricingUnitEur === null ? '—' : (line.forecastPricingUnitEur | eur: 4) }}</dd></div></dl>
+                  <dl><div><dt>Afspraak (begroot)</dt><dd>{{ line.plannedExternalEur | eur }}</dd></div><div><dt>{{ result.totals.finalized ? 'Externe kost' : 'Verwachte externe kost' }}</dt><dd>{{ line.forecastExternalEur | eur }}</dd></div><div><dt>Verschil</dt><dd [class.higher]="line.varianceEur > 0" [class.lower]="line.varianceEur < 0">{{ line.varianceEur > 0 ? '+' : '' }}{{ line.varianceEur | eur }}</dd></div><div><dt>Externe kost per stuk</dt><dd>{{ line.forecastExternalUnitEur === null ? '—' : (line.forecastExternalUnitEur | eur: 4) }}</dd></div><div><dt>Per stuk incl. interne opslag</dt><dd>{{ line.forecastPricingUnitEur === null ? '—' : (line.forecastPricingUnitEur | eur: 4) }}</dd></div></dl>
                   @if (line.unitCostQuantity === 0) { <p class="higher">Geen bruikbare stuks: de kost blijft bij deze productregel, zonder stukprijs.</p> }
                 </article>
               }
@@ -110,6 +113,9 @@ export class PurchaseReconciliation {
   readonly orderId = input.required<number>();
   readonly orderNumber = input.required<string>();
   readonly dirty = input(false);
+  /** The payee figures belong to Betalingen; Analyses still shows them here. */
+  readonly showStreams = input(true);
+  readonly payeeLabel = PAYEE_LABEL;
   readonly downloading = signal(false);
   readonly statusLabel = reconciliationStatusLabel;
   private readonly sourcing = inject(SourcingApi);

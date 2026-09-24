@@ -1,219 +1,426 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
-import type { Payee, PurchaseDocument, PurchaseOrderView, PurchasePayment } from '../../core/api/models';
-import { PAYMENT_TERMS } from '../../core/api/models';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import type { PurchaseDocument, PurchasePayment } from '../../core/api/models';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { Icon } from '../../shared/icon';
+import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
-import { instalmentsOf } from './payment-plan';
-import { purchaseGroupSettled, purchaseInstalmentState } from './purchase-instalment-state';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { Skeleton } from '../../shared/skeleton';
+import { Sheet } from '../../shared/ui';
+import {
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
+  type PurchasePaymentAction, type PurchaseSettleRequest,
+} from './purchase-payment-ledger';
+import { dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, toneClass } from './purchase-payment-menus';
+import { PurchasePayeeSheet } from './purchase-payee-sheet';
 
-export interface PurchasePaymentAction {
-  payee: Payee;
-  amount?: number;
-  label?: string;
-  due?: PurchasePayment['instalmentDue'];
-}
+export type { PurchasePaymentAction } from './purchase-payment-ledger';
 
-/** One presentation of the actual ledger for the phone, desktop and read-only order. */
+/**
+ * Betalingen on the phone, in the read view and in step 4 of the editor: what
+ * has to be paid now, what to do, the payees and one chronological list of
+ * payments, as iOS grouped lists. Styles live in styles/purchase-payments.scss.
+ */
 @Component({
   selector: 'app-purchase-payment-overview',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EurPipe, CurPipe, DateNlPipe],
+  imports: [Sheet, ContextMenu, Icon, MenuTrigger, Segmented, Skeleton, PurchasePayeeSheet, EurPipe, CurPipe, DateNlPipe],
   template: `
-    <div class="payment-overview">
-      <div class="payment-overview__totals" aria-label="Totaal betalingen">
-        <div><span>Werkelijk betaald</span><strong>{{ paidTotal() | eur }}</strong></div>
-        <div><span>Nog open</span><strong>{{ openTotal() | eur }}</strong></div>
+    <header class="pp-head">
+      <div>
+        <h2 class="ios-title2" id="purchase-payments-title">{{ state() === 'loading' ? 'Betalingen laden…' : state() === 'error' ? 'Betalingen niet actueel' : 'Betalingen' }}</h2>
+        <p class="ios-caption">Afgesproken, betaald en open per ontvanger</p>
       </div>
-      @if (dirty()) {
-        <p class="payment-overview__notice" role="status">De afspraak bevat niet-opgeslagen wijzigingen. Sla deze eerst op voordat je een betaling toevoegt. Eerdere betalingen behouden hun geboekte bedrag en omschrijving.</p>
+      @if (mode() === 'read') {
+        <button class="ios-circle" type="button" aria-label="Betaling noteren" [disabled]="!ready()" (click)="payeeMenu.set(true)"><app-icon name="plus" [size]="20" /></button>
       }
-      <div class="payment-overview__groups">
-        @for (group of groups(); track group.payee) {
-          <section class="payment-group" [class.payment-group--supplier]="group.payee === 'SUPPLIER'" [attr.aria-label]="group.label">
-            <header class="payment-group__head">
-              <div><span class="payment-group__icon" aria-hidden="true">{{ group.symbol }}</span><h3>{{ group.label }}</h3></div>
-              <span class="payment-group__status" [class.is-settled]="group.settled || group.paidInFull">{{ group.settled ? 'Afgerekend' : group.paidInFull ? 'Betaald' : group.payee === 'OTHER' ? 'Extra uitgaven' : group.paid > 0 ? 'Deels betaald' : 'Nog te betalen' }}</span>
-            </header>
-            <dl class="payment-group__amounts">
-              @if (group.payee !== 'OTHER') {
-                <div><dt>{{ group.payee === 'SUPPLIER' ? 'Afgesproken bedrag' : 'Verwachte kosten' }}</dt><dd>{{ group.planned | eur }}</dd></div>
-              }
-              <div><dt>Werkelijk betaald</dt><dd>{{ group.paid | eur }}</dd></div>
-              @if (group.payee !== 'OTHER') {
-                <div><dt>{{ group.settled ? 'Resterend na afrekening' : 'Nog open' }}</dt><dd>{{ group.open | eur }}</dd></div>
-              }
-            </dl>
-            @if (group.payee === 'SUPPLIER' && editable()) {
-              <button class="payment-plan-edit" type="button" [disabled]="busy()" (click)="planChange.emit()">Betaalafspraak wijzigen <span aria-hidden="true">›</span></button>
-              @if (!terms().length) { <p class="payment-plan-hint">Er is nog geen termijnverdeling ingesteld.</p> }
+    </header>
+
+    @switch (state()) {
+      @case ('loading') {
+        <app-skeleton kind="stats" [rows]="2" /><app-skeleton kind="list" [rows]="3" />
+        <p class="ios-section__foot pp-late">Blijft dit laden? <button class="ios-section__link" type="button" (click)="refresh.emit()">Opnieuw laden</button></p>
+      }
+      @case ('error') {
+        <div class="ios-banner ios-banner--danger" role="alert"><span>{{ error() || 'Het betalingsoverzicht kon niet worden geladen.' }}</span>
+          <button class="ios-capsule" type="button" (click)="refresh.emit()">Opnieuw laden</button></div>
+      }
+      @default {
+        @if (ledger(); as book) {
+          <div class="pp-content" [class.is-loading]="state() === 'refreshing'" [attr.inert]="state() === 'refreshing' ? '' : null" [attr.aria-busy]="state() === 'refreshing'">
+            @if (mode() === 'edit' && dirty()) {
+              <div class="ios-banner" role="status"><span>Niet-opgeslagen wijzigingen aan de order</span>
+                <button class="ios-capsule ios-capsule--tinted" type="button" (click)="save.emit()">Opslaan</button></div>
             }
-            @if (group.payee === 'SUPPLIER' && terms().length) {
-              <ol class="payment-terms" aria-label="Leverancierstermijnen">
-                @for (term of terms(); track term.due) {
-                  <li class="payment-term" [class.is-settled]="term.state === 'paid'">
-                    <div class="payment-term__head"><b>{{ term.label }}</b><span>{{ term.settled ? 'Afgerekend' : term.state === 'paid' ? 'Betaald' : term.state === 'due' ? 'Nu te betalen' : 'Later' }}</span></div>
-                    <dl><div><dt>Afgesproken</dt><dd>{{ term.full | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ term.covered | eur }}</dd></div><div><dt>Nog open</dt><dd>{{ term.amount | eur }}</dd></div></dl>
-                    @if (term.settled && term.covered < term.full - 0.005) {
-                      <p>{{ term.full - term.covered | eur }} minder betaald; deze termijn is afgesloten.</p>
-                    } @else if (term.covered > term.full + 0.005) {
-                      <p>{{ term.covered - term.full | eur }} meer betaald dan de huidige afspraak.</p>
-                    }
-                    @if (editable() && term.amount > 0 && !term.settled) {
-                      <button class="payment-term__add" type="button" [disabled]="busy() || dirty()"
-                              (click)="add.emit({ payee: 'SUPPLIER', amount: term.amount, label: term.label, due: term.due })">Betaling noteren <span aria-hidden="true">＋</span></button>
-                    }
-                  </li>
-                }
-              </ol>
-            }
-            @if (group.settled && group.planned > group.paid + 0.005) {
-              <p class="payment-group__difference">{{ group.planned - group.paid | eur }} minder betaald na afrekening.</p>
-            } @else if (group.payee !== 'OTHER' && group.paid > group.planned + 0.005) {
-              <p class="payment-group__difference is-warning">{{ group.paid - group.planned | eur }} meer betaald. {{ group.settled ? 'Deze groep is afgerekend.' : 'Controleer of een correctie volgt.' }}</p>
-            }
-            @if (group.payments.length) {
-              <details class="payment-ledger">
-                <summary>Betalingshistoriek <span>{{ group.payments.length }} {{ group.payments.length === 1 ? 'betaling' : 'betalingen' }}</span></summary>
-                <ol>
-                  @for (payment of group.payments; track payment.id) {
-                    <li class="payment-ledger__entry">
-                      <div class="payment-ledger__title"><b>{{ payment.label || 'Betaling' }}</b><strong>{{ payment.amountEur | eur }}</strong></div>
-                      <p>{{ payment.paidOn | dateNl }}@if (payment.currency !== 'EUR') { · {{ payment.amount | cur: payment.currency }} }@if (payment.actor) { · {{ actor(payment.actor) }} }</p>
-                      @if (payment.instalmentDue || payment.settles) {
-                        <p class="payment-ledger__scope">@if (payment.instalmentDue) { {{ dueLabel(payment.instalmentDue) }} }@if (payment.settles) { {{ payment.instalmentDue ? ' · termijn afgerekend' : 'Betaalgroep afgerekend' }} }</p>
-                      }
-                      @if (proofs(payment.id).length) {
-                        <div class="payment-ledger__proofs">
-                          @for (document of proofs(payment.id); track document.id) {
-                            <button type="button" [disabled]="busy()" (click)="download.emit(document)">↗ {{ document.originalFilename }}</button>
-                          }
-                        </div>
-                      }
-                      @if (editable()) {
-                        <div class="payment-ledger__actions">
-                          <button type="button" [disabled]="busy() || dirty()" (click)="edit.emit(payment)">Aanpassen</button>
-                          <button type="button" [disabled]="busy()" (click)="proof.emit(payment)">Bewijs toevoegen</button>
-                        </div>
-                      }
-                    </li>
+
+            @let sum = book.summary;
+            <section class="ios-card pp-summary" aria-label="Samenvatting">
+              <div class="ios-headline">
+                @switch (sum.headline.kind) {
+                  @case ('due') {
+                    <div class="ios-headline__label">Nu te betalen</div><div class="ios-headline__value">{{ sum.dueNowEur | eur }}</div>
+                    @if (sum.next; as next) { <div class="ios-headline__sub">Volgende: {{ next.label }}@if (next.due) { · {{ label(next.payee) }} }</div> }
                   }
-                </ol>
-              </details>
-            }
-            @if (editable()) {
-              <div class="payment-group__actions">
-                <button type="button" [disabled]="busy() || dirty()" (click)="add.emit({ payee: group.payee })">＋ {{ group.payments.length ? 'Betaling toevoegen' : 'Betaling noteren' }}</button>
-                @if (group.payments.length && group.payee !== 'OTHER') {
-                  <button type="button" class="payment-group__settle" [disabled]="busy() || dirty()" (click)="settle.emit(group.payee)">{{ group.settled ? 'Afrekening aanpassen' : 'Groep afrekenen' }}</button>
+                  @case ('later') {
+                    <div class="ios-headline__label">Niets nu te betalen</div><div class="ios-headline__value">{{ sum.openEur | eur }}</div>
+                    @if (sum.next; as next) { <div class="ios-headline__sub">Volgende: {{ next.label }} · {{ next.when }}</div> }
+                  }
+                  @case ('review') {
+                    <div class="ios-headline__label">Nakijken</div>
+                    @if (review(); as check) {
+                      @if (check.amountEur !== null) { <div class="ios-headline__value">{{ check.amountEur | eur }}</div> }
+                      <div class="ios-headline__sub wk-amount--warn">{{ check.text }}</div>
+                    }
+                  }
+                  @case ('done') { <div class="ios-headline__label">Alles betaald</div><div class="ios-headline__value">{{ sum.paidTotalEur | eur }}</div> }
+                  @case ('concept') {
+                    <div class="ios-headline__label">Nog niet besteld</div><div class="ios-headline__value">{{ sum.agreedEur | eur }}</div>
+                    <div class="ios-headline__sub">{{ planLabel() }}</div>
+                  }
+                  @case ('empty') { <div class="ios-headline__label">Nog geen bedragen</div><div class="ios-headline__sub">Voeg producten en kosten toe.</div> }
                 }
               </div>
+              @if (sum.headline.kind === 'due' && sum.next; as next) {
+                <button class="ios-capsule ios-capsule--accent ios-capsule--block" type="button" [disabled]="busy()"
+                        (click)="add.emit({ payee: next.payee, amount: next.amountEur, label: next.label, due: next.due })">Noteer {{ next.label }}</button>
+              }
+              @if (sum.agreedEur > 0) {
+                <div class="wk-meter pp-summary__meter" role="meter" aria-label="Betaald op de afspraak" aria-valuemin="0" aria-valuemax="100"
+                     [attr.aria-valuenow]="round(sum.progress * 100)"><i class="tone-ok" [style.width.%]="sum.progress * 100"></i></div>
+                <dl class="wk-equation">
+                  <div><dt>Afspraak</dt><dd>{{ sum.agreedEur | eur }}</dd></div>
+                  <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Betaald</dt><dd>{{ sum.paidOnAgreementEur | eur }}</dd></div>
+                  @if (sum.lowerEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Minder betaald · afgerekend</dt><dd>{{ sum.lowerEur | eur }}</dd></div> }
+                  @if (sum.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ reviewHigher() ? ' · nakijken' : '' }}</dt><dd>{{ sum.higherEur | eur }}</dd></div> }
+                  <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Open</dt><dd>{{ sum.openEur | eur }}</dd></div>
+                  @if (sum.openEur > 0) {
+                    <div class="is-sub"><dt>waarvan nu te betalen</dt><dd>{{ sum.dueNowEur | eur }}</dd></div>
+                    <div class="is-sub"><dt>waarvan later</dt><dd>{{ sum.laterEur | eur }}</dd></div>
+                  }
+                </dl>
+              }
+              @if (sum.additionalEur > 0) {
+                <dl class="wk-equation pp-summary__extra">
+                  <div><dt>Bijkomende kosten</dt><dd>{{ sum.additionalEur | eur }}</dd></div>
+                  <div><dt>Totaal betaald</dt><dd>{{ sum.paidTotalEur | eur }}</dd></div>
+                </dl>
+              }
+              @if (!sum.known) { <p class="ios-caption">Voorlopige cijfers</p> }
+              @if (!sum.balanced) { <p class="ios-caption wk-amount--warn">Bedragen sluiten niet: een betaling mist de eurowaarde. Controleer de betalingen.</p> }
+              <details class="ios-disclosure pp-bridge">
+                <summary>Hoe is dit opgebouwd?<app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
+                <dl class="wk-equation">
+                  @for (row of book.bridge.rows; track row.key) {
+                    <div><dt>{{ row.label }}@if (row.note) { <small> · {{ row.note }}</small> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
+                  }
+                  <div class="is-total"><dt>{{ book.bridge.totalLabel }}</dt><dd>{{ book.bridge.totalEur | eur }}</dd></div>
+                </dl>
+                @if (!book.bridge.consistent) { <p class="ios-caption">De onderdelen sluiten niet exact aan op het totaal; controleer de kosten.</p> }
+              </details>
+            </section>
+
+            @if (todos().length) {
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Te doen</h2></div>
+                <div class="ios-group ios-group--icons">
+                  @for (todo of todos(); track todo.key) {
+                    <div class="ios-cell">
+                      <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft" [class]="todoTone(todo)"><app-icon [name]="todoIcon(todo)" [size]="17" /></span></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title">{{ todoTitle(todo) }}</span><span class="ios-cell__sub">{{ todoDetail(todo) }}</span></span>
+                      <button class="ios-capsule ios-capsule--tinted" type="button" [disabled]="busy() && todo.kind !== 'proof' && todo.kind !== 'incomplete'" (click)="runTodo(todo)">{{ todoAction(todo) }}</button>
+                    </div>
+                  }
+                </div>
+              </section>
             }
-          </section>
+
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>Ontvangers</h2></div>
+              <div class="ios-group ios-group--icons">
+                @for (item of book.visible; track item.payee) {
+                  <button class="ios-cell ios-cell--tall pp-payee" type="button" [attr.aria-label]="payeeName(item)" (click)="openPayee.set(item.payee)">
+                    <span class="ios-cell__lead"><span class="ios-tile" [class]="item.tone"><app-icon [name]="item.icon" [size]="17" /></span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ item.label }}</span><span class="ios-cell__sub">{{ payeeSub(item) }}</span></span>
+                    <span class="ios-cell__trail pp-payee__trail">
+                      <span class="ios-cell__value ios-cell__value--strong">{{ (item.payee === 'OTHER' ? item.paidEur : item.openEur) | eur }}</span>
+                      <span class="ios-cell__meta" [class]="tone(item.status.tone)">{{ item.status.label }}</span>
+                    </span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                }
+                <button class="ios-cell ios-cell--action" type="button" [disabled]="busy()" (click)="payeeMenu.set(true)">
+                  <span class="ios-cell__lead"><app-icon name="plus" [size]="20" /></span><span class="ios-cell__body">Betaling noteren</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>Alle betalingen · {{ book.rows.length }}</h2></div>
+              @if (sum.missingProofCount) {
+                <div class="pp-filter"><app-segmented variant="ios" label="Betalingen tonen" [options]="filterOptions()" [value]="filter()" (changed)="setFilter($event)" /></div>
+              }
+              @if (!book.rows.length) {
+                <div class="ios-empty">
+                  <span class="ios-empty__icon"><app-icon name="receipt" [size]="26" /></span>
+                  <p class="ios-empty__title">Nog geen betalingen</p>
+                  <p class="ios-empty__text">Noteer de eerste betaling zodra het geld vertrokken is.</p>
+                  <button class="ios-capsule ios-capsule--tinted" type="button" [disabled]="busy()" (click)="payeeMenu.set(true)">Betaling noteren</button>
+                </div>
+              } @else if (!filtered().length) {
+                <p class="ios-section__foot">Geen betalingen voor dit filter. <button class="ios-section__link" type="button" (click)="setFilter('ALL')">Alle tonen</button></p>
+              } @else {
+                <div class="ios-group">
+                  @for (row of shownRows(); track row.id) {
+                    <button class="ios-cell pp-row" type="button" appMenuTrigger [appMenuTriggerDisabled]="mode() !== 'edit'"
+                            (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || tapRow(row)">
+                      <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
+                        <span class="ios-cell__sub">{{ row.payeeShort }}@if (row.termLabel) { · {{ row.termLabel }} }@if (row.foreign) { · {{ row.amount | cur: row.currency }} }</span></span>
+                      <span class="ios-cell__trail">
+                        <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
+                        @if (row.hasProof === true) { <span class="ios-cell__meta"><app-icon name="clip" [size]="12" /> {{ row.proofCount }}</span> }
+                        @else if (row.hasProof === false) { <span class="ios-cell__meta wk-amount--warn">geen bewijs</span> }
+                      </span>
+                    </button>
+                  }
+                  @if (filtered().length > 5 && !showAll()) {
+                    <button class="ios-cell ios-cell--action" type="button" (click)="showAll.set(true)">Toon alle {{ filtered().length }} betalingen</button>
+                  }
+                </div>
+              }
+            </section>
+
+            <button class="ios-section__link pp-costs" type="button" (click)="openCosts.emit()">Nacalculatie en kostprijs staan bij Kosten ›</button>
+          </div>
         }
-      </div>
-    </div>
-  `,
-  styles: `
-    :host { display: block; min-width: 0; }
-    .payment-overview { min-width: 0; }
-    .payment-overview__totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
-    .payment-overview__totals > div { display: grid; gap: 7px; padding: 16px; border-radius: 18px; background: var(--surface-2); }
-    .payment-overview__totals > div:first-child { background: var(--rose-soft); }
-    .payment-overview__totals span { color: var(--muted); font-size: 11px; }
-    .payment-overview__totals strong { color: var(--ink); font-size: clamp(19px, 2vw, 25px); letter-spacing: -.03em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-    .payment-overview__notice { margin: 0 0 14px; padding: 12px; background: var(--warn-soft); border-radius: 12px; color: var(--ink); font-size: 12px; line-height: 1.5; }
-    .payment-overview__groups { display: grid; gap: 14px; }
-    .payment-group { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
-    .payment-group--supplier { border-color: var(--rose-line); }
-    .payment-group__head { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
-    .payment-group__head > div { display: flex; align-items: center; gap: 9px; min-width: 0; }
-    .payment-group__icon { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 11px; color: var(--rose-dark); background: var(--rose-soft); font-size: 19px; }
-    h3 { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.4; }
-    .payment-group__status { padding: 5px 8px; border-radius: 999px; color: var(--muted); background: var(--surface-2); font-size: 10px; white-space: nowrap; }
-    .payment-group__status.is-settled { color: var(--ok); background: var(--ok-soft); }
-    .payment-group__amounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 16px 0 0; }
-    dl > div { min-width: 0; }
-    dt { color: var(--muted); font-size: 10px; line-height: 1.5; }
-    dd { margin: 5px 0 0; color: var(--ink); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-    .payment-terms { display: grid; gap: 8px; list-style: none; margin: 16px 0 0; padding: 0; }
-    .payment-term { padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
-    .payment-term.is-settled { background: color-mix(in srgb, var(--ok-soft) 45%, var(--surface)); }
-    .payment-term__head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; }
-    .payment-term__head b { font-size: 12px; line-height: 1.5; }
-    .payment-term__head span { color: var(--muted); font-size: 10px; }
-    .payment-term.is-settled .payment-term__head span { color: var(--ok); }
-    .payment-term dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 10px 0 0; }
-    .payment-term dd { font-size: 12px; }
-    .payment-term p, .payment-group__difference { margin: 10px 0 0; font-size: 11px; color: var(--ok); line-height: 1.5; }
-    .is-warning { color: var(--warn); }
-    button { min-height: 44px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
-    button:disabled { opacity: .45; cursor: default; }
-    button:focus-visible, summary:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
-    .payment-term__add { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 10px; border-color: var(--rose-line); color: var(--rose-dark); }
-    .payment-group__actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
-    .payment-group__actions > button:first-child { flex: 1; color: var(--rose-dark); border-color: var(--rose-line); background: var(--rose-soft); }
-    .payment-group__settle { color: var(--muted); }
-    .payment-plan-edit { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; margin-top: 12px; color: var(--rose-dark); background: var(--surface-2); }
-    .payment-plan-hint { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-    .payment-ledger { margin-top: 14px; border-top: 1px solid var(--line); }
-    summary { min-height: 44px; padding: 14px 0 8px; color: var(--ink); font-size: 12px; font-weight: 650; cursor: pointer; }
-    summary > span { margin-left: 5px; color: var(--muted); font-size: 10px; font-weight: 400; }
-    .payment-ledger ol { list-style: none; margin: 0; padding: 0; }
-    .payment-ledger__entry { padding: 12px 0; border-bottom: 1px solid var(--line); }
-    .payment-ledger__entry:last-child { padding-bottom: 0; border-bottom: 0; }
-    .payment-ledger__title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12px; }
-    .payment-ledger__title b { min-width: 0; overflow-wrap: anywhere; }
-    .payment-ledger__title strong { flex-shrink: 0; font-variant-numeric: tabular-nums; }
-    .payment-ledger__entry p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-    .payment-ledger__actions, .payment-ledger__proofs { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
-    .payment-ledger__proofs button { max-width: 100%; text-align: left; overflow-wrap: anywhere; }
-    .payment-ledger__actions button { flex: 1; }
-    @media (max-width: 360px) {
-      .payment-group { padding: 12px; }
-      .payment-overview__totals > div { padding: 13px; }
-      .payment-group__amounts, .payment-term dl { gap: 5px; }
-      dd { font-size: 12px; }
-      .payment-term dd { font-size: 11px; }
+      }
+    }
+
+    @if (payeeOpen(); as item) {
+      <app-purchase-payee-sheet [payee]="item" [mode]="mode()" [busy]="busy()" [dirty]="dirty()" [supplierName]="supplierName()" [planLabel]="planLabel()"
+        (closed)="openPayee.set(null)" (add)="afterPayeeSheet(add, $event)" (edit)="tapAfterPayeeSheet($event)" (proof)="afterPayeeSheet(proof, $event)"
+        (download)="download.emit($event)" (settle)="afterPayeeSheet(settle, $event)" (undoSettle)="afterPayeeSheet(undoSettle, $event)"
+        (planChange)="afterPayeeSheet(planChange, undefined)" (remove)="afterPayeeSheet(remove, $event)" />
+    }
+    @if (detail(); as row) {
+      <app-sheet title="Betaling" variant="ios" (closed)="detail.set(null)">
+        <div body>
+          <div class="ios-group pp-detail">
+            <div class="ios-cell"><span class="ios-cell__body">Bedrag</span><span class="ios-cell__value ios-cell__value--strong">{{ row.amount | cur: row.currency }}</span></div>
+            @if (row.foreign) { <div class="ios-cell"><span class="ios-cell__body">In euro</span><span class="ios-cell__value">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span></div> }
+            <div class="ios-cell"><span class="ios-cell__body">Betaald op</span><span class="ios-cell__value">{{ row.paidOn | dateNl }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body">Ontvanger</span><span class="ios-cell__value">{{ row.payeeLabel }}</span></div>
+            @if (row.termLabel) { <div class="ios-cell"><span class="ios-cell__body">Termijn</span><span class="ios-cell__value">{{ row.termLabel }}</span></div> }
+            <div class="ios-cell"><span class="ios-cell__body">Afrekening</span><span class="ios-cell__value">{{ row.settlesLabel || 'Niet afgerekend' }}</span></div>
+            @if (row.label) { <div class="ios-cell"><span class="ios-cell__body">Omschrijving</span><span class="ios-cell__value">{{ row.label }}</span></div> }
+          </div>
+          @if (row.actor) { <p class="ios-section__foot">Genoteerd door {{ actor(row.actor) }}</p> }
+          <section class="ios-section pp-detail__proofs">
+            <div class="ios-section__head"><h2>Bewijzen</h2></div>
+            @if (row.proofs?.length) {
+              <div class="ios-group ios-group--icons">
+                @for (document of row.proofs; track document.id) {
+                  <button class="ios-cell" type="button" (click)="download.emit(document)">
+                    <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-grey"><app-icon name="document" [size]="17" /></span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ document.originalFilename }}</span></span>
+                    <app-icon class="ios-cell__chev" name="download" [size]="18" />
+                  </button>
+                }
+              </div>
+            } @else { <p class="ios-section__foot">Geen bewijs toegevoegd</p> }
+          </section>
+        </div>
+        <div foot style="display:contents"><button class="btn" type="button" (click)="detail.set(null)">Sluiten</button></div>
+      </app-sheet>
+    }
+    @if (payeeMenu()) {
+      <app-context-menu title="Betaling aan…" variant="ios" cancelLabel="Annuleren" [items]="payeeItems()"
+                        (pick)="payeeMenu.set(false); add.emit({ payee: $any($event.id) })" (closed)="payeeMenu.set(false)" />
+    }
+    @if (rowMenu(); as open) {
+      <app-context-menu [title]="open.row.title" variant="ios" cancelLabel="Annuleren" [anchor]="open.point"
+                        [items]="rowItems(open.row)" (pick)="pickRow(open.row, $event)" (closed)="rowMenu.set(null)" />
     }
   `,
+  styles: `:host { display: block; min-width: 0; }`,
 })
 export class PurchasePaymentOverview {
-  readonly view = input.required<PurchaseOrderView>();
-  readonly payments = input<readonly PurchasePayment[] | null>(null);
-  readonly documents = input<readonly PurchaseDocument[] | null>(null);
-  readonly editable = input(false);
+  readonly ledger = input<PaymentLedger | null>(null);
+  readonly mode = input<'read' | 'edit'>('read');
+  readonly state = input<'loading' | 'refreshing' | 'error' | 'ready'>('ready');
+  readonly error = input<string | null>(null);
   readonly busy = input(false);
   readonly dirty = input(false);
+  readonly planLabel = input('');
+  readonly supplierName = input('');
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
   readonly proof = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();
-  readonly settle = output<Payee>();
+  readonly settle = output<PurchaseSettleRequest>();
+  readonly undoSettle = output<{ payee: PayeeLedger['payee']; due?: Due | null }>();
   readonly planChange = output<void>();
-  readonly terms = computed(() => purchaseInstalmentState(this.view(), instalmentsOf(this.view().order, PAYMENT_TERMS), this.payments()));
-  readonly groups = computed(() => {
-    const view = this.view();
-    const settings: { payee: Payee; label: string; symbol: string; fallback: number }[] = [
-      { payee: 'SUPPLIER', label: 'Leverancier', symbol: '↗', fallback: view.payable?.supplierEur ?? view.costing.totals.goodsEur },
-      { payee: 'LOGISTICS', label: 'Douane & transport', symbol: '↔', fallback: view.payable?.logisticsEur ?? 0 },
-      { payee: 'SEPARATE', label: 'Inspectie & andere kosten', symbol: '✓', fallback: view.costing.totals.separateCostsEur ?? 0 },
-      { payee: 'OTHER', label: 'Extra uitgaven', symbol: '+', fallback: 0 },
-    ];
-    return settings.map(setting => {
-      const stream = view.reconciliation?.streams.find(item => item.payee === setting.payee);
-      const payments = (this.payments() ?? []).filter(item => (item.payee ?? 'SUPPLIER') === setting.payee)
-        .sort((a, b) => b.paidOn.localeCompare(a.paidOn) || b.id - a.id);
-      const planned = stream?.plannedEur ?? setting.fallback;
-      const paid = stream?.paidEur ?? payments.reduce((sum, item) => sum + item.amountEur, 0);
-      const settled = purchaseGroupSettled(view, this.payments(), setting.payee);
-      const open = stream?.remainingEur ?? (settled || setting.payee === 'OTHER' ? 0 : Math.max(0, planned - paid));
-      return { ...setting, planned, paid, open, payments, settled, paidInFull: setting.payee !== 'OTHER' && planned > 0 && open === 0 && paid >= planned };
-    }).filter(group => group.payee === 'SUPPLIER' || group.planned > 0 || group.payments.length
-      || (this.editable() && (group.payee !== 'LOGISTICS' || !view.payable?.ddp)));
-  });
-  readonly paidTotal = computed(() => this.view().reconciliation?.totals.paidEur ?? this.groups().reduce((sum, group) => sum + group.paid, 0));
-  readonly openTotal = computed(() => this.view().reconciliation?.totals.remainingEur ?? this.groups().reduce((sum, group) => sum + group.open, 0));
+  readonly remove = output<PurchasePayment>();
+  readonly save = output<void>();
+  readonly refresh = output<void>();
+  readonly openCosts = output<void>();
 
-  proofs(id: number): readonly PurchaseDocument[] { return (this.documents() ?? []).filter(document => document.paymentId === id); }
-  dueLabel(due: NonNullable<PurchasePayment['instalmentDue']>): string { return { ORDERED: 'Bij bestelling', SHIPPED: 'Bij vertrek', ARRIVED: 'Bij aankomst' }[due]; }
+  readonly openPayee = signal<PayeeLedger['payee'] | null>(null);
+  readonly detail = signal<LedgerRow | null>(null);
+  readonly payeeMenu = signal(false);
+  readonly rowMenu = signal<{ row: LedgerRow; point: MenuPoint } | null>(null);
+  readonly filter = signal<'ALL' | 'NO_PROOF'>('ALL');
+  readonly showAll = signal(false);
+  readonly tone = toneClass;
+  readonly day = dayOf;
+  readonly month = monthOf;
+  readonly round = Math.round;
+
+  readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');
+  readonly payeeOpen = computed(() => this.ledger()?.payees.find(item => item.payee === this.openPayee()) ?? null);
+  readonly payeeItems = computed(() => payeeMenuItems(this.ledger()));
+  /** What the review headline points at: overpaid, not budgeted or incomplete. */
+  readonly review = computed(() => {
+    const payee = this.ledger()?.summary.headline.payee;
+    if (!payee) return null;
+    const kind = payee.status.kind;
+    return {
+      amountEur: kind === 'UNBUDGETED' ? payee.paidEur : kind === 'OVERPAID' ? payee.higherEur : null,
+      text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'niet begroot' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
+    };
+  });
+  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.higherEur > 0 && !item.finalized) ?? false);
+  readonly filterOptions = computed<SegmentOption[]>(() => [
+    { id: 'ALL', label: 'Alle' }, { id: 'NO_PROOF', label: `Zonder bewijs (${this.ledger()?.summary.missingProofCount ?? 0})` },
+  ]);
+  readonly filtered = computed(() => {
+    const rows = this.ledger()?.rows ?? [];
+    return this.filter() === 'NO_PROOF' && this.ledger()?.summary.missingProofCount ? rows.filter(row => row.hasProof === false) : rows;
+  });
+  readonly shownRows = computed(() => this.showAll() ? this.filtered() : this.filtered().slice(0, 5));
+  /** The card already offers the first payment that is due; read mode only pays and shows proofs. */
+  readonly todos = computed(() => {
+    const todos = this.ledger()?.todos ?? [];
+    const first = todos.findIndex(todo => todo.kind === 'pay');
+    return todos.filter((todo, index) => index !== first
+      && (this.mode() === 'edit' || todo.kind === 'pay' || todo.kind === 'proof'));
+  });
+
+  label(payee: PayeeLedger['payee']): string { return PAYEE_LABEL[payee]; }
+  finite(value: number): boolean { return Number.isFinite(value); }
   actor(value: string): string { return value.replace(/^.*[\\/]/, '').split('@')[0]; }
+
+  payeeSub(item: PayeeLedger): string {
+    if (item.payee === 'OTHER') return `${formatEur(item.paidEur)} betaald · zonder afspraak`;
+    return item.paidEur > 0 ? `${formatEur(item.paidEur)} van ${formatEur(item.agreedEur ?? 0)} betaald` : 'Nog niets betaald';
+  }
+
+  payeeName(item: PayeeLedger): string {
+    return item.payee === 'OTHER'
+      ? `${item.label}, ${formatEur(item.paidEur)} betaald, ${item.status.label}`
+      : `${item.label}, ${formatEur(item.paidEur)} van ${formatEur(item.agreedEur ?? 0)} betaald, ${formatEur(item.openEur)} open, ${item.status.label}`;
+  }
+
+  setFilter(value: string): void {
+    this.filter.set(value === 'NO_PROOF' ? 'NO_PROOF' : 'ALL');
+    this.showAll.set(false);
+  }
+
+  tapRow(row: LedgerRow): void {
+    if (this.mode() === 'edit') this.edit.emit(row.payment);
+    else this.detail.set(row);
+  }
+
+  /** From the payee sheet: edit in the editor, the read-only detail in the view. */
+  tapPayment(payment: PurchasePayment): void {
+    const row = this.ledger()?.rows.find(item => item.id === payment.id);
+    if (this.mode() === 'edit') this.edit.emit(payment);
+    else if (row) this.detail.set(row);
+  }
+
+  /**
+   * The payee sheet closes before it reports an action. Acting in the same
+   * turn would open the next sheet before the closing one hands focus back
+   * to its row, leaving focus outside the new dialog; one task later the old
+   * sheet is gone and the next one takes focus last.
+   */
+  afterPayeeSheet<T>(target: { emit(value: T): void }, value: T): void {
+    setTimeout(() => target.emit(value));
+  }
+
+  tapAfterPayeeSheet(payment: PurchasePayment): void {
+    setTimeout(() => this.tapPayment(payment));
+  }
+
+  rowItems(row: LedgerRow): ContextMenuItem[] { return paymentMenuItems(row, { move: false, busy: this.busy() }); }
+
+  pickRow(row: LedgerRow, item: ContextMenuItem): void {
+    this.rowMenu.set(null);
+    if (item.id.startsWith('open:')) {
+      const document = row.proofs?.find(proof => 'open:' + proof.id === item.id);
+      if (document) this.download.emit(document);
+      return;
+    }
+    switch (item.id) {
+      case 'edit': this.edit.emit(row.payment); break;
+      case 'proof': this.proof.emit(row.payment); break;
+      case 'settle': this.settle.emit(settleWith(row)); break;
+      case 'remove': this.remove.emit(row.payment); break;
+    }
+  }
+
+  todoIcon(todo: LedgerTodo): string {
+    switch (todo.kind) {
+      case 'pay': return PAYEE_ICON[todo.payee];
+      case 'settle': return 'tick';
+      case 'proof': return 'clip';
+      default: return 'alert';
+    }
+  }
+
+  todoTone(todo: LedgerTodo): string {
+    switch (todo.kind) {
+      case 'pay': return PAYEE_TONE[todo.payee];
+      case 'proof': return 'tone-grey';
+      case 'incomplete': return 'tone-danger';
+      default: return 'tone-warn';
+    }
+  }
+
+  todoTitle(todo: LedgerTodo): string {
+    switch (todo.kind) {
+      case 'pay': return todo.label;
+      case 'settle': return `Klein verschil bij ${PAYEE_LABEL[todo.payee]}`;
+      case 'review': return `Te veel betaald aan ${PAYEE_LABEL[todo.payee]}`;
+      case 'budget': return `Niet begroot: ${PAYEE_LABEL[todo.payee]}`;
+      case 'incomplete': return `Betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`;
+      case 'proof': return `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder bewijs`;
+    }
+  }
+
+  todoDetail(todo: LedgerTodo): string {
+    switch (todo.kind) {
+      case 'pay': return `${formatEur(todo.amountEur)} · nu te betalen${todo.due ? ' · ' + PAYEE_LABEL[todo.payee] : ''}`;
+      case 'settle': return `${formatEur(todo.amountEur)} open · bijv. bankkosten of afronding`;
+      case 'review': return `${formatEur(todo.amountEur)} meer dan afgesproken`;
+      case 'budget': return `${formatEur(todo.amountEur)} betaald zonder bedrag in Kosten`;
+      case 'incomplete': return 'Controleer het bedrag van deze betaling';
+      case 'proof': return this.mode() === 'edit' ? 'Voeg het bankafschrift toe' : 'Bankafschrift ontbreekt';
+    }
+  }
+
+  todoAction(todo: LedgerTodo): string {
+    return { pay: 'Noteer', settle: 'Afrekenen', review: 'Nakijken', budget: 'Afrekenen', incomplete: 'Bekijken', proof: 'Toon' }[todo.kind];
+  }
+
+  runTodo(todo: LedgerTodo): void {
+    switch (todo.kind) {
+      case 'pay': this.add.emit({ payee: todo.payee, amount: todo.amountEur, label: todo.label, due: todo.due }); break;
+      case 'settle': case 'review': case 'budget': this.settle.emit(todo.request); break;
+      case 'incomplete': this.openPayee.set(todo.payee); break;
+      case 'proof': this.setFilter('NO_PROOF'); break;
+    }
+  }
+
 }

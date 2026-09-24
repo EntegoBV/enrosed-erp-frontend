@@ -194,7 +194,38 @@ the workspaces. All CSS lives in one global partial,
   cost sheet and purchase dossier in their own rounds): `?view=<key>&doel=`.
 
 ### Inkoop · Betalingen
-_Filled in by the Inkoop round._
+Money out of a container, per payee: Leverancier, Douane & transport,
+Inspectie & andere kosten and Bijkomende kosten (no agreement, never in
+Afspraak or Open). One pure, node-tested view model,
+`purchase-payment-ledger.ts`, turns the server reconciliation into every
+figure on screen, in cents: Afspraak − Betaald (− Minder betaald · afgerekend)
+(+ Meer betaald) = Open, and Open splits into Nu te betalen and Later
+(`PAYEE_DUE_STATUSES`: transport is due once the container sails,
+inspection once ordered; the supplier follows its plan). It also builds the
+payee statuses, 'Te doen', the ledger rows with proof coverage and the bridge
+to the landed total ('Opbouw van het totaal'). The server stays the judge of
+allocation, settlement and FX; a missing reconciliation shows 'Voorlopige
+cijfers'.
+- Desk: [Producten | Betalingen] in the main pane (⌥1/⌥2);
+  `app-purchase-payment-workbench` (strip, 'Per ontvanger', 'Alle
+  betalingen', Te doen, Opbouw; N adds, A settles). The rail lost Betalingen
+  and gained Partner (money in); Kosten has Calculatie | Nacalculatie.
+- Phone: `app-purchase-payment-overview` (read view and editor step 4) with
+  `app-purchase-payee-sheet`; the read view records through
+  `/purchasing/:id/edit?section=pay&payee=…&due=…` and returns to
+  `?section=ledger`. Partner financing and the Nacalculatie are cards of
+  their own.
+- Shared sheets: payment ('Aan wie?' moves a payment), settle (flags an
+  existing payment, no money moves), first instalment; every payment action
+  saves a dirty order first (`whenSaved`), because payment writes rewrite the
+  order notes on the server.
+- Deep links: `?section=payments` partner financing, `ledger` money out,
+  `payment-result` the Nacalculatie, `pay` the payment sheet. Styles live in
+  `styles/purchase-payments.scss`.
+- Proof coverage is unknown (documents `null`) while the documents load and
+  after a failed request (`documentsFailed`), never "no proof". Rows with
+  `appMenuTrigger` and their own `(click)` skip `$event.defaultPrevented`,
+  the click that trails a long press.
 
 ## Screens and their scenarios
 

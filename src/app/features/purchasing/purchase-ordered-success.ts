@@ -55,7 +55,7 @@ import { Sheet } from '../../shared/ui';
         <h3>{{ orderNumber() }} is klaar voor productie</h3>
         <p>
           De afgesproken aantallen zijn vastgelegd.
-          {{ overviewAvailable() ? 'Je kunt nu verderwerken of teruggaan naar het controlescherm van deze inkooporder.' : 'Volgens de betaalafspraak valt nu de eerste termijn; je vindt ze onder Betalingen.' }}
+          {{ overviewAvailable() ? 'Je kunt nu verderwerken of teruggaan naar het controlescherm van deze inkooporder.' : 'Volgens het betaalplan valt nu de eerste termijn; je vindt ze onder Betalingen.' }}
         </p>
       </div>
       <div foot class="production-success__actions" [class.production-success__actions--single]="!overviewAvailable()">

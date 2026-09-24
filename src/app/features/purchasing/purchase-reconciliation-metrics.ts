@@ -3,17 +3,20 @@ import type { PurchaseOrderView, PurchaseReconciliation } from '../../core/api/m
 export type ReconciliationStream = PurchaseReconciliation['streams'][number];
 export type ContainerCostFilter = 'active' | 'all' | 'open' | 'finalized' | 'higher' | 'lower';
 
-/** Display vocabulary only: settlement decisions and all cost allocations belong to the server. */
+/**
+ * Display vocabulary only: settlement decisions and all cost allocations belong to the server.
+ * The words match the payee statuses of purchase-payment-ledger, so Betalingen and Analyses agree.
+ */
 export function reconciliationStatusLabel(stream: ReconciliationStream): string {
   switch (stream.status) {
     case 'PLANNED': return 'Gepland';
-    case 'UNPAID': return 'Nog te betalen';
+    case 'UNPAID': return 'Open';
     case 'PARTIAL': return 'Deels betaald';
-    case 'PAID': return 'Volledig betaald';
-    case 'OVERPAID': return stream.finalized ? 'Meer betaald · vereffend' : 'Meer betaald · te beoordelen';
-    case 'SETTLED_LOWER': return 'Minder betaald · vereffend';
-    case 'NOT_APPLICABLE': return 'Niet van toepassing';
-    case 'ADDITIONAL': return 'Extra uitgave';
+    case 'PAID': return 'Betaald';
+    case 'OVERPAID': return stream.finalized ? 'Afgerekend · meer betaald' : 'Te veel betaald · nakijken';
+    case 'SETTLED_LOWER': return 'Afgerekend · minder betaald';
+    case 'NOT_APPLICABLE': return 'Geen kosten';
+    case 'ADDITIONAL': return stream.payee === 'OTHER' ? 'Bijkomend' : 'Niet begroot';
   }
 }
 
