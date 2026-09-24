@@ -19,6 +19,7 @@ import {
   CatalogApi,
   CatalogExportRequest,
   CatalogLayout,
+  CatalogOrder,
 } from '../../core/api/catalog-api';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
@@ -37,6 +38,7 @@ import {
 } from './catalog-translation-issues';
 import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection } from './catalog-product-order';
 import { deselectProductIds } from './catalog-product-selection-state';
+import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v3';
 const LEGACY_STATE_KEY = 'enrosed.catalogBuilder.v2';
@@ -101,7 +103,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
 
     <div class="content content--with-action-bar catalog-page"
          [attr.aria-busy]="busy() || loading()">
-      <app-catalogue-photo-import [disabled]="downloading() || savingPhotos() || loading()"
+      <app-catalogue-photo-import [disabled]="busy() || loading()"
         (workingChange)="importingPhotos.set($event)" (completed)="load()" />
       <fieldset class="catalog-workspace" [disabled]="busy()">
         <legend class="sr-only">Catalogus samenstellen</legend>
@@ -181,7 +183,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               }
             </div>
           }
-          <p class="studio-note">{{ draftPersistence() === 'DEVICE' ? 'Uw selectie en volgorde blijven bewaard op dit apparaat.' : draftPersistence() === 'SESSION' ? 'Uw selectie en volgorde blijven bewaard in dit tabblad.' : 'Uw selectie en volgorde blijven actief zolang dit scherm open is.' }} De vertalingen worden gecontroleerd vóór het downloaden.</p>
+          <p class="studio-note">{{ draftPersistence() === 'DEVICE' ? 'Uw selectie en instellingen blijven bewaard op dit apparaat.' : draftPersistence() === 'SESSION' ? 'Uw selectie en instellingen blijven bewaard in dit tabblad.' : 'Uw selectie en instellingen blijven actief zolang dit scherm open is.' }} Gebruik ‘Volgorde opslaan’ om uw volgorde voor volgende exports te bewaren.</p>
         </aside>
 
         <div class="catalog-settings">
@@ -243,7 +245,10 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
           <app-catalog-product-arrangement
             [products]="selectedProducts()" [families]="families()" [categories]="categories()"
             [disabled]="busy() || loading()" [canReset]="hasCustomOrder()"
+            [canSave]="canSaveOrder()" [saving]="savingOrder()" [saveStatus]="orderSaveStatus()"
+            [saveError]="orderError()" [canReload]="dataReady() && (!savedOrder() || orderConflict())"
             (orderChange)="reorderProducts($event)" (resetRequested)="resetProductOrder()"
+            (saveRequested)="saveProductOrder()" (reloadRequested)="reloadSavedOrder()"
           />
 
           @if (layout() === 'BROCHURE') {
@@ -581,6 +586,11 @@ export class CatalogExport {
   readonly families = signal<ProductFamily[]>([]);
   readonly selected = signal<Set<number>>(new Set());
   readonly orderedIds = signal<number[]>([]);
+  readonly savedOrder = signal<CatalogOrder | null>(null);
+  readonly loadingOrder = signal(false);
+  readonly savingOrder = signal(false);
+  readonly orderError = signal<string | null>(null);
+  readonly orderConflict = signal(false);
   readonly draftPersistence = signal<'DEVICE' | 'SESSION' | 'NONE'>('NONE');
   readonly loading = signal(true);
   readonly loadError = signal<string | null>(null);
@@ -592,10 +602,13 @@ export class CatalogExport {
   readonly renderTranslationError = signal(false);
   readonly missingTranslationPaths = signal<string[]>([]);
 
-  readonly busy = computed(() => this.downloading() || this.savingPhotos() || this.importingPhotos());
+  readonly busy = computed(() => this.downloading() || this.savingPhotos() || this.importingPhotos()
+    || this.savingOrder() || this.loadingOrder());
   readonly canExport = computed(() =>
     this.dataReady() && this.selected().size > 0 && !this.loadError());
   readonly actionStatus = computed(() => {
+    if (this.savingOrder()) return 'Catalogusvolgorde wordt opgeslagen.';
+    if (this.loadingOrder()) return 'Opgeslagen catalogusvolgorde wordt geladen.';
     if (this.importingPhotos()) return 'Catalogusfoto’s worden gecontroleerd of toegevoegd.';
     if (this.savingPhotos()) return 'Fotokeuzes worden opgeslagen.';
     if (this.downloading()) return 'PDF wordt gemaakt. Dit kan enkele minuten duren.';
@@ -628,6 +641,22 @@ export class CatalogExport {
   readonly hasCustomOrder = computed(() => {
     const defaults = applyCatalogProductOrder(this.products(), []);
     return this.orderedProducts().some((product, index) => product.id !== defaults[index]?.id);
+  });
+  readonly orderDirty = computed(() => {
+    const saved = this.savedOrder();
+    return saved !== null && catalogOrderChanged(this.products(), this.orderedIds(), saved.orderedIds);
+  });
+  readonly canSaveOrder = computed(() => this.dataReady() && this.savedOrder() !== null
+    && !this.orderConflict() && this.products().length > 0 && !this.busy() && !this.loading()
+    && (this.savedOrder()!.revision === 0 || this.orderDirty()));
+  readonly orderSaveStatus = computed(() => {
+    if (this.loadingOrder()) return 'Opgeslagen volgorde laden…';
+    if (this.savingOrder()) return 'Volgorde opslaan…';
+    if (this.orderConflict()) return 'De opgeslagen volgorde is intussen gewijzigd. Laad die opnieuw voordat u verder opslaat.';
+    if (!this.savedOrder()) return 'De opgeslagen volgorde kon nog niet worden geladen.';
+    if (this.orderDirty()) return 'Volgorde gewijzigd · nog niet opgeslagen voor volgende exports.';
+    if (this.savedOrder()!.revision > 0) return 'Volgorde opgeslagen voor volgende exports, ook op andere apparaten.';
+    return 'Sla deze volgorde op voor volgende exports, ook op andere apparaten.';
   });
   readonly selectedCategoryCount = computed(() => new Set(this.selectedProducts().map((product) => product.categoryId).filter((id) => id !== null)).size);
   readonly previewProducts = computed(() => catalogueFamilies(this.selectedProducts(), this.families()).filter((family) => family.photo).slice(0, 4));
@@ -708,12 +737,19 @@ export class CatalogExport {
   async load(): Promise<void> {
     if (this.loading() && this.dataReady()) return;
     this.loading.set(true);
+    this.loadingOrder.set(true);
     this.loadError.set(null);
     try {
-      const [products, categories, families] = await Promise.all([
+      const [products, categories, families, orderResult] = await Promise.all([
         this.catalog.products(),
         this.catalog.categories(),
         this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
+        this.selectionInitialized
+          ? Promise.resolve({ order: this.savedOrder(), error: this.orderError() })
+          : this.catalog.catalogOrder()
+          .then(order => ({ order, error: null }))
+          .catch(failure => ({ order: null, error: messageOf(failure,
+            'De opgeslagen volgorde kon niet worden geladen. Probeer het opnieuw voordat u de volgorde opslaat.') })),
       ]);
       if (this.destroyed) return;
       /* Internal assessment products stay in product management but never appear in a
@@ -727,9 +763,17 @@ export class CatalogExport {
       this.families.set(families);
       const available = new Set(customerCatalogue.flatMap((product) =>
         product.id === null ? [] : [product.id]));
-      const ordered = applyCatalogProductOrder(customerCatalogue,
-        this.selectionInitialized ? this.orderedIds() : this.storedOrder ?? []);
-      this.orderedIds.set(ordered.map(product => product.id!));
+      // Product/photo refreshes keep the original revision so a stale editor cannot
+      // silently overwrite an order saved from another tab in the meantime.
+      if (!this.selectionInitialized) {
+        this.savedOrder.set(orderResult.order);
+        this.orderError.set(orderResult.error);
+        this.orderConflict.set(false);
+      }
+      this.orderedIds.set(this.selectionInitialized
+        ? normalizedCatalogOrderIds(customerCatalogue, this.orderedIds())
+        : initialCatalogOrderIds(customerCatalogue,
+          orderResult.order ?? { revision: 0, orderedIds: [] }, this.storedOrder ?? []));
       if (!this.selectionInitialized) {
         const initial = this.storedSelection === null
           ? available
@@ -752,7 +796,10 @@ export class CatalogExport {
         ));
       }
     } finally {
-      if (!this.destroyed) this.loading.set(false);
+      if (!this.destroyed) {
+        this.loading.set(false);
+        this.loadingOrder.set(false);
+      }
     }
   }
 
@@ -810,7 +857,48 @@ export class CatalogExport {
   resetProductOrder(): void {
     if (this.busy() || this.loading()) return;
     this.orderedIds.set(applyCatalogProductOrder(this.products(), []).map(product => product.id!));
-    this.ui.toast('Standaardvolgorde hersteld');
+    this.ui.toast('Standaardvolgorde hersteld. Sla op om deze voortaan te gebruiken.');
+  }
+
+  async saveProductOrder(): Promise<void> {
+    const previous = this.savedOrder();
+    if (!previous || !this.canSaveOrder()) return;
+    const ids = normalizedCatalogOrderIds(this.products(), this.orderedIds());
+    this.savingOrder.set(true);
+    this.orderError.set(null);
+    try {
+      const saved = await this.catalog.saveCatalogOrder(previous.revision, ids);
+      if (this.destroyed) return;
+      this.savedOrder.set(saved);
+      this.orderedIds.set(normalizedCatalogOrderIds(this.products(), saved.orderedIds));
+      this.ui.toast('Catalogusvolgorde opgeslagen voor volgende exports');
+    } catch (failure) {
+      if (this.destroyed) return;
+      this.orderConflict.set((failure as { status?: number })?.status === 409);
+      const message = messageOf(failure, 'De volgorde is niet opgeslagen. Uw aanpassingen staan er nog; probeer opnieuw.');
+      this.orderError.set(message);
+      this.ui.toast(message, 'err');
+    } finally {
+      if (!this.destroyed) this.savingOrder.set(false);
+    }
+  }
+
+  async reloadSavedOrder(): Promise<void> {
+    if (this.busy() || this.loading() || !this.dataReady()) return;
+    this.loadingOrder.set(true);
+    try {
+      const saved = await this.catalog.catalogOrder();
+      if (this.destroyed) return;
+      this.savedOrder.set(saved);
+      this.orderedIds.set(initialCatalogOrderIds(this.products(), saved, this.orderedIds()));
+      this.orderError.set(null);
+      this.orderConflict.set(false);
+      this.ui.toast('Opgeslagen catalogusvolgorde geladen');
+    } catch (failure) {
+      if (!this.destroyed) this.orderError.set(messageOf(failure, 'De opgeslagen volgorde kon niet worden geladen. Probeer opnieuw.'));
+    } finally {
+      if (!this.destroyed) this.loadingOrder.set(false);
+    }
   }
 
   private buildRequest(): CatalogExportRequest {
