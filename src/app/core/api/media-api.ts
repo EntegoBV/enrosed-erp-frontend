@@ -11,6 +11,8 @@ import {
   MediaUploadResult,
   MediaVariant,
 } from './media-models';
+import { MEDIA_PAGE_SIZE, collectPages } from './media-paging';
+import type { CollectedPages } from './media-paging';
 
 /** Typed access to the central document and media library. */
 @Injectable({ providedIn: 'root' })
@@ -32,6 +34,19 @@ export class MediaApi {
     if (filters.linked !== undefined) params = params.set('linked', filters.linked);
     return firstValueFrom(
       this.http.get<MediaAssetSummary[]>(api('/api/media-assets'), { params }),
+    );
+  }
+
+  /**
+   * Every matching asset, page by page, up to `max`. The server caps a page
+   * at 200, so one `assets()` call silently stops there; `complete` is false
+   * when `max` cut the list short.
+   */
+  allAssets(filters: MediaAssetFilters = {}, max = 1000): Promise<CollectedPages<MediaAssetSummary>> {
+    /* The walk owns offset and limit; any the caller passed are replaced. */
+    return collectPages(
+      (offset, limit) => this.assets({ ...filters, offset, limit }),
+      { pageSize: MEDIA_PAGE_SIZE, max },
     );
   }
 

@@ -33,8 +33,7 @@ import { NotificationBell } from './notification-bell';
       @if (showBack()) {
         <button class="appbar__back" type="button" aria-label="Terug" (click)="back()">‹</button>
       } @else {
-        <!-- On phones the brand mark sits here; double-tapping it toggles the
-             purchase figures. On desktop the sidebar's mark does that. -->
+        <!-- On phones the brand mark sits here. -->
         <div class="appbar__brand hide-desktop">
           <app-brand-mark [small]="true" />
         </div>

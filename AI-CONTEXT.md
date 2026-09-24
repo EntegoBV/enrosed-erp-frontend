@@ -26,16 +26,21 @@ digital signing, change proposals) served by the same app.
   messages in English, grouped per topic.
 - Standalone components, signals, zoneless change detection, OnPush
   everywhere. Inline templates+styles in the component `.ts` files.
-- No test suite (scaffolding was removed deliberately); verification is
-  `ng build` plus visual checks at 375 px width.
+- Node tests:
+  `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/*.test.mts`;
+  modules with a node test may only `import type` from other src files;
+  also `npx ng build` and visual checks at 375 px and desk widths.
 - Errors surface via `messageOf(failure, fallback)` - the backend sends
   readable Dutch messages on 409s; show them.
 
 ## Design system ("iOS 26" look, owner-approved)
 
-- Red theme is the default (internal mode); **green theme = customer-safe
-  mode** toggled by double-tapping the brand mark: every purchase figure,
-  margin and cost disappears (customers watch over shoulders at fairs).
+- Accent palettes (core/platform/theme.ts): six, green is the default,
+  stored per device, purely cosmetic. There is NO customer-safe/privacy
+  mode: fd979b4 (2026-08-23) removed it and the brand-mark double-tap. Cost
+  prices, margins and purchase figures are always visible to staff; only
+  PDF choices (internal vs supplier/customer) differ. Rebuilding a
+  customer-safe mode is an owner decision.
 - Floating pill chrome: tabbar and action bars share 20 px radius; the
   appbar blurs through `.appbar::before` (blur on the bar itself creates
   a containing block that breaks `position:fixed` children - learned the
@@ -50,6 +55,62 @@ digital signing, change proposals) served by the same app.
   stat rows (tiles everywhere proved less scannable).
 - Entrance animation `.anim-rise`, reveal-on-scroll patterns, subtle
   transitions; respect `prefers-reduced-motion`.
+
+## Workspace kit (2026-09)
+
+Shared building blocks for the desk and iOS 26 (Liquid Glass) layouts of
+the workspaces. All CSS lives in one global partial,
+`src/styles/workspace-kit.scss`; kit components have no styles array.
+
+- Prefixes: `wk-*` is the desk (DesktopViewport.active(), 680 px and up),
+  `ios-*` the phone; `tone-*`, `wk-meter`, `wk-equation`, `wk-amount` and
+  `wk-dot` work on both.
+- Opt-in: the desk shell (`.shell--workspace`) locks page scrolling only
+  when the routed page renders `.wk-page`; the phone shell
+  (`.shell--workspace-phone`) hides the ERP `.tabbar` only when the page
+  renders `.ios-page`. A page that renders neither looks as before.
+- Pieces (src/app/shared unless noted): `app-segmented` (desk/ios,
+  tabs/radio, arrow keys), `app-ios-nav` (large title that condenses into
+  a glass bar; [lead] [trail] [caption] [below] slots), `app-ios-tabbar`
+  (floating tab bar plus accessory button; tabs use replaceUrl),
+  `[appSwipeActions]` (multi-action swipe rows, geometry in row-actions.ts),
+  `app-wk-side-foot` (sidebar foot with "Terug naar …" and the account),
+  `keyContext()` (typing / overlay / scope checks for shortcuts),
+  `elementWidth()` + `WK_DOCK_MIN_PX` (inspector docks at 1000 px of page
+  host, else a drawer), `WorkspaceReturn` + `returnLabel()` in
+  core/platform (remembers the ERP screen a workspace was opened from),
+  `MediaApi.allAssets()` + `collectPages()` (paging past the server's
+  200-row cap), `appAuthLazy` on AuthImage, `Ui.toast(text, kind, action)`
+  for undo toasts, `variant="ios"` on app-sheet and app-context-menu,
+  `iconName` / `checked` / `cancelLabel` on context menus, and about sixty
+  icons in icon.ts ('more' is the horizontal ellipsis).
+- Tones: `tone-accent`, `-ok`, `-warn`, `-danger`, `-blue`, `-teal`,
+  `-amber`, `-green`, `-plum`, `-grey`, `-ink` set `--tone` for tiles,
+  pills, chips, dots, meters and swipe buttons. Record types: Product and
+  Reeks accent, Inkooporder blue, Kost teal, Planner amber, Niet gekoppeld
+  grey. Payees: Leverancier accent, Douane & transport blue, Inspectie &
+  andere kosten amber, Bijkomende kosten grey.
+- Trap rule: size containers (`.wk-toolbar`, `.wk-pane`, any `container:`
+  element), transformed elements (`.ios-swipe__row`) and blurred elements
+  trap `position:fixed` children. Render app-sheet, app-context-menu,
+  `.wk-inspector--drawer` and Quick Look at page-host level. Sticky bars
+  blur only on `::before`.
+- Areas scope under their host: never restyle a bare kit class; override
+  kit custom properties only (`--wk-cols`, `--wk-group-span`,
+  `--wk-sticky-top`, `--wk-max`, `--wk-side-w`, `--ios-inset`,
+  `--ios-sep-inset`). Area partials: finance-workspace / finance-phone /
+  finance-legacy, files-workspace / files-phone, purchase-payments.
+
+## Workspaces
+
+### Kosten & bank
+_Filled in by the Kosten & bank round._
+
+### Documenten & media
+_Filled in by the Documenten & media round._
+
+### Inkoop · Betalingen
+_Filled in by the Inkoop round._
 
 ## Screens and their scenarios
 
@@ -97,8 +158,8 @@ weekly by the backend's Drewry scrape).
   supplier currency price, pieces/carton, carton size) without leaving,
   per-line EXW currency, status advance button at the bottom, apply
   landed costs with confirm dialog.
-- Purchase figures respect the privacy mode everywhere, PDF included
-  (internal vs klantweergave toast explains which you got).
+- Purchase figures are always shown to staff (no privacy mode since
+  fd979b4); the PDF sheet picks the internal or supplier variant.
 
 ### Products
 - List (search, skeletons) → view first: price and margin (intern) in

@@ -1030,7 +1030,6 @@ export const PAYMENT_TERMS: { value: PaymentTerms; label: string; instalments: I
   { value: 'CUSTOM', label: 'Anders: eigen verdeling', instalments: [] },
 ];
 
-/** Who got the money: the factory, or the forwarder and customs. */
 /** Who got the money: the factory, the forwarder and customs, the inspection and other named costs, or whatever else it cost to pay. */
 export type Payee = 'SUPPLIER' | 'LOGISTICS' | 'SEPARATE' | 'OTHER';
 

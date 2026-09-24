@@ -1,4 +1,6 @@
-import { Directive, ElementRef, OnDestroy, effect, inject, input } from '@angular/core';
+import {
+  Directive, ElementRef, OnDestroy, afterNextRender, booleanAttribute, effect, inject, input, signal,
+} from '@angular/core';
 import { CatalogApi } from './catalog-api';
 import { DesktopViewport } from '../platform/desktop-viewport';
 
@@ -9,6 +11,9 @@ import { DesktopViewport } from '../platform/desktop-viewport';
  * fetch the bytes with the HttpClient and make a blob URL. It is released
  * when the element disappears, or memory leaks while paging through a
  * long list.
+ *
+ * Long libraries add `appAuthLazy`: the bytes are then fetched only once
+ * the image comes within 200px of the viewport.
  */
 @Directive({ selector: 'img[appAuthSrc]' })
 export class AuthImage implements OnDestroy {
@@ -19,12 +24,28 @@ export class AuthImage implements OnDestroy {
   readonly source = input.required<string | null>({ alias: 'appAuthSrc' });
   /** Lists default to small; viewers opt into medium or the untouched original. */
   readonly rendition = input<'small' | 'medium' | 'original'>('small', { alias: 'appAuthSize' });
+  /** Wait with the fetch until the image is (nearly) on screen. */
+  readonly lazy = input(false, { alias: 'appAuthLazy', transform: booleanAttribute });
 
   private objectUrl: string | null = null;
   private requestVersion = 0;
+  /** Without IntersectionObserver every image counts as visible at once. */
+  private readonly visible = signal(typeof IntersectionObserver === 'undefined');
+  private observer: IntersectionObserver | null = null;
 
   constructor() {
+    afterNextRender(() => {
+      if (!this.lazy() || this.visible()) return;
+      this.observer = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        this.visible.set(true);
+        this.disconnect();
+      }, { rootMargin: '200px' });
+      this.observer.observe(this.element.nativeElement);
+    });
+
     effect(() => {
+      if (this.lazy() && !this.visible()) return;
       const requestedSize = this.rendition();
       const size = requestedSize === 'medium' && !this.desktop.active() ? 'small' : requestedSize;
       const url = screenPhotoUrl(this.source(), size);
@@ -48,8 +69,14 @@ export class AuthImage implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.disconnect();
     this.requestVersion++;
     this.release();
+  }
+
+  private disconnect(): void {
+    this.observer?.disconnect();
+    this.observer = null;
   }
 
   private release(): void {
