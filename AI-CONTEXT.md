@@ -148,7 +148,50 @@ the workspaces. All CSS lives in one global partial,
   member used at construction or in tested code needs a harness entry.
 
 ### Documenten & media
-_Filled in by the Documenten & media round._
+- /files, `features/files`: FilesPage is a thin shell (desk or phone view,
+  plus every sheet, menu and Quick Look at page-host level); the logic is
+  FilesController (provided per visit); folders, drags and folder requests
+  from the nav live in the root FilesStore. The pure modules are
+  node-tested: files-collections (URL, record lens, routes, file types,
+  dates, sorts), files-rules (tree and counts, lifecycle, upload
+  destination, where-line, the one action list `fileActions`),
+  files-selection, files-keys, media-action-identity (now really stamped
+  per mutation). Styles: styles/files-workspace.scss (desk, dialogs, the
+  upload tray, Quick Look, nav) and styles/files-phone.scss; no files
+  component has a styles array.
+- Places: Recent (`view=all`), Mappen (none, or `map=<id>`), Gekoppeld aan
+  (`view=product|family|purchase|cost|planner|unused`, optional
+  `doel=<recordId>`), Archief (`view=all&archief=1`). Modifiers `kind`,
+  `q` (global in folder places, scoped in views and Archief) and
+  `bestand=<id>` replace the history entry; places push. `view=quote|invoice`
+  is rewritten to Recent (nothing ever set those roles).
+- Folders are primary: the backend auto-files by first link (Productfoto's,
+  Kosten/<jaar>, Inkooporders/<order>…), unlinked uploads land in
+  Overig/Foto's|Documenten. Folder counts from the server are cumulative;
+  `folderCounts` derives the direct ones.
+- Lifecycle: archive first (confirm only when linked, with what changes
+  where), then in Archief Terughalen or Definitief verwijderen (only when
+  nothing links to it). Links with `createdBy === 'system'` come from a
+  source record (indexer): shown as "Via bron", never unlinked here.
+- Linking to an inkooporder downloads the bytes and posts them as a dossier
+  document (`sourcing.addDocument`); the one-minute indexer then links the
+  same asset back, so the inspector shows a pending row meanwhile.
+- Public links always go through a confirm (extra warning for cost and
+  purchase documents: `isSensitive`, LINK_VIEWS.sensitive and
+  `costTargetMeta` are the hooks a future customer-safe mode would gate).
+- Desk: kit toolbar (the selection swaps only the tools, the location
+  stays; words fold away as the bar narrows), table/grid with Finder
+  selection (click, ⌘, ⇧), row menus by right-click or long press
+  (MenuTrigger), drag to folders, crumbs and the nav tree, inspector docked
+  from 1000px of page width, else a drawer; keyboard table in files-keys
+  ("?" lists it). Phone: own ios tab bar (Recent, Bladeren, Archief) with
+  + accessory, swipe rows, long-press menus, a file screen with the
+  two-step share; "Toon in map" opens the folder list, not the file.
+- Uploads: a finished tray with failures, failed links or files the
+  library already had never closes by itself; a toast, the phone's pill
+  and the desk status bar lead back to it.
+- Records link back with "In Documenten & media ›" (product card here;
+  cost sheet and purchase dossier in their own rounds): `?view=<key>&doel=`.
 
 ### Inkoop · Betalingen
 _Filled in by the Inkoop round._

@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   isCurrentMediaDetailAction,
   type MediaDetailActionIdentity,
-} from '../src/app/features/settings/media-action-identity.ts';
+} from '../src/app/features/files/media-action-identity.ts';
 
 const started: MediaDetailActionIdentity = {
   assetId: 17,

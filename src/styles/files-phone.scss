@@ -1,1 +1,96 @@
-/* Owned by the Documenten & media round. Scope every rule under the area host. */
+/* ==========================================================================
+   Documenten & media on a phone (below 680px), on the workspace kit's ios-*
+   classes: the Recent shelf, file rows and tiles, the file screen, the
+   upload pill and Quick Look as a black screen. Scoped under the page host;
+   the kit's tab bar and toolbar take care of --tabbar-h.
+   ========================================================================== */
+@media (max-width: 679.98px) {
+  app-files-page#files-workspace {
+    .files-phone__caption a { color: var(--rose); text-decoration: none; }
+    .files-phone__subbar { display: grid; gap: 8px; }
+    .files-phone__skel { padding: 4px 16px; }
+    .files-phone__more { text-align: center; }
+    .files-phone__record { color: var(--rose); text-decoration: none; }
+    .files-phone__name { font-size: 15px; }
+    .files-phone__dest { margin: 0 0 8px; }
+    .files-ext--row { width: 44px; height: 44px; border-radius: 10px; font-size: 10px; }
+    .files-picker__filter input { font-size: 16px; }
+    .ios-cell > .ios-check { margin-right: -2px; }
+    .ios-cell .ok-text { flex: none; }
+
+    /* the newest files, a shelf that scrolls sideways */
+    .files-shelf { display: flex; gap: 12px; padding: 2px var(--ios-inset) 4px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scroll-padding-inline: var(--ios-inset); scrollbar-width: none; }
+    .files-shelf::-webkit-scrollbar { display: none; }
+    .files-shelf__item { display: grid; flex: none; gap: 6px; width: 96px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12.5px; text-align: left; scroll-snap-align: start; -webkit-tap-highlight-color: transparent; }
+    .files-shelf__item > img, .files-shelf__item > .files-ext, .files-shelf__item > .skel { width: 96px; height: 96px; border-radius: 16px; background: var(--surface); object-fit: cover; }
+    .files-shelf__item > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .files-shelf__item--skel > .skel { display: block; }
+    .files-shelf__cell { display: grid; flex: none; scroll-snap-align: start; }
+    .files-shelf__empty { padding: 12px 4px; }
+
+    /* tiles ("Weergave: Tegels") */
+    .files-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px; margin: 0 var(--ios-inset); }
+    .files-tiles__item { position: relative; display: grid; gap: 5px; min-width: 0; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; -webkit-tap-highlight-color: transparent; }
+    .files-tiles__item > img, .files-tiles__item > .files-ext { width: 100%; height: auto; aspect-ratio: 1; border-radius: 14px; background: var(--surface); object-fit: cover; }
+    .files-tiles__item[aria-pressed=true] > img, .files-tiles__item[aria-pressed=true] > .files-ext { box-shadow: 0 0 0 3px var(--rose); }
+    .files-tiles__item > .ios-check { position: absolute; top: 6px; right: 6px; border-color: #fff; background: rgb(26 22 20 / 25%); }
+    .files-tiles__name { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+    @media (max-width: 359.98px) { .files-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+    /* "Toon in map": the file's row in its folder lights up once */
+    .files-flash { animation: files-flash 1.6s ease; }
+
+    /* the selection toolbar's count badge */
+    .files-toolbar__icon { position: relative; line-height: 0; }
+    .files-count { position: absolute; top: -6px; left: 14px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border: 2px solid var(--surface); border-radius: 9px; background: var(--rose); color: #fff; font-size: 10px; font-weight: 750; line-height: 1; }
+
+    /* the upload pill above the tab bar */
+    .files-pill { cursor: pointer; }
+    .files-pill__stack { display: flex; flex: none; }
+    .files-pill__stack img { width: 30px; height: 30px; border: 2px solid var(--surface); border-radius: 8px; object-fit: cover; }
+    .files-pill__stack img + img { margin-left: -14px; }
+    .files-pill > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* the file screen */
+    .files-screen { display: block; }
+    .files-screen__preview { display: grid; place-items: center; min-height: 180px; margin: 4px var(--ios-inset) 14px; overflow: hidden; border-radius: var(--ios-radius); background: var(--surface); }
+    .files-screen__image { display: block; width: 100%; padding: 0; border: 0; background: var(--surface); }
+    .files-screen__image img { display: block; width: 100%; max-height: 46vh; object-fit: contain; }
+    .files-screen__doc { display: grid; justify-items: center; gap: 12px; padding: 28px 16px; }
+    .files-screen__name { margin: 0 calc(var(--ios-inset) + 4px) 20px; }
+    .files-screen__title { width: 100%; margin: 0 -4px; padding: 2px 4px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+    .files-screen__title:focus { background: var(--surface); outline: 2px solid color-mix(in srgb, var(--rose) 45%, transparent); }
+    .files-screen__info { padding: 4px 16px 14px; }
+    .files-screen .wk-kv > div { grid-template-columns: 116px minmax(0, 1fr); font-size: 14px; }
+    .files-pending .ios-cell__body { color: inherit; text-decoration: none; }
+    .files-danger { color: var(--danger); }
+
+    /* Quick Look as a black screen (its desk layer: styles/files-workspace.scss) */
+    .files-ql--screen { background: #000; }
+    .files-ql--screen .files-ql__bar { gap: 6px; min-height: calc(var(--ios-nav-h) + var(--safe-t)); padding: var(--safe-t) 6px 0; text-align: center; }
+    .files-ql--screen .files-ql__title b { font-size: 16px; }
+    .files-ql--screen .files-ql__icon { width: 44px; height: 44px; }
+    .files-ql--screen .files-ql__stage { padding: 8px 0 calc(var(--ios-tabbar-h) + var(--safe-b) + 24px); touch-action: pan-y; }
+    .files-ql--screen .files-ql__card { margin: 0 24px; padding: 28px 24px; }
+    .files-ql__toolbar { border-color: rgb(255 255 255 / 12%); background: rgb(40 36 34 / 78%); }
+    .files-ql__toolbar .ios-toolbar__btn { color: #fff; }
+
+    /*
+     * The dialogs are shared with the desk: on an iOS sheet (a body without
+     * side padding) they keep the inset, and every target is 44pt.
+     */
+    .sheet--ios :is(.files-picker, .files-tray, .files-draft) { padding: 0 var(--ios-inset); }
+    .files-picker__row { min-height: 44px; }
+    .files-picker__filter { min-height: 44px; }
+    .files-tray__row { min-height: 44px; }
+    .files-tray .wk-link { min-height: 44px; padding: 0 4px; font-size: 14px; }
+    .files-tray .wk-btn--icon { width: 44px; height: 44px; }
+    .files-tray__dedup { gap: 4px 12px; }
+    .files-tray__kind .select { font-size: 16px; }
+    .sheet--ios .sheet__foot:has(.files-tray__status) { flex-wrap: wrap; }
+    .sheet--ios .files-tray__status { flex-basis: 100%; order: -1; text-align: center; }
+    .files-picker__add { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--rose); font: inherit; font-size: 16px; }
+  }
+}
+
+@keyframes files-flash { 0%, 60% { background: var(--rose-soft); } }
