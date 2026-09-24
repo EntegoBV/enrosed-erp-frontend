@@ -13,6 +13,12 @@ import { rememberUnitNames } from '../../features/products/product-sales-unit';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
 
+export interface CatalogOrder {
+  revision: number;
+  orderedIds: number[];
+  updatedAt: string | null;
+}
+
 export interface CatalogBrochureOptions {
   includeOverview?: boolean;
   includeCategoryIntros?: boolean;
@@ -511,6 +517,14 @@ export class CatalogApi {
   preparePhotoExport(body: ProductPhotoExportRequest): Promise<ProductPhotoExportResult> {
     return firstValueFrom(
       this.http.post<ProductPhotoExportResult>(api('/api/products/photo-export'), body));
+  }
+
+  catalogOrder(): Promise<CatalogOrder> {
+    return firstValueFrom(this.http.get<CatalogOrder>(api('/api/catalog/order')));
+  }
+
+  saveCatalogOrder(revision: number, orderedIds: number[]): Promise<CatalogOrder> {
+    return firstValueFrom(this.http.put<CatalogOrder>(api('/api/catalog/order'), { revision, orderedIds }));
   }
 
   /** The catalogue as a PDF, with a hand-picked selection. */

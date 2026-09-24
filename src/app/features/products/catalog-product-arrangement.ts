@@ -19,6 +19,20 @@ import { catalogueFamilies } from './catalog-studio';
           <p>Verplaats productgroepen met de pijlen of kies een positie. Deze volgorde geldt voor de handelscatalogus én het compacte overzicht. Kleuren en maten blijven bij hun productgroep.</p>
           <button type="button" class="linklike" [disabled]="disabled() || !canReset()" (click)="resetRequested.emit()">Standaardvolgorde herstellen</button>
         </div>
+        <div class="arrangement__save">
+          <p role="status" aria-live="polite">{{ saveStatus() }}</p>
+          <button type="button" class="btn btn--primary" [disabled]="disabled() || !canSave()"
+                  (click)="saveRequested.emit()">{{ saving() ? 'Opslaan…' : 'Volgorde opslaan' }}</button>
+        </div>
+        @if (saveError()) {
+          <div class="arrangement__error" role="alert">
+            <p>{{ saveError() }}</p>
+            @if (canReload()) {
+              <button type="button" class="linklike" [disabled]="disabled()"
+                      (click)="reloadRequested.emit()">Opgeslagen volgorde laden</button>
+            }
+          </div>
+        }
         <ol class="arrangement__list" aria-label="Productgroepen in PDF-volgorde">
           @for (family of groups(); track family.key; let index = $index) {
             <li class="arrangement__family">
@@ -87,6 +101,12 @@ import { catalogueFamilies } from './catalog-studio';
     .arrangement__body { padding: 0 18px 18px; }
     .arrangement__intro p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
     .arrangement__intro > button { min-height: 44px; margin-bottom: 8px; font-size: 12px; }
+    .arrangement__save { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+    .arrangement__save p { flex: 1 1 220px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .arrangement__save .btn { min-height: 44px; }
+    .arrangement__error { margin-bottom: 14px; color: var(--danger); font-size: 13px; line-height: 1.5; }
+    .arrangement__error p { margin: 0; }
+    .arrangement__error button { min-height: 44px; }
     .arrangement__list, .arrangement__variants ol { list-style: none; margin: 0; padding: 0; }
     .arrangement__list { display: grid; gap: 8px; }
     .arrangement__family { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -119,8 +139,15 @@ export class CatalogProductArrangement {
   readonly categories = input<readonly Category[]>([]);
   readonly disabled = input(false);
   readonly canReset = input(false);
+  readonly canSave = input(false);
+  readonly saving = input(false);
+  readonly saveStatus = input('');
+  readonly saveError = input<string | null>(null);
+  readonly canReload = input(false);
   readonly orderChange = output<number[]>();
   readonly resetRequested = output<void>();
+  readonly saveRequested = output<void>();
+  readonly reloadRequested = output<void>();
   readonly announcement = signal('');
   readonly groups = computed(() => catalogueFamilies(this.products(), this.families()));
   readonly positions = computed(() => this.groups().map((_, index) => index));
