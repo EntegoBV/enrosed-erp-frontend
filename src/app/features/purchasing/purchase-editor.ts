@@ -1863,12 +1863,16 @@ export class PurchaseEditor {
   ];
 
   /**
-   * The ordered quantity when it no longer matches the line, or null.
-   * The costing rows the template renders do not carry the snapshot; the
-   * raw order lines do.
+   * The ordered quantity when the receipt counted something else, or null.
+   * Only the receipt makes a difference: a count changed while ordered or
+   * under way is the new agreement, not a short delivery (older orders may
+   * still hold the first snapshot from before that rule). The costing rows
+   * the template renders do not carry the snapshot; the raw order lines do.
    */
   shortShipped(productId: number): number | null {
-    const line = this.view()?.order.lines.find((l) => l.productId === productId);
+    const view = this.view();
+    if (view?.order.status !== 'ONTVANGEN') return null;
+    const line = view.order.lines.find((l) => l.productId === productId);
     if (!line || line.orderedQuantity === null || line.orderedQuantity === undefined) return null;
     return line.orderedQuantity !== line.quantity ? line.orderedQuantity : null;
   }
