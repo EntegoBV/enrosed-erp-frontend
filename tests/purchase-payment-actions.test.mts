@@ -145,6 +145,7 @@ test('settling resends the stored payment with the flag, so the booked euro valu
   assert.deepEqual(calls[0], { type: 'PUT', order: 50, id: 2, body: { paidOn: '2026-08-02', amount: 1000, currency: 'USD', label: 'Aanbetaling',
     payee: 'SUPPLIER', settles: true, instalmentDue: 'SHIPPED' } });
   assert.deepEqual(calls.filter(call => call.type === 'REFRESH'), [{ type: 'REFRESH', id: 50 }]);
+  assert.equal('amountEur' in calls[0].body, false, 'a settle never revalues the bank amount: the body carries no amountEur');
   assert.equal(editor.settling(), null);
   assert.deepEqual(toasts.at(-1), ['70% bij vertrek afgerekend', 'ok']);
   assert.equal(editor.payingBusy(), false);
@@ -197,6 +198,7 @@ test('undo clears only the matching flags, one write at a time, and refreshes on
   api.updatePayment = async (_order, id, body) => { inFlight++; most = Math.max(most, inFlight); await Promise.resolve(); inFlight--; return { ...payment(id), ...body }; };
   await confirms[0].run();
   assert.deepEqual(calls.filter(call => call.type === 'PUT').map(call => [call.id, call.body.settles, call.body.instalmentDue]), [[2, false, 'SHIPPED']]);
+  assert.equal(calls.filter(call => call.type === 'PUT').some(call => 'amountEur' in call.body), false, 'an undo never revalues the bank amount either');
   assert.equal(calls.filter(call => call.type === 'REFRESH').length, 1);
   assert.deepEqual(toasts.at(-1), ['Afrekening ongedaan gemaakt', 'ok']);
   calls.length = 0;

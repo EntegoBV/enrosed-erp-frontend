@@ -24,9 +24,10 @@ import { Fx } from '../../core/api/fx';
 import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
-import { PurchaseReconciliation } from './purchase-reconciliation';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
-import { PurchasePaymentResult } from './purchase-payment-result';
+import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
+import { purchaseNacalc } from './purchase-nacalc-metrics';
+import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { PurchasePaymentSheet } from './purchase-payment-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
@@ -40,7 +41,7 @@ import {
 import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-menus';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
-  Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
+  Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
   PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -112,7 +113,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1123,13 +1124,16 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               </div>
             </section>
 
-            <!-- Nacalculatie: what the container really cost, under Kosten. -->
+            <!-- Nacalculatie: what the container really cost, under Kosten. Every action goes through the editor's sheets. -->
             <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
               <span class="section-kicker">Nacalculatie</span>
-              <app-purchase-payment-result [view]="data" [ledger]="paymentLedger()" actions="inline" [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
-                (open)="openPayee($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee)" />
-              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" [hosted]="true"
-                (openPayments)="jumpToSection('purchase-payments-section')" />
+              <app-purchase-nacalc-overview mode="edit" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
+                [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
+                [orderId]="data.order.id"
+                (openPayee)="openPayee($event)" (pay)="requestPayment($event)" (settle)="requestSettle($event)"
+                (openPayments)="jumpToSection('purchase-payments-section')" (openPartner)="jumpToSection('purchase-partner-section')"
+                (openReports)="jumpToSection('purchase-files-section')" (applyCosts)="jumpToSection('purchase-actions-section')"
+                (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()" />
             </section>
 
             <!-- Money out, per payee: the supplier for the goods in its planned
@@ -1140,7 +1144,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                      id="purchase-payments-section" tabindex="-1"
                      aria-labelledby="purchase-payments-title">
               <app-purchase-payment-overview mode="edit" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
-                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()"
+                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [nacalc]="nacalcSummary()"
                 [planLabel]="planLabel(data.order)" [supplierName]="supplierName()"
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
@@ -1437,10 +1441,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
-          [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()"
+          [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
-          (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (payeeChange)="setPaymentPayee($event)"
+          (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
       }
       @if (settling(); as settle) {
@@ -1968,7 +1972,8 @@ export class PurchaseEditor {
 
   /* ---- payments --------------------------------------------------- */
   readonly payments = signal<PurchasePayment[] | null>(null);
-  readonly paying = signal<{ id?: number | null; amount: number | null; amountInput: string; currency: Currency; paidOn: string; label: string; payee: Payee; files: File[]; settles: boolean; instalmentDue: PurchasePayment['instalmentDue'] } | null>(null);
+  /** The payment sheet's draft; amountEur is the bank's euro debit of a USD/CNY payment, only sent when filled in. */
+  readonly paying = signal<{ id?: number | null; amount: number | null; amountInput: string; currency: Currency; paidOn: string; label: string; payee: Payee; files: File[]; settles: boolean; instalmentDue: PurchasePayment['instalmentDue']; amountEurInput?: string; amountEur?: number | null } | null>(null);
   readonly paymentStateError = signal<string | null>(null);
   readonly paymentStateLoading = signal(false);
   private paymentRefreshVersion = 0;
@@ -2036,27 +2041,50 @@ export class PurchaseEditor {
     }
   }
 
+  /** A new foreign amount also clears the bank's euro amount: it belonged to the old figure. */
   setPaymentAmount(raw: string | number | null): void {
     if (this.payingBusy()) return;
-    this.paying.update(pay => pay ? { ...pay, amountInput: raw == null ? '' : String(raw), amount: parsePurchasePaymentAmount(raw) } : pay);
+    this.paying.update(pay => {
+      if (!pay) return pay;
+      const amount = parsePurchasePaymentAmount(raw);
+      const changed = amount !== pay.amount;
+      return { ...pay, amountInput: raw == null ? '' : String(raw), amount, ...(changed ? { amountEurInput: '', amountEur: null } : {}) };
+    });
   }
 
+  /** 'Afgeschreven in euro': what the bank really debited for a USD/CNY payment; empty means the order rate. */
+  setPaymentAmountEur(raw: string | number | null): void {
+    if (this.payingBusy()) return;
+    this.paying.update(pay => pay ? { ...pay, amountEurInput: raw == null ? '' : String(raw), amountEur: parsePurchasePaymentAmount(raw) } : pay);
+  }
+
+  /** The euro value of the draft: the bank amount when filled in, else the stored value of unchanged money, else the order rate. */
   readonly paymentDraftEur = computed(() => {
     const pay = this.paying();
     if (!pay || pay.amount === null) return 0;
+    if (pay.currency !== 'EUR' && pay.amountEur != null && pay.amountEur > 0) return pay.amountEur;
     const previous = (this.payments() ?? []).find(payment => payment.id === pay.id);
     if (previous && previous.currency === pay.currency && Math.round(previous.amount * 100) === Math.round(pay.amount * 100)) return previous.amountEur;
     return Math.round(this.eurOf(pay.amount, pay.currency) * 100) / 100;
   });
 
+  /** The order-rate value of the foreign amount, for the placeholder and the hint of the bank amount field. */
+  readonly paymentRateEur = computed(() => {
+    const pay = this.paying();
+    if (!pay || pay.amount === null || pay.currency === 'EUR') return 0;
+    return Math.round(this.eurOf(pay.amount, pay.currency) * 100) / 100;
+  });
+
   closePayment(): void { if (!this.payingBusy()) this.paying.set(null); }
 
-  /** Opens the noted payment for correction: the day, the amount, the words, who got it. */
+  /** Opens the noted payment for correction: the day, the amount, the words, who got it; a foreign payment brings its booked euro value. */
   editPayment(payment: PurchasePayment): void {
     if (this.payingBusy() || this.paymentStateLoading() || this.dirty() || this.paymentPlanBusy()) return;
+    const foreign = payment.currency !== 'EUR' && Number.isFinite(payment.amountEur) && payment.amountEur > 0;
     this.paying.set({ id: payment.id, amount: payment.amount, amountInput: String(payment.amount).replace('.', ','), currency: payment.currency, paidOn: payment.paidOn,
       label: payment.label ?? '', payee: payment.payee ?? 'SUPPLIER', files: [], settles: !!payment.settles,
-      instalmentDue: payment.instalmentDue ?? null });
+      instalmentDue: payment.instalmentDue ?? null,
+      amountEurInput: foreign ? String(payment.amountEur).replace('.', ',') : '', amountEur: foreign ? payment.amountEur : null });
   }
 
   paymentGroupLabel(payee: Payee): string {
@@ -2246,8 +2274,11 @@ export class PurchaseEditor {
     this.payingBusy.set(true);
     let paymentSaved = false;
     try {
+      // The bank's euro amount travels only when it was filled in for a USD/CNY payment; the server keeps the order rate otherwise.
+      const bankEur = pay.currency !== 'EUR' && pay.amountEur != null && Number.isFinite(pay.amountEur) && pay.amountEur > 0 ? pay.amountEur : undefined;
       const body = { paidOn: pay.paidOn, amount: pay.amount, currency: pay.currency, label: pay.label || null,
-        payee: pay.payee, settles: pay.settles, instalmentDue: pay.payee === 'SUPPLIER' ? pay.instalmentDue ?? null : null };
+        payee: pay.payee, settles: pay.settles, instalmentDue: pay.payee === 'SUPPLIER' ? pay.instalmentDue ?? null : null,
+        ...(bankEur !== undefined ? { amountEur: bankEur } : {}) };
       const saved = pay.id
         ? await this.sourcing.updatePayment(data.order.id, pay.id, body)
         : await this.sourcing.addPayment(data.order.id, body);
@@ -2622,7 +2653,50 @@ export class PurchaseEditor {
       partnerCustomerId: fresh.order.partnerCustomerId ?? null,
       partnerCostPct: fresh.order.partnerCostPct ?? null,
       partnerSharePct: fresh.order.partnerSharePct ?? null } } : current);
+    this.reloadPartnerFinancing();
   }
+
+  /* ---- the nacalculatie -------------------------------------------------- */
+  /** The partner's money in, for the Nacalculatie's Partner block: fetched once per partner container, again after a partner change. */
+  readonly partnerFinancing = signal<PartnerFinancing | null | 'loading' | 'error'>(null);
+  private partnerFinancingVersion = 0;
+  private partnerFinancingKey = '';
+  /** Follows the loaded order and its partner; draft edits keep the key and fetch nothing. */
+  private readonly partnerFinancingWatch = effect(() => {
+    const data = this.view();
+    const key = data ? `${data.order.id}|${data.order.partnerCustomerId ?? ''}` : '';
+    untracked(() => {
+      if (key === this.partnerFinancingKey) return;
+      this.partnerFinancingKey = key;
+      this.reloadPartnerFinancing();
+    });
+  });
+
+  reloadPartnerFinancing(): void {
+    const data = this.view();
+    const version = ++this.partnerFinancingVersion;
+    if (!data || data.order.partnerCustomerId == null) { this.partnerFinancing.set(null); return; }
+    this.partnerFinancing.set('loading');
+    this.sourcing.partnerFinancing(data.order.id).then((financing) => {
+      if (version === this.partnerFinancingVersion) this.partnerFinancing.set(financing);
+    }).catch(() => {
+      if (version === this.partnerFinancingVersion) this.partnerFinancing.set('error');
+    });
+  }
+
+  /** The Nacalculatie in four lines, for the Betalingen cards; the ledger sharpens its state. */
+  readonly nacalcSummary = computed(() => {
+    const data = this.view();
+    return data ? purchaseNacalcSummary(data, this.paymentLedger()) : null;
+  });
+
+  /** The whole story: server report, ledger and partner financing joined by purchaseNacalc. */
+  readonly nacalc = computed(() => {
+    const data = this.view();
+    const partner = this.partnerFinancing();
+    return data ? purchaseNacalc({ view: data, ledger: this.paymentLedger(), summary: this.nacalcSummary(),
+      partner: partner === 'loading' || partner === 'error' ? null : partner }) : null;
+  });
 
   unlinkPartnerDoc(doc: SalesOrderView): void {
     this.ui.confirm({

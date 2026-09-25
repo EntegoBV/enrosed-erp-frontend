@@ -12,8 +12,9 @@ import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
   type PurchasePaymentAction, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
-import { dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, proofLine, settleWith, toneClass } from './purchase-payment-menus';
+import { dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, proofLine, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
+import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
 export type { PurchasePaymentAction } from './purchase-payment-ledger';
 
@@ -200,7 +201,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
 
             <div class="ios-group pp-costs">
               <button class="ios-cell" type="button" (click)="openCosts.emit()">
-                <span class="ios-cell__body"><span class="ios-cell__title">Nacalculatie en kostprijs</span><span class="ios-cell__sub">Bij Kosten</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title">Nacalculatie en kostprijs</span><span class="ios-cell__sub">{{ nacalcSub() }}</span></span>
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </button>
             </div>
@@ -266,6 +267,8 @@ export class PurchasePaymentOverview {
   readonly dirty = input(false);
   readonly planLabel = input('');
   readonly supplierName = input('');
+  /** The Nacalculatie in four lines, for the live sub of the closing cell. */
+  readonly nacalc = input<PurchaseNacalcSummary | null>(null);
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
   readonly proof = output<PurchasePayment>();
@@ -304,6 +307,13 @@ export class PurchasePaymentOverview {
     };
   });
   readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.higherEur > 0 && !item.finalized) ?? false);
+  /** 'Verwachte eindkost € 70.204,31 · geen verschil', or where the Nacalculatie lives while it is not loaded. */
+  readonly nacalcSub = computed(() => {
+    const n = this.nacalc();
+    if (!n) return 'Bij Kosten';
+    const variance = n.varianceEur === 0 ? 'geen verschil' : (n.varianceEur > 0 ? '+ ' : '− ') + formatEur(Math.abs(n.varianceEur));
+    return `${n.label} ${formatEur(n.forecastEur)} · ${n.kind === 'concept' ? 'nog niet besteld' : variance}`;
+  });
   readonly filterOptions = computed<SegmentOption[]>(() => [
     { id: 'ALL', label: 'Alle' }, { id: 'NO_PROOF', label: `Zonder bewijs (${this.ledger()?.summary.missingProofCount ?? 0})` },
   ]);
@@ -403,31 +413,9 @@ export class PurchasePaymentOverview {
     }
   }
 
-  todoTitle(todo: LedgerTodo): string {
-    switch (todo.kind) {
-      case 'pay': return todo.label;
-      case 'settle': return `Klein verschil bij ${PAYEE_LABEL[todo.payee]}`;
-      case 'review': return `Te veel betaald aan ${PAYEE_LABEL[todo.payee]}`;
-      case 'budget': return `Niet begroot: ${PAYEE_LABEL[todo.payee]}`;
-      case 'incomplete': return `Betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`;
-      case 'proof': return `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder bewijs`;
-    }
-  }
-
-  todoDetail(todo: LedgerTodo): string {
-    switch (todo.kind) {
-      case 'pay': return `${formatEur(todo.amountEur)} · nu te betalen${todo.due ? ' · ' + PAYEE_LABEL[todo.payee] : ''}`;
-      case 'settle': return `${formatEur(todo.amountEur)} open · bijv. bankkosten of afronding`;
-      case 'review': return `${formatEur(todo.amountEur)} meer dan afgesproken`;
-      case 'budget': return `${formatEur(todo.amountEur)} betaald zonder bedrag in Kosten`;
-      case 'incomplete': return 'Controleer het bedrag van deze betaling';
-      case 'proof': return this.mode() === 'edit' ? 'Voeg het bankafschrift toe' : 'Bankafschrift ontbreekt';
-    }
-  }
-
-  todoAction(todo: LedgerTodo): string {
-    return { pay: 'Noteer', settle: 'Afrekenen', review: 'Nakijken', budget: 'Afrekenen', incomplete: 'Bekijken', proof: 'Toon' }[todo.kind];
-  }
+  todoTitle(todo: LedgerTodo): string { return todoCopy(todo, this.mode()).title; }
+  todoDetail(todo: LedgerTodo): string { return todoCopy(todo, this.mode()).detail; }
+  todoAction(todo: LedgerTodo): string { return todoCopy(todo, this.mode()).action; }
 
   runTodo(todo: LedgerTodo): void {
     switch (todo.kind) {

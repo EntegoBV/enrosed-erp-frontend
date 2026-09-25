@@ -11,10 +11,9 @@ import { SalesCreditNoteSheet } from '../sales/sales-credit-note-sheet';
 import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
-import { PurchaseReconciliation } from './purchase-reconciliation';
 import { PurchasePaymentWorkbench } from './purchase-payment-workbench';
-import { PurchasePaymentResult } from './purchase-payment-result';
-import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
+import { PurchaseNacalcWorkbench } from './purchase-nacalc-workbench';
+import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import { PurchasePaymentSheet } from './purchase-payment-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
@@ -56,7 +55,8 @@ type DeskRow =
  * A phone walks a buyer through steps; a desk shows the whole container at
  * once. The command bar keeps status, next step and the live figures in
  * view. The main pane switches between the products, a real table you can
- * key through, and the payments workbench (⌥1 / ⌥2); everything else -
+ * key through, the payments workbench and the nacalculatie (⌥1 / ⌥2 / ⌥3);
+ * everything else -
  * order facts, cost mechanics, partner financing, the dossier, closing the
  * container - lives in one tabbed rail beside the products. The logic is
  * the phone editor's: only the room it gets is different.
@@ -64,7 +64,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentWorkbench, PurchasePaymentResult, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -177,11 +177,11 @@ type DeskRow =
           </div>
         }
 
-        <div class="desk-body" [class.desk-body--payments]="mainView() === 'payments'">
+        <div class="desk-body" [class.desk-body--payments]="mainView() !== 'products'">
           <!-- ============================ the table: every line, keyed through -->
           <main class="desk-main">
             <div class="desk-viewbar">
-              <app-segmented label="Weergave" semantics="tabs" [options]="viewOptions()" [value]="mainView()" (changed)="mainView.set($event === 'payments' ? 'payments' : 'products')" />
+              <app-segmented label="Weergave" semantics="tabs" [options]="viewOptions()" [value]="mainView()" (changed)="mainView.set($event === 'payments' ? 'payments' : $event === 'nacalc' ? 'nacalc' : 'products')" />
             </div>
             @if (mainView() === 'payments') {
               <app-purchase-payment-workbench id="purchase-payments-section" tabindex="-1"
@@ -193,6 +193,13 @@ type DeskRow =
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
                 (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" />
+            } @else if (mainView() === 'nacalc') {
+              <app-purchase-nacalc-workbench [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
+                [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [saving]="saving()"
+                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [orderId]="data.order.id"
+                (openPayments)="showPayments($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)"
+                (save)="save()" (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()"
+                (openPartner)="openPartner()" (openReports)="showRail('files')" (applyCosts)="showRail('done')" (openCosts)="showCosts()" />
             } @else {
             <div class="desk-table-bar">
               <div>
@@ -545,12 +552,8 @@ type DeskRow =
                 }
 
                 @case ('costs') {
-                  <div class="desk-costs-switch"><app-segmented label="Kosten" [options]="costsOptions" [value]="costsPane()" (changed)="costsPane.set($event === 'actual' ? 'actual' : 'plan')" /></div>
-                  @if (costsPane() === 'actual') {
-                    <app-purchase-payment-result [view]="data" [ledger]="paymentLedger()" actions="inline" [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
-                      (open)="showPayments($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee)" />
-                    <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" [hosted]="true" (openPayments)="showPayments()" />
-                  } @else {
+                  <!-- The nacalculatie in four lines; 'Volledig ›' opens the third main view. -->
+                  <app-purchase-nacalc-summary [summary]="nacalcSummary()" [dirty]="dirty()" (open)="showNacalculatie()" />
                   @if (!editing()) {
                     <div class="desk-panel__head"><strong>Kosten &amp; koersen</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
                     <div class="desk-rates">
@@ -726,7 +729,6 @@ type DeskRow =
                       </div>
                     }
                   </div>
-                }
                 }
 
                 @case ('partner') {
@@ -1047,10 +1049,10 @@ type DeskRow =
       }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
-          [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()"
+          [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
-          (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (payeeChange)="setPaymentPayee($event)"
+          (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
       }
       @if (settling(); as settle) {
@@ -1295,29 +1297,22 @@ export class PurchaseDesk extends PurchaseEditor {
 
   /** Which drawer of the rail is open; the order facts first, as on paper. */
   readonly railTab = signal<RailTab>('order');
-  /** The main pane: the products table, or the payments workbench across the full width. */
-  readonly mainView = signal<'products' | 'payments'>('products');
-  /** Kosten shows the calculation or, once paying, the Nacalculatie. */
-  readonly costsPane = signal<'plan' | 'actual'>('plan');
+  /** The main pane: the products table, the payments workbench or the nacalculatie, each across the full width. */
+  readonly mainView = signal<'products' | 'payments' | 'nacalc'>('products');
   readonly hasPartnerTab = computed(() => this.view()?.order.partnerCustomerId != null);
   /** A partner that was unlinked takes its tab along; the rail falls back to the order. */
   readonly activeRailTab = computed<RailTab>(() => this.railTab() === 'partner' && !this.hasPartnerTab() ? 'order' : this.railTab());
   readonly viewOptions = computed<SegmentOption[]>(() => [
     { id: 'products', label: 'Producten' },
     { id: 'payments', label: 'Betalingen', dot: (this.paymentLedger()?.summary.dueNowEur ?? 0) > 0 ? 'warn' : null },
+    { id: 'nacalc', label: 'Nacalculatie', dot: this.nacalc()?.headline.kind === 'review' ? 'warn' : null },
   ]);
-  readonly costsOptions: SegmentOption[] = [{ id: 'plan', label: 'Calculatie' }, { id: 'actual', label: 'Nacalculatie' }];
   /** The server's attention list names a payment: offer the way there. */
   readonly paymentAttention = computed(() => (this.view()?.attention ?? []).some(PurchaseDesk.isPaymentAttention));
   /** In the payments view the strip already answers what is due; the banner keeps only the rest. */
   readonly attentionShown = computed(() => {
     const items = this.view()?.attention ?? [];
     return this.mainView() === 'payments' ? items.filter(item => !PurchaseDesk.isPaymentAttention(item)) : items;
-  });
-  /** The Nacalculatie in one glance, for the workbench's side card. */
-  readonly nacalcSummary = computed(() => {
-    const data = this.view();
-    return data ? purchaseNacalcSummary(data) : null;
   });
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly workbench = viewChild(PurchasePaymentWorkbench);
@@ -1349,14 +1344,14 @@ export class PurchaseDesk extends PurchaseEditor {
     else this.showPayments();
   }
 
+  /** The calculation in the rail's Kosten pane. */
   showCosts(): void {
     this.showRail('costs');
-    this.costsPane.set('plan');
   }
 
+  /** The nacalculatie across the main pane, scrolled into view below the app bar. */
   showNacalculatie(): void {
-    this.showRail('costs');
-    this.costsPane.set('actual');
+    this.mainView.set('nacalc');
     requestAnimationFrame(() => {
       const target = document.getElementById('purchase-payment-result');
       target?.scrollIntoView({ block: 'start' });
@@ -1364,15 +1359,16 @@ export class PurchaseDesk extends PurchaseEditor {
     });
   }
 
-  /** ⌥1 products, ⌥2 payments; on a Mac ⌥1 types '¡', so the physical key counts. */
+  /** ⌥1 products, ⌥2 payments, ⌥3 nacalculatie; on a Mac ⌥1 types '¡', so the physical key counts. */
   @HostListener('document:keydown', ['$event'])
   onDeskKey(event: KeyboardEvent): void {
     if (!event.altKey || event.metaKey || event.ctrlKey || !this.view()) return;
-    if (event.code !== 'Digit1' && event.code !== 'Digit2') return;
+    if (event.code !== 'Digit1' && event.code !== 'Digit2' && event.code !== 'Digit3') return;
     const context = keyContext(event, this.host.nativeElement);
     if (context.typing || context.overlayOpen || !context.inScope) return;
     event.preventDefault();
     if (event.code === 'Digit2') this.showPayments();
+    else if (event.code === 'Digit3') this.showNacalculatie();
     else this.mainView.set('products');
   }
 

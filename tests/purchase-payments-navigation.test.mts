@@ -24,7 +24,7 @@ function harness(kind: 'desk' | 'editor' | 'viewer', loaded = true, partner = fa
   const calls: unknown[] = [];
   const child = {
     view: signal(loaded ? { order: { id: 50 } } : null), railTab: signal('order'), workspaceSection: signal('purchase-overview'),
-    mainView: signal('products'), costsPane: signal('plan'), hasPartnerTab: signal(partner),
+    mainView: signal('products'), hasPartnerTab: signal(partner),
     jumpToSection: (...args: unknown[]) => calls.push(['step', ...args]),
   };
   const dom = { activeElement: null as any, termsReady: true };
@@ -138,7 +138,7 @@ for (const kind of ['desk', 'editor', 'viewer'] as const) {
     state.screen.section.set('payment-result');
     state.screen.openRequestedSection();
     if (kind === 'desk') {
-      assert.deepEqual([state.child.mainView(), state.child.railTab(), state.child.costsPane()], ['products', 'costs', 'actual']);
+      assert.deepEqual([state.child.mainView(), state.child.railTab()], ['nacalc', 'order'], 'The nacalculatie is the third main view; the rail stays where it was');
     }
     if (kind === 'editor') assert.deepEqual(state.calls, [['step', 'purchase-costs-section', 'costs', false]]);
     if (kind === 'viewer') assert.equal(state.child.workspaceSection(), 'purchase-costs-section');

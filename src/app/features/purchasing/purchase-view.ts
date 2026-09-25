@@ -14,9 +14,10 @@ import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
-import { PurchaseReconciliation } from './purchase-reconciliation';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
-import { PurchasePaymentResult } from './purchase-payment-result';
+import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
+import { purchaseNacalc } from './purchase-nacalc-metrics';
+import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
 import { saveBlob } from '../../core/api/download';
@@ -24,7 +25,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe } from '../../shared/pipes';
 import {
-  Category, OtherCost, Payee, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
+  Category, OtherCost, PartnerFinancing, Payee, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -65,7 +66,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -653,12 +654,17 @@ type PurchaseWorkspaceSectionId =
               </div>
             </section>
 
-            <!-- Nacalculatie: what the container really cost, right under the calculation. -->
+            <!-- Nacalculatie: what the container really cost, right under the calculation. Recording and settling happen in the editor. -->
             <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
               <span class="section-kicker">Nacalculatie</span>
-              <app-purchase-payment-result [view]="data" [ledger]="paymentLedger()" actions="none" (open)="openPayee($event)" />
-              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [showStreams]="false" [hosted]="true"
-                (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')" />
+              <app-purchase-nacalc-overview mode="read" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
+                [state]="paymentState()" [error]="paymentsError()" [orderId]="data.order.id"
+                (openPayee)="openPayee($event)" (pay)="recordPayment($event)" (settle)="settleInEditor()"
+                (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')"
+                (openPartner)="scrollToCard('purchase-partner-section', 'purchase-payments-section')"
+                (openReports)="scrollToCard('purchase-reports-section', 'purchase-files-section')"
+                (applyCosts)="scrollToCard('purchase-actions-section', 'purchase-actions-section')"
+                (refresh)="reloadPayments()" (refreshPartner)="loadPartnerFinancing()" />
             </section>
 
             <!-- Money out, per payee: supplier, forwarder and customs, inspection,
@@ -667,7 +673,7 @@ type PurchaseWorkspaceSectionId =
                      id="purchase-payments-section" tabindex="-1"
                      aria-labelledby="purchase-payments-title">
               <app-purchase-payment-overview mode="read" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentsError()"
-                [planLabel]="planLabel()" [supplierName]="supplierName()"
+                [planLabel]="planLabel()" [supplierName]="supplierName()" [nacalc]="nacalcSummary()"
                 (add)="recordPayment($event)" (download)="downloadDocument($event)" (refresh)="reloadPayments()"
                 (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
             </section>
@@ -691,7 +697,7 @@ type PurchaseWorkspaceSectionId =
             }
 
             @if (data.receiptReports?.length) {
-              <section class="card payments-card erp-workspace__section erp-workspace__support-card"
+              <section class="card payments-card erp-workspace__section erp-workspace__support-card" id="purchase-reports-section" tabindex="-1"
                        aria-labelledby="purchase-reports-title">
                 <span class="section-kicker">Schade en tekorten</span>
                 <h2 id="purchase-reports-title">{{ data.receiptReports!.length }} melding{{ data.receiptReports!.length === 1 ? '' : 'en' }}</h2>
@@ -1109,15 +1115,53 @@ export class PurchaseView {
     if (id == null) return;
     void this.loadPartnerDocs(id);
     /* A linked document may have given the container its partner. */
-    void this.sourcing.purchaseOrder(id).then((fresh) => this.view.update((current) => current ? { ...current, order: { ...current.order,
-      partnerCustomerId: fresh.order.partnerCustomerId ?? null, partnerCostPct: fresh.order.partnerCostPct ?? null, partnerSharePct: fresh.order.partnerSharePct ?? null } } : current))
-      .catch(() => undefined);
+    void this.sourcing.purchaseOrder(id).then((fresh) => {
+      this.view.update((current) => current ? { ...current, order: { ...current.order,
+        partnerCustomerId: fresh.order.partnerCustomerId ?? null, partnerCostPct: fresh.order.partnerCostPct ?? null, partnerSharePct: fresh.order.partnerSharePct ?? null } } : current);
+      this.loadPartnerFinancing();
+    }).catch(() => undefined);
   }
 
-  /** The panel saved the partner: the fresh view replaces the old one, the documents follow. */
+  /** The panel saved the partner: the fresh view replaces the old one, the documents and the financing follow. */
   onPartnerSaved(fresh: PurchaseOrderView): void {
     this.view.update((current) => current ? { ...current, order: fresh.order, costing: fresh.costing } : fresh);
     void this.loadPartnerDocs(fresh.order.id);
+    this.loadPartnerFinancing();
+  }
+
+  /** The partner's money in, for the Nacalculatie's Partner block; fetched once per partner container and after a partner change. */
+  readonly partnerFinancing = signal<PartnerFinancing | null | 'loading' | 'error'>(null);
+  private partnerFinancingVersion = 0;
+
+  loadPartnerFinancing(): void {
+    const data = this.view();
+    const version = ++this.partnerFinancingVersion;
+    if (!data || data.order.partnerCustomerId == null) { this.partnerFinancing.set(null); return; }
+    this.partnerFinancing.set('loading');
+    this.sourcing.partnerFinancing(data.order.id).then((financing) => {
+      if (version === this.partnerFinancingVersion) this.partnerFinancing.set(financing);
+    }).catch(() => {
+      if (version === this.partnerFinancingVersion) this.partnerFinancing.set('error');
+    });
+  }
+
+  /** The Nacalculatie in four lines for the Betalingen card, and the whole story for the Kosten stop. */
+  readonly nacalcSummary = computed(() => {
+    const data = this.view();
+    return data ? purchaseNacalcSummary(data, this.paymentLedger()) : null;
+  });
+  readonly nacalc = computed(() => {
+    const data = this.view();
+    const partner = this.partnerFinancing();
+    return data ? purchaseNacalc({ view: data, ledger: this.paymentLedger(), summary: this.nacalcSummary(),
+      partner: partner === 'loading' || partner === 'error' ? null : partner }) : null;
+  });
+
+  /** Settling happens in the editor: open it on the Nacalculatie. */
+  settleInEditor(): void {
+    const id = this.view()?.order.id;
+    if (id == null) return;
+    void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'payment-result' } });
   }
 
   unlinkPartnerDoc(doc: SalesOrderView): void {
@@ -1309,6 +1353,7 @@ export class PurchaseView {
     this.categories.set(categories);
     this.suppliers.set(suppliers);
     this.view.set(view);
+    this.loadPartnerFinancing();
   }
 
   amt(value: number, line: { quantity: number }): number {

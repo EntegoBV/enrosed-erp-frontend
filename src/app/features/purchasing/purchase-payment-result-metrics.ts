@@ -1,4 +1,7 @@
-import type { Payee, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseReconciliationStream } from '../../core/api/models';
+import type {
+  Payee, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseReconciliationStream, PurchaseReconciliationTotals, UnitCostBasis,
+} from '../../core/api/models';
+import type { PaymentLedger, PayeeStatusKind } from './purchase-payment-ledger';
 
 export interface PurchasePaymentResultStream {
   payee: Payee;
@@ -123,7 +126,44 @@ function cents(value: unknown): number | null {
   return Number.isSafeInteger(amount) ? amount : null;
 }
 
-/** What the Betalingen workbench shows of the Nacalculatie in one side card. */
+/** Where the nacalculatie stands: a draft, a forecast, something to review, or final. */
+export type NacalcKind = 'concept' | 'provisional' | 'review' | 'final';
+export type NacalcTone = 'ok' | 'warn' | 'neutral' | 'outline';
+
+/** The state pill, one word per kind, shared by the summary card and the full nacalculatie. */
+export const NACALC_PILL: Readonly<Record<NacalcKind, { label: string; tone: NacalcTone }>> = {
+  concept: { label: 'Nog niet besteld', tone: 'outline' },
+  provisional: { label: 'Voorlopig', tone: 'neutral' },
+  review: { label: 'Na te kijken', tone: 'warn' },
+  final: { label: 'Definitief', tone: 'ok' },
+};
+
+/** What the headline figure is called in each state. */
+export const NACALC_LABEL: Readonly<Record<NacalcKind, 'Begrote kost' | 'Verwachte eindkost' | 'Eindkost'>> = {
+  concept: 'Begrote kost', provisional: 'Verwachte eindkost', review: 'Verwachte eindkost', final: 'Eindkost',
+};
+
+const REVIEW_STATUSES: ReadonlySet<PayeeStatusKind> = new Set<PayeeStatusKind>(['OVERPAID', 'UNBUDGETED', 'INCOMPLETE']);
+
+/**
+ * The state machine. With the ledger, a payee that is overpaid, unbudgeted or
+ * incomplete (or figures that do not close) means review; without it the
+ * server report alone decides: an unsettled overrun or a stream missing its
+ * euro amount. Final needs every stream finalized on a non-concept order.
+ */
+export function nacalcKind(
+  result: Pick<PurchasePaymentResult, 'eligible' | 'finalized' | 'unsettledOverrunsEur' | 'streams'>,
+  totals: Pick<PurchaseReconciliationTotals, 'finalized'>,
+  ledger?: Pick<PaymentLedger, 'payees' | 'summary'> | null,
+): NacalcKind {
+  if (!result.eligible) return 'concept';
+  const ledgerReview = !!ledger && (!ledger.summary.balanced || ledger.payees.some(payee => REVIEW_STATUSES.has(payee.status.kind)));
+  const serverReview = result.unsettledOverrunsEur > 0 || result.streams.some(stream => !stream.finalized && stream.paidEur === null);
+  if (ledgerReview || serverReview) return 'review';
+  return totals.finalized === true && result.finalized ? 'final' : 'provisional';
+}
+
+/** What the Betalingen workbench and the desk rail show of the Nacalculatie in one card, and what the full story starts from. */
 export interface PurchaseNacalcSummary {
   eligible: boolean;
   finalized: boolean;
@@ -134,12 +174,29 @@ export interface PurchaseNacalcSummary {
   netResultEur: number;
   internalMarkupEur: number;
   markupWithResultEur: number;
+  kind: NacalcKind;
+  label: 'Begrote kost' | 'Verwachte eindkost' | 'Eindkost';
+  pill: { label: string; tone: NacalcTone };
+  /** totals.remainingEur: what still has to be paid on the agreements. */
+  openEur: number;
+  /** Paid beyond an agreement and not yet settled: inside the forecast, apart from every result. */
+  reviewEur: number;
+  unitEur: number | null;
+  unitQuantity: number;
+  unitBasis: UnitCostBasis;
+  /** The confirmed differences, as purchasePaymentResult counts them; the full nacalculatie explains the Verschil with these. */
+  settledSavingsEur: number;
+  settledOverrunsEur: number;
+  additionalCostsEur: number;
 }
 
-export function purchaseNacalcSummary(view: Pick<PurchaseOrderView, 'order' | 'reconciliation'>): PurchaseNacalcSummary | null {
+export function purchaseNacalcSummary(
+  view: Pick<PurchaseOrderView, 'order' | 'reconciliation'>, ledger?: Pick<PaymentLedger, 'payees' | 'summary'> | null,
+): PurchaseNacalcSummary | null {
   const result = purchasePaymentResult(view);
   const totals = view.reconciliation?.totals;
   if (!result || !totals) return null;
+  const kind = nacalcKind(result, totals, ledger);
   return {
     eligible: result.eligible,
     finalized: totals.finalized === true,
@@ -148,5 +205,16 @@ export function purchaseNacalcSummary(view: Pick<PurchaseOrderView, 'order' | 'r
     netResultEur: result.netResultEur,
     internalMarkupEur: result.internalMarkupEur,
     markupWithResultEur: result.markupWithResultEur,
+    kind,
+    label: NACALC_LABEL[kind],
+    pill: NACALC_PILL[kind],
+    openEur: totals.remainingEur,
+    reviewEur: result.unsettledOverrunsEur,
+    unitEur: totals.forecastExternalUnitEur ?? null,
+    unitQuantity: totals.unitCostQuantity ?? 0,
+    unitBasis: totals.unitCostBasis ?? 'ORDERED',
+    settledSavingsEur: result.settledSavingsEur,
+    settledOverrunsEur: result.settledOverrunsEur,
+    additionalCostsEur: result.additionalCostsEur,
   };
 }

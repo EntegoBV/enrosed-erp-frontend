@@ -9,6 +9,7 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
 import { DUE_MOMENT, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, type Due } from './purchase-payment-ledger';
+import { formatEur } from './purchase-payment-menus';
 import { PurchasePaymentScope } from './purchase-payment-scope';
 
 /** The editor's payment draft, as the sheet edits it. */
@@ -23,6 +24,9 @@ export interface PurchasePaymentDraft {
   files: File[];
   settles: boolean;
   instalmentDue?: Due | null;
+  /** 'Afgeschreven in euro': the bank's debit of a USD/CNY payment, as typed and as parsed; empty means the order rate. */
+  amountEurInput?: string;
+  amountEur?: number | null;
 }
 
 let nextSheetId = 0;
@@ -66,8 +70,8 @@ let nextSheetId = 0;
               </select>
             </div>
             @if (pay.amountInput && pay.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 1.046,95.</span> }
-            @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0) {
-              <span class="hint">≈ {{ draftEur() | eur }} · EUR-bedrag van deze boeking; bij een bedragwijziging geldt de huidige orderkoers.</span>
+            @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0 && !((pay.amountEur ?? 0) > 0)) {
+              <span class="hint">Zonder bankbedrag geldt de orderkoers: ≈ {{ draftEur() | eur }}.</span>
             }
             @if (overageEur() > 0) {
               <span class="hint hint--warn">Hiermee is {{ overageEur() | eur }} meer betaald dan afgesproken. Klopt het bedrag? Bankkosten noteer je apart bij Bijkomende kosten.</span>
@@ -79,6 +83,19 @@ let nextSheetId = 0;
             <label [for]="ids + '-date'">Betaald op</label>
             <app-date-field [fieldId]="ids + '-date'" [value]="pay.paidOn" (valueChange)="patch.emit({ paidOn: $event })" />
           </div>
+          @if (pay.currency !== 'EUR') {
+            <div class="field span-2 pay-sheet__bank">
+              <label [for]="ids + '-eur'">Afgeschreven in euro <span class="opt"></span></label>
+              <div class="input-affix">
+                <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy()"
+                       [placeholder]="rateEur() > 0 ? rateText() : ''" [ngModel]="pay.amountEurInput ?? ''" (ngModelChange)="amountEurInput.emit($event)" />
+                <span class="input-affix__suffix">EUR</span>
+              </div>
+              @if (pay.amountEurInput && pay.amountEur === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 18.300,00.</span> }
+              @else if (bankOff()) { <span class="hint hint--warn" role="status">Wijkt sterk af van de orderkoers — controleer bedrag en munt.</span> }
+              @else { <span class="hint">{{ rateHint() }}</span> }
+            </div>
+          }
           <div class="field span-2">
             <label [for]="ids + '-label'">Omschrijving <span class="opt"></span></label>
             <input class="input" [id]="ids + '-label'" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
@@ -116,6 +133,8 @@ export class PurchasePaymentSheet {
   readonly openHint = input<{ label: string; amountEur: number } | null>(null);
   readonly overageEur = input(0);
   readonly draftEur = input(0);
+  /** The foreign amount at the order rate: the placeholder and yardstick of 'Afgeschreven in euro'. */
+  readonly rateEur = input(0);
   /** The payee of the stored payment when editing, to warn about a move. */
   readonly originalPayee = input<Payee | null>(null);
   readonly originalSettles = input(false);
@@ -125,6 +144,7 @@ export class PurchasePaymentSheet {
   readonly groupLabel = input('Leverancier');
   readonly patch = output<Partial<PurchasePaymentDraft>>();
   readonly amountInput = output<string>();
+  readonly amountEurInput = output<string>();
   readonly payeeChange = output<Payee>();
   readonly confirm = output<void>();
   readonly cancel = output<void>();
@@ -143,6 +163,15 @@ export class PurchasePaymentSheet {
     const due = pay.payee === 'SUPPLIER' ? pay.instalmentDue : null;
     const term = due ? this.instalmentOptions().find(option => option.due === due)?.label ?? 'termijn ' + DUE_MOMENT[due] : null;
     return `${term ? 'Telt voor ' + term : 'Automatisch'} · ${!pay.settles ? 'niet afgerekend' : due ? 'rekent termijn af' : 'rekent alles af'}`;
+  });
+  /** The order-rate estimate as a typable placeholder, e.g. 18.450,00. */
+  readonly rateText = computed(() => this.rateEur().toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  readonly rateHint = computed(() => `Leeg laten = orderkoers${this.rateEur() > 0 ? ' (' + formatEur(this.rateEur()) + ')' : ''}. Vul het afgeschreven bedrag in voor het echte koersverschil.`);
+  /** More than 15 % away from the order rate: probably the foreign amount typed as euro. Warns, never blocks. */
+  readonly bankOff = computed(() => {
+    const bank = this.draft().amountEur ?? null;
+    const rate = this.rateEur();
+    return bank !== null && bank > 0 && rate > 0 && Math.abs(bank - rate) / rate > 0.15;
   });
   readonly moved = computed(() => {
     const from = this.originalPayee();

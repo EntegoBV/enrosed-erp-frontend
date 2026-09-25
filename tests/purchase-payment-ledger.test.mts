@@ -7,7 +7,7 @@ import { PAYMENT_TERMS } from '../src/app/core/api/models.ts';
 import { instalmentsOf } from '../src/app/features/purchasing/payment-plan.ts';
 import { purchaseGroupSettled, purchaseInstalmentState } from '../src/app/features/purchasing/purchase-instalment-state.ts';
 import {
-  PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, paymentOptionParts, payeeComposition, purchaseLandedBridge, purchasePaymentLedger,
+  PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, paymentOptionParts, payeeComposition, payeeRowAction, purchaseLandedBridge, purchasePaymentLedger,
   settleCarriers, sortLedgerRows, type PaymentLedger,
 } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import { reconciliationStatusLabel } from '../src/app/features/purchasing/purchase-reconciliation-metrics.ts';
@@ -440,6 +440,30 @@ test('the headline and next step answer what has to be paid now', () => {
   const done = ledger(purchase({ status: 'ONTVANGEN', streams: [stream('SUPPLIER', { plannedEur: 1000, paidEur: 1000, finalized: true }), stream('LOGISTICS')] }), [payment(1, { amountEur: 1000 })]);
   assert.equal(done.summary.headline.kind, 'done');
   assert.equal(done.summary.progress, 1);
+});
+
+test('the one text action of a payee row is the same rule on every screen: record what is due, settle only a remainder that is not scheduled later', () => {
+  const action = (status: Status, values: Partial<PurchaseReconciliationStream>, payee: 'SUPPLIER' | 'LOGISTICS' | 'SEPARATE' | 'OTHER' = 'LOGISTICS',
+    payments: PurchasePayment[] = values.paidEur ? [payment(1, { payee, amountEur: values.paidEur, amount: values.paidEur })] : []) => {
+    const item = of(ledger(purchase({ status, streams: [stream('SUPPLIER', { plannedEur: 1000, remainingEur: 1000 }), stream(payee, values)] }), payments), payee);
+    assert.equal(item.action, payeeRowAction(item), 'the ledger stamps the rule on the payee');
+    return item.action;
+  };
+  assert.equal(action('ONDERWEG', { plannedEur: 400, remainingEur: 400 }), 'add', 'due now');
+  assert.equal(action('BESTELD', { plannedEur: 400, remainingEur: 400 }), 'add', 'open later only: record ahead of time, never settle');
+  assert.equal(action('BESTELD', { plannedEur: 400, paidEur: 120, remainingEur: 280 }), 'add', 'a remainder scheduled later is never settled');
+  assert.equal(action('ONDERWEG', { plannedEur: 400, paidEur: 395.2, remainingEur: 4.8 }), 'settle', 'small difference');
+  assert.equal(action('BESTELD', { plannedEur: 400, paidEur: 395.2, remainingEur: 4.8 }), 'add', 'a small difference whose remainder is scheduled later is recorded, never settled');
+  assert.equal(action('ONDERWEG', { plannedEur: 400, paidEur: 430, overpaidEur: 30 }), 'settle', 'overpaid and unsettled');
+  assert.equal(action('ONDERWEG', { paidEur: 60, overpaidEur: 60 }), 'settle', 'unbudgeted');
+  assert.equal(action('ONDERWEG', { plannedEur: 400, paidEur: 400, finalized: true }), null, 'nothing left');
+  assert.equal(action('ONDERWEG', { plannedEur: 400, paidEur: 380, settledSavingEur: 20, finalized: true, explicitlySettled: true }), null, 'settled lower');
+  assert.equal(action('ONDERWEG', { paidEur: 12 }, 'OTHER'), null, 'bijkomende kosten have no agreement to settle');
+  // Mock 14: the supplier's 30 % is paid and the 70 % waits for departure; the workbench records, it does not settle.
+  const deposit = of(ledger(purchase({ status: 'BESTELD', streams: [stream('SUPPLIER', { plannedEur: 42000, paidEur: 12600, remainingEur: 29400 })],
+    instalments: [instalment('ORDERED', { plannedEur: 12600, paidEur: 12600, finalized: true }), instalment('SHIPPED', { plannedEur: 29400, remainingEur: 29400 })] }),
+    [payment(1, { amountEur: 12600, amount: 104278.72, currency: 'CNY', instalmentDue: 'ORDERED' })]), 'SUPPLIER');
+  assert.deepEqual([deposit.laterEur, deposit.canSettle, deposit.action], [29400, true, 'add']);
 });
 
 test('payee statuses use the same words as the reconciliation labels in Analyses', () => {

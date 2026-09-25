@@ -13,8 +13,10 @@ import { PurchaseView } from './purchase-view';
  *
  * Deep links: ?section=payments is partner financing (money in),
  * ?section=ledger the payments to suppliers and forwarders (money out),
- * ?section=payment-result the Nacalculatie, and ?section=pay&payee=…&due=…
- * opens the payment sheet once the payments have loaded.
+ * ?section=payment-result the Nacalculatie (the desk's third main view, the
+ * phone's Kosten stop; both roots carry id purchase-payment-result), and
+ * ?section=pay&payee=…&due=… opens the payment sheet once the payments have
+ * loaded.
  */
 @Component({
   selector: 'app-purchase-screen',
@@ -89,9 +91,8 @@ export class PurchaseScreen {
     untracked(() => {
       if (desk) {
         if (section === 'payment-result') {
-          desk.mainView.set('products');
-          desk.railTab.set('costs');
-          desk.costsPane.set('actual');
+          // The nacalculatie is the desk's third main view; the rail stays as it was.
+          desk.mainView.set('nacalc');
         } else if (section === 'payments' && desk.hasPartnerTab()) {
           // Every financing link means the partner's money coming in.
           desk.mainView.set('products');

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
@@ -11,9 +11,10 @@ import { PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE } from './purchase-payment-ledger';
 import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
 
 /**
- * The same server-owned settlement picture in the desk rail, the phone Kosten
- * card and the container analysis: what the container really costs, per piece
- * and per product. Styles live in styles/purchase-payments.scss.
+ * The server-owned settlement picture in Analyses › Inkoop (Containerafrekening):
+ * what the container really costs, per stream, per piece and per product. The
+ * container screens tell this story with app-purchase-nacalc-workbench and
+ * -overview. Styles live in styles/purchase-payments.scss.
  */
 @Component({
   selector: 'app-purchase-reconciliation',
@@ -110,11 +111,9 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
         <p class="reconciliation__note">De nacalculatie is nog niet beschikbaar. Vernieuw de order om de actuele betalingen op te halen.</p>
       }
       <div class="reconciliation__foot">
-        @if (hosted()) {
-          <button class="wk-link" type="button" (click)="openPayments.emit()">Betalingen ›</button>
-        } @else {
-          <a class="wk-link" [routerLink]="['/purchasing', orderId()]" [queryParams]="{ section: 'ledger' }">Betalingen ›</a>
-        }
+        <a class="wk-link" [routerLink]="['/purchasing', orderId()]" [queryParams]="{ section: 'payment-result' }">Nacalculatie ›</a>
+        <span aria-hidden="true">·</span>
+        <a class="wk-link" [routerLink]="['/purchasing', orderId()]" [queryParams]="{ section: 'ledger' }">Betalingen ›</a>
         <span aria-hidden="true">·</span>
         <a class="wk-link" routerLink="/costs" [queryParams]="{ container: orderId() }">Kosten &amp; bank ›</a>
       </div>
@@ -129,9 +128,6 @@ export class PurchaseReconciliation {
   readonly dirty = input(false);
   /** The payee figures belong to Betalingen; Analyses still shows them here. */
   readonly showStreams = input(true);
-  /** Inside the purchase screen the Betalingen link switches the view instead of navigating. */
-  readonly hosted = input(false);
-  readonly openPayments = output<void>();
   readonly payeeLabel = PAYEE_LABEL;
   readonly icon = PAYEE_ICON;
   readonly tone = PAYEE_TONE;

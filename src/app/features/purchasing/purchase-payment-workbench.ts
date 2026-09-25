@@ -11,10 +11,11 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, sortLedgerRows, type Due, type LedgerRow, type LedgerTodo,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeRowAction, sortLedgerRows, type Due, type LedgerRow, type LedgerTodo,
   type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
-import { formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith } from './purchase-payment-menus';
+import { formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, todoCopy } from './purchase-payment-menus';
+import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
 type LedgerFilter = 'ALL' | Payee | 'NO_PROOF';
@@ -36,7 +37,7 @@ type MenuState =
 @Component({
   selector: 'app-purchase-payment-workbench',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ContextMenu, Icon, MenuTrigger, Skeleton, EurPipe, CurPipe, DateNlPipe],
+  imports: [ContextMenu, Icon, MenuTrigger, Skeleton, PurchaseNacalcSummaryCard, EurPipe, CurPipe, DateNlPipe],
   host: { '(keydown)': 'onKey($event)' },
   template: `
     <div class="pw">
@@ -385,29 +386,13 @@ type MenuState =
                     </div>
                   </section>
                 </div>
-                @if (nacalc(); as n) {
-                  <div>
-                    <section class="wk-card">
-                      <header class="wk-card__head"><h3 class="wk-card__title">Nacalculatie</h3><button class="wk-link wk-card__trail" type="button" (click)="openCosts.emit('actual')">Volledig ›</button></header>
-                      <div class="wk-card__body">
-                        @if (!n.eligible) {
-                          <p class="pw-muted">Verschijnt zodra de container besteld is.</p>
-                        } @else {
-                          <dl class="wk-equation">
-                            <div><dt>{{ n.finalized ? 'Definitieve externe kost' : 'Verwachte externe kost' }}</dt><dd>{{ n.forecastEur | eur }}</dd></div>
-                            <div><dt>Verschil met raming</dt><dd [class.wk-amount--warn]="n.varianceEur > 0" [class.wk-amount--in]="n.varianceEur < 0" [class.wk-amount--muted]="n.varianceEur === 0">{{ n.varianceEur === 0 ? 'geen' : signed(n.varianceEur) }}</dd></div>
-                            <div><dt>Betalingsresultaat</dt><dd [class.wk-amount--warn]="n.netResultEur < 0" [class.wk-amount--in]="n.netResultEur > 0" [class.wk-amount--muted]="n.netResultEur === 0">{{ signed(n.netResultEur) }}</dd></div>
-                            <div class="is-total"><dt>Enrosed kost + resultaat</dt><dd>{{ n.markupWithResultEur | eur }}</dd></div>
-                          </dl>
-                        }
-                      </div>
-                    </section>
-                  </div>
+                @if (nacalc()) {
+                  <div><app-purchase-nacalc-summary [summary]="nacalc()" [dirty]="dirty()" (open)="openCosts.emit('actual')" /></div>
                 }
               </aside>
             </div>
             <footer class="wk-statusbar pw-status">
-              <span>{{ sum.paymentCount }} {{ sum.paymentCount === 1 ? 'betaling' : 'betalingen' }}@if (sum.missingProofCount) { · {{ sum.missingProofCount }} zonder bewijs } · in euro, koers van de betaaldag</span>
+              <span>{{ sum.paymentCount }} {{ sum.paymentCount === 1 ? 'betaling' : 'betalingen' }}@if (sum.missingProofCount) { · {{ sum.missingProofCount }} zonder bewijs } · in euro zoals geboekt</span>
               <span class="wk-statusbar__end pw-keys"><kbd class="wk-kbd">N</kbd> nieuw · <kbd class="wk-kbd">A</kbd> afrekenen · <kbd class="wk-kbd">↩</kbd> aanpassen · <kbd class="wk-kbd">⌥1</kbd> <kbd class="wk-kbd">⌥2</kbd> weergave</span>
             </footer>
           }
@@ -538,16 +523,9 @@ export class PurchasePaymentWorkbench {
   }
   proofNames(row: LedgerRow): string { return (row.proofs ?? []).map(proof => proof.originalFilename).join(', '); }
 
-  /**
-   * The one text button of a payee row: record what is due, settle a remainder
-   * that is not scheduled for later (a small difference, an overpayment, a
-   * payment without budget), else record ahead of time; a closed payee has
-   * only the ⋯ menu.
-   */
+  /** The one text button of a payee row: the ledger's shared rule, the same as the Nacalculatie's. */
   rowAction(item: PayeeLedger): 'add' | 'settle' | null {
-    if (item.dueNowEur > 0) return 'add';
-    if (item.canSettle && item.laterEur === 0) return 'settle';
-    return item.openEur > 0 ? 'add' : null;
+    return payeeRowAction(item);
   }
 
   /** What comes next under the status pill, unless the pill already says it. */
@@ -740,31 +718,9 @@ export class PurchasePaymentWorkbench {
     }
   }
 
-  todoTitle(todo: LedgerTodo): string {
-    switch (todo.kind) {
-      case 'pay': return todo.label;
-      case 'settle': return `Klein verschil bij ${PAYEE_LABEL[todo.payee]}`;
-      case 'review': return `Te veel betaald aan ${PAYEE_LABEL[todo.payee]}`;
-      case 'budget': return `Niet begroot: ${PAYEE_LABEL[todo.payee]}`;
-      case 'incomplete': return `Betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`;
-      case 'proof': return `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder bewijs`;
-    }
-  }
-
-  todoDetail(todo: LedgerTodo): string {
-    switch (todo.kind) {
-      case 'pay': return `${formatEur(todo.amountEur)} · nu te betalen${todo.due ? ' · ' + PAYEE_LABEL[todo.payee] : ''}`;
-      case 'settle': return `${formatEur(todo.amountEur)} open · bijv. bankkosten of afronding`;
-      case 'review': return `${formatEur(todo.amountEur)} meer dan afgesproken`;
-      case 'budget': return `${formatEur(todo.amountEur)} betaald zonder bedrag in Kosten`;
-      case 'incomplete': return 'Controleer het bedrag van deze betaling';
-      case 'proof': return 'Voeg het bankafschrift toe';
-    }
-  }
-
-  todoAction(todo: LedgerTodo): string {
-    return { pay: 'Noteer', settle: 'Afrekenen', review: 'Nakijken', budget: 'Afrekenen', incomplete: 'Bekijken', proof: 'Toon' }[todo.kind];
-  }
+  todoTitle(todo: LedgerTodo): string { return todoCopy(todo).title; }
+  todoDetail(todo: LedgerTodo): string { return todoCopy(todo).detail; }
+  todoAction(todo: LedgerTodo): string { return todoCopy(todo).action; }
 
   runTodo(todo: LedgerTodo): void {
     switch (todo.kind) {

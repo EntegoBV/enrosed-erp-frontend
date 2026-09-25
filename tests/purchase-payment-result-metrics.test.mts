@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseOrderView, PurchaseReconciliationStream } from '../src/app/core/api/models.ts';
-import { purchaseNacalcSummary, purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
+import { NACALC_LABEL, NACALC_PILL, nacalcKind, purchaseNacalcSummary, purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 
 function stream(values: Partial<PurchaseReconciliationStream> = {}): PurchaseReconciliationStream {
   return { payee: 'SUPPLIER', label: 'Leverancier', status: 'PARTIAL', plannedEur: 1_000,
@@ -279,7 +279,47 @@ test('the nacalculatie summary carries the server forecast and variance next to 
   const summary = purchaseNacalcSummary(view)!;
   assert.deepEqual(summary, {
     eligible: true, finalized: true, forecastEur: 940, varianceEur: -60, netResultEur: 60, internalMarkupEur: 250, markupWithResultEur: 310,
+    kind: 'final', label: 'Eindkost', pill: { label: 'Definitief', tone: 'ok' }, openEur: 0, reviewEur: 0,
+    unitEur: null, unitQuantity: 0, unitBasis: 'ORDERED', settledSavingsEur: 60, settledOverrunsEur: 0, additionalCostsEur: 0,
   });
   const provisional = purchaseNacalcSummary(purchase([stream({ paidEur: 300, remainingEur: 700 })]))!;
   assert.deepEqual([provisional.finalized, provisional.forecastEur, provisional.varianceEur, provisional.netResultEur], [false, 1_000, 0, 0]);
+  assert.deepEqual([provisional.kind, provisional.label, provisional.pill, provisional.openEur, provisional.reviewEur],
+    ['provisional', 'Verwachte eindkost', { label: 'Voorlopig', tone: 'neutral' }, 700, 0]);
+});
+
+test('the summary carries the state machine: concept, review on an unsettled overrun or a missing euro amount, final only when everything is', () => {
+  const concept = purchase([lower()], true);
+  concept.order.status = 'CONCEPT';
+  const draft = purchaseNacalcSummary(concept)!;
+  assert.deepEqual([draft.kind, draft.label, draft.pill], ['concept', 'Begrote kost', { label: 'Nog niet besteld', tone: 'outline' }]);
+  const overrun = stream({ paidEur: 1_075, remainingEur: 0, forecastEur: 1_075, varianceEur: 75, overpaidEur: 75, status: 'OVERPAID' });
+  const review = purchaseNacalcSummary(purchase([overrun]))!;
+  assert.deepEqual([review.kind, review.label, review.pill.label, review.reviewEur], ['review', 'Verwachte eindkost', 'Na te kijken', 75]);
+  const missing = purchaseNacalcSummary(purchase([{ ...stream(), paidEur: null as unknown as number }]))!;
+  assert.equal(missing.kind, 'review', 'a stream without its euro amount cannot be a plain forecast');
+  const settled = purchaseNacalcSummary(purchase([{ ...overrun, explicitlySettled: true, finalized: true }], true))!;
+  assert.deepEqual([settled.kind, settled.reviewEur, settled.settledOverrunsEur], ['final', 0, 75]);
+  const notYetTotals = purchaseNacalcSummary(purchase([lower()], false))!;
+  assert.equal(notYetTotals.kind, 'provisional', 'the server totals must also say finalized');
+  for (const kind of ['concept', 'provisional', 'review', 'final'] as const) {
+    assert.equal(NACALC_PILL[kind].label.length > 0 && NACALC_LABEL[kind].length > 0, true);
+  }
+});
+
+test('with the ledger, an overpaid, unbudgeted or incomplete payee (or figures that do not close) means review', () => {
+  const view = purchase([stream({ paidEur: 300, remainingEur: 700 })]);
+  const result = purchasePaymentResult(view)!;
+  const payee = (kind: string) => ({ status: { kind } });
+  const balanced = { summary: { balanced: true } };
+  assert.equal(nacalcKind(result, view.reconciliation!.totals, { payees: [payee('PARTIAL')], ...balanced } as never), 'provisional');
+  for (const kind of ['OVERPAID', 'UNBUDGETED', 'INCOMPLETE']) {
+    assert.equal(nacalcKind(result, view.reconciliation!.totals, { payees: [payee('PARTIAL'), payee(kind)], ...balanced } as never), 'review', kind);
+  }
+  assert.equal(nacalcKind(result, view.reconciliation!.totals, { payees: [payee('PARTIAL')], summary: { balanced: false } } as never), 'review');
+  assert.equal(purchaseNacalcSummary(view, { payees: [payee('INCOMPLETE')], ...balanced } as never)!.pill.label, 'Na te kijken');
+  const unit = purchase([stream({ paidEur: 300, remainingEur: 700 })]);
+  Object.assign(unit.reconciliation!.totals, { forecastExternalUnitEur: 12.6267, unitCostQuantity: 5_560, unitCostBasis: 'ORDERED' });
+  const summary = purchaseNacalcSummary(unit)!;
+  assert.deepEqual([summary.unitEur, summary.unitQuantity, summary.unitBasis], [12.6267, 5_560, 'ORDERED']);
 });

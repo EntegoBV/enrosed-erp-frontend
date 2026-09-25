@@ -173,6 +173,8 @@ export interface PayeeLedger {
   smallDifference: boolean;
   settleDefault: PurchaseSettleRequest;
   next: LedgerNext | null;
+  /** The one text action of the payee's row on every screen: payeeRowAction. */
+  action: 'add' | 'settle' | null;
   visible: boolean;
 }
 
@@ -382,6 +384,8 @@ function payeeLedger(
     : { payee, due: null, label: PAYEE_LABEL[payee], amountEur: euro(open), now: dueNow > 0,
       when: dueNow > 0 ? 'nu' : laterDue ? DUE_MOMENT[laterDue] : 'later' };
 
+  const canSettle = !other && known && rows.length >= 1
+    && (open > 0 || (higher > 0 && !finalized) || status.kind === 'UNBUDGETED');
   return {
     payee,
     label: PAYEE_LABEL[payee],
@@ -410,14 +414,29 @@ function payeeLedger(
     terms,
     composition: composition.lines,
     compositionConsistent: composition.consistent,
-    canSettle: !other && known && rows.length >= 1
-      && (open > 0 || (higher > 0 && !finalized) || status.kind === 'UNBUDGETED'),
+    canSettle,
     canUndoSettle: settledRows,
     smallDifference: status.kind === 'SMALL_DIFFERENCE',
     settleDefault,
     next,
+    action: payeeRowAction({ dueNowEur: euro(dueNow), canSettle, laterEur: euro(later), openEur: euro(open), smallDifference: status.kind === 'SMALL_DIFFERENCE' }),
     visible: payee === 'SUPPLIER' || rows.length > 0 || (!other && (agreed ?? 0) > 0),
   };
+}
+
+/**
+ * The one text action of a payee row, shared by Betalingen and the
+ * Nacalculatie: a small difference is settled rather than paid, what is due
+ * is recorded, a remainder that is not scheduled for later (an overpayment, a
+ * payment without budget) is settled, else money is recorded ahead of time;
+ * a closed payee has only the ⋯ menu. Nothing is ever settled while a
+ * remainder is scheduled later, a small one included.
+ */
+export function payeeRowAction(item: Pick<PayeeLedger, 'dueNowEur' | 'canSettle' | 'laterEur' | 'openEur' | 'smallDifference'>): 'add' | 'settle' | null {
+  if (item.smallDifference && item.canSettle && item.laterEur === 0) return 'settle';
+  if (item.dueNowEur > 0) return 'add';
+  if (item.canSettle && item.laterEur === 0) return 'settle';
+  return item.openEur > 0 ? 'add' : null;
 }
 
 /**

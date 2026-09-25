@@ -4,8 +4,7 @@
    app-purchase-* host, a purchase hook (.desk-viewbar, .desk-body--payments,
    .purchase-payments-plain, .purchase-result-card) or a class only these
    components use (pw-, pp-, pr-, rc-, pay-sheet, settle-sheet, payee-sheet,
-   payment-scope, payment-result, reconciliation); kit classes are never
-   restyled bare.
+   payment-scope, reconciliation); kit classes are never restyled bare.
 
    Desk: the workbench in the purchase desk's main pane. Container `pw`
    sizes the strip and the side cards (1100 / 760); the main column is
@@ -14,15 +13,14 @@
    hides Verschil and the text buttons (the ⋯ stays), 600 hides Status (the
    pill moves under the name). Verschil only renders once a payee or term was
    settled for another amount. Phone: grouped lists. Shared: the sheets, the
-   scope control and the Nacalculatie (payment result + reconciliation) as
-   shown in the desk rail, the phone Kosten card and Analyses.
+   scope control and the reconciliation card of Analyses › Inkoop. The
+   Nacalculatie of the container screens lives in purchase-nacalc.scss.
    ========================================================================== */
 
 /* ---- desk: view switch; the payments view takes the whole width */
 .desk-viewbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line)}
 .desk-body.desk-body--payments{grid-template-columns:minmax(0,1fr)}
 .desk-body.desk-body--payments>.desk-rail{display:none}
-.desk-costs-switch{margin-bottom:12px}
 
 /* ---- desk: the workbench */
 app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-margin-top:calc(var(--appbar-h,62px) + 8px)}
@@ -215,16 +213,7 @@ app-purchase-payment-scope{display:block;min-width:0;--ios-inset:0px}
 .payment-scope__explanation{margin:0;padding:10px 12px;border-radius:12px;background:var(--rose-soft);color:var(--ink-2);font-size:12px;line-height:1.5}
 .payment-scope__explanation b{display:block;font-weight:650}
 
-/* ---- Nacalculatie: the payment result and the cost price (desk rail, phone Kosten card, Analyses) */
-app-purchase-payment-result{display:block;min-width:0;margin-bottom:12px}
-.payment-result{display:grid;gap:10px;padding:16px;border:1px solid var(--rose-line);border-radius:16px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));outline:none;scroll-margin-top:calc(var(--appbar-h,62px) + 16px)}
-.payment-result__head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
-.payment-result__head h3{flex:1 1 auto;min-width:0;margin:0;font-size:15px}
-/* the net figure sits last and drops to its own line in a narrow rail */
-.payment-result__net{order:3;margin-left:auto;font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
-.payment-result__note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
-.payment-result__pending{margin:0;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:#7c450b;font-size:12px}
-.payment-result__sub{margin:6px 0 0;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+/* ---- Analyses › Inkoop: the reconciliation card with its per-stream rows and the cost price */
 .pr-payees{display:grid}
 .pr-payee{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
 .pr-payee:first-child{border-top:0}
@@ -264,15 +253,9 @@ app-purchase-reconciliation{display:block;min-width:0}
 .rc-product__plan{color:var(--muted)}
 .reconciliation__notes ul{margin:2px 0 10px;padding-left:16px;color:var(--muted);font-size:11px;line-height:1.5}.reconciliation__notes li+li{margin-top:5px}
 .reconciliation__foot{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);color:var(--muted-2);font-size:12.5px}
-.purchase-result-card{padding:14px}
-.purchase-result-card>.section-kicker{margin-bottom:10px}
 @media (max-width:679.98px){
- .purchase-result-card .payment-result,.purchase-result-card .reconciliation{padding:0;border:0;background:transparent;box-shadow:none}
- .purchase-result-card app-purchase-payment-result{margin-bottom:0}
- .purchase-result-card app-purchase-reconciliation{margin:14px 0 0;padding-top:14px;border-top:1px solid var(--line)}
  /* thumb-sized targets: the inline links and the PDF button are real actions on a phone */
  .pr-payee{padding:12px 0}.pr-payee__copy b{font-size:15px}.pr-payee__figures{font-size:13px}.pr-payee__state .wk-link{min-height:44px;font-size:14px}
- .purchase-result-card .reconciliation__pdf{height:44px;padding:0 14px;border-radius:12px;font-size:14px}
  .rc-product{font-size:14px}.rc-product__copy small{font-size:12px}.rc-product__amount small{font-size:12px}
  .reconciliation__foot{justify-content:center;font-size:15px}.reconciliation__foot .wk-link{min-height:44px;font-size:15px}}
 

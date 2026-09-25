@@ -1,6 +1,6 @@
 import type { ContextMenuItem } from '../../shared/context-menu';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, type LedgerRow, type PayeeLedger, type PaymentLedger, type PurchaseSettleRequest,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
 
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -8,6 +8,25 @@ const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR'
 /** Euro the way the pipes write it, for menu hints and confirm messages built in code. */
 export function formatEur(value: number): string {
   return EURO.format(Number.isFinite(value) ? value : 0);
+}
+
+/**
+ * One 'Te doen' item in words: the title, the detail line and the verb of its
+ * button. The Betalingen overview, the workbench and the Nacalculatie's action
+ * cell all read the same three strings; the read view only asks for a proof.
+ */
+export function todoCopy(todo: LedgerTodo, mode: 'read' | 'edit' = 'edit'): { title: string; detail: string; action: string } {
+  const action = { pay: 'Noteer', settle: 'Afrekenen', review: 'Nakijken', budget: 'Afrekenen', incomplete: 'Bekijken', proof: 'Toon' }[todo.kind];
+  switch (todo.kind) {
+    case 'pay': return { title: todo.label, action,
+      detail: `${formatEur(todo.amountEur)} · nu te betalen${todo.due ? ' · ' + PAYEE_LABEL[todo.payee] : ''}` };
+    case 'settle': return { title: `Klein verschil bij ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} open · bijv. bankkosten of afronding` };
+    case 'review': return { title: `Te veel betaald aan ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} meer dan afgesproken` };
+    case 'budget': return { title: `Niet begroot: ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} betaald zonder bedrag in Kosten` };
+    case 'incomplete': return { title: `Betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`, action, detail: 'Controleer het bedrag van deze betaling' };
+    case 'proof': return { title: `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder bewijs`, action,
+      detail: mode === 'edit' ? 'Voeg het bankafschrift toe' : 'Bankafschrift ontbreekt' };
+  }
 }
 
 /** 'Betaling aan…': always all four payees, with what is still open at each. */
