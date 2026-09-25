@@ -1,6 +1,6 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, inject, input, linkedSignal, signal } from '@angular/core';
-import { LandedCostLine, Product } from '../../core/api/models';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, inject, input, linkedSignal, signal, viewChild } from '@angular/core';
+import { LandedCostLine, Payee, Product } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { PageHeader } from '../../shared/page-header';
@@ -13,6 +13,7 @@ import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchaseReconciliation } from './purchase-reconciliation';
 import { PurchasePaymentWorkbench } from './purchase-payment-workbench';
 import { PurchasePaymentResult } from './purchase-payment-result';
+import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { PurchasePaymentSheet } from './purchase-payment-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
@@ -142,7 +143,7 @@ type DeskRow =
             <button class="desk-kpi desk-kpi--button" type="button" (click)="showPayments()" [class.is-warn]="(money?.dueNowEur ?? 0) > 0">
               <small>Nu te betalen</small>
               <strong>@if (paymentStateError()) { — } @else { {{ (money?.dueNowEur ?? 0) | eur: 0 }} }</strong>
-              <span>@if (paymentStateError()) { Opnieuw laden } @else if (paymentStateLoading() || !money) { Bijwerken… } @else if (data.order.status === 'CONCEPT') { Nog niet besteld } @else if (money.openEur === 0 && money.paidTotalEur > 0) { Alles betaald } @else { {{ money.openEur | eur: 0 }} open · {{ money.paidTotalEur | eur: 0 }} betaald }</span>
+              <span>@if (paymentStateError()) { Opnieuw laden } @else if (paymentStateLoading() || !money) { Bijwerken… } @else if (data.order.status === 'CONCEPT') { Nog niet besteld } @else if (money.openEur === 0 && money.paidTotalEur > 0) { Alles betaald } @else { {{ money.paidTotalEur | eur: 0 }} betaald@if (money.laterEur > 0) { · {{ money.laterEur | eur: 0 }} later } }</span>
             </button>
             @if (nextStep(); as step) {
               <button class="desk-kpi desk-kpi--go" type="button" (click)="advanceStatus()">
@@ -166,10 +167,10 @@ type DeskRow =
           </div>
         </header>
 
-        @if (data.attention?.length) {
+        @if (attentionShown().length) {
           <div class="desk-attention" role="status">
-            <b>{{ data.attention!.length }}</b>
-            <span>@for (item of data.attention; track item; let last = $last) {{{ item }}@if (!last) { · }}</span>
+            <b>{{ attentionShown().length }}</b>
+            <span>@for (item of attentionShown(); track item; let last = $last) {{{ item }}@if (!last) { · }}</span>
             @if (paymentAttention()) { <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button> }
             <button class="linklike" type="button" (click)="showRail('done')">Bekijken ›</button>
           </div>
@@ -180,17 +181,17 @@ type DeskRow =
           <main class="desk-main">
             <div class="desk-viewbar">
               <app-segmented label="Weergave" semantics="tabs" [options]="viewOptions()" [value]="mainView()" (changed)="mainView.set($event === 'payments' ? 'payments' : 'products')" />
-              <span class="desk-viewbar__hint" aria-hidden="true"><kbd class="wk-kbd">⌥1</kbd> / <kbd class="wk-kbd">⌥2</kbd></span>
             </div>
             @if (mainView() === 'payments') {
               <app-purchase-payment-workbench id="purchase-payments-section" tabindex="-1"
                 [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [saving]="saving()"
                 [pdfBusy]="paymentsPdfBusy()" [orderId]="data.order.id" [planLabel]="planLabel(data.order)"
+                [partnerLinked]="hasPartnerTab()" [nacalc]="nacalcSummary()"
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
-                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" />
+                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" />
             } @else {
             <div class="desk-table-bar">
               <div>
@@ -545,9 +546,9 @@ type DeskRow =
                 @case ('costs') {
                   <div class="desk-costs-switch"><app-segmented label="Kosten" [options]="costsOptions" [value]="costsPane()" (changed)="costsPane.set($event === 'actual' ? 'actual' : 'plan')" /></div>
                   @if (costsPane() === 'actual') {
-                    <app-purchase-payment-result [view]="data" />
-                    <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" />
-                    <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button>
+                    <app-purchase-payment-result [view]="data" [ledger]="paymentLedger()" actions="inline" [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
+                      (open)="showPayments($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee)" />
+                    <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" [hosted]="true" (openPayments)="showPayments()" />
                   } @else {
                   @if (!editing()) {
                     <div class="desk-panel__head"><strong>Kosten &amp; koersen</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
@@ -1301,17 +1302,32 @@ export class PurchaseDesk extends PurchaseEditor {
   ]);
   readonly costsOptions: SegmentOption[] = [{ id: 'plan', label: 'Calculatie' }, { id: 'actual', label: 'Nacalculatie' }];
   /** The server's attention list names a payment: offer the way there. */
-  readonly paymentAttention = computed(() => (this.view()?.attention ?? [])
-    .some((item) => item.startsWith('Betaling open') || item === 'Nog geen betaling genoteerd'));
+  readonly paymentAttention = computed(() => (this.view()?.attention ?? []).some(PurchaseDesk.isPaymentAttention));
+  /** In the payments view the strip already answers what is due; the banner keeps only the rest. */
+  readonly attentionShown = computed(() => {
+    const items = this.view()?.attention ?? [];
+    return this.mainView() === 'payments' ? items.filter(item => !PurchaseDesk.isPaymentAttention(item)) : items;
+  });
+  /** The Nacalculatie in one glance, for the workbench's side card. */
+  readonly nacalcSummary = computed(() => {
+    const data = this.view();
+    return data ? purchaseNacalcSummary(data) : null;
+  });
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly workbench = viewChild(PurchasePaymentWorkbench);
 
-  /** The payments workbench, scrolled into view below the app bar. */
-  showPayments(): void {
+  private static isPaymentAttention(item: string): boolean {
+    return item.startsWith('Betaling open') || item === 'Nog geen betaling genoteerd' || /nog te betalen\.?$/.test(item);
+  }
+
+  /** The payments workbench, scrolled into view below the app bar; with a payee, that payee's row selected. */
+  showPayments(payee?: Payee): void {
     this.mainView.set('payments');
     requestAnimationFrame(() => {
       const target = document.getElementById('purchase-payments-section');
       target?.scrollIntoView({ block: 'start' });
       target?.focus({ preventScroll: true });
+      if (payee) this.workbench()?.focusPayee(payee);
     });
   }
 

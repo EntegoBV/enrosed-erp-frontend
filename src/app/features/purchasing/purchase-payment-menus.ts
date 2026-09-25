@@ -55,6 +55,13 @@ export function settleWith(row: LedgerRow): PurchaseSettleRequest {
   return { payee: row.payee, scope: row.payee === 'SUPPLIER' && row.due ? 'TERM' : 'GROUP', due: row.payee === 'SUPPLIER' ? row.due : null, paymentId: row.id };
 }
 
+/** The proof of one payment in words: unknown while the documents load, the file name, or how many there are. */
+export function proofLine(row: LedgerRow): string | null {
+  if (row.hasProof === null) return null;
+  if (!row.hasProof) return 'geen bewijs';
+  return row.proofCount === 1 ? row.proofs![0].originalFilename : `${row.proofCount} bewijzen`;
+}
+
 /** Status text colour through the kit's amount classes: warn, ok (green) or muted. */
 export function toneClass(tone: 'warn' | 'ok' | 'neutral'): string {
   return tone === 'warn' ? 'wk-amount--warn' : tone === 'ok' ? 'wk-amount--in' : 'wk-amount--muted';

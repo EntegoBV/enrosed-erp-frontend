@@ -54,6 +54,11 @@ test('overpayment status does not suggest final agreement until the stream is se
   assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID', finalized: true })), 'Afgerekend · meer betaald');
   assert.equal(reconciliationStatusLabel(stream({ status: 'SETTLED_LOWER' })), 'Afgerekend · minder betaald');
   assert.equal(reconciliationStatusLabel(stream({ status: 'PAID' })), 'Betaald');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'PAID', finalized: true, explicitlySettled: true })), 'Betaald · afgerekend');
+  const term = (explicitlySettled: boolean) => ({ due: 'ORDERED' as const, label: '30% bij bestelling', plannedEur: 300, paidEur: 300, remainingEur: 0,
+    settledSavingEur: 0, overpaidEur: 0, explicitlySettled, finalized: true });
+  assert.equal(reconciliationStatusLabel(stream({ status: 'PAID', finalized: true }), [term(true)]), 'Betaald · afgerekend', 'a term settled on its own counts');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'PAID', finalized: true }), [term(false)]), 'Betaald');
   assert.equal(reconciliationStatusLabel(stream({ status: 'UNPAID' })), 'Open');
   assert.equal(reconciliationStatusLabel(stream({ status: 'ADDITIONAL', payee: 'OTHER' })), 'Bijkomend');
   assert.equal(reconciliationStatusLabel(stream({ status: 'ADDITIONAL', payee: 'SEPARATE' })), 'Niet begroot');

@@ -122,3 +122,31 @@ function cents(value: unknown): number | null {
   const amount = Math.round(value * 100);
   return Number.isSafeInteger(amount) ? amount : null;
 }
+
+/** What the Betalingen workbench shows of the Nacalculatie in one side card. */
+export interface PurchaseNacalcSummary {
+  eligible: boolean;
+  finalized: boolean;
+  /** The expected or final external cost: paid plus open. */
+  forecastEur: number;
+  /** Against the calculation in Kosten; positive is dearer. */
+  varianceEur: number;
+  netResultEur: number;
+  internalMarkupEur: number;
+  markupWithResultEur: number;
+}
+
+export function purchaseNacalcSummary(view: Pick<PurchaseOrderView, 'order' | 'reconciliation'>): PurchaseNacalcSummary | null {
+  const result = purchasePaymentResult(view);
+  const totals = view.reconciliation?.totals;
+  if (!result || !totals) return null;
+  return {
+    eligible: result.eligible,
+    finalized: totals.finalized === true,
+    forecastEur: totals.forecastExternalEur,
+    varianceEur: totals.varianceEur,
+    netResultEur: result.netResultEur,
+    internalMarkupEur: result.internalMarkupEur,
+    markupWithResultEur: result.markupWithResultEur,
+  };
+}

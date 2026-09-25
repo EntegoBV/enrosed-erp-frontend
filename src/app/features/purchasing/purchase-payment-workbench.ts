@@ -11,10 +11,11 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, sortLedgerRows, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger,
-  type LedgerTerm, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, sortLedgerRows, type Due, type LedgerRow, type LedgerTodo,
+  type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
 import { formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith } from './purchase-payment-menus';
+import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
 type LedgerFilter = 'ALL' | Payee | 'NO_PROOF';
 type MenuState =
@@ -52,6 +53,7 @@ type MenuState =
             <button class="wk-btn wk-btn--primary" type="button" aria-label="Betaling aan…" [disabled]="!actionable()" (click)="openMenu('payees', $event)"><app-icon name="chevron-down" [size]="14" /></button>
           </div>
           <button class="wk-btn" type="button" [disabled]="!actionable() || !settleTarget()" [title]="settleHint()" (click)="settleMain()">Afrekenen…</button>
+          @if (settleHintVisible()) { <span class="pw-bar__hint">{{ settleHint() }}</span> }
           <button class="wk-btn" type="button" [disabled]="busy()" (click)="planChange.emit()">Betaalplan…</button>
           <button class="wk-btn wk-btn--icon" type="button" aria-label="Meer acties" (click)="openMenu('more', $event)"><app-icon name="more" [size]="18" /></button>
         </div>
@@ -81,7 +83,7 @@ type MenuState =
             <div class="wk-strip pw-strip" aria-label="Afspraak, betaald en open" [class.is-loading]="state() === 'refreshing'">
               <div class="wk-strip__item pw-cell"><span class="wk-strip__label">Afspraak</span><span class="wk-strip__value">{{ sum.agreedEur | eur }}</span><small class="pw-strip__sub">leverancier, transport en inspectie</small></div>
               <span class="wk-strip__op pw-op" aria-hidden="true">−</span>
-              <div class="wk-strip__item pw-cell"><span class="wk-strip__label">Betaald</span><span class="wk-strip__value">{{ sum.paidOnAgreementEur | eur }}</span><small class="pw-strip__sub">op de afspraak</small></div>
+              <div class="wk-strip__item pw-cell"><span class="wk-strip__label">Betaald</span><span class="wk-strip__value">{{ sum.paidOnAgreementEur | eur }}</span><small class="pw-strip__sub">volgens afspraak</small></div>
               @if (sum.differenceEur !== 0) {
                 <span class="wk-strip__op pw-op pw-strip__wide" aria-hidden="true">±</span>
                 <div class="wk-strip__item pw-strip__wide"><span class="wk-strip__label">Verschil</span>
@@ -89,13 +91,16 @@ type MenuState =
                   <small class="pw-strip__sub">{{ reviewHigher() ? 'nog na te kijken' : 'na afrekening' }}</small></div>
               }
               <span class="wk-strip__op pw-op" aria-hidden="true">=</span>
-              <div class="wk-strip__item pw-cell"><span class="wk-strip__label">Open</span><span class="wk-strip__value">{{ sum.openEur | eur }}</span><small class="pw-strip__sub">waarvan nu {{ sum.dueNowEur | eur }} · later {{ sum.laterEur | eur }}</small></div>
+              <div class="wk-strip__item pw-cell"><span class="wk-strip__label">Open</span><span class="wk-strip__value">{{ sum.openEur | eur }}</span><small class="pw-strip__sub">@if (sum.laterEur > 0) { waarvan later {{ sum.laterEur | eur }} } @else if (sum.openEur > 0) { volledig nu te betalen } @else { niets meer open }</small></div>
               @if (sum.additionalEur > 0) {
                 <span class="wk-strip__sep pw-strip__wide" aria-hidden="true"></span>
                 <div class="wk-strip__item pw-strip__wide"><span class="wk-strip__label">Bijkomende kosten</span><span class="wk-strip__value">{{ sum.additionalEur | eur }}</span><small class="pw-strip__sub">zonder afspraak</small></div>
               }
               <div class="wk-strip__item pw-cell pw-now" [class.is-due]="sum.dueNowEur > 0">
-                @if (sum.dueNowEur > 0) {
+                @if (sum.headline.kind === 'concept') {
+                  <span class="wk-strip__label">Status</span><span class="wk-strip__value">Nog niet besteld</span>
+                  @if (planLabel()) { <small class="pw-strip__sub">{{ planLabel() }}</small> }
+                } @else if (sum.dueNowEur > 0) {
                   <span class="wk-strip__label">Nu te betalen</span><span class="wk-strip__value">{{ sum.dueNowEur | eur }}</span>
                   @if (sum.next; as next) {
                     <small class="pw-strip__sub">Volgende: {{ next.label }}@if (next.due) { · {{ label(next.payee) }} }</small>
@@ -103,9 +108,12 @@ type MenuState =
                             (click)="add.emit({ payee: next.payee, amount: next.amountEur, label: next.label, due: next.due })">Noteer</button>
                   }
                 } @else if (sum.openEur > 0) {
-                  <span class="wk-strip__label">Nu te betalen</span><span class="wk-strip__value">Niets nu te betalen</span><small class="pw-strip__sub">Later: {{ sum.laterEur | eur }}</small>
+                  <span class="wk-strip__label">Nu te betalen</span><span class="wk-strip__value">Niets</span>
+                  @if (sum.next; as next) { <small class="pw-strip__sub">Volgende: {{ next.label }} · {{ next.when }}</small> }
+                } @else if (sum.paymentCount || sum.paidTotalEur > 0) {
+                  <span class="wk-strip__label">Status</span><span class="wk-strip__value">Alles betaald</span><small class="pw-strip__sub">{{ sum.paidTotalEur | eur }} betaald</small>
                 } @else {
-                  <span class="wk-strip__label">Nu te betalen</span><span class="wk-strip__value">{{ sum.paymentCount ? 'Alles betaald' : '—' }}</span>
+                  <span class="wk-strip__label">Status</span><span class="wk-strip__value">Nog geen bedragen</span>
                 }
               </div>
             </div>
@@ -121,26 +129,28 @@ type MenuState =
                       @if (sum.meter.agreedPct !== null) { <span class="pw-meter__mark" [style.left.%]="sum.meter.agreedPct" title="Einde van de afspraak"></span> }
                     </div>
                   }
-                  <p class="pw-foot">Totaal betaald {{ sum.paidTotalEur | eur }} incl. bijkomende kosten@if (sum.missingProofCount) { · <button class="wk-link" type="button" (click)="setFilter('NO_PROOF')">{{ sum.missingProofCount }} zonder bewijs ›</button> }@if (!sum.known) { · Voorlopige cijfers }</p>
+                  @if (sum.additionalEur > 0 || sum.missingProofCount || !sum.known) {
+                    <p class="pw-foot">@if (sum.additionalEur > 0) { Totaal betaald {{ sum.paidTotalEur | eur }} incl. {{ sum.additionalEur | eur }} bijkomende kosten }@if (sum.missingProofCount) { @if (sum.additionalEur > 0) { · }<button class="wk-link" type="button" (click)="setFilter('NO_PROOF')">{{ sum.missingProofCount }} zonder bewijs ›</button> }@if (!sum.known) { @if (sum.additionalEur > 0 || sum.missingProofCount) { · }Voorlopige cijfers }</p>
+                  }
                   @if (!sum.balanced) { <p class="pw-foot wk-amount--warn" role="status">Bedragen sluiten niet: een betaling mist de eurowaarde. Controleer de betalingen.</p> }
                 </div>
 
                 <section class="pw-section" aria-labelledby="pw-payees-title">
                   <h3 class="pw-section__title" id="pw-payees-title">Per ontvanger</h3>
-                  <div class="wk-table pw-payees" role="treegrid" aria-labelledby="pw-payees-title">
+                  <div class="wk-table pw-payees" [class.pw-payees--diff]="showDifference()" role="treegrid" aria-labelledby="pw-payees-title">
                     <div class="wk-thead" role="row">
                       <span class="wk-th" role="columnheader"><span class="sr-only">Openklappen</span></span>
                       <span class="wk-th" role="columnheader">Ontvanger</span>
                       <span class="wk-th wk-th--num" role="columnheader">Afspraak</span>
                       <span class="wk-th wk-th--num" role="columnheader">Betaald</span>
-                      <span class="wk-th wk-th--num" role="columnheader" data-pw-hide="narrow">Verschil</span>
+                      @if (showDifference()) { <span class="wk-th wk-th--num" role="columnheader" data-pw-hide="narrow">Verschil</span> }
                       <span class="wk-th wk-th--num" role="columnheader">Open</span>
                       <span class="wk-th wk-th--num" role="columnheader" data-pw-hide="mid">Nu te betalen</span>
                       <span class="wk-th" role="columnheader" data-pw-hide="tiny">Status</span>
                       <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
                     </div>
                     @for (item of agreements(); track item.payee) {
-                      <div class="wk-tr wk-tr--link pw-payee-row" role="row" tabindex="0" aria-level="1" [attr.aria-selected]="selectedPayee() === item.payee"
+                      <div class="wk-tr wk-tr--link pw-payee-row" role="row" tabindex="0" aria-level="1" [attr.aria-selected]="selectedPayee() === item.payee" [attr.data-payee]="item.payee"
                            [attr.aria-expanded]="expandable(item) ? isExpanded(item.payee) : null"
                            appMenuTrigger (menuTrigger)="menu.set({ kind: 'payee', point: $event, payee: item })"
                            (click)="rowClick($event, item.payee)" (dblclick)="toggle(item.payee)"
@@ -152,26 +162,33 @@ type MenuState =
                           }
                         </span>
                         <span class="wk-td" role="gridcell"><span class="pw-payee"><span class="pw-tile" [class]="item.tone"><app-icon [name]="item.icon" [size]="14" /></span>
-                          <span class="pw-payee__copy"><b>{{ item.label }}</b><span class="wk-td__sub" data-pw-hide="mid">{{ item.basis }}</span>
-                            <span class="wk-td__sub pw-when-mid">{{ item.dueNowEur | eur }} nu@if (item.differenceEur) {<span class="pw-when-narrow"> · {{ abs(item.differenceEur) | eur }} {{ item.differenceEur < 0 ? 'minder' : 'meer' }}</span>}</span>
+                          <span class="pw-payee__copy"><b>{{ item.label }}</b><span class="wk-td__sub pw-basis" [title]="item.basis">{{ basis(item) }}</span>
+                            @if (item.dueNowEur > 0) { <span class="wk-td__sub pw-when-mid">{{ item.dueNowEur | eur }} nu</span> }
                             <span class="pw-when-tiny"><span class="wk-pill" [class]="pill(item.status.tone)">{{ item.status.label }}</span></span></span></span></span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ item.agreedEur | eur }}</span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ item.paidEur | eur }}</span>
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (item.differenceEur) { {{ abs(item.differenceEur) | eur }}<span class="wk-td__sub">{{ item.differenceEur < 0 ? 'minder' : 'meer' }}</span> } @else { — }</span>
-                        <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ item.openEur | eur }}</span>
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid" [class.wk-amount--warn]="item.dueNowEur > 0">{{ item.dueNowEur | eur }}</span>
+                        @if (showDifference()) {
+                          <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (item.differenceEur) { {{ abs(item.differenceEur) | eur }}<span class="wk-td__sub">{{ item.differenceEur < 0 ? 'minder' : 'meer' }}</span> }</span>
+                        }
+                        <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ item.openEur | eur }}
+                          @if (showDifference() && item.differenceEur) { <span class="wk-td__sub pw-open-sub pw-when-narrow">{{ abs(item.differenceEur) | eur }} {{ item.differenceEur < 0 ? 'minder' : 'meer' }} · afgerekend</span> }</span>
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid" [class.wk-amount--warn]="item.dueNowEur > 0">@if (item.dueNowEur > 0) { {{ item.dueNowEur | eur }} }</span>
                         <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="tiny">
                           <span class="wk-pill" [class]="pill(item.status.tone)">{{ item.status.label }}</span>
                           @if (item.smallDifference) {
                             <button class="wk-link pw-status-link" type="button" [disabled]="!actionable()" (click)="$event.stopPropagation(); settle.emit(item.settleDefault)">Verschil van {{ item.openEur | eur }} afrekenen</button>
-                          } @else if (item.next; as next) {
-                            <span class="wk-td__sub">@if (next.due) { Volgende: {{ next.label }} · }{{ next.amountEur | eur }} · {{ next.when }}</span>
+                          } @else if (item.canUndoSettle) {
+                            <button class="wk-link pw-status-link" type="button" [disabled]="!actionable()" (click)="$event.stopPropagation(); undoSettle.emit({ payee: item.payee })">Afrekening ongedaan maken</button>
+                          } @else if (nextSub(item); as sub) {
+                            <span class="wk-td__sub pw-status-sub">{{ sub }}</span>
                           }
                         </span>
                         <span class="wk-td wk-td--actions" role="gridcell">
-                          <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="mid" [disabled]="!actionable()" (click)="$event.stopPropagation(); addFor(item)">Noteer</button>
-                          @if (item.canSettle) { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="mid" [disabled]="!actionable()" (click)="$event.stopPropagation(); settle.emit(item.settleDefault)">Afrekenen…</button> }
-                          <button class="wk-btn wk-btn--sm wk-btn--icon" type="button" [attr.aria-label]="'Acties voor ' + item.label" (click)="$event.stopPropagation(); openMenu('payee', $event, item)"><app-icon name="more" [size]="16" /></button>
+                          @switch (rowAction(item)) {
+                            @case ('add') { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); addFor(item)">Noteer</button> }
+                            @case ('settle') { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); settle.emit(item.settleDefault)">Afrekenen…</button> }
+                          }
+                          <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + item.label" (click)="$event.stopPropagation(); openMenu('payee', $event, item)"><app-icon name="more" [size]="16" /></button>
                         </span>
                       </div>
                       @if (isExpanded(item.payee)) {
@@ -182,15 +199,20 @@ type MenuState =
                               <span class="wk-td" role="gridcell"><span class="pw-sub">{{ term.label }}<span class="wk-td__sub">{{ term.moment }}</span></span></span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.fullEur | eur }}</span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.paidEur | eur }}</span>
-                              <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (term.higherEur - term.lowerEur) { {{ abs(term.higherEur - term.lowerEur) | eur }}<span class="wk-td__sub">{{ term.higherEur < term.lowerEur ? 'minder' : 'meer' }}</span> } @else { — }</span>
+                              @if (showDifference()) {
+                                <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (term.higherEur - term.lowerEur) { {{ abs(term.higherEur - term.lowerEur) | eur }}<span class="wk-td__sub">{{ term.higherEur < term.lowerEur ? 'minder' : 'meer' }}</span> }</span>
+                              }
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.openEur | eur }}</span>
-                              <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">{{ term.state === 'due' && !term.settled ? (term.openEur | eur) : '—' }}</span>
+                              <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (term.state === 'due' && !term.settled && term.openEur > 0) { {{ term.openEur | eur }} }</span>
                               <span class="wk-td" role="gridcell" data-pw-hide="tiny"><span class="wk-pill" [class]="pill(term.status.tone)">{{ term.status.label }}</span></span>
                               <span class="wk-td wk-td--actions" role="gridcell">
-                                @if (term.openEur > 0 && !term.settled) { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="mid" [disabled]="!actionable()" (click)="add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due })">Noteer</button> }
-                                @if (term.canSettle) { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="mid" [disabled]="!actionable()" (click)="settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due })">Afrekenen…</button> }
-                                @if ((term.openEur > 0 && !term.settled) || term.canSettle) {
-                                  <button class="wk-btn wk-btn--sm wk-btn--icon pw-when-mid" type="button" [attr.aria-label]="'Acties voor ' + term.label" (click)="openTermMenu(term, $event)"><app-icon name="more" [size]="16" /></button>
+                                @if (term.openEur > 0 && !term.settled) {
+                                  <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due })">Noteer</button>
+                                } @else if (term.canSettle) {
+                                  <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due })">Afrekenen…</button>
+                                }
+                                @if ((term.openEur > 0 && !term.settled) || term.canSettle || term.canUndo) {
+                                  <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + term.label" (click)="openTermMenu(term, $event)"><app-icon name="more" [size]="16" /></button>
                                 }
                               </span>
                             </div>
@@ -199,42 +221,51 @@ type MenuState =
                               <button class="wk-btn wk-btn--sm" type="button" [disabled]="busy()" (click)="planChange.emit()">Betaalplan…</button></span></div>
                           }
                         } @else {
+                          <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2">
+                            <span class="wk-td" role="gridcell" [class.wk-amount--warn]="!item.compositionConsistent">{{ item.compositionConsistent ? 'Raming uit Kosten' : 'Raming uit Kosten · wijkt af van de afspraak' }}</span>
+                          </div>
                           @for (line of item.composition; track line.label) {
-                            <div class="wk-tr wk-tr--sub" role="row" aria-level="2">
-                              <span class="wk-td" role="gridcell"></span>
-                              <span class="wk-td" role="gridcell"><span class="pw-sub">{{ line.label }}@if (line.hint) { <span class="wk-td__sub">{{ line.hint }}</span> }</span></span>
-                              <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ line.amountEur | eur }}</span>
+                            <div class="wk-tr wk-tr--sub pw-comp-row" role="row" aria-level="2">
+                              <span class="wk-td pw-comp__label" role="gridcell">{{ line.label }}@if (line.hint) { <span class="wk-td__sub">{{ line.hint }}</span> }</span>
+                              <span class="wk-td wk-td--num wk-amount pw-comp__amount" role="gridcell">{{ line.amountEur | eur }}</span>
                             </div>
                           }
-                          <div class="wk-tr wk-tr--sub pw-note-row" role="row" aria-level="2"><span class="wk-td wk-td--wrap" role="gridcell">{{ item.compositionConsistent ? 'Betalingen worden per ontvanger bijgehouden, niet per kostenregel.' : 'Raming uit Kosten; wijkt af van de afspraak.' }}</span></div>
+                          @if (item.paymentCount) {
+                            <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--link" role="row" aria-level="2">
+                              <span class="wk-td" role="gridcell">{{ item.paymentCount }} {{ item.paymentCount === 1 ? 'betaling' : 'betalingen' }} · {{ item.paidEur | eur }} betaald
+                                <button class="wk-link" type="button" (click)="$event.stopPropagation(); setFilter(item.payee); scrollToLedger()">Toon betalingen ›</button></span>
+                            </div>
+                          }
                         }
                       }
                     }
                     <div class="wk-tr wk-tr--total" role="row">
                       <span class="wk-td" role="gridcell"></span>
-                      <span class="wk-td" role="gridcell">Totaal<span class="wk-td__sub pw-when-mid">{{ sum.dueNowEur | eur }} nu</span></span>
+                      <span class="wk-td" role="gridcell">Totaal@if (sum.dueNowEur > 0) { <span class="wk-td__sub pw-when-mid">{{ sum.dueNowEur | eur }} nu</span> }</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ sum.agreedEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ sum.paidOnAgreementEur | eur }}</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (sum.differenceEur) { {{ abs(sum.differenceEur) | eur }}<span class="wk-td__sub">{{ sum.differenceEur < 0 ? 'minder' : 'meer' }}</span> } @else { — }</span>
+                      @if (showDifference()) {
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (sum.differenceEur) { {{ abs(sum.differenceEur) | eur }}<span class="wk-td__sub">{{ sum.differenceEur < 0 ? 'minder' : 'meer' }}</span> }</span>
+                      }
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ sum.openEur | eur }}</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">{{ sum.dueNowEur | eur }}</span>
+                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (sum.dueNowEur > 0) { {{ sum.dueNowEur | eur }} }</span>
                     </div>
                     @if (additional(); as other) {
-                      <div class="wk-tr wk-tr--muted pw-divider pw-payee-row" role="row" aria-level="1" [attr.aria-selected]="selectedPayee() === 'OTHER'" tabindex="0"
+                      <div class="wk-tr wk-tr--muted pw-divider pw-payee-row" role="row" aria-level="1" [attr.aria-selected]="selectedPayee() === 'OTHER'" tabindex="0" data-payee="OTHER"
                            appMenuTrigger (menuTrigger)="menu.set({ kind: 'payee', point: $event, payee: other })" (click)="rowClick($event, 'OTHER')"
                            (keydown)="onPayeeKey($event, 'OTHER')">
                         <span class="wk-td" role="gridcell"></span>
                         <span class="wk-td" role="gridcell"><span class="pw-payee"><span class="pw-tile" [class]="other.tone"><app-icon [name]="other.icon" [size]="14" /></span>
-                          <span class="pw-payee__copy"><b>{{ other.label }}</b><span class="wk-td__sub">zonder afspraak</span></span></span></span>
-                        <span class="wk-td wk-td--num" role="gridcell">—</span>
+                          <span class="pw-payee__copy"><b>{{ other.label }}</b><span class="wk-td__sub pw-basis">{{ other.basis }}</span></span></span></span>
+                        <span class="wk-td wk-td--num" role="gridcell"></span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ other.paidEur | eur }}</span>
-                        <span class="wk-td wk-td--num" role="gridcell" data-pw-hide="narrow">—</span>
-                        <span class="wk-td wk-td--num" role="gridcell">—</span>
-                        <span class="wk-td wk-td--num" role="gridcell" data-pw-hide="mid">—</span>
+                        @if (showDifference()) { <span class="wk-td wk-td--num" role="gridcell" data-pw-hide="narrow"></span> }
+                        <span class="wk-td wk-td--num" role="gridcell"></span>
+                        <span class="wk-td wk-td--num" role="gridcell" data-pw-hide="mid"></span>
                         <span class="wk-td" role="gridcell" data-pw-hide="tiny"><span class="wk-pill" [class]="pill(other.status.tone)">{{ other.status.label }}</span></span>
                         <span class="wk-td wk-td--actions" role="gridcell">
-                          <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="mid" [disabled]="!actionable()" (click)="$event.stopPropagation(); add.emit({ payee: 'OTHER' })">Noteer</button>
-                          <button class="wk-btn wk-btn--sm wk-btn--icon" type="button" [attr.aria-label]="'Acties voor ' + other.label" (click)="$event.stopPropagation(); openMenu('payee', $event, other)"><app-icon name="more" [size]="16" /></button>
+                          <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); add.emit({ payee: 'OTHER' })">Noteer</button>
+                          <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + other.label" (click)="$event.stopPropagation(); openMenu('payee', $event, other)"><app-icon name="more" [size]="16" /></button>
                         </span>
                       </div>
                     }
@@ -243,10 +274,10 @@ type MenuState =
 
                 <section class="pw-section" aria-labelledby="pw-ledger-title">
                   <div class="pw-section__head">
-                    <h3 class="pw-section__title" id="pw-ledger-title">Alle betalingen</h3>
+                    <h3 class="pw-section__title" id="pw-ledger-title">{{ ledgerTitle() }}</h3>
                     <div class="wk-chips" role="group" aria-label="Betalingen filteren">
                       @for (chip of filterChips(); track chip.id) {
-                        <button class="wk-chip" type="button" [attr.aria-pressed]="filter() === chip.id" [class.tone-warn]="chip.id === 'NO_PROOF'" (click)="setFilter(chip.id)">{{ chip.label }}</button>
+                        <button class="wk-chip" type="button" [attr.aria-pressed]="filter() === chip.id" (click)="setFilter(chip.id)">@if (chip.id === 'NO_PROOF') { <span class="wk-dot tone-warn" aria-hidden="true"></span> }{{ chip.label }}</button>
                       }
                     </div>
                   </div>
@@ -254,8 +285,13 @@ type MenuState =
                     <div class="wk-empty">
                       <span class="wk-empty__icon"><app-icon name="receipt" [size]="22" /></span>
                       <p class="wk-empty__title">Nog geen betalingen</p>
-                      <p class="wk-empty__text">Noteer de eerste betaling zodra het geld vertrokken is. Voeg het bankafschrift toe als bewijs.</p>
-                      <div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" [disabled]="!actionable()" (click)="addMain()"><app-icon name="plus" [size]="16" />Betaling noteren</button></div>
+                      @if (sum.headline.kind === 'concept') {
+                        <p class="wk-empty__text">Betalingen noteer je zodra de container besteld is.</p>
+                        <div class="wk-empty__actions"><button class="wk-btn" type="button" [disabled]="!actionable()" (click)="addMain()">Betaling noteren</button></div>
+                      } @else {
+                        <p class="wk-empty__text">Noteer de eerste betaling zodra het geld vertrokken is. Voeg het bankafschrift toe als bewijs.</p>
+                        <div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" [disabled]="!actionable()" (click)="addMain()"><app-icon name="plus" [size]="16" />Betaling noteren</button></div>
+                      }
                     </div>
                   } @else if (!ledgerRows().length) {
                     <div class="wk-empty"><p class="wk-empty__text">Geen betalingen voor dit filter.</p>
@@ -263,13 +299,13 @@ type MenuState =
                   } @else {
                     <div class="wk-table pw-ledger" role="grid" aria-labelledby="pw-ledger-title">
                       <div class="wk-thead" role="row">
-                        <span class="wk-th" role="columnheader" [attr.aria-sort]="ariaSort('date')"><button class="wk-th__btn" type="button" (click)="sortBy('date')">Datum<app-icon [name]="sortIcon('date')" [size]="12" /></button></span>
-                        <span class="wk-th" role="columnheader" data-pw-hide="mid">Ontvanger</span>
+                        <span class="wk-th" role="columnheader" [attr.aria-sort]="ariaSort('date')"><button class="wk-th__btn" type="button" (click)="sortBy('date')">Datum@if (sort().key === 'date') { <app-icon [name]="sortIcon('date')" [size]="12" /> }</button></span>
+                        <span class="wk-th" role="columnheader" data-pw-hide="narrow">Ontvanger</span>
                         <span class="wk-th" role="columnheader">Omschrijving</span>
                         <span class="wk-th wk-th--num" role="columnheader" data-pw-hide="mid">Bedrag</span>
-                        <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('amount')"><button class="wk-th__btn" type="button" (click)="sortBy('amount')">In euro<app-icon [name]="sortIcon('amount')" [size]="12" /></button></span>
+                        <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('amount')"><button class="wk-th__btn" type="button" (click)="sortBy('amount')">In euro@if (sort().key === 'amount') { <app-icon [name]="sortIcon('amount')" [size]="12" /> }</button></span>
                         <span class="wk-th" role="columnheader" data-pw-hide="mid">Afrekening</span>
-                        <span class="wk-th" role="columnheader">Bewijs</span>
+                        <span class="wk-th wk-th--num" role="columnheader">Bewijs</span>
                         <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
                       </div>
                       @for (row of ledgerRows(); track row.id) {
@@ -277,25 +313,26 @@ type MenuState =
                              appMenuTrigger (menuTrigger)="menu.set({ kind: 'payment', point: $event, row })"
                              (click)="selectedRow.set(row.id)" (focus)="selectedRow.set(row.id)" (dblclick)="edit.emit(row.payment)" (keydown)="onRowKey($event, row)">
                           <span class="wk-td wk-amount" role="gridcell">{{ row.paidOn | dateNl }}</span>
-                          <span class="wk-td" role="gridcell" data-pw-hide="mid"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
+                          <span class="wk-td" role="gridcell" data-pw-hide="narrow"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
                           <span class="wk-td" role="gridcell">
-                            <span class="pw-desc">{{ row.label || '—' }}</span>
-                            <span class="wk-td__sub pw-when-mid"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span>@if (row.settlesLabel) { {{ row.settlesLabel }} }</span>
+                            <span class="pw-desc">{{ row.label || '—' }}@if (row.settlesLabel) { <span class="wk-pill pw-settles pw-when-mid">{{ row.settlesLabel }}</span> }</span>
+                            <span class="wk-td__sub pw-when-narrow"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
                             @if (row.termLabel || row.actor) { <span class="wk-td__sub">{{ row.termLabel }}@if (row.termLabel && row.actor) { · }{{ row.actor ? actor(row.actor) : '' }}</span> }
                           </span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (row.foreign) { {{ row.amount | cur: row.currency }} }</span>
                           <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }
                             @if (row.foreign) { <span class="wk-td__sub pw-when-mid">{{ row.amount | cur: row.currency }}</span> }</span>
-                          <span class="wk-td" role="gridcell" data-pw-hide="mid">{{ row.settlesLabel }}</span>
-                          <span class="wk-td" role="gridcell">
+                          <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="mid">{{ row.settlesLabel || '' }}</span>
+                          <span class="wk-td pw-proof" role="gridcell">
                             @if (row.hasProof === true) {
-                              <button class="wk-btn wk-btn--sm wk-btn--ghost" type="button" [attr.aria-label]="row.proofCount === 1 ? 'Bewijs openen' : row.proofCount + ' bewijzen'" (click)="$event.stopPropagation(); openProof(row, $event)"><app-icon name="clip" [size]="14" />{{ row.proofCount }}</button>
+                              <button class="wk-btn wk-btn--sm wk-btn--ghost pw-proof__btn" type="button" [title]="proofNames(row)" [attr.aria-label]="row.proofCount === 1 ? 'Bewijs openen: ' + row.proofs![0].originalFilename : row.proofCount + ' bewijzen'" (click)="$event.stopPropagation(); openProof(row, $event)"><app-icon name="clip" [size]="14" /><span class="pw-proof__name">{{ row.proofCount === 1 ? row.proofs![0].originalFilename : row.proofCount + ' bewijzen' }}</span></button>
                             } @else if (row.hasProof === false) {
-                              <button class="wk-chip tone-warn" type="button" [disabled]="busy()" (click)="$event.stopPropagation(); proof.emit(row.payment)">Bewijs ontbreekt</button>
+                              <button class="wk-btn wk-btn--sm wk-btn--ghost pw-proof__btn pw-proof__btn--missing" type="button" [disabled]="busy()" (click)="$event.stopPropagation(); proof.emit(row.payment)"><app-icon name="clip" [size]="14" />Bewijs toevoegen</button>
                             }
                           </span>
                           <span class="wk-td wk-td--actions" role="gridcell">
-                            <button class="wk-btn wk-btn--sm wk-btn--icon" type="button" [attr.aria-label]="'Acties voor ' + row.title" (click)="$event.stopPropagation(); openMenu('payment', $event, row)"><app-icon name="more" [size]="16" /></button>
+                            <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); edit.emit(row.payment)">Aanpassen</button>
+                            <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + row.title" (click)="$event.stopPropagation(); openMenu('payment', $event, row)"><app-icon name="more" [size]="16" /></button>
                           </span>
                         </div>
                       }
@@ -304,7 +341,7 @@ type MenuState =
                 </section>
               </div>
 
-              <aside class="pw-side" aria-label="Te doen en opbouw">
+              <aside class="pw-side" aria-label="Te doen, opbouw en nacalculatie">
                 <div>
                   <section class="wk-card">
                     <header class="wk-card__head"><h3 class="wk-card__title">Te doen</h3></header>
@@ -320,16 +357,23 @@ type MenuState =
                       } @else {
                         <p class="pw-muted">Niets te doen · alles is bij</p>
                       }
+                      @if (partnerLinked()) {
+                        <p class="pw-muted pw-card__foot"><button class="wk-link" type="button" (click)="openPartner.emit()">Verkoopdocumenten van deze container ›</button></p>
+                      }
                     </div>
                   </section>
                 </div>
                 <div>
                   <section class="wk-card">
-                    <header class="wk-card__head"><h3 class="wk-card__title">Opbouw van het totaal</h3><button class="wk-link wk-card__trail" type="button" (click)="openCosts.emit('plan')">Kosten ›</button></header>
+                    <header class="wk-card__head"><h3 class="wk-card__title">Zo is het totaal opgebouwd</h3><button class="wk-link wk-card__trail" type="button" (click)="openCosts.emit('plan')">Kosten ›</button></header>
                     <div class="wk-card__body">
                       <dl class="wk-equation">
                         @for (row of book.bridge.rows; track row.key) {
-                          <div><dt>{{ row.label }}@if (row.note) { <span class="wk-td__sub">{{ row.note }}</span> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
+                          @if (row.subtotal) {
+                            <div class="is-sub pw-bridge__subtotal"><dt><span class="wk-equation__op" aria-hidden="true">=</span>{{ row.label }}@if (row.note) { <span class="wk-td__sub">{{ row.note }}</span> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
+                          } @else {
+                            <div><dt>{{ row.label }}@if (row.note) { <span class="wk-td__sub">{{ row.note }}</span> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
+                          }
                         }
                         @if (book.bridge.consistent) {
                           <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>{{ book.bridge.totalLabel }}</dt><dd>{{ book.bridge.totalEur | eur }}</dd></div>
@@ -341,10 +385,29 @@ type MenuState =
                     </div>
                   </section>
                 </div>
+                @if (nacalc(); as n) {
+                  <div>
+                    <section class="wk-card">
+                      <header class="wk-card__head"><h3 class="wk-card__title">Nacalculatie</h3><button class="wk-link wk-card__trail" type="button" (click)="openCosts.emit('actual')">Volledig ›</button></header>
+                      <div class="wk-card__body">
+                        @if (!n.eligible) {
+                          <p class="pw-muted">Verschijnt zodra de container besteld is.</p>
+                        } @else {
+                          <dl class="wk-equation">
+                            <div><dt>{{ n.finalized ? 'Definitieve externe kost' : 'Verwachte externe kost' }}</dt><dd>{{ n.forecastEur | eur }}</dd></div>
+                            <div><dt>Verschil met raming</dt><dd [class.wk-amount--warn]="n.varianceEur > 0" [class.wk-amount--in]="n.varianceEur < 0" [class.wk-amount--muted]="n.varianceEur === 0">{{ n.varianceEur === 0 ? 'geen' : signed(n.varianceEur) }}</dd></div>
+                            <div><dt>Betalingsresultaat</dt><dd [class.wk-amount--warn]="n.netResultEur < 0" [class.wk-amount--in]="n.netResultEur > 0" [class.wk-amount--muted]="n.netResultEur === 0">{{ signed(n.netResultEur) }}</dd></div>
+                            <div class="is-total"><dt>Enrosed kost + resultaat</dt><dd>{{ n.markupWithResultEur | eur }}</dd></div>
+                          </dl>
+                        }
+                      </div>
+                    </section>
+                  </div>
+                }
               </aside>
             </div>
             <footer class="wk-statusbar pw-status">
-              <span>{{ sum.paymentCount }} {{ sum.paymentCount === 1 ? 'betaling' : 'betalingen' }}@if (sum.missingProofCount) { · {{ sum.missingProofCount }} zonder bewijs } · bedragen in euro tegen de geboekte koers</span>
+              <span>{{ sum.paymentCount }} {{ sum.paymentCount === 1 ? 'betaling' : 'betalingen' }}@if (sum.missingProofCount) { · {{ sum.missingProofCount }} zonder bewijs } · in euro, koers van de betaaldag</span>
               <span class="wk-statusbar__end pw-keys"><kbd class="wk-kbd">N</kbd> nieuw · <kbd class="wk-kbd">A</kbd> afrekenen · <kbd class="wk-kbd">↩</kbd> aanpassen · <kbd class="wk-kbd">⌥1</kbd> <kbd class="wk-kbd">⌥2</kbd> weergave</span>
             </footer>
           }
@@ -370,6 +433,10 @@ export class PurchasePaymentWorkbench {
   readonly pdfBusy = input(false);
   readonly orderId = input.required<number>();
   readonly planLabel = input('');
+  /** A partner co-finances the container: the Te doen card links to its documents. */
+  readonly partnerLinked = input(false);
+  /** The Nacalculatie in one glance; null hides the card. */
+  readonly nacalc = input<PurchaseNacalcSummary | null>(null);
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
   readonly proof = output<PurchasePayment>();
@@ -384,6 +451,7 @@ export class PurchasePaymentWorkbench {
   readonly exportPdf = output<void>();
   /** 'actual' opens the Nacalculatie, 'plan' the calculation in Kosten. */
   readonly openCosts = output<'actual' | 'plan'>();
+  readonly openPartner = output<void>();
 
   readonly selectedPayee = signal<Payee | null>(null);
   readonly filter = signal<LedgerFilter>('ALL');
@@ -412,6 +480,18 @@ export class PurchasePaymentWorkbench {
     const selected = this.selectedPayee();
     if (selected) return `Niets af te rekenen bij ${PAYEE_LABEL[selected]}`;
     return this.ledger()?.payees.some(item => item.canSettle) ? 'Kies eerst een ontvanger' : 'Niets af te rekenen';
+  });
+  /** The Verschil column only earns its room once some payee or term was settled for another amount. */
+  readonly showDifference = computed(() => {
+    const book = this.ledger();
+    return !!book && (book.summary.differenceEur !== 0
+      || book.payees.some(item => item.differenceEur !== 0 || item.terms.some(term => term.higherEur !== term.lowerEur)));
+  });
+  /** The hint beside the disabled 'Afrekenen…' button, only while there is something to settle. */
+  readonly settleHintVisible = computed(() => !this.settleTarget() && !!this.ledger()?.payees.some(item => item.canSettle));
+  readonly ledgerTitle = computed(() => {
+    const filter = this.filter();
+    return filter === 'ALL' ? 'Alle betalingen' : filter === 'NO_PROOF' ? 'Betalingen zonder bewijs' : 'Betalingen aan ' + PAYEE_LABEL[filter];
   });
   readonly filterChips = computed(() => {
     const book = this.ledger();
@@ -452,6 +532,52 @@ export class PurchasePaymentWorkbench {
   actor(value: string): string { return value.replace(/^.*[\\/]/, '').split('@')[0]; }
   expandable(item: PayeeLedger): boolean { return item.payee === 'SUPPLIER' || item.composition.length > 0; }
   isExpanded(payee: Payee): boolean { return this.expanded().has(payee); }
+  /** The supplier's plan is spelled out by its term rows once they are open; the basis then keeps only the goods. */
+  basis(item: PayeeLedger): string {
+    return item.payee === 'SUPPLIER' && item.terms.length && this.isExpanded('SUPPLIER') ? SUPPLIER_GOODS : item.basis;
+  }
+  proofNames(row: LedgerRow): string { return (row.proofs ?? []).map(proof => proof.originalFilename).join(', '); }
+
+  /**
+   * The one text button of a payee row: record what is due, settle a remainder
+   * that is not scheduled for later (a small difference, an overpayment, a
+   * payment without budget), else record ahead of time; a closed payee has
+   * only the ⋯ menu.
+   */
+  rowAction(item: PayeeLedger): 'add' | 'settle' | null {
+    if (item.dueNowEur > 0) return 'add';
+    if (item.canSettle && item.laterEur === 0) return 'settle';
+    return item.openEur > 0 ? 'add' : null;
+  }
+
+  /** What comes next under the status pill, unless the pill already says it. */
+  nextSub(item: PayeeLedger): string | null {
+    const next = item.next;
+    if (!next || item.status.kind === 'LATER') return null;
+    if (next.now && !next.due && next.amountEur === item.openEur) return null;
+    const label = next.due ? next.label : '';
+    const when = !next.now && !next.label.toLowerCase().includes(next.when) ? next.when : '';
+    return [label, formatEur(next.amountEur), when].filter(Boolean).join(' · ');
+  }
+
+  /** '+ € 120,00' or '− € 50,00'; zero stays a plain amount. */
+  signed(value: number): string {
+    if (!value) return formatEur(0);
+    return (value > 0 ? '+ ' : '− ') + formatEur(Math.abs(value));
+  }
+
+  /** From the Nacalculatie: select the payee, show its payments and put the keyboard on its row. */
+  focusPayee(payee: Payee): void {
+    this.selectedPayee.set(payee);
+    this.filter.set(payee);
+    const item = this.ledger()?.payees.find(candidate => candidate.payee === payee);
+    if (item && this.expandable(item)) this.expanded.update(open => new Set([...open, payee]));
+    requestAnimationFrame(() => this.host.nativeElement.querySelector<HTMLElement>('.pw-payee-row[data-payee="' + payee + '"]')?.focus());
+  }
+
+  scrollToLedger(): void {
+    this.host.nativeElement.querySelector('#pw-ledger-title')?.scrollIntoView({ block: 'start' });
+  }
 
   toggle(payee: Payee): void {
     const item = this.ledger()?.payees.find(candidate => candidate.payee === payee);
@@ -568,6 +694,7 @@ export class PurchasePaymentWorkbench {
       case 'term': return [
         ...(open.term.openEur > 0 && !open.term.settled ? [{ id: 'add', label: 'Betaling noteren voor deze termijn', iconName: 'plus', disabled: busy }] : []),
         ...(open.term.canSettle ? [{ id: 'settle', label: 'Termijn afrekenen', iconName: 'tick', disabled: busy }] : []),
+        ...(open.term.canUndo ? [{ id: 'undo', label: 'Afrekening ongedaan maken', iconName: 'restore', disabled: busy }] : []),
       ];
     }
   }
@@ -585,6 +712,7 @@ export class PurchasePaymentWorkbench {
     if (open.kind === 'term') {
       const term = open.term;
       if (item.id === 'add') this.add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due });
+      else if (item.id === 'undo') this.undoSettle.emit({ payee: 'SUPPLIER', due: term.due });
       else this.settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due });
       return;
     }

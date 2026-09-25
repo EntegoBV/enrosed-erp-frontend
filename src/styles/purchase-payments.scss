@@ -2,22 +2,24 @@
    Inkoop · Betalingen: money out of a container, per payee. Owned by the
    Inkoop round and built on the workspace kit. Every rule hangs on an
    app-purchase-* host, a purchase hook (.desk-viewbar, .desk-body--payments,
-   .purchase-payments-plain, .purchase-result-*) or a class only these
-   components use (pw-, pp-, pay-sheet, settle-sheet, payee-sheet,
-   payment-scope, payment-result); kit classes are never restyled bare.
+   .purchase-payments-plain, .purchase-result-card) or a class only these
+   components use (pw-, pp-, pr-, rc-, pay-sheet, settle-sheet, payee-sheet,
+   payment-scope, payment-result, reconciliation); kit classes are never
+   restyled bare.
 
    Desk: the workbench in the purchase desk's main pane. Container `pw`
    sizes the strip and the side cards (1100 / 760); the main column is
    container `pw-main`, so the tables drop columns by the room they really
-   get (1000 / 720 / 600). Below 1000 'Nu te betalen' moves into the payee
-   sub-line and Verschil stays, so every row still closes to Open. Phone:
-   grouped lists. Shared: the sheets, the scope control and the Nacalculatie
-   card.
+   get: 900 hides 'Nu te betalen' (the amount moves under the payee), 760
+   hides Verschil and the text buttons (the ⋯ stays), 600 hides Status (the
+   pill moves under the name). Verschil only renders once a payee or term was
+   settled for another amount. Phone: grouped lists. Shared: the sheets, the
+   scope control and the Nacalculatie (payment result + reconciliation) as
+   shown in the desk rail, the phone Kosten card and Analyses.
    ========================================================================== */
 
 /* ---- desk: view switch; the payments view takes the whole width */
 .desk-viewbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line)}
-.desk-viewbar__hint{color:var(--muted);font-size:11.5px;white-space:nowrap}
 .desk-body.desk-body--payments{grid-template-columns:minmax(0,1fr)}
 .desk-body.desk-body--payments>.desk-rail{display:none}
 .desk-costs-switch{margin-bottom:12px}
@@ -28,6 +30,7 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-bar{--wk-sticky-top:var(--appbar-h,62px)}
 .pw-bar__copy{display:grid;min-width:0}
 .pw-bar__sub{margin:0;overflow:hidden;color:var(--muted);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.pw-bar__hint{color:var(--muted);font-size:12px;white-space:nowrap}
 .pw-note{margin:12px 20px 0}
 .pw .is-loading{opacity:.5;transition:opacity .15s}
 /* 'Opnieuw laden' under a skeleton only once loading takes long (a failed first load only toasts) */
@@ -45,47 +48,84 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-meter__mark{position:absolute;top:-3px;width:2px;height:12px;margin-left:-1px;border-radius:1px;background:var(--ink-2)}
 .pw-foot{margin:8px 0 0;color:var(--muted);font-size:11.5px}
 .pw-section__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:8px}
-.pw-section__title{margin:0 0 8px;font-size:13.5px;font-weight:700}.pw-section__head>.pw-section__title{margin:0}
+.pw-section__title{margin:0 0 8px;font-size:13.5px;font-weight:700;scroll-margin-top:calc(var(--appbar-h,62px) + var(--wk-bar-h) + 12px)}.pw-section__head>.pw-section__title{margin:0}
 .pw-payees,.pw-ledger{border:1px solid var(--line)}
-.pw-payees{--wk-cols:28px minmax(0,1.6fr) repeat(5,minmax(0,1fr)) minmax(0,1.4fr) 190px}
+/* chev · Ontvanger · Afspraak · Betaald · [Verschil] · Open · Nu · Status · Acties */
+.pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1fr) minmax(0,1.4fr) 96px}
+.pw-payees--diff{--wk-cols:28px minmax(0,1.5fr) repeat(4,minmax(0,1fr)) minmax(0,1fr) minmax(0,1.4fr) 96px}
 .pw-payees .wk-th{line-height:1.2;white-space:normal}
-.pw-ledger{--wk-cols:92px 100px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) 140px 32px}
-.pw-desc{display:block;overflow:hidden;text-overflow:ellipsis}
+/* Datum · Ontvanger · Omschrijving · Bedrag · In euro · Afrekening · Bewijs · Acties */
+.pw-ledger{--wk-cols:92px 100px minmax(0,1.6fr) minmax(104px,1fr) minmax(100px,1fr) minmax(0,1.1fr) 140px 110px}
+.pw-desc{display:block;white-space:normal;overflow-wrap:anywhere}
+.pw-settles{margin-left:6px;vertical-align:1px}
 .pw-ledger .wk-td__sub>.wk-pill{margin-right:4px}
+/* the row actions are the way to work here: never hover-only; the ⋯ steps back until the row is live */
+.pw-payees .wk-td--actions,.pw-ledger .wk-td--actions{opacity:1}
+.pw .pw-more{opacity:.55}
+.pw .wk-tr:hover .pw-more,.pw .wk-tr:focus-within .pw-more,.pw .wk-tr[aria-selected=true] .pw-more{opacity:1}
 .pw-payee{display:flex;align-items:center;gap:10px;min-width:0}
 .pw-payee__copy{display:grid;min-width:0}.pw-payee__copy b{font-weight:650;white-space:normal}
+/* what the agreement rests on: two lines at most, never a bare 'Raming uit Kosten…' */
+.pw-payee__copy>.pw-basis{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal;overflow-wrap:anywhere}
 .pw-tile{display:grid;flex:none;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--tone,var(--muted-2));color:#fff}
 .pw-chev{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .pw-chev:hover{background:var(--surface-2);color:var(--ink)}
 .pw-chev app-icon{transition:transform .15s}.pw-chev[aria-expanded=true] app-icon{transform:rotate(90deg)}
 .pw-sub{display:grid;min-width:0;padding-left:36px}
 .pw-note-row>.wk-td{grid-column:1/-1;padding-left:64px;color:var(--muted)}.pw-note-row .wk-btn{margin-left:10px}
+/* what an agreement is made of: label across the name columns, the amount under Open */
+.pw-comp-row>.pw-comp__label{grid-column:2/5;display:grid;min-width:0;padding-left:36px}
+.pw-comp-row>.pw-comp__amount{grid-column:5/6}
+.pw-payees--diff .pw-comp-row>.pw-comp__label{grid-column:2/6}
+.pw-payees--diff .pw-comp-row>.pw-comp__amount{grid-column:6/7}
+.pw-comp-row--caption>.wk-td,.pw-comp-row--link>.wk-td{grid-column:2/-1;padding-left:36px;color:var(--muted);font-size:12px}
+.pw-comp-row--caption>.wk-td.wk-amount--warn{color:var(--warn)}
+.pw-comp-row--link .wk-link{margin-left:6px}
 .pw-divider{margin-top:10px;border-top:1px solid var(--line)}
 .pw-status-link{display:block;margin-top:2px;font-size:11.5px;text-align:left}
+.pw-payees .wk-td--wrap .pw-status-sub{white-space:normal;overflow:visible}
+.pw-open-sub{display:block}
+.pw-proof{display:flex;justify-content:flex-end;overflow:visible}
+.pw-proof__btn{max-width:100%;color:var(--muted)}
+.pw-proof__name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+.pw-proof__btn--missing{color:var(--muted)}
 .pw-muted{margin:0;color:var(--muted);font-size:12.5px;line-height:1.45}
+.pw-card__foot{margin-top:10px}
+.pw-bridge__subtotal dt{color:var(--ink);font-weight:600}
 .pw-todo__go{flex:none;color:var(--rose-dark);font-size:12.5px;font-style:normal;font-weight:650;white-space:nowrap}
 .pw-status{border-radius:0 0 17px 17px}
 .pw-when-mid,.pw-when-narrow,.pw-when-tiny{display:none}
+/* the hero tile wraps instead of clipping its money */
+app-purchase-desk .desk-kpi--button span{white-space:normal;line-height:1.3}
+/* the side sticks, and scrolls inside its box once three cards outgrow the viewport (nothing fixed lives in it) */
 @container pw (min-width:1100px){
  .pw-content{grid-template-columns:minmax(0,1fr) 300px;align-items:start}
- .pw-side{position:sticky;top:calc(var(--appbar-h,62px) + var(--wk-bar-h) + 12px)}}
+ .pw-side{position:sticky;top:calc(var(--appbar-h,62px) + var(--wk-bar-h) + 12px);max-height:calc(100dvh - var(--appbar-h,62px) - var(--wk-bar-h) - 24px);overflow-y:auto;scrollbar-width:thin}}
 @container pw (min-width:760px) and (max-width:1099.98px){.pw-side{grid-template-columns:1fr 1fr;align-items:start}}
 /* a narrow desk (a Fold, a small window): four figures in a 2×2 grid and the formula in words */
 @container pw (max-width:759.98px){
- .pw-bar__sub,.pw-op,.pw-strip__wide,.pw-keys{display:none}
+ .pw-bar__sub,.pw-bar__hint,.pw-op,.pw-strip__wide,.pw-keys{display:none}
  .pw-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
  .pw-strip .pw-strip__sub{overflow-wrap:anywhere;white-space:normal}
  .pw-now{min-width:0;margin-left:0}.pw-formula{display:block}.pw-content{padding-inline:14px}}
-@container pw-main (max-width:999.98px){
+/* mid: 'Nu te betalen' folds into the payee sub-line; the ledger keeps date, payee, description, euro, proof, actions
+   (880 rather than 900 so a 1536 px laptop, at 898 px of main column, keeps the real column) */
+@container pw-main (max-width:879.98px){
  .pw [data-pw-hide~=mid]{display:none}.pw .pw-when-mid{display:inline-flex}.pw .wk-td__sub.pw-when-mid{display:block}
- .pw-payees{--wk-cols:28px minmax(0,1.6fr) repeat(4,minmax(0,1fr)) minmax(0,1.4fr) 28px}
- .pw-ledger{--wk-cols:88px minmax(0,1fr) 112px 140px 32px}}
-@container pw-main (max-width:719.98px){
- .pw [data-pw-hide~=narrow]{display:none}.pw .pw-when-narrow{display:inline}
- .pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1.2fr) 28px}}
+ .pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1.4fr) 96px}
+ .pw-payees--diff{--wk-cols:28px minmax(0,1.5fr) repeat(4,minmax(0,1fr)) minmax(0,1.4fr) 96px}
+ .pw-ledger{--wk-cols:92px 100px minmax(0,1fr) 116px 160px 110px}}
+/* narrow: Verschil and the text buttons go; the ⋯ carries every action */
+@container pw-main (max-width:759.98px){
+ .pw [data-pw-hide~=narrow]{display:none}.pw .pw-when-narrow{display:inline}.pw .wk-td__sub.pw-when-narrow{display:block}
+ .pw-payees,.pw-payees--diff{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1.3fr) 28px}
+ .pw-payees--diff .pw-comp-row>.pw-comp__label{grid-column:2/5}
+ .pw-payees--diff .pw-comp-row>.pw-comp__amount{grid-column:5/6}
+ .pw-ledger{--wk-cols:88px minmax(0,1fr) 112px 120px 32px}}
+/* tiny: the status pill moves under the name */
 @container pw-main (max-width:599.98px){
  .pw [data-pw-hide~=tiny]{display:none}.pw .pw-when-tiny{display:block;margin-top:2px}
- .pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) 28px}}
+ .pw-payees,.pw-payees--diff{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) 28px}}
 
 /* ---- phone: Betalingen as grouped lists on the page, not a card */
 .purchase-payments-plain{--ios-inset:0px}
@@ -102,18 +142,21 @@ app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16p
 .pp-bridge>summary{padding-inline:0;color:var(--rose-dark);font-size:15px}
 .pp-bridge small{color:var(--muted);font-size:12px}
 .pp-filter{margin:0 0 10px}
-.pp-costs{display:block;min-height:44px;margin:0 auto 12px}
+.pp-costs{margin:0 var(--ios-inset) 12px}
 .pp-late{margin-top:10px}
-.pp-payee :is(.ios-cell__title,.ios-cell__sub){overflow-wrap:anywhere;white-space:normal}
+.pp-payee :is(.ios-cell__title,.ios-cell__sub),.pp-term .ios-cell__sub,.pp-row .ios-cell__sub{overflow-wrap:anywhere;white-space:normal}
 .pp-payee__trail{min-width:96px}
 .pp-row__date{display:grid;flex:none;justify-items:center;width:34px;line-height:1.1}
 .pp-row__date b{font-size:17px;font-weight:700}.pp-row__date small{color:var(--muted);font-size:11px}
-.pp-row .ios-cell__meta app-icon{vertical-align:-2px}
+.pp-row .ios-cell__meta app-icon,.pp-row__proof app-icon{vertical-align:-2px}
+.pp-row__proof{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-term{--ios-sep-inset:58px}.pp-term .ios-cell__lead{width:30px}
 .pp-detail .ios-cell__value{white-space:normal}
 .payee-sheet__lead{margin:0 16px 14px;color:var(--muted);font-size:14px;text-align:center}
 .payee-sheet__split{margin:10px 0 0;color:var(--muted);font-size:13px}
 .payee-sheet__links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 20px;padding:0 16px}
 .payee-sheet__links>button{min-height:44px}
+.payee-sheet__term--done .ios-cell__chev{opacity:.35}
 
 /* ---- shared sheets: record a payment, settle, the first instalment */
 .pay-sheet,.settle-sheet,.first-sheet{display:grid;gap:14px;min-width:0}
@@ -172,23 +215,65 @@ app-purchase-payment-scope{display:block;min-width:0;--ios-inset:0px}
 .payment-scope__explanation{margin:0;padding:10px 12px;border-radius:12px;background:var(--rose-soft);color:var(--ink-2);font-size:12px;line-height:1.5}
 .payment-scope__explanation b{display:block;font-weight:650}
 
-/* ---- Nacalculatie: the payment result and the cost-price disclosure (Kosten) */
+/* ---- Nacalculatie: the payment result and the cost price (desk rail, phone Kosten card, Analyses) */
 app-purchase-payment-result{display:block;min-width:0;margin-bottom:12px}
 .payment-result{display:grid;gap:10px;padding:16px;border:1px solid var(--rose-line);border-radius:16px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));outline:none;scroll-margin-top:calc(var(--appbar-h,62px) + 16px)}
-.payment-result__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.payment-result__eyebrow{color:var(--rose-dark);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
-.payment-result h3{margin:2px 0 0;font-size:15px}
-.payment-result__amount{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;color:var(--rose-dark)}
-.payment-result__amount strong{font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.payment-result__amount span{color:var(--muted);font-size:12px}
-.payment-result__amount.is-loss{color:var(--warn)}
+.payment-result__head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.payment-result__head h3{flex:1 1 auto;min-width:0;margin:0;font-size:15px}
+/* the net figure sits last and drops to its own line in a narrow rail */
+.payment-result__net{order:3;margin-left:auto;font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
 .payment-result__note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
 .payment-result__pending{margin:0;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:#7c450b;font-size:12px}
+.payment-result__sub{margin:6px 0 0;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+.pr-payees{display:grid}
+.pr-payee{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
+.pr-payee:first-child{border-top:0}
+.pr-payee__tile{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--tone,var(--muted-2));color:#fff}
+.pr-payee__copy{display:grid;gap:3px;min-width:0}
+.pr-payee__copy b{font-size:13px;font-weight:650}
+.pr-payee__figures{color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
+.pr-payee__state{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.pr-payee__state .wk-link{text-align:left}
+.pr-payee__diff{display:grid;justify-items:end;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pr-payee__diff small{color:var(--muted);font-size:10.5px;font-weight:500}
+app-purchase-reconciliation{display:block;min-width:0}
+.reconciliation{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.reconciliation__head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.reconciliation__head h3{flex:1;margin:0;font-size:15px}
+.reconciliation__pdf{margin-left:auto}
+.reconciliation__variance{display:flex;justify-content:space-between;gap:10px;margin:8px 0 0;padding:10px 12px;border-radius:10px;background:var(--surface-2);font-size:12px}
+.reconciliation__variance strong{flex-shrink:0;font-variant-numeric:tabular-nums}
+.reconciliation__variance small{display:block;margin-top:2px;font-size:11px;opacity:.8}
+.reconciliation__variance.is-higher{background:var(--warn-soft);color:#7c450b}
+.reconciliation__variance.is-lower{background:var(--ok-soft);color:var(--ok)}
+.reconciliation__variance.is-none{margin:8px 0 0;padding:0;background:none;color:var(--muted)}
+.reconciliation__note{margin:8px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5}
+.reconciliation__streams{display:grid;margin-top:10px}
+.reconciliation__unit{margin-top:10px;padding-top:6px;border-top:1px solid var(--line)}
+.reconciliation__unit .wk-td__sub{white-space:normal}
+.reconciliation__details{margin-top:10px;border-top:1px solid var(--line)}
+.reconciliation__details>summary{padding:10px 0;color:var(--ink);font-size:12px;font-weight:650;cursor:pointer}
+.reconciliation__details>summary span{margin-left:6px;color:var(--muted);font-size:11px;font-weight:400}
+.rc-products{display:grid}
+.rc-product{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:12px}
+.rc-product__copy{display:grid;gap:2px;min-width:0}
+.rc-product__copy a{color:var(--rose-dark);font-weight:650;text-decoration:none;overflow-wrap:anywhere}.rc-product__copy a:hover{text-decoration:underline}
+.rc-product__copy small{color:var(--muted);font-size:11px}
+.rc-product__amount{display:grid;flex:none;justify-items:end;font-variant-numeric:tabular-nums}
+.rc-product__amount small{font-size:10.5px}
+.rc-product__plan{color:var(--muted)}
+.reconciliation__notes ul{margin:2px 0 10px;padding-left:16px;color:var(--muted);font-size:11px;line-height:1.5}.reconciliation__notes li+li{margin-top:5px}
+.reconciliation__foot{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);color:var(--muted-2);font-size:12.5px}
 .purchase-result-card{padding:14px}
-.purchase-result-disclosure{border-top:1px solid var(--line)}
-.purchase-result-disclosure>summary{display:flex;align-items:center;min-height:48px;font-size:14px;font-weight:650;list-style:none;cursor:pointer}
-.purchase-result-disclosure>summary::-webkit-details-marker{display:none}
-.purchase-result-disclosure>summary::after{content:'›';margin-left:auto;color:var(--muted-2);font-size:20px;transition:transform .18s}
-.purchase-result-disclosure[open]>summary::after{transform:rotate(90deg)}
+.purchase-result-card>.section-kicker{margin-bottom:10px}
+@media (max-width:679.98px){
+ .purchase-result-card .payment-result,.purchase-result-card .reconciliation{padding:0;border:0;background:transparent;box-shadow:none}
+ .purchase-result-card app-purchase-payment-result{margin-bottom:0}
+ .purchase-result-card app-purchase-reconciliation{margin:14px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+ /* thumb-sized targets: the inline links and the PDF button are real actions on a phone */
+ .pr-payee{padding:12px 0}.pr-payee__copy b{font-size:15px}.pr-payee__figures{font-size:13px}.pr-payee__state .wk-link{min-height:44px;font-size:14px}
+ .purchase-result-card .reconciliation__pdf{height:44px;padding:0 14px;border-radius:12px;font-size:14px}
+ .rc-product{font-size:14px}.rc-product__copy small{font-size:12px}.rc-product__amount small{font-size:12px}
+ .reconciliation__foot{justify-content:center;font-size:15px}.reconciliation__foot .wk-link{min-height:44px;font-size:15px}}
 
-@media (prefers-reduced-motion:reduce){.pw-late,.pp-late{animation-duration:0s}.pw-chev app-icon,.pw .is-loading,.pay-sheet__scope>summary app-icon,.purchase-result-disclosure>summary::after{transition:none}}
+@media (prefers-reduced-motion:reduce){.pw-late,.pp-late{animation-duration:0s}.pw-chev app-icon,.pw .is-loading,.pay-sheet__scope>summary app-icon{transition:none}}

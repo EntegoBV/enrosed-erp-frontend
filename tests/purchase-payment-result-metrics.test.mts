@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseOrderView, PurchaseReconciliationStream } from '../src/app/core/api/models.ts';
-import { purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
+import { purchaseNacalcSummary, purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 
 function stream(values: Partial<PurchaseReconciliationStream> = {}): PurchaseReconciliationStream {
   return { payee: 'SUPPLIER', label: 'Leverancier', status: 'PARTIAL', plannedEur: 1_000,
@@ -257,4 +257,29 @@ test('all separately finalized instalments finalize the group without a whole-gr
   assert.equal(result.netResultEur, 886);
   assert.equal(result.finalized, true);
   assert.equal(result.streams[0].finalized, true);
+});
+
+test('the nacalculatie summary is null without a reconciliation and never claims a result on a concept', () => {
+  const missing = purchase();
+  missing.reconciliation = null;
+  assert.equal(purchaseNacalcSummary(missing), null);
+  delete missing.reconciliation;
+  assert.equal(purchaseNacalcSummary(missing), null);
+  const concept = purchase([lower()], true);
+  concept.order.status = 'CONCEPT';
+  const draft = purchaseNacalcSummary(concept)!;
+  assert.equal(draft.eligible, false);
+  assert.equal(draft.netResultEur, 0);
+  assert.equal(draft.markupWithResultEur, 250);
+});
+
+test('the nacalculatie summary carries the server forecast and variance next to the settled result', () => {
+  const view = purchase([lower()], true);
+  Object.assign(view.reconciliation!.totals, { paidEur: 940, remainingEur: 0, forecastExternalEur: 940, varianceEur: -60 });
+  const summary = purchaseNacalcSummary(view)!;
+  assert.deepEqual(summary, {
+    eligible: true, finalized: true, forecastEur: 940, varianceEur: -60, netResultEur: 60, internalMarkupEur: 250, markupWithResultEur: 310,
+  });
+  const provisional = purchaseNacalcSummary(purchase([stream({ paidEur: 300, remainingEur: 700 })]))!;
+  assert.deepEqual([provisional.finalized, provisional.forecastEur, provisional.varianceEur, provisional.netResultEur], [false, 1_000, 0, 0]);
 });

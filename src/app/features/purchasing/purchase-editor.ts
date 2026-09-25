@@ -1,6 +1,6 @@
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -1125,11 +1125,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <!-- Nacalculatie: what the container really cost, under Kosten. -->
             <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
-              <app-purchase-payment-result [view]="data" />
-              <details class="purchase-result-disclosure">
-                <summary>Kostprijs per product en PDF</summary>
-                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" />
-              </details>
+              <span class="section-kicker">Nacalculatie</span>
+              <app-purchase-payment-result [view]="data" [ledger]="paymentLedger()" actions="inline" [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
+                (open)="openPayee($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee)" />
+              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [showStreams]="false" [hosted]="true"
+                (openPayments)="jumpToSection('purchase-payments-section')" />
             </section>
 
             <!-- Money out, per payee: the supplier for the goods in its planned
@@ -1802,6 +1802,14 @@ export class PurchaseEditor {
     if (sectionId === 'purchase-result-section') return 2;
     if (sectionId === 'purchase-partner-section') return 3;
     return -1;
+  }
+
+  private readonly paymentOverview = viewChild(PurchasePaymentOverview);
+
+  /** From the Nacalculatie: the payee's sheet on top of the payments step. */
+  openPayee(payee: Payee): void {
+    this.jumpToSection('purchase-payments-section');
+    this.paymentOverview()?.openPayee.set(payee);
   }
 
   /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */

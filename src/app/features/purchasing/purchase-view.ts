@@ -1,5 +1,5 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Router, RouterLink } from '@angular/router';
@@ -24,7 +24,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe } from '../../shared/pipes';
 import {
-  Category, OtherCost, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
+  Category, OtherCost, Payee, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -654,11 +654,10 @@ type PurchaseWorkspaceSectionId =
 
             <!-- Nacalculatie: what the container really cost, right under the calculation. -->
             <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
-              <app-purchase-payment-result [view]="data" />
-              <details class="purchase-result-disclosure">
-                <summary>Kostprijs per product en PDF</summary>
-                <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [showStreams]="false" />
-              </details>
+              <span class="section-kicker">Nacalculatie</span>
+              <app-purchase-payment-result [view]="data" [ledger]="paymentLedger()" actions="none" (open)="openPayee($event)" />
+              <app-purchase-reconciliation [data]="data.reconciliation" [orderId]="data.order.id" [orderNumber]="data.order.number" [showStreams]="false" [hosted]="true"
+                (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')" />
             </section>
 
             <!-- Money out, per payee: supplier, forwarder and customs, inspection,
@@ -1171,6 +1170,14 @@ export class PurchaseView {
     void this.routerNav.navigate(['/purchasing', id, 'edit'], {
       queryParams: { section: 'pay', payee: action.payee, due: action.due ?? null }, replaceUrl: true,
     });
+  }
+
+  private readonly paymentOverview = viewChild(PurchasePaymentOverview);
+
+  /** From the Nacalculatie: the payee's sheet on top of the payments card. */
+  openPayee(payee: Payee): void {
+    this.scrollToCard('purchase-payments-section', 'purchase-payments-section');
+    this.paymentOverview()?.openPayee.set(payee);
   }
 
   /** Scrolls to a card that is not a navigation stop of its own, marking the stop it belongs to. */

@@ -7,7 +7,7 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { DUE_MOMENT, type Due, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest } from './purchase-payment-ledger';
-import { dayOf, monthOf, paymentMenuItems, settleWith, toneClass } from './purchase-payment-menus';
+import { dayOf, monthOf, paymentMenuItems, proofLine, settleWith, toneClass } from './purchase-payment-menus';
 
 /**
  * One payee on the phone: its agreement as a receipt, its terms or what the
@@ -35,7 +35,7 @@ import { dayOf, monthOf, paymentMenuItems, settleWith, toneClass } from './purch
               <div class="is-total"><dt>Open</dt><dd>{{ item.openEur | eur }}</dd></div>
             </dl>
             @if (item.openEur > 0) {
-              <p class="payee-sheet__split">Nu te betalen {{ item.dueNowEur | eur }} · Later {{ item.laterEur | eur }}@if (item.laterDue) { ({{ moment(item.laterDue) }}) }</p>
+              <p class="payee-sheet__split">@if (item.dueNowEur > 0) { Nu te betalen {{ item.dueNowEur | eur }}@if (item.laterEur > 0) { · Later {{ item.laterEur | eur }}@if (item.laterDue) { ({{ moment(item.laterDue) }}) } } } @else { Later {{ item.laterEur | eur }}@if (item.laterDue) { ({{ moment(item.laterDue) }}) } }</p>
             }
           }
         </div>
@@ -45,9 +45,13 @@ import { dayOf, monthOf, paymentMenuItems, settleWith, toneClass } from './purch
             <div class="ios-section__head"><h2>Termijnen</h2></div>
             <div class="ios-group">
               @for (term of item.terms; track term.due) {
-                <button class="ios-cell" type="button" [attr.aria-disabled]="!termActionable(term) || null" (click)="tapTerm(term, $event)">
+                <button class="ios-cell" type="button" [class.payee-sheet__term--done]="!termActionable(term)" (click)="tapTerm(term, $event)">
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}</span></span>
-                  <span class="ios-cell__trail"><span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
+                  <span class="ios-cell__trail">
+                    @if (termActionable(term)) { <span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span> }
+                    @else { <span class="ios-cell__meta wk-amount--in"><app-icon name="tick" [size]="12" /> {{ term.status.label }}</span> }
+                  </span>
+                  @if (termActionable(term)) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
                 </button>
               }
             </div>
@@ -74,11 +78,12 @@ import { dayOf, monthOf, paymentMenuItems, settleWith, toneClass } from './purch
                         (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || act('edit', row.payment)">
                   <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                    <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.settlesLabel) { · {{ row.settlesLabel }} }@if (row.foreign) { · {{ row.amount | cur: row.currency }} }</span></span>
+                    <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
+                    @if (row.hasProof === true) { <span class="ios-cell__sub pp-row__proof"><app-icon name="clip" [size]="12" /> {{ proofLine(row) }}</span> }</span>
                   <span class="ios-cell__trail">
                     <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
-                    @if (row.hasProof === true) { <span class="ios-cell__meta"><app-icon name="clip" [size]="12" /> {{ row.proofCount }}</span> }
-                    @else if (row.hasProof === false) { <span class="ios-cell__meta wk-amount--warn">geen bewijs</span> }
+                    @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
+                    @if (row.hasProof === false) { <span class="ios-cell__meta wk-amount--warn">geen bewijs</span> }
                   </span>
                 </button>
               }
@@ -96,12 +101,17 @@ import { dayOf, monthOf, paymentMenuItems, settleWith, toneClass } from './purch
         }
       </div>
       <div foot style="display:contents">
-        @if (mode() === 'edit' && item.canSettle) {
-          <button class="btn" type="button" [disabled]="busy()" (click)="act('settle')">
+        @if (item.dueNowEur > 0) {
+          <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="act('add')">Noteer {{ item.dueNowEur | eur }}</button>
+          @if (mode() === 'edit' && item.canSettle) { <button class="btn" type="button" [disabled]="busy()" (click)="act('settle')">Afrekenen…</button> }
+        } @else if (mode() === 'edit' && item.canSettle) {
+          <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="act('settle')">
             @if (item.smallDifference) { Verschil van {{ item.openEur | eur }} afrekenen } @else { Afrekenen… }
           </button>
+          <button class="btn" type="button" [disabled]="busy()" (click)="act('add')">Extra betaling noteren</button>
+        } @else {
+          <button class="btn" type="button" [disabled]="busy()" (click)="act('add')">{{ item.openEur > 0 ? 'Betaling noteren' : 'Extra betaling noteren' }}</button>
         }
-        <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="act('add')">Betaling noteren</button>
       </div>
     </app-sheet>
     @if (termMenu(); as open) {
@@ -136,6 +146,7 @@ export class PurchasePayeeSheet {
   readonly tone = toneClass;
   readonly day = dayOf;
   readonly month = monthOf;
+  readonly proofLine = proofLine;
   readonly basis = computed(() => {
     const payee = this.payee();
     switch (payee.payee) {

@@ -12,7 +12,7 @@ import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
   type PurchasePaymentAction, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
-import { dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, toneClass } from './purchase-payment-menus';
+import { dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, proofLine, settleWith, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
 
 export type { PurchasePaymentAction } from './purchase-payment-ledger';
@@ -32,9 +32,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
         <h2 class="ios-title2" id="purchase-payments-title">{{ state() === 'loading' ? 'Betalingen laden…' : state() === 'error' ? 'Betalingen niet actueel' : 'Betalingen' }}</h2>
         <p class="ios-caption">Afgesproken, betaald en open per ontvanger</p>
       </div>
-      @if (mode() === 'read') {
-        <button class="ios-circle" type="button" aria-label="Betaling noteren" [disabled]="!ready()" (click)="payeeMenu.set(true)"><app-icon name="plus" [size]="20" /></button>
-      }
+      <button class="ios-circle" type="button" aria-label="Betaling noteren" [disabled]="!ready() || busy()" (click)="payeeMenu.set(true)"><app-icon name="plus" [size]="20" /></button>
     </header>
 
     @switch (state()) {
@@ -94,10 +92,8 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                   @if (sum.lowerEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Minder betaald · afgerekend</dt><dd>{{ sum.lowerEur | eur }}</dd></div> }
                   @if (sum.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ reviewHigher() ? ' · nakijken' : '' }}</dt><dd>{{ sum.higherEur | eur }}</dd></div> }
                   <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Open</dt><dd>{{ sum.openEur | eur }}</dd></div>
-                  @if (sum.openEur > 0) {
-                    <div class="is-sub"><dt>waarvan nu te betalen</dt><dd>{{ sum.dueNowEur | eur }}</dd></div>
-                    <div class="is-sub"><dt>waarvan later</dt><dd>{{ sum.laterEur | eur }}</dd></div>
-                  }
+                  @if (sum.dueNowEur > 0 && sum.laterEur > 0) { <div class="is-sub"><dt>waarvan nu te betalen</dt><dd>{{ sum.dueNowEur | eur }}</dd></div> }
+                  @if (sum.laterEur > 0) { <div class="is-sub"><dt>waarvan later</dt><dd>{{ sum.laterEur | eur }}</dd></div> }
                 </dl>
               }
               @if (sum.additionalEur > 0) {
@@ -143,15 +139,25 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                     <span class="ios-cell__lead"><span class="ios-tile" [class]="item.tone"><app-icon [name]="item.icon" [size]="17" /></span></span>
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ item.label }}</span><span class="ios-cell__sub">{{ payeeSub(item) }}</span></span>
                     <span class="ios-cell__trail pp-payee__trail">
-                      <span class="ios-cell__value ios-cell__value--strong">{{ (item.payee === 'OTHER' ? item.paidEur : item.openEur) | eur }}</span>
+                      @if (item.payee !== 'OTHER' && item.openEur === 0) {
+                        <span class="ios-cell__value">{{ item.paidEur | eur }}</span>
+                      } @else {
+                        <span class="ios-cell__value ios-cell__value--strong">{{ (item.payee === 'OTHER' ? item.paidEur : item.openEur) | eur }}</span>
+                      }
                       <span class="ios-cell__meta" [class]="tone(item.status.tone)">{{ item.status.label }}</span>
                     </span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
+                  @if (item.payee === 'SUPPLIER') {
+                    @for (term of item.terms; track term.due) {
+                      <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
+                        <span class="ios-cell__lead"></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}</span></span>
+                        <span class="ios-cell__trail"><span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
+                      </button>
+                    }
+                  }
                 }
-                <button class="ios-cell ios-cell--action" type="button" [disabled]="busy()" (click)="payeeMenu.set(true)">
-                  <span class="ios-cell__lead"><app-icon name="plus" [size]="20" /></span><span class="ios-cell__body">Betaling noteren</span>
-                </button>
               </div>
             </section>
 
@@ -176,11 +182,12 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                             (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || tapRow(row)">
                       <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                       <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                        <span class="ios-cell__sub">{{ row.payeeShort }}@if (row.termLabel) { · {{ row.termLabel }} }@if (row.foreign) { · {{ row.amount | cur: row.currency }} }</span></span>
+                        <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
+                        @if (row.hasProof === true) { <span class="ios-cell__sub pp-row__proof"><app-icon name="clip" [size]="12" /> {{ proofLine(row) }}</span> }</span>
                       <span class="ios-cell__trail">
                         <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
-                        @if (row.hasProof === true) { <span class="ios-cell__meta"><app-icon name="clip" [size]="12" /> {{ row.proofCount }}</span> }
-                        @else if (row.hasProof === false) { <span class="ios-cell__meta wk-amount--warn">geen bewijs</span> }
+                        @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
+                        @if (row.hasProof === false) { <span class="ios-cell__meta wk-amount--warn">geen bewijs</span> }
                       </span>
                     </button>
                   }
@@ -191,7 +198,12 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               }
             </section>
 
-            <button class="ios-section__link pp-costs" type="button" (click)="openCosts.emit()">Nacalculatie en kostprijs staan bij Kosten ›</button>
+            <div class="ios-group pp-costs">
+              <button class="ios-cell" type="button" (click)="openCosts.emit()">
+                <span class="ios-cell__body"><span class="ios-cell__title">Nacalculatie en kostprijs</span><span class="ios-cell__sub">Bij Kosten</span></span>
+                <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+              </button>
+            </div>
           </div>
         }
       }
@@ -276,6 +288,7 @@ export class PurchasePaymentOverview {
   readonly day = dayOf;
   readonly month = monthOf;
   readonly round = Math.round;
+  readonly proofLine = proofLine;
 
   readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');
   readonly payeeOpen = computed(() => this.ledger()?.payees.find(item => item.payee === this.openPayee()) ?? null);
@@ -311,8 +324,10 @@ export class PurchasePaymentOverview {
   finite(value: number): boolean { return Number.isFinite(value); }
   actor(value: string): string { return value.replace(/^.*[\\/]/, '').split('@')[0]; }
 
+  /** 'Alles betaald' only when the agreement was paid to the cent; a settled difference keeps its two figures under the pill. */
   payeeSub(item: PayeeLedger): string {
     if (item.payee === 'OTHER') return `${formatEur(item.paidEur)} betaald · zonder afspraak`;
+    if (item.openEur === 0 && item.paidEur > 0 && item.differenceEur === 0) return 'Alles betaald';
     return item.paidEur > 0 ? `${formatEur(item.paidEur)} van ${formatEur(item.agreedEur ?? 0)} betaald` : 'Nog niets betaald';
   }
 

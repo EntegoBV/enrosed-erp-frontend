@@ -1,4 +1,4 @@
-import type { PurchaseOrderView, PurchaseReconciliation } from '../../core/api/models';
+import type { PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseReconciliation } from '../../core/api/models';
 
 export type ReconciliationStream = PurchaseReconciliation['streams'][number];
 export type ContainerCostFilter = 'active' | 'all' | 'open' | 'finalized' | 'higher' | 'lower';
@@ -6,13 +6,15 @@ export type ContainerCostFilter = 'active' | 'all' | 'open' | 'finalized' | 'hig
 /**
  * Display vocabulary only: settlement decisions and all cost allocations belong to the server.
  * The words match the payee statuses of purchase-payment-ledger, so Betalingen and Analyses agree.
+ * The supplier's terms count too: a term settled on its own makes the paid supplier 'afgerekend',
+ * exactly when the ledger offers to undo that settlement.
  */
-export function reconciliationStatusLabel(stream: ReconciliationStream): string {
+export function reconciliationStatusLabel(stream: ReconciliationStream, terms?: readonly PurchaseInstalmentReconciliation[]): string {
   switch (stream.status) {
     case 'PLANNED': return 'Gepland';
     case 'UNPAID': return 'Open';
     case 'PARTIAL': return 'Deels betaald';
-    case 'PAID': return 'Betaald';
+    case 'PAID': return stream.explicitlySettled || terms?.some(term => term.explicitlySettled) ? 'Betaald · afgerekend' : 'Betaald';
     case 'OVERPAID': return stream.finalized ? 'Afgerekend · meer betaald' : 'Te veel betaald · nakijken';
     case 'SETTLED_LOWER': return 'Afgerekend · minder betaald';
     case 'NOT_APPLICABLE': return 'Geen kosten';

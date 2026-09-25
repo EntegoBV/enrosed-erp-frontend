@@ -208,6 +208,8 @@ test('each payee status comes from exactly one rule, in priority order', () => {
   assert.equal(kind({ plannedEur: 60, paidEur: 70, overpaidEur: 10, finalized: true }).kind, 'SETTLED_HIGHER');
   assert.equal(kind({ plannedEur: 60, paidEur: 50, settledSavingEur: 10, finalized: true, explicitlySettled: true }).kind, 'SETTLED_LOWER');
   assert.equal(kind({ plannedEur: 60, paidEur: 60, finalized: true }).kind, 'PAID');
+  const closed = kind({ plannedEur: 60, paidEur: 60, finalized: true, explicitlySettled: true });
+  assert.deepEqual([closed.kind, closed.label, closed.tone], ['PAID', 'Betaald · afgerekend', 'ok'], 'an explicit settlement without a difference says so');
   assert.equal(kind({ plannedEur: 60, remainingEur: 60 }, 'CONCEPT').kind, 'PLANNED');
   const due = kind({ plannedEur: 60, remainingEur: 60 });
   assert.deepEqual([due.kind, due.label, due.tone], ['DUE', 'Nu te betalen', 'warn']);
@@ -277,6 +279,19 @@ test('supplier terms join the server figures on their moment and can only be set
   const single = of(ledger(oneOpen, [payment(1, { amountEur: 300, instalmentDue: 'ORDERED' }), payment(2, { amountEur: 690, instalmentDue: 'SHIPPED' })]), 'SUPPLIER');
   assert.deepEqual(single.settleDefault, { payee: 'SUPPLIER', scope: 'TERM', due: 'SHIPPED' });
   assert.equal(single.smallDifference, true);
+  assert.deepEqual(single.terms[0].status, { label: 'Betaald', tone: 'ok' });
+  const closedTerm = purchase({ status: 'ONDERWEG', streams: [stream('SUPPLIER', { plannedEur: 1000, paidEur: 1000, remainingEur: 0, finalized: true, explicitlySettled: true })],
+    instalments: [instalment('ORDERED', { plannedEur: 300, paidEur: 300, remainingEur: 0, finalized: true, explicitlySettled: true }), instalment('SHIPPED', { plannedEur: 700, paidEur: 700, remainingEur: 0, finalized: true })] });
+  const terms = of(ledger(closedTerm, [payment(1, { amountEur: 300, instalmentDue: 'ORDERED', settles: true }), payment(2, { amountEur: 700, instalmentDue: 'SHIPPED' })]), 'SUPPLIER').terms;
+  assert.deepEqual(terms.map(term => term.status), [{ label: 'Betaald · afgerekend', tone: 'ok' }, { label: 'Betaald', tone: 'ok' }], 'a settled, fully paid term says so; a merely paid one does not');
+  // A term settled on its own: the paid supplier reads 'afgerekend' exactly when its row offers to undo that settlement, in both vocabularies.
+  const termOnly = purchase({ status: 'ONDERWEG', streams: [stream('SUPPLIER', { plannedEur: 1000, paidEur: 1000, remainingEur: 0, finalized: true, status: 'PAID' })],
+    instalments: [instalment('ORDERED', { plannedEur: 300, paidEur: 300, remainingEur: 0, finalized: true }), instalment('SHIPPED', { plannedEur: 700, paidEur: 700, remainingEur: 0, finalized: true, explicitlySettled: true })] });
+  const termSettled = of(ledger(termOnly, [payment(1, { amountEur: 300, instalmentDue: 'ORDERED' }), payment(2, { amountEur: 700, instalmentDue: 'SHIPPED', settles: true })]), 'SUPPLIER');
+  assert.deepEqual([termSettled.status.label, termSettled.canUndoSettle], ['Betaald · afgerekend', true]);
+  assert.equal(reconciliationStatusLabel(termOnly.reconciliation!.streams[0], termOnly.reconciliation!.supplierInstalments), 'Betaald · afgerekend');
+  const merelyPaid = of(ledger(termOnly, [payment(1, { amountEur: 300, instalmentDue: 'ORDERED' }), payment(2, { amountEur: 700, instalmentDue: 'SHIPPED' })]), 'SUPPLIER');
+  assert.deepEqual([merelyPaid.status.label, merelyPaid.canUndoSettle], ['Betaald', false]);
 });
 
 test('an agreement lists its parts, adds a rounding row up to a euro, and says so when the estimate no longer matches', () => {
@@ -305,11 +320,27 @@ test('the bridge adds up to the landed total, with a rounding row up to a euro',
   assert.deepEqual(rounded.rows.at(-1), { key: 'ROUNDING', label: 'Afronding', amountEur: 0.6, note: null });
   assert.equal(purchaseLandedBridge(purchase({ totals: { totalWithSeparateCostsEur: 1600 } }), 'Totaal geland').consistent, false);
   const separate = purchaseLandedBridge(purchase({ totals: { separateCostsEur: 85, totalWithSeparateCostsEur: 1635 } }), 'Totaal incl. aparte kosten');
-  assert.deepEqual(separate.rows[2], { key: 'SEPARATE', label: 'Inspectie & andere kosten', amountEur: 85, note: 'apart, buiten de stukprijs' });
+  assert.deepEqual(separate.rows.map(row => row.key), ['SUPPLIER', 'LOGISTICS', 'ENROSED', 'LANDED', 'SEPARATE'],
+    'costs outside the piece price come after the landed total the hero shows');
+  assert.deepEqual(separate.rows[3], { key: 'LANDED', label: 'Totaal geland', amountEur: 1550, note: 'zoals in de kop', subtotal: true });
+  assert.deepEqual(separate.rows[4], { key: 'SEPARATE', label: 'Inspectie & andere kosten', amountEur: 85, note: 'apart, buiten de stukprijs' });
   assert.equal(separate.totalLabel, 'Totaal incl. aparte kosten');
-  assert.equal(separate.consistent, true);
+  assert.equal(separate.consistent, true, 'the subtotal is shown, never added again');
+  assert.equal(separate.rows.filter(row => !row.subtotal).reduce((sum, row) => sum + row.amountEur, 0), separate.totalEur);
+  const roundedSeparate = purchaseLandedBridge(purchase({ totals: { separateCostsEur: 85, totalWithSeparateCostsEur: 1635.5 } }), 'x');
+  assert.deepEqual(roundedSeparate.rows.at(-1), { key: 'ROUNDING', label: 'Afronding', amountEur: 0.5, note: null });
+  assert.equal(roundedSeparate.rows.some(row => row.key === 'ROUNDING_LANDED'), false, 'a residue in the separate part stays below the subtotal');
+  const roundedLanded = purchaseLandedBridge(purchase({ totals: { totalEur: 1550.3, separateCostsEur: 85, totalWithSeparateCostsEur: 1635.3 } }), 'x');
+  assert.deepEqual(roundedLanded.rows.map(row => [row.key, row.amountEur]),
+    [['SUPPLIER', 1000], ['LOGISTICS', 400], ['ENROSED', 150], ['ROUNDING_LANDED', 0.3], ['LANDED', 1550.3], ['SEPARATE', 85]],
+    'a residue in the landed part is corrected before the subtotal, so the rows above it add up by eye');
+  assert.equal(roundedLanded.consistent, true);
+  assert.equal(roundedLanded.rows.filter(row => !row.subtotal).reduce((sum, row) => sum + row.amountEur, 0), 1635.3);
   const inPrice = purchaseLandedBridge(purchase({ totals: { separateCostsEur: 85, separateCostsInPiecePrice: true, totalWithSeparateCostsEur: 1635 } }), 'x');
+  assert.deepEqual(inPrice.rows.map(row => row.key), ['SUPPLIER', 'LOGISTICS', 'SEPARATE', 'ENROSED'], 'in the piece price there is no subtotal');
   assert.equal(inPrice.rows[2].note, null);
+  assert.equal(inPrice.rows.some(row => row.subtotal), false);
+  assert.equal(plain.rows.some(row => row.subtotal), false);
   const ddp = purchaseLandedBridge(purchase({ ddp: true, totals: { totalWithSeparateCostsEur: 1150 } }), 'Totaal geland');
   assert.deepEqual(ddp.rows[1], { key: 'LOGISTICS', label: 'Douane & transport', amountEur: 0, note: 'inbegrepen in de prijs (DDP)' });
   assert.equal(ddp.consistent, true);
@@ -353,7 +384,8 @@ test('ledger rows read newest first, keep the booked currency and euro value, an
   assert.equal(of(loading, 'SUPPLIER').proof, null);
   const row = loading.rows[1];
   assert.deepEqual([row.payee, row.currency, row.foreign, row.amount, row.amountEur, row.termLabel, row.settlesLabel, row.title],
-    ['SUPPLIER', 'USD', true, 330, 297.1, '30% bij bestelling', 'Rekent termijn af', 'Leverancier']);
+    ['SUPPLIER', 'USD', true, 330, 297.1, '30% bij bestelling', 'Rekent de termijn af', 'Leverancier']);
+  assert.equal(ledger(view, [payment(4, { payee: 'LOGISTICS', settles: true })]).rows[0].settlesLabel, 'Rekent alles af');
   assert.equal(loading.rows[0].title, 'Forwarder');
   assert.equal(loading.rows[2].termLabel, 'Termijn bij vertrek');
   const loaded = ledger(view, payments, [proof(10, 1), proof(11, 1), proof(12, null)]);
@@ -414,6 +446,7 @@ test('payee statuses use the same words as the reconciliation labels in Analyses
   const pairs: [Partial<PurchaseReconciliationStream>, PurchaseReconciliationStream['status'], 'SEPARATE' | 'OTHER'][] = [
     [{ plannedEur: 60, paidEur: 20, remainingEur: 40 }, 'PARTIAL', 'SEPARATE'],
     [{ plannedEur: 60, paidEur: 60, finalized: true }, 'PAID', 'SEPARATE'],
+    [{ plannedEur: 60, paidEur: 60, finalized: true, explicitlySettled: true }, 'PAID', 'SEPARATE'],
     [{ plannedEur: 60, paidEur: 70, overpaidEur: 10 }, 'OVERPAID', 'SEPARATE'],
     [{ plannedEur: 60, paidEur: 70, overpaidEur: 10, finalized: true, explicitlySettled: true }, 'OVERPAID', 'SEPARATE'],
     [{ plannedEur: 60, paidEur: 50, settledSavingEur: 10, finalized: true, explicitlySettled: true }, 'SETTLED_LOWER', 'SEPARATE'],

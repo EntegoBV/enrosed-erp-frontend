@@ -34,6 +34,8 @@ export const PAYEE_ICON: Readonly<Record<Payee, string>> = {
 export const PAYEE_TONE: Readonly<Record<Payee, string>> = {
   SUPPLIER: 'tone-accent', LOGISTICS: 'tone-blue', SEPARATE: 'tone-amber', OTHER: 'tone-grey',
 };
+/** What the supplier is paid for; the basis line and the composition share the word. */
+export const SUPPLIER_GOODS = 'Goederen';
 export const DUE_ORDER: readonly Due[] = ['ORDERED', 'SHIPPED', 'ARRIVED'];
 export const DUE_MOMENT: Readonly<Record<Due, string>> = {
   ORDERED: 'bij bestelling', SHIPPED: 'bij vertrek', ARRIVED: 'bij aankomst',
@@ -206,7 +208,14 @@ export type LedgerTodo =
   | { kind: 'incomplete'; key: string; payee: Payee }
   | { kind: 'proof'; key: string; count: number };
 
-export interface BridgeRow { key: string; label: string; amountEur: number; note: string | null }
+export interface BridgeRow {
+  key: string;
+  label: string;
+  amountEur: number;
+  note: string | null;
+  /** The landed total as a running subtotal: shown, never added again. */
+  subtotal?: boolean;
+}
 
 export interface LandedBridge {
   rows: BridgeRow[];
@@ -354,8 +363,9 @@ function payeeLedger(
     }
   }
 
+  const settledRows = rows.some(row => row.settles);
   const status = payeeStatus({
-    payee, known, agreed, paid, open, lower, higher, finalized, explicitlySettled, missingAmount, balanced,
+    payee, known, agreed, paid, open, lower, higher, finalized, explicitlySettled, settledRows, missingAmount, balanced,
     count: rows.length, dueNow, laterDue, concept, tolerance: cents(input.toleranceEur),
   });
   const composition = payeeComposition(payee, view, agreed === null ? null : euro(agreed));
@@ -402,7 +412,7 @@ function payeeLedger(
     compositionConsistent: composition.consistent,
     canSettle: !other && known && rows.length >= 1
       && (open > 0 || (higher > 0 && !finalized) || status.kind === 'UNBUDGETED'),
-    canUndoSettle: rows.some(row => row.settles),
+    canUndoSettle: settledRows,
     smallDifference: status.kind === 'SMALL_DIFFERENCE',
     settleDefault,
     next,
@@ -410,9 +420,14 @@ function payeeLedger(
   };
 }
 
+/**
+ * The one word per payee. A payee paid in full reads 'Betaald · afgerekend'
+ * as soon as any of its payments carries a settlement, a whole-payee one or
+ * a term's: that is exactly when the row offers to undo it.
+ */
 function payeeStatus(values: {
   payee: Payee; known: boolean; agreed: number | null; paid: number; open: number; lower: number; higher: number;
-  finalized: boolean; explicitlySettled: boolean; missingAmount: boolean; balanced: boolean; count: number;
+  finalized: boolean; explicitlySettled: boolean; settledRows: boolean; missingAmount: boolean; balanced: boolean; count: number;
   dueNow: number; laterDue: Due | null; concept: boolean; tolerance: number;
 }): PayeeStatus {
   const { agreed, paid, open, lower, higher, finalized } = values;
@@ -425,7 +440,7 @@ function payeeStatus(values: {
     const net = higher - lower;
     return net > 0 ? STATUS.SETTLED_HIGHER : net < 0 ? STATUS.SETTLED_LOWER : STATUS.PAID;
   }
-  if (open === 0) return STATUS.PAID;
+  if (open === 0) return values.explicitlySettled || values.settledRows ? { ...STATUS.PAID, label: 'Betaald · afgerekend' } : STATUS.PAID;
   if (paid === 0) {
     if (values.concept) return STATUS.PLANNED;
     if (values.dueNow > 0) return STATUS.DUE;
@@ -437,7 +452,7 @@ function payeeStatus(values: {
 
 function payeeBasis(payee: Payee, view: PurchaseOrderView, hasPlan: boolean, planLabel: string): string {
   switch (payee) {
-    case 'SUPPLIER': return hasPlan ? 'Goederen · ' + planLabel : 'Goederen · geen betaalplan';
+    case 'SUPPLIER': return SUPPLIER_GOODS + ' · ' + (hasPlan ? planLabel : 'geen betaalplan');
     case 'LOGISTICS': return view.payable?.ddp ? 'Inbegrepen in de prijs (DDP)' : 'Raming uit Kosten: vracht, lokale kosten en invoerrechten';
     case 'SEPARATE': return 'Raming uit Kosten: inspectie en andere kosten';
     default: return 'Bankkosten, koerier, wisselkoers · zonder afspraak';
@@ -468,6 +483,7 @@ function ledgerTerms(
     const status: LedgerTerm['status'] = concept ? { label: 'Gepland', tone: 'neutral' }
       : state.settled && lower > 0 ? { label: 'Afgerekend · minder betaald', tone: 'ok' }
       : higher > 0 ? (finalized ? { label: 'Afgerekend · meer betaald', tone: 'neutral' } : { label: 'Te veel betaald · nakijken', tone: 'warn' })
+      : state.settled && state.state === 'paid' ? { label: 'Betaald · afgerekend', tone: 'ok' }
       : state.state === 'paid' ? { label: 'Betaald', tone: 'ok' }
       : state.state === 'due' ? { label: state.covered > 0 ? 'Deels betaald' : 'Nu te betalen', tone: 'warn' }
       : { label: 'Later · ' + moment, tone: 'neutral' };
@@ -511,7 +527,7 @@ function ledgerRows(
       due,
       termLabel: termLabel(due, instalments),
       settles: !!payment.settles,
-      settlesLabel: payment.settles ? (due ? 'Rekent termijn af' : 'Rekent alles af') : null,
+      settlesLabel: payment.settles ? (due ? 'Rekent de termijn af' : 'Rekent alles af') : null,
       amount: payment.amount,
       currency: payment.currency,
       foreign: payment.currency !== 'EUR',
@@ -639,7 +655,7 @@ export function payeeComposition(payee: Payee, view: PurchaseOrderView, agreedEu
     ({ label, amountEur: euro(cents(amountEur)), hint, rounding: false });
   let lines: CompositionLine[] = [];
   if (payee === 'SUPPLIER') {
-    lines = [line('Goederen', totals.goodsEur)];
+    lines = [line(SUPPLIER_GOODS, totals.goodsEur)];
   } else if (payee === 'LOGISTICS' && !view.payable?.ddp) {
     lines = [
       line(labels?.originCostsLabel ?? 'Lokale kosten vertrek', totals.originEur),
@@ -670,13 +686,24 @@ export function purchaseLandedBridge(view: PurchaseOrderView, totalLabel: string
     { key: 'LOGISTICS', label: 'Douane & transport', note: payable?.ddp ? 'inbegrepen in de prijs (DDP)' : null,
       amountEur: euro(cents(payable ? payable.logisticsEur : totals.originEur + totals.freightEur + totals.dutyEur + totals.destinationEur)) },
   ];
-  if (separate > 0) {
-    rows.push({ key: 'SEPARATE', label: 'Inspectie & andere kosten', amountEur: euro(separate),
-      note: totals.separateCostsInPiecePrice ? null : 'apart, buiten de stukprijs' });
+  const separateRow: BridgeRow = { key: 'SEPARATE', label: 'Inspectie & andere kosten', amountEur: euro(separate),
+    note: totals.separateCostsInPiecePrice ? null : 'apart, buiten de stukprijs' };
+  const enrosedRow: BridgeRow = { key: 'ENROSED', label: 'Enrosed kost', amountEur: euro(enrosed), note: 'intern, geen betaling' };
+  if (separate > 0 && !totals.separateCostsInPiecePrice) {
+    // Costs outside the piece price come after the landed total the hero shows, so the two figures meet here.
+    if (enrosed !== 0) rows.push(enrosedRow);
+    // The rows above must add up to the subtotal by eye, so their own rounding sits before it.
+    const landed = cents(totals.totalEur);
+    const landedResidue = landed - rows.reduce((sum, row) => sum + cents(row.amountEur), 0);
+    if (landedResidue !== 0 && Math.abs(landedResidue) <= 100) rows.push({ key: 'ROUNDING_LANDED', label: 'Afronding', amountEur: euro(landedResidue), note: null });
+    rows.push({ key: 'LANDED', label: 'Totaal geland', amountEur: euro(landed), note: 'zoals in de kop', subtotal: true });
+    rows.push(separateRow);
+  } else {
+    if (separate > 0) rows.push(separateRow);
+    if (enrosed !== 0) rows.push(enrosedRow);
   }
-  if (enrosed !== 0) rows.push({ key: 'ENROSED', label: 'Enrosed kost', amountEur: euro(enrosed), note: 'intern, geen betaling' });
   const total = cents(totals.totalWithSeparateCostsEur ?? totals.totalEur);
-  const residue = total - rows.reduce((sum, row) => sum + cents(row.amountEur), 0);
+  const residue = total - rows.filter(row => !row.subtotal).reduce((sum, row) => sum + cents(row.amountEur), 0);
   const consistent = Math.abs(residue) <= 100;
   if (consistent && residue !== 0) rows.push({ key: 'ROUNDING', label: 'Afronding', amountEur: euro(residue), note: null });
   return { rows, totalLabel, totalEur: euro(total), consistent };

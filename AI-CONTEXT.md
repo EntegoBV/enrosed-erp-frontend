@@ -226,6 +226,34 @@ cijfers'.
   after a failed request (`documentsFailed`), never "no proof". Rows with
   `appMenuTrigger` and their own `(click)` skip `$event.defaultPrevented`,
   the click that trails a long press.
+- Nacalculatie (round 2): `app-purchase-payment-result` always shows the
+  equation Enrosed kost + minder betaald − meer betaald − bijkomend = Enrosed
+  kost + resultaat (with zeros) and a 'Per ontvanger' list built from the
+  ledger by `purchase-payment-result-rows.ts` (same figures and words as
+  Betalingen; Bijkomende kosten only once paid, counted as 'meer'; a payee
+  without a settled difference reads 'nog niet afgerekend' until it is
+  finalized). The rows are plain: their buttons are the actions (inline
+  Afrekenen…/undo, 'Betalingen ›'), never the row itself. The desk rail
+  (Kosten › Nacalculatie, 'Betalingen ›' preselects the payee in the
+  workbench via `focusPayee`) and the phone Kosten card (`openPayee` opens
+  the payee sheet; 44 px links) share it; below it
+  `app-purchase-reconciliation` (kit look, styles in purchase-payments.scss,
+  `hosted` swaps the router link for an output) shows betaald + open =
+  externe kost with the begroot figure beside the variance, the per-stuk
+  block and the Per product (four decimals, begroot per line) and Toelichting
+  disclosures; Analyses keeps the per-stream rows (`showStreams`). The
+  workbench has a third side card 'Nacalculatie' (`purchaseNacalcSummary`),
+  the side column scrolls inside its sticky box when three cards outgrow the
+  viewport, and the bridge shows 'Totaal geland' as a subtotal before the
+  separate costs, with its own rounding row above it when the landed part
+  needs one. Table tiers of `pw-main`: 880 (Nu te betalen folds into the sub
+  lines, always shown when something is due) / 760 (Verschil and text
+  buttons go, the ⋯ stays) / 600 (Status pill under the name); the Verschil
+  column only renders once a payee or term was settled for another amount.
+  'Betaald · afgerekend' is the settled word in both vocabularies (ledger
+  statuses and reconciliationStatusLabel), also after a term-level settle,
+  so it appears exactly when 'Afrekening ongedaan maken' does; a ledger row
+  that carries the flag says 'Rekent de termijn af' / 'Rekent alles af'.
 
 ## Screens and their scenarios
 
