@@ -104,7 +104,48 @@ the workspaces. All CSS lives in one global partial,
 ## Workspaces
 
 ### Kosten & bank
-_Filled in by the Kosten & bank round._
+- Six sections, one question each (finance-sections.ts, same order in the
+  sidebar, the phone tab bar and the shortcuts 1-6): Overzicht, Te betalen
+  (Alles/Kosten/Containers/Vaste kosten; buckets Nu / Binnenkort 30 dagen /
+  Later), Te ontvangen (Openstaand/Ontvangen), Bank (Rekeningen/Bewegingen),
+  Uitgaven (Bedrijfskosten/Containers/Vaste kosten) and Analyse (phone: ⋯).
+- The address is the state: finance-url.ts alone parses and writes it
+  (`view`, `tab`, period/from/to, q, cat, status, channel, docs, container,
+  cost, scope, account, dir, link, kind, purpose, year; defaults omitted).
+  Filters replace the history entry, drill-ins push. Legacy view=recurring,
+  view=bank and ?container=<id> keep working; ?cost=<id> inspects a cost.
+- Money basis: cash figures (Overzicht, Te betalen, Te ontvangen, Bank) are
+  incl. btw and may add container EUR, labelled 'verwacht' when forecast;
+  cost figures (Uitgaven › Bedrijfskosten, Analyse) are excl. btw with the
+  btw beside them and never include container cash.
+- Container payables (payables.ts) bucket the server's reconciliation per PO
+  and payee; supplier terms replace the stream, never both. reached() is a
+  copy of purchase-instalment-state.ts. Payee words follow Inkoop's
+  PAYEE_LABEL (cost-ledger.ts, asserted in tests).
+- Betaald zetten: PaySheet with a date and an optional outgoing bank line per
+  cost carrying a 'kost #id' marker (bank-markers.ts); undo reverts only
+  what nobody touched since. Outgoing lines cannot be allocated to a cost or
+  a container payment (needs the backend): markers and a ±7-day amount match
+  only drive 'Nog niet op de bank' and link chips, never money maths.
+- FinanceState (page-scoped) owns data, reload(sources), the forms (cost,
+  recurring, balance, movement, pay, check), the inspector target and the one
+  page-level context menu. Sections provide FINANCE_SECTION (strip, status,
+  keyboard, selection) and the page finds them with viewChild. Every sheet,
+  menu, drawer and the allocation dialog render at page level (trap rule).
+  FinanceShell (root) carries the sidebar/tab counts.
+- 'Zonder document' is one rule (cost-ledger missingDocument): a company cost
+  without a file, recurring bookings excepted; the filter, the attention row,
+  Analyse and the accountant package count the same rows. A receipt linked to
+  a bank line counts on that line's account (FinanceState.receiptAccountKey).
+- Forms: fields sit in `.fin-group` wrappers, an inset `.ios-group` on a phone
+  (label left, value right; `.fin-field--stack` for chips, segments, notes)
+  and `display: contents` on a desk, where the `.fin-form` grid stays. Desk
+  tables fit their pane at every width (track sets per container threshold;
+  Vaste kosten measures its own column, container fin-rec). On a phone
+  Analyse is a pushed sub-screen with a back chevron (openAnalysis).
+- Harness caveat: tests/bank-movement-panel.test.mts compiles
+  bank-movement-panel.ts with imports stripped; a new import, global or state
+  member used at construction or in tested code needs a harness entry.
 
 ### Documenten & media
 _Filled in by the Documenten & media round._

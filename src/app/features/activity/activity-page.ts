@@ -12,6 +12,7 @@ import {
   activityCategoryIcon,
   activityCategoryLabel,
   activityEntityLabel,
+  activityQueryParams,
   activityRoute,
 } from './activity-copy';
 
@@ -109,7 +110,7 @@ interface ActivityDayGroup {
 
                       @if (event.entityLabel) {
                         @if (routeOf(event); as target) {
-                          <a class="activity-event__entity" [routerLink]="target">
+                          <a class="activity-event__entity" [routerLink]="target" [queryParams]="queryOf(event)">
                             <span>{{ entityKind(event) }}</span>
                             <b>{{ event.entityLabel }}</b>
                             <span class="activity-event__link-mark" aria-hidden="true"></span>
@@ -258,6 +259,10 @@ export class ActivityPage {
 
   routeOf(event: ActivityEvent): string[] | null {
     return activityRoute(event);
+  }
+
+  queryOf(event: ActivityEvent): Record<string, string> | null {
+    return activityQueryParams(event);
   }
 
   /** Older entries could carry a value that "changed" into itself; those pairs say nothing. */

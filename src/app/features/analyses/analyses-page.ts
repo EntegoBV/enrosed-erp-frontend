@@ -293,8 +293,8 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <strong>{{ salesMetrics().invoices.overdueValueEur | eur: 0 }}</strong>
             <p>{{ salesMetrics().invoices.overdue }} factuur/facturen na vervaldatum</p>
           </article>
-          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="metric-card__label">Ontvangen in deze periode</span><strong>{{ incoming().receivedEur | eur: 0 }}</strong><p>{{ incoming().count }} echte betalingen op ontvangstdatum · incl. btw</p></a>
-          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="metric-card__label">Partnervoorschotten ontvangen</span><strong>{{ incoming().partnerAdvanceEur | eur: 0 }}</strong><p>financiering · {{ incoming().partnerSettlementEur | eur: 0 }} daarnaast uit afrekeningen</p></a>
+          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'incoming', tab: 'received', from: salesFromDate() || null, to: salesToDate() || null, period: salesFromDate() || salesToDate() ? null : 'all' }"><span class="metric-card__label">Ontvangen in deze periode</span><strong>{{ incoming().receivedEur | eur: 0 }}</strong><p>{{ incoming().count }} echte betalingen op ontvangstdatum · incl. btw</p></a>
+          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'incoming', tab: 'received', from: salesFromDate() || null, to: salesToDate() || null, period: salesFromDate() || salesToDate() ? null : 'all' }"><span class="metric-card__label">Partnervoorschotten ontvangen</span><strong>{{ incoming().partnerAdvanceEur | eur: 0 }}</strong><p>financiering · {{ incoming().partnerSettlementEur | eur: 0 }} daarnaast uit afrekeningen</p></a>
         </div>
 
         <article class="card funnel-card" aria-label="Offertefunnel">

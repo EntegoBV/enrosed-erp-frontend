@@ -1,189 +1,290 @@
-import { ChangeDetectionStrategy, Component, computed, inject, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { DateNlPipe, EurPipe } from '../../shared/pipes';
-import { TrendChart, TrendSeries } from '../../shared/trend-chart';
-import { resultAnalysis } from '../analyses/analysis-metrics';
-import { CostRow } from './cost-row';
-import { addDays, intervalLabel, monthlyCostSeries, upcomingRecurring } from './finance-metrics';
-import { FinanceView, MONTH_START, TODAY, YEAR } from './finance-sections';
+import { NgTemplateOutlet } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, forwardRef, inject, signal } from '@angular/core';
+import { Icon } from '../../shared/icon';
+import { EurPipe } from '../../shared/pipes';
+import { Sheet } from '../../shared/ui';
+import { AttentionItem } from './finance-attention';
+import { dayMonth } from './finance-format';
+import { FINANCE_SECTION, FinanceSectionApi } from './finance-section';
+import { periodRange } from './finance-sections';
 import { FinanceState } from './finance-state';
-import { PurchasePaymentCostRow } from './purchase-payment-cost-row';
-import { incomingMoneyTotals } from './incoming-money';
+import { CostLedgerRow } from './cost-ledger';
 
-/** The money at a glance: the bank, what has to go out, what comes in, and how the months run. */
+const ATTENTION_ROWS = 7;
+
+/**
+ * Overzicht: how we stand and what needs me now. Four answers (bank, to pay,
+ * to receive, spent this month), one attention queue with direct actions,
+ * the outlook with the container terms in it, and what was booked last.
+ */
 @Component({
   selector: 'app-finance-overview',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, DateNlPipe, TrendChart, CostRow, PurchasePaymentCostRow],
+  providers: [{ provide: FINANCE_SECTION, useExisting: forwardRef(() => FinanceOverview) }],
+  imports: [NgTemplateOutlet, Icon, EurPipe, Sheet],
   template: `
-    <section class="finance-snapshot" aria-label="Geld in één oogopslag">
-      <button type="button" class="finance-balance" (click)="navigate.emit('bank')">
-        <span class="finance-eyebrow">{{ bankKnown() ? bankComplete() ? 'Berekend banksaldo' : 'Bekend deel van je banksaldo' : 'Banksaldo nog onbekend' }}</span>
-        <strong>{{ bankKnown() ? (state.currentBankEur() | eur) : 'Vul je saldo in' }}</strong>
-        <span>{{ bankComplete() ? state.bankLedger().accounts.length + ' rekening(en) · op basis van je registraties' : bankKnown() ? 'Deeltotaal · ' + state.bankLedger().missingReadings + ' rekening(en) zonder beginsaldo' : 'Begin met het saldo en tijdstip uit je bankapp.' }}</span>
-        <b>{{ bankKnown() ? 'Rekeningen bekijken' : 'Bank instellen' }} <span aria-hidden="true">↗</span></b>
-      </button>
-      <div class="finance-position">
-        <button type="button" (click)="navigate.emit('open')"><span><b>Te betalen</b><small>{{ state.openCosts().length }} open bedrijfskosten · incl. btw</small></span><strong>{{ state.openCostsInclEur() | eur }}</strong></button>
-        <a routerLink="/sales" [queryParams]="{scope: 'ALL', tab: 'FACTUUR', payment: 'open'}"><span><b>Te ontvangen</b><small>{{ state.openInvoices().count }} open verkoop- en partnerfacturen</small></span><strong>{{ state.openInvoices().totalEur | eur }}</strong></a>
-        <button type="button" (click)="navigate.emit('recurring')"><span><b>Vaste kosten binnenkort</b><small>{{ state.upcoming().length }} geplande boekingen · komende 30 dagen</small></span><strong>{{ state.upcomingInclEur() | eur }}</strong></button>
+    @if (state.desk()) {
+      <div class="fin-tiles">
+        <button class="fin-tile fin-tile--ink" type="button" (click)="bankTile()">
+          <span class="fin-tile__label">Op de bank</span>
+          <strong class="fin-tile__value">{{ bankKnown() ? (state.currentBankEur() | eur) : 'Nog niet ingesteld' }}</strong>
+          @if (bankKnown()) { <span class="fin-tile__sub" [class.is-warn]="bankStale()">{{ bankSub() }}</span> }
+          @else { <span class="fin-tile__sub fin-tile__action">Saldo invullen ›</span> }
+        </button>
+        <button class="fin-tile" type="button" (click)="state.go({ view: 'open' }, 'push')">
+          <span class="fin-tile__label">Te betalen @if (payWarn()) { <i class="wk-dot tone-warn" aria-label="Er staat een oude kost open"></i> }</span>
+          <strong class="fin-tile__value">{{ state.payableTotals().nowEur | eur }}</strong>
+          <span class="fin-tile__sub">+ {{ state.payableTotals().soonEur | eur }} binnenkort · {{ state.payableTotals().laterEur | eur }} later{{ state.payableTotals().containerLaterEur ? ' (verwacht)' : '' }}</span>
+          @if (state.containersLoading()) { <span class="fin-tile__sub">Containers worden geladen…</span> }
+        </button>
+        <button class="fin-tile" type="button" (click)="state.go({ view: 'incoming' }, 'push')">
+          <span class="fin-tile__label">Te ontvangen</span>
+          <strong class="fin-tile__value">{{ state.openInvoices().totalEur | eur }}</strong>
+          <span class="fin-tile__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }} · {{ state.incomingThisMonth().receivedEur | eur }} ontvangen deze maand</span>
+        </button>
+        <button class="fin-tile" type="button" (click)="state.go({ view: 'costs', period: 'month' }, 'push')">
+          <span class="fin-tile__label">Uitgegeven deze maand</span>
+          <strong class="fin-tile__value">{{ spent().monthEur | eur }}</strong>
+          <span class="fin-tile__sub">excl. btw · {{ spent().yearEur | eur }} dit jaar</span>
+        </button>
       </div>
-    </section>
 
-    <section class="card fin-panel finance-next" aria-label="Volgende acties">
-      <header class="fin-panel__head"><div><span class="section-kicker">Aan de slag</span><h2>Wat wil je bijwerken?</h2></div></header>
-      <div class="finance-actions">
-        <button type="button" (click)="navigate.emit('bank')"><span class="finance-action-icon" aria-hidden="true">↔</span><span><b>Bankbeweging noteren</b><small>Geld ontvangen of betaald? Vul het handmatig in.</small></span><span aria-hidden="true">›</span></button>
-        <button type="button" (click)="state.openCost(null)"><span class="finance-action-icon" aria-hidden="true">+</span><span><b>Kost toevoegen</b><small>Een bedrijfsuitgave met factuur of bon.</small></span><span aria-hidden="true">›</span></button>
-        <button type="button" (click)="navigate.emit('open')"><span class="finance-action-icon" aria-hidden="true">✓</span><span><b>Betalingen bijwerken</b><small>{{ olderCosts() ? olderCosts() + (olderCosts() === 1 ? ' open kost met een boekdatum ouder dan 30 dagen.' : ' open kosten met een boekdatum ouder dan 30 dagen.') : 'Bekijk je open bedrijfskosten en noteer wat betaald is.' }}</small></span><span aria-hidden="true">›</span></button>
-      </div>
-      @if (state.dueNow().length || state.bankLedger().unassignedPayments) {
-        <div class="finance-attention">
-          @if (state.dueNow().length) { <button class="linklike" type="button" (click)="navigate.emit('recurring')">{{ state.dueNow().length }} vaste kosten klaar om te boeken ›</button> }
-          @if (state.bankLedger().unassignedPayments) { <button class="linklike" type="button" (click)="navigate.emit('bank')">{{ state.bankLedger().unassignedPayments }} {{ state.bankLedger().unassignedPayments === 1 ? 'factuurbetaling' : 'factuurbetalingen' }} zonder rekening ›</button> }
-        </div>
-      }
-    </section>
-
-    <div class="fin-cols">
-      <section class="card fin-panel finance-scenario">
-        <header class="fin-panel__head"><div><span class="section-kicker">Vooruitkijken</span><h2>Als alles wordt betaald</h2></div></header>
-        <p class="fin-panel__hint">Een rekenscenario met de bedragen die nu bekend zijn.</p>
-        @if (bankComplete() && !state.loadErrors().length) {
-          <dl class="finance-equation">
-            <div><dt>Berekend banksaldo</dt><dd>{{ state.currentBankEur() | eur }}</dd></div>
-            <div><dt>Alle open bedrijfskosten</dt><dd>− {{ state.openCostsInclEur() | eur }}</dd></div>
-            <div><dt>Vaste kosten komende 30 dagen</dt><dd>− {{ state.upcomingInclEur() | eur }}</dd></div>
-            <div class="finance-equation__subtotal"><dt>Na deze kosten</dt><dd [class.finance-negative]="afterCosts() < 0">{{ afterCosts() | eur }}</dd></div>
-            <div><dt>Alle open klant- en partnerfacturen</dt><dd>+ {{ state.openInvoices().totalEur | eur }}</dd></div>
-            <div class="finance-equation__total"><dt>Als ook die facturen binnenkomen</dt><dd [class.finance-negative]="state.outlook().expectedEur < 0">{{ state.outlook().expectedEur | eur }}</dd></div>
-          </dl>
-        } @else {
-          <div class="finance-placeholder"><b>{{ state.loadErrors().length ? 'Nog geen volledig beeld' : 'Eerst een beginsaldo per rekening' }}</b><p>Dit scenario verschijnt zodra alle gegevens en rekeningsaldi beschikbaar zijn.</p><button class="linklike" type="button" (click)="navigate.emit('bank')">Rekeningen bekijken ›</button></div>
-        }
-        <details class="finance-explainer"><summary>Welke bedragen tellen mee?</summary><p>Alle open bedrijfskosten en uitgeschreven facturen tellen mee, ongeacht hun betaaldatum. Van vaste kosten nemen we de komende 30 dagen mee. Nog te betalen containertermijnen, toekomstige verkopen en mogelijke terugbetalingen zitten hier niet in. Dit is geen voorspelling voor een vaste datum.</p></details>
-      </section>
-      <section class="card fin-panel finance-receipts">
-        <header class="fin-panel__head"><div><span class="section-kicker">{{ monthLabel }}</span><h2>Ontvangen op facturen</h2></div><button class="linklike" type="button" (click)="navigate.emit('bank')">Bekijk ›</button></header>
-        <div class="finance-receipt-total"><strong>{{ incomingMonth().receivedEur | eur }}</strong><span>netto · {{ incomingMonth().count }} registraties</span></div>
-        <dl class="finance-equation">
-          <div><dt>Ontvangsten</dt><dd>{{ incomingMonth().grossReceivedEur | eur }}</dd></div>
-          <div><dt>Terugbetalingen</dt><dd>− {{ incomingMonth().refundedEur | eur }}</dd></div>
-        </dl>
-        <div class="finance-breakdown"><b>Waaruit bestaat het nettobedrag?</b><div><span>Klantbetalingen</span><strong>{{ incomingMonth().standardEur | eur }}</strong></div><div><span>Partnervoorschotten</span><strong>{{ incomingMonth().partnerAdvanceEur | eur }}</strong></div><div><span>Partnerafrekeningen</span><strong>{{ incomingMonth().partnerSettlementEur | eur }}</strong></div></div>
-        <p class="fin-panel__hint">Partnervoorschotten zijn ontvangen financiering. Een ontvangst is niet automatisch omzet of winst.</p>
-      </section>
-    </div>
-
-    <section class="card fin-panel">
-      <header class="fin-panel__head"><div><span class="section-kicker">Open facturen</span><h2>Wie moet nog betalen?</h2></div><a class="linklike" routerLink="/sales" [queryParams]="{scope: 'ALL', tab: 'FACTUUR', payment: 'open'}">Naar facturen ›</a></header>
-      <div class="finance-receivable-split"><div><span>Reguliere verkoop</span><strong>{{ state.openInvoices().standardEur | eur }}</strong></div><div><span>Partnercontainers</span><strong>{{ state.openInvoices().partnerEur | eur }}</strong></div><p>{{ state.openInvoices().partialCount }} facturen zijn gedeeltelijk betaald. De bedragen tonen alleen wat nog openstaat.</p></div>
-    </section>
-
-    <section class="card fin-panel">
-      <header class="fin-panel__head">
-        <div><span class="section-kicker">Bedrijfskosten per maand</span><h2>{{ monthEur() | eur: 0 }} deze maand · {{ yearEur() | eur: 0 }} dit jaar</h2></div>
-        <button class="linklike" type="button" (click)="navigate.emit('analysis')">Analyse ›</button>
-      </header>
-      <p class="fin-panel__hint">Bedrijfskosten excl. btw · <a class="linklike" routerLink="/analyses/result">Resultaat {{ year }}: {{ result().resultEur | eur }} ›</a></p>
-      <app-trend-chart [series]="series()" prefix="€ " [decimals]="0" [height]="150" ariaLabel="Kosten per maand, de laatste twaalf maanden" emptyText="Nog geen kosten geboekt" />
-      @if (containerPaymentsEur()) { <p class="fin-panel__hint">Daarnaast {{ containerPaymentsEur() | eur }} aan containerbetalingen dit jaar, geregistreerd bij de inkooporders. De goederenwaarde telt in de verkoopmarge mee.</p> }
-    </section>
-
-    <div class="fin-cols">
-      <section class="card fin-panel">
-        <header class="fin-panel__head">
-          <div><span class="section-kicker">Vaste kosten</span><h2>Komt eraan</h2></div>
-          <button class="linklike" type="button" (click)="navigate.emit('recurring')">Alle vaste kosten ›</button>
-        </header>
-        @if (state.dueNow().length) {
-          <p class="fin-note fin-note--warn">{{ state.dueNow().length }} vaste {{ state.dueNow().length === 1 ? 'kost staat' : 'kosten staan' }} klaar om te boeken.
-            <button class="linklike" type="button" [disabled]="state.booking()" (click)="state.bookNow()">{{ state.booking() ? 'Bezig…' : 'Nu boeken' }}</button></p>
-        }
-        @if (!ahead().length) {
-          <p class="fin-empty">{{ state.recurring().length ? 'Niets gepland in de komende 60 dagen.' : 'Nog geen vaste kosten: huur, boekhouder, software, verzekering. Stel ze één keer in, de boekingen volgen vanzelf.' }}
-            <button class="linklike" type="button" (click)="state.openRecurring(null)">Vaste kost instellen</button></p>
-        } @else {
-          <ul class="fin-agenda">
-            @for (row of ahead(); track row.date + '/' + row.definition.id) {
-              <li>
-                <span class="fin-agenda__date">{{ row.date | dateNl }}</span>
-                <span class="fin-agenda__body"><b>{{ row.definition.name }}</b><small>{{ intervalLabel(row.definition.interval) }}{{ row.definition.party ? ' · ' + row.definition.party : '' }}{{ row.definition.autoPaid ? ' · domiciliëring' : '' }}</small></span>
-                <strong>{{ row.amountInclEur | eur }}</strong>
-              </li>
+      <div class="fin-ov-grid">
+        <section class="fin-card fin-attention">
+          <header class="wk-card__head"><h2 class="wk-card__title">Vraagt aandacht</h2>@if (state.attention().length) { <span class="wk-pill">{{ state.attention().length }}</span> }</header>
+          @if (state.attention().length) {
+            <ul class="fin-attention__list">
+              @for (item of attention(); track item.id) {
+                <li class="fin-attention__row">
+                  <span [class]="'fin-attention__icon ' + toneClass(item)"><app-icon [name]="item.tone === 'info' ? 'info' : 'alert'" [size]="16" /></span>
+                  <span class="fin-attention__text"><b>{{ item.title }}</b><small>{{ item.detail }}</small></span>
+                  <span class="fin-attention__amount">@if (item.amountEur !== null) { {{ item.amountEur | eur }} }</span>
+                  @if (item.action) {
+                    <button class="wk-btn wk-btn--sm" type="button" [disabled]="item.action === 'book' && state.booking()" (click)="act(item)">{{ item.actionLabel }}</button>
+                  } @else {
+                    <button class="wk-btn wk-btn--sm wk-btn--ghost" type="button" [attr.aria-label]="item.actionLabel + ': ' + item.title" (click)="act(item)">{{ item.actionLabel }} <app-icon name="chevron-right" [size]="14" /></button>
+                  }
+                </li>
+              }
+            </ul>
+            @if (state.attention().length > limit()) {
+              <button class="wk-link fin-attention__more" type="button" (click)="expanded.set(true)">Toon alle {{ state.attention().length }}</button>
             }
-          </ul>
-        }
-      </section>
+          } @else {
+            <div class="wk-empty"><span class="wk-empty__icon"><app-icon name="tick" [size]="22" /></span><p class="wk-empty__title">Alles bijgewerkt</p><p class="wk-empty__text">Niets vraagt nu je aandacht.</p></div>
+          }
+        </section>
 
-      <section class="card fin-panel">
-        <header class="fin-panel__head">
-          <div><span class="section-kicker">Openstaand</span><h2>Te betalen</h2></div>
-          <button class="linklike" type="button" (click)="navigate.emit('open')">Alles open ›</button>
-        </header>
-        @if (!state.openCosts().length) {
-          <p class="fin-empty">Er zijn geen open bedrijfskosten geregistreerd.</p>
-        } @else {
-          <div class="fin-list">
-            @for (cost of openSoon(); track cost.id) { <app-cost-row [cost]="cost" /> }
+        <section class="fin-card fin-outlook">
+          <header class="wk-card__head"><h2 class="wk-card__title">Vooruitblik</h2>
+            @if (incomplete()) { <span class="wk-pill tone-warn wk-card__trail" [title]="incomplete()">onvolledig</span> }</header>
+          <div class="wk-card__body"><ng-container [ngTemplateOutlet]="equation" /></div>
+        </section>
+      </div>
+
+      <section class="wk-card fin-recent">
+        <header class="wk-card__head"><h2 class="wk-card__title">Laatst geboekt</h2><button class="wk-link wk-card__trail" type="button" (click)="state.go({ view: 'costs' }, 'push')">Alle uitgaven ›</button></header>
+        @if (recent().length) {
+          <div class="wk-table fin-table fin-table--recent" role="table">
+            <div class="wk-thead" role="row"><span class="wk-th">Datum</span><span class="wk-th">Omschrijving</span><span class="wk-th">Soort</span><span class="wk-th wk-th--num">Bedrag</span></div>
+            @for (row of recent(); track row.key) {
+              <div class="wk-tr wk-tr--link" role="row" tabindex="0" (click)="openRow(row)" (keydown.enter)="openRow(row)">
+                <span class="wk-td">{{ day(row.date) }}</span>
+                <span class="wk-td">{{ row.description }}@if (row.party) { <span class="wk-td__sub">{{ row.party }}</span> }</span>
+                <span class="wk-td"><span class="wk-pill" [class.tone-teal]="!!row.cost" [class.tone-blue]="!row.cost">{{ row.cost ? 'Kost' : 'Container' }}</span></span>
+                <span class="wk-td wk-td--num"><b>{{ row.amountEur | eur }}</b></span>
+              </div>
+            }
           </div>
-          @if (state.openCosts().length > openSoon().length) {
-            <button class="linklike fin-more" type="button" (click)="navigate.emit('open')">Nog {{ state.openCosts().length - openSoon().length }} meer ›</button>
-          }
+        } @else {
+          <div class="wk-empty"><p class="wk-empty__title">Nog niets geboekt</p><p class="wk-empty__text">Boek de beurs, de boekhouder of de huur met Kost boeken.</p></div>
         }
       </section>
-    </div>
-
-    <section class="card fin-panel">
-      <header class="fin-panel__head">
-        <div><span class="section-kicker">Laatste boekingen</span><h2>Recent</h2></div>
-        <div class="fin-panel__actions">
-          <button class="linklike" type="button" (click)="navigate.emit('costs')">Alle kosten ›</button>
-          <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="state.openCost(null)">+ Kost</button>
+    } @else {
+      <button class="ios-hero" type="button" (click)="bankKnown() ? state.go({ view: 'bank' }, 'push') : state.openBank(null)">
+        <span class="ios-hero__label">Op de bank</span>
+        <div class="ios-hero__value">{{ bankKnown() ? (state.currentBankEur() | eur) : 'Nog niet ingesteld' }}</div>
+        <div class="ios-hero__sub" [class.is-warn]="bankStale()">{{ bankKnown() ? bankSub() : 'Tik om je saldo in te vullen' }}</div>
+        <app-icon class="ios-hero__chev" name="chevron-right" [size]="18" />
+      </button>
+      <section class="ios-section">
+        <div class="ios-section__head"><h2>Geld</h2></div>
+        <div class="ios-group ios-group--icons">
+          <button class="ios-cell ios-cell--tall" type="button" (click)="state.go({ view: 'open' }, 'push')">
+            <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg tone-warn"><app-icon name="arrow-out" [size]="18" /></span></span>
+            <span class="ios-cell__body"><span class="ios-cell__title">Te betalen</span><span class="ios-cell__sub">{{ state.containersLoading() ? 'Containers worden geladen…' : '+ ' + (state.payableTotals().soonEur | eur) + ' binnenkort · ' + (state.payableTotals().laterEur | eur) + ' later' }}</span></span>
+            <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">Nu {{ state.payableTotals().nowEur | eur }}</span></span>
+            <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+          </button>
+          <button class="ios-cell ios-cell--tall" type="button" (click)="state.go({ view: 'incoming' }, 'push')">
+            <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg tone-ok"><app-icon name="arrow-in" [size]="18" /></span></span>
+            <span class="ios-cell__body"><span class="ios-cell__title">Te ontvangen</span><span class="ios-cell__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }}</span></span>
+            <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ state.openInvoices().totalEur | eur }}</span></span>
+            <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+          </button>
+          <button class="ios-cell ios-cell--tall" type="button" (click)="state.go({ view: 'costs', period: 'month' }, 'push')">
+            <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg tone-teal"><app-icon name="receipt" [size]="18" /></span></span>
+            <span class="ios-cell__body"><span class="ios-cell__title">Uitgegeven deze maand</span><span class="ios-cell__sub">excl. btw · {{ spent().yearEur | eur }} dit jaar</span></span>
+            <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ spent().monthEur | eur }}</span></span>
+            <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+          </button>
         </div>
-      </header>
-      @if (state.loading()) {
-        <p class="fin-empty">Laden…</p>
-      } @else if (!recent().length) {
-        <p class="fin-empty">Nog geen kosten geboekt. Boek de beurs, de boekhouder of de huur met + Kost.</p>
-      } @else {
-        <div class="fin-list">
-          @for (row of recent(); track row.key) {
-            @if (row.cost; as cost) { <app-cost-row [cost]="cost" /> }
-            @else { <app-purchase-payment-cost-row [row]="row" /> }
+      </section>
+      <section class="ios-section">
+        <div class="ios-section__head"><h2>Vraagt aandacht</h2></div>
+        <div class="ios-group ios-group--icons">
+          @for (item of attention(); track item.id) {
+            @if (item.action) {
+              <div class="ios-cell ios-cell--tall">
+                <span class="ios-cell__lead"><span [class]="'ios-tile ios-tile--lg ios-tile--soft ' + toneClass(item)"><app-icon [name]="item.tone === 'info' ? 'info' : 'alert'" [size]="18" /></span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ item.title }}</span><span class="ios-cell__sub">{{ item.detail }}</span></span>
+                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" [disabled]="item.action === 'book' && state.booking()" (click)="act(item)">{{ phoneLabel(item) }}</button>
+              </div>
+            } @else {
+              <button class="ios-cell ios-cell--tall" type="button" (click)="act(item)">
+                <span class="ios-cell__lead"><span [class]="'ios-tile ios-tile--lg ios-tile--soft ' + toneClass(item)"><app-icon [name]="item.tone === 'info' ? 'info' : 'alert'" [size]="18" /></span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ item.title }}</span><span class="ios-cell__sub">{{ item.detail }}</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value">{{ item.amountEur !== null ? (item.amountEur | eur) : item.count }}</span></span>
+                <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+              </button>
+            }
+          } @empty {
+            <div class="ios-cell"><span class="ios-cell__lead"><span class="ios-tile ios-tile--lg tone-ok"><app-icon name="tick" [size]="18" /></span></span><span class="ios-cell__body"><span class="ios-cell__title">Alles bijgewerkt</span></span></div>
+          }
+          @if (state.attention().length > limit()) {
+            <button class="ios-cell ios-cell--action" type="button" (click)="expanded.set(true)">Toon alle {{ state.attention().length }}</button>
           }
         </div>
+      </section>
+      <div class="ios-group fin-ios-single">
+        <button class="ios-cell" type="button" (click)="state.outlookOpen.set(true)">
+          <span class="ios-cell__body"><span class="ios-cell__title">Vooruitblik</span>@if (incomplete()) { <span class="ios-cell__sub fin-warn-text">Onvolledig: {{ incomplete() }}</span> }</span>
+          <span class="ios-cell__trail"><span class="ios-cell__value">{{ hasReading() ? 'Blijft over ' + (state.outlook().expectedEur | eur) : 'Netto open ' + (state.outlook().netOpenEur | eur) }}</span></span>
+          <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+        </button>
+      </div>
+      <section class="ios-section">
+        <div class="ios-section__head"><h2>Laatst geboekt</h2></div>
+        <div class="ios-group">
+          @for (row of recent().slice(0, 5); track row.key) {
+            <button class="ios-cell" type="button" (click)="openRow(row)">
+              <span class="ios-cell__body"><span class="ios-cell__title">{{ row.description }}</span><span class="ios-cell__sub">{{ day(row.date) }} · {{ row.cost ? 'Kost' : 'Container' }}{{ row.party ? ' · ' + row.party : '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.amountEur | eur }}</span></span>
+            </button>
+          }
+          <button class="ios-cell ios-cell--action" type="button" (click)="state.go({ view: 'costs' }, 'push')">Alle uitgaven</button>
+        </div>
+      </section>
+      <div class="ios-group fin-ios-single">
+        <button class="ios-cell" type="button" (click)="state.openAnalysis()">
+          <span class="ios-cell__body"><span class="ios-cell__title">Analyse</span><span class="ios-cell__sub">Per categorie, btw per kwartaal</span></span>
+          <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+        </button>
+      </div>
+      @if (state.outlookOpen()) {
+        <app-sheet variant="ios" title="Vooruitblik" (closed)="state.outlookOpen.set(false)">
+          <div body class="fin-sheet"><ng-container [ngTemplateOutlet]="equation" /></div>
+        </app-sheet>
       }
-    </section>
+    }
+
+    <ng-template #equation>
+      @let o = state.outlook();
+      <dl class="wk-equation">
+        <div><dt>Op de bank</dt><dd>@if (hasReading()) { {{ o.bankEur | eur }} } @else { onbekend · <button class="wk-link" type="button" (click)="state.openBank(null)">Saldo invullen</button> }</dd></div>
+        <div class="is-sub"><dt><span class="wk-equation__op">−</span>Open kosten (incl. btw)</dt><dd>{{ o.openCostsEur | eur }}</dd></div>
+        @if (state.purchaseFiguresVisible()) { <div class="is-sub"><dt><span class="wk-equation__op">−</span>Containers · nu te betalen (verwacht)</dt><dd>{{ o.containerNowEur | eur }}</dd></div> }
+        <div class="is-sub"><dt><span class="wk-equation__op">−</span>Vaste kosten · komende 30 dagen</dt><dd>{{ o.upcomingEur | eur }}</dd></div>
+        @if (hasReading()) {
+          <div class="is-total"><dt><span class="wk-equation__op">=</span>Na wat nu betaald moet worden</dt><dd [class.wk-amount--warn]="o.afterPayablesEur < 0">{{ o.afterPayablesEur | eur }}</dd></div>
+        }
+        <div class="is-sub"><dt><span class="wk-equation__op">+</span>Nog te ontvangen (klant &amp; partner)</dt><dd>{{ o.openInvoicesEur | eur }}</dd></div>
+        @if (state.purchaseFiguresVisible()) { <div class="is-sub"><dt><span class="wk-equation__op">−</span>Containers · later (verwacht)</dt><dd>{{ o.containerLaterEur | eur }}</dd></div> }
+        @if (hasReading()) {
+          <div class="is-total is-grand"><dt><span class="wk-equation__op">=</span>Als alles betaald en ontvangen is</dt><dd [class.wk-amount--warn]="o.expectedEur < 0">{{ o.expectedEur | eur }}</dd></div>
+        } @else {
+          <div class="is-total is-grand"><dt><span class="wk-equation__op">=</span>Netto open positie</dt><dd>{{ o.netOpenEur | eur }}</dd></div>
+        }
+      </dl>
+      @if (!hasReading()) { <p class="fin-hint fin-hint--warn">Banksaldo onbekend: vul eerst een saldo in.</p> }
+      @else if (incomplete()) { <p class="fin-hint fin-hint--warn">Onvolledig: {{ incomplete() }}</p> }
+      <p class="fin-hint">Containerbedragen volgen de afspraak bij de container en zijn verwacht. Toekomstige verkopen tellen niet mee.</p>
+    </ng-template>
   `,
 })
-export class FinanceOverview {
+export class FinanceOverview implements FinanceSectionApi {
   readonly state = inject(FinanceState);
-  readonly navigate = output<FinanceView>();
-  readonly intervalLabel = intervalLabel;
-  readonly year = YEAR;
-  readonly monthLabel = new Date(TODAY + 'T12:00:00').toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' });
-  readonly bankKnown = computed(() => this.state.bankLedger().accounts.some(account => account.currentEur !== null));
-  readonly bankComplete = computed(() => this.bankKnown() && !this.state.bankLedger().missingReadings);
-  readonly afterCosts = computed(() => this.state.currentBankEur() - this.state.openCostsInclEur() - this.state.upcomingInclEur());
-  readonly olderCosts = computed(() => this.state.openCosts().filter(cost => cost.date < addDays(TODAY, -30)).length);
-  readonly incomingMonth = computed(() => incomingMoneyTotals(this.state.incomingPayments(), MONTH_START, TODAY));
+  readonly expanded = signal(false);
+  readonly limit = computed(() => (this.expanded() ? Infinity : ATTENTION_ROWS));
+  readonly attention = computed(() => this.state.attention().slice(0, this.limit()));
 
-  readonly monthEur = computed(() => sum(this.state.costs().filter((cost) => cost.date >= MONTH_START && cost.date <= TODAY)));
-  readonly yearEur = computed(() => sum(this.state.costs().filter((cost) => cost.date >= `${YEAR}-01-01` && cost.date <= TODAY)));
-  readonly series = computed<TrendSeries[]>(() => {
-    const months = monthlyCostSeries(this.state.costs(), 12, TODAY);
-    return months.values.some((value) => value > 0) ? [{ label: 'Kosten excl. btw', dates: months.dates, values: months.values, tone: 'accent' }] : [];
+  readonly bankKnown = computed(() => this.state.bankLedger().accounts.some((account) => account.currentEur !== null));
+  readonly hasReading = this.bankKnown;
+  readonly bankStale = computed(() => this.state.accountsView().some((account) => account.ageDays !== null && account.ageDays > 14));
+  readonly bankSub = computed(() => {
+    const accounts = this.state.accountsView();
+    if (!accounts.length || !this.bankKnown()) return 'Saldo invullen';
+    const missing = accounts.filter((account) => !account.reading).length;
+    if (missing) return `deels bekend · ${missing} ${missing === 1 ? 'rekening' : 'rekeningen'} zonder saldo`;
+    const newest = Math.min(...accounts.map((account) => account.ageDays ?? 999));
+    const when = newest === 0 ? 'vandaag' : newest === 1 ? 'gisteren' : `${newest} dagen geleden`;
+    return `${accounts.length} ${accounts.length === 1 ? 'rekening' : 'rekeningen'} · gecontroleerd ${when}`;
   });
-  readonly ahead = computed(() => upcomingRecurring(this.state.recurring(), TODAY, addDays(TODAY, 60)).slice(0, 8));
-  readonly openSoon = computed(() => this.state.openCosts().slice(0, 6));
-  readonly recent = computed(() => this.state.ledger().slice(0, 6));
-  readonly containerPaymentsEur = computed(() => Math.round(this.state.ledger()
-    .filter((row) => row.source === 'container' && row.date >= `${YEAR}-01-01` && row.date <= TODAY)
-    .reduce((total, row) => total + row.amountEur, 0) * 100) / 100);
-  readonly result = computed(() => resultAnalysis(this.state.salesOrders(), [], this.state.costs(), { from: `${YEAR}-01-01`, to: TODAY }));
-}
+  readonly payWarn = computed(() => (this.state.payableTotals().oldestCostAgeDays ?? 0) > 30);
+  readonly spent = computed(() => {
+    const today = this.state.today();
+    const month = periodRange('month', today).from;
+    const year = periodRange('year', today).from;
+    const sum = (from: string): number => Math.round(this.state.costs().filter((cost) => cost.date >= from && cost.date <= today)
+      .reduce((total, cost) => total + (cost.amountExclEur || 0) * 100, 0)) / 100;
+    return { monthEur: sum(month), yearEur: sum(year) };
+  });
+  /** Why the totals may not be the whole story; containers still loading count, their terms are not in yet. */
+  readonly incomplete = computed(() => {
+    const missing = this.state.accountsView().filter((account) => !account.reading).length;
+    const reasons = [
+      ...(missing ? [`${missing} ${missing === 1 ? 'rekening' : 'rekeningen'} zonder saldo`] : []),
+      ...(this.state.containersLoading() && this.state.purchaseFiguresVisible() ? ['containers worden geladen'] : []),
+      ...(this.state.loadErrors().length ? [`niet geladen: ${this.state.failedSources().join(', ')}`] : []),
+    ];
+    return reasons.join('; ');
+  });
+  /** Company costs and container payments dated today or earlier, newest first. */
+  readonly recent = computed(() => this.state.ledger().filter((row) => row.date <= this.state.today()).slice(0, 6));
 
-function sum(costs: readonly { amountExclEur: number }[]): number {
-  return Math.round(costs.reduce((total, cost) => total + (cost.amountExclEur || 0), 0) * 100) / 100;
+  readonly strip = signal(null).asReadonly();
+  readonly status = computed(() => `${this.state.attention().length} ${this.state.attention().length === 1 ? 'punt vraagt' : 'punten vragen'} aandacht`);
+
+  handle(): boolean {
+    return false;
+  }
+
+  bankTile(): void {
+    if (this.bankKnown()) this.state.go({ view: 'bank' }, 'push');
+    else this.state.openBank(null);
+  }
+
+  act(item: AttentionItem): void {
+    switch (item.action) {
+      case 'book': void this.state.bookNow(); break;
+      case 'check': if (item.accountKey) this.state.checkOrFill(item.accountKey); break;
+      case 'fill': this.state.openBank(null, item.accountKey ?? ''); break;
+      default: this.state.go(item.target, 'push');
+    }
+  }
+
+  phoneLabel(item: AttentionItem): string {
+    return item.action === 'book' ? 'Nu boeken' : item.action === 'link' ? 'Koppel' : item.action === 'check' ? 'Controleer' : item.actionLabel;
+  }
+
+  toneClass(item: AttentionItem): string {
+    return item.tone === 'danger' ? 'tone-danger' : item.tone === 'warn' ? 'tone-warn' : 'tone-blue';
+  }
+
+  openRow(row: CostLedgerRow): void {
+    if (row.cost?.id) this.state.inspectItem({ kind: 'cost', id: row.cost.id });
+    else if (row.payment) this.state.inspectItem({ kind: 'container', id: row.payment.orderId });
+  }
+
+  day(date: string): string { return dayMonth(date); }
 }

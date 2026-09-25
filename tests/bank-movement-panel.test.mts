@@ -10,6 +10,10 @@ import type { BankMovementPanel } from '../src/app/features/finance/bank-movemen
 import { receiptInstant, receiptLocalParts, receiptRequest } from '../src/app/shared/received-at.ts';
 import { paymentLocalDay, paymentMomentLabel } from '../src/app/features/finance/incoming-money.ts';
 
+/* The same helper as shared/ui.ts (that file has Angular decorators, so it cannot be imported here). */
+const escapeHtml = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+
 /**
  * Exercise the production component methods with real Angular signals, without
  * a browser, HTTP client or backend. The AST transform removes only imports;
@@ -73,10 +77,24 @@ function newMatch(salesOrderId: number, openEur = 100): BankMatch {
 }
 
 function harness() {
+  const loads = { load: 0, refreshBank: 0 };
+  const movementDraft = signal<{ accountKey?: string } | null>(null);
   const state = {
     salesOrders: signal<SalesOrderView[]>([]), incomingPayments: signal<IncomingPaymentRow[]>([]),
     bankStatements: signal<BankStatementLine[]>([]), customers: signal<Customer[]>([]), accounts: signal<string[]>([]),
-    load: async () => {},
+    load: async () => { loads.load += 1; },
+    // The movement form lives in FinanceState now; the panel opens it and reads whether it is open.
+    movementDraft,
+    openMovement: (prefill: { accountKey?: string } = {}) => { movementDraft.set({ ...prefill }); },
+    refreshBank: async () => { loads.refreshBank += 1; },
+  };
+  const confirms: { title: string; message: string; confirmLabel?: string; danger?: boolean }[] = [];
+  const ui = {
+    toast: () => {},
+    confirm: (options: { title: string; message: string; confirmLabel?: string; danger?: boolean }, onConfirm: () => void) => {
+      confirms.push(options);
+      onConfirm();
+    },
   };
   const allocationCalls: { id: number; salesOrderId: number; existingPaymentId: number | null }[] = [];
   const api = {
@@ -90,21 +108,21 @@ function harness() {
   const exports: { BankMovementPanel?: new () => BankMovementPanel } = {};
   vm.runInNewContext(componentCode, {
     exports, signal, computed, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
-    FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {},
+    FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
     FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui,
     inject: (token: symbol) => {
       if (token === tokens.state) return state;
       if (token === tokens.api) return api;
-      if (token === tokens.ui) return { toast: () => {} };
+      if (token === tokens.ui) return ui;
       throw new Error(`Unexpected service injection: ${String(token)}`);
     },
     bankAccountKey: bankExports.bankAccountKey, receiptLocalParts, receiptRequest,
-    paymentLocalDay, paymentMomentLabel, crypto: globalThis.crypto,
+    paymentLocalDay, paymentMomentLabel, crypto: globalThis.crypto, escapeHtml,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback,
   });
   assert.ok(exports.BankMovementPanel, 'Production component class was compiled');
   const panel = new exports.BankMovementPanel();
-  return { panel, state, api, allocationCalls };
+  return { panel, state, api, allocationCalls, loads, confirms };
 }
 
 test('choosing a suggestion clears the manual invoice and allocates the visibly chosen invoice', async () => {
@@ -244,4 +262,76 @@ test('a pending allocation locks the selection, closing and duplicate submission
   assert.equal(panel.busy(), false);
   assert.equal(panel.selected(), null);
   assert.equal(state.bankStatements()[0].salesOrderId, 1);
+});
+
+test('adding a movement opens the shared form with the account filter and closes the allocation', async () => {
+  const { panel, state } = harness();
+  state.salesOrders.set([invoice(1)]);
+  await panel.openAllocation(movement());
+  panel.accountFilter.set('KBC');
+  panel.add();
+  assert.equal(panel.selected(), null, 'the allocation closes first');
+  assert.deepEqual(state.movementDraft(), { accountKey: 'KBC' });
+  assert.deepEqual(panel.draft(), { accountKey: 'KBC' }, 'the panel reads the form from the state');
+  state.movementDraft.set(null);
+  panel.accountFilter.set('');
+  panel.add();
+  assert.deepEqual(state.movementDraft(), { accountKey: undefined });
+});
+
+test('adding while busy does nothing', async () => {
+  const { panel, state, api } = harness();
+  const pending = deferred<BankStatementLine>();
+  state.salesOrders.set([invoice(1)]);
+  state.bankStatements.set([movement()]);
+  api.allocate = async () => pending.promise;
+  await panel.openAllocation(movement());
+  panel.chooseInvoice(1);
+  panel.chooseMatch(panel.manualNewMatch()!, true);
+  const saving = panel.allocate();
+  panel.add();
+  assert.equal(state.movementDraft(), null);
+  pending.resolve({ ...movement(), salesPaymentId: 7, salesOrderId: 1 });
+  await saving;
+});
+
+test('allocating refreshes only the bank sources and keeps every filter', async () => {
+  const { panel, state, loads } = harness();
+  state.salesOrders.set([invoice(1)]);
+  state.bankStatements.set([movement()]);
+  panel.search.set('partner');
+  panel.accountFilter.set('KBC');
+  panel.directionFilter.set('INCOMING');
+  panel.linkFilter.set('UNLINKED_IN');
+  await panel.openAllocation(movement());
+  panel.chooseInvoice(1);
+  panel.chooseMatch(panel.manualNewMatch()!, true);
+  await panel.allocate();
+  assert.deepEqual(loads, { load: 0, refreshBank: 1 });
+  assert.deepEqual([panel.search(), panel.accountFilter(), panel.directionFilter(), panel.linkFilter()], ['partner', 'KBC', 'INCOMING', 'UNLINKED_IN']);
+});
+
+test('the withdraw confirmation escapes what was typed and shows the amount in euro', () => {
+  const { panel, api, confirms, loads } = harness();
+  const deleted: number[] = [];
+  (api as unknown as { delete: (id: number) => Promise<void> }).delete = async (id) => { deleted.push(id); };
+  panel.remove({ ...movement(3, -1250.5), counterparty: '<b>Leverancier & Co</b>', reference: 'Factuur "7"' });
+  assert.equal(confirms.length, 1);
+  assert.equal(confirms[0].title, 'Bankbeweging intrekken');
+  assert.match(confirms[0].message, /&lt;b&gt;Leverancier &amp; Co&lt;\/b&gt;/);
+  assert.match(confirms[0].message, /Factuur &quot;7&quot;/);
+  assert.ok(confirms[0].message.includes('€ -1.250,50'), confirms[0].message);
+  assert.doesNotMatch(confirms[0].message, /<b>/);
+  assert.equal(confirms[0].danger, true);
+  assert.deepEqual(deleted, [3]);
+  return Promise.resolve().then(() => new Promise((done) => setTimeout(done, 0))).then(() => assert.equal(loads.refreshBank, 1));
+});
+
+test('"Te koppelen" shows only money in that is not linked to an invoice', () => {
+  const { panel, state } = harness();
+  state.bankStatements.set([movement(1, 50), { ...movement(2, 40), salesPaymentId: 9 }, movement(3, -30), { ...movement(4, -20), salesPaymentId: 8 }]);
+  panel.linkFilter.set('UNLINKED_IN');
+  assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id), [1]);
+  panel.linkFilter.set('UNLINKED');
+  assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [1, 3]);
 });

@@ -1,102 +1,215 @@
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import type { Customer } from '../../core/api/models';
-import { DateField } from '../../shared/date-field';
+import type { IncomingPaymentRow } from '../../core/api/models';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { Icon } from '../../shared/icon';
+import { MenuTrigger } from '../../shared/menu-trigger';
 import { EurPipe } from '../../shared/pipes';
 import { bankAccountKey } from './bank-reconciliation';
-import { MONTH_START, TODAY } from './finance-sections';
-import { IncomingMoneyRow, incomingPurposeLabel, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
+import { clockOf, dayHeading, signedEur } from './finance-format';
+import type { FinanceCommand } from './finance-shortcuts';
+import { FinanceState } from './finance-state';
+import { FinanceTable } from './finance-table';
+import { NO_ACCOUNT } from './finance-url';
+import { incomingMoneyTotals, incomingPurposeLabel, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
+import { FinanceFilterFields } from './finance-filter-fields';
+import { Sheet } from '../../shared/ui';
 
-interface ReceiptRow extends IncomingMoneyRow { bankAccount?: string | null; }
-type ReceiptDirection = 'ALL' | 'INCOMING' | 'REFUND';
-type ReceiptPurpose = 'ALL' | IncomingMoneyRow['purpose'];
-
+/**
+ * Te ontvangen › Ontvangen: the receipts and refunds recorded on sales and
+ * partner invoices. Period, kind, purpose and account come from the address.
+ * On a desk a grid like the others: a click selects, Enter or a double click
+ * opens the invoice, the menu (right-click or ⋯) also offers the container of
+ * a partner receipt. A receipt linked to a bank line counts on that line's
+ * account.
+ */
 @Component({
   selector: 'app-incoming-payment-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, EurPipe, DateField],
+  imports: [RouterLink, Icon, EurPipe, Sheet, FinanceFilterFields, MenuTrigger],
   template: `
-    <p class="receipt-copy">Werkelijk ontvangen bedragen en terugbetalingen bij verkoopfacturen. Partnervoorschotten en veilingafrekeningen staan apart herkenbaar in deze lijst.</p>
-    <div class="receipt-filters">
-      <label class="field receipt-search"><span>Zoeken in factuurboekingen</span><input class="input" type="search" placeholder="Factuur, klant of mededeling…" [ngModel]="search()" (ngModelChange)="search.set($event); expanded.set(false)" /></label>
-      <label class="field"><span>Soort boeking</span><select class="input" [ngModel]="direction()" (ngModelChange)="direction.set($event); expanded.set(false)"><option value="ALL">Ontvangsten &amp; terugbetalingen</option><option value="INCOMING">Ontvangsten</option><option value="REFUND">Terugbetalingen</option></select></label>
-      <label class="field"><span>Waarvoor</span><select class="input" [ngModel]="purpose()" (ngModelChange)="purpose.set($event); expanded.set(false)"><option value="ALL">Alle facturen</option><option value="STANDARD">Reguliere verkoop</option><option value="PARTNER_ADVANCE">Partnervoorschotten</option><option value="PARTNER_SETTLEMENT">Partnerafrekeningen</option></select></label>
-    </div>
-    <div class="receipt-period" role="group" aria-label="Periode voor factuurboekingen"><span>Periode</span><button type="button" [attr.aria-pressed]="monthSelected()" (click)="setPeriod('MONTH')">Deze maand</button><button type="button" [attr.aria-pressed]="allDatesSelected()" (click)="setPeriod('ALL')">Alle datums</button></div>
-    <details class="receipt-extra"><summary>Rekening &amp; periode{{ account() || from() || to() ? ' · actief' : '' }}</summary><div class="receipt-extra__fields">
-      <label class="field"><span>Rekening op de factuurbetaling</span><select class="input" [ngModel]="account()" (ngModelChange)="account.set($event); expanded.set(false)"><option value="">Alle rekeningen</option><option value="__MISSING__">Geen rekening genoteerd</option>@for (item of accounts(); track item) { <option [value]="item">{{ item }}</option> }</select></label>
-      <div class="field"><label [attr.for]="fieldId + '-from'">Vanaf betaaldatum</label><app-date-field [fieldId]="fieldId + '-from'" [value]="from()" (valueChange)="from.set($event); expanded.set(false)" /></div>
-      <div class="field"><label [attr.for]="fieldId + '-to'">Tot en met betaaldatum</label><app-date-field [fieldId]="fieldId + '-to'" [value]="to()" (valueChange)="to.set($event); expanded.set(false)" /></div>
-    </div><p class="receipt-copy">Dit is de rekening die op de factuurbetaling is genoteerd. Een afzonderlijke bankkoppeling kan de rekening bepalen wanneer deze hier ontbreekt.</p></details>
-    @if (invalidPeriod()) { <p class="receipt-error" role="alert">De einddatum moet op of na de begindatum liggen.</p> }
-    <div class="receipt-selection"><span>{{ filtered().length }} van {{ rows().length }} factuurboekingen</span>@if (hasFilters()) { <button class="linklike" type="button" (click)="clearFilters()">Filters wissen</button> }</div>
-    <div class="receipt-totals" aria-label="Factuurboekingen in deze selectie"><div><small>Ontvangen</small><b>{{ totals().received | eur }}</b></div><div><small>Terugbetaald</small><b>{{ totals().refunded | eur }}</b></div><div><small>Netto ontvangen</small><b>{{ totals().net | eur }}</b></div></div>
-    @for (row of visible(); track row.id) {
-      <article class="receipt">
-        <div class="receipt__body">
-          <span class="receipt__purpose">{{ purposeLabel(row.purpose) }}</span>
-          <a [routerLink]="['/sales', row.salesOrderId]">{{ row.orderNumber }}{{ customerName(row.customerId) ? ' · ' + customerName(row.customerId) : '' }} ›</a>
-          <small>{{ momentLabel(row) }}</small>
-          @if (row.bankAccount) { <small>Rekening: {{ row.bankAccount }}</small> } @else { <small>Geen rekening op de factuurbetaling genoteerd</small> }
-          @if (row.reference) { <small>{{ row.reference }}</small> }
-          @if (row.purchaseOrderId) { <a class="receipt__container" [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }">Betalingen bij de container ›</a> }
-          @if (row.legacy) { <small>Overgenomen uit eerdere betaaldregistratie</small> }
+    @if (state.desk()) {
+      @if (filtered().length) {
+        <div class="wk-table fin-table fin-table--receipts" role="grid" aria-label="Ontvangen">
+          <div class="wk-thead" role="row">
+            <span class="wk-th" role="columnheader">Moment</span>
+            <span class="wk-th" role="columnheader">Factuur · klant</span>
+            <span class="wk-th" role="columnheader" data-hide="xs">Waarvoor</span>
+            <span class="wk-th" role="columnheader" data-hide="sm">Rekening</span>
+            <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
+            <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
+          </div>
+          @for (row of visible(); track row.id) {
+            <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="table.stop() === key(row) ? 0 : -1" [attr.data-key]="key(row)" [attr.aria-selected]="table.isSelected(key(row))"
+                 (focus)="table.focused(key(row))" (click)="table.click(key(row), $event)" (dblclick)="state.openInvoice(row.salesOrderId)"
+                 appMenuTrigger (menuTrigger)="rowMenu(row, $event)">
+              <span class="wk-td" role="gridcell">{{ moment(row) }}</span>
+              <span class="wk-td" role="gridcell"><a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a>{{ customer(row) ? ' · ' + customer(row) : '' }}@if (row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
+              <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill" [class.tone-plum]="row.purpose !== 'STANDARD'" [attr.title]="row.purpose === 'PARTNER_ADVANCE' ? 'Een partnervoorschot is financiering, geen omzet.' : null">{{ purpose(row) }}</span></span>
+              <span class="wk-td" role="gridcell" data-hide="sm">@if (account(row); as name) { {{ name }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
+              <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ signed(row.amountEur) }}</b></span>
+              <span class="wk-td fin-td-end" role="gridcell">
+                <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" tabindex="-1" aria-label="Acties" (click)="$event.stopPropagation(); rowMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
+              </span>
+            </div>
+          }
         </div>
-        <div class="receipt__money" [class.receipt__money--refund]="row.amountEur < 0"><b>{{ row.amountEur > 0 ? '+' : '' }}{{ row.amountEur | eur }}</b><span>{{ row.amountEur < 0 ? 'Terugbetaald' : 'Ontvangen' }}</span></div>
-      </article>
-    } @empty { <div class="receipt-empty"><b>{{ rows().length ? 'Geen factuurboekingen gevonden' : 'Nog geen ontvangsten of terugbetalingen' }}</b><p>{{ rows().length ? 'Pas je zoekopdracht of filters aan.' : 'Registreer een betaling bij de factuur, of koppel een genoteerde bankbeweging aan de factuur.' }}</p></div> }
-    @if (!expanded() && filtered().length > limit()) { <button class="btn receipt-more" type="button" (click)="expanded.set(true)">Alle {{ filtered().length }} factuurboekingen tonen</button> }
-    @if (expanded() && filtered().length > limit()) { <button class="linklike receipt-more" type="button" (click)="expanded.set(false)">Minder tonen</button> }
-  `,
-  styles: `
-    .receipt-period{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:14px}.receipt-period>span{font-size:12px;color:var(--muted);margin-right:3px}.receipt-period button{min-height:40px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:12px;cursor:pointer}.receipt-period button[aria-pressed="true"]{background:var(--rose-soft);border-color:var(--rose-line);color:var(--rose-dark);font-weight:650}.receipt-period button:focus-visible{outline:2px solid var(--rose-dark);outline-offset:3px}
-    :host{display:block;min-width:0}.receipt-copy{font-size:13px;line-height:1.7;color:var(--muted);margin:10px 0 16px}.receipt-filters{display:grid;grid-template-columns:1.4fr repeat(2,minmax(0,1fr));gap:12px}.field{min-width:0}.field>span,.field>label{font-size:12px;font-weight:650}.input{min-width:0;width:100%;min-height:44px}.receipt-extra{margin-top:8px}.receipt-extra summary{cursor:pointer;color:var(--muted);font-size:12px;min-height:40px;padding:12px 0}.receipt-extra__fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding-bottom:5px}.receipt-extra summary:focus-visible{outline:2px solid var(--rose-dark);outline-offset:3px}.receipt-selection{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:40px;font-size:12px;color:var(--muted)}.receipt-selection .linklike{min-height:40px}.receipt-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px;border-radius:12px;background:var(--surface-2);margin:6px 0 12px}.receipt-totals>div{display:grid;gap:6px;min-width:0}.receipt-totals small{font-size:12px;color:var(--muted)}.receipt-totals b{font-size:17px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.receipt{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,auto);gap:18px;padding:17px 0;border-bottom:1px solid var(--line)}.receipt:last-child{border-bottom:0}.receipt__body{display:grid;gap:6px;min-width:0}.receipt small{color:var(--muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}.receipt__purpose{font-size:11px;font-weight:650;color:var(--muted)}.receipt a{color:var(--rose-dark);font-size:14px;font-weight:650;text-decoration:none;overflow-wrap:anywhere;line-height:1.5}.receipt .receipt__container{font-size:12px;font-weight:500}.receipt__money{display:grid;gap:5px;justify-items:end;align-content:start;color:var(--ok);min-width:0}.receipt__money b{font-size:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.receipt__money span{font-size:11px}.receipt__money--refund{color:var(--ink-2)}.receipt-empty{text-align:center;padding:28px 12px;font-size:14px}.receipt-empty p{font-size:13px;color:var(--muted);line-height:1.6}.receipt-more{margin-top:16px;min-height:44px}.receipt-error{color:var(--danger);font-size:13px;line-height:1.6}
-    @media(max-width:850px){.receipt-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.receipt-search{grid-column:1/-1}.receipt-extra__fields{grid-template-columns:repeat(2,minmax(0,1fr))}.receipt-extra__fields>.field:first-child{grid-column:1/-1}}
-    @media(max-width:600px){.input{font-size:16px}.receipt-filters,.receipt-extra__fields{grid-template-columns:1fr}.receipt-totals{gap:8px;padding:12px}.receipt-totals b{font-size:15px}.receipt{grid-template-columns:minmax(0,1fr);gap:10px}.receipt__money{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}.receipt__money b{font-size:19px}}
+        @if (visible().length < filtered().length) {
+          <div class="fin-more"><button class="wk-btn" type="button" (click)="limit.update(more)">Meer tonen · nog {{ filtered().length - visible().length }}</button></div>
+        }
+      } @else {
+        <div class="wk-empty"><span class="wk-empty__icon"><app-icon name="arrow-in" [size]="22" /></span>
+          <p class="wk-empty__title">Niets ontvangen in deze periode</p><p class="wk-empty__text">Kies een andere periode of pas de filters aan.</p></div>
+      }
+    } @else {
+      <div class="ios-chips" role="group" aria-label="Periode">
+        @for (option of periods; track option.id) {
+          <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().period === option.id" (click)="state.go({ period: option.id })">{{ option.label }}</button>
+        }
+        <button class="ios-chip" type="button" [attr.aria-pressed]="filterCount() > 0" (click)="filtersOpen.set(true)"><app-icon name="filter" [size]="16" />Filter
+          @if (filterCount()) { <span class="ios-chip__badge">{{ filterCount() }}</span> }</button>
+      </div>
+      <div class="ios-figures ios-figures--3">
+        <div><small>Ontvangen</small><strong [attr.title]="totals().grossReceivedEur | eur">{{ totals().grossReceivedEur | eur: 0 }}</strong></div>
+        <div><small>Terug</small><strong [attr.title]="totals().refundedEur | eur">{{ totals().refundedEur | eur: 0 }}</strong></div>
+        <div><small>Netto</small><strong [attr.title]="totals().receivedEur | eur">{{ totals().receivedEur | eur: 0 }}</strong></div>
+      </div>
+      @for (day of days(); track day.day) {
+        <section class="ios-section">
+          <div class="ios-section__head"><h2>{{ day.label }}</h2><span class="ios-section__trail">{{ day.totalEur | eur }}</span></div>
+          <div class="ios-group">
+            @for (row of day.rows; track row.id) {
+              <button class="ios-cell" type="button" (click)="rowMenu(row, null)">
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ row.orderNumber }}{{ customer(row) ? ' · ' + customer(row) : '' }}</span>
+                  <span class="ios-cell__sub">{{ clock(row) }} · @if (account(row); as name) { {{ name }} } @else { <span class="fin-warn-text">geen rekening</span> }</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0">{{ signed(row.amountEur) }}</span></span>
+              </button>
+            }
+          </div>
+        </section>
+      } @empty {
+        <div class="ios-empty"><span class="ios-empty__icon"><app-icon name="arrow-in" [size]="26" /></span><p class="ios-empty__title">Niets ontvangen</p><p class="ios-empty__text">Niet in deze periode, of niet met deze filters.</p></div>
+      }
+      @if (!expanded() && filtered().length > 12) {
+        <div class="ios-group fin-ios-more"><button class="ios-cell ios-cell--action" type="button" (click)="expanded.set(true)">Alle {{ filtered().length }} tonen</button></div>
+      }
+      @if (filtersOpen()) {
+        <app-sheet variant="ios" title="Filter" (closed)="filtersOpen.set(false)">
+          <div body class="fin-sheet"><app-finance-filter-fields kind="receipts" /></div>
+          <div foot style="display:contents"><button class="btn btn--primary" type="button" (click)="filtersOpen.set(false)">Klaar</button></div>
+        </app-sheet>
+      }
+    }
   `,
 })
 export class IncomingPaymentList {
-  private static nextId = 0;
-  readonly fieldId = `factuurboekingen-${++IncomingPaymentList.nextId}`;
-  readonly payments = input<readonly ReceiptRow[]>([]);
-  readonly customers = input<readonly Customer[]>([]);
-  readonly limit = input(12);
+  readonly state = inject(FinanceState);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  readonly periods = [{ id: 'month', label: 'Maand' }, { id: 'quarter', label: 'Kwartaal' }, { id: 'year', label: 'Jaar' }, { id: 'all', label: 'Alles' }] as const;
+  readonly limit = signal(100);
+  readonly more = (count: number): number => count + 100;
   readonly expanded = signal(false);
-  readonly search = signal('');
-  readonly direction = signal<ReceiptDirection>('ALL');
-  readonly purpose = signal<ReceiptPurpose>('ALL');
-  readonly account = signal('');
-  readonly from = signal('');
-  readonly to = signal('');
-  readonly monthSelected = computed(() => this.from() === MONTH_START && this.to() === TODAY);
-  readonly allDatesSelected = computed(() => !this.from() && !this.to());
-  readonly rows = computed(() => uniqueIncomingPayments(this.payments()) as ReceiptRow[]);
-  private readonly customerNames = computed(() => new Map(this.customers().map(customer => [customer.id, customer.company])));
-  readonly accounts = computed(() => [...new Set(this.rows().map(row => bankAccountKey(row.bankAccount)).filter(Boolean))].sort());
-  readonly invalidPeriod = computed(() => !!this.from() && !!this.to() && this.from() > this.to());
-  readonly hasFilters = computed(() => !!this.search().trim() || this.direction() !== 'ALL' || this.purpose() !== 'ALL' || !!this.account() || !!this.from() || !!this.to());
+  readonly filtersOpen = signal(false);
+
+  /** Unique by id, zero amounts dropped, newest first. */
+  readonly rows = computed(() => uniqueIncomingPayments(this.state.incomingPayments()) as IncomingPaymentRow[]);
   readonly filtered = computed(() => {
-    if (this.invalidPeriod()) return [];
-    const search = this.search().trim().toLocaleLowerCase('nl-BE');
-    return this.rows().filter(row => {
-      const day = paymentLocalDay(row), account = bankAccountKey(row.bankAccount);
-      const text = [row.orderNumber, row.reference, this.customerName(row.customerId), row.bankAccount].join(' ').toLocaleLowerCase('nl-BE');
-      return (this.direction() === 'ALL' || (this.direction() === 'INCOMING' ? row.amountEur > 0 : row.amountEur < 0))
-        && (this.purpose() === 'ALL' || row.purpose === this.purpose())
-        && (!this.account() || (this.account() === '__MISSING__' ? !account : account === this.account()))
-        && (!this.from() || day >= this.from()) && (!this.to() || day <= this.to()) && (!search || text.includes(search));
+    const location = this.state.location();
+    const range = this.state.rangeOf(location);
+    const needle = location.q.trim().toLocaleLowerCase('nl-BE');
+    return this.rows().filter((row) => {
+      const day = paymentLocalDay(row);
+      const key = this.state.receiptAccountKey(row);
+      return (!range.from || day >= range.from) && (!range.to || day <= range.to)
+        && (!location.dir || (location.dir === 'in' ? row.amountEur > 0 : row.amountEur < 0))
+        && (!location.purpose || row.purpose === location.purpose)
+        && (!location.account || (location.account === NO_ACCOUNT ? !key : key === bankAccountKey(location.account)))
+        && (!needle || [row.orderNumber, row.reference, this.customer(row), row.bankAccount].join(' ').toLocaleLowerCase('nl-BE').includes(needle));
     });
   });
-  readonly visible = computed(() => this.expanded() ? this.filtered() : this.filtered().slice(0, this.limit()));
-  readonly totals = computed(() => {
-    const received = this.filtered().reduce((sum, row) => sum + (row.amountEur > 0 ? Math.round(row.amountEur * 100) : 0), 0);
-    const refunded = this.filtered().reduce((sum, row) => sum + (row.amountEur < 0 ? -Math.round(row.amountEur * 100) : 0), 0);
-    return { received: received / 100, refunded: refunded / 100, net: (received - refunded) / 100 };
+  readonly totals = computed(() => incomingMoneyTotals(this.filtered()));
+  readonly visible = computed(() => this.filtered().slice(0, this.limit()));
+
+  readonly table = new FinanceTable({
+    order: () => this.visible().map((row) => this.key(row)),
+    host: () => this.host.nativeElement,
+    /* A receipt has no inspector of its own; Enter opens its invoice. */
+    inspect: () => undefined,
   });
-  readonly purposeLabel = incomingPurposeLabel;
-  readonly momentLabel = paymentMomentLabel;
-  customerName(id: number | null): string { return id == null ? '' : this.customerNames().get(id) ?? ''; }
-  setPeriod(period: 'MONTH' | 'ALL'): void { this.from.set(period === 'MONTH' ? MONTH_START : ''); this.to.set(period === 'MONTH' ? TODAY : ''); this.expanded.set(false); }
-  clearFilters(): void { this.search.set(''); this.direction.set('ALL'); this.purpose.set('ALL'); this.account.set(''); this.from.set(''); this.to.set(''); this.expanded.set(false); }
+
+  constructor() {
+    effect(() => { this.visible(); untracked(() => this.table.prune()); });
+  }
+
+  /** The desk keyboard: the arrows move, Enter or E opens the invoice. */
+  handle(command: FinanceCommand): boolean {
+    if (this.table.handle(command)) return true;
+    const focus = this.visible().find((row) => this.key(row) === this.table.selection().focus);
+    if ((command === 'open' || command === 'edit') && focus) {
+      this.state.openInvoice(focus.salesOrderId);
+      return true;
+    }
+    return false;
+  }
+
+  key(row: IncomingPaymentRow): string {
+    return `receipt:${row.id}`;
+  }
+
+  point(event: MouseEvent): MenuPoint {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    return { x: rect.left, y: rect.bottom + 6 };
+  }
+  readonly filterCount = computed(() => {
+    const location = this.state.location();
+    return Number(!!location.dir) + Number(!!location.purpose) + Number(!!location.account);
+  });
+  readonly days = computed(() => {
+    const rows = this.expanded() ? this.filtered() : this.filtered().slice(0, 12);
+    const groups = new Map<string, IncomingPaymentRow[]>();
+    for (const row of rows) {
+      const day = paymentLocalDay(row);
+      groups.set(day, [...(groups.get(day) ?? []), row]);
+    }
+    return [...groups.entries()].map(([day, list]) => ({
+      day, label: dayHeading(day, this.state.today()), rows: list,
+      totalEur: Math.round(list.reduce((sum, row) => sum + row.amountEur * 100, 0)) / 100,
+    }));
+  });
+
+  customer(row: IncomingPaymentRow): string {
+    return row.customerId == null ? '' : this.state.customerNames().get(row.customerId) ?? '';
+  }
+
+  account(row: IncomingPaymentRow): string {
+    return this.state.accountLabel(this.state.receiptAccountKey(row));
+  }
+
+  purpose(row: IncomingPaymentRow): string {
+    return incomingPurposeLabel(row.purpose);
+  }
+
+  moment(row: IncomingPaymentRow): string {
+    return paymentMomentLabel(row);
+  }
+
+  clock(row: IncomingPaymentRow): string {
+    return clockOf(row.receivedAt, row.timeZone);
+  }
+
+  signed(amount: number): string {
+    return signedEur(amount);
+  }
+
+  /** Right-click or ⋯ on a desk, a tap on a phone: the invoice, and the container of a partner receipt. */
+  rowMenu(row: IncomingPaymentRow, anchor: MenuPoint | null): void {
+    this.state.openMenu({
+      title: `${row.orderNumber} · ${signedEur(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren',
+      items: [
+        { id: 'invoice', label: 'Factuur openen', iconName: 'document' },
+        ...(row.purchaseOrderId ? [{ id: 'container', label: 'Container openen', iconName: 'truck' }] : []),
+      ],
+      pick: (id) => (id === 'container' ? this.state.openPartnerContainer(row.purchaseOrderId!) : this.state.openInvoice(row.salesOrderId)),
+    });
+  }
 }

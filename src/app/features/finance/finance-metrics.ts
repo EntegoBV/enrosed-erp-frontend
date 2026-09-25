@@ -72,6 +72,16 @@ export function occurrencesBetween(schedule: Schedule, from: string, to: string)
   return dates;
 }
 
+/**
+ * How many periods the server books the moment a definition is saved: from
+ * its first date (a new one) or its next date (a paused one being resumed)
+ * up to and including today. The server's bookDue runs on create and update.
+ */
+export function previewBacklog(definition: Schedule & Pick<RecurringCost, 'id' | 'nextDate'>, today: string): number {
+  const from = definition.id && definition.nextDate ? definition.nextDate : definition.startDate;
+  return from && from <= today ? occurrencesBetween(definition, from, today).length : 0;
+}
+
 export interface UpcomingCost {
   definition: RecurringCost;
   date: string;
@@ -248,16 +258,53 @@ export interface CashOutlook {
   openCostsEur: number;
   upcomingEur: number;
   openInvoicesEur: number;
-  /** The bank after the open and coming costs go out and the open invoices come in. */
+  /** Container terms due now and later: forecasts from the reconciliation, incl. nothing else. */
+  containerNowEur: number;
+  containerLaterEur: number;
+  /** The bank after everything due now has gone out: open costs, the coming recurring costs and the container terms due now. */
+  afterPayablesEur: number;
+  /** Then the open invoices come in and the later container terms go out. */
   expectedEur: number;
+  /** Without a bank reading: what comes in minus everything that still goes out. */
+  netOpenEur: number;
 }
 
-export function cashOutlook(bankEur: number, openCostsInclEur: number, upcomingInclEur: number, openInvoicesEur: number): CashOutlook {
+export function cashOutlook(bankEur: number, openCostsInclEur: number, upcomingInclEur: number, openInvoicesEur: number,
+                            containerNowEur = 0, containerLaterEur = 0): CashOutlook {
   const bank = finite(bankEur);
   const open = finite(openCostsInclEur);
   const upcoming = finite(upcomingInclEur);
   const invoices = finite(openInvoicesEur);
-  return { bankEur: bank, openCostsEur: open, upcomingEur: upcoming, openInvoicesEur: invoices, expectedEur: round2(bank - open - upcoming + invoices) };
+  const containerNow = finite(containerNowEur);
+  const containerLater = finite(containerLaterEur);
+  const afterPayablesEur = round2(bank - open - upcoming - containerNow);
+  return {
+    bankEur: bank, openCostsEur: open, upcomingEur: upcoming, openInvoicesEur: invoices,
+    containerNowEur: containerNow, containerLaterEur: containerLater, afterPayablesEur,
+    expectedEur: round2(afterPayablesEur + invoices - containerLater),
+    netOpenEur: round2(invoices - open - upcoming - containerNow - containerLater),
+  };
+}
+
+export interface RecurringGroups {
+  active: RecurringCost[];
+  paused: RecurringCost[];
+  ended: RecurringCost[];
+}
+
+/**
+ * Definitions as the server sees them: an ended schedule comes back
+ * inactive with no next date, so it is ended, not paused.
+ */
+export function recurringGroups(definitions: readonly RecurringCost[], today: string): RecurringGroups {
+  const groups: RecurringGroups = { active: [], paused: [], ended: [] };
+  for (const definition of definitions) {
+    const ended = !definition.nextDate && (!!definition.lastBookedOn || (!!definition.endDate && definition.endDate < today));
+    if (ended) groups.ended.push(definition);
+    else if (definition.active) groups.active.push(definition);
+    else groups.paused.push(definition);
+  }
+  return groups;
 }
 
 /** A semicolon-separated CSV with a decimal comma, the way a Belgian accountant's Excel opens it. */

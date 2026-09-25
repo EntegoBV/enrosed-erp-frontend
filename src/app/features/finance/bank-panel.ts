@@ -1,86 +1,250 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { DateNlPipe, EurPipe } from '../../shared/pipes';
-import { FinanceState } from './finance-state';
-import { IncomingPaymentList } from './incoming-payment-list';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, forwardRef, inject, untracked, viewChild } from '@angular/core';
+import { Icon } from '../../shared/icon';
+import { EurPipe } from '../../shared/pipes';
+import { bankAccountKey } from './bank-reconciliation';
 import { BankMovementPanel } from './bank-movement-panel';
+import { bankMarker } from './bank-markers';
+import { paymentPayeeLabel } from './cost-ledger';
+import { dayMonth } from './finance-format';
+import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
+import type { FinanceCommand } from './finance-shortcuts';
+import { FinanceState, formatEuro } from './finance-state';
+import type { CostLedgerRow } from './cost-ledger';
 import { paymentMomentLabel } from './incoming-money';
 
-type BankView = 'movements' | 'receipts' | 'accounts';
+type AccountView = FinanceState['accountsView'] extends () => (infer T)[] ? T : never;
+
+/**
+ * Bank: only accounts and movements. Rekeningen answers "klopt mijn
+ * banksaldo?" per account; Bewegingen is the movement list, whose filters
+ * follow the address both ways.
+ */
 @Component({
-  selector: 'app-bank-panel', changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, DateNlPipe, IncomingPaymentList, BankMovementPanel],
+  selector: 'app-bank-panel',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [{ provide: FINANCE_SECTION, useExisting: forwardRef(() => BankPanel) }],
+  imports: [Icon, EurPipe, BankMovementPanel],
   template: `
-    <section class="finance-bank-summary" aria-label="Bank samengevat">
-      <button type="button" class="finance-bank-total" (click)="tab.set('accounts')"><span>{{ knownAccounts() ? state.bankLedger().missingReadings ? 'Bekend deel van je banksaldo' : 'Berekend banksaldo' : 'Banksaldo nog onbekend' }}</span><strong>{{ knownAccounts() ? (state.currentBankEur() | eur) : 'Nog invullen' }}</strong><small>{{ state.bankLedger().missingReadings ? 'Deeltotaal · ' + state.bankLedger().missingReadings + ' rekening(en) zonder beginsaldo' : 'Volgens de ingevoerde saldi en betalingen' }}</small></button>
-      <div><span>Rekeningen</span><strong>{{ state.bankLedger().accounts.length }}</strong><small>{{ knownAccounts() }} met een beginsaldo</small></div>
-      <div><span>Bankbewegingen</span><strong>{{ state.bankStatements().length }}</strong><small>{{ linkedCount() }} aan een factuurbetaling gekoppeld</small></div>
-    </section>
-    @if (!knownAccounts() || state.bankLedger().missingReadings) {
-      <div class="finance-setup"><div><b>{{ !knownAccounts() ? 'Begin met het saldo uit je bankapp' : 'Nog niet alle rekeningen hebben een beginsaldo' }}</b><p>Noteer per rekening het saldo met datum en tijd. Latere geregistreerde bewegingen worden daarbij opgeteld.</p></div><button type="button" class="btn btn--sm" (click)="setupBank()">Banksaldo invullen</button></div>
-    }
-    <nav class="finance-bank-tabs" aria-label="Bankonderdelen">
-      <button type="button" [class.active]="tab() === 'movements'" [attr.aria-pressed]="tab() === 'movements'" (click)="tab.set('movements')"><b>Bankbewegingen</b><span>{{ state.bankStatements().length }} geregistreerd</span></button>
-      <button type="button" [class.active]="tab() === 'receipts'" [attr.aria-pressed]="tab() === 'receipts'" (click)="tab.set('receipts')"><b>Factuurbetalingen</b><span>Ontvangsten & terugbetalingen</span></button>
-      <button type="button" [class.active]="tab() === 'accounts'" [attr.aria-pressed]="tab() === 'accounts'" (click)="tab.set('accounts')"><b>Rekeningen</b><span>Saldi & controlepunten</span></button>
-    </nav>
-
-    <div [hidden]="tab() !== 'movements'">
+    @if (state.location().tab === 'movements') {
       <app-bank-movement-panel />
-      <details class="card finance-help"><summary>Hoe gebruik ik Bank & betalingen?</summary>
-        <ol><li><b>Noteer het beginsaldo.</b> Neem rekening, saldo en tijdstip over uit je bankapp.</li><li><b>Voeg een bankbeweging toe.</b> Kies geld in of uit en vul bedrag, datum, tijd en omschrijving in.</li><li><b>Koppel waar nodig een factuurbetaling.</b> Kies de verkoop- of partnerfactuur. Is de betaling al genoteerd bij die factuur? Koppel dan de bestaande betaling.</li></ol>
-        <p>Een leveranciersbetaling of bedrijfsuitgave kun je als bankbeweging registreren. Rechtstreeks koppelen aan een inkoopbetaling of bedrijfskost is nog niet beschikbaar. Eén bankbeweging kan aan één factuurbetaling worden gekoppeld.</p>
-      </details>
-    </div>
-
-    @if (tab() === 'receipts') {
-      <section class="card fin-panel">
-        <header class="fin-panel__head"><div><span class="section-kicker">Geld op verkoop- en partnerfacturen</span><h2>Ontvangsten &amp; terugbetalingen</h2></div><a class="linklike" routerLink="/sales" [queryParams]="{scope: 'ALL', tab: 'FACTUUR'}">Facturen beheren ›</a></header>
-        <p class="fin-panel__hint">Betalingen die bij een factuur zijn geregistreerd. Een bankbeweging zonder factuurkoppeling staat hier niet tussen.</p>
-        @if (state.bankLedger().unassignedPayments) { <p class="finance-inline-note">Over alle datums: {{ state.bankLedger().unassignedPayments }} factuurbetalingen hebben geen rekening of bankkoppeling. Ze tellen niet mee in het banksaldo. <button class="linklike" type="button" (click)="tab.set('movements')">Bankbeweging koppelen ›</button></p> }
-        <app-incoming-payment-list [payments]="state.incomingPayments()" [customers]="state.customers()" />
-      </section>
-    }
-
-    @if (tab() === 'accounts') {
-      <section class="card fin-panel">
-        <header class="fin-panel__head"><div><span class="section-kicker">Per rekening</span><h2>Saldi controleren</h2></div><button type="button" class="btn btn--sm" (click)="state.openBank(null)">+ Rekening / saldo</button></header>
-        <p class="fin-panel__hint">Dit overzicht is berekend uit jouw registraties. Vergelijk het met je bankapp en voeg een nieuw saldo toe als controlepunt.</p>
-        <div class="finance-accounts">@for (account of state.bankLedger().accounts; track account.account) {
-          <article class="finance-account">
-            <header><b>{{ account.account }}</b><span [class.finance-status--warn]="account.currentEur === null" class="finance-status">{{ account.currentEur === null ? 'Beginsaldo nodig' : 'Berekend' }}</span></header>
-            <strong class="finance-account__amount">{{ account.currentEur === null ? 'Nog onbekend' : (account.currentEur | eur) }}</strong>
-            @if (account.reading; as reading) {
-              <dl class="finance-equation"><div><dt>Laatst ingevoerd saldo</dt><dd>{{ reading.balanceEur | eur }}</dd></div><div><dt>Bewegingen daarna ({{ account.movements.length }})</dt><dd>{{ account.deltaEur | eur }}</dd></div></dl>
-              <small>{{ reading.asOfAt ? stamp(reading.asOfAt, reading.timeZone || 'Europe/Brussels') : (reading.date | dateNl) + ' einde dag' }}</small>
-            } @else { <p class="fin-panel__hint">De bewegingen zijn bewaard. Het saldo kan pas berekend worden na het invoeren van een beginsaldo.</p> }
-            @if (account.unlinkedBookings) { <p class="fin-panel__hint">{{ account.unlinkedBookings }} losse factuurbetalingen geregistreerd. Alleen betalingen na het controlepunt tellen erbij. Koppel dezelfde betaling aan elkaar als je die ook als bankbeweging invoert.</p> }
-            <button type="button" class="btn btn--sm" (click)="state.openBank(null, account.account)">{{ account.reading ? 'Nieuw banksaldo invullen' : 'Beginsaldo invullen' }}</button>
-          </article>
-        } @empty { <div class="finance-placeholder"><b>Je eerste rekening toevoegen</b><p>Gebruik een herkenbare naam of IBAN en vul het huidige saldo uit je bankapp in.</p><button type="button" class="btn btn--primary btn--sm" (click)="state.openBank(null)">Rekening toevoegen</button></div> }</div>
-        <details class="finance-explainer"><summary>Hoe wordt mijn saldo berekend?</summary><p>Elke rekening begint bij haar laatste ingevoerde saldo en tijdstip. Alleen latere bankbewegingen en afzonderlijke factuurbetalingen met die rekening tellen erbij. Een gekoppelde bankbeweging vervangt de factuurbetaling, zodat hetzelfde bedrag één keer meetelt. Een betaling zonder rekening telt niet mee.</p></details>
-      </section>
-      @if (state.balances().length) {
-        <section class="card fin-panel"><header class="fin-panel__head"><div><span class="section-kicker">Geschiedenis</span><h2>Ingevoerde saldi</h2></div><span class="finance-status">{{ state.balances().length }} controlepunten</span></header><p class="fin-panel__hint">Open een saldo om de registratie te bekijken of te corrigeren.</p><div class="fin-list">@for (row of state.balances(); track row.id) {<button type="button" class="fin-reading" (click)="state.openBank(row)"><span class="fin-reading__date">{{ row.date | dateNl }}</span><span class="fin-reading__body"><b>{{ row.account }}</b><small>{{ row.asOfAt ? stamp(row.asOfAt, row.timeZone || 'Europe/Brussels') : 'Einde van de bankdag' }}</small>@if(row.notes){<small>{{ row.notes }}</small>}</span><strong>{{ row.balanceEur | eur }}</strong></button>}</div></section>
+    } @else if (state.desk()) {
+      <header class="fin-bank-head">
+        <span class="fin-bank-head__label">Totaal op de bank</span>
+        <strong class="fin-bank-head__value">{{ known() ? (state.currentBankEur() | eur) : '—' }}</strong>
+        <span class="fin-bank-head__sub">{{ headSub() }}</span>
+      </header>
+      @if (state.accountsView().length) {
+        <div class="fin-accounts">
+          @for (account of state.accountsView(); track account.account) {
+            <article class="fin-account">
+              <div class="fin-account__top">
+                <span class="fin-account__name"><b>{{ account.label }}</b>@if (tail(account.account); as tail) { <small>…{{ tail }}</small> }</span>
+                <span [class]="'wk-pill ' + freshTone(account)">{{ freshLabel(account) }}</span>
+                <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" aria-label="Meer over deze rekening" (click)="accountMenu(account, $event)"><app-icon name="more" [size]="16" /></button>
+              </div>
+              <strong class="fin-account__value">{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</strong>
+              @if (account.reading; as reading) {
+                <dl class="wk-equation">
+                  <div><dt>Saldo {{ stamp(reading.asOfAt, reading.date, reading.timeZone) }}</dt><dd>{{ reading.balanceEur | eur }}</dd></div>
+                  <div class="is-sub"><dt><span class="wk-equation__op">+</span>{{ account.movements.length }} {{ account.movements.length === 1 ? 'beweging' : 'bewegingen' }}</dt><dd>{{ account.deltaEur | eur }}</dd></div>
+                </dl>
+              }
+              <div class="fin-account__actions">
+                <button class="wk-btn" type="button" (click)="state.checkOrFill(account.account)">{{ account.reading ? 'Klopt het saldo?' : 'Saldo invullen' }}</button>
+                <button class="wk-btn" type="button" (click)="state.openMovement({ accountKey: account.account })">Beweging noteren</button>
+              </div>
+            </article>
+          }
+          <button class="fin-account fin-account--add" type="button" (click)="state.openBank(null)"><app-icon name="plus" [size]="18" />Rekening toevoegen</button>
+        </div>
+      } @else {
+        <div class="wk-empty"><span class="wk-empty__icon"><app-icon name="bank" [size]="22" /></span><p class="wk-empty__title">Nog geen rekening</p>
+          <p class="wk-empty__text">Vul het saldo uit je bankapp in.</p><div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" (click)="state.openBank(null)">Saldo invullen</button></div></div>
       }
-      @if (state.outgoingsWithoutAccount().length) {
-        <details class="card finance-help"><summary>Administratieve uitgaven bekijken ({{ state.outgoingsWithoutAccount().length }})</summary>
-          <p>{{ state.outgoingsWithoutAccountEur() | eur }} aan betaalde bedrijfskosten en inkoopbetalingen, over alle datums. Deze registraties hebben geen bankrekening. Ze kunnen al verwerkt zijn in een saldo of bankbeweging; dit is geen lijst van ontbrekende bankbewegingen.</p>
-          <div class="fin-list">@for (row of state.outgoingsWithoutAccount(); track row.key) {
-            <div class="fin-reading"><span class="fin-reading__date">{{ row.paidOn | dateNl }}</span><span class="fin-reading__body">@if (row.payment; as payment) { <a class="linklike" [routerLink]="['/purchasing', payment.orderId]">{{ row.description }} · {{ row.reference }} ›</a> } @else if (row.cost; as cost) { <button class="linklike" type="button" (click)="state.openCost(cost)">{{ row.description }} ›</button> }</span><strong>{{ row.amountEur | eur }}</strong></div>
-          }</div>
-        </details>
+      @if (state.unbanked().length) {
+        <section class="wk-card fin-unbanked">
+          <header class="wk-card__head"><h2 class="wk-card__title">Nog niet op de bank ({{ state.unbanked().length }})</h2></header>
+          <p class="fin-hint">Betaald gezet, maar geen bankbeweging gevonden na je laatste saldocontrole.</p>
+          <div class="wk-table fin-table fin-table--unbanked" role="table">
+            <div class="wk-thead" role="row"><span class="wk-th">Betaald op</span><span class="wk-th">Wat</span><span class="wk-th" data-hide="xs">Soort</span><span class="wk-th wk-th--num">Bedrag</span><span class="wk-th"></span></div>
+            @for (item of state.unbanked(); track item.row.key) {
+              <div class="wk-tr" role="row">
+                <span class="wk-td">{{ day(item.paidOn) }}</span>
+                <span class="wk-td">{{ item.row.description }}<span class="wk-td__sub">{{ item.row.cost ? item.row.party : item.row.reference }}</span></span>
+                <span class="wk-td" data-hide="xs"><span class="wk-pill" [class.tone-teal]="!!item.row.cost" [class.tone-blue]="!item.row.cost">{{ item.row.cost ? 'Kost' : 'Container' }}</span></span>
+                <span class="wk-td wk-td--num">{{ item.amountEur | eur }}</span>
+                <span class="wk-td fin-td-end"><button class="wk-btn wk-btn--sm" type="button" (click)="note(item.row)">Noteren</button></span>
+              </div>
+            }
+          </div>
+        </section>
       }
+    } @else {
+      <div class="ios-card fin-ios-total"><span class="ios-hero__label">Op de bank</span><strong>{{ known() ? (state.currentBankEur() | eur) : '—' }}</strong><small>{{ headSub() }}</small></div>
+      @for (account of state.accountsView(); track account.account) {
+        <article class="ios-card ios-wallet">
+          <div class="ios-wallet__top"><span>{{ account.label }}</span><span [class]="'wk-pill ' + freshTone(account)">{{ freshLabel(account) }}</span></div>
+          <div class="ios-wallet__value">{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</div>
+          @if (account.reading; as reading) {
+            <div class="ios-wallet__sub">Saldo {{ day(reading.date) }} {{ reading.balanceEur | eur }} · + {{ account.movements.length }} {{ account.movements.length === 1 ? 'beweging' : 'bewegingen' }}</div>
+          }
+          <div class="ios-wallet__actions">
+            <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.checkOrFill(account.account)">{{ account.reading ? 'Klopt het saldo?' : 'Saldo invullen' }}</button>
+            <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.openMovement({ accountKey: account.account })">Beweging</button>
+          </div>
+          <button class="fin-wallet-link" type="button" (click)="state.historyAccount.set(account.account)">Saldogeschiedenis <app-icon name="chevron-right" [size]="14" /></button>
+        </article>
+      }
+      <div class="ios-group fin-ios-add"><button class="ios-cell ios-cell--action" type="button" (click)="state.openBank(null)"><app-icon name="plus" [size]="18" />Rekening toevoegen</button></div>
+      @if (state.unbanked().length) {
+        <section class="ios-section">
+          <div class="ios-section__head"><h2>Nog niet op de bank</h2><span class="ios-section__trail">{{ unbankedEur() | eur }}</span></div>
+          <div class="ios-group">
+            @for (item of state.unbanked(); track item.row.key) {
+              <div class="ios-cell">
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ item.row.description }}</span><span class="ios-cell__sub">{{ day(item.paidOn) }} · {{ item.row.cost ? 'Kost' : 'Container' }} · {{ item.amountEur | eur }}</span></span>
+                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="note(item.row)">Noteer</button>
+              </div>
+            }
+          </div>
+          <p class="ios-section__foot">Betaald gezet, maar geen bankbeweging gevonden na je laatste saldocontrole.</p>
+        </section>
+      }
+      <p class="fin-ios-foot"><button class="ios-section__link" type="button" (click)="state.helpOpen.set(true)">Hoe werkt je banksaldo?</button></p>
     }
   `,
 })
-export class BankPanel {
+export class BankPanel implements FinanceSectionApi {
   readonly state = inject(FinanceState);
-  readonly tab = signal<BankView>('movements');
   readonly movementPanel = viewChild(BankMovementPanel);
-  readonly knownAccounts = computed(() => this.state.bankLedger().accounts.filter(account => account.currentEur !== null).length);
-  readonly linkedCount = computed(() => this.state.bankStatements().filter(row => row.salesPaymentId !== null).length);
-  setupBank(): void { this.tab.set('accounts'); this.state.openBank(null, this.state.bankLedger().accounts.find(account => account.currentEur === null)?.account ?? ''); }
-  addMovement(): void { this.tab.set('movements'); this.movementPanel()?.add(); }
-  stamp(receivedAt: string, timeZone: string): string { return paymentMomentLabel({ receivedAt, timeZone }); }
+
+  readonly known = computed(() => this.state.bankLedger().accounts.some((account) => account.currentEur !== null));
+  readonly unbankedEur = computed(() => Math.round(this.state.unbanked().reduce((sum, row) => sum + row.amountEur * 100, 0)) / 100);
+  readonly headSub = computed(() => {
+    const ages = this.state.accountsView().map((account) => account.ageDays).filter((age): age is number => age !== null);
+    if (!ages.length) return 'Nog geen saldo ingevuld';
+    const newest = Math.min(...ages);
+    return `Berekend uit je saldo's en bewegingen · laatst gecontroleerd ${newest === 0 ? 'vandaag' : newest === 1 ? 'gisteren' : newest + ' dagen geleden'}`;
+  });
+
+  readonly strip = computed<StripItem[] | null>(() => {
+    const panel = this.movementPanel();
+    if (this.state.location().tab !== 'movements' || !panel) return null;
+    const totals = panel.totals();
+    return [
+      { label: 'In', value: formatEuro(totals.incoming), tone: 'in' },
+      { label: 'Uit', value: formatEuro(totals.outgoing) },
+      { label: 'Netto', value: formatEuro(totals.net), tone: 'strong' },
+    ];
+  });
+  readonly status = computed(() => {
+    const panel = this.movementPanel();
+    if (this.state.location().tab === 'movements' && panel) return `${panel.filteredLines().length} van ${this.state.bankStatements().length} bewegingen`;
+    const count = this.state.accountsView().length;
+    return `${count} ${count === 1 ? 'rekening' : 'rekeningen'}`;
+  });
+
+  constructor() {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    /* The list writes back only once the address has been read into it, or its defaults would wipe the address. */
+    let synced: BankMovementPanel | null = null;
+    inject(DestroyRef).onDestroy(() => { if (timer) clearTimeout(timer); });
+
+    /* Address → list: the panel keeps its own filter signals (its tests rely on them). */
+    effect(() => {
+      const panel = this.movementPanel();
+      const location = this.state.location();
+      const desk = this.state.desk();
+      if (!panel || location.view !== 'bank' || location.tab !== 'movements') return;
+      untracked(() => {
+        const range = this.state.rangeOf(location);
+        const direction = location.dir === 'in' ? 'INCOMING' : location.dir === 'out' ? 'OUTGOING' : 'ALL';
+        const link = location.link === 'unlinked' ? 'UNLINKED_IN' : 'ALL';
+        const account = location.account ? bankAccountKey(location.account) : '';
+        if (!timer && panel.search() !== location.q) panel.search.set(location.q);
+        if (panel.accountFilter() !== account) panel.accountFilter.set(account);
+        if (panel.directionFilter() !== direction) panel.directionFilter.set(direction);
+        if (panel.linkFilter() !== link) panel.linkFilter.set(link);
+        if (panel.from() !== range.from) panel.from.set(range.from);
+        if (panel.to() !== range.to) panel.to.set(range.to);
+        if (desk && panel.shown() < 50) panel.shown.set(50);
+        synced = panel;
+      });
+    });
+
+    /* List → address: a chip or the search field on the phone writes back, the search after 400 ms. */
+    effect(() => {
+      const panel = this.movementPanel();
+      if (!panel) return;
+      const search = panel.search(), account = panel.accountFilter(), direction = panel.directionFilter();
+      const link = panel.linkFilter(), from = panel.from(), to = panel.to();
+      untracked(() => {
+        const location = this.state.location();
+        if (synced !== panel || location.view !== 'bank' || location.tab !== 'movements') return;
+        const patch: Record<string, string> = {};
+        const dir = direction === 'INCOMING' ? 'in' : direction === 'OUTGOING' ? 'out' : '';
+        const unlinked = link === 'UNLINKED_IN' ? 'unlinked' : '';
+        if (dir !== location.dir) patch['dir'] = dir;
+        if (unlinked !== location.link) patch['link'] = unlinked;
+        if (account !== (location.account ? bankAccountKey(location.account) : '')) patch['account'] = account;
+        const range = this.state.rangeOf(location);
+        if (from !== range.from || to !== range.to) Object.assign(patch, from || to ? { from, to } : { period: 'all', from: '', to: '' });
+        if (Object.keys(patch).length) this.state.go(patch);
+        if (search !== location.q) {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => {
+            timer = null;
+            if (this.state.location().q !== panel.search()) this.state.go({ q: panel.search() });
+          }, 400);
+        }
+      });
+    });
+  }
+
+  handle(command: FinanceCommand): boolean {
+    return this.movementPanel()?.handle(command) ?? false;
+  }
+
+  accountMenu(account: AccountView, event: MouseEvent): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.state.openMenu({ title: account.label, anchor: { x: rect.left, y: rect.bottom + 6 },
+      items: [
+        { id: 'history', label: 'Saldogeschiedenis', iconName: 'recent' },
+        ...(account.reading ? [{ id: 'fix', label: 'Saldo corrigeren', iconName: 'pencil' }] : []),
+      ],
+      pick: (id) => (id === 'history' ? this.state.historyAccount.set(account.account) : this.state.openBank(account.reading)) });
+  }
+
+  /** 'Noteren': the movement form prefilled with the amount, the day and the marker. */
+  note(row: CostLedgerRow): void {
+    if (row.cost) {
+      this.state.openMovement(this.state.costMovement(row.cost));
+      return;
+    }
+    const payment = row.payment!;
+    const marker = bankMarker('containerbetaling', payment.id);
+    this.state.openMovement({ direction: 'OUTGOING', amount: row.amountEur, day: payment.paidOn, counterparty: paymentPayeeLabel(payment.payee),
+      reference: `${[payment.orderNumber, payment.label].filter(Boolean).join(' · ')} · ${marker}`.replace(/^ · /, '') });
+  }
+
+  freshTone(account: AccountView): string {
+    if (!account.reading || account.ageDays === null) return 'tone-warn';
+    return account.ageDays === 0 ? 'tone-ok' : account.ageDays <= 7 ? '' : account.ageDays <= 14 ? 'tone-warn' : 'tone-danger';
+  }
+
+  freshLabel(account: AccountView): string {
+    if (!account.reading || account.ageDays === null) return 'Nog geen saldo';
+    return account.ageDays === 0 ? 'Vandaag gecontroleerd' : `${account.ageDays} d geleden`;
+  }
+
+  /** The last digits of an IBAN key, so two accounts of one bank can be told apart. */
+  tail(key: string): string {
+    return /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(key) ? key.slice(-4) : '';
+  }
+
+  stamp(asOfAt: string | null | undefined, date: string, timeZone: string | null | undefined): string {
+    return asOfAt ? paymentMomentLabel({ receivedAt: asOfAt, timeZone: timeZone || 'Europe/Brussels' }) : `${dayMonth(date)}, einde dag`;
+  }
+
+  day(date: string | null): string { return dayMonth(date); }
 }

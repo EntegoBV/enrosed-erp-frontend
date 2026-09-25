@@ -1,4 +1,4 @@
-import { ActivityCategory, ActivityEvent } from '../../core/api/models';
+import type { ActivityCategory, ActivityEvent } from '../../core/api/models';
 
 const ACTION_LABELS: Record<string, string> = {
   CREATED: 'Aangemaakt',
@@ -38,6 +38,7 @@ const ENTITY_CATEGORIES: Record<string, ActivityCategory> = {
   COMPANY_COST: 'FINANCE',
   RECURRING_COST: 'FINANCE',
   BANK_BALANCE: 'FINANCE',
+  BANK_STATEMENT: 'FINANCE',
 };
 
 const CATEGORY_LABELS: Record<ActivityCategory, string> = {
@@ -92,6 +93,7 @@ export function activityEntityLabel(event: ActivityEvent): string {
   if (type === 'COMPANY_COST') return 'Kost';
   if (type === 'RECURRING_COST') return 'Vaste kost';
   if (type === 'BANK_BALANCE') return 'Banksaldo';
+  if (type === 'BANK_STATEMENT') return 'Bankbeweging';
   return event.entityType.replaceAll('_', ' ').toLocaleLowerCase('nl-BE');
 }
 
@@ -103,8 +105,23 @@ export function activityRoute(event: ActivityEvent): string[] | null {
   if (type === 'SALES_ORDER') return ['/sales', String(event.entityId)];
   if (type === 'PRODUCT') return ['/products', String(event.entityId)];
   if (type === 'PRODUCT_FAMILY') return ['/website/products'];
-  if (type === 'COMPANY_COST') return ['/costs'];
-  if (type === 'RECURRING_COST') return ['/costs?view=recurring'];
-  if (type === 'BANK_BALANCE') return ['/costs?view=bank'];
+  if (FINANCE_TYPES.has(type)) return ['/costs'];
+  return null;
+}
+
+const FINANCE_TYPES = new Set(['COMPANY_COST', 'RECURRING_COST', 'BANK_BALANCE', 'BANK_STATEMENT']);
+
+/**
+ * The query that goes with activityRoute: Kosten & bank keeps its section
+ * in the query string, never in the path (a '?' inside a routerLink array
+ * matched no route and ended on the dashboard).
+ */
+export function activityQueryParams(event: ActivityEvent): Record<string, string> | null {
+  if (!activityRoute(event)) return null;
+  const type = event.entityType.trim().toUpperCase();
+  if (type === 'COMPANY_COST') return { view: 'costs', cost: String(event.entityId) };
+  if (type === 'RECURRING_COST') return { view: 'costs', tab: 'recurring' };
+  if (type === 'BANK_BALANCE') return { view: 'bank' };
+  if (type === 'BANK_STATEMENT') return { view: 'bank', tab: 'movements' };
   return null;
 }

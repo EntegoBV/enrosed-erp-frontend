@@ -6,83 +6,83 @@ import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { SALES_CHANNELS } from '../sales/sales-channels';
 import { categoryChoices } from './cost-categories';
-import { INTERVALS, addDays, inclOf, monthlyEquivalentEur, occurrencesBetween, yearlyEur } from './finance-metrics';
+import { INTERVALS, addDays, inclOf, monthlyEquivalentEur, occurrencesBetween, previewBacklog, yearlyEur } from './finance-metrics';
 import { blankRecurring } from './finance-sections';
 import { FinanceState } from './finance-state';
+import { VatChoice } from './vat-choice';
 
 /** The recurring cost form: what, how much, how often, from when, and whether the bank pays it by itself. */
 @Component({
   selector: 'app-recurring-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, DateField, EurPipe, DateNlPipe],
+  imports: [FormsModule, Sheet, DateField, EurPipe, DateNlPipe, VatChoice],
   template: `
-    <app-sheet [title]="draft().id ? 'Vaste kost bewerken' : 'Vaste kost instellen'" (closed)="state.recurringDraft.set(null)">
-      <div body>
-        <div class="form-grid">
-          <div class="field span-2"><label class="req" for="r-name">Naam</label>
-            <input class="input" id="r-name" placeholder="bijv. Huur magazijn" [ngModel]="draft().name" (ngModelChange)="patch({ name: $event })" /></div>
-          <div class="field"><label class="req" for="r-cat">Categorie</label>
-            <select class="select" id="r-cat" [ngModel]="categoryChoice()" (ngModelChange)="pickCategory($event)">
+    <app-sheet variant="ios" [title]="draft().id ? 'Vaste kost bewerken' : 'Vaste kost instellen'" [wide]="true" (closed)="state.recurringDraft.set(null)">
+      <div body class="fin-sheet fin-form">
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <label class="fin-field fin-field--wide"><span class="req">Naam</span>
+            <input class="input" placeholder="bijv. Huur magazijn" [ngModel]="draft().name" (ngModelChange)="patch({ name: $event })" /></label>
+        </div>
+        <label class="fin-amount fin-amount--left fin-field--wide">
+          <span class="fin-field__label req">Bedrag excl. btw</span><i aria-hidden="true">€</i>
+          <input type="number" min="0" step="0.01" inputmode="decimal" [ngModel]="draft().amountExclEur || null" (ngModelChange)="patch({ amountExclEur: +($event || 0) })" />
+        </label>
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
+            <app-vat-choice [value]="draft().vatPct" (changed)="patch({ vatPct: $event })" />
+            <span class="fin-hint">Incl. btw: {{ inclOf(draft()) | eur }}</span></div>
+          <div class="fin-field fin-field--wide fin-field--stack"><span class="req">Hoe vaak</span>
+            <div class="fin-choice" role="group" aria-label="Ritme">
+              @for (option of intervals; track option.code) {
+                <button type="button" class="fin-choice__chip" [attr.aria-pressed]="draft().interval === option.code" (click)="patch({ interval: option.code })" [title]="option.hint">{{ option.label }}</button>
+              }
+            </div>
+            <span class="fin-hint">≈ {{ monthly() | eur: 0 }} per maand · {{ yearly() | eur: 0 }} per jaar, excl. btw</span></div>
+        </div>
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <label class="fin-field"><span class="req">Categorie</span>
+            <select class="select" [ngModel]="categoryChoice()" (ngModelChange)="pickCategory($event)">
               @for (category of categories(); track category.code) { <option [value]="category.code">{{ category.label }}</option> }
               <option value="__other__">Eigen categorie…</option>
             </select>
-            @if (customCategory()) {
-              <input class="input mt-8" aria-label="Eigen categorie" placeholder="bijv. OPLEIDING" [ngModel]="draft().category" (ngModelChange)="patch({ category: ($event || '').toUpperCase() })" />
-            }</div>
-          <div class="field"><label for="r-party">Aan wie</label>
-            <input class="input" id="r-party" placeholder="bijv. Immo Ham" [ngModel]="draft().party" (ngModelChange)="patch({ party: $event })" /></div>
-          <div class="field"><label class="req" for="r-amount">Bedrag excl. btw</label>
-            <span class="fin-money"><i>€</i><input class="input num right" id="r-amount" type="number" min="0" step="0.01" inputmode="decimal"
-                   [ngModel]="draft().amountExclEur || null" (ngModelChange)="patch({ amountExclEur: +($event || 0) })" /></span></div>
-          <div class="field"><label for="r-vat">Btw</label>
-            <span class="fin-money">
-              <span class="fin-quick" role="group" aria-label="Btw kiezen">
-                <button type="button" [class.on]="draft().vatPct === 21" (click)="patch({ vatPct: 21 })">21</button>
-                <button type="button" [class.on]="draft().vatPct === 6" (click)="patch({ vatPct: 6 })">6</button>
-                <button type="button" [class.on]="!draft().vatPct" (click)="patch({ vatPct: 0 })">0</button>
-              </span>
-              <input class="input num right" id="r-vat" type="number" min="0" max="100" step="0.5" inputmode="decimal"
-                     [ngModel]="draft().vatPct ?? 0" (ngModelChange)="patch({ vatPct: +($event || 0) })" /><i>%</i></span>
-            <span class="hint">Incl. btw: {{ inclOf(draft()) | eur }}</span></div>
-          <div class="field span-2"><span class="label req">Hoe vaak</span>
-            <div class="fin-chips" role="group" aria-label="Ritme">
-              @for (option of intervals; track option.code) {
-                <button type="button" class="fin-chip" [class.on]="draft().interval === option.code" (click)="patch({ interval: option.code })" [title]="option.hint">{{ option.label }}</button>
-              }
-            </div>
-            <span class="hint">≈ {{ monthly() | eur: 0 }} per maand · {{ yearly() | eur: 0 }} per jaar, excl. btw</span></div>
-          <div class="field"><label class="req" for="r-start">Eerste keer op</label>
+            @if (customCategory()) { <input class="input" aria-label="Eigen categorie" placeholder="bijv. OPLEIDING" [ngModel]="draft().category" (ngModelChange)="patch({ category: ($event || '').toUpperCase() })" /> }</label>
+          <label class="fin-field"><span>Aan wie</span>
+            <input class="input" placeholder="bijv. Immo Ham" [ngModel]="draft().party" (ngModelChange)="patch({ party: $event })" /></label>
+          <div class="fin-field"><span class="req">Eerste keer op</span>
             <app-date-field fieldId="r-start" [value]="draft().startDate" (valueChange)="patch({ startDate: $event })" />
-            @if (backlog() > 0 && !draft().id) { <span class="hint fin-hint--warn">{{ backlog() }} {{ backlog() === 1 ? 'periode' : 'periodes' }} tot vandaag worden meteen geboekt.</span> }</div>
-          <div class="field"><label for="r-end">Laatste keer op <span class="opt"></span></label>
+            @if (backlog() > 0 && !draft().id) { <span class="fin-hint fin-hint--warn">{{ backlog() }} {{ backlog() === 1 ? 'periode' : 'periodes' }} tot vandaag worden meteen geboekt.</span> }</div>
+          <div class="fin-field"><span>Laatste keer op</span>
             <app-date-field fieldId="r-end" [value]="draft().endDate ?? ''" (valueChange)="patch({ endDate: $event || null })" />
-            <span class="hint">{{ draft().endDate ? 'Daarna stopt de reeks vanzelf.' : 'Leeg: loopt door tot je ze pauzeert.' }}</span></div>
-          <div class="field span-2 fin-switches">
-            <label class="fin-switch"><input type="checkbox" [ngModel]="draft().autoPaid" (ngModelChange)="patch({ autoPaid: $event })" />
-              <span><b>Domiciliëring of doorlopende opdracht</b><small>De geboekte kost staat meteen op betaald.</small></span></label>
-            @if (draft().id) {
-              <label class="fin-switch"><input type="checkbox" [ngModel]="draft().active" (ngModelChange)="patch({ active: $event })" />
-                <span><b>Actief</b><small>Uitgevinkt: gepauzeerd, er wordt niets meer geboekt.</small></span></label>
-            }
-          </div>
-          <div class="field"><label for="r-channel">Hoort bij verkoopkanaal <span class="opt"></span></label>
-            <select class="select" id="r-channel" [ngModel]="draft().salesChannel ?? ''" (ngModelChange)="patch({ salesChannel: $event || null })">
+            <span class="fin-hint">{{ draft().endDate ? 'Daarna stopt de reeks vanzelf.' : 'Leeg: loopt door tot je ze pauzeert.' }}</span></div>
+        </div>
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <label class="fin-field fin-field--switch fin-field--wide"><span>Domiciliëring of doorlopende opdracht<small>De geboekte kost staat meteen op betaald.</small></span>
+            <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [ngModel]="draft().autoPaid" (ngModelChange)="patch({ autoPaid: $event })" /></label>
+          @if (draft().id) {
+            <label class="fin-field fin-field--switch fin-field--wide"><span>Actief<small>{{ activeHint() }}</small></span>
+              <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [ngModel]="draft().active" (ngModelChange)="patch({ active: $event })" /></label>
+          }
+        </div>
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <label class="fin-field"><span>Hoort bij verkoopkanaal</span>
+            <select class="select" [ngModel]="draft().salesChannel ?? ''" (ngModelChange)="patch({ salesChannel: $event || null })">
               <option value="">Algemene kost</option>
               @for (channel of channels; track channel.code) { <option [value]="channel.code">{{ channel.label }}</option> }
-            </select></div>
-          <div class="field"><label for="r-ref">Referentie <span class="opt"></span></label>
-            <input class="input" id="r-ref" placeholder="contractnummer, klantnummer" [ngModel]="draft().reference" (ngModelChange)="patch({ reference: $event })" /></div>
-          <div class="field span-2"><label for="r-notes">Notities <span class="opt"></span></label>
-            <textarea class="textarea" id="r-notes" rows="2" [ngModel]="draft().notes" (ngModelChange)="patch({ notes: $event })"></textarea></div>
+            </select></label>
+          <label class="fin-field"><span>Referentie</span>
+            <input class="input" placeholder="contractnummer, klantnummer" [ngModel]="draft().reference" (ngModelChange)="patch({ reference: $event })" /></label>
+        </div>
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <label class="fin-field fin-field--wide fin-field--stack"><span>Notities</span>
+            <textarea class="textarea" rows="2" [ngModel]="draft().notes" (ngModelChange)="patch({ notes: $event })"></textarea></label>
         </div>
         @if (preview().length) {
-          <p class="fin-note">Volgende boekingen: @for (date of preview(); track date; let last = $last) {<b>{{ date | dateNl }}</b>@if (!last) {, }}</p>
+          <p class="fin-hint fin-field--wide">Volgende boekingen: @for (date of preview(); track date; let last = $last) {<b>{{ date | dateNl }}</b>@if (!last) {, }}</p>
         }
       </div>
       <div foot style="display:contents">
         @if (draft().id) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteRecurring(draft())">Verwijderen</button> }
         <span class="spacer"></span>
-        <button class="btn" type="button" (click)="state.recurringDraft.set(null)">Annuleren</button>
         <button class="btn btn--primary" type="button" [disabled]="state.saving() || !canSave()" (click)="state.saveRecurring(draft())">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaren' : 'Instellen' }}</button>
       </div>
     </app-sheet>
@@ -93,7 +93,7 @@ export class RecurringSheet {
   readonly channels = SALES_CHANNELS;
   readonly intervals = INTERVALS;
   readonly inclOf = inclOf;
-  readonly draft = linkedSignal<RecurringCost>(() => this.state.recurringDraft() ?? blankRecurring());
+  readonly draft = linkedSignal<RecurringCost>(() => this.state.recurringDraft() ?? blankRecurring(this.state.today()));
   readonly customCategory = signal(false);
   readonly categories = computed(() => categoryChoices([...this.state.costs().map((cost) => cost.category), ...this.state.recurring().map((row) => row.category)]));
   readonly categoryChoice = computed(() => {
@@ -106,13 +106,21 @@ export class RecurringSheet {
   /** How many periods a start in the past books straight away. */
   readonly backlog = computed(() => {
     const draft = this.draft();
-    return draft.startDate && draft.startDate < this.state.today ? occurrencesBetween(draft, draft.startDate, this.state.today).length : 0;
+    return draft.startDate && draft.startDate < this.state.today() ? previewBacklog({ ...draft, id: null }, this.state.today()) : 0;
+  });
+  /** A paused definition switched back on books its missed periods on save (confirmed first, as on the row). */
+  readonly resuming = computed(() => this.state.resumeBacklog(this.draft()));
+  readonly activeHint = computed(() => {
+    const draft = this.draft();
+    const missed = this.resuming();
+    if (missed > 0) return `Bewaren hervat de reeks en boekt meteen ${missed} gemiste ${missed === 1 ? 'periode' : 'periodes'}.`;
+    return draft.active ? 'Wordt op haar dagen geboekt.' : 'Gepauzeerd: er wordt niets geboekt. Hervatten boekt gemiste periodes meteen.';
   });
   /** The first three occurrences still ahead. */
   readonly preview = computed(() => {
     const draft = this.draft();
     if (!draft.startDate || !draft.interval) return [];
-    const from = draft.nextDate && draft.nextDate > this.state.today ? draft.nextDate : this.state.today;
+    const from = draft.nextDate && draft.nextDate > this.state.today() ? draft.nextDate : this.state.today();
     return occurrencesBetween(draft, from, addDays(from, 800)).slice(0, 3);
   });
   readonly canSave = computed(() => {

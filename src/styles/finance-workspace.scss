@@ -1,160 +1,279 @@
-/* Scoped to the finance workspace so shared sheets and other modules keep their layout. */
+/* ==========================================================================
+   Kosten & bank (/costs). Everything is scoped under the page host
+   (#finance-workspace); the frame, tables, toolbar, inspector and phone
+   chrome come from the workspace kit (workspace-kit.scss). This partial
+   sets the column tracks of each table (--wk-cols, --wk-group-span), the
+   parts the kit has no class for, and the shared bits of the sheets.
+   The sidebar is pure kit (.wk-side) and needs nothing here. The phone
+   specifics are in finance-phone.scss.
+   ========================================================================== */
+
+/* Bedrijfskosten without Referentie and Kanaal: beside the inspector, and below a 1320px pane. */
+@mixin costs-without-reference {
+  --wk-cols: 28px 84px minmax(170px, 1fr) minmax(0, 140px) 40px 100px 88px 108px 112px; --wk-group-span: 6;
+  .fin-sum--excl { grid-column: 6; } .fin-sum--vat { grid-column: 7; } .fin-sum--incl { grid-column: 8; }
+}
+
 #finance-workspace {
-  display: block; min-width: 0;
-  .fin, .fin-head { max-width: 1240px; }
-  .fin { gap: 20px; padding-top: 12px; }
-  .fin-head { padding-top: 28px; align-items: center; }
-  .fin-head__copy p { max-width: 560px; line-height: 1.5; }
-  .fin-panel { padding: 22px; box-shadow: 0 3px 16px rgb(35 30 23 / 3%); }
-  .fin-panel__head { align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
-  .fin-panel__head h2 { font-size: 18px; letter-spacing: -.025em; }
-  .fin-panel__hint, .fin-empty { line-height: 1.6; }
-  .fin-panel__hint { margin: 10px 0; }
-  .fin-kpi { padding: 16px; gap: 6px; }
-  .fin-kpi strong { white-space: normal; overflow: visible; overflow-wrap: anywhere; font-size: clamp(18px, 2vw, 26px); }
-  .fin-kpi span { white-space: normal; overflow: visible; line-height: 1.45; }
-  app-finance-overview, app-bank-panel { display: grid; gap: 20px; min-width: 0; }
-  .fin-cols { align-items: start; gap: 20px; }
-  button, a, summary { -webkit-tap-highlight-color: transparent; }
-  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
-  button:disabled { cursor: wait; }
-  .finance-sync { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; }
-  .finance-sync button { min-height: 32px; }
-  .finance-alert, .finance-setup { padding: 16px 18px; border: 1px solid #e9d7b5; border-radius: 16px; background: #fff8eb; color: #735122; font-size: 13px; }
-  .finance-alert p, .finance-setup p { margin: 5px 0 8px; line-height: 1.55; }
-  .finance-setup { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-  .finance-setup .btn { flex: none; }
-  .finance-loading { padding: 40px 24px; text-align: center; color: var(--muted); }
-  .finance-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 10px 16px 0; padding: 6px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
-  .finance-nav button { display: flex; min-height: 46px; align-items: center; justify-content: center; gap: 6px; padding: 8px 4px; border: none; border-radius: 12px; color: var(--muted); background: transparent; font: inherit; font-size: 12px; font-weight: 650; }
-  .finance-nav button.active { color: var(--rose-dark); background: var(--rose-soft); }
-  .finance-nav app-icon { flex: none; }
-  .finance-snapshot { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: var(--surface); }
-  .finance-balance { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 13px; padding: 26px; border: none; text-align: left; font: inherit; color: #fff; background: #292824; cursor: pointer; }
-  .finance-eyebrow { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #d0cdc5; font-weight: 650; }
-  .finance-balance > strong { font-size: clamp(26px, 3vw, 38px); font-weight: 650; letter-spacing: -.045em; line-height: 1.15; overflow-wrap: anywhere; }
-  .finance-balance > span:not(.finance-eyebrow) { color: #c8c7bd; line-height: 1.5; font-size: 12px; max-width: 320px; }
-  .finance-balance > b { display: flex; justify-content: space-between; gap: 20px; width: 100%; margin-top: 12px; font-size: 12px; color: #e7d5a9; }
-  .finance-position { display: grid; padding: 8px 24px; }
-  .finance-position > button, .finance-position > a { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-width: 0; padding: 19px 0; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); font: inherit; background: transparent; text-align: left; text-decoration: none; cursor: pointer; }
-  .finance-position > :last-child { border-bottom: 0; }
-  .finance-position span { display: grid; gap: 5px; min-width: 0; }
-  .finance-position b { font-size: 14px; font-weight: 650; }
-  .finance-position small { font-size: 11px; color: var(--muted); line-height: 1.5; }
-  .finance-position strong { flex: none; font-size: 21px; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-  .finance-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-  .finance-actions > button { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); font: inherit; text-align: left; cursor: pointer; color: var(--ink); }
-  .finance-actions > button:hover { border-color: var(--rose); background: var(--rose-soft); }
-  .finance-actions > button > span:nth-child(2) { display: grid; flex: 1; gap: 5px; }
-  .finance-actions b { font-size: 13px; }
-  .finance-actions small { font-size: 11px; color: var(--muted); line-height: 1.5; }
-  .finance-action-icon { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 10px; background: var(--surface-2); font-size: 21px; color: var(--rose-dark); }
-  .finance-attention { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
-  .finance-equation { margin: 16px 0; display: grid; gap: 12px; font-size: 12px; }
-  .finance-equation > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
-  .finance-equation dt { color: var(--muted); line-height: 1.5; }
-  .finance-equation dd { margin: 0; flex: none; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .finance-equation__subtotal { padding-top: 10px; border-top: 1px solid var(--line); }
-  .finance-equation__total { padding: 13px 14px; border-radius: 12px; background: var(--rose-soft); }
-  .finance-equation__total dt { font-weight: 650; color: var(--rose-dark); }
-  .finance-equation__total dd { font-size: 18px; color: var(--rose-dark); }
-  .finance-equation .finance-negative { color: var(--danger, #b3261e); }
-  .finance-explainer { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-  .finance-explainer summary, .finance-help summary { min-height: 28px; font-weight: 650; cursor: pointer; color: var(--ink-2); }
-  .finance-explainer p { margin: 10px 0 0; line-height: 1.6; }
-  .finance-placeholder { padding: 24px 16px; border: 1px dashed var(--line-strong); border-radius: 14px; background: var(--surface-2); margin: 16px 0; font-size: 13px; }
-  .finance-placeholder p { color: var(--muted); line-height: 1.6; margin: 8px 0 14px; }
-  .finance-receipt-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; padding: 8px 0; }
-  .finance-receipt-total strong { font-size: 32px; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
-  .finance-receipt-total span { color: var(--muted); font-size: 12px; }
-  .finance-breakdown { display: grid; gap: 10px; margin-top: 20px; padding: 16px; border-radius: 12px; background: var(--surface-2); font-size: 12px; }
-  .finance-breakdown > b { margin-bottom: 2px; }
-  .finance-breakdown > div { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); }
-  .finance-breakdown strong { color: var(--ink-2); font-variant-numeric: tabular-nums; }
-  .finance-receivable-split { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 20px; align-items: center; }
-  .finance-receivable-split > div { display: grid; gap: 6px; border-right: 1px solid var(--line); }
-  .finance-receivable-split span { color: var(--muted); font-size: 12px; }
-  .finance-receivable-split strong { font-size: 24px; font-variant-numeric: tabular-nums; }
-  .finance-receivable-split p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
-  .finance-bank-summary { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 12px; }
-  .finance-bank-summary > * { display: grid; gap: 7px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; font: inherit; color: var(--ink); }
-  .finance-bank-summary .finance-bank-total { background: #292824; color: #fff; cursor: pointer; }
-  .finance-bank-summary span { font-size: 12px; }
-  .finance-bank-summary strong { font-size: clamp(24px, 2.5vw, 32px); letter-spacing: -.04em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .finance-bank-summary small { font-size: 11px; color: var(--muted); line-height: 1.5; }
-  .finance-bank-total small { color: #c8c7bd; }
-  .finance-bank-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 5px; gap: 5px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--line); }
-  .finance-bank-tabs button { display: grid; gap: 5px; padding: 14px 10px; border: 1px solid transparent; border-radius: 12px; color: var(--muted); background: transparent; font: inherit; cursor: pointer; }
-  .finance-bank-tabs b { font-size: 13px; font-weight: 650; }
-  .finance-bank-tabs span { font-size: 11px; }
-  .finance-bank-tabs button.active { background: var(--surface); color: var(--rose-dark); border-color: var(--line); box-shadow: 0 2px 5px rgb(0 0 0 / 4%); }
-  [hidden] { display: none !important; }
-  .finance-help { margin-top: 18px; padding: 18px 22px; font-size: 12px; }
-  .finance-help p, .finance-help li { color: var(--muted); line-height: 1.7; }
-  .finance-help ol { padding-left: 20px; display: grid; gap: 10px; }
-  .finance-help li b { color: var(--ink-2); }
-  .finance-inline-note { background: #fff8eb; padding: 14px; border-radius: 12px; font-size: 12px; color: #735122; line-height: 1.6; }
-  .finance-accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; margin-top: 20px; }
-  .finance-account { padding: 18px; border: 1px solid var(--line); border-radius: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
-  .finance-account > header { display: flex; width: 100%; align-items: flex-start; justify-content: space-between; gap: 8px; }
-  .finance-account > header b { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
-  .finance-status { padding: 4px 8px; border-radius: 8px; background: var(--surface-2); font-size: 10px; color: var(--muted); flex: none; }
-  .finance-status--warn { color: #735122; background: #fff0d5; }
-  .finance-account__amount { font-size: 27px; letter-spacing: -.035em; overflow-wrap: anywhere; max-width: 100%; }
-  .finance-account .finance-equation { width: 100%; margin: 5px 0; }
-  .finance-account > small { font-size: 11px; color: var(--muted); line-height: 1.5; }
-  .finance-account .btn { margin-top: auto; }
-  .fin-reading { gap: 12px; min-height: 66px; }
-  .fin-reading__body small, .fin-reading__body b { white-space: normal; overflow-wrap: anywhere; }
-  @media (max-width: 1099px) {
-    .finance-actions { grid-template-columns: 1fr; }
-    .finance-snapshot { grid-template-columns: 1fr 1.2fr; }
-    .finance-position strong { font-size: 18px; }
-    .finance-position { padding: 8px 18px; }
-    .finance-receivable-split { grid-template-columns: 1fr 1fr; }
-    .finance-receivable-split p { grid-column: 1 / -1; }
-    .finance-receivable-split > div:nth-child(2) { border: 0; }
+  display: block;
+  min-width: 0;
+
+  /* ---- shared small parts */
+  .fin-hidden { display: none; }
+  .fin-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .fin-hint { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .fin-hint--warn, .fin-warn-text { color: var(--warn); }
+  .fin-error { margin: 0 0 12px; color: var(--danger); font-size: 13px; line-height: 1.5; }
+  .fin-more { display: flex; justify-content: center; padding: 16px 0; }
+  .fin-note-line { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
+  .fin-inline-icon { margin-left: 5px; color: var(--muted); vertical-align: -2px; }
+  .fin-clip { display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: 12px; }
+  .fin-td-end { display: flex; justify-content: flex-end; }
+  .fin-chev { color: var(--muted-2); }
+  .fin-age { margin-left: 4px; }
+  .fin-foot-link { margin: 20px 0 0; text-align: right; }
+  .fin-pay-line { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; width: 100%; padding: 6px 0;
+    border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; font: inherit; font-size: 13px; text-align: left;
+    b { font-variant-numeric: tabular-nums; }
+    > span:nth-child(2) { min-width: 0; overflow: hidden; color: var(--ink-2); text-overflow: ellipsis; white-space: nowrap; }
+    &:last-child { border-bottom: 0; } }
+  .fin-pay-line--link { cursor: pointer; &:hover { background: var(--surface-2); } }
+
+  /* ---- a card that sits in a grid (a .wk-card would add its stacking margin) */
+  .fin-card { min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 4%); }
+
+  /* ---- desk frame: toolbar title, strip tools, loading */
+  .fin-toolbar__title { flex: none; }
+  .fin-strip__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+  .fin-loading { display: grid; gap: 16px; }
+  .fin-range { min-width: 280px; }
+  .fin-filter-pop { width: 300px; }
+
+  /* ---- fields (popovers and sheets) */
+  .fin-field { display: grid; gap: 6px; min-width: 0; font-size: 13px;
+    > span:first-child { color: var(--ink-2); font-weight: 650; }
+    small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+    .select, .input, .textarea { width: 100%; } }
+  .fin-field--switch { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .fin-field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .fin-field__label { display: block; width: 100%; color: var(--ink-2); font-size: 13px; font-weight: 650; }
+  .fin-checkbox { width: 18px; height: 18px; margin: 0; accent-color: var(--rose); cursor: pointer; }
+  .fin-switch { position: relative; width: 34px; height: 20px; margin: 0; border-radius: 999px; background: var(--line-strong); appearance: none; -webkit-appearance: none; cursor: pointer; transition: background .16s;
+    &::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(26 22 20 / 25%); transition: transform .16s; }
+    &:checked { background: var(--rose); } &:checked::after { transform: translateX(14px); } &:disabled { opacity: .5; } }
+  .fin-choice { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fin-choice__chip { min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    &[aria-pressed='true'] { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); } }
+  .fin-inline-btn { justify-self: start; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink-2); font: inherit; font-size: 14px; cursor: pointer; }
+  .fin-amount { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 4px; padding: 6px 0 2px;
+    i { color: var(--muted); font-size: 22px; font-style: normal; }
+    input { width: 7.5em; max-width: 70%; padding: 0; border: 0; border-bottom: 2px solid var(--line); background: transparent; color: var(--ink); font: inherit; font-size: 34px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.02em; text-align: center; outline: none;
+      &:focus { border-bottom-color: var(--rose); } } }
+  .fin-amount--left { justify-content: flex-start; input { text-align: left; font-size: 26px; } }
+  .fin-vat-other { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; .input { width: 90px; } i { color: var(--muted); font-style: normal; } }
+  .fin-preview { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); strong { font-size: 22px; font-variant-numeric: tabular-nums; } span { color: var(--muted); font-size: 12.5px; } }
+  .fin-foot-note { flex: 1; color: var(--muted); font-size: 12px; }
+
+  /* ---- sheets. A .fin-group is an inset .ios-group on a phone and has no box on a desk, where its fields stay in the .fin-form grid. */
+  .fin-sheet { display: grid; gap: 14px; }
+  .fin-group:not(.ios-group) { display: contents; }
+  .fin-reset { justify-self: start; }
+  .fin-sign { flex: none; align-self: center; min-width: 40px; height: 32px; margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+    color: var(--ink-2); font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; &:hover { border-color: var(--line-strong); } }
+  .fin-sheet__lead { margin: 0; color: var(--ink-2); font-size: 14px; font-weight: 600; }
+  .fin-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fin-field--wide { grid-column: 1 / -1; }
+  .fin-keys { display: grid; gap: 2px; margin: 0;
+    > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+    dt { display: flex; gap: 4px; } dd { margin: 0; font-size: 13.5px; } }
+  .fin-help { font-size: 14px; line-height: 1.55;
+    ol { display: grid; gap: 6px; margin: 0; padding-left: 20px; font-weight: 600; }
+    h3 { margin: 6px 0 0; font-size: 14px; } p { margin: 0; color: var(--ink-2); } }
+
+  /* ---- documents on a cost */
+  .fin-docs { gap: 8px; }
+  .fin-docs__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: 13px; font-weight: 650; }
+  .fin-doc { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+  .fin-doc--pending { border-style: dashed; background: transparent; }
+  .fin-doc__open { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    > span { display: grid; min-width: 0; } b, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } b { font-size: 13px; } small { color: var(--muted); font-size: 11.5px; } }
+  .fin-doc__icon { display: grid; flex: none; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer;
+    &:hover { background: var(--surface); color: var(--ink); } }
+  .fin-dropzone { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; border: 1.5px dashed var(--line-strong); border-radius: 12px; color: var(--muted); font-size: 12.5px;
+    &.is-over { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); } }
+  .fin-doc-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ---- inspector bodies */
+  .fin-insp-hero { display: grid; justify-items: start; gap: 4px; }
+  .fin-insp-party { color: var(--muted); font-size: 13px; }
+  .fin-insp-amount { font-size: 24px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .fin-insp-state { color: var(--muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
+  .fin-insp-missing { padding: 24px 18px; }
+  .fin-notes { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+  .fin-terms { display: grid; gap: 2px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 12.5px;
+    li { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); } }
+
+  /* ---- allocation dialog */
+  .fin-alloc__movement { display: grid; gap: 3px; padding: 14px; border-radius: 12px; background: var(--surface-2);
+    strong { font-size: 24px; font-variant-numeric: tabular-nums; } span, small { color: var(--muted); font-size: 12.5px; } }
+  .fin-alloc__label { margin: 4px 0 0; font-size: 13px; font-weight: 700; }
+  .fin-alloc__cards { display: grid; gap: 8px; }
+  .fin-match { display: grid; gap: 3px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer;
+    b { font-size: 14px; } span, small { color: var(--muted); font-size: 12.5px; }
+    &[aria-pressed='true'] { border-color: var(--rose); background: var(--rose-soft); box-shadow: inset 0 0 0 1px var(--rose); } }
+  .fin-match__kind { color: var(--ink-2) !important; font-weight: 650; }
+  .fin-check { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.5; input { flex: none; width: 18px; height: 18px; margin-top: 1px; accent-color: var(--rose); } }
+
+  /*
+   * ---- table tracks: header, groups and rows share --wk-cols. Every set
+   * must fit its pane: the tracks, the gaps (12px) and the row padding (2 ×
+   * 16px) within the pane minus its own padding (2 × 24px). Text columns
+   * shrink (minmax(0, …)) before anything overflows; below each container
+   * threshold the columns tagged data-hide (md 1024, sm 860, xs 720) go.
+   */
+  .fin-table--payables { --wk-cols: 28px 104px minmax(180px, 1fr) 92px minmax(0, 170px) 40px 124px 116px; --wk-group-span: 7; .fin-group__sum { grid-column: 7; } }
+  /* Bedrijfskosten: Referentie and Kanaal go first, below a 1320px pane (.fin-hide-lg) or beside the inspector. */
+  .fin-table--costs { --wk-cols: 28px 84px minmax(180px, 1fr) minmax(0, 150px) minmax(0, 110px) minmax(0, 104px) 40px 100px 88px 108px 112px; --wk-group-span: 8;
+    .fin-sum--excl { grid-column: 8; } .fin-sum--vat { grid-column: 9; } .fin-sum--incl { grid-column: 10; } }
+  .wk-body--split .fin-table--costs { @include costs-without-reference; }
+  .fin-table--receivables { --wk-cols: 120px minmax(160px, 1fr) 140px 132px 108px 108px 116px 24px; }
+  .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) 124px 36px; }
+  .fin-table--moves { --wk-cols: 150px minmax(180px, 1fr) minmax(0, 150px) 170px 128px 36px; }
+  .wk-body--split .fin-table--moves { --wk-cols: 140px minmax(160px, 1fr) 150px 120px 36px; }
+  .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px 36px; }
+  .fin-table--unbanked { --wk-cols: 92px minmax(140px, 1fr) 96px 112px 96px; }
+  .fin-table--recent { --wk-cols: 84px minmax(180px, 1fr) 104px 120px; }
+  .fin-table--vat { --wk-cols: minmax(160px, 1fr) 112px 104px 112px 132px 84px; }
+  /* Vaste kosten: sized by its own column (container fin-rec), since the agenda may sit beside it. */
+  .fin-recurring__main { min-width: 0; container: fin-rec / inline-size; }
+  .fin-table--recurring { --wk-cols: minmax(180px, 1fr) minmax(0, 140px) 108px 124px 104px 108px 96px 64px; }
+  @container fin-rec (max-width: 959.98px) {
+    .fin-table--recurring { --wk-cols: minmax(170px, 1fr) 104px 116px 104px 108px 60px; }
+    .fin-rec-lg { display: none !important; }
   }
-  @media (max-width: 679px) {
-    .fin { gap: 14px; padding-top: 8px; }
-    .fin-panel { padding: 17px 15px; border-radius: 18px; }
-    .fin-panel__head h2 { font-size: 17px; }
-    .fin-panel__head .linklike { min-height: 36px; display: inline-flex; align-items: center; }
-    app-finance-overview, app-bank-panel { gap: 14px; }
-    .finance-snapshot { grid-template-columns: 1fr; border-radius: 18px; }
-    .finance-balance { padding: 22px; gap: 10px; }
-    .finance-balance > b { margin-top: 4px; }
-    .finance-position { padding: 0 17px; }
-    .finance-position > button, .finance-position > a { padding: 17px 0; gap: 10px; }
-    .finance-position strong { font-size: 19px; }
-    .finance-position b { font-size: 13px; }
-    .finance-bank-summary { grid-template-columns: 1fr 1fr; gap: 8px; }
-    .finance-bank-summary > * { padding: 15px; border-radius: 15px; }
-    .finance-bank-total { grid-column: 1 / -1; }
-    .finance-bank-summary > div { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 10px; }
-    .finance-bank-summary > div strong { font-size: 24px; }
-    .finance-bank-summary > div small { grid-column: 1 / -1; }
-    .finance-bank-tabs { order: -1; }
-    .finance-setup { flex-direction: column; align-items: flex-start; gap: 6px; }
-    .finance-bank-tabs { gap: 2px; padding: 4px; border-radius: 12px; }
-    .finance-bank-tabs button { padding: 12px 3px; min-height: 48px; }
-    .finance-bank-tabs b { font-size: 11px; overflow-wrap: anywhere; }
-    .finance-bank-tabs span { display: none; }
-    .finance-equation { font-size: 11.5px; }
-    .finance-equation__total { padding: 12px 10px; }
-    .finance-equation__total dd { font-size: 16px; }
-    .finance-accounts { grid-template-columns: minmax(0, 1fr); }
-    .finance-help { padding: 16px; }
-    .finance-receivable-split { gap: 14px; }
-    .finance-receivable-split strong { font-size: 23px; }
-    .fin-reading { grid-template-columns: minmax(0, 1fr) auto; }
-    .fin-reading__date { grid-column: 1 / -1; }
+  @container fin-rec (max-width: 759.98px) {
+    .fin-table--recurring { --wk-cols: minmax(150px, 1fr) 100px 112px 100px 56px; }
+    .fin-rec-md { display: none !important; }
   }
-  @media (max-width: 359px) {
-    .finance-nav { margin-left: 10px; margin-right: 10px; }
-    .finance-nav button { font-size: 11px; gap: 4px; }
-    .finance-bank-tabs b { font-size: 10px; }
-    .finance-position strong { font-size: 17px; }
-    .finance-equation > div { gap: 8px; }
+  @container fin-rec (max-width: 599.98px) {
+    .fin-table--recurring { --wk-cols: minmax(130px, 1fr) 104px 100px 56px; }
+    .fin-rec-sm { display: none !important; }
   }
+  .fin-group__sum, .fin-sum { font-variant-numeric: tabular-nums; }
+  .fin-status { display: flex; align-items: center; gap: 6px; }
+  .fin-status__pay { display: none; }
+  .fin-row:hover .fin-status__pay, .fin-row:focus-within .fin-status__pay { display: inline-flex; }
+  .fin-row:hover .fin-status__open, .fin-row:focus-within .fin-status__open { display: none; }
+  .fin-marker { border: 0; cursor: pointer; }
+  .fin-link-btn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+  .fin-pending { padding: 8px var(--wk-pad-x); }
+  .fin-record { grid-column: 1 / -1; color: var(--muted); }
+
+  /* ---- Uitgaven › Containers: the unfolded row */
+  .fin-expand { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 12px var(--wk-pad-x) 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+  .fin-expand__streams { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .fin-expand__payments { display: grid; align-content: start; gap: 4px; font-size: 13px; > .wk-link { justify-self: start; margin-top: 6px; } }
+  .fin-stream { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: 12.5px; }
+  .fin-stream__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; b { font-size: 13px; } }
+  .fin-stream__figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0;
+    dt { color: var(--muted); font-size: 11px; } dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; } }
+  .fin-stream__term { display: flex; justify-content: space-between; gap: 8px; padding-top: 4px; color: var(--ink-2); }
+
+  /* ---- Overzicht */
+  .fin-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .fin-tile { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s;
+    &:hover { border-color: var(--line-strong); box-shadow: 0 4px 14px rgb(26 22 20 / 7%); } }
+  .fin-tile__label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+  .fin-tile__value { overflow: hidden; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-tile__sub { color: var(--muted); font-size: 12px; line-height: 1.4; &.is-warn { color: var(--warn); } }
+  .fin-tile--ink { border-color: #2c2622; background: #1f1b19; color: #fff;
+    .fin-tile__label, .fin-tile__sub { color: rgb(255 255 255 / 66%); } .fin-tile__sub.is-warn { color: #f4cf9a; }
+    .fin-tile__sub.fin-tile__action { color: #fff; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; } }
+  .fin-ov-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+  .fin-attention__list { margin: 0; padding: 0 0 6px; list-style: none; }
+  .fin-attention__row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 6px 16px; border-top: 1px solid var(--line); }
+  .fin-attention__icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, var(--tone) 14%, var(--surface)); color: var(--tone); }
+  .fin-attention__text { display: grid; min-width: 0; b { font-size: 14px; font-weight: 600; } small { color: var(--muted); font-size: 12px; } }
+  .fin-attention__amount { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fin-attention__more { margin: 4px 16px 12px; }
+
+  /* ---- Bank › Rekeningen */
+  .fin-bank-head { display: grid; gap: 2px; margin-bottom: 16px; }
+  .fin-bank-head__label { color: var(--muted); font-size: 13px; font-weight: 650; }
+  .fin-bank-head__value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .fin-bank-head__sub { color: var(--muted); font-size: 12.5px; }
+  .fin-accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .fin-account { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+  .fin-account__top { display: flex; align-items: center; gap: 8px; }
+  .fin-account__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; small { margin-left: 4px; color: var(--muted); } }
+  .fin-account__value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .fin-account__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+  .fin-account--add { align-items: center; justify-content: center; min-height: 140px; border: 1.5px dashed var(--line-strong); background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer;
+    &:hover { border-color: var(--rose); color: var(--rose-dark); } }
+  .fin-unbanked .fin-hint { padding: 0 16px 10px; }
+
+  /* ---- Uitgaven › Vaste kosten */
+  .fin-recurring { display: grid; gap: 16px; }
+  .fin-agenda .wk-section__title { margin-top: 10px; }
+
+  /* ---- Analyse */
+  .fin-analysis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+  .fin-share__list { display: grid; margin: 0; padding: 0 16px 14px; list-style: none;
+    li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); &:last-child { border-bottom: 0; } }
+    .wk-meter { grid-column: 1 / -1; height: 4px; margin-top: 5px; } }
+  .fin-share__label { display: grid; min-width: 0; b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; } small { color: var(--muted); font-size: 11.5px; } }
+  .fin-share__amount { display: grid; justify-items: end; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; small { color: var(--muted); font-size: 11px; font-weight: 500; } }
+  .fin-share__row-btn { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; width: 100%; padding: 0; border: 0; border-radius: 6px;
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    &:hover b { color: var(--rose-dark); } &:focus-visible { outline: 2px solid var(--rose-dark); outline-offset: 3px; } }
+  .fin-months { display: grid; gap: 4px; }
+  .fin-months__row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 84px 70px; align-items: center; gap: 10px; font-size: 12.5px;
+    strong, small { text-align: right; font-variant-numeric: tabular-nums; } small { color: var(--muted); } }
+  .fin-months__row--quiet { opacity: .5; }
+  .fin-months__label { color: var(--muted); font-weight: 700; }
+  .fin-months__bars { display: grid; gap: 2px; i { display: block; height: 6px; border-radius: 999px; } }
+  .fin-months__this { background: var(--rose); }
+  .fin-months__last { background: var(--line-strong); }
+
+  /* ---- the pane is narrow (a rail and a docked inspector, or a small window) */
+  @container wk-pane (max-width: 1319.98px) {
+    .fin-table--costs { @include costs-without-reference; }
+    .fin-hide-lg { display: none !important; }
+  }
+  @container wk-pane (max-width: 1023.98px) {
+    .fin-table--payables { --wk-cols: 28px 96px minmax(150px, 1fr) 84px minmax(0, 140px) 112px 100px; --wk-group-span: 6; .fin-group__sum { grid-column: 6; } }
+    .fin-table--costs, .wk-body--split .fin-table--costs { --wk-cols: 28px 80px minmax(140px, 1fr) minmax(0, 124px) 96px 104px 108px; --wk-group-span: 5;
+      .fin-sum--excl { grid-column: 5; } .fin-sum--incl { grid-column: 6; } }
+    .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) minmax(0, 130px) 116px 112px 24px; }
+    .fin-table--receipts { --wk-cols: 140px minmax(160px, 1fr) 130px minmax(0, 150px) 116px 36px; }
+    .fin-table--moves { --wk-cols: 140px minmax(160px, 1fr) minmax(0, 150px) 150px 120px 36px; }
+    .fin-table--vat { --wk-cols: minmax(120px, 1fr) 104px 96px 112px 72px; }
+    .fin-ov-grid, .fin-analysis-grid { grid-template-columns: minmax(0, 1fr); }
+    .fin-expand { grid-template-columns: minmax(0, 1fr); }
+  }
+  @container wk-pane (max-width: 859.98px) {
+    .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) 116px 112px 24px; }
+    .fin-table--receipts { --wk-cols: 124px minmax(140px, 1fr) 120px 112px 36px; }
+    .fin-table--moves, .wk-body--split .fin-table--moves { --wk-cols: 124px minmax(140px, 1fr) 120px 112px 36px; }
+    .fin-table--containers { --wk-cols: minmax(160px, 1fr) 104px 108px 108px 36px; }
+  }
+  @container wk-pane (max-width: 719.98px) {
+    .fin-table--payables { --wk-cols: 28px 88px minmax(130px, 1fr) minmax(0, 120px) 104px 96px; --wk-group-span: 5; .fin-group__sum { grid-column: 5; } }
+    .fin-table--costs, .wk-body--split .fin-table--costs { --wk-cols: 28px 72px minmax(120px, 1fr) 100px 100px; --wk-group-span: 4; .fin-sum--incl { grid-column: 4; } }
+    .fin-table--receivables { --wk-cols: 96px minmax(120px, 1fr) 104px 104px 24px; }
+    .fin-table--receipts { --wk-cols: 116px minmax(130px, 1fr) 108px 36px; }
+    .fin-table--moves, .wk-body--split .fin-table--moves { --wk-cols: 100px minmax(120px, 1fr) 104px 104px 36px; }
+    .fin-table--containers { --wk-cols: minmax(130px, 1fr) 100px 100px 36px; }
+    .fin-table--unbanked { --wk-cols: 88px minmax(110px, 1fr) 104px 88px; }
+    .fin-table--recent { --wk-cols: 72px minmax(140px, 1fr) 88px 108px; }
+    .fin-table--vat { --wk-cols: minmax(100px, 1fr) 96px 88px 96px 64px; }
+  }
+  @container wk-pane (min-width: 1100px) {
+    .fin-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .fin-recurring--agenda { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #finance-workspace { .fin-tile, .fin-switch, .fin-switch::after { transition: none; } }
 }

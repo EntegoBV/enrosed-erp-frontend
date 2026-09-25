@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { BankBalance, CompanyCost, RecurringCost } from '../src/app/core/api/models.ts';
 import {
   addDays, bankOverview, cashOutlook, costsCsv, monthlyCostSeries, monthlyEquivalentEur, occurrencesBetween,
-  largestCosts, movementsSince, recurringSummary, stepDate, topParties, upcomingRecurring, vatByQuarter, yearComparison, yearlyEur,
+  largestCosts, movementsSince, previewBacklog, recurringGroups, recurringSummary, stepDate, topParties, upcomingRecurring, vatByQuarter, yearComparison, yearlyEur,
 } from '../src/app/features/finance/finance-metrics.ts';
 
 function definition(input: Partial<RecurringCost> = {}): RecurringCost {
@@ -126,6 +126,37 @@ test('bank history merges account case, whitespace and formatted IBAN aliases wi
 test('the cash outlook takes the open and coming costs off the bank and adds the open invoices', () => {
   assert.equal(cashOutlook(33500.5, 1512.51, 2057, 4200).expectedEur, 34130.99);
   assert.equal(cashOutlook(0, Number.NaN, 10, 0).expectedEur, -10);
+});
+
+test('the outlook also takes the container terms: now before the invoices, later after them', () => {
+  const outlook = cashOutlook(10000, 1000, 500, 4000, 2500, 3000);
+  assert.equal(outlook.afterPayablesEur, 6000);
+  assert.equal(outlook.expectedEur, 7000);
+  assert.equal(outlook.netOpenEur, -3000, 'without a bank reading: receivables minus everything still to pay');
+  assert.deepEqual([outlook.containerNowEur, outlook.containerLaterEur], [2500, 3000]);
+  const fourArguments = cashOutlook(33500.5, 1512.51, 2057, 4200);
+  assert.deepEqual([fourArguments.containerNowEur, fourArguments.containerLaterEur, fourArguments.afterPayablesEur], [0, 0, 29930.99]);
+  assert.equal(cashOutlook(100.1, 0.2, 0, 0, 0.1).afterPayablesEur, 99.8);
+});
+
+test('the backlog counts the periods booked at once: from the start for a new one, from the next date on resume', () => {
+  assert.equal(previewBacklog(definition({ id: null, startDate: '2026-07-15', nextDate: null }), '2026-09-24'), 3);
+  assert.equal(previewBacklog(definition({ id: 4, active: false, startDate: '2026-01-15', nextDate: '2026-08-15' }), '2026-09-24'), 2);
+  assert.equal(previewBacklog(definition({ id: 4, active: false, startDate: '2026-01-24', nextDate: '2026-09-24' }), '2026-09-24'), 1);
+  assert.equal(previewBacklog(definition({ id: 4, startDate: '2026-01-15', nextDate: '2026-10-15' }), '2026-09-24'), 0);
+});
+
+test('recurring definitions group as the server sees them: active, paused, ended', () => {
+  const groups = recurringGroups([
+    definition({ id: 1, nextDate: '2026-10-01' }),
+    definition({ id: 2, active: false, nextDate: '2026-10-01' }),
+    definition({ id: 3, active: false, nextDate: null, lastBookedOn: '2026-06-01' }),
+    definition({ id: 4, active: true, nextDate: null, lastBookedOn: null, endDate: '2026-09-01' }),
+    definition({ id: 5, active: true, nextDate: null, lastBookedOn: null, endDate: null }),
+  ], '2026-09-24');
+  assert.deepEqual(groups.active.map((row) => row.id), [1, 5]);
+  assert.deepEqual(groups.paused.map((row) => row.id), [2]);
+  assert.deepEqual(groups.ended.map((row) => row.id), [3, 4]);
 });
 
 test('the CSV uses semicolons and a decimal comma and quotes what would break a cell', () => {

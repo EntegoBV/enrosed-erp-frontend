@@ -1,1 +1,60 @@
-/* Owned by the Kosten & bank round. Scope every rule under the area host. */
+/* Kosten & bank on a phone (below 680px). The iOS 26 chrome (large title,
+   glass tab bar, inset groups, swipe rows) is the kit's; the kit also hides
+   the ERP tab bar once the page renders .ios-page. These are the few
+   finance parts on top, scoped under the page host. */
+@media (max-width: 679.98px) {
+  #finance-workspace {
+    .fin-ios-search { padding: 0 var(--ios-inset) 8px; }
+    .fin-ios-note { margin: 0 0 12px; }
+    .fin-ios-single, .fin-ios-add, .fin-ios-more { margin-bottom: 22px; }
+    .fin-ios-add .ios-cell { gap: 8px; }
+    .fin-ios-foot { margin: 0 0 24px; text-align: center; }
+    .fin-ios-total { display: grid; gap: 2px;
+      strong { font-size: 30px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
+      small { color: var(--muted); font-size: 13px; }
+      .ios-hero__label { color: var(--muted); } }
+    .fin-wallet-link { display: flex; align-items: center; justify-content: space-between; margin: 10px -18px -18px; padding: 12px 18px; border: 0; border-top: .5px solid var(--ios-sep);
+      background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+    .fin-round { border-radius: 50%; }
+    .fin-wrap { white-space: normal; }
+    .fin-cell-button { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .fin-share-cell .wk-meter { height: 4px; margin-top: 6px; }
+    .fin-chart { padding: 14px 14px 8px; }
+    .fin-chart__head { padding: 0 2px 8px; .wk-card__title { font-size: 15px; } }
+    .fin-foot-link { margin: 0 var(--ios-inset) 24px; text-align: center; }
+    .fin-ios-banner .ios-capsule { flex: none; }
+    .fin-sheet { --ios-inset: 0px; padding: 0 16px; }
+    .fin-form, .fin-field-row { grid-template-columns: minmax(0, 1fr); }
+    .fin-sheet .input, .fin-sheet .select, .fin-sheet .textarea { min-height: 44px; font-size: 16px; }
+    .fin-choice__chip, .fin-inline-btn, .fin-sign { min-height: 44px; font-size: 15px; }
+    .fin-history { margin: 0; }
+    .fin-foot-note { flex-basis: 100%; text-align: center; }
+
+    /* ---- forms, inset grouped (kit sheet rule): label left, value right; chips, segments and notes stack */
+    .fin-group > .fin-field, .fin-group .fin-field-row > .fin-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: var(--ios-row); padding: 4px 16px; font-size: 16px;
+      > span:first-child { flex: none; max-width: 48%; color: var(--ink); font-size: 16px; font-weight: 400; }
+      > .input, > .select, > app-date-field { flex: 1; min-width: 0; }
+      > .input, > .select, app-date-field .input { min-height: 44px; padding: 0; border: 0; border-radius: 0; background-color: transparent; box-shadow: none; text-align: right; text-align-last: right; }
+      > .select { padding-right: 18px; background-position: right 2px center; }
+      app-date-field .input { padding-right: 40px; }
+      > .select + .input { flex-basis: 100%; text-align: left; }
+      > .fin-hint { flex-basis: 100%; padding-bottom: 6px; }
+      > .fin-inline-btn { margin-left: auto; } }
+    .fin-group > .fin-field--switch { flex-wrap: nowrap; justify-content: space-between; padding-block: 8px;
+      > span:first-child { flex: 1; max-width: none; } }
+    .fin-group > .fin-field--stack { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 8px; padding: 12px 16px;
+      > span:first-child { max-width: none; }
+      > .input, > .textarea { text-align: left; text-align-last: auto; }
+      > .textarea { min-height: 64px; padding: 0; border: 0; background: transparent; box-shadow: none; } }
+    .fin-group .fin-field-row { display: grid; gap: 0; }
+    .fin-group .fin-field-row > .fin-field + .fin-field { position: relative;
+      &::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--ios-sep); } }
+    .fin-row-action { display: flex; align-items: center; width: 100%; min-height: var(--ios-row); padding: 0 16px; border: 0; background: none; color: var(--rose); font: inherit; font-size: 16px; text-align: left; cursor: pointer; }
+
+    /* ---- the detail sheet: phone targets */
+    .fin-doc__icon { width: 44px; height: 44px; }
+    .fin-insp-link, .fin-pay-line--link { min-height: 44px; }
+    .fin-insp-link { align-items: center; }
+    .fin-doc-buttons .ios-capsule { flex: 1; }
+  }
+}
