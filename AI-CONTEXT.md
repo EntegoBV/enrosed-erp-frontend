@@ -226,7 +226,8 @@ cijfers'.
   after a failed request (`documentsFailed`), never "no proof". Rows with
   `appMenuTrigger` and their own `(click)` skip `$event.defaultPrevented`,
   the click that trails a long press.
-- Nacalculatie (round 2): `app-purchase-payment-result` always shows the
+- Nacalculatie (round 2, superseded by round 3 below; `app-purchase-payment-result` and
+  `purchase-payment-result-rows.ts` are gone): it always showed the
   equation Enrosed kost + minder betaald − meer betaald − bijkomend = Enrosed
   kost + resultaat (with zeros) and a 'Per ontvanger' list built from the
   ledger by `purchase-payment-result-rows.ts` (same figures and words as
@@ -254,6 +255,62 @@ cijfers'.
   statuses and reconciliationStatusLabel), also after a term-level settle,
   so it appears exactly when 'Afrekening ongedaan maken' does; a ledger row
   that carries the flag says 'Rekent de termijn af' / 'Rekent alles af'.
+- Nacalculatie (round 3): one story on both devices, computed by the pure,
+  node-tested `purchase-nacalc-metrics.ts` (cents, type-only imports) from
+  `PurchaseOrderView` + the payment ledger + `purchaseNacalcSummary(view,
+  ledger)` (+ `PartnerFinancing` when the host has it): state machine
+  concept | provisional | review | final with a state pill and sentence, the
+  headline (Begroot on ordered pieces → Verwachte eindkost / Eindkost →
+  signed Verschil with % → per stuk on ordered or usable pieces), one reason
+  word per payee (`nacalcReason`, precedence additional → incomplete →
+  unbudgeted → review → legacy → partly-settled → open →
+  settled-lower/-higher → none) with at most one action (`payeeRowAction` in
+  the ledger, stamped on every payee as `action`; 'Nakijken…' only for an
+  overpayment, a small difference settles before it is paid, an incomplete
+  payee gets no action), the receipt block (server `receiptVariance` first,
+  reconciliation lines as fallback, over-received value from the order
+  lines, supplier fact, LATER reports shown but never counted), the bridge
+  from 'Calculatie · totaal geland' to 'Begroot extern' ('Afronding' up to €
+  1 before receipt, 'Correctie naar bestelde stuks' after) and on to the
+  eindkost, the explained differences (`purchasePaymentResult`, never budget
+  minus paid), the partner block (costPct ?? 100, sharePct ?? 50, advance on
+  `totalWithSeparateCostsEur`, financing when loaded, short-delivery handoff
+  to the creditnota) and the koersverschil per payment (`paymentFxEur`:
+  stored amountEur minus the foreign amount at the order rate; 0 for EUR or
+  a missing rate). `purchaseNacalc({ view, ledger, summary, partner? })`
+  takes `summary = purchaseNacalcSummary(view, ledger)` from the host (a
+  runtime import would break the node suite) and returns null without a
+  reconciliation or summary (hosts show 'nog niet beschikbaar' +
+  Vernieuwen); `nacalcBridge(view, summary)` likewise; with a null ledger
+  `payees` is null and the rest renders from the server report. Desk: third
+  main view Nacalculatie (⌥3, dot on review) =
+  `app-purchase-nacalc-workbench` (container `nc`; the tables fold on the
+  main column: < 1000 pill and reason under the payee, < 760
+  Afspraak/Begroot/Verschil and text buttons go); the rail's Kosten pane and
+  the Betalingen side card share `app-purchase-nacalc-summary`
+  (`PurchaseNacalcSummaryCard`, 'Volledig ›'); Betalingen is the only place
+  that records money (row 'Noteer ›' → `showPayments(payee)`), settle/undo
+  use the desk's page-level sheets. Phone: `app-purchase-nacalc-overview`
+  replaces the two Kosten cards in the read view and editor step 3 (hero +
+  meter, WAAR HET VERSCHIL ZIT cells → payee sheet, one action cell from the
+  ledger's todos via `todoCopy` (read mode settles in the editor:
+  `?section=payment-result`), ONTVANGST, PER STUK with the bridge
+  disclosure, PER PRODUCT collapsed, PARTNER, TOELICHTING, footer PDF /
+  Betalingen / Kosten & bank); the Betalingen card's closing cell shows the
+  live eindkost. Both roots carry id `purchase-payment-result`; the desk
+  deep link sets `mainView('nacalc')`. Hosts fetch `/partner-financing` once
+  per partner container (editor: effect on the loaded order and its partner;
+  view: after load and partner changes) into `partnerFinancing:
+  PartnerFinancing | null | 'loading' | 'error'`. The payment sheet offers
+  'Afgeschreven in euro' for USD/CNY payments (placeholder and hint =
+  order-rate estimate, non-blocking warn beyond 15 %); the editor sends
+  `amountEur` only when filled in and the currency is not EUR, clears it
+  when the foreign amount changes, prefills it when editing a foreign
+  payment; settle and undo PUT bodies never carry it.
+  `app-purchase-reconciliation` serves Analyses › Inkoop only; styles for
+  the Nacalculatie live in `styles/purchase-nacalc.scss` (.nc-* desk, .np-*
+  phone, .nc-summary), purchase-payments.scss keeps the Betalingen rules and
+  .desk-body--payments (applied for both wide views).
 
 ## Screens and their scenarios
 
@@ -289,6 +346,93 @@ weekly by the backend's Drewry scrape).
   promise chain applying each change to the freshest order. Two quick
   taps used to race and resurrect stale state (pallets came back
   shuffled). Same pattern in the purchase editor. Never bypass it.
+
+### Creditnota's (2026-09-25)
+A third `DocumentType` CREDITNOTA reduces an invoice's claim: lines and
+amounts stay positive, the sign lives in the type (`creditedInvoiceId`,
+`creditReason`, `goodsReturnedAt` on the order;
+`creditNotes[]`/`creditedEur` on invoices, `creditedInvoiceNumber/Status` on
+credit notes; a credit note's `paymentSummary.invoiceTotalEur` is negative
+and `creditEur` is the open tegoed). The pure, node-tested module
+`features/sales/sales-credit-note.ts` is the one place for the rules:
+`isCreditNote` / `isClaimDocument` (an invoice or a credit note is a money
+document — a `docType === 'FACTUUR'` check that means 'money' uses it, one
+that means 'the positive invoice' stays), `canCreateCreditNote`,
+`creditNoteJourney` (Concept → Uitgereikt[· verstuurd] → Verrekend /
+Terugbetaald / Afgehandeld, 'Geannuleerd' stop), `creditNoteSettlement`
+(tegoed = |invoiceTotalEur|, verrekend = rows with `offsetPaymentId`,
+terugbetaald = the other negative rows, open = server `creditEur`),
+`creditNoteNextStep` (issue → apply when the credited invoice still has an
+open amount → refund → done), `creditDraftTotals` (client preview only, cent
+rounding; the server prices at CONTAINER_COST), `creditRequestFrom`,
+`creditNoteStatusLabel` ('Tegoed open' outranks the mail state) and
+`signedClaim`. `quote-status.statusOf` repeats the pill rules inline (it may
+only import types) and reads 'Gecrediteerd' on a fully credited invoice;
+`sales-invoice-journey.ts` is untouched — the desk and the phone view switch
+to `creditNoteJourney` themselves. Sheets: `app-sales-credit-note-sheet`
+(lead seam; invoice mode `[invoiceId]`, partner mode `[purchaseOrderId]` →
+`partnerCreditProposal` picks `suggestedAdvanceInvoiceId`, reason fixed
+PARTNER_SHORTFALL, one prefilled amount; desk `[wide]`, phone
+`variant="ios"`; it navigates to the new document itself and emits
+`created`) and `app-sales-offset-sheet` ('Verrekenen': the customer's open
+issued invoices, original first; a partner credit note lists the container's
+open documents; `applyCredit` then `(changed)` → the host adopts the credit
+note and reloads history). `SalesReceipts` renders 'Tegoed & afhandeling'
+for credit notes (`credit()`, `settlement()`, `original` = the credited
+invoice fetched on every view so 'Verrekenen met F-… · € X' knows its cap;
+`(applyRequested)` → the host opens the offset sheet; `[refundRequest]`
+opens the REFUND sheet; 'Intrekken' on an offset row calls `deletePayment`,
+the server voids the pair); the receipt-bank-account harness rule stands:
+new construction-time members go in its `names[]`, new imports in its
+globals. `SalesEditor` (desk and phone editor) owns the credit state:
+`isCreditNoteDoc` / `isClaimDoc`, `creditOriginal` + `creditProposal` loaded
+from `adopt()` via `loadCreditContext` (listed in the split-editor harness),
+`creditLineCap`/`creditLineHint` (invoiced − credited on the other live
+notes, this concept's saved quantity added back; price ≤ invoiced net unit;
+no carton snap for credit notes), `openCreditSheet`, `issueCreditNote`
+(confirm, no mail), `cancelCreditNote` (issued, no money history, no return;
+`cancelQuote(id, '', false)`), `openReturnSheet`/`confirmReturnGoods`
+(STANDARD, product lines, original shipped, once),
+`openOffset`/`offsetApplied`; `canCancel` and the product picker exclude
+credit notes, `canDelete` is false while an invoice has live credit notes.
+`SalesView` duplicates the same for the phone read view (hero bar
+'Annuleren'/'Beheren' only while concept, next-step card, Meer acties). The
+Verkoop list buckets `docType !== 'OFFERTE'` under Facturen with
+`docs=all|f|cn` (app-segmented in `sales-document-navigation`), credit rows
+('− € x', tegoed line, 'Tegoed af te handelen'), 'Alleen nog te ontvangen'
+keeps invoices with remainingEur > 0 and credit notes with creditEur > 0,
+`todo()` skips credit notes and fully credited invoices; `sales-list-groups`
+subtracts credit totals inside a container group. `sales-list-swipe` (unused
+concept only) and `sales-reopen` (also false with live credit notes or
+`goodsReturnedAt`) treat credit notes like invoices; `sales-pdf-sheet` takes
+`[creditNote]` ('Creditnota instellen', no packing slip). Partner
+containers: `purchase-partner-payments` loads `partnerCreditProposal` next
+to the financing and shows the 'Tekort na ontvangst' card (received ∧ no
+settlement ∧ overFinancingEur > 0 → 'Creditnota maken op {advance}' emits
+the lead's `creditNote` output; a concept advance credit note reads 'in
+concept · open ›'; not received / settlement exists → the two hints); its
+documents list and Betaalhistorie know credit notes and 'verrekend'. Kosten
+& bank: `incoming-money` (`isOffsetRow`; `incomingMoneyTotals` leaves offset
+pairs out of every cash sum and reports `offsetEur` once per pair;
+`receivableTotals` adds `creditEur`/`creditNoteCount`, `invoiceReceivable`
+handles credit notes without a summary), `FinanceState.receivables` rows of
+kind 'credit' (remainingEur 0, `creditEur`, credited number), Te ontvangen
+chips/strip/headline 'Tegoeden − € X' (`kind=credit`), Ontvangen
+'Verrekening · CN ↔ F' rows with `dir=offset` and the 'Verrekend' figure,
+the Overzicht tile subline, `cashOutlook(…, openCreditEur)` and the
+'open-credits' attention row; `bank-movement-panel` offers credit notes for
+OUTGOING lines only and never matches offset rows (no new imports: harness).
+Analyses: issued credit notes come off Gefactureerd ('waarvan gecrediteerd −
+€ X'), the monthly trend and the top lists (signed), `documentAccounting`
+also covers issued credit notes (server accounting: standard credits
+negative, advance credits zero, settlement credits revenue only),
+outstanding/overdue stay FACTUUR-only, attention says 'Tegoed af te
+handelen' and never 'Betaling open' for a credit note; dashboard, settings
+('Nummering creditnota's', one CN series) and the trash (`CREDIT_NOTE` →
+'Creditnota') follow. Every credit style lives in
+`src/styles/sales-credit-note.scss` (`cn-*`, `receipts--credit`, `credit-*`,
+`so-credit*`, `partner-shortage`, `fin-credit-row`, `fin-offset-row`); the
+desk and editor style arrays did not grow.
 
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete.
