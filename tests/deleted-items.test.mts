@@ -226,3 +226,11 @@ test('templates parse with read-only details, no direct attachment links, and al
     assert.match(content, /TEMPORARY_DELETION_NOTICE/); assert.doesNotMatch(content, /Dit kan niet ongedaan worden gemaakt|definitief verwijderen\?/);
   }
 });
+
+test('trashed credit notes have their own type, label and filter', () => {
+  assert.equal(deletedItemLabel('CREDIT_NOTE'), 'Creditnota');
+  const rows = [item(1), item(2, { type: 'CREDIT_NOTE', number: 'CN-2026-0001' }), item(3, { type: 'QUOTE', number: 'ENR-2026-0003' })];
+  assert.deepEqual(filterDeletedItems(rows, '', 'CREDIT_NOTE').map(row => row.number), ['CN-2026-0001']);
+  assert.deepEqual(filterDeletedItems(rows, 'creditnota', '').map(row => row.number), ['CN-2026-0001'], 'the label is searchable');
+  assert.equal(restoredItemRoute(rows[1], { sourceId: 102, targetRoute: '/sales/102' }), '/sales/102');
+});

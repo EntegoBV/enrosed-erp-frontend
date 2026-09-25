@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
-import type { SalesOrderView, SalesPayment } from '../../core/api/models';
+import type { IncomingPaymentRow, SalesOrderView, SalesPayment } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { DateField } from '../../shared/date-field';
 import { EurPipe } from '../../shared/pipes';
@@ -11,18 +11,64 @@ import { isPartnerDocument } from './sales-payment-state';
 import { salesAllProductsUnavailable } from './sales-line-availability';
 import { ReceiptDraft, receiptLocalParts, receiptRequest } from '../../shared/received-at';
 import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue, type ReceiptBankAccount } from './receipt-bank-account';
+import { creditNoteSettlement, isCreditNote, isOffsetPayment } from './sales-credit-note';
 
+/**
+ * Money on a claim document. An invoice shows 'Ontvangen & open'; a credit
+ * note shows 'Tegoed & afhandeling' (verrekend, terugbetaald, still open).
+ * A node harness compiles this class with its imports stripped: a new import
+ * or construction-time member needs an entry in tests/receipt-bank-account.test.mts.
+ */
 @Component({
   selector: 'app-sales-receipts',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, DateField, EurPipe, Sheet],
   template: `
-    @if (view().order.docType === 'FACTUUR') {
+    @if (credit()) {
+      <section class="receipts receipts--credit" aria-label="Tegoed en afhandeling">
+        <header><div><span class="eyebrow">Tegoed</span><h3>Tegoed &amp; afhandeling</h3></div><span class="receipts__status">{{ statusLabel() }}</span></header>
+        @if (summary(); as summary) {
+          @if (dead()) {
+            <p class="receipts__hint">Deze creditnota is {{ statusLabel().toLowerCase() }}. Het tegoed van {{ (settlement()?.tegoedEur ?? 0) | eur }} vervalt en telt nergens meer mee; de factuur telt weer volledig.</p>
+          } @else if (settlement(); as s) {
+            <div class="receipts__metrics receipts__metrics--4"><div><span>Creditnota incl. btw</span><b>{{ s.tegoedEur | eur }}</b></div><div><span>Verrekend</span><b>{{ s.offsetEur | eur }}</b></div><div><span>Terugbetaald</span><b>{{ s.refundedEur | eur }}</b></div><div [class.is-open]="s.openEur > 0" [class.is-done]="s.openEur <= 0 && view().order.status !== 'CONCEPT'"><span>Nog af te handelen</span><b>{{ s.openEur | eur }}</b></div></div>
+          }
+          @if (view().creditedInvoiceId && view().creditedInvoiceNumber) { <div class="receipts__credit-links"><a [routerLink]="['/sales', view().creditedInvoiceId]">Op factuur {{ view().creditedInvoiceNumber }}{{ original() ? ' · ' + (originalOpenEur() > 0 ? (originalOpenEur() | eur) + ' nog open' : 'betaald') : '' }} ›</a></div> }
+          <div class="receipts__trail">
+            @for (payment of summary.payments; track payment.id) {
+              <article><div><b>{{ abs(payment.amountEur) | eur }} {{ offset(payment) ? 'verrekend met ' + offsetPartner(payment) : payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}</b><span>{{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.timeZone }}@if (payment.bankAccount) { · {{ payment.bankAccount }} }@if (payment.reference) { · {{ payment.reference }} }</small><small>Geregistreerd {{ stamp(payment.recordedAt, payment.timeZone) }}@if (payment.actor) { · {{ payment.actor }} }</small></div>@if (offset(payment)) { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="withdraw(payment)">Intrekken</button> } @else { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="edit(payment)">Corrigeren</button> }</article>
+            } @empty { <p class="receipts__hint">{{ view().order.status === 'CONCEPT' ? 'Geef de creditnota definitief uit om ze te verrekenen of terug te betalen.' : 'Nog niets verrekend of terugbetaald.' }}</p> }
+          </div>
+          @if (view().order.status === 'CONCEPT') {
+            <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || dirty()" (click)="issue()">Uitreiken zonder e-mail</button>
+            <p class="receipts__hint">Uitreiken zet de creditnota vast; daarna kun je ze e-mailen, verrekenen of terugbetalen.</p>
+          } @else if (settled()) {
+            <p class="receipts__hint">Het tegoed is volledig verrekend of terugbetaald.</p>
+          } @else if (canSettle()) {
+            <div class="receipts__actions">
+              @if (originalOpenEur() > 0 && view().creditedInvoiceNumber) { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || dirty()" (click)="applyRequested.emit(view().creditedInvoiceId ?? null)">Verrekenen met {{ view().creditedInvoiceNumber }} · {{ applyMaxEur() | eur }}</button> }
+              <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="applyRequested.emit(null)">Verrekenen met andere factuur…</button>
+              @if (canRefund()) { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="refund()">Terugbetaling noteren · {{ summary.refundableEur | eur }}</button> }
+            </div>
+            @if (!(originalOpenEur() > 0)) { <p class="receipts__hint">Verreken de rest met een volgende factuur of noteer een terugbetaling.</p> }
+          }
+        } @else { <p class="receipts__hint">De betalingsgegevens konden niet worden geladen. Vernieuw de creditnota.</p> }
+        @if (dirty()) { <p class="receipts__hint">Sla eerst de wijzigingen op voordat je het tegoed afhandelt.</p> }
+        @if (containerId(); as id) { <a class="receipts__link" [routerLink]="['/purchasing', id]">Container, voorschotten &amp; slotafrekening ›</a> }
+      </section>
+    } @else if (view().order.docType === 'FACTUUR') {
       <section class="receipts" aria-label="Ontvangen betalingen">
         <header><div><span class="eyebrow">{{ partner() ? 'Partnerontvangsten' : 'Klantbetalingen' }}</span><h3>Ontvangen &amp; open</h3></div><span class="receipts__status">{{ statusLabel() }}</span></header>
         @if (summary(); as summary) {
           <div class="receipts__metrics"><div><span>Factuur incl. btw</span><b>{{ summary.invoiceTotalEur | eur }}</b></div><div><span>Netto ontvangen</span><b>{{ summary.receivedEur | eur }}</b></div><div><span>Nog te ontvangen</span><b>{{ summary.remainingEur | eur }}</b></div></div>
           @if ((summary.refundedEur ?? 0) > 0) { <p class="receipts__hint">Bruto ontvangen {{ summary.grossReceivedEur | eur }} · terugbetaald {{ summary.refundedEur | eur }}</p> }
+          @if (view().creditNotes?.length) {
+            <div class="receipts__credit-links">
+              @for (note of view().creditNotes; track note.id) {
+                <a [routerLink]="['/sales', note.id]">{{ note.status === 'CONCEPT' ? 'Creditnota in concept ' + note.number : (note.totalInclVatEur | eur) + ' gecrediteerd via ' + note.number }} ›</a>
+              }
+            </div>
+          }
           @if (summary.overpaidEur > 0) { <p class="receipts__warning">{{ summary.overpaidEur | eur }} meer ontvangen dan de factuur. Controleer of dit moet worden terugbetaald of verrekend.</p> }
           @if (summary.creditEur > 0) { <p class="receipts__warning">{{ summary.creditEur | eur }} credit voor de klant. Dit is geen open inkomende betaling.</p> }
           @if (summary.legacyPaidMarker) { <p class="receipts__warning">De historische betaalmarkering is als ontvangst overgenomen. Corrigeer die bestaande ontvangst als het bedrag of tijdstip niet klopt. Een nieuwe ontvangst wordt erbij opgeteld.</p> }
@@ -33,7 +79,7 @@ import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue, type
           }
           <div class="receipts__trail">
             @for (payment of summary.payments; track payment.id) {
-              <article><div><b>{{ payment.amountEur | eur }} {{ payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}@if (payment.legacy) { · historisch }</b><span>{{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.timeZone }}@if (payment.bankAccount) { · {{ payment.bankAccount }} }@if (payment.reference) { · {{ payment.reference }} }</small><small>Geregistreerd {{ stamp(payment.recordedAt, payment.timeZone) }}@if (payment.actor) { · {{ payment.actor }} }</small></div><button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="edit(payment)">Corrigeren</button></article>
+              <article><div><b>{{ abs(payment.amountEur) | eur }} {{ offset(payment) ? 'verrekend met ' + offsetPartner(payment) : payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}@if (payment.legacy) { · historisch }</b><span>{{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.timeZone }}@if (payment.bankAccount) { · {{ payment.bankAccount }} }@if (payment.reference) { · {{ payment.reference }} }</small><small>Geregistreerd {{ stamp(payment.recordedAt, payment.timeZone) }}@if (payment.actor) { · {{ payment.actor }} }</small></div>@if (offset(payment)) { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="withdraw(payment)">Intrekken</button> } @else { <button class="btn btn--sm" type="button" [disabled]="busy() || dirty()" (click)="edit(payment)">Corrigeren</button> }</article>
             } @empty { <p class="receipts__hint">{{ view().order.status === 'CONCEPT' ? 'Ontvangsten kun je na het uitreiken registreren.' : 'Nog geen ontvangsten geregistreerd. Het versturen van de factuur registreert geen betaling.' }}</p> }
           </div>
           @if (view().order.status === 'CONCEPT') { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || dirty() || allProductsUnavailable(view())" (click)="issue()">{{ summary.invoiceTotalEur > 0 ? 'Uitgeven zonder e-mail & ontvangst noteren' : 'Uitgeven zonder e-mail' }}</button><p class="receipts__hint">@if (allProductsUnavailable(view())) { Alle producten staan tijdelijk op 0. Herstel minstens één product voordat je deze factuur uitgeeft. } @else { Geef de factuur definitief uit om ontvangsten te registreren. De factuur wordt dan vastgezet. }</p> }
@@ -84,7 +130,11 @@ export class SalesReceipts implements OnDestroy {
   readonly view = input.required<SalesOrderView>();
   readonly dirty = input(false);
   readonly openRequest = input(0);
+  /** Bumped by a host to open the refund sheet (a credit note's 'Terugbetaling noteren'). */
+  readonly refundRequest = input(0);
   readonly changed = output<SalesOrderView>();
+  /** A credit note asks its host to open the offset sheet: the invoice to preselect, or null for the list. */
+  readonly applyRequested = output<number | null>();
   readonly draft = signal<ReceiptDraft | null>(null);
   readonly error = signal('');
   readonly busy = signal(false);
@@ -108,17 +158,70 @@ export class SalesReceipts implements OnDestroy {
   readonly summary = computed(() => this.view().paymentSummary);
   readonly partner = computed(() => isPartnerDocument(this.view().order));
   readonly containerId = computed(() => this.view().order.partnerPurchaseOrderId ?? this.view().order.sourcePurchaseOrderId);
+  /** The credit variant: 'Tegoed & afhandeling' instead of receipts. */
+  readonly credit = computed(() => isCreditNote(this.view().order));
+  readonly settlement = computed(() => (this.credit() ? creditNoteSettlement(this.summary(), this.view().order.status) : null));
+  /** A cancelled credit note: the server summary keeps its creditEur, but nothing is open any more. */
+  readonly dead = computed(() => this.credit() && ['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(this.view().order.status));
+  readonly settled = computed(() => this.credit() && !this.dead() && this.view().order.status !== 'CONCEPT' && (this.summary()?.status === 'PAID' || this.summary()?.status === 'OVERPAID' || this.view().order.status === 'BETAALD'));
+  /** The credited invoice, fetched for the 'Verrekenen met F-…' button and the link line. */
+  readonly original = signal<SalesOrderView | null>(null);
+  readonly originalOpenEur = computed(() => Math.max(0, this.original()?.paymentSummary?.remainingEur ?? 0));
+  readonly applyMaxEur = computed(() => Math.min(this.originalOpenEur(), Math.max(0, this.summary()?.creditEur ?? 0)));
+  readonly canSettle = computed(() => this.credit() && !['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(this.view().order.status) && (this.summary()?.creditEur ?? 0) > 0);
   readonly canRecord = computed(() => this.view().order.docType === 'FACTUUR'
     && !['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(this.view().order.status) && (this.summary()?.invoiceTotalEur ?? 0) > 0);
   readonly canRefund = computed(() => !['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(this.view().order.status) && (this.summary()?.refundableEur ?? 0) > 0);
-  readonly statusLabel = computed(() => this.view().order.status === 'CONCEPT' ? 'Concept' : ({ UNPAID: 'Nog te ontvangen', PARTIAL: 'Deels ontvangen', PAID: this.summary()?.invoiceTotalEur && this.summary()!.invoiceTotalEur < 0 ? 'Volledig afgehandeld' : 'Volledig ontvangen', OVERPAID: 'Te veel ontvangen', CREDIT: 'Credit' })[this.summary()?.status ?? 'UNPAID']);
+  readonly statusLabel = computed(() => {
+    const status = this.view().order.status;
+    if (status === 'CONCEPT') return 'Concept';
+    if (this.credit()) return this.dead() ? (status === 'GEANNULEERD' ? 'Geannuleerd' : status === 'VERLOPEN' ? 'Verlopen' : 'Afgewezen') : this.settled() ? 'Afgehandeld' : 'Tegoed open';
+    return ({ UNPAID: 'Nog te ontvangen', PARTIAL: 'Deels ontvangen', PAID: this.summary()?.invoiceTotalEur && this.summary()!.invoiceTotalEur < 0 ? 'Volledig afgehandeld' : 'Volledig ontvangen', OVERPAID: 'Te veel ontvangen', CREDIT: 'Credit' })[this.summary()?.status ?? 'UNPAID'];
+  });
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
 
   constructor() {
     effect(() => { if (this.openRequest() > 0) untracked(() => this.add()); });
+    effect(() => { if (this.refundRequest() > 0) untracked(() => this.refund()); });
     effect(() => { const id = this.view().order.id; untracked(() => { if (this.draftOrderId !== null && this.draftOrderId !== id) this.clearDraft(); }); });
+    /* A credit note reads its invoice's open amount so 'Verrekenen met F-…' knows its cap; every fresh view refetches it. */
+    effect(() => {
+      const view = this.view();
+      const originalId = isCreditNote(view.order) ? (view.order.creditedInvoiceId ?? view.creditedInvoiceId ?? null) : null;
+      untracked(() => { void this.loadOriginal(originalId); });
+    });
   }
+  private originalVersion = 0;
+  private async loadOriginal(id: number | null): Promise<void> {
+    const version = ++this.originalVersion;
+    if (id == null) { this.original.set(null); return; }
+    try {
+      const original = await this.sales.order(id);
+      if (!this.destroyed && version === this.originalVersion) this.original.set(original);
+    } catch { if (version === this.originalVersion) this.original.set(null); }
+  }
+  offset(payment: SalesPayment): boolean { return isOffsetPayment(payment); }
+  /**
+   * The other document of a verrekening: the row's number when the server sent
+   * it, else the link we know, else the reference 'Verrekening {cn} met {nr}',
+   * of which the number that is not our own names the partner (an offset with
+   * another invoice than the credited one has no link on the invoice side).
+   */
+  offsetPartner(payment: SalesPayment): string {
+    const sent = (payment as Partial<IncomingPaymentRow>).offsetOrderNumber;
+    if (sent) return sent;
+    const view = this.view();
+    if (payment.offsetOrderId != null) {
+      if (payment.offsetOrderId === (view.order.creditedInvoiceId ?? view.creditedInvoiceId) && view.creditedInvoiceNumber) return view.creditedInvoiceNumber;
+      const note = view.creditNotes?.find((item) => item.id === payment.offsetOrderId);
+      if (note) return note.number;
+    }
+    const match = /^Verrekening (\S+) met (\S+)/.exec(payment.reference ?? '');
+    if (match) return match[1] === view.order.number ? match[2] : match[2] === view.order.number ? match[1] : (this.credit() ? match[2] : match[1]);
+    return this.credit() ? 'factuur' : 'creditnota';
+  }
+  abs(value: number): number { return Math.abs(value); }
   private beginDraft(draft: ReceiptDraft): void {
     this.draftVersion++; this.draftOrderId = this.view().order.id; this.accountTouched = false;
     this.originalAccount.set(draft.id ? draft.bankAccount ?? '' : null);
@@ -164,7 +267,7 @@ export class SalesReceipts implements OnDestroy {
     this.beginDraft({ amount: this.summary()?.refundableEur ?? 0, ...receiptLocalParts(Date.now(), timeZone), timeZone, reference: '', bankAccount: '', direction: 'REFUND' });
   }
   edit(payment: SalesPayment): void {
-    if (this.dirty() || this.busy()) return;
+    if (this.dirty() || this.busy() || isOffsetPayment(payment)) return;
     this.error.set('');
     this.beginDraft({ id: payment.id, amount: Math.abs(payment.amountEur), direction: payment.amountEur < 0 ? 'REFUND' : 'RECEIPT', bankAccount: payment.bankAccount ?? '', ...receiptLocalParts(payment.receivedAt, payment.timeZone), timeZone: payment.timeZone, reference: payment.reference ?? '' });
   }
@@ -176,7 +279,8 @@ export class SalesReceipts implements OnDestroy {
   }
   async issue(): Promise<void> {
     if (this.busy() || this.dirty()) return;
-    if (salesAllProductsUnavailable(this.view())) { this.ui.toast('Herstel minstens één product voordat je deze factuur uitgeeft.', 'err'); return; }
+    const creditNote = this.credit();
+    if (!creditNote && salesAllProductsUnavailable(this.view())) { this.ui.toast('Herstel minstens één product voordat je deze factuur uitgeeft.', 'err'); return; }
     const orderId = this.view().order.id;
     this.busy.set(true);
     try {
@@ -184,9 +288,9 @@ export class SalesReceipts implements OnDestroy {
       if (this.destroyed || this.view().order.id !== orderId) return;
       this.changed.emit(fresh);
       const timeZone = 'Europe/Brussels';
-      if ((fresh.paymentSummary?.invoiceTotalEur ?? 0) > 0) this.beginDraft({ amount: fresh.paymentSummary?.remainingEur ?? 0, ...receiptLocalParts(Date.now(), timeZone), timeZone, reference: '', bankAccount: '', direction: 'RECEIPT' });
-      this.ui.toast('Factuur uitgereikt zonder e-mail');
-    } catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Factuur uitreiken mislukt'), 'err'); }
+      if (!creditNote && (fresh.paymentSummary?.invoiceTotalEur ?? 0) > 0) this.beginDraft({ amount: fresh.paymentSummary?.remainingEur ?? 0, ...receiptLocalParts(Date.now(), timeZone), timeZone, reference: '', bankAccount: '', direction: 'RECEIPT' });
+      this.ui.toast(creditNote ? 'Creditnota uitgereikt' : 'Factuur uitgereikt zonder e-mail');
+    } catch (failure: unknown) { this.ui.toast(messageOf(failure, creditNote ? 'Creditnota uitreiken mislukt' : 'Factuur uitreiken mislukt'), 'err'); }
     finally { this.busy.set(false); }
   }
   async save(): Promise<void> {
@@ -207,6 +311,16 @@ export class SalesReceipts implements OnDestroy {
       this.busy.set(true);
       try { await this.sales.deletePayment(this.view().order.id, id); this.changed.emit(await this.sales.order(this.view().order.id)); this.draft.set(null); this.ui.toast('Ontvangst verwijderd'); }
       catch (failure: unknown) { this.error.set(messageOf(failure, 'Ontvangst verwijderen mislukt')); }
+      finally { this.busy.set(false); }
+    });
+  }
+  /** A verrekening is withdrawn on both documents at once; the history keeps the rows. */
+  withdraw(payment: SalesPayment): void {
+    if (this.busy() || this.dirty() || !isOffsetPayment(payment)) return;
+    this.ui.confirm({ title: 'Verrekening intrekken', message: 'De verrekening wordt op beide documenten ingetrokken. De historiek blijft bewaard.', confirmLabel: 'Intrekken', danger: true }, async () => {
+      this.busy.set(true);
+      try { await this.sales.deletePayment(this.view().order.id, payment.id); this.changed.emit(await this.sales.order(this.view().order.id)); this.ui.toast('Verrekening ingetrokken'); }
+      catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Verrekening intrekken mislukt'), 'err'); }
       finally { this.busy.set(false); }
     });
   }

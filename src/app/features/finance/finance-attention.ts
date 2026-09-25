@@ -12,7 +12,7 @@ export const OLD_RECEIVABLE_DAYS = 30;
 export const DOCUMENT_WINDOW_DAYS = 90;
 
 export type AttentionKind = 'container-due' | 'overdue-costs' | 'account-without-reading' | 'recurring-due' | 'unlinked-incoming'
-  | 'old-receivables' | 'stale-reading' | 'receipts-without-account' | 'unbanked-payments' | 'costs-without-document';
+  | 'old-receivables' | 'stale-reading' | 'receipts-without-account' | 'unbanked-payments' | 'costs-without-document' | 'open-credits';
 export type AttentionTone = 'danger' | 'warn' | 'info';
 /** What the row's button does directly; null means it just opens the target. */
 export type AttentionAction = 'book' | 'link' | 'check' | 'fill' | null;
@@ -33,6 +33,8 @@ export interface AttentionItem {
 
 export interface AttentionInput {
   today: string;
+  /** Issued credit notes whose tegoed is not yet offset or refunded. */
+  openCredits?: { count: number; eur: number };
   /** Open company costs: their date and the amount incl. btw. */
   openCosts: readonly { date: string; amountInclEur: number }[];
   dueNowCount: number;
@@ -100,6 +102,13 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
       title: `${n} ontvangen ${plural(n, 'bankbeweging', 'bankbewegingen')} nog niet aan een factuur gekoppeld`,
       detail: 'Koppel ze, dan telt het geld één keer', action: 'link', actionLabel: 'Koppelen',
       target: { view: 'bank', tab: 'movements', link: 'unlinked' } });
+  }
+
+  if ((input.openCredits?.count ?? 0) > 0) {
+    const n = input.openCredits!.count;
+    add({ kind: 'open-credits', tone: 'warn', count: n, amountEur: input.openCredits!.eur,
+      title: `${n} ${plural(n, 'creditnota', 'creditnota\u2019s')} met een tegoed af te handelen`,
+      detail: 'Verreken met een openstaande factuur of noteer de terugbetaling', action: null, actionLabel: 'Bekijken', target: { view: 'incoming', kind: 'credit' } });
   }
 
   const old = input.receivables.filter((row) => row.remainingEur > 0 && days(row.orderDate, today) > OLD_RECEIVABLE_DAYS);

@@ -11,7 +11,7 @@ import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { NO_ACCOUNT } from './finance-url';
-import { incomingMoneyTotals, incomingPurposeLabel, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
+import { incomingMoneyTotals, incomingPurposeLabel, isOffsetRow, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
 import { FinanceFilterFields } from './finance-filter-fields';
 import { Sheet } from '../../shared/ui';
 
@@ -40,14 +40,14 @@ import { Sheet } from '../../shared/ui';
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
           </div>
           @for (row of visible(); track row.id) {
-            <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="table.stop() === key(row) ? 0 : -1" [attr.data-key]="key(row)" [attr.aria-selected]="table.isSelected(key(row))"
+            <div class="wk-tr wk-tr--link" [class.fin-offset-row]="offset(row)" role="row" [attr.tabindex]="table.stop() === key(row) ? 0 : -1" [attr.data-key]="key(row)" [attr.aria-selected]="table.isSelected(key(row))"
                  (focus)="table.focused(key(row))" (click)="table.click(key(row), $event)" (dblclick)="state.openInvoice(row.salesOrderId)"
                  appMenuTrigger (menuTrigger)="rowMenu(row, $event)">
               <span class="wk-td" role="gridcell">{{ moment(row) }}</span>
-              <span class="wk-td" role="gridcell"><a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a>{{ customer(row) ? ' · ' + customer(row) : '' }}@if (row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
-              <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill" [class.tone-plum]="row.purpose !== 'STANDARD'" [attr.title]="row.purpose === 'PARTNER_ADVANCE' ? 'Een partnervoorschot is financiering, geen omzet.' : null">{{ purpose(row) }}</span></span>
-              <span class="wk-td" role="gridcell" data-hide="sm">@if (account(row); as name) { {{ name }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
-              <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ signed(row.amountEur) }}</b></span>
+              <span class="wk-td" role="gridcell">@if (offset(row)) { Verrekening · <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a> ↔ {{ row.offsetOrderNumber || 'document' }} } @else { <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a>{{ customer(row) ? ' · ' + customer(row) : '' }} }@if (row.reference && !offset(row)) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
+              <span class="wk-td" role="gridcell" data-hide="xs">@if (offset(row)) { <span class="wk-pill tone-grey" title="Een creditnota verrekend met een factuur: geen geld op de bank.">Verrekening</span> } @else { <span class="wk-pill" [class.tone-plum]="row.purpose !== 'STANDARD'" [attr.title]="row.purpose === 'PARTNER_ADVANCE' ? 'Een partnervoorschot is financiering, geen omzet.' : null">{{ purpose(row) }}</span> }</span>
+              <span class="wk-td" role="gridcell" data-hide="sm">@if (offset(row)) { <span class="wk-td__sub">geen bankbeweging</span> } @else if (account(row); as name) { {{ name }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
+              <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0 && !offset(row)" [class.wk-amount--muted]="offset(row)">{{ signed(row.amountEur) }}</b></span>
               <span class="wk-td fin-td-end" role="gridcell">
                 <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" tabindex="-1" aria-label="Acties" (click)="$event.stopPropagation(); rowMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
               </span>
@@ -79,10 +79,10 @@ import { Sheet } from '../../shared/ui';
           <div class="ios-section__head"><h2>{{ day.label }}</h2><span class="ios-section__trail">{{ day.totalEur | eur }}</span></div>
           <div class="ios-group">
             @for (row of day.rows; track row.id) {
-              <button class="ios-cell" type="button" (click)="rowMenu(row, null)">
-                <span class="ios-cell__body"><span class="ios-cell__title">{{ row.orderNumber }}{{ customer(row) ? ' · ' + customer(row) : '' }}</span>
-                  <span class="ios-cell__sub">{{ clock(row) }} · @if (account(row); as name) { {{ name }} } @else { <span class="fin-warn-text">geen rekening</span> }</span></span>
-                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0">{{ signed(row.amountEur) }}</span></span>
+              <button class="ios-cell" [class.fin-offset-row]="offset(row)" type="button" (click)="rowMenu(row, null)">
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ offset(row) ? 'Verrekening · ' + row.orderNumber + ' ↔ ' + (row.offsetOrderNumber || 'document') : row.orderNumber + (customer(row) ? ' · ' + customer(row) : '') }}</span>
+                  <span class="ios-cell__sub">{{ clock(row) }} · @if (offset(row)) { geen bankbeweging } @else if (account(row); as name) { {{ name }} } @else { <span class="fin-warn-text">geen rekening</span> }</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0 && !offset(row)">{{ signed(row.amountEur) }}</span></span>
               </button>
             }
           </div>
@@ -121,7 +121,7 @@ export class IncomingPaymentList {
       const day = paymentLocalDay(row);
       const key = this.state.receiptAccountKey(row);
       return (!range.from || day >= range.from) && (!range.to || day <= range.to)
-        && (!location.dir || (location.dir === 'in' ? row.amountEur > 0 : row.amountEur < 0))
+        && (!location.dir || (location.dir === 'offset' ? isOffsetRow(row) : location.dir === 'in' ? row.amountEur > 0 && !isOffsetRow(row) : row.amountEur < 0 && !isOffsetRow(row)))
         && (!location.purpose || row.purpose === location.purpose)
         && (!location.account || (location.account === NO_ACCOUNT ? !key : key === bankAccountKey(location.account)))
         && (!needle || [row.orderNumber, row.reference, this.customer(row), row.bankAccount].join(' ').toLocaleLowerCase('nl-BE').includes(needle));
@@ -173,13 +173,15 @@ export class IncomingPaymentList {
     }
     return [...groups.entries()].map(([day, list]) => ({
       day, label: dayHeading(day, this.state.today()), rows: list,
-      totalEur: Math.round(list.reduce((sum, row) => sum + row.amountEur * 100, 0)) / 100,
+      /* Day totals are cash: a verrekening moved nothing. */
+      totalEur: Math.round(list.filter((row) => !isOffsetRow(row)).reduce((sum, row) => sum + row.amountEur * 100, 0)) / 100,
     }));
   });
 
   customer(row: IncomingPaymentRow): string {
     return row.customerId == null ? '' : this.state.customerNames().get(row.customerId) ?? '';
   }
+  offset(row: IncomingPaymentRow): boolean { return isOffsetRow(row); }
 
   account(row: IncomingPaymentRow): string {
     return this.state.accountLabel(this.state.receiptAccountKey(row));
@@ -206,7 +208,7 @@ export class IncomingPaymentList {
     this.state.openMenu({
       title: `${row.orderNumber} · ${signedEur(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren',
       items: [
-        { id: 'invoice', label: 'Factuur openen', iconName: 'document' },
+        { id: 'invoice', label: row.docType === 'CREDITNOTA' ? 'Creditnota openen' : 'Factuur openen', iconName: 'document' },
         ...(row.purchaseOrderId ? [{ id: 'container', label: 'Container openen', iconName: 'truck' }] : []),
       ],
       pick: (id) => (id === 'container' ? this.state.openPartnerContainer(row.purchaseOrderId!) : this.state.openInvoice(row.salesOrderId)),

@@ -263,7 +263,8 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <span class="metric-card__label">Gefactureerd</span>
             <strong>{{ salesMetrics().invoices.issuedValueEur | eur: 0 }}</strong>
             <p>{{ salesMetrics().invoices.issued }} factuur/facturen incl. btw
-              @if (salesMetrics().invoices.averageClaimEur !== null) { · gem. {{ salesMetrics().invoices.averageClaimEur | eur: 0 }} }</p>
+              @if (salesMetrics().invoices.averageClaimEur !== null) { · gem. {{ salesMetrics().invoices.averageClaimEur | eur: 0 }} }
+              @if (salesMetrics().invoices.creditNoteCount) { · waarvan gecrediteerd − {{ salesMetrics().invoices.creditedEur | eur: 0 }} ({{ salesMetrics().invoices.creditNoteCount }} {{ salesMetrics().invoices.creditNoteCount === 1 ? 'creditnota' : 'creditnota\u2019s' }}) }</p>
           </article>
           <article class="card metric-card metric-card--quality">
             <span class="metric-card__label">Brutomarge</span>
@@ -636,7 +637,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
           <article class="card metric-card"><span class="metric-card__label">Nog te ontvangen</span><strong>{{ financing().openEur | eur: 0 }}</strong><p>resterende uitgegeven facturen, na deelbetalingen · incl. btw</p></article>
           <article class="card metric-card"><span class="metric-card__label">Eigen kasinleg</span><strong>{{ financing().ownExposureEur | eur: 0 }}</strong><p>betaalde containerkosten min ontvangen partnergeld, minimaal nul</p></article>
           <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Gerealiseerd partnerresultaat</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>uitgegeven deel- en slotafrekeningen · voorschotten tellen niet als winst</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Credit voor partners</span><strong>{{ financing().creditEur | eur: 0 }}</strong><p>te verrekenen of terug te betalen volgens afrekening</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Credit voor partners</span><strong>{{ financing().creditEur | eur: 0 }}</strong><p>tegoeden op creditnota\u2019s en afrekeningen, te verrekenen of terug te betalen</p></article>
           <article class="card metric-card" [class.metric-card--danger]="financing().awaitingSettlement > 0"><span class="metric-card__label">Nog af te rekenen</span><strong>{{ financing().awaitingSettlement }}</strong><p>partnercontainer{{ financing().awaitingSettlement === 1 ? '' : 's' }} ontvangen, veilingoverzicht nog niet afgerekend</p></article>
         </div>
         <article class="card analysis-list scorecard-card">
@@ -651,10 +652,10 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
                       <td data-label="Container"><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ row.alias || row.number }}</a>@if (row.alias) { <small class="muted"> {{ row.number }}</small> }</td>
                       <td data-label="Partner">{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
                       <td data-label="Externe kost">{{ row.landedEur | eur: 0 }}<small class="muted"> {{ row.costFinalized ? 'definitief' : 'verwacht' }}</small></td>
-                      <td data-label="Ontvangen">{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small>@if (row.unbilledAdvanceCount) { <a [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }">{{ row.unbilledAdvanceCount }} termijnen factureren · {{ row.unbilledAdvanceEur | eur: 0 }}</a>@if (row.nextAdvanceDueDate) { <small class="muted">volgende vervaldatum {{ row.nextAdvanceDueDate | dateNl }}</small> } }</td>
+                      <td data-label="Ontvangen">{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small>@if (row.creditedEur) { <small class="muted"> {{ row.creditedEur | eur: 0 }} gecrediteerd</small> }@if (row.unbilledAdvanceCount) { <a [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }">{{ row.unbilledAdvanceCount }} termijnen factureren · {{ row.unbilledAdvanceEur | eur: 0 }}</a>@if (row.nextAdvanceDueDate) { <small class="muted">volgende vervaldatum {{ row.nextAdvanceDueDate | dateNl }}</small> } }</td>
                       <td data-label="Open / eigen kas" [class.scorecard__warn]="row.openEur > 0">{{ row.openEur | eur: 0 }} open<small class="muted"> {{ row.ownExposureEur | eur: 0 }} eigen kasinleg</small></td>
                       <td data-label="Resultaat" [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}<small class="muted"> {{ row.settled ? 'volledig afgerekend' : row.remainingQuantity > 0 ? (row.remainingQuantity | num) + ' stuks resteren' : 'afrekening nog uitgeven' }}</small>@if (row.creditEur) { <small class="muted"> {{ row.creditEur | eur: 0 }} credit</small> }</td>
-                      <td data-label="Documenten">@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'afrekening' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
+                      <td data-label="Documenten">@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.docType === 'CREDITNOTA' ? (doc.status === 'CONCEPT' ? 'creditnota · concept' : 'creditnota') : doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'afrekening' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
                     </tr>
                   }
                 </tbody>

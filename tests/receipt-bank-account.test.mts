@@ -9,17 +9,19 @@ import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue } fro
 import { receiptLocalParts, receiptRequest } from '../src/app/shared/received-at.ts';
 import { salesAllProductsUnavailable } from '../src/app/features/sales/sales-line-availability.ts';
 import { messageOf } from '../src/app/core/api/errors.ts';
+import { creditNoteSettlement, isCreditNote, isOffsetPayment } from '../src/app/features/sales/sales-credit-note.ts';
 
 const profile = { name: 'Enrosed', legalName: 'Enrosed BV', iban: 'BE94\u00a07310\u00a07408\u00a02814', bic: 'KREDBEBB' };
 const account = companyReceiptAccount(profile)!;
 const source = await readFile(new URL('../src/app/features/sales/sales-receipts.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('sales-receipts.ts', source, ts.ScriptTarget.Latest, true);
 const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'SalesReceipts'); assert.ok(cls);
-const names = ['configuredAccount', 'originalAccount', 'accountLoading', 'accountError', 'accountChoices', 'selectedAccount', 'accountReady', 'draftVersion', 'accountRequestVersion', 'draftOrderId', 'accountTouched', 'destroyed', 'beginDraft', 'clearDraft', 'loadBankAccount', 'selectAccount', 'add', 'refund', 'edit', 'patch', 'close', 'issue', 'save', 'ngOnDestroy'];
+const names = ['configuredAccount', 'originalAccount', 'accountLoading', 'accountError', 'accountChoices', 'selectedAccount', 'accountReady', 'draftVersion', 'accountRequestVersion', 'draftOrderId', 'accountTouched', 'destroyed', 'beginDraft', 'clearDraft', 'loadBankAccount', 'selectAccount', 'add', 'refund', 'edit', 'patch', 'close', 'issue', 'save', 'ngOnDestroy',
+  'summary', 'credit', 'settlement', 'dead', 'settled', 'original', 'originalOpenEur', 'applyMaxEur', 'canSettle', 'canRecord', 'canRefund', 'statusLabel', 'originalVersion', 'loadOriginal', 'offset', 'abs', 'withdraw'];
 const members = cls.members.filter(m => m.name && names.includes(m.name.getText(parsed))); assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
 const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-const exports: any = {}; vm.runInNewContext(js, { exports, computed, signal, companyReceiptAccount, receiptAccountChoices, receiptAccountValue, receiptLocalParts, receiptRequest, messageOf, salesAllProductsUnavailable, Date });
+const exports: any = {}; vm.runInNewContext(js, { exports, computed, signal, companyReceiptAccount, receiptAccountChoices, receiptAccountValue, receiptLocalParts, receiptRequest, messageOf, salesAllProductsUnavailable, creditNoteSettlement, isCreditNote, isOffsetPayment, Date });
 const Component = exports.SalesReceipts;
 const payment = (bankAccount: string | null) => ({ id: 7, bankAccount, amountEur: 333.33, receivedAt: '2026-09-08T08:30:00Z', timeZone: 'Europe/Brussels', reference: 'Betaling 1' });
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -164,4 +166,31 @@ test('template provides labelled select, loading/error/retry, wrapped mobile acc
   assert.match(template, /Opnieuw laden/); assert.match(template, /receipts__account-selected/);
   assert.doesNotMatch(template, /<input[^>]*draft.bankAccount/);
   assert.match(template, /disabled\]="busy\(\) \|\| !accountReady\(\)"/);
+});
+
+test('a credit note offers no receipt, splits offsets from refunds, and issues without opening a receipt draft', async () => {
+  const component = new Component(), calls: string[] = [], emitted: any[] = [];
+  const offset = { id: 1, amountEur: -120.2, offsetOrderId: 38, offsetPaymentId: 2, offsetOrderNumber: 'INV-2026-038', receivedAt: '2026-09-25T10:00:00Z', timeZone: 'Europe/Brussels', reference: 'Verrekening', recordedAt: '2026-09-25T10:00:00Z' };
+  const refund = { id: 3, amountEur: -50, offsetOrderId: null, offsetPaymentId: null, receivedAt: '2026-09-25T11:00:00Z', timeZone: 'Europe/Brussels', reference: null, recordedAt: '2026-09-25T11:00:00Z' };
+  const view = { order: { id: 55, status: 'UITGEREIKT', docType: 'CREDITNOTA', creditedInvoiceId: 38 }, creditedInvoiceNumber: 'INV-2026-038',
+    paymentSummary: { invoiceTotalEur: -220.2, remainingEur: 0, creditEur: 50, refundableEur: 50, status: 'CREDIT', payments: [offset, refund] } };
+  Object.assign(component, { view: signal(view), dirty: signal(false), busy: signal(false), draft: signal(null), error: signal(''),
+    changed: { emit: (fresh: any) => { emitted.push(fresh); component.view.set(fresh); } }, ui: { toast: (text: string) => calls.push(`TOAST ${text}`) },
+    sales: { company: async () => profile, issueInvoice: async (id: number) => { calls.push(`POST issue ${id}`); return view; } } });
+  assert.equal(component.credit(), true);
+  assert.equal(component.canRecord(), false, 'a credit note never records a receipt');
+  assert.equal(component.canRefund(), true);
+  assert.equal(component.canSettle(), true);
+  assert.equal(component.statusLabel(), 'Tegoed open');
+  assert.deepEqual(component.settlement(), { tegoedEur: 220.2, offsetEur: 120.2, refundedEur: 50, openEur: 50 });
+  assert.equal(component.offset(offset), true); assert.equal(component.offset(refund), false);
+  component.add(); assert.equal(component.draft(), null, 'no receipt draft on a credit note');
+  component.edit(offset); assert.equal(component.draft(), null, 'an offset row is never corrected, only withdrawn');
+  component.view.set({ ...view, order: { ...view.order, status: 'CONCEPT' } });
+  assert.equal(component.statusLabel(), 'Concept');
+  await component.issue();
+  assert.deepEqual(calls, ['POST issue 55', 'TOAST Creditnota uitgereikt']);
+  assert.equal(emitted.length, 1); assert.equal(component.draft(), null, 'issuing a credit note opens no receipt draft');
+  component.view.set({ ...view, paymentSummary: { ...view.paymentSummary, creditEur: 0, refundableEur: 0, status: 'PAID' } });
+  assert.equal(component.settled(), true); assert.equal(component.statusLabel(), 'Afgehandeld'); assert.equal(component.canSettle(), false);
 });

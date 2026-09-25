@@ -1,12 +1,14 @@
 import { primarySalesPrice, productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
+import { canCreateCreditNote, creditNoteNextStep, creditNoteSettlement, creditReasonLabel, euro, isCreditNote, isDeadCreditNote } from './sales-credit-note';
+import { SalesOffsetSheet } from './sales-offset-sheet';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
 import { salesLineUnavailable, salesUnavailableLineCount, salesLineRequestedQuantity, salesLineWithAvailability, salesAvailabilityBlockReason, salesAllProductsUnavailable, salesFrozenLineChangeAllowed, salesPalletsWithoutUnavailable } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
-import type { SalesSplitResult } from '../../core/api/models';
+import type { CreditNoteProposal, SalesSplitResult } from '../../core/api/models';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -65,7 +67,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -94,7 +96,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           @if (canReopen(data)) {
             <button class="btn btn--primary btn--sm quote-header-button" type="button"
                     [disabled]="busy() || dirty() || documentMutationBusy()" style="min-height:44px" (click)="reopen()">Heropen</button>
-          } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
+          } @else if (!isClaimDoc() && (data.order.status === 'CONCEPT'
                      || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
             <button class="btn btn--sm quote-header-button quote-header-button--send" type="button"
                     [class.quote-header-button--send-quiet]="dirty()"
@@ -162,6 +164,14 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <strong>{{ data.priced.lines.length }}</strong>
               <span>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }}</span>
             </div>
+            @if (isCreditNoteDoc()) {
+            <!-- A credit note delivers nothing: the tile that matters is the tegoed. -->
+            <div class="hero-fact">
+              <span class="hero-fact__label">Tegoed</span>
+              <strong>{{ data.priced.totals.totalInclVat | eur: 0 }}</strong>
+              <span>{{ data.order.status === 'CONCEPT' ? 'incl. btw · na uitreiken' : 'incl. btw' }}</span>
+            </div>
+            } @else {
             <div class="hero-fact">
               <span class="hero-fact__label">Levering</span>
               @if (isLooseCartons(data)) {
@@ -179,11 +189,12 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               }
             </div>
             }
+            }
             <div class="hero-fact hero-fact--total">
               @if (advanceAgreement()) {
                 <span class="hero-fact__label">Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
               } @else {
-              <span class="hero-fact__label">{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
+              <span class="hero-fact__label">{{ isCreditNoteDoc() ? 'Totaal creditnota' : isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
               <strong>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</strong>
               <span>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</span>
               }
@@ -237,7 +248,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
         <app-sales-advance-invoices [order]="data.order" />
         <app-sales-document-note [notes]="mobileCustomerAuthoredMessage(data) ? mobileCustomerNote(data) : data.order.notes" [fromCustomer]="mobileCustomerAuthoredMessage(data)" />
         <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || mobileSplitBusy()" (changed)="mobileFulfillmentChanged($event)" />
-        @if (!data.fulfillment && !isPartnerDocument(data.order)) {
+        @if (!data.fulfillment && !isPartnerDocument(data.order) && !isCreditNoteDoc()) {
           <section class="mobile-split-entry"><div><b>Een deel later leveren?</b><span>{{ mobileSplitBlockReason(data) || 'Verplaats producten naar een gekoppelde nalevering.' }}</span></div><button class="btn btn--sm" type="button" [disabled]="!!mobileSplitBlockReason(data) || dirty() || saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (click)="openMobileSplit()">Order splitsen</button></section>
         }
 
@@ -332,8 +343,19 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           </section>
         }
 
+        @if (isCreditNoteDoc() && data.creditedInvoiceNumber) {
+          <div class="credit-banner" role="status"><span aria-hidden="true">↩</span><span><b>Creditnota op <a [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }}</a></b> · alleen regels van die factuur, hoogstens de gefactureerde aantallen.</span></div>
+        }
         @if (advanceAgreement(); as agreement) {
           <app-sales-advance-agreement [agreement]="agreement" />
+        } @else if (!canEdit() && isCreditNoteDoc()) {
+          <div class="alert alert--info quote-lock">
+            <span class="alert__icon">✓</span>
+            <div class="grow">
+              <b>Deze creditnota staat vast</b>
+              <div class="small">Bedragen veranderen niet meer; het tegoed handel je af bij Controle.</div>
+            </div>
+          </div>
         } @else if (!canEdit()) {
           <div class="alert alert--info quote-lock">
             <span class="alert__icon">✓</span>
@@ -426,7 +448,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   [attr.aria-expanded]="isOpen('order')" aria-controls="quote-setup-body">
             <span class="section-toggle__number">1</span>
             <span class="section-toggle__copy">
-              <strong id="quote-setup-title">Klant &amp; offerte</strong>
+              <strong id="quote-setup-title">{{ isCreditNoteDoc() ? 'Klant & creditnota' : 'Klant & offerte' }}</strong>
               <span>{{ orderSummary() }}</span>
             </span>
             <span class="section-toggle__chev" aria-hidden="true"
@@ -436,24 +458,29 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                [class.collapse--open]="isOpen('order')"><div class="collapse__inner">
           <div class="card__body">
             <fieldset class="form-lock" [disabled]="!canEdit()">
+            @if (isCreditNoteDoc()) {
+            <p class="card-intro">Klant en leverland volgen de factuur. Kies de datum; de toelichting staat onder de reden op de creditnota.</p>
+            } @else {
             <p class="card-intro">
               Kies eerst voor wie de offerte is. Leverland en voorwaarden worden waar mogelijk
               van de klant overgenomen.
             </p>
+            }
             <div class="form-grid">
               <div class="field span-2">
                 <label class="req" for="so-customer">Klant</label>
-                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked()" [ngModel]="data.order.customerId"
+                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.customerId"
                         (ngModelChange)="setCustomer(+$event)">
                   @for (customer of customers(); track customer.id) {
                     <option [ngValue]="customer.id">{{ customer.company }}</option>
                   }
                 </select>
+                @if (isCreditNoteDoc() && data.creditedInvoiceNumber) { <span class="hint">Klant en land volgen factuur <a [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }} ›</a></span> }
               </div>
               <div class="field-duo">
                 <div class="field">
                   <label class="req" for="so-country">Land van levering</label>
-                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked()" [ngModel]="data.order.countryCode"
+                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.countryCode"
                           (ngModelChange)="patch({ countryCode: $event })">
                     @for (country of countries(); track country.code) {
                       <option [ngValue]="country.code">{{ country.name }}</option>
@@ -501,7 +528,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <app-date-field fieldId="so-date" [value]="data.order.orderDate"
                                 (valueChange)="patch({ orderDate: $event })" />
               </div>
-              @if (isInvoiceDoc()) {
+              @if (isCreditNoteDoc()) {
+                <div class="field">
+                  <label for="so-credit-reason">Reden</label>
+                  <input class="input" id="so-credit-reason" [value]="creditReason()" readonly aria-readonly="true" />
+                  <span class="hint">Vast sinds het maken van de creditnota; de toelichting hieronder staat eronder op het document.</span>
+                </div>
+              } @else if (isInvoiceDoc()) {
                 <div class="field">
                   <label for="so-due">Vervaldatum</label>
                   <app-date-field fieldId="so-due" [value]="data.order.invoiceDueDate ?? ''"
@@ -561,10 +594,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <span class="section-heading__number">2</span>
               <div>
                 <h2 id="order-lines-title">Producten</h2>
-                <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' ' + quantityLabel(data.priced.lines) + ' in deze offerte' : 'Bouw de offerte regel voor regel op' }}</p>
+                <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' ' + quantityLabel(data.priced.lines) + (isCreditNoteDoc() ? ' op deze creditnota' : ' in deze offerte') : (isCreditNoteDoc() ? 'Alleen regels van de factuur, hoogstens de gefactureerde aantallen' : 'Bouw de offerte regel voor regel op') }}</p>
               </div>
             </div>
-            @if (data.priced.lines.length) {
+            @if (data.priced.lines.length && !isCreditNoteDoc()) {
               <button class="btn btn--primary btn--sm add-product" type="button"
                       [disabled]="!mobileCommercialEditable() || !available().length" (click)="openPicker()">
                 <span aria-hidden="true">＋</span> Product
@@ -666,6 +699,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     @if (linePending()[line.productId]; as to) {
                       <span class="hint warn-text" role="status">Volle doos: wordt <b>{{ to | num }} {{ lineUnit(line.productId).short }}</b></span>
                     }
+                    @if (creditLineHint(line.productId, line.quantity); as hint) { <span class="credit-line-hint">{{ hint }}</span> }
                   </div>
                   <div class="field">
                     <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>
@@ -673,14 +707,18 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                       <input class="input num" [id]="'p-' + line.productId" type="number"
                              min="0" step="0.01" inputmode="decimal" [disabled]="!mobileCommercialEditable()"
                              [ngModel]="line.unitPrice"
-                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
+                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })"
+                             (blur)="creditPriceBlur(line.productId, $event)" />
                       <!-- The discount hides behind its own vertical tab: two
                            calm fields until you actually want a third. -->
+                      @if (!isCreditNoteDoc()) {
                       <button class="input-affix__suffix discount-tab" type="button"
                               [class.discount-tab--on]="discountShown(line)"
                               [attr.aria-expanded]="discountShown(line)"
                               (click)="toggleDiscountOpen(line.productId)">korting</button>
+                      }
                     </div>
+                    @if (creditPriceHint(line.productId); as hint) { <span class="hint danger-text" role="alert">{{ hint }}</span> }
                   </div>
                   @if (discountShown(line)) {
                   <div class="field">
@@ -726,6 +764,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   </div>
                 }
 
+                @if (!isCreditNoteDoc()) {
                 <div class="delivery order-line__delivery">
                   <div class="delivery-row">
                     <span class="stock-dot"
@@ -773,8 +812,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     </div>
                   }
                 </div>
+                }
 
-                @if (canToggleLineAvailability(line.productId)) { <div class="line-availability"><button type="button" (click)="toggleLineAvailability(line.productId)">Tijdelijk niet beschikbaar</button><span>Voor deze order op 0 zetten.</span></div> }
+                @if (!isCreditNoteDoc() && canToggleLineAvailability(line.productId)) { <div class="line-availability"><button type="button" (click)="toggleLineAvailability(line.productId)">Tijdelijk niet beschikbaar</button><span>Voor deze order op 0 zetten.</span></div> }
 
                 @if (isAdvance(data.order)) {
                   <p class="line-internal__note">Voorschot voor de containerfinanciering. Het resultaat wordt berekend bij elke uitgegeven veilingafrekening.</p>
@@ -845,8 +885,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             @if ((data.order.extraLines ?? []).length || mobileCommercialEditable()) {
               <div class="extra-lines" aria-label="Andere regels">
                 <div class="extra-lines__head">
-                  <strong>Andere regels</strong>
-                  <small>Eigen lijn op het document, buiten de staffels</small>
+                  <strong>{{ isCreditNoteDoc() ? 'Bedragen zonder product' : 'Andere regels' }}</strong>
+                  <small>{{ isCreditNoteDoc() ? 'Een bedrag op de creditnota zonder productregel, excl. btw' : 'Eigen lijn op het document, buiten de staffels' }}</small>
                 </div>
                 @for (extra of data.order.extraLines ?? []; track $index; let i = $index) {
                   <div class="extra-line">
@@ -894,7 +934,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
         <!-- ==================================== transport and delivery -->
         @if (desktop.active() || phoneStep() === 2) {
-        @if (isAdvanceInvoice(data)) { <section id="quote-logistics" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> } @else {<section class="card logistics-card erp-workspace__section" id="quote-logistics" aria-labelledby="logistics-title">
+        @if (isAdvanceInvoice(data)) { <section id="quote-logistics" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> }
+        @else if (isCreditNoteDoc()) { <section id="quote-logistics" class="card erp-workspace__section" aria-label="Levering"><p class="credit-card-note"><b>Geen levering · creditnota.</b> Niet van toepassing op een creditnota. Vracht crediteer je als aparte regel bij Controle.</p></section> }
+        @else {<section class="card logistics-card erp-workspace__section" id="quote-logistics" aria-labelledby="logistics-title">
           <div class="section-card-head">
             <div class="section-heading">
               <span class="section-heading__number">3</span>
@@ -970,14 +1012,16 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           </div>
           <div class="card__body">
-            <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" />
+            <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" (applyRequested)="openOffset($event)" />
             <app-sales-invoice-declaration [view]="data" [dirty]="dirty() || saving()" />
-            @if (isInvoiceDoc() && !data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
-              <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">Factuur e-mailen…</button>
+            @if (isClaimDoc() && !data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+              <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">{{ isCreditNoteDoc() ? 'Creditnota e-mailen…' : 'Factuur e-mailen…' }}</button>
             }
-            @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
+            @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId && !isCreditNoteDoc()) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
             @if (advanceAgreement(); as agreement) {
               <p class="hint">De opgeslagen betaalafspraak staat bovenaan. De slotfactuur volgt na de veiling.</p>
+            } @else if (isCreditNoteDoc()) {
+              @if (data.creditedInvoiceNumber) { <p class="hint">Op factuur <a [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }}</a> · {{ creditReason() }}</p> }
             } @else if (data.order.partnerPurchaseOrderId) {
               <section class="desk-partner" aria-label="Partnercontainer">
                 <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
@@ -1012,7 +1056,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   <span class="check-lines__what">
                     <b>{{ line.description }}</b>
                     <small>{{ line.quantity | num }} {{ lineUnit(line.productId).short }} × @if (linePrimaryPrice(line); as primary) { {{ primary.price | eur: 2 }} per {{ primary.singular }} } @else { {{ line.unitPrice | eur: 2 }} }@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
-                      · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}}</small>
+                      @if (!isCreditNoteDoc()) { · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}} }</small>
                   </span>
                   <span class="num check-lines__amount">{{ line.net | eur }}</span>
                 </li>
@@ -1024,12 +1068,12 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   <span class="check-lines__photo check-lines__photo--empty" aria-hidden="true">＋</span>
                   <span class="check-lines__what">
                     <b>{{ extra.description }}</b>
-                    <small>{{ extra.quantity | num }} × {{ extra.unitPrice | eur: 2 }} · eigen regel, buiten de staffels</small>
+                    <small>{{ extra.quantity | num }} × {{ extra.unitPrice | eur: 2 }} · {{ isCreditNoteDoc() ? 'bedrag zonder product' : 'eigen regel, buiten de staffels' }}</small>
                   </span>
                   <span class="num check-lines__amount">{{ extra.total | eur }}</span>
                 </li>
               }
-              @if (!isAdvanceInvoice(data) && data.priced.lines.length) {
+              @if (!isAdvanceInvoice(data) && !isCreditNoteDoc() && data.priced.lines.length) {
                 <li class="check-lines__delivery">
                   <span class="check-lines__delivery-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7zM7.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0M17.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0" /></svg>
@@ -1087,7 +1131,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               }
               <!-- The one commercial lever at check time: an order discount
                    for a fair or a deal, as a percentage or an amount. -->
-              @if (canEdit()) {
+              @if (canEdit() && !isCreditNoteDoc()) {
                 @if (!orderDiscountOpen()) {
                   <button class="receipt-korting__add" type="button"
                           (click)="orderDiscountOpen.set(true)">
@@ -1124,7 +1168,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
               @if ((data.priced.extraLines ?? []).length) {
                 <div class="receipt__row receipt__row--head">
-                  <span>Andere regels</span>
+                  <span>{{ isCreditNoteDoc() ? 'Bedragen zonder product' : 'Andere regels' }}</span>
                   <span class="num">{{ data.priced.totals.extraLinesTotal | eur }}</span>
                 </div>
                 @for (extra of data.priced.extraLines ?? []; track $index) {
@@ -1134,8 +1178,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   </div>
                 }
               }
+              @if (!isCreditNoteDoc() || data.priced.totals.freight + data.priced.totals.handling > 0) {
               <div class="receipt__row receipt__row--head">
-                <span>Verzending</span>
+                <span>{{ isCreditNoteDoc() ? 'Vracht en handling gecrediteerd' : 'Verzending' }}</span>
                 <span class="num">
                   @if (data.order.freight === 'TE_BEPALEN') {
                     <span class="danger-text">nog te bepalen</span>
@@ -1144,6 +1189,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                   }
                 </span>
               </div>
+              }
               @if (data.order.freight !== 'TE_BEPALEN') {
                 <div class="receipt__row receipt__row--sub">
                   <span>Vracht · {{ freightBasisLabel(data) }}</span>
@@ -1162,9 +1208,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               </div>
 
               <div class="receipt__row receipt__row--total">
-                <span>Totaal
+                <span>{{ isCreditNoteDoc() ? 'Totaal creditnota' : 'Totaal' }}
                   <span class="receipt__profit" [class.receipt__profit--negative]="displayedProfit(data) < 0">
                     @if (isAdvance(data.order)) { Voorschot = financiering }
+                    @else if (isCreditNoteDoc()) { tegoed voor de klant }
                     @else { {{ isPartnerDocument(data.order) ? 'gerealiseerd resultaat' : 'winst' }} {{ displayedProfit(data) >= 0 ? '+' : '' }}{{ displayedProfit(data) | eur: 0 }} }
                   </span>
                 </span>
@@ -1175,8 +1222,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           </div>
         </section>
 
-        <!-- ==================================== sending the quote -->
-        @if (!isInvoiceDoc()) {
+        <!-- ==================================== sending the quote (a claim document is issued, not sent) -->
+        @if (!isClaimDoc()) {
         <section class="card send-card erp-workspace__section" id="quote-status" aria-labelledby="send-title">
           <div class="send-card__head">
             <div class="send-card__icon" [class.send-card__icon--ok]="!sendIssues().length"
@@ -1282,7 +1329,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           } @else if (!dirty() && pendingRevision()) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     (click)="focusPendingRevision()">Wijziging beoordelen</button>
-          } @else if (!dirty() && !isInvoiceDoc() && data.order.status === 'GEACCEPTEERD') {
+          } @else if (!dirty() && !isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     [disabled]="invoiceConversionBusy() || saving()" (click)="makeInvoiceFromEditor(data)">
               {{ advanceAgreement() ? 'Voorschotten beheren' : invoiceConversionBusy() ? 'Factuur maken…' : 'Factuur maken' }}
@@ -1291,15 +1338,18 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                      && canReopen(data)) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     [disabled]="busy() || dirty() || documentMutationBusy()" style="min-height:44px" (click)="reopen()">Heropenen</button>
-          } @else if (!dirty() && !isInvoiceDoc() && !sendIssues().length) {
+          } @else if (!dirty() && !isClaimDoc() && !sendIssues().length) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     [disabled]="sending()" (click)="openSend()">Versturen</button>
-          } @else if (!dirty() && !isInvoiceDoc() && sendIssues().length) {
+          } @else if (!dirty() && !isClaimDoc() && sendIssues().length) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     (click)="fixIssue(sendIssues()[0])">
               {{ sendIssues().length }} open {{ sendIssues().length === 1 ? 'punt' : 'punten' }}
             </button>
-          } @else if (!dirty() && isInvoiceDoc()) {
+          } @else if (!dirty() && isCreditNoteDoc() && data.order.status === 'CONCEPT') {
+            <button class="btn btn--primary sales-mobile-dock__primary" type="button"
+                    [disabled]="busy() || documentMutationBusy()" (click)="issueCreditNote(true)">Uitreiken</button>
+          } @else if (!dirty() && isClaimDoc()) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     (click)="openPdfSheet()">PDF bekijken</button>
           }
@@ -1333,6 +1383,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       }
 
       @if (mobileSplitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (busyChange)="mobileSplitBusy.set($event)" (saved)="mobileSplitSaved($event)" (closed)="closeMobileSplit()" /> }
+      @if (offsetOpen()) { <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" /> }
       @if (restoreLine(); as restore) { <app-sales-line-restore-sheet [description]="restore.description" [piecesPerCarton]="restore.piecesPerCarton" (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" /> }
 
       @if (pdfSheet()) {
@@ -1342,6 +1393,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           [customerName]="customerName()"
           [customerLanguage]="customerLanguage()"
           [invoice]="isInvoiceDoc()"
+          [creditNote]="isCreditNoteDoc()"
           [agreementQuote]="!!advanceAgreement()"
           [dirty]="dirty()"
           [saving]="saving()"
@@ -1447,10 +1499,10 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       }
 
       @if (sendSheet()) {
-        <app-sheet [title]="isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen'" (closed)="sendSheet.set(false)">
+        <app-sheet [title]="isCreditNoteDoc() ? 'Creditnota versturen' : isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen'" (closed)="sendSheet.set(false)">
           <div body>
             <p class="small muted" style="margin-bottom:14px">
-              {{ isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.' }}
+              {{ isCreditNoteDoc() ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.' : isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.' }}
             </p>
             <div class="field">
               <label for="send-message">Persoonlijk bericht</label>
@@ -2330,7 +2382,8 @@ export class SalesEditor {
         && !this.overassigned();
     }
     if (id === 'quote-check') {
-      return this.isInvoiceDoc()
+      /* An invoice or a credit note is issued, not sent: the quote's send checklist does not apply. */
+      return (data.order.docType ?? 'OFFERTE') !== 'OFFERTE'
         ? this.workflowComplete('quote-setup') && this.workflowComplete('order-lines')
         : this.sendIssues().length === 0;
     }
@@ -2363,13 +2416,14 @@ export class SalesEditor {
       return `${data.priced.lines.length} ${data.priced.lines.length === 1 ? 'regel' : 'regels'}`;
     }
     if (id === 'quote-logistics') {
+      if (data.order.docType === 'CREDITNOTA') return 'Geen levering · creditnota';
       if (isAdvanceInvoice(data)) return advancePlanningHint(data);
       if (data.priced.validation.freightPricingIssue) return 'Vracht nakijken';
       if (data.priced.totals.unassignedCartons > 0 || this.overassigned()) return 'Indeling nakijken';
       return data.order.freight === 'TE_BEPALEN' ? 'Vracht later' : 'Volledig';
     }
     if (id === 'quote-check') {
-      const open = this.isInvoiceDoc()
+      const open = (data.order.docType ?? 'OFFERTE') !== 'OFFERTE'
         ? Number(!this.workflowComplete('quote-setup')) + Number(!this.workflowComplete('order-lines'))
         : this.sendIssues().length;
       if (open) return `${open} open ${open === 1 ? 'punt' : 'punten'}`;
@@ -2441,6 +2495,151 @@ export class SalesEditor {
   readonly carriers = signal<Carrier[]>([]);
 
   readonly isInvoiceDoc = computed(() => (this.view()?.order.docType ?? 'OFFERTE') === 'FACTUUR');
+
+  /* ---- credit notes: the document that reduces an invoice --------------- */
+  readonly isCreditNoteDoc = computed(() => isCreditNote(this.view()?.order));
+  /** An invoice or a credit note: the money UI applies to both. */
+  readonly isClaimDoc = computed(() => this.isInvoiceDoc() || this.isCreditNoteDoc());
+  readonly canCreateCreditNote = computed(() => canCreateCreditNote(this.view()));
+  readonly creditSheetOpen = signal(false);
+  readonly offsetOpen = signal(false);
+  readonly offsetTarget = signal<number | null>(null);
+  /** The credited invoice (its open amount drives 'Verrekenen met F-…') and the proposal (per-line caps of a concept). */
+  readonly creditOriginal = signal<SalesOrderView | null>(null);
+  readonly creditProposal = signal<CreditNoteProposal | null>(null);
+  private creditContextVersion = 0;
+  readonly creditOriginalOpenEur = computed(() => Math.max(0, this.creditOriginal()?.paymentSummary?.remainingEur ?? 0));
+  readonly creditSettlement = computed(() => creditNoteSettlement(this.view()?.paymentSummary, this.view()?.order.status));
+  /** Cancelled, rejected or expired: the tegoed lapsed and counts nowhere. */
+  readonly creditDead = computed(() => isDeadCreditNote(this.view()?.order));
+  readonly creditStep = computed(() => { const data = this.view(); return data && this.isCreditNoteDoc() ? creditNoteNextStep(data, this.creditOriginalOpenEur()) : null; });
+  /** Prices typed above a concept credit note's cap, by product: the model keeps the cap, the field says so until it is left. */
+  readonly creditPriceOver = signal<Record<number, number>>({});
+  creditPriceHint(productId: number): string | null {
+    const typed = this.creditPriceOver()[productId];
+    const cap = typed === undefined ? null : this.creditLineCap(productId);
+    return cap ? `Hoogstens ${euro(cap.priceMax)} per stuk, de gefactureerde prijs · gerekend met ${euro(cap.priceMax)}` : null;
+  }
+  /** Leaving the field writes the price that counts back into it, so field and amount agree. */
+  creditPriceBlur(productId: number, event: FocusEvent): void {
+    if (this.creditPriceOver()[productId] === undefined) return;
+    const cap = this.creditLineCap(productId);
+    const input = event.target as HTMLInputElement | null;
+    if (cap && input) input.value = String(cap.priceMax);
+    this.creditPriceOver.update((map) => { const next = { ...map }; delete next[productId]; return next; });
+  }
+  readonly creditReason = computed(() => creditReasonLabel(this.view()?.order.creditReason));
+  readonly canCancelCreditNote = computed(() => {
+    const data = this.view();
+    return !!data && this.isCreditNoteDoc() && ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN'].includes(data.order.status)
+      && !data.order.archivedAt && !data.order.goodsReturnedAt && !(data.paymentSummary?.payments?.length) && !this.documentMutationBusy();
+  });
+  /** Only a standard credit note with product lines on a shipped invoice takes goods back, once. */
+  readonly canReturnGoods = computed(() => {
+    const data = this.view();
+    if (!data || !this.isCreditNoteDoc() || (data.order.purpose ?? 'STANDARD') !== 'STANDARD') return false;
+    return ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(data.order.status) && data.priced.lines.some((line) => line.quantity > 0)
+      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt;
+  });
+  readonly returnSheet = signal<{ rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string; before: number | null; after: number | null }[]; pieces: number; number: string } | null>(null);
+  /** Every adopted view refetches its context: the open amount changes with each offset or receipt. */
+  protected loadCreditContext(view: SalesOrderView): void {
+    const version = ++this.creditContextVersion;
+    const originalId = isCreditNote(view.order) ? (view.order.creditedInvoiceId ?? view.creditedInvoiceId ?? null) : null;
+    if (originalId == null) { this.creditOriginal.set(null); this.creditProposal.set(null); return; }
+    void this.sales.order(originalId).then((original) => { if (version === this.creditContextVersion) this.creditOriginal.set(original); }).catch(() => undefined);
+    if (view.order.status === 'CONCEPT') {
+      void this.sales.creditNoteProposal(originalId).then((proposal) => { if (version === this.creditContextVersion) this.creditProposal.set(proposal); }).catch(() => undefined);
+    } else this.creditProposal.set(null);
+  }
+  /** A concept credit note: how many pieces of this product may still be credited, and the price ceiling. */
+  creditLineCap(productId: number): { invoiced: number; max: number; priceMax: number } | null {
+    if (!this.isCreditNoteDoc()) return null;
+    const line = this.creditProposal()?.lines.find((item) => item.productId === productId);
+    if (!line) return null;
+    let saved = 0;
+    try { saved = (JSON.parse(this.savedOrder()) as SalesOrder).lines.find((item) => item.productId === productId)?.quantity ?? 0; } catch { saved = 0; }
+    return { invoiced: line.invoicedQuantity, max: Math.max(0, line.invoicedQuantity - line.alreadyCreditedQuantity + saved), priceMax: line.netUnitPriceEur };
+  }
+  creditLineHint(productId: number, quantity: number): string | null {
+    const cap = this.creditLineCap(productId);
+    return cap ? `van ${cap.invoiced.toLocaleString('nl-BE')} gefactureerd · nog ${Math.max(0, cap.max - quantity).toLocaleString('nl-BE')} te crediteren` : null;
+  }
+  openCreditSheet(): void { if (this.canCreateCreditNote() && !this.dirty() && !this.saving()) this.creditSheetOpen.set(true); }
+  /** The sheet navigates to the new credit note; the invoice on screen refreshes its 'Creditnota in concept' link meanwhile. */
+  creditCreated(_view: SalesOrderView): void {
+    this.creditSheetOpen.set(false);
+    const id = this.view()?.order.id;
+    if (!id || this.dirty()) return;
+    void this.sales.order(id).then((fresh) => { if (this.view()?.order.id === id && !this.dirty()) this.adopt(fresh); }).catch(() => undefined);
+  }
+  openOffset(target: number | null): void {
+    if (!this.isCreditNoteDoc() || this.dirty() || this.saving() || this.documentMutationBusy()) return;
+    this.offsetTarget.set(target); this.offsetOpen.set(true);
+  }
+  offsetApplied(fresh: SalesOrderView): void {
+    this.offsetOpen.set(false);
+    if (this.view()?.order.id !== fresh.order.id) return;
+    this.adopt(fresh); void this.loadHistory(fresh.order.id); this.refreshWorkQueue();
+  }
+  /** 'Uitreiken': the concept credit note is fixed; no mail goes out. */
+  issueCreditNote(thenView = false): void {
+    const data = this.view();
+    if (!data || !this.isCreditNoteDoc() || data.order.status !== 'CONCEPT' || this.dirty() || this.saving() || this.busy() || this.documentMutationBusy()) return;
+    this.ui.confirm({ title: 'Creditnota uitreiken', message: `<b>${escapeHtml(data.order.number)}</b> wordt vastgezet. Er gaat geen e-mail uit.`, confirmLabel: 'Uitreiken' },
+      () => { void this.confirmIssueCreditNote(data.order.id, thenView); });
+  }
+  private async confirmIssueCreditNote(orderId: number, thenView: boolean): Promise<void> {
+    if (this.view()?.order.id !== orderId || this.dirty() || this.documentMutationBusy()) return;
+    this.documentMutationBusy.set(true); this.busy.set(true);
+    try {
+      const fresh = await this.sales.issueInvoice(orderId);
+      if (this.view()?.order.id !== orderId) return;
+      this.adopt(fresh); void this.loadHistory(orderId); this.refreshWorkQueue();
+      this.ui.toast('Creditnota uitgereikt');
+      if (thenView) await this.router.navigate(['/sales', orderId]);
+    } catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Creditnota uitreiken mislukt'), 'err'); }
+    finally { this.documentMutationBusy.set(false); this.busy.set(false); }
+  }
+  /** Cancelling keeps the number reserved and lets the invoice count in full again. */
+  cancelCreditNote(): void {
+    const data = this.view();
+    if (!data || !this.canCancelCreditNote() || this.busy()) return;
+    this.ui.confirm({ title: 'Creditnota annuleren', message: `<b>${escapeHtml(data.order.number)}</b> vervalt; het nummer blijft gereserveerd. De factuur telt weer volledig.`, confirmLabel: 'Creditnota annuleren', danger: true },
+      async () => {
+        if (this.view()?.order.id !== data.order.id || this.busy()) return;
+        this.busy.set(true); this.documentMutationBusy.set(true);
+        try { this.adopt(await this.sales.cancelQuote(data.order.id, '', false)); void this.loadHistory(data.order.id); this.refreshWorkQueue(); this.ui.toast('Creditnota geannuleerd'); }
+        catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Annuleren mislukt'), 'err'); }
+        finally { this.busy.set(false); this.documentMutationBusy.set(false); }
+      });
+  }
+  /** Taking goods back is deliberate: first every product with its stock before and after. */
+  async openReturnSheet(data: SalesOrderView): Promise<void> {
+    if (!this.canReturnGoods() || this.documentMutationBusy()) return;
+    let stockById = new Map<number, number>();
+    try {
+      const products = await this.catalog.products();
+      stockById = new Map(products.filter((product) => product.id !== null).map((product) => [product.id!, product.stockQuantity ?? 0]));
+    } catch { /* best effort; the rows then read "onbekend" */ }
+    const rows = data.priced.lines.filter((line) => line.quantity > 0).map((line) => {
+      const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
+      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity, unitLabel: this.lineUnit(line.productId).plural, before, after: before === null ? null : before + line.quantity };
+    });
+    this.returnSheet.set({ rows, pieces: data.priced.totals.pieces, number: data.order.number });
+  }
+  async confirmReturnGoods(): Promise<void> {
+    const data = this.view();
+    if (!data || !this.returnSheet() || this.documentMutationBusy()) return;
+    this.documentMutationBusy.set(true);
+    try {
+      const fresh = await this.sales.returnGoods(data.order.id);
+      if (this.view()?.order.id !== data.order.id) return;
+      this.adopt(fresh); void this.loadHistory(data.order.id); this.returnSheet.set(null);
+      this.ui.toast('Goederen terug in voorraad geboekt');
+    } catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Retour boeken mislukt'), 'err'); }
+    finally { this.documentMutationBusy.set(false); }
+  }
   /** "Verkoopofferte", "Voorschotfactuur", "Slotfactuur": what this document is. */
   readonly documentKind = computed(() => {
     if (this.advanceAgreement()) return 'Offerte met betaalplan';
@@ -2521,7 +2720,7 @@ export class SalesEditor {
   /** An open quote can be withdrawn; invoices and closed quotes cannot. */
   readonly canCancel = computed(() => {
     const data = this.view();
-    if (!data || this.isInvoiceDoc()) return false;
+    if (!data || this.isInvoiceDoc() || this.isCreditNoteDoc()) return false;
     return ['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAAGD'].includes(data.order.status);
   });
   readonly customerEmail = computed(() => {
@@ -2675,7 +2874,7 @@ export class SalesEditor {
   /** A customer-link token alone is not use; sending, viewing or deciding is. */
   readonly canDelete = computed(() => {
     const data = this.view();
-    return !!data && this.revisions().length === 0
+    return !!data && this.revisions().length === 0 && !(data.creditNotes?.length)
       && isLocallyDeletableSalesDocument(data.order);
   });
   readonly deleting = signal(false);
@@ -2699,7 +2898,7 @@ export class SalesEditor {
     const data = this.view();
     if (!data) return ['De offerte wordt nog geladen'];
     const issues: string[] = [];
-    const invoice = data.order.docType === 'FACTUUR';
+    const invoice = data.order.docType === 'FACTUUR' || data.order.docType === 'CREDITNOTA';
     if (!(invoice ? ['CONCEPT', 'UITGEREIKT', 'BETAALD'] : ['CONCEPT', 'VERZONDEN', 'BEKEKEN']).includes(data.order.status)) {
       issues.push(`Status ${this.label(data.order.status).toLowerCase()} laat versturen niet toe`);
     }
@@ -2882,6 +3081,7 @@ export class SalesEditor {
     this.savedOrder.set(JSON.stringify(view.order));
     this.saveError.set(null);
     this.previewError.set(null);
+    this.loadCreditContext(view);
   }
 
   /** Applies a change to the draft and re-prices it. */
@@ -3092,6 +3292,13 @@ export class SalesEditor {
   setLineQuantity(productId: number, raw: number | null | ''): void {
     if (!this.mobileCommercialEditable()) return;
     if (raw === null || raw === '' || !Number.isFinite(raw) || raw < 0 || this.lineUnavailable(productId)) return;
+    /* A credit note never exceeds what the invoice still allows, and prices the exact quantity: no carton snap. */
+    const cap = this.creditLineCap(productId);
+    if (cap) {
+      this.linePending.update((map) => { const next = { ...map }; delete next[productId]; return next; });
+      this.setLine(productId, { quantity: Math.max(1, Math.min(cap.max, Math.round(raw))) });
+      return;
+    }
     if (raw === 0 && this.currentQuantity(productId) > 0 && this.canToggleLineAvailability(productId)) {
       this.changeLineAvailability(productId, true); return;
     }
@@ -3127,6 +3334,19 @@ export class SalesEditor {
   setLine(productId: number,
           changes: { quantity?: number; unitPriceEur?: number; manualDiscountPct?: number;
                      deliveryWeek?: string }): void {
+    if (changes.unitPriceEur !== undefined) {
+      const cap = this.creditLineCap(productId);
+      if (cap) {
+        const typed = changes.unitPriceEur;
+        const over = Number.isFinite(typed) && typed > cap.priceMax + 0.00005;
+        this.creditPriceOver.update((map) => {
+          if (over) return { ...map, [productId]: typed };
+          if (map[productId] === undefined) return map;
+          const next = { ...map }; delete next[productId]; return next;
+        });
+        changes = { ...changes, unitPriceEur: Math.max(0.0001, Math.min(cap.priceMax, Number.isFinite(typed) ? typed : cap.priceMax)) };
+      }
+    }
     if (!this.canEdit()) {
       const deliveryOnly = Object.keys(changes).length === 1
           && Object.prototype.hasOwnProperty.call(changes, 'deliveryWeek');
@@ -3210,7 +3430,7 @@ export class SalesEditor {
   }
 
   openPicker(): void {
-    if (!this.mobileCommercialEditable()) return;
+    if (!this.mobileCommercialEditable() || this.isCreditNoteDoc()) return;
     this.picking.set(true);
   }
 
@@ -3288,7 +3508,7 @@ export class SalesEditor {
       this.adopt(sent);
       this.sendSheet.set(false);
       void this.work.refresh(true);
-      this.ui.toast(`${data.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} verstuurd naar de klant`);
+      this.ui.toast(`${data.order.docType === 'CREDITNOTA' ? 'Creditnota' : data.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} verstuurd naar de klant`);
       await this.router.navigate(['/sales', sent.order.id]);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Versturen mislukt'), 'err');
@@ -3346,7 +3566,7 @@ export class SalesEditor {
       this.adopt(fresh);
       void this.loadCustomerPortalLink(orderId);
       void this.work.refresh(true);
-      this.ui.toast(`${fresh.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} staat weer op concept`);
+      this.ui.toast(`${fresh.order.docType === 'CREDITNOTA' ? 'Creditnota' : fresh.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} staat weer op concept`);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Heropenen mislukt'), 'err');
     } finally { this.documentMutationBusy.set(false); this.busy.set(false); }

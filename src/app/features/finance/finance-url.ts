@@ -29,9 +29,10 @@ export interface FinanceLocation {
   scope: 'all' | '';
   /** A bank account key, or '__none__' for receipts without an account. */
   account: string;
-  dir: 'in' | 'out' | '';
+  /** Ontvangen: receipts, refunds, or the verrekeningen between credit notes and invoices. */
+  dir: 'in' | 'out' | 'offset' | '';
   link: 'unlinked' | '';
-  kind: 'customer' | 'partner' | '';
+  kind: 'customer' | 'partner' | 'credit' | '';
   purpose: FinancePurpose | '';
   /** Analyse: 'YYYY' or 'all'; '' is the current year. */
   year: string;
@@ -123,10 +124,10 @@ export function parseFinanceLocation(get: (key: string) => string | null): Finan
   location.docs = text('docs') === 'missing' ? 'missing' : '';
   location.scope = text('scope') === 'all' ? 'all' : '';
   const dir = text('dir');
-  location.dir = dir === 'in' || dir === 'out' ? dir : '';
+  location.dir = dir === 'in' || dir === 'out' || dir === 'offset' ? dir : '';
   location.link = text('link') === 'unlinked' ? 'unlinked' : '';
   const kind = text('kind');
-  location.kind = kind === 'customer' || kind === 'partner' ? kind : '';
+  location.kind = kind === 'customer' || kind === 'partner' || kind === 'credit' ? kind : '';
   const purpose = text('purpose');
   location.purpose = PURPOSES.includes(purpose as FinancePurpose) ? purpose as FinancePurpose : '';
   const year = text('year');

@@ -258,6 +258,8 @@ export interface CashOutlook {
   openCostsEur: number;
   upcomingEur: number;
   openInvoicesEur: number;
+  /** Open credit-note tegoeden: money that goes back, already taken off openInvoicesEur. */
+  openCreditEur: number;
   /** Container terms due now and later: forecasts from the reconciliation, incl. nothing else. */
   containerNowEur: number;
   containerLaterEur: number;
@@ -270,16 +272,17 @@ export interface CashOutlook {
 }
 
 export function cashOutlook(bankEur: number, openCostsInclEur: number, upcomingInclEur: number, openInvoicesEur: number,
-                            containerNowEur = 0, containerLaterEur = 0): CashOutlook {
+                            containerNowEur = 0, containerLaterEur = 0, openCreditEur = 0): CashOutlook {
   const bank = finite(bankEur);
   const open = finite(openCostsInclEur);
   const upcoming = finite(upcomingInclEur);
-  const invoices = finite(openInvoicesEur);
+  const credit = Math.max(0, finite(openCreditEur));
+  const invoices = round2(finite(openInvoicesEur) - credit);
   const containerNow = finite(containerNowEur);
   const containerLater = finite(containerLaterEur);
   const afterPayablesEur = round2(bank - open - upcoming - containerNow);
   return {
-    bankEur: bank, openCostsEur: open, upcomingEur: upcoming, openInvoicesEur: invoices,
+    bankEur: bank, openCostsEur: open, upcomingEur: upcoming, openInvoicesEur: invoices, openCreditEur: credit,
     containerNowEur: containerNow, containerLaterEur: containerLater, afterPayablesEur,
     expectedEur: round2(afterPayablesEur + invoices - containerLater),
     netOpenEur: round2(invoices - open - upcoming - containerNow - containerLater),

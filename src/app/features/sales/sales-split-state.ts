@@ -4,6 +4,7 @@ import type { SalesOrderView, SalesSplitEligibility, SalesSplitPreview, SalesSpl
 export function salesSplitBlockReason(view: SalesOrderView | null | undefined): string | null {
   if (!view) return 'Laad eerst de verkooporder.';
   const order = view.order;
+  if (order.docType === 'CREDITNOTA') return 'Een creditnota splits je niet.';
   if (order.purpose && order.purpose !== 'STANDARD' || order.partnerPurchaseOrderId || order.partnerSettlement
     || view.advanceAgreement || view.advanceContents || view.settlement) return 'Partnerfacturen worden via hun container en termijnplan beheerd.';
   if (order.archivedAt) return 'Een gearchiveerd document kan niet worden gesplitst.';

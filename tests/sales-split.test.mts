@@ -154,6 +154,8 @@ test('local eligibility clearly excludes accepted quotes, existing invoice histo
   assert.equal(salesSplitBlockReason(view() as any), null);
   for (const patch of [{ status: 'VERZONDEN' }, { status: 'UITGEREIKT' }, { sentAt: '2026-09-10' }, { goodsShippedAt: '2026-09-10' }, { archivedAt: '2026-09-10' }, { purpose: 'PARTNER_ADVANCE' }, { purpose: 'PARTNER_SETTLEMENT' }, { paidAt: '2026-09-10' }]) assert.ok(salesSplitBlockReason({ ...view(), order: { ...view().order, ...patch } } as any));
   assert.match(salesSplitBlockReason({ ...view(), order: { ...view().order, docType: 'OFFERTE', status: 'GEACCEPTEERD' } } as any)!, /conceptfactuur/);
+  /* An unused concept credit note passes every other rule; the type alone blocks it. */
+  assert.match(salesSplitBlockReason({ ...view(), order: { ...view().order, docType: 'CREDITNOTA', status: 'CONCEPT' } } as any)!, /creditnota/i);
   assert.ok(salesSplitBlockReason({ ...view(), fulfillment: { groupId: 'existing' } } as any));
   assert.ok(salesSplitBlockReason({ ...view(), paymentSummary: { payments: [{ amountEur: 1 }] } } as any));
 });

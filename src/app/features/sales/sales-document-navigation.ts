@@ -1,12 +1,17 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
 
 export type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
 export type SalesScope = 'STANDARD' | 'PARTNER' | 'ALL';
+/** Within Facturen: everything, only invoices, or only credit notes. */
+export type SalesDocsFilter = 'all' | 'f' | 'cn';
 
 /** Scope chooses the business context; the tabs choose documents within it. */
 @Component({
   selector: 'app-sales-document-navigation',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Segmented],
   template: `
     <section class="document-navigation" aria-label="Verkoopdocumenten kiezen">
       <div class="scope-row">
@@ -31,7 +36,9 @@ export type SalesScope = 'STANDARD' | 'PARTNER' | 'ALL';
       @if (tab() === 'FACTUUR') {
         <div class="payment-filter">
           <label><input type="checkbox" [checked]="outstandingOnly()" (change)="outstandingChange.emit($any($event.target).checked)" /><span>Alleen nog te ontvangen</span></label>
-          @if (outstandingOnly()) { <small>Inclusief openstaande facturen in het archief.</small> }
+          <app-segmented class="docs-filter" label="Facturen of creditnota's" [variant]="desktop.active() ? 'desk' : 'ios'"
+                         [options]="docsOptions()" [value]="docs()" (changed)="docsChange.emit($any($event))" />
+          @if (outstandingOnly()) { <small>Inclusief openstaande facturen en creditnota's met een tegoed in het archief.</small> }
         </div>
       }
     </section>
@@ -51,24 +58,38 @@ export type SalesScope = 'STANDARD' | 'PARTNER' | 'ALL';
     .document-tabs button:hover{background:var(--surface-2)}select:focus-visible,.document-tabs button:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-3px}
     .payment-filter{display:flex;align-items:center;flex-wrap:wrap;gap:4px 20px;padding:6px 20px;border-top:1px solid var(--line)}
     .payment-filter label{display:inline-flex;align-items:center;gap:9px;min-height:44px;font-size:13px;cursor:pointer}.payment-filter input{width:18px;height:18px;accent-color:var(--rose-dark);margin:0}.payment-filter small{color:var(--muted);font-size:12px;line-height:1.5}
-    @media(max-width:679px){.scope-row{display:block;padding:14px}.scope-field{width:100%;gap:7px}select{font-size:16px;min-height:48px}.scope-hint{display:none}.document-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;padding:0 6px}.document-tabs button{min-width:0;min-height:54px;padding:10px 4px;font-size:13px;gap:6px}.document-tabs b{min-width:21px;padding:2px 5px;font-size:11px}.payment-filter{padding:6px 14px 10px}.payment-filter small{width:100%}}
+    .docs-filter{margin-left:auto;min-width:0}
+    @media(max-width:679px){.scope-row{display:block;padding:14px}.scope-field{width:100%;gap:7px}select{font-size:16px;min-height:48px}.scope-hint{display:none}.document-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;padding:0 6px}.document-tabs button{min-width:0;min-height:54px;padding:10px 4px;font-size:13px;gap:6px}.document-tabs b{min-width:21px;padding:2px 5px;font-size:11px}.payment-filter{padding:6px 14px 10px}.payment-filter small{width:100%}.docs-filter{margin:0 0 4px;width:100%}}
   `,
 })
 export class SalesDocumentNavigation {
+  readonly desktop = inject(DesktopViewport);
   readonly scope = input<SalesScope>('ALL');
   readonly tab = input<SalesTab>('OFFERTE');
   readonly counts = input.required<Record<SalesTab, number>>();
   readonly loading = input(false);
   readonly outstandingOnly = input(false);
+  readonly docs = input<SalesDocsFilter>('all');
+  /** How many invoices and credit notes sit behind the Facturen tab, for the segments. */
+  readonly docsCounts = input<{ f: number; cn: number } | null>(null);
   readonly scopeChange = output<SalesScope>();
   readonly tabChange = output<SalesTab>();
   readonly outstandingChange = output<boolean>();
+  readonly docsChange = output<SalesDocsFilter>();
   readonly tabs: { key: SalesTab; label: string }[] = [
     { key: 'OFFERTE', label: 'Offertes' }, { key: 'FACTUUR', label: 'Facturen' }, { key: 'ARCHIEF', label: 'Archief' },
   ];
+  readonly docsOptions = computed<SegmentOption[]>(() => {
+    const counts = this.docsCounts();
+    return [
+      { id: 'all', label: 'Alle' },
+      { id: 'f', label: 'Facturen', count: counts?.f ?? null },
+      { id: 'cn', label: 'Creditnota’s', shortLabel: 'CN', count: counts?.cn ?? null },
+    ];
+  });
   readonly scopeHint = computed(() => ({
-    STANDARD: 'Offertes en facturen voor verkoop aan je klanten.',
-    PARTNER: 'Voorschotten en veilingafrekeningen van gezamenlijke inkopen.',
+    STANDARD: 'Offertes, facturen en creditnota’s voor verkoop aan je klanten.',
+    PARTNER: 'Voorschotten, veilingafrekeningen en creditnota’s van gezamenlijke inkopen.',
     ALL: 'Reguliere verkoop en partnerdocumenten in één overzicht.',
   })[this.scope()]);
   navigateTabs(event: KeyboardEvent): void {

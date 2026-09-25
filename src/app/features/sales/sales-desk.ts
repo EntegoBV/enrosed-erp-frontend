@@ -11,9 +11,12 @@ import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
+import { creditNoteJourney, creditNoteSettlement } from './sales-credit-note';
+import { SalesCreditNoteSheet } from './sales-credit-note-sheet';
+import { SalesOffsetSheet } from './sales-offset-sheet';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
-import { ChangeDetectionStrategy, Component, computed, signal, effect, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, signal, effect, inject, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
@@ -63,7 +66,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -86,23 +89,33 @@ interface JourneyStep {
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
         }
-        @if (!splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()">Order splitsen</button> }
+        @if (!isCreditNoteDoc() && !splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()">Order splitsen</button> }
         <button class="btn btn--sm" type="button" (click)="openPdfSheet()">PDF</button>
+        @if (canCreateCreditNote()) { <button class="btn btn--sm" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="openCreditSheet()">Creditnota maken</button> }
+        @if (isCreditNoteDoc() && data.order.status === 'CONCEPT') {
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="dirty() || saving() || busy() || documentMutationBusy()" [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="issueCreditNote()">Uitreiken</button>
+        } @else if (isCreditNoteDoc() && creditStep()?.key === 'apply') {
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || documentMutationBusy()" (click)="openOffset(data.creditedInvoiceId ?? null)">{{ creditStep()!.label }}</button>
+        }
         @if (data.order.status === 'CONCEPT' && canCreateInvoice(data)) {
           <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()"
                   [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="makeInvoice(data)">
             {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
           </button>
         }
+        @if (isCreditNoteDoc() && creditStep()?.key === 'refund') {
+          <!-- The settlement is the next step; undoing the document is not. -->
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || documentMutationBusy()" (click)="noteRefund()">{{ creditStep()!.label }}</button>
+        }
         @if (canReopen(data)) {
-          <button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="reopen()">Heropenen</button>
-        } @else if (!isInvoiceDoc() && (data.order.status === 'CONCEPT'
+          <button class="btn btn--sm" [class.btn--primary]="!isCreditNoteDoc()" type="button" [disabled]="busy()" (click)="reopen()">Heropenen</button>
+        } @else if (!isClaimDoc() && (data.order.status === 'CONCEPT'
                    || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="sending() || dirty()"
                   [title]="dirty() ? 'Sla eerst op' : ''" (click)="openSend()">
             {{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }}
           </button>
-        } @else if (!isInvoiceDoc() && data.order.status === 'GEACCEPTEERD') {
+        } @else if (!isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="makeInvoice(data)">
             {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
           </button>
@@ -119,9 +132,13 @@ interface JourneyStep {
               <p>{{ orderCountryName() || 'Nog geen leverland' }} · {{ data.order.incoterm || 'geen incoterm' }}
                 · {{ paymentLabel(data.order, 'betaalvoorwaarden van de klant') }}</p>
               <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }}
-                @if (isInvoiceDoc()) { · vervalt {{ data.order.invoiceDueDate ? (data.order.invoiceDueDate | dateNl) : '—' }} }
+                @if (isCreditNoteDoc()) { · {{ creditReason() }}@if (data.creditedInvoiceNumber) { · Op factuur <a class="desk-hero__link" [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }} ›</a> } }
+                @else if (isInvoiceDoc()) { · vervalt {{ data.order.invoiceDueDate ? (data.order.invoiceDueDate | dateNl) : '—' }} }
                 @else { · geldig tot {{ data.order.validUntil | dateNl }} }
                 @if (lastEvent(); as event) { · {{ event.summary }} ({{ event.at | dateTimeNl }}) }</p>
+              @if (data.creditNotes?.length) {
+                <p class="desk-hero__meta desk-credit-meta">@for (note of data.creditNotes; track note.id) { <a class="desk-hero__link" [routerLink]="['/sales', note.id]">{{ note.status === 'CONCEPT' ? 'Creditnota in concept ' + note.number : 'Gecrediteerd ' + (note.totalInclVatEur | eur) + ' · ' + note.number }} ›</a> }</p>
+              }
               @if (data.order.sourceQuoteId && data.sourceQuoteNumber) {
                 <p class="desk-hero__meta"><a class="desk-hero__link" [routerLink]="['/sales', data.order.sourceQuoteId]">Uit offerte {{ data.sourceQuoteNumber }} ›</a></p>
               }
@@ -145,7 +162,23 @@ interface JourneyStep {
             </div>
           </div>
 
-          <div class="desk-kpis" aria-label="Kerncijfers">
+          <div class="desk-kpis" [class.desk-kpis--credit]="isCreditNoteDoc()" aria-label="Kerncijfers">
+            @if (isCreditNoteDoc()) {
+            <div class="desk-kpi"><small>Producten</small><strong>{{ data.priced.totals.pieces | num }}</strong><span>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}@if ((data.order.extraLines ?? []).length) { · {{ (data.order.extraLines ?? []).length }} {{ (data.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }</span></div>
+            <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" [class.desk-kpi--credit]="creditSettlement().openEur > 0" [class.desk-kpi--credit-done]="creditSettlement().openEur <= 0 && data.order.status !== 'CONCEPT' && !creditDead()" (click)="railTab.set('payments')">
+              <small>Tegoed</small>
+              <strong>{{ (data.order.status === 'CONCEPT' ? data.priced.totals.totalInclVat : creditSettlement().openEur) | eur }}</strong>
+              <span>{{ data.order.status === 'CONCEPT' ? 'incl. btw · nog niet uitgereikt' : creditDead() ? 'geannuleerd · ' + (creditSettlement().tegoedEur | eur) + ' vervallen' : creditSettlement().openEur > 0 ? 'nog af te handelen · incl. btw' : 'afgehandeld · ' + (creditSettlement().tegoedEur | eur) + ' incl. btw' }}</span>
+            </button>
+            @if (data.creditedInvoiceId) {
+              <a class="desk-kpi desk-kpi--button" [routerLink]="['/sales', data.creditedInvoiceId]"><small>Factuur</small><strong>{{ data.creditedInvoiceNumber }}</strong><span>{{ creditOriginal() ? (creditOriginalOpenEur() > 0 ? (creditOriginalOpenEur() | eur) + ' nog open' : 'betaald') : 'openen ›' }}</span></a>
+            }
+            @if (creditStep(); as step) {
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="busy() || documentMutationBusy()" (click)="railTab.set(step.key === 'issue' ? 'status' : 'payments')">
+                <small>Volgende stap</small><strong>{{ step.title }} ›</strong><span>{{ step.label && step.label !== step.title ? step.label : step.help }}</span>
+              </button>
+            }
+            } @else {
             @if (isAdvanceInvoice(data)) {
             <div class="desk-kpi"><small>Producten</small><strong>{{ advanceSummary(data).pieces }}</strong><span>{{ advanceSummary(data).lines ?? '—' }} productregels van de container</span></div>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"><small>Lading container</small><strong>{{ advanceSummary(data).load }}</strong><span>{{ advanceSummary(data).volume }}</span></button>
@@ -189,7 +222,7 @@ interface JourneyStep {
               } @else {
               <small>{{ isInvoiceDoc() ? 'Factuurtotaal' : 'Offertetotaal' }}</small>
               <strong>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</strong>
-              <span>{{ data.priced.totals.vatLegalMention ? 'btw verlegd' : 'excl. btw · ' + ((data.priced.totals.totalInclVat) | eur: (isPartnerDocument(data.order) ? 2 : 0)) + ' incl.' }}</span>
+              <span>{{ data.priced.totals.vatLegalMention ? 'btw verlegd' : 'excl. btw · ' + ((data.priced.totals.totalInclVat) | eur: (isPartnerDocument(data.order) ? 2 : 0)) + ' incl.' }}@if (data.creditedEur) { · {{ data.creditedEur | eur }} gecrediteerd }</span>
               }
             </button>
             @if (allProductsUnavailable()) {
@@ -226,6 +259,7 @@ interface JourneyStep {
                 <strong>{{ statusOf(data).label }}</strong>
                 <span>{{ data.order.decidedAt ? (data.order.decidedAt | dateTimeNl) : '' }}</span>
               </div>
+            }
             }
           </div>
         </header>
@@ -276,6 +310,12 @@ interface JourneyStep {
         }
         @if (advanceAgreement(); as agreement) {
           <app-sales-advance-agreement [agreement]="agreement" />
+        } @else if (!canEdit() && isCreditNoteDoc()) {
+          <div class="desk-lock desk-lock--credit" role="status">
+            <span aria-hidden="true">✓</span>
+            <span><b>Deze creditnota staat vast.</b> Bedragen veranderen niet meer; het tegoed handel je af bij Afhandeling.</span>
+            <button class="btn btn--sm" type="button" (click)="railTab.set('payments')">Afhandeling ›</button>
+          </div>
         } @else if (!canEdit()) {
           <div class="desk-lock" role="status">
             <span aria-hidden="true">✓</span>
@@ -297,14 +337,17 @@ interface JourneyStep {
                 <button type="button" [class.on]="profitPerPiece()" [attr.aria-pressed]="profitPerPiece()" (click)="profitPerPiece.set(true)">Per eenheid</button>
                 <button type="button" [class.on]="!profitPerPiece()" [attr.aria-pressed]="!profitPerPiece()" (click)="profitPerPiece.set(false)">Per regel</button>
               </span>
+              @if (!isCreditNoteDoc()) {
               <button class="btn btn--primary btn--sm" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">
                 <span aria-hidden="true">＋</span> Product
               </button>
+              }
               <button class="btn btn--sm" type="button" [disabled]="!commercialEditable()" (click)="addExtraLine()"
-                      title="Een eigen regel op het document, buiten de staffels">
-                <span aria-hidden="true">＋</span> Andere regel
+                      [title]="isCreditNoteDoc() ? 'Een bedrag zonder product, positief' : 'Een eigen regel op het document, buiten de staffels'">
+                <span aria-hidden="true">＋</span> {{ isCreditNoteDoc() ? 'Bedrag zonder product' : 'Andere regel' }}
               </button>
             </div>
+            @if (isCreditNoteDoc() && commercialEditable() && data.creditedInvoiceNumber) { <p class="desk-lines-locked"><span aria-hidden="true">↩</span>Alleen regels van {{ data.creditedInvoiceNumber }}, hoogstens de gefactureerde aantallen en prijzen.</p> }
 
             @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
@@ -383,6 +426,7 @@ interface JourneyStep {
                                 }
                                 }
                               </div>
+                              @if (creditLineHint(line.productId, line.quantity); as hint) { <div class="desk-line-cap">{{ hint }}</div> }
                             </div>
                           </div>
                         </td>
@@ -418,10 +462,12 @@ interface JourneyStep {
                             <div class="desk-price">
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
                                      [attr.aria-label]="lineUnit(line.productId).priceLabel + ' ' + line.description"
-                                     [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" />
+                                     [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" (blur)="creditPriceBlur(line.productId, $event)" />
+                              @if (!isCreditNoteDoc()) {
                               <button class="desk-disc-pill" type="button" [class.is-on]="line.manualPercent"
                                       [attr.aria-expanded]="discOpen() === line.productId" [attr.aria-label]="'Extra korting ' + line.description"
                                       (click)="toggleDisc(line.productId)">{{ line.manualPercent ? '−' + (line.manualPercent | pct: 1) : 'Korting' }}</button>
+                              }
                             </div>
                             @if (discOpen() === line.productId) {
                               <div class="desk-price-disc">
@@ -432,6 +478,7 @@ interface JourneyStep {
                                 <span>% extra korting</span>
                               </div>
                             }
+                            @if (creditPriceHint(line.productId); as hint) { <div class="desk-line-cap danger-text" role="alert">{{ hint }}</div> }
                           } @else {
                             @if (linePrimaryPrice(line); as primary) { <b>{{ primary.price | eur: 2 }}</b> } @else { <b>{{ line.unitPrice | eur: 2 }}</b> }
                             @if (line.discountPct) { <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small> }
@@ -443,7 +490,7 @@ interface JourneyStep {
                           }
                         </td>
                         <td class="c-disc num">
-                          @if (commercialEditable()) {
+                          @if (commercialEditable() && !isCreditNoteDoc()) {
                             <div class="desk-disc">
                               <input class="input num right desk-cell" type="number" min="0" max="100" step="0.5" inputmode="decimal"
                                      [attr.aria-label]="'Extra korting ' + line.description"
@@ -470,6 +517,9 @@ interface JourneyStep {
                           </button>
                         </td>
                         <td class="c-delivery">
+                          @if (isCreditNoteDoc()) {
+                            <span class="desk-delivery"><b class="muted">Geen levering</b><small>{{ data.order.goodsReturnedAt ? 'retour geboekt ' + (data.order.goodsReturnedAt | dateNl) : 'creditnota' }}</small></span>
+                          } @else {
                           <span class="desk-delivery"
                                 [class.desk-delivery--ok]="line.inStock || line.deliveryWeek"
                                 [class.desk-delivery--bad]="line.inventoryKnown && !line.inStock && !line.deliveryWeek">
@@ -478,13 +528,14 @@ interface JourneyStep {
                             @else if (line.deliveryWeek) { <b>{{ line.deliveryWeek | weekNl: 'short' }}</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} te leveren</small> }
                             @else { <b>Levertermijn nodig</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} niet op voorraad</small> }
                           </span>
-                          @if (canEditTerms()) {
+                          }
+                          @if (canEditTerms() && !isCreditNoteDoc()) {
                             <button class="desk-product__link" type="button" (click)="toggleDelivery(line.productId)"
                                     [attr.aria-expanded]="editingDelivery() === line.productId">
                               {{ editingDelivery() === line.productId ? 'Sluiten' : (line.deliveryWeek ? 'Week wijzigen' : 'Leverweek') }}
                             </button>
                           }
-                          @if (canToggleLineAvailability(line.productId)) {
+                          @if (canToggleLineAvailability(line.productId) && !isCreditNoteDoc()) {
                             <button class="desk-availability" type="button"
                               [attr.aria-label]="line.description + ' tijdelijk niet beschikbaar markeren'"
                               (click)="toggleLineAvailability(line.productId)">Tijdelijk niet beschikbaar</button>
@@ -521,7 +572,7 @@ interface JourneyStep {
                                  [ngModel]="extra.description"
                                  (ngModelChange)="setExtraLine(i, { description: $event })" />
                         } @else {
-                          <span class="desk-product__copy"><strong>{{ extra.description }}</strong><small>eigen regel · buiten de staffels</small></span>
+                          <span class="desk-product__copy"><strong>{{ extra.description }}</strong><small>{{ isCreditNoteDoc() ? 'bedrag zonder product' : 'eigen regel · buiten de staffels' }}</small></span>
                         }
                       </div>
                     </td>
@@ -543,7 +594,7 @@ interface JourneyStep {
                     <td class="c-disc"><span class="muted">—</span></td>
                     <td class="c-money num c-money--total">{{ extraLineTotal(extra) | eur }}</td>
                     <td class="c-money num"><span class="muted">—</span></td>
-                    <td class="c-delivery"><small class="muted">eigen regel</small></td>
+                    <td class="c-delivery"><small class="muted">{{ isCreditNoteDoc() ? 'bedrag' : 'eigen regel' }}</small></td>
                     @if (commercialEditable()) {
                       <td class="c-act">
                         <button class="desk-remove" type="button" [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))" (click)="removeExtraLine(i)">×</button>
@@ -569,10 +620,10 @@ interface JourneyStep {
             } @else {
               <div class="desk-empty">
                 <div class="desk-empty__art" aria-hidden="true">＋</div>
-                <h3>Nog geen producten</h3>
-                <p>Voeg een product toe, kies het aantal en de prijs wordt meteen berekend.</p>
-                <button class="btn btn--primary" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">Eerste product toevoegen</button>
-                <button class="btn" type="button" [disabled]="!commercialEditable()" (click)="addExtraLine()">Andere regel</button>
+                <h3>{{ isCreditNoteDoc() ? 'Nog geen regels' : 'Nog geen producten' }}</h3>
+                <p>{{ isCreditNoteDoc() ? 'Een creditnota zonder regels kan niet uitgereikt worden. Voeg een bedrag toe, of maak ze opnieuw vanuit de factuur met productregels.' : 'Voeg een product toe, kies het aantal en de prijs wordt meteen berekend.' }}</p>
+                @if (!isCreditNoteDoc()) { <button class="btn btn--primary" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">Eerste product toevoegen</button> }
+                <button class="btn" type="button" [disabled]="!commercialEditable()" (click)="addExtraLine()">{{ isCreditNoteDoc() ? 'Bedrag zonder product' : 'Andere regel' }}</button>
               </div>
             }
 
@@ -582,38 +633,41 @@ interface JourneyStep {
           <aside class="desk-rail" aria-label="Documentgegevens">
             <div class="desk-tabs" role="tablist">
               <button type="button" role="tab" [class.on]="railTab() === 'order'" [attr.aria-selected]="railTab() === 'order'" (click)="railTab.set('order')">Klant</button>
+              @if (!isCreditNoteDoc()) {
               <button type="button" role="tab" [class.on]="railTab() === 'delivery'" [attr.aria-selected]="railTab() === 'delivery'" (click)="railTab.set('delivery')">
                 Levering @if (data.order.freight === 'TE_BEPALEN' || (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
+              }
               <button type="button" role="tab" [class.on]="railTab() === 'check'" [attr.aria-selected]="railTab() === 'check'" (click)="railTab.set('check')">
-                Prijs @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
+                Prijs @if (!isCreditNoteDoc() && !isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
-              @if (isInvoiceDoc()) { <button type="button" role="tab" [class.on]="railTab() === 'payments'" [attr.aria-selected]="railTab() === 'payments'" (click)="railTab.set('payments')">Betalingen</button> }
+              @if (isClaimDoc()) { <button type="button" role="tab" [class.on]="railTab() === 'payments'" [attr.aria-selected]="railTab() === 'payments'" (click)="railTab.set('payments')">{{ isCreditNoteDoc() ? 'Afhandeling' : 'Betalingen' }} @if (isCreditNoteDoc() && creditStep()?.key === 'apply' || creditStep()?.key === 'refund') { <i class="desk-tabs__dot" aria-hidden="true"></i> }</button> }
               <button type="button" role="tab" [class.on]="railTab() === 'status'" [attr.aria-selected]="railTab() === 'status'" (click)="railTab.set('status')">
-                {{ isInvoiceDoc() ? 'Status' : 'Versturen' }} @if (pendingRevision() || (!isInvoiceDoc() && sendIssues().length && data.order.status === 'CONCEPT')) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
+                {{ isClaimDoc() ? 'Status' : 'Versturen' }} @if (pendingRevision() || (!isClaimDoc() && sendIssues().length && data.order.status === 'CONCEPT')) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
             </div>
 
             <div class="desk-panel">
               @switch (railTab()) {
-                @case ('payments') { <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" /> }
+                @case ('payments') { <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" [refundRequest]="refundOpenRequest()" (changed)="paymentReceived($event)" (applyRequested)="openOffset($event)" /> }
                 @case ('order') {
                   <fieldset class="desk-form form-lock" [disabled]="!canEdit()">
                     <p class="desk-form__group">Klant &amp; document</p>
                     <div class="field">
                       <label class="req" for="sd-customer">Klant</label>
-                      <select class="select" id="sd-customer" [disabled]="financiallyLocked()" [ngModel]="data.order.customerId" (ngModelChange)="setCustomer(+$event)">
+                      <select class="select" id="sd-customer" [disabled]="financiallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.customerId" (ngModelChange)="setCustomer(+$event)">
                         @for (customer of customers(); track customer.id) {
                           <option [ngValue]="customer.id">{{ customer.company }}</option>
                         }
                       </select>
+                      @if (isCreditNoteDoc() && data.creditedInvoiceNumber) { <span class="hint">Klant en land volgen factuur <a [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }}</a>.</span> }
                       @if (customerVatNumber()) { <span class="hint">BTW {{ customerVatNumber() }} · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
                       @else { <span class="hint">Geen BTW-nummer bij de klant · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
                     </div>
                     <div class="desk-form__duo">
                       <div class="field">
                         <label class="req" for="sd-country">Land van levering</label>
-                        <select class="select" id="sd-country" [disabled]="financiallyLocked()" [ngModel]="data.order.countryCode" (ngModelChange)="patch({ countryCode: $event })">
+                        <select class="select" id="sd-country" [disabled]="financiallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.countryCode" (ngModelChange)="patch({ countryCode: $event })">
                           @for (country of countries(); track country.code) {
                             <option [ngValue]="country.code">{{ country.name }}</option>
                           }
@@ -650,7 +704,12 @@ interface JourneyStep {
                         <label for="sd-date">Datum</label>
                         <app-date-field fieldId="sd-date" [value]="data.order.orderDate" (valueChange)="patch({ orderDate: $event })" />
                       </div>
-                      @if (isInvoiceDoc()) {
+                      @if (isCreditNoteDoc()) {
+                        <div class="field">
+                          <label for="sd-credit-reason">Reden</label>
+                          <input class="input" id="sd-credit-reason" [value]="creditReason()" readonly aria-readonly="true" />
+                        </div>
+                      } @else if (isInvoiceDoc()) {
                         <div class="field">
                           <label for="sd-due">Vervaldatum</label>
                           <app-date-field fieldId="sd-due" [value]="data.order.invoiceDueDate ?? ''" (valueChange)="patch({ invoiceDueDate: $event })" />
@@ -719,7 +778,30 @@ interface JourneyStep {
 
                 @case ('check') {
                   <div class="desk-form">
-                    @if (advanceAgreement(); as agreement) {
+                    @if (isCreditNoteDoc()) {
+                      <p class="desk-form__group">Opbouw creditnota</p>
+                      <div class="desk-chain">
+                        <div class="desk-chain__row"><i></i><span>Goederen <small>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }}</small></span><b>{{ data.priced.totals.goodsTotal | eur }}</b></div>
+                        @if ((data.priced.extraLines ?? []).length) {
+                          <div class="desk-chain__row"><i>+</i><span>Andere regels <small>bedragen zonder product</small></span><b>{{ data.priced.totals.extraLinesTotal | eur }}</b></div>
+                        }
+                        <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Totaal creditnota excl. btw</span><b>{{ data.priced.totals.total | eur }}</b></div>
+                        <div class="desk-chain__row"><i>+</i><span>BTW <small>{{ data.priced.totals.vatLegalMention ? '0% · verlegd' : (data.priced.totals.vatRatePct | pct: 1) }}</small></span><b>{{ (data.priced.totals.vatLegalMention ? 0 : data.priced.totals.vatAmount) | eur }}</b></div>
+                        <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Inclusief btw <small>tegoed voor de klant</small></span><b>{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</b></div>
+                      </div>
+                      @if (data.creditedInvoiceId) {
+                        <p class="desk-form__group">Op factuur</p>
+                        <div class="desk-credit-block">
+                          <div class="desk-credit-line"><span>Factuur</span><b><a [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }} ›</a></b></div>
+                          @if (creditOriginal(); as original) {
+                            <div class="desk-credit-line"><span>Factuurtotaal incl. btw</span><b>{{ original.paymentSummary?.invoiceTotalEur ?? original.priced.totals.totalInclVat | eur }}</b></div>
+                            <div class="desk-credit-line"><span>Nog open op de factuur</span><b>{{ creditOriginalOpenEur() | eur }}</b></div>
+                            @if (original.creditedEur) { <div class="desk-credit-line"><span>Al gecrediteerd</span><b>{{ original.creditedEur | eur }}</b></div> }
+                          }
+                          <div class="desk-credit-line"><span>Reden</span><b>{{ creditReason() }}</b></div>
+                        </div>
+                      }
+                    } @else if (advanceAgreement(); as agreement) {
                       <p class="hint">De opgeslagen voorschottermijnen staan bovenaan. Per termijn maak je een voorschotfactuur op de inkooporder; de slotfactuur volgt na verkoop.</p>
                     } @else {
                     @if (data.order.partnerPurchaseOrderId) {
@@ -822,7 +904,7 @@ interface JourneyStep {
                       </div>
                     }
 
-                    @if (!isInvoiceDoc()) {
+                    @if (!isClaimDoc()) {
                       <p class="desk-form__group">{{ sendIssues().length ? 'Nog niet klaar om te versturen' : 'Klaar voor de klant' }}</p>
                       @if (sendIssues().length) {
                         <div class="desk-actions">
@@ -839,11 +921,41 @@ interface JourneyStep {
 
                     <p class="desk-form__group">Acties</p>
                     @if (allProductsUnavailable()) { <p class="desk-form__help" role="status">Geen leverbare producten. Herstel eerst een product om uit te geven of te versturen.</p> }
+                    @if (data.creditNotes?.length) { <p class="desk-form__help" role="status">Factuur heeft creditnota {{ creditNoteNumbers(data) }}: heropenen of verwijderen kan pas nadat die geannuleerd of verwijderd is.</p> }
                     <div class="desk-actions">
-                      @if (isInvoiceDoc()) {
+                      @if (isCreditNoteDoc()) {
+                        @if (data.order.status === 'CONCEPT') {
+                          <button class="desk-action" type="button" [disabled]="dirty() || saving() || busy() || documentMutationBusy()" (click)="issueCreditNote()"><i aria-hidden="true">✓</i><span><b>Uitreiken</b><small>{{ dirty() ? 'Sla de wijzigingen eerst op' : 'Zet de creditnota vast; er gaat geen e-mail uit' }}</small></span></button>
+                        }
+                        @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                          <button class="desk-action" type="button" [disabled]="sending() || dirty()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Creditnota e-mailen</b><small>PDF met de factuur waarop ze slaat en de stand van het tegoed</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de creditnota buiten het ERP bezorgde</small></span></button>
+                        }
+                        @if (creditStep()?.key === 'apply' || creditStep()?.key === 'refund') {
+                          <button class="desk-action" type="button" [disabled]="busy() || documentMutationBusy()" (click)="railTab.set('payments')"><i aria-hidden="true">€</i><span><b>{{ creditStep()!.label }}</b><small>Bij Afhandeling: verrekenen met een factuur of een terugbetaling noteren</small></span></button>
+                        }
+                        @if (canReturnGoods()) {
+                          <button class="desk-action" type="button" [disabled]="documentMutationBusy()" (click)="openReturnSheet(data)"><i aria-hidden="true">▤</i><span><b>Goederen terug in voorraad</b><small>De gecrediteerde stuks komen als retour terug; gebeurt één keer</small></span></button>
+                        } @else if (data.order.goodsReturnedAt) {
+                          <p class="desk-form__help" role="status">Goederen terug in voorraad geboekt op {{ data.order.goodsReturnedAt | dateNl }}.</p>
+                        }
+                        <button class="desk-action" type="button" (click)="openPdfSheet()"><i aria-hidden="true">⎙</i><span><b>PDF</b><small>Creditnota instellen en downloaden</small></span></button>
+                        @if (data.creditedInvoiceId) {
+                          <a class="desk-action" [routerLink]="['/sales', data.creditedInvoiceId]"><i aria-hidden="true">›</i><span><b>Naar de factuur</b><small>{{ data.creditedInvoiceNumber }} · waar deze creditnota op slaat</small></span></a>
+                        }
+                        @if (canReopen(data)) {
+                          <button class="desk-action" type="button" [disabled]="busy()" (click)="reopen()"><i aria-hidden="true">↺</i><span><b>Heropenen</b><small>Terug naar concept om aan te passen</small></span></button>
+                        }
+                        @if (canCancelCreditNote()) {
+                          <button class="desk-action" type="button" [disabled]="busy()" (click)="cancelCreditNote()"><i aria-hidden="true">⊘</i><span><b>Creditnota annuleren</b><small>Het nummer blijft gereserveerd; de factuur telt weer volledig</small></span></button>
+                        }
+                      } @else if (isInvoiceDoc()) {
                         @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
                           <button class="desk-action" type="button" [disabled]="sending() || dirty() || allProductsUnavailable()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Factuur e-mailen</b><small>PDF en betaalgegevens naar de klant</small></span></button>
                           <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || allProductsUnavailable()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de factuur buiten het ERP bezorgde</small></span></button>
+                        }
+                        @if (canCreateCreditNote()) {
+                          <button class="desk-action" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" (click)="openCreditSheet()"><i aria-hidden="true">↩</i><span><b>Creditnota maken</b><small>Te weinig geleverd, schade, retour of prijscorrectie</small></span></button>
                         }
                         @if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
                           <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="openShipSheet(data)"><i aria-hidden="true">▤</i><span><b>Bestelling verzonden</b><small>Punt de voorraad af</small></span></button>
@@ -877,8 +989,10 @@ interface JourneyStep {
                         }
                         <button class="desk-action" type="button" (click)="openPdfSheet()"><i aria-hidden="true">⎙</i><span><b>PDF</b><small>Taal en inhoud kiezen en downloaden</small></span></button>
                       }
+                      @if (!isCreditNoteDoc()) {
                       @if (!isPartnerDocument(data.order) && !data.fulfillment) { <button class="desk-action" type="button" [disabled]="!!splitBlockReason(data) || dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ dirty() ? 'Sla de wijzigingen eerst op' : splitBlockReason(data) || 'Verplaats producten naar een nalevering' }}</small></span></button> }
                       <button class="desk-action" type="button" [disabled]="busy()" (click)="duplicate()"><i aria-hidden="true">⧉</i><span><b>{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</b><small>{{ isPartnerDocument(data.order) ? 'Voorschotten en afrekeningen op de container bekijken' : 'Een nieuw concept met dezelfde inhoud' }}</small></span></button>
+                      }
                     </div>
 
                     <p class="desk-form__group">Geschiedenis</p>
@@ -899,7 +1013,7 @@ interface JourneyStep {
                         <summary>Verwijderen</summary>
                         <p>Alleen een concept dat de klant nooit zag. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
                         <button class="btn btn--danger btn--block" type="button" [disabled]="deleting()" (click)="remove()">
-                          {{ deleting() ? 'Verwijderen…' : (isInvoiceDoc() ? 'Deze factuur verwijderen' : 'Deze offerte verwijderen') }}
+                          {{ deleting() ? 'Verwijderen…' : (isCreditNoteDoc() ? 'Deze creditnota verwijderen' : isInvoiceDoc() ? 'Deze factuur verwijderen' : 'Deze offerte verwijderen') }}
                         </button>
                       </details>
                     }
@@ -941,7 +1055,7 @@ interface JourneyStep {
       @if (pdfSheet()) {
         <app-sales-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
                              [customerName]="customerName()" [customerLanguage]="customerLanguage()"
-                             [invoice]="isInvoiceDoc()" [agreementQuote]="!!advanceAgreement()" [dirty]="dirty()" [saving]="saving()"
+                             [invoice]="isInvoiceDoc()" [creditNote]="isCreditNoteDoc()" [agreementQuote]="!!advanceAgreement()" [dirty]="dirty()" [saving]="saving()"
                              (saveRequested)="save()" (closed)="pdfSheet.set(false)" />
       }
 
@@ -978,6 +1092,34 @@ interface JourneyStep {
         @if (view(); as data) {
           <app-partner-link-sheet [order]="data.order" (closed)="partnerLinkOpen.set(false)" (linked)="applyPartner($event)" />
         }
+      }
+      @if (creditSheetOpen()) {
+        <app-sales-credit-note-sheet [invoiceId]="data.order.id" (closed)="creditSheetOpen.set(false)" (created)="creditCreated($event)" />
+      }
+      @if (offsetOpen()) {
+        <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" />
+      }
+      @if (returnSheet(); as ret) {
+        <app-sheet title="Goederen terug in voorraad" (closed)="returnSheet.set(null)">
+          <div body>
+            <p class="small muted" style="margin-bottom:12px">Deze aantallen komen als retour terug in de voorraad op {{ ret.number }}. Beschadigde stukken boek je daarna apart af als beschadigd. Dit gebeurt één keer.</p>
+            <ul class="desk-ship">
+              @for (row of ret.rows; track $index) {
+                <li>
+                  @if (row.photoUrl) { <img class="desk-ship__photo" [appAuthSrc]="row.photoUrl" alt="" /> }
+                  @else { <span class="desk-ship__photo desk-ship__photo--empty" aria-hidden="true">◈</span> }
+                  <span class="desk-ship__copy"><strong>{{ row.name }}</strong><small>+{{ row.qty | num }} {{ row.unitLabel }}</small></span>
+                  <span class="desk-ship__stock">@if (row.before !== null) { {{ row.before | num }} → {{ row.after | num }} } @else { onbekend }</span>
+                </li>
+              }
+            </ul>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="returnSheet.set(null)">Annuleren</button>
+            <span class="spacer"></span>
+            <button class="btn btn--primary" type="button" [disabled]="documentMutationBusy()" (click)="confirmReturnGoods()">{{ documentMutationBusy() ? 'Bezig…' : 'Retour boeken' }}</button>
+          </div>
+        </app-sheet>
       }
 
       @if (picking()) {
@@ -1026,10 +1168,10 @@ interface JourneyStep {
       }
 
       @if (sendSheet()) {
-        <app-sheet [title]="isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen'" (closed)="sendSheet.set(false)">
+        <app-sheet [title]="isCreditNoteDoc() ? 'Creditnota versturen' : isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen'" (closed)="sendSheet.set(false)">
           <div body>
             <p class="small muted" style="margin-bottom:14px">
-              {{ isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.' }}
+              {{ isCreditNoteDoc() ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.' : isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.' }}
             </p>
             <div class="field">
               <label for="sd-send-message">Persoonlijk bericht</label>
@@ -1288,6 +1430,10 @@ export class SalesDesk extends SalesEditor {
   journey(): JourneyStep[] {
     const order = this.view()?.order;
     if (!order) return [];
+    if (order.docType === 'CREDITNOTA') {
+      return creditNoteJourney(order, this.view()?.paymentSummary?.status, creditNoteSettlement(this.view()?.paymentSummary))
+        .map((step) => ({ label: step.label, state: step.state }));
+    }
     if (this.isInvoiceDoc()) {
       if (isAdvanceDocument(order)) {
         return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
@@ -1330,6 +1476,7 @@ export class SalesDesk extends SalesEditor {
 
   invoiceNextStep(data: SalesOrderView): string {
     if (data.order.status === 'CONCEPT') return 'Factuur versturen';
+    if ((data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'Afgerond · gecrediteerd';
     if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bestelling verzenden';
     if (data.order.status !== 'BETAALD') return 'Betaling registreren';
     return 'Afgerond ✓';
@@ -1393,7 +1540,7 @@ export class SalesDesk extends SalesEditor {
       if (this.view()?.order.id !== data.order.id) return;
       this.adopt(updated);
       void this.loadHistory(data.order.id);
-      this.ui.toast('Factuur staat op verstuurd');
+      this.ui.toast(data.order.docType === 'CREDITNOTA' ? 'Creditnota staat op verstuurd' : 'Factuur staat op verstuurd');
     } catch (failure: unknown) {
       if (this.view()?.order.id !== data.order.id) return;
       this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
@@ -1455,9 +1602,35 @@ export class SalesDesk extends SalesEditor {
     this.railTab.set('payments');
     this.receiptOpenRequest.update((value) => value + 1);
   }
+  /** Bumped to open the refund sheet of a credit note in the Afhandeling tab ('Terugbetaling noteren'). */
+  readonly refundOpenRequest = signal(0);
+  noteRefund(): void {
+    if (this.busy() || this.documentMutationBusy()) return;
+    this.railTab.set('payments');
+    this.refundOpenRequest.update((value) => value + 1);
+  }
+
+  constructor() {
+    super();
+    /* The rail survives document navigation in this reused instance: a tab the new document does not offer falls back to Klant. */
+    effect(() => {
+      const id = this.view()?.order.id;
+      const credit = this.isCreditNoteDoc(), claim = this.isClaimDoc();
+      untracked(() => {
+        if (id == null) return;
+        const tab = this.railTab();
+        if ((tab === 'delivery' && credit) || (tab === 'payments' && !claim)) this.railTab.set('order');
+      });
+    });
+    /* A consumed receipt or refund request must not reopen its sheet when the tab is re-entered. */
+    effect(() => {
+      if (this.railTab() !== 'payments') untracked(() => { this.receiptOpenRequest.set(0); this.refundOpenRequest.set(0); });
+    });
+  }
 
   documentLabel(order: SalesOrder): string {
     if (this.advanceAgreement()) return 'Offerte met betaalplan';
     return salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
   }
+  creditNoteNumbers(data: SalesOrderView): string { return (data.creditNotes ?? []).map((note) => note.number).join(', '); }
 }

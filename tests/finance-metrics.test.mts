@@ -137,6 +137,11 @@ test('the outlook also takes the container terms: now before the invoices, later
   const fourArguments = cashOutlook(33500.5, 1512.51, 2057, 4200);
   assert.deepEqual([fourArguments.containerNowEur, fourArguments.containerLaterEur, fourArguments.afterPayablesEur], [0, 0, 29930.99]);
   assert.equal(cashOutlook(100.1, 0.2, 0, 0, 0.1).afterPayablesEur, 99.8);
+  const withCredits = cashOutlook(10000, 1000, 500, 4000, 2500, 3000, 296.45);
+  assert.equal(withCredits.openInvoicesEur, 3703.55, 'open tegoeden come off the expected invoices');
+  assert.equal(withCredits.openCreditEur, 296.45);
+  assert.equal(withCredits.expectedEur, 6703.55);
+  assert.equal(cashOutlook(10000, 1000, 500, 4000, 2500, 3000).openCreditEur, 0);
 });
 
 test('the backlog counts the periods booked at once: from the start for a new one, from the next date on resume', () => {

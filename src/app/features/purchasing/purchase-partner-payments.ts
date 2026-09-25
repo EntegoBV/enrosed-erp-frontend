@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { PartnerFinancing, PurchaseOrder, SalesOrderView } from '../../core/api/models';
+import { PartnerCreditProposal, PartnerFinancing, PartnerFinancingDocument, PurchaseOrder, SalesOrderView } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { messageOf } from '../../core/api/errors';
@@ -8,6 +8,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { SalesReceipts } from '../sales/sales-receipts';
 import { PartnerAdvanceSchedule } from './partner-advance-schedule';
 import { STATUS_LABEL } from '../sales/quote-status';
+import { creditNoteStatusLabel } from '../sales/sales-credit-note';
 
 /** One receipt ledger, shown from the partner invoice and the container alike. */
 @Component({
@@ -35,13 +36,31 @@ import { STATUS_LABEL } from '../sales/quote-status';
           <section class="money-section" aria-label="Ontvangsten van de partner">
             <h4><span class="step">3</span> Ontvangsten &amp; afrekening</h4>
             <div class="partner-money__kpis">
-              <div class="received"><small>Voorschotten ontvangen</small><b>{{ summary.receivedAdvanceEur | eur }}</b></div>
+              <div class="received"><small>Voorschotten ontvangen</small><b>{{ summary.receivedAdvanceEur | eur }}</b>@if ((summary.creditNotesEur ?? 0) > 0) { <span class="kpi-sub">Voorschotten gefinancierd {{ summary.invoicedAdvanceEur | eur }} excl. btw na creditnota</span> }</div>
               <div><small>Voorschotten nog open</small><b>{{ summary.openAdvanceEur | eur }}</b></div>
               <div><small>Veiling&shy;afrekeningen open</small><b>{{ summary.openSettlementEur | eur }}</b></div>
               <div><small>Eigen geld ingelegd</small><b>{{ summary.ownExposureEur | eur }}</b></div>
             </div>
             <p class="partner-money__hint">Bedragen incl. btw. Eigen geld = betaalde containerkosten min netto partnerontvangsten.</p>
-            @if (summary.creditEur > 0) { <p class="partner-money__warning"><b>{{ summary.creditEur | eur }} terug te betalen of te verrekenen.</b> Open de betreffende factuur om een uitgevoerde terugbetaling te noteren.</p> }
+            @if (openCreditEur(summary) > 0) { <p class="partner-money__warning"><b>{{ openCreditEur(summary) | eur }} terug te betalen of te verrekenen.</b> @if (openCreditNote(summary); as note) { Open <a [routerLink]="['/sales', note.id]">{{ note.number }}</a> om te verrekenen of een terugbetaling te noteren › } @else { Open de betreffende factuur om een uitgevoerde terugbetaling te noteren. }</p> }
+            @if (shortageCard(); as card) {
+              <section class="partner-shortage" aria-label="Tekort na ontvangst">
+                <div class="partner-shortage__head"><span aria-hidden="true">↩</span>Tekort na ontvangst</div>
+                @switch (card.kind) {
+                  @case ('credit') {
+                    <p>{{ card.missing + card.damaged | num }} stuks minder ontvangen dan gefinancierd ({{ card.missing | num }} ontbreken · {{ card.damaged | num }} beschadigd). Voorschot gefinancierd {{ card.financedEur | eur }} · afgesproken deel na ontvangst {{ card.agreedEur | eur }} ({{ card.pct | num }} % van {{ card.basisEur | eur }}) · <b>{{ card.overEur | eur }} te veel</b>, excl. btw.</p>
+                    @if (card.concept) {
+                      <p>Creditnota <a [routerLink]="['/sales', card.concept.id]">{{ card.concept.number }}</a> in concept · <a [routerLink]="['/sales', card.concept.id]">open ›</a></p>
+                    } @else {
+                      <button class="btn btn--primary" type="button" (click)="creditNote.emit()">Creditnota maken op {{ card.advanceNumber }}</button>
+                    }
+                  }
+                  @case ('not-received') { <p class="muted">Tekorten worden pas na ontvangst berekend.</p> }
+                  @case ('settlement') { <p class="muted">De afrekening verrekent het voorschot; maak een creditnota op de afrekening vanuit die factuur.</p> }
+                }
+              </section>
+            }
+            @if (hasCreditNotes(summary)) { <p class="partner-money__hint">Creditnota's verlagen het gefinancierde voorschot; de slotfactuur verrekent alleen wat overblijft.</p> }
             @if (invoices().length) {
               <label class="invoice-picker"><span>Betaling bij een factuur noteren</span><select class="select" [disabled]="opening()" [value]="invoiceSelection() || ''" (change)="selectInvoice($any($event.target).value)"><option value="">Kies een factuur…</option>@for (doc of invoices(); track doc.id) { <option [value]="doc.id">{{ doc.number }} · {{ statusLabel[doc.status] }} · {{ doc.invoiceTotalEur | eur }}</option> }</select></label>
               <p class="partner-money__hint">Noteer het ontvangen bedrag met datum en tijdstip. De factuur moet daarvoor uitgegeven zijn.</p>
@@ -53,11 +72,15 @@ import { STATUS_LABEL } from '../sales/quote-status';
           <div class="partner-money__details">
             <details><summary>Alle offertes &amp; facturen <span>{{ summary.documents.length }}</span></summary>
               <div class="partner-money__docs">@for (doc of summary.documents; track doc.id) {
+                @if (doc.docType === 'CREDITNOTA') {
+                  <article class="is-credit"><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>Creditnota op {{ creditedNumber(doc, summary) }} · {{ creditStatus(doc) }}</small><b>− {{ absEur(doc.invoiceTotalEur) | eur }} <small>incl. btw</small></b>@if (doc.status !== 'CONCEPT') { <small>{{ offsetOf(doc) | eur }} verrekend · {{ doc.creditEur | eur }} tegoed</small> } @else { <small>Concept · nog niet uitgereikt</small> }</div><a class="btn btn--sm" [routerLink]="['/sales', doc.id]">Tegoed afhandelen</a></article>
+                } @else {
                 <article><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>{{ doc.purpose === 'PARTNER_SETTLEMENT' ? 'Veilingafrekening' : doc.docType === 'FACTUUR' ? 'Voorschotfactuur' : 'Voorschotofferte' }} · {{ statusLabel[doc.status] }}</small>@if (doc.docType === 'FACTUUR') { <b>{{ doc.invoiceTotalEur | eur }} <small>incl. btw</small></b> } @else { <small>Betaalafspraken · afrekening volgt later</small> }@if (doc.docType === 'FACTUUR') { @if (doc.status === 'CONCEPT') { <small>Concept · nog niet uitgegeven</small> } @else { <small>{{ doc.receivedEur | eur }} netto ontvangen · {{ doc.remainingEur | eur }} open</small> } }@if (doc.creditEur > 0) { <small>{{ doc.creditEur | eur }} credit</small> }</div>@if (doc.docType === 'FACTUUR') { <button class="btn btn--sm" type="button" [disabled]="opening()" (click)="open(doc.id)">Betalingen bekijken</button> }</article>
+                }
               } @empty { <p class="partner-money__hint">Nog geen partnerdocumenten gekoppeld.</p> }</div>
             </details>
             @if (summary.payments.length) {
-              <details><summary>Betaalhistorie <span>{{ summary.payments.length }}</span></summary><div class="partner-money__trail">@for (payment of summary.payments; track payment.id) { <a [routerLink]="['/sales', payment.salesOrderId]"><b>{{ (payment.amountEur < 0 ? -payment.amountEur : payment.amountEur) | eur }} {{ payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}</b><span>{{ payment.orderNumber }} · {{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.reference || 'Geen referentie' }}@if (payment.legacy) { · historische ontvangst }</small></a> }</div></details>
+              <details><summary>Betaalhistorie <span>{{ summary.payments.length }}</span></summary><div class="partner-money__trail">@for (payment of summary.payments; track payment.id) { <a [routerLink]="['/sales', payment.salesOrderId]"><b>{{ (payment.amountEur < 0 ? -payment.amountEur : payment.amountEur) | eur }} {{ payment.offsetPaymentId != null ? 'verrekend' : payment.amountEur < 0 ? 'terugbetaald' : 'ontvangen' }}</b><span>{{ payment.orderNumber }} · {{ stamp(payment.receivedAt, payment.timeZone) }}</span><small>{{ payment.reference || 'Geen referentie' }}@if (payment.legacy) { · historische ontvangst }</small></a> }</div></details>
             }
             <details class="partner-money__costs"><summary>Kostprijs &amp; gerealiseerd resultaat</summary><dl><div><dt>{{ summary.costFinalized ? 'Externe containerkost' : 'Verwachte externe containerkost' }}</dt><dd>{{ summary.forecastExternalEur | eur }}</dd></div>@if (advanceBasisEur() != null) { <div><dt>Actueel inkooptotaal incl. aparte kosten</dt><dd>{{ advanceBasisEur() | eur }}</dd></div> }@if (summary.financingBasisEur != null) { <div><dt>{{ summary.financingBasis === 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' ? 'Opgeslagen inkoopbasis incl. aparte kosten' : 'Opgeslagen financieringsbasis' }}</dt><dd>{{ summary.financingBasisEur | eur }}</dd></div> }<div><dt>Afgesproken financiering</dt><dd>{{ summary.committedAdvanceEur | eur }}</dd></div><div><dt>Uitgereikte voorschotfacturen</dt><dd>{{ summary.invoicedAdvanceEur | eur }}</dd></div><div><dt>Afrekeningen na voorschotten</dt><dd>{{ summary.settlementEur | eur }}</dd></div><div><dt>Gerealiseerd resultaat ENROSED</dt><dd>{{ summary.recognizedProfitEur | eur }}</dd></div></dl><p class="partner-money__hint">Deze bedragen zijn excl. btw. Voorschotten zijn financiering; resultaat wordt vastgelegd bij elke uitgegeven veilingafrekening.</p></details>
           </div>
@@ -90,7 +113,42 @@ export class PurchasePartnerPayments {
   /** Lead seam: the host mounts app-sales-credit-note-sheet in partner mode on this. */
   readonly creditNote = output<void>();
   readonly summary = signal<PartnerFinancing | null>(null);
+  /** Over-financing after a short receipt: the 'Tekort na ontvangst' card. Read-only, best effort. */
+  readonly proposal = signal<PartnerCreditProposal | null>(null);
   readonly invoices = computed(() => this.summary()?.documents.filter(doc => doc.docType === 'FACTUUR') ?? []);
+  readonly shortageCard = computed(() => {
+    const proposal = this.proposal();
+    const summary = this.summary();
+    if (!proposal || !summary) return null;
+    if (proposal.settlementExists) return { kind: 'settlement' as const };
+    if (!proposal.received) return { kind: 'not-received' as const };
+    if (!(proposal.overFinancingEur > 0)) {
+      const concept = summary.documents.find((doc) => doc.docType === 'CREDITNOTA' && doc.purpose === 'PARTNER_ADVANCE' && doc.status === 'CONCEPT');
+      return concept ? { kind: 'credit' as const, concept, missing: proposal.missingPieces, damaged: proposal.damagedPieces, financedEur: proposal.issuedAdvanceEur - proposal.creditedAdvanceEur,
+        agreedEur: proposal.agreedShareEur, pct: proposal.financingPct, basisEur: proposal.actualBasisEur, overEur: proposal.overFinancingEur, advanceNumber: '' } : null;
+    }
+    const advance = proposal.advances.find((row) => row.invoiceId === proposal.suggestedAdvanceInvoiceId) ?? proposal.advances[0] ?? null;
+    const concept = summary.documents.find((doc) => doc.docType === 'CREDITNOTA' && doc.purpose === 'PARTNER_ADVANCE' && doc.status === 'CONCEPT') ?? null;
+    return { kind: 'credit' as const, concept, missing: proposal.missingPieces, damaged: proposal.damagedPieces, financedEur: proposal.issuedAdvanceEur - proposal.creditedAdvanceEur,
+      agreedEur: proposal.agreedShareEur, pct: proposal.financingPct, basisEur: proposal.actualBasisEur, overEur: proposal.overFinancingEur, advanceNumber: advance?.number ?? 'het voorschot' };
+  });
+  hasCreditNotes(summary: PartnerFinancing): boolean { return summary.documents.some((doc) => doc.docType === 'CREDITNOTA'); }
+  /** The live credit note with an open tegoed; a cancelled one keeps creditEur on the server but counts nowhere. */
+  openCreditNote(summary: PartnerFinancing): PartnerFinancingDocument | null {
+    return summary.documents.find((doc) => doc.docType === 'CREDITNOTA' && doc.creditEur > 0 && !['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(doc.status)) ?? null;
+  }
+  /** The container's credit, less the tegoeden of dead credit notes the summary still carries. */
+  openCreditEur(summary: PartnerFinancing): number {
+    const lapsed = summary.documents.filter((doc) => doc.docType === 'CREDITNOTA' && ['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(doc.status)).reduce((sum, doc) => sum + Math.max(0, doc.creditEur), 0);
+    return Math.round(Math.max(0, summary.creditEur - lapsed) * 100) / 100;
+  }
+  creditedNumber(doc: PartnerFinancingDocument, summary: PartnerFinancing): string { return summary.documents.find((item) => item.id === doc.creditedInvoiceId)?.number ?? 'factuur'; }
+  creditStatus(doc: PartnerFinancingDocument): string { return creditNoteStatusLabel({ order: { status: doc.status }, paymentSummary: doc.status === 'CONCEPT' ? null : { status: doc.creditEur > 0 ? 'CREDIT' : 'PAID', creditEur: doc.creditEur } } as Parameters<typeof creditNoteStatusLabel>[0]).label; }
+  absEur(value: number): number { return Math.abs(value); }
+  /** What the container's payment rows say was offset on this credit note. */
+  offsetOf(doc: PartnerFinancingDocument): number {
+    return Math.round((this.summary()?.payments ?? []).filter((row) => row.salesOrderId === doc.id && row.offsetPaymentId != null).reduce((sum, row) => sum + Math.abs(row.amountEur), 0) * 100) / 100;
+  }
   readonly statusLabel = STATUS_LABEL;
   readonly selected = signal<SalesOrderView | null>(null);
   readonly invoiceSelection = signal<number | null>(null);
@@ -104,7 +162,10 @@ export class PurchasePartnerPayments {
   constructor() { effect(() => { const order = this.order(); this.docs(); if (order.partnerCustomerId != null) void this.load(order.id); }); }
   async load(id = this.order().id): Promise<void> {
     const version = ++this.version; this.loading.set(true); this.error.set('');
-    try { const summary = await this.sourcing.partnerFinancing(id); if (version === this.version) this.summary.set(summary); }
+    try {
+      const [summary, proposal] = await Promise.all([this.sourcing.partnerFinancing(id), this.sourcing.partnerCreditProposal(id).catch(() => null)]);
+      if (version === this.version) { this.summary.set(summary); this.proposal.set(proposal); }
+    }
     catch (failure: unknown) { if (version === this.version) this.error.set(messageOf(failure, 'Partnerfinanciering laden mislukt')); }
     finally { if (version === this.version) this.loading.set(false); }
   }

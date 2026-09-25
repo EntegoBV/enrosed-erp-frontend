@@ -38,15 +38,15 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
             <span class="wk-th" role="columnheader"><span class="fin-sr">Openen</span></span>
           </div>
           @for (row of rows(); track row.key) {
-            <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="table.stop() === row.key ? 0 : -1" [attr.data-key]="row.key" [attr.aria-selected]="table.isSelected(row.key)"
+            <div class="wk-tr wk-tr--link" [class.fin-credit-row]="row.kind === 'credit'" role="row" [attr.tabindex]="table.stop() === row.key ? 0 : -1" [attr.data-key]="row.key" [attr.aria-selected]="table.isSelected(row.key)"
                  (focus)="table.focused(row.key)" (click)="table.click(row.key, $event)" (dblclick)="state.openInvoice(row.id)" appMenuTrigger (menuTrigger)="menu(row, $event)">
               <span class="wk-td" role="gridcell"><b>{{ row.number }}</b></span>
               <span class="wk-td" role="gridcell">{{ row.customer || '—' }}</span>
-              <span class="wk-td" role="gridcell" data-hide="sm"><span class="wk-pill" [class.tone-plum]="row.kind === 'partner'">{{ kindLabel(row) }}</span></span>
+              <span class="wk-td" role="gridcell" data-hide="sm"><span class="wk-pill" [class.tone-plum]="row.kind === 'partner' || row.kind === 'credit'">{{ kindLabel(row) }}</span>@if (row.kind === 'credit' && row.creditedInvoiceNumber) { <span class="wk-td__sub">op {{ row.creditedInvoiceNumber }}</span> }</span>
               <span class="wk-td" role="gridcell">{{ day(row.orderDate) }} @if (row.ageDays > 0) { <span class="wk-pill fin-age" [class.tone-warn]="row.ageDays > 30">{{ row.ageDays }} d</span> }</span>
               <span class="wk-td wk-td--num" role="gridcell" data-hide="md">{{ row.totalEur | eur }}</span>
               <span class="wk-td wk-td--num" role="gridcell" data-hide="md">{{ row.receivedEur | eur }}</span>
-              <span class="wk-td wk-td--num" role="gridcell"><b>{{ row.remainingEur | eur }}</b></span>
+              <span class="wk-td wk-td--num" role="gridcell"><b>{{ row.kind === 'credit' ? '− ' + (row.creditEur | eur) : (row.remainingEur | eur) }}</b></span>
               <span class="wk-td" role="gridcell"><app-icon class="fin-chev" name="chevron-right" [size]="14" /></span>
             </div>
           }
@@ -60,20 +60,21 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
       <div class="ios-headline">
         <div class="ios-headline__label">Nog open</div>
         <div class="ios-headline__value">{{ totals().openEur | eur }}</div>
-        <div class="ios-headline__sub">{{ rows().length }} {{ rows().length === 1 ? 'factuur' : 'facturen' }}</div>
+        <div class="ios-headline__sub">{{ totals().count }} {{ totals().count === 1 ? 'factuur' : 'facturen' }}@if (totals().creditEur > 0) { · Tegoeden − {{ totals().creditEur | eur }} }</div>
       </div>
       <div class="ios-chips" role="group" aria-label="Soort">
         <button class="ios-chip" type="button" [attr.aria-pressed]="!state.location().kind" (click)="state.go({ kind: '' })">Alle</button>
         <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().kind === 'customer'" (click)="state.go({ kind: 'customer' })">Klanten</button>
         <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().kind === 'partner'" (click)="state.go({ kind: 'partner' })">Partners</button>
+        <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().kind === 'credit'" (click)="state.go({ kind: 'credit' })">Tegoeden</button>
       </div>
       @if (rows().length) {
         <div class="ios-group">
           @for (row of rows(); track row.key) {
-            <button class="ios-cell ios-cell--tall" type="button" (click)="state.inspectItem({ kind: 'invoice', id: row.id })">
-              <span class="ios-cell__body"><span class="ios-cell__title">{{ row.number }}{{ row.customer ? ' · ' + row.customer : '' }}</span>
-                <span class="ios-cell__sub">{{ kindLabel(row) }} · <span [class.fin-warn-text]="row.ageDays > 30">sinds {{ row.ageDays }} d</span>{{ row.receivedEur > 0 ? ' · deels betaald' : '' }}</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.remainingEur | eur }}</span></span>
+            <button class="ios-cell ios-cell--tall" [class.fin-credit-row]="row.kind === 'credit'" type="button" (click)="state.inspectItem({ kind: 'invoice', id: row.id })">
+              <span class="ios-cell__body"><span class="ios-cell__title">@if (row.kind === 'credit') { <i class="fin-dot-plum" aria-hidden="true"></i> }{{ row.number }}{{ row.customer ? ' · ' + row.customer : '' }}</span>
+                <span class="ios-cell__sub">{{ kindLabel(row) }}@if (row.kind === 'credit' && row.creditedInvoiceNumber) { · op {{ row.creditedInvoiceNumber }} } · <span [class.fin-warn-text]="row.kind !== 'credit' && row.ageDays > 30">sinds {{ row.ageDays }} d</span>{{ row.receivedEur > 0 ? ' · deels betaald' : '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.kind === 'credit' ? '− ' + (row.creditEur | eur) : (row.remainingEur | eur) }}</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </button>
           }
@@ -99,10 +100,12 @@ export class ReceivablesPanel implements FinanceSectionApi {
       && (!needle || `${row.number} ${row.customer}`.toLocaleLowerCase('nl-BE').includes(needle)));
   });
   readonly totals = computed(() => {
-    const cents = (rows: readonly ReceivableRow[]): number => rows.reduce((sum, row) => sum + Math.round(row.remainingEur * 100), 0) / 100;
+    const cents = (rows: readonly ReceivableRow[], pick: (row: ReceivableRow) => number = (row) => row.remainingEur): number => rows.reduce((sum, row) => sum + Math.round(pick(row) * 100), 0) / 100;
     const rows = this.rows();
-    return { openEur: cents(rows), customerEur: cents(rows.filter((row) => row.kind === 'customer')),
-      partnerEur: cents(rows.filter((row) => row.kind === 'partner')), partial: rows.filter((row) => row.receivedEur > 0).length };
+    const invoices = rows.filter((row) => row.kind !== 'credit');
+    return { openEur: cents(invoices), customerEur: cents(rows.filter((row) => row.kind === 'customer')), count: invoices.length,
+      partnerEur: cents(rows.filter((row) => row.kind === 'partner')), partial: invoices.filter((row) => row.receivedEur > 0).length,
+      creditEur: cents(rows.filter((row) => row.kind === 'credit'), (row) => row.creditEur), creditCount: rows.filter((row) => row.kind === 'credit').length };
   });
 
   readonly table = new FinanceTable({
@@ -122,6 +125,7 @@ export class ReceivablesPanel implements FinanceSectionApi {
         { label: 'Ontvangen', value: formatEuro(totals.grossReceivedEur), tone: 'in' },
         { label: 'Terugbetaald', value: formatEuro(totals.refundedEur) },
         { label: 'Netto', value: formatEuro(totals.receivedEur), tone: 'strong' },
+        { label: 'Verrekend', value: formatEuro(totals.offsetEur), tone: 'muted', title: 'Creditnota\u2019s verrekend met facturen: geen geld op de bank.' },
         { label: 'Klantbetalingen', value: formatEuro(totals.standardEur), tone: 'muted' },
         { label: 'Partnervoorschotten', value: formatEuro(totals.partnerAdvanceEur), tone: 'muted', title: 'Een partnervoorschot is financiering, geen omzet.' },
         { label: 'Partnerafrekeningen', value: formatEuro(totals.partnerSettlementEur), tone: 'muted' },
@@ -132,6 +136,7 @@ export class ReceivablesPanel implements FinanceSectionApi {
       { label: 'Nog open', value: formatEuro(totals.openEur), tone: 'strong' },
       { label: 'Klanten', value: formatEuro(totals.customerEur) },
       { label: 'Partners', value: formatEuro(totals.partnerEur) },
+      ...(totals.creditEur > 0 ? [{ label: 'Tegoeden', value: `− ${formatEuro(totals.creditEur)}`, title: 'Creditnota\u2019s die nog verrekend of terugbetaald moeten worden.' } as StripItem] : []),
       { label: 'Deels betaald', value: String(totals.partial), tone: 'muted' },
     ];
   });
@@ -140,7 +145,8 @@ export class ReceivablesPanel implements FinanceSectionApi {
       const count = this.received()?.filtered().length ?? 0;
       return `${count} ${count === 1 ? 'boeking' : 'boekingen'}`;
     }
-    return `${this.rows().length} ${this.rows().length === 1 ? 'factuur' : 'facturen'}`;
+    const totals = this.totals();
+    return `${totals.count} ${totals.count === 1 ? 'factuur' : 'facturen'}${totals.creditCount ? ` · ${totals.creditCount} ${totals.creditCount === 1 ? 'creditnota' : 'creditnota\u2019s'}` : ''}`;
   });
 
   constructor() {
@@ -159,10 +165,10 @@ export class ReceivablesPanel implements FinanceSectionApi {
   }
 
   menu(row: ReceivableRow, anchor: MenuPoint): void {
-    this.state.openMenu({ title: row.number, anchor, items: [{ id: 'open', label: 'Factuur openen', iconName: 'document' }],
+    this.state.openMenu({ title: row.number, anchor, items: [{ id: 'open', label: row.kind === 'credit' ? 'Creditnota openen' : 'Factuur openen', iconName: 'document' }],
       pick: () => this.state.openInvoice(row.id) });
   }
 
-  kindLabel(row: ReceivableRow): string { return KIND_LABEL[row.purpose] ?? 'Klant'; }
+  kindLabel(row: ReceivableRow): string { return row.kind === 'credit' ? 'Tegoed' : KIND_LABEL[row.purpose] ?? 'Klant'; }
   day(date: string): string { return dayMonth(date); }
 }

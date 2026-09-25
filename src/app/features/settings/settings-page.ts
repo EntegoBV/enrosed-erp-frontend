@@ -236,6 +236,12 @@ const normalizeCategoryCode = (value: string): string => value
                 <span class="hint">F geeft F-{{ year }}-0001 voor gewone facturen.</span>
               </div>
               <div class="field">
+                <label for="co-credit-prefix">Nummering creditnota's <span class="opt"></span></label>
+                <input class="input mono" id="co-credit-prefix" maxlength="12" [ngModel]="profile.creditNoteNumberPrefix ?? ''"
+                       (ngModelChange)="patchCompany({ creditNoteNumberPrefix: $event })" placeholder="CN" />
+                <span class="hint">CN geeft CN-{{ year }}-0001. Eén reeks voor gewone en partnercreditnota's.</span>
+              </div>
+              <div class="field">
                 <label for="co-partner-invoice-pattern">Nummering partnerfacturen <span class="opt"></span></label>
                 <input class="input mono" id="co-partner-invoice-pattern" maxlength="60" [ngModel]="profile.partnerInvoiceNumberPattern ?? ''"
                        (ngModelChange)="patchCompany({ partnerInvoiceNumberPattern: $event })" placeholder="partner/{jaar}/{nr:3}" />

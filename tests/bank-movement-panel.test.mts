@@ -335,3 +335,25 @@ test('"Te koppelen" shows only money in that is not linked to an invoice', () =>
   panel.linkFilter.set('UNLINKED');
   assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [1, 3]);
 });
+
+test('a credit note with an open tegoed is offered for an outgoing line only, and a verrekening row never matches', async () => {
+  const creditNote = { order: { id: 55, number: 'CN-2026-0002', status: 'UITGEREIKT', docType: 'CREDITNOTA', customerId: 1 },
+    priced: { totals: { totalInclVat: 220.2 } }, paymentSummary: { invoiceTotalEur: -220.2, remainingEur: 0, refundableEur: 220.2, payments: [] } } as unknown as SalesOrderView;
+  const outgoing = harness();
+  outgoing.state.salesOrders.set([invoice(1, 100, 100, 0), creditNote]);
+  outgoing.state.incomingPayments.set([{ ...receipt(12, 55, -120.2), offsetOrderId: 1, offsetPaymentId: 13 } as IncomingPaymentRow]);
+  outgoing.state.bankStatements.set([movement(1, -220.2)]);
+  await outgoing.panel.openAllocation(movement(1, -220.2));
+  assert.deepEqual(outgoing.panel.selectableInvoices().map(view => view.order.id), [55], 'money out: only the credit note has enough tegoed');
+  assert.equal(outgoing.panel.isCreditNote(55), true);
+  assert.equal(outgoing.panel.existingMatches().length, 0, 'the verrekening row is no bank movement');
+  outgoing.panel.chooseInvoice(55);
+  outgoing.panel.chooseMatch(outgoing.panel.manualNewMatch()!, true);
+  await outgoing.panel.allocate();
+  assert.deepEqual(outgoing.allocationCalls, [{ id: 1, salesOrderId: 55, existingPaymentId: null }]);
+  const incoming = harness();
+  incoming.state.salesOrders.set([invoice(1, 100, 100, 0), creditNote]);
+  incoming.state.bankStatements.set([movement(2, 50)]);
+  await incoming.panel.openAllocation(movement(2, 50));
+  assert.deepEqual(incoming.panel.selectableInvoices().map(view => view.order.id), [1], 'money in never lands on a credit note');
+});

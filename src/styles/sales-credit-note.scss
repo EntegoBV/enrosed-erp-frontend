@@ -1,2 +1,182 @@
 // Credit notes: the 'Creditnota maken' sheet, the offset sheet, the credit variants of desk/phone/list/finance.
 // Owned by the credit-note engineer; wk-*/ios-* kit classes are used bare, never restyled here.
+// Everything is scoped under its own cn-* / *--credit hook so nothing here leaks into the kit.
+
+:root { --cn-plum: #8157a3; --cn-plum-soft: color-mix(in srgb, #8157a3 12%, #fff); --cn-plum-line: color-mix(in srgb, #8157a3 35%, #fff); }
+
+/* ============================================================ the sheets */
+.cn-sheet { display: grid; gap: 18px; min-width: 0; }
+.cn-sheet--ios { gap: 16px; }
+.cn-head { display: grid; gap: 3px; }
+.cn-head h3 { margin: 0; font-size: 17px; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.cn-head__who { margin: 0; color: var(--ink-2); font-size: 13px; }
+.cn-head__cap { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.cn-block { display: grid; gap: 10px; min-width: 0; }
+.cn-block h4 { margin: 0; font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; color: var(--rose-dark); }
+.cn-block h4 .cn-opt { margin-left: 6px; color: var(--muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
+.cn-block--partner { padding: 12px 14px; border: 1px solid var(--cn-plum-line); border-radius: 14px; background: var(--cn-plum-soft); }
+.cn-partner__explain { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cn-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.cn-hint--warn { color: var(--warn); font-weight: 650; }
+.cn-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--danger-soft); color: var(--danger); font-size: 12.5px; line-height: 1.5; }
+.cn-error--retry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.cn-error--retry .btn { margin: 0; }
+/* the sheet's foot carries the refusal so it is seen next to the button that was pressed */
+.cn-foot__error { flex-basis: 100%; }
+.cn-foot__need { display: block; color: var(--warn); font-weight: 650; }
+.cn-line__error { display: block; margin-top: 4px; color: var(--danger); font-size: 11px; font-style: normal; font-weight: 650; line-height: 1.35; }
+.cn-reason-fixed { margin: 0; padding: 9px 12px; border-radius: 999px; background: var(--cn-plum-soft); color: var(--cn-plum); font-size: 13px; font-weight: 700; width: fit-content; }
+.cn-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cn-sheet--ios .cn-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 2px 16px; }
+.cn-sheet--ios .cn-chips::-webkit-scrollbar { display: none; }
+.cn-chip { min-height: 44px; padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; white-space: nowrap; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.cn-chip--on { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+.cn-chip:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+
+/* the invoice lines: a table on a desk, stacked cells on a phone */
+.cn-lines { display: grid; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.cn-lines__head { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, .9fr) minmax(0, .8fr); gap: 10px; padding: 8px 12px; background: var(--surface-2); color: var(--muted); font-size: 9.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.cn-lines__head span:nth-child(n+2) { text-align: right; }
+.cn-line { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, .9fr) minmax(0, .8fr); gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+.cn-line--on { background: color-mix(in srgb, var(--rose-soft) 55%, var(--surface)); }
+.cn-line--full { opacity: .72; }
+.cn-line__product { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cn-line__photo { width: 44px; height: 44px; flex: none; border: 1px solid var(--line); border-radius: 11px; object-fit: cover; background: #fff; }
+.cn-line__photo--empty { display: grid; place-items: center; background: var(--surface-2); color: var(--muted); }
+.cn-line__copy { display: grid; gap: 2px; min-width: 0; }
+.cn-line__copy strong { font-size: 13px; overflow-wrap: anywhere; }
+.cn-line__copy small { color: var(--muted); font-size: 11px; }
+.cn-tag { display: inline-block; width: fit-content; margin-top: 2px; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 10.5px; font-style: normal; font-weight: 650; }
+.cn-tag--warn { background: var(--warn-soft); color: #765017; }
+.cn-line__invoiced, .cn-line__price, .cn-line__amount { display: grid; gap: 2px; text-align: right; font-variant-numeric: tabular-nums; min-width: 0; }
+/* the cell labels stay in the accessibility tree on a desk (the header row carries the visible words) and show on a phone */
+.cn-line__invoiced small, .cn-line__price small, .cn-line__amount small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; }
+.cn-line__invoiced b { font-size: 12px; font-weight: 600; color: var(--ink-2); overflow-wrap: anywhere; }
+.cn-line__price b { font-size: 12.5px; }
+.cn-line__amount b { font-size: 14px; color: var(--rose-dark); }
+.cn-line__qty { display: grid; justify-items: end; gap: 4px; }
+.cn-stepper { display: inline-flex; align-items: stretch; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.cn-stepper__btn { width: 44px; min-height: 44px; border: 0; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 20px; font-weight: 600; line-height: 1; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.cn-stepper__btn:disabled { color: var(--muted); cursor: default; opacity: .6; }
+.cn-stepper__btn:active:not(:disabled) { background: var(--rose-soft); }
+.cn-stepper__input { width: 64px; min-height: 44px; border: 0; border-radius: 0; text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.cn-stepper__input::-webkit-outer-spin-button, .cn-stepper__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cn-all { min-height: 28px; padding: 0 6px; border: 0; background: transparent; color: var(--rose-dark); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+.cn-all:disabled { color: var(--muted); cursor: default; }
+.cn-price { width: 100%; max-width: 110px; min-height: 40px; text-align: right; font-variant-numeric: tabular-nums; margin-left: auto; }
+.cn-toggle { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; }
+.cn-toggle--off { opacity: .7; cursor: default; }
+.cn-toggle input { width: 20px; height: 20px; flex: none; accent-color: var(--rose); margin: 0; }
+.cn-toggle span { display: grid; gap: 2px; }
+.cn-toggle b { font-size: 13px; }
+.cn-toggle small { color: var(--muted); font-size: 11px; }
+.cn-amount { display: grid; grid-template-columns: minmax(0, 1fr) 140px 36px; gap: 8px; align-items: center; }
+.cn-amount__eur .input { text-align: right; font-variant-numeric: tabular-nums; }
+.cn-remove { width: 36px; height: 36px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.cn-remove:hover { background: var(--danger-soft); color: var(--danger); }
+.cn-add { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px dashed var(--line-strong); border-radius: 12px; background: transparent; color: var(--rose-dark); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; width: fit-content; }
+.cn-add:hover { background: var(--rose-soft); }
+.cn-foot__preview { display: grid; flex: 1 1 auto; min-width: 0; gap: 1px; line-height: 1.3; }
+.cn-foot__preview b { font-size: 13.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cn-foot__preview small { color: var(--muted); font-size: 11.5px; }
+.sheet__foot:has(.cn-foot__preview) { flex-wrap: wrap; }
+.sheet__foot .cn-foot__preview ~ .btn { flex: 0 0 auto; }
+
+/* the offset sheet */
+.cn-offset { gap: 14px; }
+.cn-targets { display: grid; gap: 8px; }
+.cn-target { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cn-target--on { border-color: var(--rose); background: var(--rose-soft); }
+.cn-target__copy { display: grid; gap: 2px; min-width: 0; }
+.cn-target__copy b { font-size: 13.5px; }
+.cn-target__copy small { color: var(--muted); font-size: 11.5px; }
+.cn-target__open { flex: none; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--rose-dark); }
+.cn-offset__amount { display: grid; gap: 6px; }
+.cn-offset__amount > span { font-size: 12px; font-weight: 650; }
+.cn-sentence { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.5; }
+
+@media (max-width: 679px) {
+  .cn-lines { border: 0; background: transparent; gap: 8px; overflow: visible; }
+  .cn-lines__head { display: none; }
+  .cn-line { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'product product' 'invoiced amount' 'qty price'; gap: 10px 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+  .cn-line--on { background: color-mix(in srgb, var(--rose-soft) 55%, var(--surface)); }
+  .cn-line__product { grid-area: product; }
+  .cn-line__invoiced { grid-area: invoiced; text-align: left; }
+  .cn-line__amount { grid-area: amount; }
+  .cn-line__qty { grid-area: qty; justify-items: start; grid-auto-flow: column; align-items: center; gap: 10px; }
+  .cn-line__price { grid-area: price; }
+  .cn-line__invoiced small, .cn-line__price small, .cn-line__amount small { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; display: block; }
+  .cn-price { max-width: 120px; min-height: 44px; }
+  .cn-amount { grid-template-columns: minmax(0, 1fr) 36px; }
+  .cn-amount__eur { grid-column: 1; }
+  .cn-amount .cn-remove { grid-column: 2; grid-row: 1 / 3; }
+  .cn-foot__preview { flex-basis: 100%; }
+  .sheet__foot .cn-foot__preview + .btn, .sheet__foot .cn-foot__preview ~ .btn--primary { flex: 1 1 auto; }
+}
+
+/* ============================================================ desk: the credit note document */
+.desk-credit-meta { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+/* four tiles fill the strip; their sublines may wrap instead of truncating */
+.desk-kpis.desk-kpis--credit { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.desk-kpis.desk-kpis--credit .desk-kpi span { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 1180px) { .desk-kpis.desk-kpis--credit { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.desk-kpi--credit strong { color: #f3c8ff; }
+.desk-kpi--credit-done strong { color: #a8e8c6; }
+.desk-lock--credit > span:first-child { color: var(--cn-plum); }
+.desk-credit-block { display: grid; gap: 6px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--cn-plum-line); border-radius: 12px; background: var(--cn-plum-soft); font-size: 12.5px; }
+.desk-credit-block b { font-variant-numeric: tabular-nums; }
+.desk-credit-block a { color: var(--rose-dark); font-weight: 650; }
+.desk-credit-line { display: flex; justify-content: space-between; gap: 12px; }
+.desk-credit-line span { color: var(--ink-2); }
+.desk-lines-locked { display: flex; align-items: center; gap: 10px; margin: 8px 16px 0; padding: 8px 12px; border-radius: 10px; background: var(--cn-plum-soft); color: var(--cn-plum); font-size: 12px; }
+.desk-line-cap { margin-top: 3px; color: var(--cn-plum); font-size: 11px; font-weight: 650; white-space: normal; line-height: 1.35; }
+
+/* ============================================================ receipts: 'Tegoed & afhandeling' */
+.receipts--credit { border-color: var(--cn-plum-line); }
+.receipts--credit .eyebrow { color: var(--cn-plum); }
+.receipts__metrics--4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; row-gap: 12px !important; }
+.receipts__metrics--4 .is-open b { color: var(--cn-plum); }
+.receipts__metrics--4 .is-done b { color: var(--ok); }
+.receipts__credit-links { display: grid; gap: 4px; margin: 10px 0; }
+.receipts__credit-links a { color: var(--cn-plum); font-size: 12px; font-weight: 650; text-decoration: none; }
+.receipts__credit-links a:hover { text-decoration: underline; }
+.receipts__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.receipts__actions .btn { margin: 0; }
+.receipts__actions .btn--block { flex-basis: 100%; }
+
+/* ============================================================ phone view: the credit note document */
+.sales-hero--credit .eyebrow { color: #e5c8f5 !important; }
+.credit-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px -3px -3px; padding: 8px 11px; border-radius: 10px; background: rgb(203 160 235 / .16); color: #e9d3f7; font-size: 10px; }
+.credit-strip strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.credit-strip--done { background: rgb(77 203 137 / .12); color: #a8e8c6; }
+.credit-strip--dead { background: rgb(255 255 255 / .08); color: rgb(255 255 255 / .62); }
+/* the invoice's 'Gecrediteerd' cell carries an amount and a number: it takes the whole row instead of truncating */
+.hero-details .hero-details__credited { grid-column: 1 / -1; }
+.credit-none-cell { display: flex; align-items: center; gap: 10px; padding: 14px; color: var(--muted); font-size: 12.5px; }
+.credit-card-note { margin: 0; padding: 12px 14px; color: var(--ink-2); font-size: 12.5px; line-height: 1.55; }
+.credit-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--cn-plum-line); border-radius: 14px; background: var(--cn-plum-soft); color: var(--cn-plum); font-size: 12.5px; line-height: 1.5; }
+.credit-banner b { color: inherit; }
+.credit-banner a { color: var(--rose-dark); font-weight: 650; }
+.credit-line-hint { display: block; margin-top: 4px; color: var(--cn-plum); font-size: 11px; font-weight: 650; }
+
+/* ============================================================ list rows */
+.so-credit { color: var(--danger); }
+.so-credit-tegoed { display: block; color: var(--cn-plum); font-size: 10.5px; font-weight: 650; }
+.so-credited { display: block; color: var(--cn-plum); font-size: 10.5px; font-weight: 650; }
+.so-status-mini--credit i { background: var(--cn-plum); }
+
+/* ============================================================ partner container card */
+.partner-shortage { display: grid; gap: 10px; margin: 14px 0 0; padding: 14px; border: 1px solid var(--cn-plum-line); border-radius: 12px; background: var(--cn-plum-soft); }
+.partner-shortage__head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 750; color: var(--cn-plum); }
+.partner-shortage p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.partner-shortage p.muted { color: var(--muted); }
+.partner-shortage .btn { width: fit-content; }
+.partner-shortage a { color: var(--rose-dark); font-weight: 650; }
+.partner-money__docs .is-credit a { color: var(--cn-plum); }
+.partner-money__kpis .kpi-sub { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); font-weight: 500; }
+
+/* ============================================================ finance: Te ontvangen and Ontvangen */
+.fin-credit-row .wk-td b, .fin-credit-row .ios-cell__value { color: var(--cn-plum); }
+.fin-dot-plum { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--cn-plum); vertical-align: middle; }
+.fin-offset-row .wk-td, .fin-offset-row .ios-cell__title { color: var(--muted); }
+.fin-tile__sub--credit { color: var(--cn-plum); }

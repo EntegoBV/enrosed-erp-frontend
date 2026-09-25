@@ -25,16 +25,16 @@ import { BankMovementPanel } from './bank-movement-panel';
             <small>{{ p.stamp(row.bookedAt, row.timeZone) }}{{ row.counterparty ? ' · ' + row.counterparty : '' }}</small>
             @if (row.reference) { <small>{{ row.reference }}</small> }
           </div>
-          @if (row.amountEur < 0) { <p class="fin-hint">Een uitgaande beweging koppel je alleen aan een terugbetaling op een factuur.</p> }
+          @if (row.amountEur < 0) { <p class="fin-hint">Een uitgaande beweging koppel je alleen aan een terugbetaling op een factuur of aan het tegoed van een creditnota.</p> }
           @if (p.matchingLoading()) { <p class="fin-hint" role="status">Voorstellen zoeken…</p> }
           @if (p.matches().length) {
             <h3 class="fin-alloc__label">Voorstellen</h3>
             <div class="fin-alloc__cards" role="group" aria-label="Voorstellen">
               @for (match of p.matches(); track key(match)) {
                 <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.isChosen(match)" (click)="p.chooseMatch(match)">
-                  <span class="fin-match__kind">{{ match.existingPaymentId ? 'Bestaande betaling koppelen' : row.amountEur < 0 ? 'Nieuwe terugbetaling op de factuur' : 'Nieuwe betaling op de factuur' }}</span>
+                  <span class="fin-match__kind">{{ match.existingPaymentId ? 'Bestaande betaling koppelen' : row.amountEur < 0 ? (p.isCreditNote(match.salesOrderId) ? 'Nieuwe terugbetaling op creditnota ' + match.number : 'Nieuwe terugbetaling op de factuur') : 'Nieuwe betaling op de factuur' }}</span>
                   <b>{{ match.number }}</b>
-                  <span>{{ match.openEur | eur }} {{ row.amountEur < 0 ? 'terug te betalen' : 'nog te ontvangen' }}</span>
+                  <span>{{ match.openEur | eur }} {{ row.amountEur < 0 ? (p.isCreditNote(match.salesOrderId) ? 'tegoed' : 'terug te betalen') : 'nog te ontvangen' }}</span>
                   @if (match.receivedAt) { <small>Geboekt {{ p.matchStamp(match) }}{{ match.reference ? ' · ' + match.reference : '' }}</small> }
                 </button>
               }
@@ -44,11 +44,11 @@ import { BankMovementPanel } from './bank-movement-panel';
           <select class="select" [disabled]="p.busy()" [value]="p.manualInvoice()" (change)="p.chooseInvoice(+$any($event.target).value)" aria-label="Factuur">
             <option value="0">Kies een factuur…</option>
             @for (view of p.selectableInvoices(); track view.order.id) {
-              <option [value]="view.order.id" [selected]="view.order.id === p.manualInvoice()">{{ view.order.number }} · {{ p.customerName(view.order.customerId) }} · {{ p.available(view) | eur }} {{ row.amountEur < 0 ? 'terug te betalen' : 'open' }}</option>
+              <option [value]="view.order.id" [selected]="view.order.id === p.manualInvoice()">{{ view.order.number }} · {{ p.customerName(view.order.customerId) }} · {{ p.available(view) | eur }} {{ row.amountEur < 0 ? (view.order.docType === 'CREDITNOTA' ? 'tegoed' : 'terug te betalen') : 'open' }}</option>
             }
           </select>
           @if (!p.selectableInvoices().length && !p.matchingLoading()) {
-            <p class="fin-hint">{{ row.amountEur < 0 ? 'Geen factuur met genoeg tegoed voor deze terugbetaling.' : 'Geen uitgegeven verkoopfactuur gevonden.' }}</p>
+            <p class="fin-hint">{{ row.amountEur < 0 ? 'Geen factuur of creditnota met genoeg tegoed voor deze terugbetaling.' : 'Geen uitgegeven verkoopfactuur gevonden.' }}</p>
           }
           @if (p.manualInvoice()) {
             <div class="fin-alloc__cards">
@@ -60,8 +60,8 @@ import { BankMovementPanel } from './bank-movement-panel';
               }
               @if (p.manualNewMatch(); as match) {
                 <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.isChosen(match)" (click)="p.chooseMatch(match, true)">
-                  <span class="fin-match__kind">{{ row.amountEur < 0 ? 'Nieuwe terugbetaling op de factuur' : 'Nieuwe betaling op de factuur' }}</span>
-                  <b>{{ match.number }}</b><span>{{ match.openEur | eur }} {{ row.amountEur < 0 ? 'terug te betalen' : 'nog te ontvangen' }}</span>
+                  <span class="fin-match__kind">{{ row.amountEur < 0 ? (p.isCreditNote(match.salesOrderId) ? 'Nieuwe terugbetaling op creditnota ' + match.number : 'Nieuwe terugbetaling op de factuur') : 'Nieuwe betaling op de factuur' }}</span>
+                  <b>{{ match.number }}</b><span>{{ match.openEur | eur }} {{ row.amountEur < 0 ? (p.isCreditNote(match.salesOrderId) ? 'tegoed' : 'terug te betalen') : 'nog te ontvangen' }}</span>
                 </button>
               }
             </div>

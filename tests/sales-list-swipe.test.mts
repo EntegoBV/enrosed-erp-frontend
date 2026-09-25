@@ -91,3 +91,14 @@ function unusedConcept() {
     decidedAt: null,
   };
 }
+
+test('a credit note swipes to the bin only while it is an unused concept, and is labelled Creditnota', () => {
+  const concept = { docType: 'CREDITNOTA', status: 'CONCEPT', sentAt: null, viewedAt: null, viewCount: 0, decidedAt: null };
+  assert.equal(isSwipeDeletableSalesDocument(concept), true);
+  assert.equal(isSwipeDeletableSalesDocument({ ...concept, status: 'UITGEREIKT' }), false);
+  assert.equal(isSwipeDeletableSalesDocument({ ...concept, sentAt: '2026-09-25T10:00:00Z' }), false);
+  assert.equal(isSwipeDeletableSalesDocument({ ...concept, docType: 'OFFERTE', status: 'VERZONDEN', sentAt: '2026-09-25T10:00:00Z' }), true, 'quotes keep their looser rule');
+  assert.equal(salesDocumentLabel('CREDITNOTA'), 'Creditnota');
+  assert.equal(salesDocumentLabel('FACTUUR'), 'Verkoopfactuur');
+  assert.equal(salesDocumentLabel(null), 'Offerte');
+});

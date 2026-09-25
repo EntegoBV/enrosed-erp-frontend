@@ -1,11 +1,11 @@
 import type { DeletedItemSummary, DeletedItemType, RestoredItem } from '../../core/api/deleted-items-api';
 
 export const DELETED_ITEM_TYPES: { value: DeletedItemType | ''; label: string }[] = [
-  { value: '', label: 'Alles' }, { value: 'INVOICE', label: 'Facturen' },
+  { value: '', label: 'Alles' }, { value: 'INVOICE', label: 'Facturen' }, { value: 'CREDIT_NOTE', label: 'Creditnota’s' },
   { value: 'QUOTE', label: 'Offertes' }, { value: 'PURCHASE_ORDER', label: 'Inkooporders' },
 ];
 export const deletedItemLabel = (type: DeletedItemType): string =>
-  ({ INVOICE: 'Factuur', QUOTE: 'Offerte', PURCHASE_ORDER: 'Inkooporder' })[type];
+  ({ INVOICE: 'Factuur', QUOTE: 'Offerte', CREDIT_NOTE: 'Creditnota', PURCHASE_ORDER: 'Inkooporder' })[type];
 
 export function deletedItemStatus(status: string): string {
   return ({ CONCEPT: 'Concept', UITGEREIKT: 'Uitgereikt', VERZONDEN: 'Verstuurd', BEKEKEN: 'Bekeken',

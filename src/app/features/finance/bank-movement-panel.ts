@@ -211,6 +211,8 @@ export class BankMovementPanel {
     const linked = new Set(this.state.bankStatements().map(line => line.salesPaymentId));
     return [...this.paymentMap().values()].filter(payment => {
       const invoice = this.invoiceMap().get(payment.salesOrderId);
+      /* A verrekening is no bank movement: it never matches a line. */
+      if (payment.offsetPaymentId != null) return false;
       return !!invoice && this.active(invoice) && !linked.has(payment.id)
         && cents(payment.amountEur) === cents(row.amountEur)
         && (!bankAccountKey(payment.bankAccount) || bankAccountKey(payment.bankAccount) === bankAccountKey(row.account));
@@ -236,7 +238,13 @@ export class BankMovementPanel {
   invoiceNumber(id: number): string { return this.invoiceMap().get(id)?.order.number || `Factuur #${id}`; }
   customerName(id: number | null): string { return id == null ? '' : this.customerNames().get(id) ?? ''; }
   available(view: SalesOrderView): number { return this.selected()?.amountEur && this.selected()!.amountEur < 0 ? view.paymentSummary?.refundableEur ?? 0 : view.paymentSummary?.remainingEur ?? 0; }
-  private active(view: SalesOrderView): boolean { return view.order.docType === 'FACTUUR' && !inactive.has(view.order.status); }
+  /** Invoices always; a credit note only for money going out (its refund). */
+  private active(view: SalesOrderView): boolean {
+    if (inactive.has(view.order.status)) return false;
+    if (view.order.docType === 'CREDITNOTA') return (this.selected()?.amountEur ?? 0) < 0;
+    return view.order.docType === 'FACTUUR';
+  }
+  isCreditNote(id: number): boolean { return this.invoiceMap().get(id)?.order.docType === 'CREDITNOTA'; }
   private canCreateOn(view: SalesOrderView): boolean {
     const row = this.selected(); if (!row || !this.active(view)) return false;
     return row.amountEur < 0 ? cents(view.paymentSummary?.refundableEur ?? 0) >= -cents(row.amountEur)

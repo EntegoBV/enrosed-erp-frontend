@@ -41,6 +41,7 @@ const ATTENTION_ROWS = 7;
           <span class="fin-tile__label">Te ontvangen</span>
           <strong class="fin-tile__value">{{ state.openInvoices().totalEur | eur }}</strong>
           <span class="fin-tile__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }} · {{ state.incomingThisMonth().receivedEur | eur }} ontvangen deze maand</span>
+          @if (state.openInvoices().creditNoteEur > 0) { <span class="fin-tile__sub fin-tile__sub--credit">{{ state.openInvoices().creditNoteEur | eur: 0 }} tegoed af te handelen</span> }
         </button>
         <button class="fin-tile" type="button" (click)="state.go({ view: 'costs', period: 'month' }, 'push')">
           <span class="fin-tile__label">Uitgegeven deze maand</span>
@@ -118,7 +119,7 @@ const ATTENTION_ROWS = 7;
           </button>
           <button class="ios-cell ios-cell--tall" type="button" (click)="state.go({ view: 'incoming' }, 'push')">
             <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg tone-ok"><app-icon name="arrow-in" [size]="18" /></span></span>
-            <span class="ios-cell__body"><span class="ios-cell__title">Te ontvangen</span><span class="ios-cell__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }}</span></span>
+            <span class="ios-cell__body"><span class="ios-cell__title">Te ontvangen</span><span class="ios-cell__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }}@if (state.openInvoices().creditEur > 0) { · {{ state.openInvoices().creditEur | eur: 0 }} tegoed af te handelen }</span></span>
             <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ state.openInvoices().totalEur | eur }}</span></span>
             <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
           </button>

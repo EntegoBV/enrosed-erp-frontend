@@ -11,6 +11,17 @@ const clear: AttentionInput = {
 };
 const kinds = (input: Partial<AttentionInput>) => financeAttention({ ...clear, ...input }).map((item) => item.kind);
 
+test('open credit-note tegoeden ask to be settled', () => {
+  assert.deepEqual(kinds({ openCredits: { count: 0, eur: 0 } }), []);
+  const [item] = financeAttention({ ...clear, openCredits: { count: 2, eur: 516.65 } });
+  assert.equal(item.kind, 'open-credits');
+  assert.equal(item.tone, 'warn');
+  assert.equal(item.title, '2 creditnota\u2019s met een tegoed af te handelen');
+  assert.equal(item.amountEur, 516.65);
+  assert.deepEqual(item.target, { view: 'incoming', kind: 'credit' });
+  assert.equal(financeAttention({ ...clear, openCredits: { count: 1, eur: 220.2 } })[0].title, '1 creditnota met een tegoed af te handelen');
+});
+
 test('an all-clear day asks for nothing', () => {
   assert.deepEqual(financeAttention(clear), []);
   assert.deepEqual(kinds({ accounts: [{ key: 'KBC', label: 'KBC Zakelijk', hasReading: true, ageDays: 0 }] }), []);

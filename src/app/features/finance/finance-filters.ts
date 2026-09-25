@@ -27,6 +27,7 @@ import { FinancePeriod } from './finance-url';
           <button class="wk-chip" type="button" [attr.aria-pressed]="!location.kind" (click)="state.go({ kind: '' })">Alle</button>
           <button class="wk-chip" type="button" [attr.aria-pressed]="location.kind === 'customer'" (click)="state.go({ kind: 'customer' })">Klanten</button>
           <button class="wk-chip" type="button" [attr.aria-pressed]="location.kind === 'partner'" (click)="state.go({ kind: 'partner' })">Partners</button>
+          <button class="wk-chip" type="button" [attr.aria-pressed]="location.kind === 'credit'" (click)="state.go({ kind: 'credit' })">Tegoeden</button>
         </div>
       }
       @case ('incoming/received') {

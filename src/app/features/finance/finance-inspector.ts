@@ -45,7 +45,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
         }
         @case ('container') { <button class="btn btn--primary" type="button" (click)="state.openContainer(t.id)">Beheren bij de container ›</button> }
         @case ('invoice') {
-          @if (invoice(); as row) { <button class="btn btn--primary" type="button" (click)="state.openInvoice(row.id)">Factuur openen ›</button> }
+          @if (invoice(); as row) { <button class="btn btn--primary" type="button" (click)="state.openInvoice(row.id)">{{ row.kind === 'credit' ? 'Creditnota openen ›' : 'Factuur openen ›' }}</button> }
         }
         @case ('recurring') {
           @if (recurring(); as definition) {
@@ -175,27 +175,32 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
           @if (invoice(); as row) {
             <section class="wk-section fin-insp-hero">
               <span class="fin-insp-party">{{ row.customer || 'Klant onbekend' }}</span>
-              <strong class="fin-insp-amount">{{ row.remainingEur | eur }}</strong>
-              <span class="wk-pill" [class.tone-warn]="row.ageDays > 30">nog open · {{ row.ageDays }} d</span>
+              <strong class="fin-insp-amount">{{ row.kind === 'credit' ? '− ' + (row.creditEur | eur) : (row.remainingEur | eur) }}</strong>
+              <span class="wk-pill" [class.tone-warn]="row.kind !== 'credit' && row.ageDays > 30" [class.tone-plum]="row.kind === 'credit'">{{ row.kind === 'credit' ? 'tegoed af te handelen' : 'nog open' }} · {{ row.ageDays }} d</span>
             </section>
             <section class="wk-section">
               <dl class="wk-kv">
-                <div><dt>Soort</dt><dd>{{ purposeLabel(row.purpose) }}</dd></div>
-                <div><dt>Factuurdatum</dt><dd>{{ dayYear(row.orderDate) }}</dd></div>
+                <div><dt>Soort</dt><dd>{{ row.kind === 'credit' ? 'Creditnota' + (row.creditedInvoiceNumber ? ' op ' + row.creditedInvoiceNumber : '') : purposeLabel(row.purpose) }}</dd></div>
+                <div><dt>{{ row.kind === 'credit' ? 'Datum' : 'Factuurdatum' }}</dt><dd>{{ dayYear(row.orderDate) }}</dd></div>
                 <div><dt>Totaal</dt><dd>{{ row.totalEur | eur }}</dd></div>
-                <div><dt>Ontvangen</dt><dd>{{ row.receivedEur | eur }}</dd></div>
-                <div><dt>Nog open</dt><dd>{{ row.remainingEur | eur }}</dd></div>
+                @if (row.kind === 'credit') {
+                  <div><dt>Verrekend of terugbetaald</dt><dd>{{ -row.receivedEur | eur }}</dd></div>
+                  <div><dt>Tegoed</dt><dd>{{ row.creditEur | eur }}</dd></div>
+                } @else {
+                  <div><dt>Ontvangen</dt><dd>{{ row.receivedEur | eur }}</dd></div>
+                  <div><dt>Nog open</dt><dd>{{ row.remainingEur | eur }}</dd></div>
+                }
               </dl>
             </section>
             <section class="wk-section">
-              <h3 class="wk-section__title">Ontvangen op deze factuur</h3>
+              <h3 class="wk-section__title">{{ row.kind === 'credit' ? 'Verrekend en terugbetaald' : 'Ontvangen op deze factuur' }}</h3>
               @for (receipt of receipts(); track receipt.id) {
                 <div class="fin-pay-line"><span>{{ moment(receipt.receivedAt, receipt.timeZone) }}</span>
-                  <span>@if (state.receiptAccountKey(receipt); as account) { {{ state.accountLabel(account) }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
-                  <b [class.wk-amount--in]="receipt.amountEur > 0">{{ receipt.amountEur | eur }}</b></div>
-              } @empty { <p class="fin-hint">Nog niets ontvangen.</p> }
+                  <span>@if (receipt.offsetPaymentId != null) { verrekend met {{ receipt.offsetOrderNumber || 'document' }} } @else if (state.receiptAccountKey(receipt); as account) { {{ state.accountLabel(account) }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
+                  <b [class.wk-amount--in]="receipt.amountEur > 0 && receipt.offsetPaymentId == null">{{ receipt.amountEur | eur }}</b></div>
+              } @empty { <p class="fin-hint">{{ row.kind === 'credit' ? 'Nog niets verrekend of terugbetaald.' : 'Nog niets ontvangen.' }}</p> }
             </section>
-            @if (layout() === 'pane') { <footer class="wk-inspector__foot"><button class="wk-btn wk-btn--primary" type="button" (click)="state.openInvoice(row.id)">Factuur openen ›</button></footer> }
+            @if (layout() === 'pane') { <footer class="wk-inspector__foot"><button class="wk-btn wk-btn--primary" type="button" (click)="state.openInvoice(row.id)">{{ row.kind === 'credit' ? 'Creditnota openen ›' : 'Factuur openen ›' }}</button></footer> }
           } @else { <p class="wk-empty__text fin-insp-missing">Deze factuur staat niet meer open.</p> }
         }
         @case ('recurring') {

@@ -8,6 +8,7 @@ import { parseTemplate } from '@angular/compiler';
 import { invoiceReceivable } from '../src/app/features/finance/incoming-money.ts';
 import { isPartnerDocument } from '../src/app/features/sales/sales-payment-state.ts';
 import { statusOf, fulfillmentStatusOf, customerMessageIsReadOnly, originalCustomerMessage } from '../src/app/features/sales/quote-status.ts';
+import { isCreditNote } from '../src/app/features/sales/sales-credit-note.ts';
 import type { SalesOrderView } from '../src/app/core/api/models.ts';
 import type { SalesContainerGroup, SalesListEntry } from '../src/app/features/sales/sales-list-groups.ts';
 
@@ -164,7 +165,7 @@ const listSource = await readFile(new URL('../src/app/features/sales/sales-list.
 const parsed = ts.createSourceFile('sales-list.ts', listSource, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'SalesList');
 assert.ok(original);
-const names = ['rows', 'groupedRows', 'expandedGroups', 'groupOpen', 'toggleGroup', 'inTab', 'rowsByDocument', 'switchTab', 'switchScope'];
+const names = ['rows', 'groupedRows', 'expandedGroups', 'groupOpen', 'toggleGroup', 'inTab', 'rowsByDocument', 'switchTab', 'switchScope', 'docsFilter'];
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.includes(member.name.text));
 assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)), original.name, undefined, undefined, members);
@@ -174,7 +175,7 @@ const listJs = ts.transpileModule(ts.createPrinter().printFile(ts.factory.update
 
 function listHarness(rows: SalesOrderView[]) {
   const exports: any = {};
-  vm.runInNewContext(listJs, { exports, computed, signal, groupSalesInvoices, isPartnerDocument, invoiceReceivable,
+  vm.runInNewContext(listJs, { exports, computed, signal, groupSalesInvoices, isPartnerDocument, invoiceReceivable, isCreditNote,
     isWebsiteQuoteRequest: () => false });
   const screen = new exports.SalesList();
   Object.assign(screen, { all: signal(rows), docTab: signal('FACTUUR'), businessScope: signal('ALL'),
@@ -331,4 +332,16 @@ test('split unavailable badges count retained requests once without adding remem
   first.order.status = 'GEANNULEERD';
   const after = groupSalesInvoices([original, first, later])[0];
   if (after.kind === 'SPLIT_ORDER') assert.equal(after.summary.unavailableCount, 0, 'Cancelled parts do not add an active availability badge');
+});
+
+test('a partner credit note sits in its container group, takes its total off the invoiced sum and adds its tegoed', () => {
+  const advance = invoice(1, 9000, { status: 'UITGEREIKT' });
+  const creditNote = invoice(2, 991.1, { docType: 'CREDITNOTA', status: 'UITGEREIKT', creditedInvoiceId: 1 });
+  const entry = group([advance, creditNote]);
+  assert.equal(entry.rows.length, 2);
+  assert.equal(entry.summary.totalEur, 8008.9, '9000 − 991,10');
+  assert.equal(entry.summary.creditEur, 991.1, 'without a summary the whole credit note is still open');
+  assert.equal(entry.summary.issuedCount, 2);
+  const standalone = groupSalesInvoices([invoice(3, 100, { docType: 'CREDITNOTA', purpose: 'STANDARD', partnerPurchaseOrderId: null, status: 'UITGEREIKT' })]);
+  assert.equal(standalone[0].kind, 'DOCUMENT', 'a standard credit note is never grouped');
 });

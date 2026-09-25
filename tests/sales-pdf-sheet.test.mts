@@ -32,7 +32,7 @@ function harness(invoice = false) {
   const sheet = new exports['SalesPdfSheet']();
   Object.assign(sheet, {
     customerLanguage: () => 'NL', orderNumber: () => 'DOC-71', customerName: () => 'Test partner', orderId: () => 71,
-    invoice: () => invoice, dirty: signal(false), busy: () => sheet.documentBusy() || sheet.packingBusy(),
+    invoice: () => invoice, creditNote: () => false, docWord: () => (invoice ? 'Factuur' : 'Offerte'), dirty: signal(false), busy: () => sheet.documentBusy() || sheet.packingBusy(),
     initialChoice: () => 'DOCUMENT', choice: signal(null), filename: signal(''),
     documentBusy: signal(false), packingBusy: signal(false), error: signal(null),
     closed: { emit() {} }, ui: { toast() {} }, sales: {

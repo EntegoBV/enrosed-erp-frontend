@@ -99,13 +99,17 @@ export interface ReceivableRow {
   number: string;
   customerId: number | null;
   customer: string;
-  kind: 'customer' | 'partner';
+  kind: 'customer' | 'partner' | 'credit';
   purpose: SalesPurpose;
   orderDate: string;
   ageDays: number;
   totalEur: number;
   receivedEur: number;
   remainingEur: number;
+  /** Credit rows: the open tegoed (money the other way); 0 on invoices. */
+  creditEur: number;
+  creditedInvoiceId: number | null;
+  creditedInvoiceNumber: string | null;
   view: SalesOrderView;
 }
 
@@ -327,21 +331,24 @@ export class FinanceState {
   readonly openInvoices = computed(() => receivableTotals(this.salesOrders()));
   readonly customerNames = computed(() => new Map(this.customers().map((customer) => [customer.id, customer.company])));
 
+  /** Open invoices, and issued credit notes with a tegoed (kind 'credit', money the other way). */
   readonly receivables = computed<ReceivableRow[]>(() => this.salesOrders()
-    .filter((view) => view.order.docType === 'FACTUUR' && !INACTIVE.has(view.order.status))
+    .filter((view) => (view.order.docType === 'FACTUUR' || view.order.docType === 'CREDITNOTA') && !INACTIVE.has(view.order.status))
     .map((view) => {
       const money = invoiceReceivable(view);
+      const credit = view.order.docType === 'CREDITNOTA';
       const purpose: SalesPurpose = view.order.purpose ?? (view.order.partnerPurchaseOrderId ? 'PARTNER_ADVANCE' : 'STANDARD');
       const partner = view.order.purpose ? view.order.purpose !== 'STANDARD' : !!view.order.partnerPurchaseOrderId;
       return {
         key: `invoice:${view.order.id}`, id: view.order.id, number: view.order.number, customerId: view.order.customerId,
-        customer: this.customerNames().get(view.order.customerId ?? -1) ?? '', kind: partner ? 'partner' as const : 'customer' as const,
+        customer: this.customerNames().get(view.order.customerId ?? -1) ?? '', kind: credit ? 'credit' as const : partner ? 'partner' as const : 'customer' as const,
         purpose, orderDate: view.order.orderDate, ageDays: Math.max(0, daysBetween(view.order.orderDate, this.today())),
         totalEur: view.paymentSummary?.invoiceTotalEur ?? view.priced?.totals?.totalInclVat ?? 0,
-        receivedEur: money.receivedEur, remainingEur: money.remainingEur, view,
+        receivedEur: money.receivedEur, remainingEur: credit ? 0 : money.remainingEur, creditEur: credit ? money.creditEur : 0,
+        creditedInvoiceId: view.order.creditedInvoiceId ?? view.creditedInvoiceId ?? null, creditedInvoiceNumber: view.creditedInvoiceNumber ?? null, view,
       };
     })
-    .filter((row) => row.remainingEur > 0)
+    .filter((row) => row.remainingEur > 0 || row.creditEur > 0)
     .sort((left, right) => left.orderDate.localeCompare(right.orderDate) || left.id - right.id));
 
   readonly incomingThisMonth = computed(() => incomingMoneyTotals(this.incomingPayments(), periodRange('month', this.today()).from, this.today()));
@@ -387,7 +394,7 @@ export class FinanceState {
   }));
   readonly payableTotals = computed(() => payableTotals(this.payables()));
   readonly outlook = computed(() => cashOutlook(this.currentBankEur(), this.openCostsInclEur(), this.upcomingInclEur(),
-    this.openInvoices().totalEur, this.payableTotals().containerNowEur, this.payableTotals().containerLaterEur));
+    this.openInvoices().totalEur, this.payableTotals().containerNowEur, this.payableTotals().containerLaterEur, this.openInvoices().creditNoteEur));
 
   /* soft bank links */
   readonly lineMarkers = computed(() => lineMarkers(this.bankStatements()));
@@ -441,6 +448,7 @@ export class FinanceState {
       unbanked: { count: unbanked.length, eur: round2(unbanked.reduce((sum, row) => sum + row.amountEur, 0)) },
       costs: this.costs().map((cost) => ({ date: cost.date, recurringCostId: cost.recurringCostId, documented: cost.id !== null && this.documentedIds().has(cost.id) })),
       receivables: this.receivables().map((row) => ({ orderDate: row.orderDate, remainingEur: row.remainingEur })),
+      openCredits: { count: this.openInvoices().creditNoteCount, eur: round2(this.receivables().filter((row) => row.kind === 'credit').reduce((sum, row) => sum + row.creditEur, 0)) },
     });
   });
 
@@ -507,7 +515,7 @@ export class FinanceState {
       case 'cost': return this.costs().find((row) => row.id === target.id)?.description || 'Kost';
       case 'container': return this.purchaseViews().find((view) => view.order.id === target.id)?.order.number
         ?? this.payments().find((row) => row.orderId === target.id)?.orderNumber ?? 'Container';
-      case 'invoice': return this.receivables().find((row) => row.id === target.id)?.number ?? 'Factuur';
+      case 'invoice': return this.receivables().find((row) => row.id === target.id)?.number ?? 'Document';
       default: return this.recurring().find((row) => row.id === target.id)?.name || 'Vaste kost';
     }
   }

@@ -63,7 +63,7 @@ export class FinanceFilterFields {
   readonly noAccount = NO_ACCOUNT;
   readonly categories = computed(() => categoryChoices(this.state.costs().map((cost) => cost.category)));
   readonly statusOptions: SegmentOption[] = [{ id: '', label: 'Alle' }, { id: 'open', label: 'Open' }, { id: 'paid', label: 'Betaald' }];
-  readonly directionOptions: SegmentOption[] = [{ id: '', label: 'Alle' }, { id: 'in', label: 'Ontvangst' }, { id: 'out', label: 'Terugbetaling' }];
+  readonly directionOptions: SegmentOption[] = [{ id: '', label: 'Alle' }, { id: 'in', label: 'Ontvangst' }, { id: 'out', label: 'Terugbetaling' }, { id: 'offset', label: 'Verrekend' }];
   readonly purposes: { id: FinancePurpose; label: string }[] = [
     { id: 'STANDARD', label: 'Klantbetaling' }, { id: 'PARTNER_ADVANCE', label: 'Partnervoorschot' }, { id: 'PARTNER_SETTLEMENT', label: 'Partnerafrekening' },
   ];

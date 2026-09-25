@@ -156,8 +156,8 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
                 </a>
               }
 
-              @if (receivables().count) {
-                <a class="work-row" routerLink="/sales" [queryParams]="{ scope: 'ALL', tab: 'FACTUUR', payment: 'open' }"><span class="work-row__icon"><app-icon name="sales" [size]="18" /></span><span class="work-row__copy"><b>Betalingen opvolgen</b><small>{{ receivables().totalEur | eur }} nog te ontvangen · {{ receivables().partialCount }} deels betaald</small></span><strong class="work-row__number">{{ receivables().count }}</strong><span class="work-row__chev" aria-hidden="true">›</span></a>
+              @if (receivables().count || receivables().creditNoteCount) {
+                <a class="work-row" routerLink="/sales" [queryParams]="{ scope: 'ALL', tab: 'FACTUUR', payment: 'open' }"><span class="work-row__icon"><app-icon name="sales" [size]="18" /></span><span class="work-row__copy"><b>Betalingen opvolgen</b><small>{{ receivables().totalEur | eur }} nog te ontvangen · {{ receivables().partialCount }} deels betaald</small>@if (receivables().creditNoteEur > 0) { <small>{{ receivables().creditNoteEur | eur }} tegoed af te handelen</small> }</span><strong class="work-row__number">{{ receivables().count + receivables().creditNoteCount }}</strong><span class="work-row__chev" aria-hidden="true">›</span></a>
               }
 
               @if (catalogAttention()) {
@@ -535,7 +535,7 @@ export class DashboardHome {
     Number(this.salesActionCount() > 0)
     + Number(this.purchaseAttentionOrders().length > 0)
     + Number(this.financing().unbilledAdvanceCount > 0)
-    + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0)
+    + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0 || this.receivables().creditNoteCount > 0)
     + Number(this.catalogAttention() > 0));
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()
     && this.purchasesReady() && this.catalogReady());

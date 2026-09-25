@@ -1,5 +1,8 @@
 import { primarySalesPrice, productSalesUnit, salesQuantityDetail, secondarySalesPrice } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
+import { canCreateCreditNote, creditNoteJourney, creditNoteNextStep, creditNoteSettlement, creditReasonLabel, isCreditNote, isDeadCreditNote } from './sales-credit-note';
+import { SalesCreditNoteSheet } from './sales-credit-note-sheet';
+import { SalesOffsetSheet } from './sales-offset-sheet';
 import { salesAllProductsUnavailable, salesLineUnavailable, salesLineRequestedQuantity, salesUnavailableLineCount } from './sales-line-availability';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
@@ -17,7 +20,7 @@ import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
@@ -58,7 +61,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -102,6 +105,29 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
       }
 
       @if (splitOpen()) { <app-sales-split-sheet [view]="data" [externalBusy]="invoiceBusy() || sendingQuote()" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
+      @if (creditSheetOpen()) { <app-sales-credit-note-sheet [invoiceId]="data.order.id" (closed)="creditSheetOpen.set(false)" (created)="creditCreated($event)" /> }
+      @if (offsetOpen()) { <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" /> }
+      @if (returnSheet(); as ret) {
+        <app-sheet title="Goederen terug in voorraad" variant="ios" (closed)="returnSheet.set(null)">
+          <div body>
+            <p class="ship-intro">Deze aantallen komen als retour terug in de voorraad op {{ ret.number }}. Beschadigde stukken boek je daarna apart af als beschadigd. Dit gebeurt één keer.</p>
+            <ul class="ship-lines">
+              @for (row of ret.rows; track $index) {
+                <li>
+                  @if (row.photoUrl) { <img class="ship-line__photo" [appAuthSrc]="row.photoUrl" alt="" /> } @else { <span class="ship-line__photo ship-line__photo--empty" aria-hidden="true">◈</span> }
+                  <div class="ship-line__copy"><strong>{{ row.name }}</strong><span>+{{ row.qty | num }} {{ row.unitLabel }}</span></div>
+                  <div class="ship-line__stock">@if (row.before !== null) { <small>voorraad</small><span>{{ row.before | num }} <b aria-hidden="true">→</b> {{ row.after | num }}</span> } @else { <small>voorraad</small><span>onbekend</span> }</div>
+                </li>
+              }
+            </ul>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" (click)="returnSheet.set(null)">Annuleren</button>
+            <span class="spacer"></span>
+            <button class="btn btn--primary" type="button" [disabled]="invoiceBusy()" (click)="confirmReturnGoods()">{{ invoiceBusy() ? 'Bezig…' : 'Retour boeken' }}</button>
+          </div>
+        </app-sheet>
+      }
 
       @if (pdfSheet()) {
         <app-sales-pdf-sheet
@@ -110,6 +136,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           [customerName]="customerName()"
           [customerLanguage]="customer()?.language ?? 'NL'"
           [invoice]="isInvoice()"
+          [creditNote]="isCreditNote()"
           [agreementQuote]="!!advanceAgreement()"
           [initialChoice]="pdfInitialChoice()"
           (closed)="closePdfSheet()"
@@ -123,8 +150,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <button class="btn btn--sm" type="button" [disabled]="cancelling()" (click)="openCancel()">
               {{ isRequest() ? 'Aanvraag annuleren' : 'Annuleren' }}
             </button>
+          } @else if (canCancelCredit()) {
+            <button class="btn btn--sm" type="button" [disabled]="invoiceBusy()" (click)="cancelCredit()">Annuleren</button>
           }
-          @if (!splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || sendingQuote()" (click)="openSplit()">Order splitsen</button> }
+          @if (!isCreditNote() && !splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || sendingQuote()" (click)="openSplit()">Order splitsen</button> }
           <button class="btn btn--sm" type="button" [disabled]="downloading()"
                   (click)="downloadPdf()">
             {{ downloading() ? 'Even wachten…' : 'PDF' }}
@@ -136,7 +165,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
       }
 
       <main class="content sales-view-page anim-rise erp-workspace erp-workspace--detail erp-workspace--sales">
-        <section class="sales-hero erp-workspace__hero" id="sales-overview" aria-labelledby="sales-overview-title">
+        <section class="sales-hero erp-workspace__hero" [class.sales-hero--credit]="isCreditNote()" id="sales-overview" aria-labelledby="sales-overview-title">
           <!-- Phone: the app bar folds into the hero - back, PDF and the
                edit action live on the dark surface itself. -->
           @if (!desktop.active()) {
@@ -145,23 +174,26 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <span class="shero-spacer"></span>
               @if (canCancel()) {
                 <button class="shero-pdf" type="button" [disabled]="cancelling()" (click)="openCancel()">Annuleren</button>
+              } @else if (canCancelCredit()) {
+                <button class="shero-pdf" type="button" [disabled]="invoiceBusy()" (click)="cancelCredit()">Annuleren</button>
               }
               <button class="shero-pdf" type="button" [disabled]="downloading()" (click)="downloadPdf()">
                 {{ downloading() ? '…' : 'PDF' }}
               </button>
-              <a class="shero-edit" [routerLink]="['/sales', data.order.id, 'edit']">{{ actionLabel() }}</a>
+              @if (!isCreditNote() || data.order.status === 'CONCEPT') { <a class="shero-edit" [routerLink]="['/sales', data.order.id, 'edit']">{{ actionLabel() }}</a> }
             </div>
           }
           <div class="sales-hero__top">
             <div class="sales-hero__identity">
-              <span class="eyebrow">{{ documentKind() }}</span>
+              <span class="eyebrow">{{ documentKind() }}@if (isCreditNote() && data.creditedInvoiceNumber && !isPartnerDocument(data.order)) { · op {{ data.creditedInvoiceNumber }} }</span>
               <h1 id="sales-overview-title">
                 <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">{{ customerName() }}</a>
               </h1>
               <p>
                 {{ data.order.orderDate | dateNl }}
                 <span aria-hidden="true"> · </span>
-                {{ countryName() }}
+                @if (isCreditNote()) { {{ creditReason() }}@if (data.creditedInvoiceNumber) { <span aria-hidden="true"> · </span>op factuur <a class="sales-hero__link" [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }}</a> } }
+                @else { {{ countryName() }} }
                 @if (data.order.sourceQuoteId && data.sourceQuoteNumber) {
                   <span aria-hidden="true"> · </span>uit offerte <a class="sales-hero__link" [routerLink]="['/sales', data.order.sourceQuoteId]">{{ data.sourceQuoteNumber }}</a>
                 }
@@ -191,6 +223,13 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <strong>{{ data.priced.lines.length }}</strong>
               <small>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }}</small>
             </div>
+            @if (isCreditNote()) {
+            <div>
+              <span>Afgehandeld</span>
+              <strong>{{ data.order.status === 'CONCEPT' ? '—' : ((creditSettlement().offsetEur + creditSettlement().refundedEur) | eur: 0) }}</strong>
+              <small>{{ data.order.status === 'CONCEPT' ? 'nog niet uitgereikt' : 'verrekend of terugbetaald' }}</small>
+            </div>
+            } @else {
             <div>
               <span>Levering</span>
               @if (isLooseCartons(data)) {
@@ -205,11 +244,12 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               }
             </div>
             }
+            }
             <div class="hero-facts__total">
               @if (advanceAgreement()) {
                 <span>Betaalplan</span><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><small>Slotfactuur na verkoop</small>
               } @else {
-              <span>{{ isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
+              <span>{{ isCreditNote() ? 'Totaal creditnota' : isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }}</span>
               <strong>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</strong>
               <small>{{ data.priced.totals.vatLegalMention ? 'BTW verlegd' : 'excl. BTW' }}</small>
               }
@@ -219,6 +259,11 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           <!-- The agreement in one glass row: what used to be its own
                Offertedetails card lives with the rest of the header. -->
           <div class="hero-details">
+            @if (isCreditNote()) {
+              <span><small>Tegoed incl. btw</small><b>{{ (data.order.status === 'CONCEPT' ? data.priced.totals.totalInclVat : creditSettlement().openEur) | eur }}</b></span>
+              @if (data.creditedInvoiceId) { <a [routerLink]="['/sales', data.creditedInvoiceId]"><small>Factuur</small><b>{{ data.creditedInvoiceNumber }} ›</b></a> } @else { <span><small>Factuur</small><b>—</b></span> }
+              <span><small>Reden</small><b>{{ creditReason() }}</b></span>
+            } @else {
             @if (isInvoice()) {
               <span><small>Vervaldatum</small><b>{{ data.order.invoiceDueDate | dateNl }}</b></span>
             } @else {
@@ -231,14 +276,18 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <small>Betaling</small>
               <b>{{ desktop.active() ? paymentTerms() : paymentShort() }}</b>
             </span>
+            }
             <span><small>BTW</small><b>{{ data.priced.totals.vatLegalMention ? 'verlegd · 0%' : (data.priced.totals.vatRatePct | pct: 0) }}</b></span>
+            @if (isInvoice() && data.creditNotes?.length) {
+              <a class="hero-details__credited" [routerLink]="['/sales', data.creditNotes![0].id]"><small>Gecrediteerd</small><b>{{ data.creditNotes![0].status === 'CONCEPT' ? data.creditNotes![0].number + ' · concept' : (data.creditedEur | eur) + ' · ' + data.creditNotes![0].number }}{{ data.creditNotes!.length > 1 ? ' +' + (data.creditNotes!.length - 1) : '' }} ›</b></a>
+            }
           </div>
 
           <!-- The inkoop journey, retold for a quote or an invoice; on the
                desktop the badges and the rail already say where it stands. -->
           @if (!desktop.active()) {
           <div class="stepper hero-stepper"
-               [attr.aria-label]="isInvoice() ? 'Status van de factuur' : 'Status van de offerte'">
+               [attr.aria-label]="isCreditNote() ? 'Status van de creditnota' : isInvoice() ? 'Status van de factuur' : 'Status van de offerte'">
             @for (step of journey(data.order); track step.label; let last = $last) {
               <div class="stepper__step" [attr.aria-current]="['now', 'stop', 'wait'].includes(step.state) ? 'step' : null"
                    [class.stepper__step--done]="step.state === 'done'"
@@ -258,12 +307,19 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </div>
           }
 
+          @if (isCreditNote()) {
+            <div class="credit-strip" [class.credit-strip--done]="data.order.status !== 'CONCEPT' && !creditDead() && creditSettlement().openEur <= 0" [class.credit-strip--dead]="creditDead()">
+              <span>{{ data.order.status === 'CONCEPT' ? 'Tegoed na uitreiken' : creditDead() ? 'Geannuleerd' : creditSettlement().openEur > 0 ? 'Tegoed' : 'Afgehandeld' }}</span>
+              <strong>{{ creditDead() ? (creditSettlement().tegoedEur | eur) + ' vervallen' : data.order.status !== 'CONCEPT' && creditSettlement().openEur <= 0 ? ('✓ ' + (creditSettlement().tegoedEur | eur)) : '− ' + ((data.order.status === 'CONCEPT' ? data.priced.totals.totalInclVat : creditSettlement().openEur) | eur) }}</strong>
+            </div>
+          } @else {
           <div class="profit-strip">
             <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</span>
             <strong [class.profit-strip__negative]="displayedProfit(data) < 0">
               {{ signedMoney(displayedProfit(data)) }}
             </strong>
           </div>
+          }
         </section>
 
         <app-sales-advance-invoices [order]="data.order" />
@@ -294,7 +350,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   [attr.aria-current]="activeDetailSection() === 'sales-delivery' ? 'true' : null"
                   (click)="scrollToSection('sales-delivery')">
             <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">2</span>
-            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Levering</b><small>{{ deliveryState(data) }}</small></span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Levering</b><small>{{ isCreditNote() ? 'Geen levering · creditnota' : deliveryState(data) }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-control'"
@@ -570,7 +626,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             }
 
 
-            @if (isAdvanceInvoice(data)) { <section id="sales-delivery" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> } @else {<section class="section-card erp-workspace__section" id="sales-delivery" aria-labelledby="delivery-details-title">
+            @if (isAdvanceInvoice(data)) { <section id="sales-delivery" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> }
+            @else if (isCreditNote()) { <section class="section-card erp-workspace__section" id="sales-delivery" aria-label="Levering"><div class="credit-none-cell"><span aria-hidden="true">—</span>Geen levering · creditnota</div></section> }
+            @else {<section class="section-card erp-workspace__section" id="sales-delivery" aria-labelledby="delivery-details-title">
               <header class="section-card__head">
                 <div><span class="section-kicker">Logistiek</span><h2 id="delivery-details-title">Levering</h2></div>
                 <span class="delivery-state" [class.delivery-state--open]="data.order.deliveryTerms === 'TE_BEPALEN'">
@@ -607,16 +665,20 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 @if ((data.priced.extraLines ?? []).length) {
                   <div><dt>Andere regels</dt><dd>{{ data.priced.totals.extraLinesTotal | eur: 2 }}</dd></div>
                 }
+                @if (!isCreditNote()) {
                 <div><dt>Vracht <small>{{ freightStrategyLabel(data) }}</small></dt><dd>{{ freightAmount(data) }}</dd></div>
                 <div><dt>Handling</dt><dd>{{ data.priced.totals.handling | eur: 2 }}</dd></div>
-                <div class="totals-list__main"><dt>{{ isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }} <small>excl. BTW</small></dt><dd>{{ data.priced.totals.total | eur: 2 }}</dd></div>
+                }
+                <div class="totals-list__main"><dt>{{ isCreditNote() ? 'Totaal creditnota' : isInvoice() ? 'Factuurtotaal' : 'Offertetotaal' }} <small>excl. BTW</small></dt><dd>{{ data.priced.totals.total | eur: 2 }}</dd></div>
                 <div><dt>BTW {{ data.priced.totals.vatRatePct | pct: 0 }}</dt><dd>{{ data.priced.totals.vatAmount | eur: 2 }}</dd></div>
                 <div class="totals-list__incl"><dt>Inclusief BTW</dt><dd>{{ data.priced.totals.totalInclVat | eur: 2 }}</dd></div>
               </dl>
+              @if (!isCreditNote()) {
               <div class="totals-profit">
                 <div><b>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</b><strong [class.negative]="displayedProfit(data) < 0">{{ displayedProfit(data) | eur: 2 }}</strong></div>
                 <small>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Resultaat bij uitgegeven afrekening' : 'Goederenwinst vóór vrachtkosten' }}</small>
               </div>
+              }
               }
               <app-sales-invoice-declaration [view]="data" />
               <section class="next-step-card" aria-labelledby="sales-next-step-title">
@@ -627,6 +689,17 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
                     Wijziging beoordelen
                   </a>
+                } @else if (isCreditNote()) {
+                  @if (creditStep(); as step) {
+                    @switch (step.key) {
+                      @case ('issue') {
+                        <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()" (click)="issueCreditNote()">Creditnota uitreiken</button>
+                        <button class="btn btn--block" type="button" [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Creditnota e-mailen…</button>
+                      }
+                      @case ('apply') { <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()" (click)="openOffset(data.creditedInvoiceId ?? null)">{{ step.label }}</button> }
+                      @case ('refund') { <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()" (click)="noteRefund()">{{ step.label }}</button> }
+                    }
+                  }
                 } @else if (isInvoice()) {
                   @if (data.order.status === 'CONCEPT') {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
@@ -669,14 +742,36 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <details class="manage-more">
                 <summary>Meer acties <span aria-hidden="true">⌄</span></summary>
               <div class="manage-actions">
-                @if (!isPartner(data.order) && !data.fulfillment) { <button class="btn btn--block" type="button" [disabled]="!!splitBlockReason(data) || invoiceBusy() || sendingQuote()" (click)="openSplit()">Order splitsen</button>@if (splitBlockReason(data); as reason) { <p class="link-explainer">{{ reason }}</p> } }
+                @if (isInvoice() && canCreateCredit()) {
+                  <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || sendingQuote()" (click)="creditSheetOpen.set(true)">Creditnota maken</button>
+                  <p class="link-explainer">Te weinig geleverd, schade, retour of prijscorrectie.</p>
+                }
+                @if (!isPartner(data.order) && !data.fulfillment && !isCreditNote()) { <button class="btn btn--block" type="button" [disabled]="!!splitBlockReason(data) || invoiceBusy() || sendingQuote()" (click)="openSplit()">Order splitsen</button>@if (splitBlockReason(data); as reason) { <p class="link-explainer">{{ reason }}</p> } }
 
-                @if (!nextStepOpensEditor(data)) {
+                @if (!nextStepOpensEditor(data) && (!isCreditNote() || data.order.status === 'CONCEPT')) {
                 <a class="btn btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
                   {{ actionLabel() }}
                 </a>
                 }
-                @if (isInvoice()) {
+                @if (isCreditNote()) {
+                  @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                    @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Creditnota e-mailen…</button> }
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()" (click)="markSent(data)">Markeer als verstuurd</button>
+                    <p class="link-explainer">Gebruik dit alleen wanneer je de creditnota buiten het ERP bezorgde.</p>
+                  }
+                  @if (creditStep()?.key === 'apply' || creditStep()?.key === 'refund') {
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()" (click)="openOffset(null)">Verrekenen met andere factuur…</button>
+                    @if ((data.paymentSummary?.refundableEur ?? 0) > 0) { <button class="btn btn--block" type="button" [disabled]="invoiceBusy()" (click)="noteRefund()">Terugbetaling noteren</button> }
+                  }
+                  @if (canReturnGoods()) {
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy()" (click)="openReturnSheet(data)">Goederen terug in voorraad</button>
+                    <p class="link-explainer">De gecrediteerde stuks komen als retour terug in de voorraad; dit gebeurt één keer.</p>
+                  } @else if (data.order.goodsReturnedAt) {
+                    <p class="link-explainer">Goederen terug in voorraad geboekt op {{ data.order.goodsReturnedAt | dateNl }}.</p>
+                  }
+                  <button class="btn btn--block" type="button" (click)="openPdfSheet('DOCUMENT')">PDF instellen</button>
+                  @if (data.creditedInvoiceId) { <a class="btn btn--block" [routerLink]="['/sales', data.creditedInvoiceId]">Naar de factuur</a> }
+                } @else if (isInvoice()) {
                   @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
                     @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()" (click)="sendSheetOpen.set(true)">Factuur e-mailen…</button> }
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || allProductsUnavailable()"
@@ -710,7 +805,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     </button>
                   }
                 }
-                @if (!isInvoice() && portalLink()?.available && portalLink()?.url) {
+                @if (!isInvoice() && !isCreditNote() && portalLink()?.available && portalLink()?.url) {
                   <button class="btn btn--block" type="button" [disabled]="copyingLink()"
                           (click)="copyCustomerLink()">
                     {{ copyingLink() ? 'Kopiëren…' : 'Klantlink kopiëren' }}
@@ -722,8 +817,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <button class="btn btn--danger btn--block manage-actions__delete" type="button"
                           [disabled]="deleting()" (click)="remove(data)">
                     {{ deleting()
-                        ? (isInvoice() ? 'Factuur verwijderen…' : 'Offerte verwijderen…')
-                        : (isInvoice() ? 'Factuur verwijderen' : 'Offerte verwijderen') }}
+                        ? (isCreditNote() ? 'Creditnota verwijderen…' : isInvoice() ? 'Factuur verwijderen…' : 'Offerte verwijderen…')
+                        : (isCreditNote() ? 'Creditnota verwijderen' : isInvoice() ? 'Factuur verwijderen' : 'Offerte verwijderen') }}
                   </button>
                 }
               </div>
@@ -732,7 +827,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </aside>
 
             <section class="section-card history-card erp-workspace__section" id="sales-status" aria-labelledby="quote-history-title">
-              <app-sales-receipts [view]="data" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" />
+              <app-sales-receipts [view]="data" [openRequest]="receiptOpenRequest()" [refundRequest]="refundOpenRequest()" (changed)="paymentReceived($event)" (applyRequested)="openOffset($event)" />
               <header class="section-card__head">
                 <div><span class="section-kicker">Status</span><h2 id="quote-history-title">Geschiedenis</h2></div>
                 <span class="badge" [class]="'badge badge--' + statusOf(data).cls">{{ statusOf(data).label }}</span>
@@ -800,11 +895,13 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         }
 
         @if (sendSheetOpen()) {
-      <app-sheet [title]="isInvoice() ? 'Factuur versturen' : 'Offerte versturen'"
+      <app-sheet [title]="isCreditNote() ? 'Creditnota versturen' : isInvoice() ? 'Factuur versturen' : 'Offerte versturen'"
                  (closed)="sendSheetOpen.set(false)">
         <div body>
           <p class="small muted" style="margin-bottom:14px">
-            {{ isInvoice()
+            {{ isCreditNote()
+                ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.'
+                : isInvoice()
                 ? 'De klant krijgt de factuur-PDF in bijlage, met de betaalgegevens in de mail.'
                 : 'De klant krijgt de PDF in bijlage en een link om online te tekenen of een wijziging voor te stellen.' }}
           </p>
@@ -1103,7 +1200,86 @@ export class SalesView {
   readonly advanceSummary = advanceContentsSummary;
   readonly displayedProfit = displayedSalesProfit;
   readonly receiptOpenRequest = signal(0);
+  readonly refundOpenRequest = signal(0);
   paymentReceived(fresh: SalesOrderView): void { this.view.set(fresh); void this.sales.history(fresh.order.id).then((history) => this.history.set(history)).catch(() => undefined); }
+
+  /* ---- credit notes ---------------------------------------------------- */
+  readonly isCreditNote = computed(() => isCreditNote(this.view()?.order));
+  readonly canCreateCredit = computed(() => canCreateCreditNote(this.view()));
+  readonly creditSheetOpen = signal(false);
+  readonly offsetOpen = signal(false);
+  readonly offsetTarget = signal<number | null>(null);
+  /** The credited invoice, for the open amount behind 'Verrekenen met F-…'. */
+  readonly creditOriginal = signal<SalesOrderView | null>(null);
+  private creditOriginalVersion = 0;
+  readonly creditOriginalOpenEur = computed(() => Math.max(0, this.creditOriginal()?.paymentSummary?.remainingEur ?? 0));
+  readonly creditSettlement = computed(() => creditNoteSettlement(this.view()?.paymentSummary, this.view()?.order.status));
+  /** Cancelled, rejected or expired: the tegoed lapsed and counts nowhere. */
+  readonly creditDead = computed(() => isDeadCreditNote(this.view()?.order));
+  readonly creditStep = computed(() => { const data = this.view(); return data && this.isCreditNote() ? creditNoteNextStep(data, this.creditOriginalOpenEur()) : null; });
+  readonly creditReason = computed(() => creditReasonLabel(this.view()?.order.creditReason));
+  readonly canCancelCredit = computed(() => {
+    const data = this.view();
+    return !!data && this.isCreditNote() && ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN'].includes(data.order.status)
+      && !data.order.archivedAt && !data.order.goodsReturnedAt && !(data.paymentSummary?.payments?.length);
+  });
+  readonly canReturnGoods = computed(() => {
+    const data = this.view();
+    if (!data || !this.isCreditNote() || (data.order.purpose ?? 'STANDARD') !== 'STANDARD') return false;
+    return ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(data.order.status) && data.priced.lines.some((line) => line.quantity > 0)
+      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt;
+  });
+  readonly returnSheet = signal<{ rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string; before: number | null; after: number | null }[]; number: string } | null>(null);
+  private loadCreditOriginal(view: SalesOrderView | null): void {
+    const version = ++this.creditOriginalVersion;
+    const id = view && isCreditNote(view.order) ? (view.order.creditedInvoiceId ?? view.creditedInvoiceId ?? null) : null;
+    if (id == null) { this.creditOriginal.set(null); return; }
+    void this.sales.order(id).then((original) => { if (version === this.creditOriginalVersion) this.creditOriginal.set(original); }).catch(() => undefined);
+  }
+  creditCreated(_view: SalesOrderView): void { this.creditSheetOpen.set(false); }
+  openOffset(target: number | null): void { if (!this.isCreditNote() || this.invoiceBusy()) return; this.offsetTarget.set(target); this.offsetOpen.set(true); }
+  offsetApplied(fresh: SalesOrderView): void { this.offsetOpen.set(false); if (this.view()?.order.id === fresh.order.id) this.paymentReceived(fresh); void this.work.refresh(true); }
+  /** 'Terugbetaling noteren': the Status section's refund sheet, prefilled with the open tegoed. */
+  noteRefund(): void { this.scrollToSection('sales-status'); this.refundOpenRequest.update((value) => value + 1); }
+  issueCreditNote(): void {
+    const data = this.view();
+    if (!data || !this.isCreditNote() || data.order.status !== 'CONCEPT' || this.invoiceBusy()) return;
+    this.ui.confirm({ title: 'Creditnota uitreiken', message: `<b>${escapeHtml(data.order.number)}</b> wordt vastgezet. Er gaat geen e-mail uit.`, confirmLabel: 'Uitreiken' }, async () => {
+      if (this.view()?.order.id !== data.order.id || this.invoiceBusy()) return;
+      this.invoiceBusy.set(true);
+      try { this.paymentReceived(await this.sales.issueInvoice(data.order.id)); void this.work.refresh(true); this.ui.toast('Creditnota uitgereikt'); }
+      catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Creditnota uitreiken mislukt'), 'err'); }
+      finally { this.invoiceBusy.set(false); }
+    });
+  }
+  cancelCredit(): void {
+    const data = this.view();
+    if (!data || !this.canCancelCredit() || this.invoiceBusy()) return;
+    this.ui.confirm({ title: 'Creditnota annuleren', message: `<b>${escapeHtml(data.order.number)}</b> vervalt; het nummer blijft gereserveerd. De factuur telt weer volledig.`, confirmLabel: 'Creditnota annuleren', danger: true }, async () => {
+      if (this.view()?.order.id !== data.order.id || this.invoiceBusy()) return;
+      this.invoiceBusy.set(true);
+      try { this.paymentReceived(await this.sales.cancelQuote(data.order.id, '', false)); void this.work.refresh(true); this.ui.toast('Creditnota geannuleerd'); }
+      catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Annuleren mislukt'), 'err'); }
+      finally { this.invoiceBusy.set(false); }
+    });
+  }
+  async openReturnSheet(data: SalesOrderView): Promise<void> {
+    if (!this.canReturnGoods() || this.invoiceBusy()) return;
+    const stockById = new Map(this.products().filter((product) => product.id !== null).map((product) => [product.id!, product.stockQuantity ?? 0]));
+    const rows = data.priced.lines.filter((line) => line.quantity > 0).map((line) => {
+      const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
+      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity, unitLabel: this.lineUnit(line.productId).plural, before, after: before === null ? null : before + line.quantity };
+    });
+    this.returnSheet.set({ rows, number: data.order.number });
+  }
+  async confirmReturnGoods(): Promise<void> {
+    const data = this.view();
+    if (!data || !this.returnSheet() || this.invoiceBusy()) return;
+    this.invoiceBusy.set(true);
+    try { this.paymentReceived(await this.sales.returnGoods(data.order.id)); this.returnSheet.set(null); this.ui.toast('Goederen terug in voorraad geboekt'); }
+    catch (failure: unknown) { this.ui.toast(messageOf(failure, 'Retour boeken mislukt'), 'err'); }
+    finally { this.invoiceBusy.set(false); }
+  }
 
   private readonly sales = inject(SalesApi);
   private readonly catalog = inject(CatalogApi);
@@ -1196,6 +1372,7 @@ export class SalesView {
   /** One decision at a time, derived from the same statuses the action methods use. */
   hasStatusAction(data: SalesOrderView): boolean {
     if (this.pendingRevision()) return true;
+    if (data.order.docType === 'CREDITNOTA') return !!this.creditStep()?.label;
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       return data.order.status === 'CONCEPT' || (!this.isAdvance(data.order) && !data.order.goodsShippedAt)
         || data.order.status !== 'BETAALD';
@@ -1205,15 +1382,18 @@ export class SalesView {
 
   nextStepOpensEditor(data: SalesOrderView): boolean {
     if (this.pendingRevision()) return true;
+    if (data.order.docType === 'CREDITNOTA') return false;
     return (data.order.docType ?? 'OFFERTE') !== 'FACTUUR'
       && data.order.status !== 'CONCEPT' && data.order.status !== 'GEACCEPTEERD';
   }
 
   nextStepTitle(data: SalesOrderView): string {
+    if (data.order.docType === 'CREDITNOTA') return this.creditStep()?.title ?? 'Creditnota';
     if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) return 'Wacht op beschikbare producten';
     if (this.pendingRevision()) return 'Wijzigingsvoorstel beoordelen';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Factuur naar de klant';
+      if ((data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'Afgerond · gecrediteerd';
       if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bestelling verzenden';
       if (data.order.status !== 'BETAALD') return 'Betaling registreren';
       return 'Order afgerond';
@@ -1232,6 +1412,8 @@ export class SalesView {
   }
 
   nextStepHelp(data: SalesOrderView): string {
+    if (data.order.docType === 'CREDITNOTA') return this.creditStep()?.help ?? '';
+    if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR' && (data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'De creditnota nam de hele factuur terug; er valt niets meer te ontvangen.';
     if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) return 'Dit concept blijft bewaard. Herstel minstens één product via Bewerken om het document uit te geven of te versturen.';
     if (this.pendingRevision()) return 'De klant wacht op jouw keuze. Open het voorstel en neem de wijzigingen gericht over.';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
@@ -1271,7 +1453,7 @@ export class SalesView {
   readonly cancelling = signal(false);
   readonly canCancel = computed(() => {
     const data = this.view();
-    if (!data || this.isInvoice()) return false;
+    if (!data || this.isInvoice() || this.isCreditNote()) return false;
     return ['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAAGD'].includes(data.order.status);
   });
   /** A website request that never became a sent quotation. */
@@ -1306,7 +1488,7 @@ export class SalesView {
   }
   readonly canDelete = computed(() => {
     const data = this.view();
-    return !!data && this.revisions().length === 0
+    return !!data && this.revisions().length === 0 && !(data.creditNotes?.length)
       && isLocallyDeletableSalesDocument(data.order);
   });
   readonly invoiceBusy = signal(false);
@@ -1323,7 +1505,7 @@ export class SalesView {
       this.view.set(await this.sales.sendQuote(data.order.id!, this.sendMessage().trim()));
       this.sendSheetOpen.set(false);
       this.sendMessage.set('');
-      this.ui.toast(this.isInvoice() ? 'Factuur verstuurd' : 'Offerte verstuurd');
+      this.ui.toast(data.order.docType === 'CREDITNOTA' ? 'Creditnota verstuurd' : this.isInvoice() ? 'Factuur verstuurd' : 'Offerte verstuurd');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Versturen mislukt'), 'err');
     } finally {
@@ -1348,13 +1530,14 @@ export class SalesView {
       const fresh = await this.sales.reopenQuote(orderId);
       if (this.view()?.order.id !== orderId) return;
       this.view.set(fresh); void this.work.refresh(true);
-      this.ui.toast(`${fresh.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} staat weer op concept`);
+      this.ui.toast(`${fresh.order.docType === 'CREDITNOTA' ? 'Creditnota' : fresh.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} staat weer op concept`);
     } catch (failure) { this.ui.toast(messageOf(failure, 'Heropenen mislukt'), 'err'); }
     finally { this.invoiceBusy.set(false); }
   }
 
   /** The quote's journey, or the invoice's shorter one. */
   journey(order: SalesOrder) {
+    if (order.docType === 'CREDITNOTA') return creditNoteJourney(order, this.view()?.paymentSummary?.status, this.creditSettlement());
     if ((order.docType ?? 'OFFERTE') !== 'FACTUUR') return this.quoteJourney(order.status);
     if (isAdvanceDocument(order)) {
       return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
@@ -1406,7 +1589,7 @@ export class SalesView {
     this.invoiceBusy.set(true);
     try {
       this.view.set(await this.sales.markInvoiceSent(data.order.id!));
-      this.ui.toast('Factuur staat op verstuurd');
+      this.ui.toast(data.order.docType === 'CREDITNOTA' ? 'Creditnota staat op verstuurd' : 'Factuur staat op verstuurd');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');
     } finally {
@@ -1514,6 +1697,8 @@ export class SalesView {
         this.loadError.set('Het ordernummer in de link is ongeldig.');
       }
     });
+    /* Every fresh view refetches the credited invoice: its open amount moves with each offset. */
+    effect(() => { const view = this.view(); untracked(() => this.loadCreditOriginal(view)); });
   }
 
   private async load(orderId: number): Promise<void> {

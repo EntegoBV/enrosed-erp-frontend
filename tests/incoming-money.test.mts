@@ -17,7 +17,7 @@ test('two scheduled thirds are exact independent receipts, not two invoice value
   const first = payment();
   const second = payment({ id: 2, amountEur: 2000, receivedAt: '2026-10-02T12:17:00Z', reference: 'Na productie' });
   const final = payment({ id: 3, salesOrderId: 13, amountEur: 300, purpose: 'PARTNER_SETTLEMENT', receivedAt: '2026-11-03T11:42:00Z' });
-  assert.deepEqual(incomingMoneyTotals([first, first, second, final]), { count: 3, receivedEur: 3300, grossReceivedEur: 3300, refundedEur: 0, standardEur: 0, partnerAdvanceEur: 3000, partnerSettlementEur: 300 });
+  assert.deepEqual(incomingMoneyTotals([first, first, second, final]), { count: 3, receivedEur: 3300, grossReceivedEur: 3300, refundedEur: 0, standardEur: 0, partnerAdvanceEur: 3000, partnerSettlementEur: 300, offsetEur: 0 });
   assert.equal(incomingMoneyTotals([first, second, final], '2026-09-01', '2026-09-30').receivedEur, 1000);
   assert.equal(uniqueIncomingPayments([first, second, final])[0].id, 3);
 });
@@ -34,7 +34,27 @@ test('partial, overpaid, cancelled and credit invoices have distinct receivable 
   const partial = invoice(1, 3000, 1000, { partnerPurchaseOrderId: 4, paidAt: '2026-09-08T12:00:00Z' });
   assert.equal(invoiceReceivable(partial).remainingEur, 2000, 'explicit payment summary wins over the old marker');
   const totals = receivableTotals([partial, invoice(2, 300, 500), invoice(3, 900, 0, { status: 'GEANNULEERD' }), invoice(4, 700, 0, { status: 'CONCEPT' }), invoice(5, -100, 0)]);
-  assert.deepEqual(totals, { count: 1, totalEur: 2000, partnerEur: 2000, standardEur: 0, overpaidEur: 200, creditEur: 100, partialCount: 1 });
+  assert.deepEqual(totals, { count: 1, totalEur: 2000, partnerEur: 2000, standardEur: 0, overpaidEur: 200, creditEur: 100, partialCount: 1, creditNoteCount: 0, creditNoteEur: 0 });
+});
+
+test('credit notes are tegoeden, never open invoices; a verrekening is no cash', () => {
+  const creditNote = (id: number, credit: number, status = 'UITGEREIKT'): SalesOrderView => ({ order: { id, docType: 'CREDITNOTA', status, orderDate: '2026-09-25', number: `CN-${id}`, creditedInvoiceId: 1 },
+    priced: { totals: { totalInclVat: 220.2 } }, paymentSummary: { invoiceTotalEur: -220.2, receivedEur: 0, remainingEur: 0, overpaidEur: 0, creditEur: credit, refundableEur: credit, status: credit > 0 ? 'CREDIT' : 'PAID', payments: [], instalments: [], legacyPaidMarker: false } } as unknown as SalesOrderView);
+  assert.deepEqual(invoiceReceivable(creditNote(55, 220.2)), { receivedEur: 0, remainingEur: 0, overpaidEur: 0, creditEur: 220.2 });
+  const bare = { ...creditNote(56, 0), paymentSummary: null } as unknown as SalesOrderView;
+  assert.equal(invoiceReceivable(bare).creditEur, 220.2, 'without a summary the whole credit note is the tegoed');
+  assert.equal(invoiceReceivable({ ...bare, order: { ...bare.order, status: 'BETAALD' } } as unknown as SalesOrderView).creditEur, 0);
+  const totals = receivableTotals([invoice(1, 3000, 1000), creditNote(55, 220.2), creditNote(57, 0), creditNote(58, 50, 'CONCEPT'), creditNote(59, 50, 'GEANNULEERD')]);
+  assert.deepEqual(totals, { count: 1, totalEur: 2000, partnerEur: 0, standardEur: 2000, overpaidEur: 0, creditEur: 220.2, partialCount: 1, creditNoteCount: 1, creditNoteEur: 220.2 });
+  /* An overpaid invoice is a credit too, but not a tegoed the outlook or the sublines chase. */
+  const mixed = receivableTotals([invoice(1, 3000, 1000), invoice(2, -100, 0), creditNote(55, 220.2)]);
+  assert.equal(mixed.creditEur, 320.2);
+  assert.equal(mixed.creditNoteEur, 220.2);
+  assert.equal(mixed.creditNoteCount, 1);
+  const offsetCredit = payment({ id: 9, amountEur: -120.2, offsetOrderId: 1, offsetPaymentId: 10, purpose: 'STANDARD' });
+  const offsetInvoice = payment({ id: 10, salesOrderId: 1, amountEur: 120.2, offsetOrderId: 55, offsetPaymentId: 9, purpose: 'STANDARD' });
+  const money = incomingMoneyTotals([payment({ amountEur: 500, purpose: 'STANDARD' }), offsetCredit, offsetInvoice]);
+  assert.deepEqual(money, { count: 1, receivedEur: 500, grossReceivedEur: 500, refundedEur: 0, standardEur: 500, partnerAdvanceEur: 0, partnerSettlementEur: 0, offsetEur: 120.2 });
 });
 
 test('issued unpaid advance plus a final net claim remains two non-duplicated receivables', () => {

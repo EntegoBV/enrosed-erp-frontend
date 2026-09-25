@@ -52,6 +52,9 @@ test('the address leaves out every default', () => {
   assert.deepEqual(financeQueryParams(parse({ view: 'bank', tab: 'accounts' })), { view: 'bank' });
   assert.deepEqual(financeQueryParams(parse({ view: 'incoming', tab: 'received', period: 'quarter', dir: 'in' })),
     { view: 'incoming', tab: 'received', period: 'quarter', dir: 'in' });
+  assert.equal(parse({ view: 'incoming', tab: 'received', dir: 'offset' }).dir, 'offset', 'the verrekeningen filter of Ontvangen');
+  assert.equal(parse({ view: 'incoming', kind: 'credit' }).kind, 'credit', 'the Tegoeden chip of Openstaand');
+  assert.equal(parse({ view: 'incoming', kind: 'bogus' }).kind, '');
 });
 
 test('filters a section does not honour are dropped', () => {

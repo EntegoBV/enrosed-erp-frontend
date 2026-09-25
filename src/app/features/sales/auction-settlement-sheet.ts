@@ -73,7 +73,7 @@ export interface AuctionSheetLine {
         }
         @if (financingError()) { <p class="hint is-bad" role="alert">{{ financingError() }}</p> }
         @if (hasPendingFunding()) {
-          <p class="hint is-bad">Rond eerst de voorschotten af: maak en geef de geplande facturen uit, of verwijder ongebruikte termijnen en concepten. Daarna kan de eerste veilingafrekening worden gemaakt. <a [routerLink]="['/purchasing', purchaseOrderId()]" [queryParams]="{ section: 'payments' }" (click)="funding.emit(); closed.emit()">Factuurtermijnen openen ›</a></p>
+          <p class="hint is-bad">@if (pendingCreditNote(); as note) { Reik conceptcreditnota <a [routerLink]="['/sales', note.id]" (click)="closed.emit()">{{ note.number }}</a> eerst uit of verwijder ze. } Rond eerst de voorschotten af: maak en geef de geplande facturen uit, of verwijder ongebruikte termijnen en concepten. Daarna kan de eerste veilingafrekening worden gemaakt. <a [routerLink]="['/purchasing', purchaseOrderId()]" [queryParams]="{ section: 'payments' }" (click)="funding.emit(); closed.emit()">Factuurtermijnen openen ›</a></p>
         }
         @if (financing(); as finance) { @if (!finance.costFinalized) { <p class="hint is-bad">De externe containerkost is nog voorlopig. Deze conceptafrekening gebruikt de huidige verwachte kost.</p> } }
         @if (availability() && !remainingBefore()) { <p class="hint">Alle bruikbare stuks zijn al afgerekend of gereserveerd in een conceptafrekening. Open de bestaande facturen hierboven.</p> }
@@ -211,8 +211,11 @@ export class AuctionSettlementSheet {
   readonly allProceedsEntered = computed(() => this.soldTotal() > 0 && this.availableLines().filter((line) => this.soldOf(line) > 0).every((line) => this.proceedsEntered(line.productId)));
   readonly advanceDeduction = computed(() => this.preview()?.advanceEur ?? 0);
   readonly finalAmount = computed(() => this.preview()?.netEur ?? this.totals().ours);
+  /** A concept credit note on an advance: the server refuses a settlement until it is issued or deleted. */
+  readonly pendingCreditNote = computed(() => this.financing()?.documents.find((document) =>
+    document.purpose === 'PARTNER_ADVANCE' && document.docType === 'CREDITNOTA' && document.status === 'CONCEPT') ?? null);
   readonly hasPendingFunding = computed(() => !!this.availability() && !this.availability()!.settlements.length
-    && ((this.financing()?.unbilledAdvanceCount ?? 0) > 0 || !!this.financing()?.documents.some((document) =>
+    && ((this.financing()?.unbilledAdvanceCount ?? 0) > 0 || !!this.pendingCreditNote() || !!this.financing()?.documents.some((document) =>
       document.purpose === 'PARTNER_ADVANCE' && document.docType === 'FACTUUR' && document.status === 'CONCEPT')));
   readonly canCreate = computed(() => (this.customerId() !== null || this.chosenCustomer() !== null) && this.allProceedsEntered()
     && !this.hasPendingFunding()

@@ -60,6 +60,8 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                   {{
                     agreementQuote()
                       ? 'Producten en het afgesproken voorschotbedrag; kies zelf of je de betaalafspraken toont.'
+                      : creditNote()
+                      ? 'Creditbedragen, btw en het tegoed blijven altijd zichtbaar; er bestaat geen pakbon van een creditnota.'
                       : invoice()
                       ? 'Bedragen, btw en het te betalen bedrag blijven altijd zichtbaar.'
                       : 'Prijzen en totalen blijven altijd zichtbaar.'
@@ -77,12 +79,13 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                 ></span>
                 <span class="choice-copy"
                   ><span class="choice-kicker">A4 · klantdocument</span>
-                  <strong>{{ invoice() ? 'Factuur instellen' : 'Offerte instellen' }}</strong>
+                  <strong>{{ docWord() }} instellen</strong>
                   <small>Kies taal, presentatie, betaalafspraken en voorwaarden.</small></span
                 >
                 <span class="choice-action">Instellen</span>
               </button>
             </section>
+            @if (!creditNote()) {
             <section class="choice-group">
               <div class="choice-group__head">
                 <strong>Voor magazijn en transport</strong>
@@ -105,13 +108,14 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                 <span class="choice-action">Instellen</span>
               </button>
             </section>
+            }
           </div>
         } @else if (choice() === 'DOCUMENT') {
           <div class="document-summary">
             <span class="paper" aria-hidden="true"><span></span><span></span><span></span></span>
             <span class="choice-copy"
               ><span class="choice-kicker">A4 · klantdocument</span>
-              <strong>{{ invoice() ? 'Factuur' : 'Offerte' }}</strong>
+              <strong>{{ docWord() }}</strong>
               <small>{{ documentOptionCount() }} aanvullende onderdelen gekozen</small></span
             >
           </div>
@@ -120,6 +124,8 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
             ><span>{{
               agreementQuote()
                 ? 'Offertenummer · klant · aantallen · afgesproken voorschotbedrag excl. btw'
+                : creditNote()
+                ? 'Creditnotanummer · factuur en reden · aantallen · prijzen · btw · totaal creditnota'
                 : invoice()
                 ? 'Factuurnummer · klant · aantallen · prijzen · btw · totaal en te betalen'
                 : 'Offertenummer · klant · aantallen · prijzen · kortingen en totalen'
@@ -238,6 +244,8 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                       documentOptions().includePaymentDetails
                         ? agreementQuote()
                           ? 'Voorschottermijnen, financieringsafspraken en uitleg over de slotafrekening.'
+                          : creditNote()
+                            ? 'Het tegoed, de factuur en wat al verrekend of terugbetaald is.'
                           : invoice()
                             ? 'Betaalvoorwaarden, ontvangen betalingen en openstaand saldo.'
                             : 'Betalingsafspraken en toelichting bij het betaalbedrag.'
@@ -352,13 +360,7 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
             @if (choice() === 'PACKING_SLIP') {
               {{ packingBusy() ? 'Pakbon maken…' : 'Pakbon downloaden' }}
             } @else {
-              {{
-                documentBusy()
-                  ? 'PDF maken…'
-                  : invoice()
-                    ? 'Factuur downloaden'
-                    : 'Offerte downloaden'
-              }}
+              {{ documentBusy() ? 'PDF maken…' : docWord() + ' downloaden' }}
             }
           </button>
         }
@@ -672,6 +674,8 @@ export class SalesPdfSheet implements OnInit {
   readonly customerName = input('');
   readonly customerLanguage = input<LanguageCode>('NL');
   readonly invoice = input(false);
+  /** A credit note: 'Creditnota instellen', no packing slip. */
+  readonly creditNote = input(false);
   readonly agreementQuote = input(false);
   readonly dirty = input(false);
   readonly saving = input(false);
@@ -706,11 +710,13 @@ export class SalesPdfSheet implements OnInit {
     const value = this.packingOptions();
     return [value.showOuterCarton, value.showBarcode].filter(Boolean).length;
   });
+  /** 'Creditnota', 'Factuur' or 'Offerte': the word the titles and buttons use. */
+  readonly docWord = computed(() => (this.creditNote() ? 'Creditnota' : this.invoice() ? 'Factuur' : 'Offerte'));
   readonly sheetTitle = computed(() =>
     this.choice() === 'PACKING_SLIP'
       ? 'Pakbon instellen'
       : this.choice() === 'DOCUMENT'
-        ? `${this.invoice() ? 'Factuur' : 'Offerte'} instellen`
+        ? `${this.docWord()} instellen`
         : 'Document exporteren',
   );
 
@@ -718,6 +724,8 @@ export class SalesPdfSheet implements OnInit {
     this.filename.set(`${this.orderNumber()} - ${this.customerName() || 'klant'}`.trim());
     this.documentOptions.set(normalizeSalesPdfOptions({ language: this.customerLanguage() }));
     if (!this.dirty() && this.initialChoice()) this.choice.set(this.initialChoice());
+    /* A credit note has no packing slip: skip straight to its settings. */
+    if (this.creditNote() && this.choice() !== 'DOCUMENT') this.choice.set('DOCUMENT');
   }
 
   patchDocument(patch: SalesPdfOptions): void {
@@ -757,7 +765,7 @@ export class SalesPdfSheet implements OnInit {
     try {
       const blob = await this.sales.quotePdf(this.orderId(), this.documentOptions());
       saveBlob(blob, `${this.safeFilename(this.filename()) || this.orderNumber()}.pdf`);
-      this.ui.toast(this.invoice() ? 'Factuur gedownload' : 'Offerte gedownload');
+      this.ui.toast(`${this.docWord()} gedownload`);
       this.closed.emit();
     } catch (failure: unknown) {
       this.error.set(messageOf(failure, 'Controleer de order en probeer opnieuw.'));
