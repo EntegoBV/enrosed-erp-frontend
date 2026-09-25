@@ -87,6 +87,8 @@ export class PurchasePartnerPayments {
   readonly advanceBasisEur = input<number | null>(null);
   readonly changed = output<void>();
   readonly quote = output<void>();
+  /** Lead seam: the host mounts app-sales-credit-note-sheet in partner mode on this. */
+  readonly creditNote = output<void>();
   readonly summary = signal<PartnerFinancing | null>(null);
   readonly invoices = computed(() => this.summary()?.documents.filter(doc => doc.docType === 'FACTUUR') ?? []);
   readonly statusLabel = STATUS_LABEL;

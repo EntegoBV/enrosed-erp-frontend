@@ -7,6 +7,7 @@ import {
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
   PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerSettlementAvailability, SalesOrderView,
+  PartnerCreditProposal, PurchasePaymentWrite,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -64,6 +65,11 @@ export class SourcingApi {
 
   partnerSettlementAvailability(id: number): Promise<PartnerSettlementAvailability> {
     return firstValueFrom(this.http.get<PartnerSettlementAvailability>(api(`/api/purchase-orders/${id}/partner-settlement-availability`)));
+  }
+
+  /** Over-financing of a received partner container: the credit-note suggestion on its advance. Read-only. */
+  partnerCreditProposal(id: number): Promise<PartnerCreditProposal> {
+    return firstValueFrom(this.http.get<PartnerCreditProposal>(api(`/api/purchase-orders/${id}/partner-credit-proposal`)));
   }
 
   purchaseOrder(id: number): Promise<PurchaseOrderView> {
@@ -172,11 +178,11 @@ export class SourcingApi {
     return firstValueFrom(this.http.get(api(`/api/purchase-orders/${orderId}/payments/pdf`), { responseType: 'blob' }));
   }
 
-  addPayment(orderId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee; settles?: boolean; instalmentDue?: PurchasePayment['instalmentDue'] }): Promise<PurchasePayment> {
+  addPayment(orderId: number, payment: PurchasePaymentWrite): Promise<PurchasePayment> {
     return firstValueFrom(this.http.post<PurchasePayment>(api(`/api/purchase-orders/${orderId}/payments`), payment));
   }
 
-  updatePayment(orderId: number, paymentId: number, payment: { paidOn: string; amount: number; currency: Currency; label: string | null; payee: Payee; settles?: boolean; instalmentDue?: PurchasePayment['instalmentDue'] }): Promise<PurchasePayment> {
+  updatePayment(orderId: number, paymentId: number, payment: PurchasePaymentWrite): Promise<PurchasePayment> {
     return firstValueFrom(this.http.put<PurchasePayment>(api(`/api/purchase-orders/${orderId}/payments/${paymentId}`), payment));
   }
 

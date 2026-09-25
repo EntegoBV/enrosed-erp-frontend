@@ -2660,6 +2660,8 @@ export class PurchaseEditor {
   /* ---- auction settlement ---------------------------------------------- */
   readonly partnerCustomer = signal<Customer | null>(null);
   readonly auctionOpen = signal(false);
+  /** Lead seam: the desk mounts app-sales-credit-note-sheet (partner mode) on this. */
+  readonly creditNoteOpen = signal(false);
   /** The container's products as they appear on the partner's auction statement. */
   /** Inspection and other costs kept apart from the piece price, per piece, for the settlement preview. */
   readonly separateUnitEur = computed(() => this.view()?.reconciliation ? 0 : separateCostPerPiece(this.view()?.costing.totals));

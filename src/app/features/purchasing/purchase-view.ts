@@ -42,6 +42,7 @@ import { purchasePaymentLedger, type PurchasePaymentAction } from './purchase-pa
 import { paymentsNavLabel } from './purchase-payment-menus';
 import { purchaseGroupSettled, purchaseInstalmentState } from './purchase-instalment-state';
 import { AuctionSettlementSheet, AuctionSheetLine } from '../sales/auction-settlement-sheet';
+import { SalesCreditNoteSheet } from '../sales/sales-credit-note-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
@@ -64,7 +65,7 @@ type PurchaseWorkspaceSectionId =
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentOverview, PurchasePaymentResult, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Skeleton, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet],
   template: `
     @if (view(); as data) {
@@ -674,7 +675,7 @@ type PurchaseWorkspaceSectionId =
             <!-- Money in: a partner who co-finances the container. -->
             @if (data.order.partnerCustomerId != null) {
               <section class="erp-workspace__section purchase-partner-card" id="purchase-partner-section" tabindex="-1" aria-label="Partnerfinanciering">
-                <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="reloadPartnerDocs()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
+                <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="reloadPartnerDocs()" (creditNote)="creditNoteOpen.set(true)" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
               </section>
             }
 
@@ -764,6 +765,9 @@ type PurchaseWorkspaceSectionId =
                                             [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                             [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                             (funding)="scrollToCard('purchase-partner-section', 'purchase-payments-section')" (closed)="auctionOpen.set(false)" />
+            }
+            @if (creditNoteOpen()) {
+              <app-sales-credit-note-sheet [purchaseOrderId]="data.order.id" (closed)="creditNoteOpen.set(false)" />
             }
           </main>
 
@@ -1064,6 +1068,8 @@ export class PurchaseView {
   readonly partnerCompany = signal('');
   readonly partnerSheetOpen = signal(false);
   readonly auctionOpen = signal(false);
+  /** Lead seam: mounts app-sales-credit-note-sheet (partner mode) after the auction sheet. */
+  readonly creditNoteOpen = signal(false);
   readonly partnerCustomer = signal<Customer | null>(null);
   /** The container's products as they appear on the partner's auction statement. */
   /** Inspection and other costs kept apart from the piece price, per piece, for the settlement preview. */

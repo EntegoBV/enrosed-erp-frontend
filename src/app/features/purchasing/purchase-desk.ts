@@ -7,6 +7,7 @@ import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet } from './purchase-quote-sheet';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { AuctionSettlementSheet } from '../sales/auction-settlement-sheet';
+import { SalesCreditNoteSheet } from '../sales/sales-credit-note-sheet';
 import { PurchaseExtraSplit } from './purchase-extra-split';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
@@ -63,7 +64,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentWorkbench, PurchasePaymentResult, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchaseReconciliation, PurchasePaymentWorkbench, PurchasePaymentResult, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -729,7 +730,7 @@ type DeskRow =
                 }
 
                 @case ('partner') {
-                  <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
+                  <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" (creditNote)="creditNoteOpen.set(true)" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
                 }
 
                 @case ('files') {
@@ -878,6 +879,11 @@ type DeskRow =
                                         [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
                                         [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                         (funding)="openPartner()" (closed)="auctionOpen.set(false)" />
+        }
+      }
+      @if (creditNoteOpen()) {
+        @if (view(); as data) {
+          <app-sales-credit-note-sheet [purchaseOrderId]="data.order.id" (closed)="creditNoteOpen.set(false)" />
         }
       }
 

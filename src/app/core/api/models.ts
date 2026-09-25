@@ -12,7 +12,8 @@ export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL' | 'SEPARATE';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
-export type DocumentType = 'OFFERTE' | 'FACTUUR';
+/** A quote proposes, an invoice claims, a credit note reduces an invoice's claim (positive lines, the sign in the type). */
+export type DocumentType = 'OFFERTE' | 'FACTUUR' | 'CREDITNOTA';
 export type PublicationStatus = 'DRAFT' | 'READY' | 'PUBLISHED';
 export type CatalogChannel = 'WEBSITE' | 'ORDER_APP' | 'CATALOGUE';
 
@@ -1051,6 +1052,23 @@ export interface PurchasePayment {
   instalmentDue?: Instalment['due'] | null;
 }
 
+/** What the editor sends for a container payment (POST and PUT …/payments). */
+export interface PurchasePaymentWrite {
+  paidOn: string;
+  amount: number;
+  currency: Currency;
+  label: string | null;
+  payee: Payee;
+  settles?: boolean;
+  instalmentDue?: Instalment['due'] | null;
+  /**
+   * The euro amount the bank debited, for USD/CNY only. Omitted: the order rate
+   * on POST, and on PUT the stored euro value survives unchanged money (so a
+   * settle/undo never revalues a bank amount). Never sent for EUR payments.
+   */
+  amountEur?: number | null;
+}
+
 /** One payment on a container as the bank saw it, with the container it went to. */
 export interface PurchasePaymentRow {
   id: number;
@@ -1380,6 +1398,8 @@ export interface OrderPallet {
 
 export type SalesPurpose = 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT';
 export type SalesPaymentPlan = 'FULL' | 'THIRD_TWO_THIRDS_PRODUCTION';
+/** Why a credit note exists; printed under 'Reden' on the document. */
+export type CreditReason = 'SHORT_DELIVERY' | 'DAMAGED' | 'RETURN' | 'PRICE_CORRECTION' | 'CANCELLATION' | 'PARTNER_SHORTFALL' | 'OTHER';
 
 export interface SalesOrder {
   purpose?: SalesPurpose | null;
@@ -1450,6 +1470,12 @@ export interface SalesOrder {
   sourceQuoteId?: number | null;
   /** Invoices only: when the goods left and stock was written down. */
   goodsShippedAt?: string | null;
+  /** Credit notes only: the issued invoice this credit note reduces. Never sourceQuoteId. */
+  creditedInvoiceId?: number | null;
+  /** Credit notes only: why it exists. */
+  creditReason?: CreditReason | null;
+  /** Credit notes only: when the credited pieces were booked back into stock. */
+  goodsReturnedAt?: string | null;
   lines: SalesOrderLine[];
   /** Hand-built pallet layout; empty means the calculated stacking applies. */
   pallets: OrderPallet[];
@@ -1544,6 +1570,9 @@ export interface SalesPayment {
   reference: string | null;
   recordedAt: string;
   actor: string | null;
+  /** Both rows of a verrekening carry the other document and the mirrored row; never bank-linked. */
+  offsetOrderId?: number | null;
+  offsetPaymentId?: number | null;
 }
 export interface SalesPaymentRequest {
   direction?: 'RECEIPT' | 'REFUND';
@@ -1559,6 +1588,8 @@ export interface IncomingPaymentRow extends SalesPayment {
   purchaseOrderId: number | null;
   purpose: SalesPurpose;
   legacy: boolean;
+  offsetOrderNumber?: string | null;
+  docType?: DocumentType;
 }
 export interface SalesPaymentInstalment {
   key: 'PRODUCTION_START' | 'PRODUCTION_COMPLETE';
@@ -1591,6 +1622,8 @@ export interface PartnerFinancingDocument {
   receivedEur: number;
   remainingEur: number;
   creditEur: number;
+  /** Credit notes: the invoice they reduce. */
+  creditedInvoiceId?: number | null;
 }
 export interface PartnerAdvanceScheduleRow {
   id: number;
@@ -1685,6 +1718,8 @@ export interface PartnerFinancing {
   recognizedProfitEur: number;
   documents: PartnerFinancingDocument[];
   payments: IncomingPaymentRow[];
+  /** Σ issued live credit notes on this container's documents (positive); invoicedAdvanceEur and settlementEur are already net of them. */
+  creditNotesEur?: number;
 }
 
 /** Frozen, price-free container contents on an advance invoice. Never participates in its monetary claim. */
@@ -1721,6 +1756,23 @@ export interface SalesOrderView {
   invoiceStatus?: QuoteStatus | null;
   /** For an invoice: the number of the quote it was made from. */
   sourceQuoteNumber?: string | null;
+  /** Credit notes: the invoice they reduce. */
+  creditedInvoiceId?: number | null;
+  creditedInvoiceNumber?: string | null;
+  creditedInvoiceStatus?: QuoteStatus | null;
+  /** Invoices: their live credit notes, concepts included (told apart by status). */
+  creditNotes?: CreditNoteLink[];
+  /** Invoices: Σ totalInclVat of ISSUED live credit notes, positive. */
+  creditedEur?: number;
+}
+
+/** A live credit note of an invoice. */
+export interface CreditNoteLink {
+  id: number;
+  number: string;
+  status: QuoteStatus;
+  totalInclVatEur: number;
+  creditReason: CreditReason | null;
 }
 
 /** Delivery planning is separate from the document's issued/payment status. */
@@ -1909,6 +1961,8 @@ export interface CompanyProfile {
   /** Where those series carry on from when the books already count further. */
   partnerQuoteNextNumber?: number | null;
   partnerInvoiceNextNumber?: number | null;
+  /** CN gives CN-2026-0001; one series for standard and partner credit notes. */
+  creditNoteNumberPrefix?: string | null;
 }
 
 /** One step in the life of a quote. */
@@ -2175,4 +2229,77 @@ export interface ProductCostHistoryEntry {
   exwPrice: number | null;
   exwCurrency: string | null;
   appliedBy: string | null;
+}
+
+/* ----------------------------------------------------------- creditnota's */
+
+/** One invoice line as the server proposes it for a credit note. */
+export interface CreditNoteProposalLine {
+  productId: number;
+  productName: string;
+  sku: string | null;
+  photoUrl: string | null;
+  unitLabel: string;
+  invoicedQuantity: number;
+  /** Over the invoice's live credit notes, concepts included. */
+  alreadyCreditedQuantity: number;
+  /** min(remaining, missing + damaged of this product on the invoice's received container). */
+  suggestedQuantity: number;
+  netUnitPriceEur: number;
+  unitCostEur: number | null;
+}
+
+/** Over-financing of a received partner container: the credit-note suggestion on its advance. */
+export interface PartnerCreditProposal {
+  purchaseOrderId: number;
+  received: boolean;
+  settlementExists: boolean;
+  missingPieces: number;
+  damagedPieces: number;
+  /** Excl. VAT: issued live advances, their issued credit notes, the landed total on received pieces. */
+  issuedAdvanceEur: number;
+  creditedAdvanceEur: number;
+  actualBasisEur: number;
+  forecastExternalEur: number;
+  financingPct: number;
+  agreedShareEur: number;
+  /** max(0, issued − credited − pct × actual basis); 0 before receipt or once a settlement exists. */
+  overFinancingEur: number;
+  overFinancingInclVatEur: number;
+  suggestedAdvanceInvoiceId: number | null;
+  advances: { invoiceId: number; number: string; totalInclVatEur: number; alreadyCreditedInclVatEur: number; maxCreditInclVatEur: number }[];
+}
+
+/** GET /api/sales-orders/{invoiceId}/credit-note-proposal: caps, suggestions from the receipt, VAT. Read-only. */
+export interface CreditNoteProposal {
+  invoiceId: number;
+  invoiceNumber: string;
+  invoiceDate: string;
+  customerId: number | null;
+  purpose: SalesPurpose;
+  invoiceTotalInclVatEur: number;
+  alreadyCreditedInclVatEur: number;
+  maxCreditInclVatEur: number;
+  /** The invoice's own open amount. */
+  remainingEur: number;
+  vatRatePct: number;
+  vatExempt: boolean;
+  suggestedReason: CreditReason;
+  lines: CreditNoteProposalLine[];
+  freightEur: number;
+  freightAlreadyCredited: boolean;
+  extraLines: { description: string; quantity: number; unitPriceEur: number; totalEur: number }[];
+  container: { purchaseOrderId: number; number: string; received: boolean; missingPieces: number; damagedPieces: number } | null;
+  /** Only for PARTNER_ADVANCE originals. */
+  partnerShortfall: PartnerCreditProposal | null;
+}
+
+/** POST /api/sales-orders/{invoiceId}/credit-note. Lines and amounts are positive; the server prices at CONTAINER_COST. */
+export interface CreditNoteRequest {
+  reason: CreditReason;
+  /** unitPriceEur null = the invoiced net unit price; never above it. */
+  lines: { productId: number; quantity: number; unitPriceEur?: number | null }[];
+  amounts: { description: string; amountEur: number }[];
+  creditFreight: boolean;
+  note?: string | null;
 }
