@@ -333,10 +333,12 @@ interface JourneyStep {
                 <h2>Producten</h2>
                 <p>{{ data.priced.lines.length ? (data.priced.totals.pieces | num) + ' ' + quantityLabel(data.priced.lines) + ' · ' + (data.priced.totals.cartons | num) + ' dozen · ' + (data.priced.totals.cbm | cbm) : 'Bouw het document regel voor regel op' }}</p>
               </div>
+              @if (showsMargin()) {
               <span class="per-toggle" role="group" aria-label="Winst tonen per">
                 <button type="button" [class.on]="profitPerPiece()" [attr.aria-pressed]="profitPerPiece()" (click)="profitPerPiece.set(true)">Per eenheid</button>
                 <button type="button" [class.on]="!profitPerPiece()" [attr.aria-pressed]="!profitPerPiece()" (click)="profitPerPiece.set(false)">Per regel</button>
               </span>
+              }
               @if (!isCreditNoteDoc()) {
               <button class="btn btn--primary btn--sm" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">
                 <span aria-hidden="true">＋</span> Product
@@ -351,7 +353,8 @@ interface JourneyStep {
 
             @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
-              <table class="desk-table" [class.desk-table--editing]="commercialEditable()">
+              <!-- A credit note has no margin column: the grid drops it whole (head, cells, foot). -->
+              <table class="desk-table" [class.desk-table--editing]="commercialEditable()" [class.desk-table--no-margin]="!showsMargin()">
                 <thead>
                   <tr>
                     <th class="c-product">Product</th>
@@ -359,7 +362,7 @@ interface JourneyStep {
                     <th class="c-price">Eenheidsprijs</th>
                     <th class="c-disc">Korting</th>
                     <th class="c-money">Netto</th>
-                    <th class="c-money" title="Productmarge na alle regel- en orderkortingen, exclusief btw en transport">{{ profitPerPiece() ? 'Marge / eenheid' : 'Marge / regel' }}</th>
+                    @if (showsMargin()) { <th class="c-money" title="Productmarge na alle regel- en orderkortingen, exclusief btw en transport">{{ profitPerPiece() ? 'Marge / eenheid' : 'Marge / regel' }}</th> }
                     <th class="c-delivery">Levering</th>
                     @if (commercialEditable()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
                   </tr>
@@ -368,7 +371,7 @@ interface JourneyStep {
                 @for (row of tableRows(); track row.key) {
                   @switch (row.kind) {
                     @case ('section') {
-                      <tr class="desk-section__row"><th [attr.colspan]="commercialEditable() ? 8 : 7">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
+                      <tr class="desk-section__row"><th [attr.colspan]="(showsMargin() ? 7 : 6) + (commercialEditable() ? 1 : 0)">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
                     }
                     @case ('group') {
                       <tr class="desk-group">
@@ -390,7 +393,7 @@ interface JourneyStep {
                         <td class="c-price"></td>
                         <td class="c-disc"></td>
                         <td class="c-money num c-money--total">@if (unavailableLineCount(row.lines) === row.lines.length) { — } @else { {{ row.net | eur }} }</td>
-                        <td class="c-money"></td>
+                        @if (showsMargin()) { <td class="c-money"></td> }
                         <td class="c-delivery"></td>
                         @if (commercialEditable()) { <td class="c-act"></td> }
                       </tr>
@@ -508,6 +511,7 @@ interface JourneyStep {
                           <b>{{ line.net | eur }}</b>
                           <small>{{ line.netUnitPrice | eur: 2 }} / st</small>
                         </td>
+                        @if (showsMargin()) {
                         <td class="c-money num">
                           <button class="desk-total desk-total--profit" type="button" (click)="openCostSheet(line)"
                                   [class.is-bad]="!isAdvance(data.order) && (profitPerPiece() ? marginPerUnit(line) : line.marginEur) < 0"
@@ -516,6 +520,7 @@ interface JourneyStep {
                             <small>kost {{ line.landedUnitCost | eur: 2 }} <i aria-hidden="true">›</i></small>
                           </button>
                         </td>
+                        }
                         <td class="c-delivery">
                           @if (isCreditNoteDoc()) {
                             <span class="desk-delivery"><b class="muted">Geen levering</b><small>{{ data.order.goodsReturnedAt ? 'retour geboekt ' + (data.order.goodsReturnedAt | dateNl) : 'creditnota' }}</small></span>
@@ -593,7 +598,7 @@ interface JourneyStep {
                     </td>
                     <td class="c-disc"><span class="muted">—</span></td>
                     <td class="c-money num c-money--total">{{ extraLineTotal(extra) | eur }}</td>
-                    <td class="c-money num"><span class="muted">—</span></td>
+                    @if (showsMargin()) { <td class="c-money num"><span class="muted">—</span></td> }
                     <td class="c-delivery"><small class="muted">{{ isCreditNoteDoc() ? 'bedrag' : 'eigen regel' }}</small></td>
                     @if (commercialEditable()) {
                       <td class="c-act">
@@ -610,7 +615,7 @@ interface JourneyStep {
                     <th class="c-price"></th>
                     <th class="c-disc">@if (data.priced.totals.lineDiscountTotal) { −{{ data.priced.totals.lineDiscountTotal | eur: 0 }} }</th>
                     <th class="c-money">{{ data.priced.totals.subtotal + (data.priced.totals.extraLinesTotal ?? 0) | eur }}@if (data.priced.totals.extraLinesTotal) { <small>goederen {{ data.priced.totals.subtotal | eur }} + andere regels</small> }</th>
-                    <th class="c-money" [class.is-bad]="displayedProfit(data) < 0">@if (isAdvance(data.order)) { Financiering } @else { {{ displayedProfit(data) | eur: 0 }} }</th>
+                    @if (showsMargin()) { <th class="c-money" [class.is-bad]="displayedProfit(data) < 0">@if (isAdvance(data.order)) { Financiering } @else { {{ displayedProfit(data) | eur: 0 }} }</th> }
                     <th class="c-delivery"></th>
                     @if (commercialEditable()) { <th class="c-act"></th> }
                   </tr>
@@ -1303,6 +1308,7 @@ interface JourneyStep {
       .desk-table tr.desk-group{grid-template-areas:'product product product' 'qty net net';border-top:2px solid var(--line-strong);background:var(--surface-2)}
       .desk-table tr.desk-row--variant{margin-left:14px;border-left:3px solid var(--rose-line)}
       .desk-table tr.desk-row{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,.85fr)}
+      .desk-table--no-margin tr.desk-row{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:'product product' 'qty price' 'net delivery'}
       .desk-table td,.desk-table--editing td.c-qty,.desk-table--editing td.c-price,.desk-table--editing td.c-disc{display:block;width:auto;min-width:0;padding:0;border:0;text-align:left;background:transparent}
       .desk-table td:empty{display:none}
       .desk-row td.c-product,.desk-group td.c-product{grid-area:product;padding-right:34px}

@@ -399,12 +399,14 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <h2 id="sales-lines-title">Producten</h2>
                 </div>
                 <div class="line-head-tools">
+                  @if (showsMargin()) {
                   <div class="profit-mode" role="group" aria-label="Winstbedrag tonen per verkoopeenheid of per regel">
                     <button type="button" [class.profit-mode__active]="profitMode() === 'UNIT'"
                             (click)="profitMode.set('UNIT')">Per eenheid</button>
                     <button type="button" [class.profit-mode__active]="profitMode() === 'LINE'"
                             (click)="profitMode.set('LINE')">Hele regel</button>
                   </div>
+                  }
                   <span class="section-count">
                     {{ data.priced.lines.length }}
                     {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}
@@ -582,6 +584,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                       </p>
                     }
 
+                    @if (showsMargin() || line.discountPct) {
                     <button class="line-breakdown-toggle" type="button"
                             [attr.aria-expanded]="openLine() === line.productId"
                             [attr.aria-controls]="linePanelId(line.productId)"
@@ -608,6 +611,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                         }
                         <div class="stat-row"><span>Verkoop na korting</span>
                           <span class="num">{{ profitNet(line) | eur: 2 }}</span></div>
+                        @if (showsMargin()) {
                         <div class="stat-row"><span>Kostprijs</span>
                           <span class="num">− {{ profitCost(line) | eur: 2 }}</span></div>
                         @if (isAdvance(data.order)) { <p class="muted">Voorschot voor de containerfinanciering. Het resultaat volgt bij elke uitgegeven veilingafrekening.</p> }
@@ -616,7 +620,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                           <span>{{ line.marginEur < 0 ? 'Verlies' : 'Winst' }}</span>
                           <span class="num">{{ profitPill(line) }}</span>
                         </div> }
+                        }
                       </div>
+                    }
                     }
                     }
                   </article>
@@ -1205,6 +1211,8 @@ export class SalesView {
 
   /* ---- credit notes ---------------------------------------------------- */
   readonly isCreditNote = computed(() => isCreditNote(this.view()?.order));
+  /** A credit note corrects an invoice; it tells no margin or profit story anywhere. Quotes and invoices keep theirs. */
+  readonly showsMargin = computed(() => !this.isCreditNote());
   readonly canCreateCredit = computed(() => canCreateCreditNote(this.view()));
   readonly creditSheetOpen = signal(false);
   readonly offsetOpen = signal(false);

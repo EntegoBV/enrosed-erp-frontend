@@ -818,7 +818,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 
                 @if (isAdvance(data.order)) {
                   <p class="line-internal__note">Voorschot voor de containerfinanciering. Het resultaat wordt berekend bij elke uitgegeven veilingafrekening.</p>
-                } @else { <details class="line-internal">
+                } @else if (showsMargin()) { <details class="line-internal">
                   <summary class="line-internal__summary">
                     <span class="line-internal__title">
                       <strong>Rendabiliteit per {{ lineUnit(line.productId).singular }}</strong>
@@ -2215,7 +2215,7 @@ export class SalesEditor {
         eur: line.landedUnitCost, sum: true });
       const advance = this.view()?.order && isAdvanceDocument(this.view()!.order);
       rows.push({ label: advance ? `Voorschot per ${this.lineUnit(line.productId).singular}` : 'Netto verkoop', eur: line.netUnitPrice });
-      if (!advance) rows.push({ label: `${this.marginPerUnit(line) < 0 ? 'Verlies' : 'Winst'} per ${this.lineUnit(line.productId).singular}`,
+      if (!advance && this.showsMargin()) rows.push({ label: `${this.marginPerUnit(line) < 0 ? 'Verlies' : 'Winst'} per ${this.lineUnit(line.productId).singular}`,
         eur: this.marginPerUnit(line), sum: true });
       this.costSheet.set({ title: line.description, source: source ?? null, rows });
     } catch {
@@ -2498,6 +2498,8 @@ export class SalesEditor {
 
   /* ---- credit notes: the document that reduces an invoice --------------- */
   readonly isCreditNoteDoc = computed(() => isCreditNote(this.view()?.order));
+  /** A credit note corrects an invoice; it tells no margin or profit story anywhere. Quotes and invoices keep theirs. */
+  readonly showsMargin = computed(() => !this.isCreditNoteDoc());
   /** An invoice or a credit note: the money UI applies to both. */
   readonly isClaimDoc = computed(() => this.isInvoiceDoc() || this.isCreditNoteDoc());
   readonly canCreateCreditNote = computed(() => canCreateCreditNote(this.view()));
