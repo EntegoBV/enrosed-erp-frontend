@@ -22,7 +22,7 @@ export function todoCopy(todo: LedgerTodo, mode: 'read' | 'edit' = 'edit'): { ti
       detail: `${formatEur(todo.amountEur)} · nu te betalen${todo.due ? ' · ' + PAYEE_LABEL[todo.payee] : ''}` };
     case 'settle': return { title: `Klein verschil bij ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} open · bijv. bankkosten of afronding` };
     case 'review': return { title: `Te veel betaald aan ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} meer dan afgesproken` };
-    case 'budget': return { title: `Niet begroot: ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} betaald zonder bedrag in Kosten` };
+    case 'budget': return { title: `Betaald zonder afspraak: ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} betaald zonder bedrag in Kosten` };
     case 'incomplete': return { title: `Betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`, action, detail: 'Controleer het bedrag van deze betaling' };
     case 'proof': return { title: `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder bewijs`, action,
       detail: mode === 'edit' ? 'Voeg het bankafschrift toe' : 'Bankafschrift ontbreekt' };

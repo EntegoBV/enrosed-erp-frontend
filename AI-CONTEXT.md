@@ -240,8 +240,8 @@ cijfers'.
   the payee sheet; 44 px links) share it; below it
   `app-purchase-reconciliation` (kit look, styles in purchase-payments.scss,
   `hosted` swaps the router link for an output) shows betaald + open =
-  externe kost with the begroot figure beside the variance, the per-stuk
-  block and the Per product (four decimals, begroot per line) and Toelichting
+  externe kost with the afspraak figure beside the variance, the per-stuk
+  block and the Per product (four decimals, afspraak per line) and Toelichting
   disclosures; Analyses keeps the per-stream rows (`showStreams`). The
   workbench has a third side card 'Nacalculatie' (`purchaseNacalcSummary`),
   the side column scrolls inside its sticky box when three cards outgrow the
@@ -260,7 +260,7 @@ cijfers'.
   `PurchaseOrderView` + the payment ledger + `purchaseNacalcSummary(view,
   ledger)` (+ `PartnerFinancing` when the host has it): state machine
   concept | provisional | review | final with a state pill and sentence, the
-  headline (Begroot on ordered pieces → Verwachte eindkost / Eindkost →
+  headline (Afspraak on ordered pieces → Verwachte eindkost / Eindkost →
   signed Verschil with % → per stuk on ordered or usable pieces), one reason
   word per payee (`nacalcReason`, precedence additional → incomplete →
   unbudgeted → review → legacy → partly-settled → open →
@@ -270,7 +270,7 @@ cijfers'.
   payee gets no action), the receipt block (server `receiptVariance` first,
   reconciliation lines as fallback, over-received value from the order
   lines, supplier fact, LATER reports shown but never counted), the bridge
-  from 'Calculatie · totaal geland' to 'Begroot extern' ('Afronding' up to €
+  from 'Calculatie · totaal geland' to 'Afspraak extern' ('Afronding' up to €
   1 before receipt, 'Correctie naar bestelde stuks' after) and on to the
   eindkost, the explained differences (`purchasePaymentResult`, never budget
   minus paid), the partner block (costPct ?? 100, sharePct ?? 50, advance on
@@ -286,7 +286,8 @@ cijfers'.
   main view Nacalculatie (⌥3, dot on review) =
   `app-purchase-nacalc-workbench` (container `nc`; the tables fold on the
   main column: < 1000 pill and reason under the payee, < 760
-  Afspraak/Begroot/Verschil and text buttons go); the rail's Kosten pane and
+  the Afspraak and Verschil columns of payees and products and the text
+  buttons go); the rail's Kosten pane and
   the Betalingen side card share `app-purchase-nacalc-summary`
   (`PurchaseNacalcSummaryCard`, 'Volledig ›'); Betalingen is the only place
   that records money (row 'Noteer ›' → `showPayments(payee)`), settle/undo
@@ -311,6 +312,16 @@ cijfers'.
   the Nacalculatie live in `styles/purchase-nacalc.scss` (.nc-* desk, .np-*
   phone, .nc-summary), purchase-payments.scss keeps the Betalingen rules and
   .desk-body--payments (applied for both wide views).
+- Wording (owner, 2026-09-26): the planned payee amount is 'Afspraak'
+  everywhere in Inkoop and Analyses › Inkoop — never begroot, begroting,
+  budget or raming (afspraak/afgesproken in sub lines, 'Afspraak extern' in
+  the bridge, 'Verschil met afspraak' in the summary card; a concept's
+  headline is 'Verwachte eindkost' with the 'Nog niet besteld' pill). A payee
+  paid without an agreement is 'Betaald zonder afspraak' (warn), so it never
+  reads like Bijkomende kosten, which are 'zonder afspraak' by design; such a
+  payee never shows 'afspraak € 0,00'. 'Raming uit Kosten' stays: it names
+  the source of the afspraak, not the figure. Code identifiers (`begrootEur`,
+  `UNBUDGETED`, `BUDGET`) keep their names.
 
 ## Screens and their scenarios
 

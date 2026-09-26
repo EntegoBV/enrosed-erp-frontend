@@ -296,14 +296,14 @@ export class PurchasePaymentOverview {
   readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');
   readonly payeeOpen = computed(() => this.ledger()?.payees.find(item => item.payee === this.openPayee()) ?? null);
   readonly payeeItems = computed(() => payeeMenuItems(this.ledger()));
-  /** What the review headline points at: overpaid, not budgeted or incomplete. */
+  /** What the review headline points at: overpaid, without an agreement or incomplete. */
   readonly review = computed(() => {
     const payee = this.ledger()?.summary.headline.payee;
     if (!payee) return null;
     const kind = payee.status.kind;
     return {
       amountEur: kind === 'UNBUDGETED' ? payee.paidEur : kind === 'OVERPAID' ? payee.higherEur : null,
-      text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'niet begroot' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
+      text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'betaald zonder afspraak' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
     };
   });
   readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.higherEur > 0 && !item.finalized) ?? false);

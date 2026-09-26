@@ -26,7 +26,7 @@ export type NacalcReason = 'none' | 'open' | 'partly-settled' | 'settled-lower' 
 
 export interface NacalcHeadline {
   kind: NacalcKind;
-  label: 'Begrote kost' | 'Verwachte eindkost' | 'Eindkost';
+  label: 'Verwachte eindkost' | 'Eindkost';
   pill: { label: string; tone: NacalcTone };
   sentence: string;
   eindkostEur: number;
@@ -203,7 +203,7 @@ export const NACALC_REASON_LABEL: Readonly<Record<NacalcReason, string>> = {
   'settled-higher': 'meer betaald · afgerekend',
   review: 'te veel betaald · nakijken',
   additional: 'bijkomend · zonder afspraak',
-  unbudgeted: 'niet begroot',
+  unbudgeted: 'betaald zonder afspraak',
   incomplete: 'bedragen onvolledig',
   legacy: 'historisch betaald bij ontvangst · niet in het logboek',
 };
@@ -313,20 +313,20 @@ function stateSentence(
   kind: NacalcKind, payees: NacalcPayeeRow[] | null, streams: readonly PurchaseReconciliationStream[], summary: PurchaseNacalcSummary,
 ): string {
   switch (kind) {
-    case 'concept': return 'Nog niet besteld — de calculatie is de begroting.';
+    case 'concept': return 'Nog niet besteld — de calculatie is de afspraak.';
     case 'final': return 'Definitief · alle ontvangers afgerekend';
     case 'review': {
       const reviewed = payees?.find(row => row.status.kind === 'OVERPAID' || row.status.kind === 'UNBUDGETED' || row.status.kind === 'INCOMPLETE');
       if (reviewed) {
         if (reviewed.status.kind === 'OVERPAID') return `Na te kijken · ${eur(overpaidOf(streams, reviewed.payee))} te veel betaald aan ${reviewed.label}`;
-        if (reviewed.status.kind === 'UNBUDGETED') return `Na te kijken · ${reviewed.label} niet begroot`;
+        if (reviewed.status.kind === 'UNBUDGETED') return `Na te kijken · ${reviewed.label} betaald zonder afspraak`;
         return `Na te kijken · betaling zonder eurowaarde bij ${reviewed.label}`;
       }
       // Without the ledger the server report names the payee.
       const overpaid = streams.find(stream => stream.payee !== 'OTHER' && stream.status === 'OVERPAID' && !stream.finalized);
       if (overpaid) return `Na te kijken · ${eur(overpaid.overpaidEur)} te veel betaald aan ${overpaid.label}`;
       const unbudgeted = streams.find(stream => stream.payee !== 'OTHER' && stream.status === 'ADDITIONAL');
-      if (unbudgeted) return `Na te kijken · ${unbudgeted.label} niet begroot`;
+      if (unbudgeted) return `Na te kijken · ${unbudgeted.label} betaald zonder afspraak`;
       return 'Na te kijken';
     }
     default: {
@@ -424,9 +424,9 @@ function termRow(term: LedgerTerm): NacalcTermRow {
 }
 
 /**
- * One reason word per payee, in this order: bijkomend, onvolledig, niet
- * begroot, te veel betaald, historisch, deels afgerekend, nog open, minder
- * or meer betaald · afgerekend, geen verschil.
+ * One reason word per payee, in this order: bijkomend, onvolledig, betaald
+ * zonder afspraak, te veel betaald, historisch, deels afgerekend, nog open,
+ * minder or meer betaald · afgerekend, geen verschil.
  */
 export function nacalcReason(
   item: PayeeLedger, stream: PurchaseReconciliationStream | undefined, totals: Pick<PurchaseReconciliationTotals, 'legacyPaidTotalEur'>,
@@ -571,18 +571,18 @@ export function nacalcBridge(view: PurchaseOrderView, summary: PurchaseNacalcSum
   if (residue !== 0) {
     if (totals.receiptRecorded) {
       rows.push({ key: 'ORDERED', label: 'Correctie naar bestelde stuks', amountEur: euro(Math.abs(residue)),
-        note: `het budget blijft op ${totals.orderedQuantity} bestelde stuks`, op: residue < 0 ? '−' : '+' });
+        note: `de afspraak blijft op ${totals.orderedQuantity} bestelde stuks`, op: residue < 0 ? '−' : '+' });
     } else if (Math.abs(residue) <= 100) {
       rows.push({ key: 'ROUNDING', label: 'Afronding', amountEur: euro(Math.abs(residue)), note: null, op: residue < 0 ? '−' : '+' });
     } else consistent = false;
   }
-  rows.push({ key: 'BUDGET', label: 'Begroot extern', amountEur: euro(begroot), note: 'op bestelde aantallen en orderkoersen', op: '=' });
+  rows.push({ key: 'BUDGET', label: 'Afspraak extern', amountEur: euro(begroot), note: 'op bestelde aantallen en orderkoersen', op: '=' });
   rows.push({ key: 'PAID', label: 'Betaald', amountEur: euro(cents(totals.paidEur)), note: null, op: '' });
   rows.push({ key: 'OPEN', label: 'Open', amountEur: euro(cents(totals.remainingEur)), note: null, op: '+' });
   rows.push({ key: 'FORECAST', label: summary.kind === 'final' ? 'Eindkost' : 'Verwachte eindkost', amountEur: euro(cents(totals.forecastExternalEur)), note: null, op: '=' });
   if (summary.reviewEur > 0) rows.push({ key: 'REVIEW', label: 'waarvan te veel betaald · nakijken', amountEur: summary.reviewEur, note: null, op: '' });
   if (summary.additionalCostsEur > 0) rows.push({ key: 'ADDITIONAL', label: 'waarvan bijkomende kosten', amountEur: summary.additionalCostsEur, note: null, op: '' });
-  rows.push({ key: 'VARIANCE', label: 'Verschil', amountEur: euro(cents(totals.varianceEur)), note: 'eindkost min begroot', op: '→' });
+  rows.push({ key: 'VARIANCE', label: 'Verschil', amountEur: euro(cents(totals.varianceEur)), note: 'eindkost min afspraak', op: '→' });
   return { rows, consistent };
 }
 

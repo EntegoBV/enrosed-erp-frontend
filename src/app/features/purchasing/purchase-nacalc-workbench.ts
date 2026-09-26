@@ -19,7 +19,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
 
 /**
  * The nacalculatie on the desk, across the whole main pane: the headline
- * strip (begroot → eindkost → verschil → per stuk), the payees with one
+ * strip (afspraak → eindkost → verschil → per stuk), the payees with one
  * reason word and at most one action each, the receipt, the products, and
  * the side cards that explain how the eindkost came about, what prices rest
  * on, what the partner finances and how it was calculated. Sheets and menus
@@ -55,8 +55,8 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
       @if (nacalc(); as n) {
         @let head = n.headline;
         @let concept = head.kind === 'concept';
-        <div class="wk-strip nc-strip" aria-label="Begroot, eindkost en verschil">
-          <div class="wk-strip__item nc-cell"><span class="wk-strip__label">Begroot</span><span class="wk-strip__value">{{ head.begrootEur | eur }}</span><small class="nc-strip__sub">calculatie op {{ head.orderedQuantity | num }} bestelde stuks</small></div>
+        <div class="wk-strip nc-strip" aria-label="Afspraak, eindkost en verschil">
+          <div class="wk-strip__item nc-cell"><span class="wk-strip__label">Afspraak</span><span class="wk-strip__value">{{ head.begrootEur | eur }}</span><small class="nc-strip__sub">calculatie op {{ head.orderedQuantity | num }} bestelde stuks</small></div>
           <span class="wk-strip__op nc-op" aria-hidden="true">→</span>
           <div class="wk-strip__item nc-cell nc-cell--grand">
             <span class="wk-strip__label">{{ head.label }} <span class="wk-pill nc-pill" [class]="pillClass(head.pill.tone)">{{ head.pill.label }}</span></span>
@@ -94,7 +94,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                 <div class="wk-empty">
                   <span class="wk-empty__icon"><app-icon name="layers" [size]="22" /></span>
                   <p class="wk-empty__title">Nog niet besteld</p>
-                  <p class="wk-empty__text">De nacalculatie begint bij de bestelling. Tot dan is dit de begroting uit Kosten.</p>
+                  <p class="wk-empty__text">De nacalculatie begint bij de bestelling. Tot dan is de calculatie uit Kosten de afspraak.</p>
                   <div class="wk-empty__actions"><button class="wk-btn" type="button" (click)="openCosts.emit()">Calculatie ›</button></div>
                 </div>
               </section>
@@ -114,7 +114,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                     <div class="wk-table nc-payees" role="grid" aria-labelledby="nc-payees-title">
                       <div class="wk-thead" role="row">
                         <span class="wk-th" role="columnheader">Ontvanger</span>
-                        <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="mid narrow">Afspraak · begroot</span>
+                        <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="mid narrow">Afspraak</span>
                         <span class="wk-th wk-th--num" role="columnheader">Betaald</span>
                         <span class="wk-th wk-th--num" role="columnheader">Open</span>
                         <span class="wk-th wk-th--num" role="columnheader">Eindkost</span>
@@ -134,7 +134,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                                         (click)="$event.stopPropagation(); toggle(row.payee)"><app-icon name="chevron-right" [size]="14" /></button>
                               }</span><span class="wk-td__sub nc-basis" [title]="row.basis">{{ row.basis }}</span>
                               <span class="nc-when-mid nc-state"><span class="wk-pill" [class]="tone(row.status.tone)">{{ row.status.label }}</span>@if (reasonBeyondStatus(row.reason)) { <span class="wk-td__sub nc-reason">{{ row.reasonLabel }}</span> }</span>
-                              @if (row.agreedEur !== null) { <span class="wk-td__sub nc-when-mid">{{ row.payee === 'SUPPLIER' ? 'afspraak' : 'begroot' }} {{ row.agreedEur | eur }}</span> }
+                              @if (row.agreedEur !== null && row.status.kind !== 'UNBUDGETED') { <span class="wk-td__sub nc-when-mid">afspraak {{ row.agreedEur | eur }}</span> }
                             </span></span></span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid narrow">@if (row.agreedEur === null) { — } @else { {{ row.agreedEur | eur }} }</span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ row.paidEur | eur }}
@@ -256,7 +256,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                       <span class="wk-th" role="columnheader">Product</span>
                       <span class="wk-th wk-th--num" role="columnheader">Besteld</span>
                       @if (received) { <span class="wk-th wk-th--num" role="columnheader">Bruikbaar</span> }
-                      <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="narrow">Begroot</span>
+                      <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="narrow">Afspraak</span>
                       <span class="wk-th wk-th--num" role="columnheader">Eindkost</span>
                       <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="narrow">Verschil</span>
                       <span class="wk-th wk-th--num" role="columnheader">Per stuk</span>
@@ -332,7 +332,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                 @else { <button class="wk-link wk-card__trail" type="button" (click)="openCosts.emit()">Calculatie ›</button> }</header>
               <div class="wk-card__body">
                 <dl class="wk-equation">
-                  <div><dt>{{ concept ? 'Begrote kost' : head.label }}</dt><dd>{{ head.eindkostEur | eur }}</dd></div>
+                  <div><dt>{{ head.label }}</dt><dd>{{ head.eindkostEur | eur }}</dd></div>
                   <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Enrosed kost<span class="wk-td__sub">intern, geen betaling</span></dt><dd>{{ head.markupEur | eur }}</dd></div>
                   <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Kostbasis</dt><dd>{{ head.pricingEur | eur }}</dd></div>
                   <div class="is-sub"><dt>Per stuk incl. Enrosed kost</dt><dd>@if (head.pricingUnitEur !== null) { {{ head.pricingUnitEur | eur: 4 }} } @else { — }</dd></div>
@@ -379,7 +379,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
         </div>
 
         <footer class="wk-statusbar nc-status">
-          <span>{{ paymentCount() }} {{ paymentCount() === 1 ? 'betaling' : 'betalingen' }} · budget op bestelde aantallen en orderkoersen · excl. btw@if (head.fxEur !== 0) { · koersverschil {{ signed(head.fxEur) }} t.o.v. orderkoers }</span>
+          <span>{{ paymentCount() }} {{ paymentCount() === 1 ? 'betaling' : 'betalingen' }} · afspraak op bestelde aantallen en orderkoersen · excl. btw@if (head.fxEur !== 0) { · koersverschil {{ signed(head.fxEur) }} t.o.v. orderkoers }</span>
           <span class="wk-statusbar__end nc-keys"><kbd class="wk-kbd">⌥1</kbd> <kbd class="wk-kbd">⌥2</kbd> <kbd class="wk-kbd">⌥3</kbd> weergave</span>
         </footer>
       } @else {

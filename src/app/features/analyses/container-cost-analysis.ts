@@ -16,11 +16,11 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
   template: `
     <section class="container-cost-analysis" aria-labelledby="container-cost-analysis-title" [attr.aria-busy]="loading()">
       <header class="container-cost-analysis__heading">
-        <div><span class="eyebrow">Containerafrekening</span><h2 id="container-cost-analysis-title">Wat de container werkelijk kost</h2><p>Begroting, betalingen en open bedragen naast elkaar. Meer- en minderbetalingen blijven per leverancier, douane en extra kost zichtbaar.</p></div>
+        <div><span class="eyebrow">Containerafrekening</span><h2 id="container-cost-analysis-title">Wat de container werkelijk kost</h2><p>Afspraak, betalingen en open bedragen naast elkaar. Meer- en minderbetalingen blijven per leverancier, douane en extra kost zichtbaar.</p></div>
         <a class="btn btn--sm" routerLink="/costs">Kosten &amp; bank ›</a>
       </header>
       <div class="container-cost-analysis__filters">
-        <label><span>Containers</span><select class="select" [ngModel]="filter()" (ngModelChange)="filter.set($event)"><option value="active">Actieve containers</option><option value="all">Alle containers · ook concepten</option><option value="open">Nog niet volledig afgerekend</option><option value="finalized">Volledig afgerekend</option><option value="higher">Duurder dan begroot</option><option value="lower">Goedkoper dan begroot</option></select></label>
+        <label><span>Containers</span><select class="select" [ngModel]="filter()" (ngModelChange)="filter.set($event)"><option value="active">Actieve containers</option><option value="all">Alle containers · ook concepten</option><option value="open">Nog niet volledig afgerekend</option><option value="finalized">Volledig afgerekend</option><option value="higher">Duurder dan afgesproken</option><option value="lower">Goedkoper dan afgesproken</option></select></label>
         <label><span>Zoeken</span><input class="input" type="search" placeholder="Containernummer of naam" [ngModel]="search()" (ngModelChange)="search.set($event)" /></label>
       </div>
       @if (loading()) {
@@ -65,7 +65,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
                 <dl class="payment-result-analysis__breakdown">
                   <div><dt>Minder betaald, definitief vereffend</dt><dd>{{ payment.settledSavingsEur | eur: 2 }}</dd></div>
                   <div><dt>Meer betaald, definitief vereffend</dt><dd>− {{ payment.settledOverrunsEur | eur: 2 }}</dd></div>
-                  <div><dt>Extra uitgaven buiten begroting</dt><dd>− {{ payment.additionalCostsEur | eur: 2 }}</dd></div>
+                  <div><dt>Extra uitgaven buiten de afspraak</dt><dd>− {{ payment.additionalCostsEur | eur: 2 }}</dd></div>
                 </dl>
                 <p>Besparing telt zodra de betreffende betaalgroep of leverancierstermijn is afgerekend. Andere termijnen blijven open; voorschotten en open bedragen zijn geen extra opbrengst.</p>
                 <p>ENROSED-kost en productprijzen blijven gelijk. Kostenverschillen zitten al in de verwachte containerkost; dit overzicht boekt ze niet nogmaals als winst.</p>
@@ -77,7 +77,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
             @if (payment.unavailableCount) { <small class="payment-result-analysis__excluded">Voor {{ payment.unavailableCount }} container(s) is het betaalresultaat nog niet beschikbaar.</small> }
           </section>
           <div class="container-cost-kpis">
-            <article><span>Begrote externe kost</span><strong>{{ totals().plannedEur | eur }}</strong><small>{{ rows().length | num }} container(s) in dit overzicht</small></article>
+            <article><span>Afgesproken externe kost</span><strong>{{ totals().plannedEur | eur }}</strong><small>{{ rows().length | num }} container(s) in dit overzicht</small></article>
             <article><span>Werkelijk betaald</span><strong>{{ totals().paidEur | eur }}</strong><small>Opgeslagen eurobedragen van betalingen</small></article>
             <article><span>Nog te betalen</span><strong>{{ totals().remainingEur | eur }}</strong><small>{{ totals().provisionalCount }} container(s) nog voorlopig</small></article>
             <article class="container-cost-kpis__forecast"><span>{{ totals().provisionalCount ? 'Verwachte externe kost' : 'Definitieve externe kost' }}</span><strong>{{ totals().forecastEur | eur }}</strong><small>{{ totals().finalizedCount }} container(s) volledig afgerekend</small></article>
@@ -85,18 +85,18 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
           <div class="container-cost-differences">
             <div><span>Meer betaald op afgesproken kosten</span><b>{{ totals().overpaidEur | eur }}</b><small>Controleer bij open betaalstromen of er nog een correctie volgt.</small></div>
             <div><span>Minder betaald na vereffening</span><b>{{ totals().settledSavingEur | eur }}</b><small>Een open saldo of gedeeltelijke betaling is geen besparing.</small></div>
-            <div><span>Extra uitgaven buiten begroting</span><b>{{ totals().additionalEur | eur }}</b><small>Bankkosten, koerier en andere betalingen tellen mee in de kost.</small></div>
-            <div><span>Netto verschil met begroting</span><b [class.higher]="totals().varianceEur > 0" [class.lower]="totals().varianceEur < 0">{{ totals().varianceEur > 0 ? '+' : '' }}{{ totals().varianceEur | eur }}</b><small>Interne Enrosed opslag staat apart in elke afrekening.</small></div>
+            <div><span>Extra uitgaven buiten de afspraak</span><b>{{ totals().additionalEur | eur }}</b><small>Bankkosten, koerier en andere betalingen tellen mee in de kost.</small></div>
+            <div><span>Netto verschil met de afspraak</span><b [class.higher]="totals().varianceEur > 0" [class.lower]="totals().varianceEur < 0">{{ totals().varianceEur > 0 ? '+' : '' }}{{ totals().varianceEur | eur }}</b><small>Interne Enrosed opslag staat apart in elke afrekening.</small></div>
           </div>
           <div class="container-cost-table" tabindex="0" role="region" aria-label="Kostenvergelijking per container">
             <table>
-              <thead><tr><th>Container</th><th>Status</th><th>Begroot</th><th>Betaald</th><th>Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th>Per stuk</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
+              <thead><tr><th>Container</th><th>Status</th><th>Afspraak</th><th>Betaald</th><th>Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th>Per stuk</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
               <tbody>
                 @for (row of rows(); track row.view.order.id) {
                   <tr [class.selected]="expandedId() === row.view.order.id">
                     <td class="container-cost-table__identity"><a [routerLink]="['/purchasing', row.view.order.id]">{{ row.view.order.alias || row.view.order.number }}</a>@if (row.view.order.alias) { <small>{{ row.view.order.number }}</small> }<small>{{ orderStatus(row.view.order.status) }}</small></td>
                     <td class="container-cost-table__status"><span class="cost-state" [class.cost-state--final]="row.reconciliation.totals.finalized">{{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></td>
-                    <td data-label="Begroot">{{ row.reconciliation.totals.plannedExternalEur | eur }}</td>
+                    <td data-label="Afspraak">{{ row.reconciliation.totals.plannedExternalEur | eur }}</td>
                     <td data-label="Betaald">{{ row.reconciliation.totals.paidEur | eur }}</td>
                     <td data-label="Open">{{ row.reconciliation.totals.remainingEur | eur }}</td>
                     <td data-label="Verwachte kost"><b>{{ row.reconciliation.totals.forecastExternalEur | eur }}</b></td>

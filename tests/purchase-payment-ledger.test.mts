@@ -159,7 +159,7 @@ test('only payees with an agreement or a payment show, and a zero inspection no 
   const paidInspection = ledger(purchase({ streams: [stream('SUPPLIER', { plannedEur: 1000, remainingEur: 1000 }), stream('SEPARATE', { paidEur: 60, overpaidEur: 60 })] }),
     [payment(1, { payee: 'SEPARATE', amountEur: 60 })]);
   assert.equal(of(paidInspection, 'SEPARATE').visible, true);
-  assert.equal(of(paidInspection, 'SEPARATE').status.label, 'Niet begroot');
+  assert.equal(of(paidInspection, 'SEPARATE').status.label, 'Betaald zonder afspraak');
   const ddp = ledger(purchase({ ddp: true, streams: [stream('SUPPLIER', { plannedEur: 1000, remainingEur: 1000 }), stream('LOGISTICS')] }));
   assert.equal(of(ddp, 'LOGISTICS').visible, false);
   assert.equal(of(ddp, 'LOGISTICS').basis, 'Inbegrepen in de prijs (DDP)');

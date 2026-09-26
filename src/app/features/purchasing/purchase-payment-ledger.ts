@@ -277,7 +277,7 @@ const STATUS: Readonly<Record<Exclude<PayeeStatusKind, 'LATER'>, PayeeStatus>> =
   NONE: { kind: 'NONE', label: 'Geen afspraak', tone: 'neutral' },
   ADDITIONAL: { kind: 'ADDITIONAL', label: 'Bijkomend', tone: 'neutral' },
   INCOMPLETE: { kind: 'INCOMPLETE', label: 'Onvolledig', tone: 'warn' },
-  UNBUDGETED: { kind: 'UNBUDGETED', label: 'Niet begroot', tone: 'warn' },
+  UNBUDGETED: { kind: 'UNBUDGETED', label: 'Betaald zonder afspraak', tone: 'warn' },
   OVERPAID: { kind: 'OVERPAID', label: 'Te veel betaald · nakijken', tone: 'warn' },
   SETTLED_HIGHER: { kind: 'SETTLED_HIGHER', label: 'Afgerekend · meer betaald', tone: 'neutral' },
   SETTLED_LOWER: { kind: 'SETTLED_LOWER', label: 'Afgerekend · minder betaald', tone: 'ok' },

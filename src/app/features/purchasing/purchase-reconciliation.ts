@@ -38,10 +38,10 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
         </dl>
         <!-- The calculation in Kosten is the yardstick: it sits with the difference, not in the sum. -->
         @if (t.varianceEur === 0) {
-          <p class="reconciliation__variance is-none">Geen verschil met de raming van {{ t.plannedExternalEur | eur }}</p>
+          <p class="reconciliation__variance is-none">Geen verschil met de afspraak van {{ t.plannedExternalEur | eur }}</p>
         } @else {
           <div class="reconciliation__variance" [class.is-higher]="t.varianceEur > 0" [class.is-lower]="t.varianceEur < 0">
-            <span>{{ t.finalized ? 'Verschil na afrekening' : 'Verschil met raming' }}<small>begroot {{ t.plannedExternalEur | eur }}</small></span>
+            <span>{{ t.finalized ? 'Verschil na afrekening' : 'Verschil met de afspraak' }}<small>afspraak {{ t.plannedExternalEur | eur }}</small></span>
             <strong>{{ t.varianceEur > 0 ? '+ ' : '− ' }}{{ abs(t.varianceEur) | eur }}</strong>
           </div>
         }
@@ -55,7 +55,9 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
                   <span class="pr-payee__tile" [class]="tone[stream.payee]"><app-icon [name]="icon[stream.payee]" [size]="14" /></span>
                   <span class="pr-payee__copy">
                     <b>{{ payeeLabel[stream.payee] }}</b>
-                    <span class="pr-payee__figures">@if (stream.payee !== 'OTHER') { {{ stream.plannedEur | eur }} begroot · }{{ stream.paidEur | eur }} betaald@if (stream.payee !== 'OTHER') { · {{ stream.remainingEur | eur }} open } @else { · zonder afspraak }</span>
+                    <!-- A payee paid without an agreement reads like Bijkomende kosten, never '€ 0,00 afgesproken'. -->
+                    @let agreed = stream.payee !== 'OTHER' && stream.status !== 'ADDITIONAL';
+                    <span class="pr-payee__figures">@if (agreed) { {{ stream.plannedEur | eur }} afgesproken · }{{ stream.paidEur | eur }} betaald@if (agreed) { · {{ stream.remainingEur | eur }} open } @else { · zonder afspraak }</span>
                     <span class="pr-payee__state"><span class="wk-pill" [class]="streamTone(stream)">{{ statusLabel(stream, stream.payee === 'SUPPLIER' ? r.supplierInstalments : undefined) }}</span></span>
                   </span>
                   <span class="pr-payee__diff" [class.wk-amount--in]="stream.varianceEur < 0" [class.wk-amount--warn]="stream.varianceEur > 0" [class.wk-amount--muted]="stream.varianceEur === 0">
@@ -96,8 +98,8 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
                   </span>
                   <span class="rc-product__amount">
                     <b>{{ line.forecastExternalEur | eur }}</b>
-                    <small class="rc-product__plan">{{ line.plannedExternalEur | eur }} begroot</small>
-                    @if (line.varianceEur !== 0) { <small [class.wk-amount--warn]="line.varianceEur > 0" [class.wk-amount--in]="line.varianceEur < 0">{{ line.varianceEur > 0 ? '+ ' : '− ' }}{{ abs(line.varianceEur) | eur }} t.o.v. begroot</small> }
+                    <small class="rc-product__plan">afspraak {{ line.plannedExternalEur | eur }}</small>
+                    @if (line.varianceEur !== 0) { <small [class.wk-amount--warn]="line.varianceEur > 0" [class.wk-amount--in]="line.varianceEur < 0">{{ line.varianceEur > 0 ? '+ ' : '− ' }}{{ abs(line.varianceEur) | eur }} t.o.v. de afspraak</small> }
                   </span>
                 </div>
               }

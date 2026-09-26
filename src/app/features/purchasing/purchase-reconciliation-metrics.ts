@@ -18,7 +18,7 @@ export function reconciliationStatusLabel(stream: ReconciliationStream, terms?: 
     case 'OVERPAID': return stream.finalized ? 'Afgerekend · meer betaald' : 'Te veel betaald · nakijken';
     case 'SETTLED_LOWER': return 'Afgerekend · minder betaald';
     case 'NOT_APPLICABLE': return 'Geen kosten';
-    case 'ADDITIONAL': return stream.payee === 'OTHER' ? 'Bijkomend' : 'Niet begroot';
+    case 'ADDITIONAL': return stream.payee === 'OTHER' ? 'Bijkomend' : 'Betaald zonder afspraak';
   }
 }
 

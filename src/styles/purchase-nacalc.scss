@@ -10,7 +10,7 @@
    the room the main column really gets (container `nc-main`; ≈ 800 px on a
    1440 desk): below 1000 the status pill, the reason word and the afspraak
    move under the payee and the 'Incl. Enrosed kost' column folds into Per
-   stuk, below 760 the Begroot and Verschil product columns and the text
+   stuk, below 760 the Afspraak and Verschil product columns and the text
    buttons go (the ⋯ stays). Amount columns keep a floor so a figure never
    ellipsises; sub-lines wrap instead.
    ========================================================================== */
@@ -87,7 +87,7 @@ app-purchase-nacalc-workbench{display:block;min-width:0}
 .nc-payees .wk-td--num .wk-td__sub{text-align:right;white-space:normal;overflow-wrap:normal;line-height:1.3}
 .nc-when-narrow,.nc-when-tiny,.nc-when-mid{display:none}
 .nc-actions{gap:6px}
-/* per product: Product · Besteld · [Bruikbaar] · Begroot · Eindkost · Verschil · Per stuk · Incl. Enrosed kost */
+/* per product: Product · Besteld · [Bruikbaar] · Afspraak · Eindkost · Verschil · Per stuk · Incl. Enrosed kost */
 .nc-products{--wk-cols:minmax(0,1.8fr) repeat(6,minmax(92px,1fr))}
 .nc-products--received{--wk-cols:minmax(0,1.8fr) repeat(7,minmax(92px,1fr))}
 .nc-product{color:var(--rose-dark);font-weight:650;text-decoration:none;overflow-wrap:anywhere}.nc-product:hover{text-decoration:underline}
@@ -124,7 +124,7 @@ app-purchase-nacalc-workbench{display:block;min-width:0}
  .nc-payees{--wk-cols:minmax(0,2.4fr) repeat(4,minmax(90px,1fr)) 112px}
  .nc-products{--wk-cols:minmax(0,1.8fr) repeat(5,minmax(92px,1fr))}
  .nc-products--received{--wk-cols:minmax(0,1.8fr) repeat(6,minmax(92px,1fr))}}
-/* narrow: Afspraak, Begroot and Verschil columns and the text buttons go; the ⋯ carries every action */
+/* narrow: the Afspraak and Verschil columns (payees and products) and the text buttons go; the ⋯ carries every action */
 @container nc-main (max-width:759.98px){
  .nc-main [data-nc-hide~=narrow]{display:none}.nc-main .nc-when-narrow{display:block;margin-top:2px}
  .nc-payees{--wk-cols:minmax(0,2fr) repeat(4,minmax(0,1fr)) 32px}

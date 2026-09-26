@@ -232,8 +232,8 @@ test('a concept or an order without lines is the budget: no payees, no meter fig
     const { view, payments } = transit();
     if (empty) view.order.lines = []; else view.order.status = 'CONCEPT';
     const result = story(view, payments);
-    assert.deepEqual([result.headline.kind, result.headline.label, result.headline.pill], ['concept', 'Begrote kost', { label: 'Nog niet besteld', tone: 'outline' }]);
-    assert.equal(result.headline.sentence, 'Nog niet besteld — de calculatie is de begroting.');
+    assert.deepEqual([result.headline.kind, result.headline.label, result.headline.pill], ['concept', 'Verwachte eindkost', { label: 'Nog niet besteld', tone: 'outline' }]);
+    assert.equal(result.headline.sentence, 'Nog niet besteld — de calculatie is de afspraak.');
     assert.deepEqual(result.payees, [], 'even with a ledger there is no per-payee story');
     assert.equal(result.headline.begrootEur, 70204.31);
     assert.equal(result.products.length, 3);
@@ -290,17 +290,17 @@ test('mock 13: an unsettled overpayment and an unbudgeted payment mean review, n
   assert.equal(supplier.paidForeign, null, 'a euro payment sits among the dollar ones');
   const logistics = row(result, 'LOGISTICS');
   assert.deepEqual([logistics.reason, logistics.actionLabel, logistics.agreedEur, logistics.paidEur, logistics.verschilEur, logistics.status.label],
-    ['unbudgeted', 'Afrekenen…', 0, 120, 120, 'Niet begroot']);
+    ['unbudgeted', 'Afrekenen…', 0, 120, 120, 'Betaald zonder afspraak']);
   assert.equal(supplier.termsMixed, true, 'the 70 % term carries the overpayment, the 30 % does not');
   assert.deepEqual(supplier.terms.map(item => [item.due, item.reason, item.verschilEur]), [['ORDERED', 'none', 0], ['SHIPPED', 'review', 350]]);
   // Without the supplier's problem the transport alone is reviewed.
   view.reconciliation!.streams[0] = stream('SUPPLIER', { status: 'PAID', plannedEur: 31537.92, paidEur: 31537.92, forecastEur: 31537.92, finalized: true, paymentCount: 2 });
   view.reconciliation!.supplierInstalments![1] = term('SHIPPED', '70% bij vertrek', { plannedEur: 22076.54, paidEur: 22076.54, finalized: true });
   const budget = story(view, [payments[0], payment(111, { orderId: 13, amount: 25670.4, currency: 'USD', amountEur: 22076.54, instalmentDue: 'SHIPPED' }), payments[3]]);
-  assert.equal(plain(budget.headline.sentence), 'Na te kijken · Douane & transport niet begroot');
+  assert.equal(plain(budget.headline.sentence), 'Na te kijken · Douane & transport betaald zonder afspraak');
 });
 
-test('reason precedence: bijkomend, onvolledig, niet begroot, te veel betaald, historisch, deels afgerekend, open, minder, meer, geen verschil', () => {
+test('reason precedence: bijkomend, onvolledig, betaald zonder afspraak, te veel betaald, historisch, deels afgerekend, open, minder, meer, geen verschil', () => {
   const { view, payments } = transit();
   const ledger = ledgerOf(view, payments);
   const item = (payee: string) => ledger.payees.find(candidate => candidate.payee === payee)!;
@@ -309,7 +309,7 @@ test('reason precedence: bijkomend, onvolledig, niet begroot, te veel betaald, h
     nacalcReason({ ...item('LOGISTICS'), ...values }, undefined, { legacyPaidTotalEur: legacyEur });
   assert.equal(nacalcReason(item('OTHER'), undefined, totals).reason, 'additional');
   assert.equal(reason({ status: { kind: 'INCOMPLETE', label: 'Onvolledig', tone: 'warn' } }).reason, 'incomplete');
-  assert.equal(reason({ status: { kind: 'UNBUDGETED', label: 'Niet begroot', tone: 'warn' } }).reason, 'unbudgeted');
+  assert.equal(reason({ status: { kind: 'UNBUDGETED', label: 'Betaald zonder afspraak', tone: 'warn' } }).reason, 'unbudgeted');
   assert.equal(reason({ status: { kind: 'OVERPAID', label: 'Te veel betaald · nakijken', tone: 'warn' } }).reason, 'review');
   const historic = reason({ payee: 'SUPPLIER', paymentCount: 0 }, 34428.8);
   assert.deepEqual(plain([historic.reason, historic.label]), ['legacy', 'historisch € 34.428,80 betaald bij ontvangst · niet in het logboek']);
@@ -475,7 +475,7 @@ test('before receipt a residue up to a euro is rounding and more is inconsistent
   const received = nacalcBridge(view, purchaseNacalcSummary(view, ledgerOf(view, payments)));
   assert.equal(received.consistent, true);
   assert.deepEqual(received.rows.find(item => item.key === 'ORDERED'),
-    { key: 'ORDERED', label: 'Correctie naar bestelde stuks', amountEur: 84.86, note: 'het budget blijft op 4128 bestelde stuks', op: '+' });
+    { key: 'ORDERED', label: 'Correctie naar bestelde stuks', amountEur: 84.86, note: 'de afspraak blijft op 4128 bestelde stuks', op: '+' });
   const over = settled();
   const overRows = nacalcBridge(over.view, purchaseNacalcSummary(over.view)).rows;
   assert.deepEqual(overRows.find(item => item.key === 'ORDERED')!.op, '−', 'over-received pieces make the live calculation exceed the budget');
@@ -617,7 +617,7 @@ test('todoCopy keeps the Te doen words of the Betalingen overview for every todo
   assert.deepEqual(plain(todoCopy({ kind: 'review', key: 'r', payee: 'SUPPLIER', amountEur: 350, request: { ...request, payee: 'SUPPLIER' } })),
     { title: 'Te veel betaald aan Leverancier', detail: '€ 350,00 meer dan afgesproken', action: 'Nakijken' });
   assert.deepEqual(plain(todoCopy({ kind: 'budget', key: 'b', payee: 'LOGISTICS', amountEur: 120, request })),
-    { title: 'Niet begroot: Douane & transport', detail: '€ 120,00 betaald zonder bedrag in Kosten', action: 'Afrekenen' });
+    { title: 'Betaald zonder afspraak: Douane & transport', detail: '€ 120,00 betaald zonder bedrag in Kosten', action: 'Afrekenen' });
   assert.deepEqual(plain(todoCopy({ kind: 'incomplete', key: 'i', payee: 'SUPPLIER' })),
     { title: 'Betaling zonder eurowaarde bij Leverancier', detail: 'Controleer het bedrag van deze betaling', action: 'Bekijken' });
   assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 2 })), { title: '2 betalingen zonder bewijs', detail: 'Voeg het bankafschrift toe', action: 'Toon' });

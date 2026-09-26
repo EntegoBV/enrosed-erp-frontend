@@ -138,9 +138,9 @@ export const NACALC_PILL: Readonly<Record<NacalcKind, { label: string; tone: Nac
   final: { label: 'Definitief', tone: 'ok' },
 };
 
-/** What the headline figure is called in each state. */
-export const NACALC_LABEL: Readonly<Record<NacalcKind, 'Begrote kost' | 'Verwachte eindkost' | 'Eindkost'>> = {
-  concept: 'Begrote kost', provisional: 'Verwachte eindkost', review: 'Verwachte eindkost', final: 'Eindkost',
+/** What the headline figure is called in each state; the pill carries the state, so a concept reads like any forecast. */
+export const NACALC_LABEL: Readonly<Record<NacalcKind, 'Verwachte eindkost' | 'Eindkost'>> = {
+  concept: 'Verwachte eindkost', provisional: 'Verwachte eindkost', review: 'Verwachte eindkost', final: 'Eindkost',
 };
 
 const REVIEW_STATUSES: ReadonlySet<PayeeStatusKind> = new Set<PayeeStatusKind>(['OVERPAID', 'UNBUDGETED', 'INCOMPLETE']);
@@ -175,7 +175,7 @@ export interface PurchaseNacalcSummary {
   internalMarkupEur: number;
   markupWithResultEur: number;
   kind: NacalcKind;
-  label: 'Begrote kost' | 'Verwachte eindkost' | 'Eindkost';
+  label: 'Verwachte eindkost' | 'Eindkost';
   pill: { label: string; tone: NacalcTone };
   /** totals.remainingEur: what still has to be paid on the agreements. */
   openEur: number;

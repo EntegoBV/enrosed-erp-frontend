@@ -61,7 +61,7 @@ test('overpayment status does not suggest final agreement until the stream is se
   assert.equal(reconciliationStatusLabel(stream({ status: 'PAID', finalized: true }), [term(false)]), 'Betaald');
   assert.equal(reconciliationStatusLabel(stream({ status: 'UNPAID' })), 'Open');
   assert.equal(reconciliationStatusLabel(stream({ status: 'ADDITIONAL', payee: 'OTHER' })), 'Bijkomend');
-  assert.equal(reconciliationStatusLabel(stream({ status: 'ADDITIONAL', payee: 'SEPARATE' })), 'Niet begroot');
+  assert.equal(reconciliationStatusLabel(stream({ status: 'ADDITIONAL', payee: 'SEPARATE' })), 'Betaald zonder afspraak');
 });
 
 test('unavailable calculations are omitted and concept containers only enter the all filter', () => {

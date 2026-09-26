@@ -292,7 +292,7 @@ test('the summary carries the state machine: concept, review on an unsettled ove
   const concept = purchase([lower()], true);
   concept.order.status = 'CONCEPT';
   const draft = purchaseNacalcSummary(concept)!;
-  assert.deepEqual([draft.kind, draft.label, draft.pill], ['concept', 'Begrote kost', { label: 'Nog niet besteld', tone: 'outline' }]);
+  assert.deepEqual([draft.kind, draft.label, draft.pill], ['concept', 'Verwachte eindkost', { label: 'Nog niet besteld', tone: 'outline' }]);
   const overrun = stream({ paidEur: 1_075, remainingEur: 0, forecastEur: 1_075, varianceEur: 75, overpaidEur: 75, status: 'OVERPAID' });
   const review = purchaseNacalcSummary(purchase([overrun]))!;
   assert.deepEqual([review.kind, review.label, review.pill.label, review.reviewEur], ['review', 'Verwachte eindkost', 'Na te kijken', 75]);

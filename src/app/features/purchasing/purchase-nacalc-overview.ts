@@ -186,7 +186,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                     <span class="ios-cell__sub">{{ productSub(row, !!n.receipt) }}</span>
                   </span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.eindkostEur | eur }}</span>
-                    <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? 'geen bruikbare stuks' : row.verschilEur === 0 ? 'begroot ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. begroot' }}</span></span>
+                    <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? 'geen bruikbare stuks' : row.verschilEur === 0 ? 'afspraak ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. de afspraak' }}</span></span>
                   @if (row.productId) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
                 </a>
               } @empty {
@@ -303,8 +303,8 @@ export class PurchaseNacalcOverview {
     if (head.kind === 'concept') return 'volgens de calculatie · nog niets betaald';
     const pct = head.verschilPct === null ? '' : ` (${Math.abs(head.verschilPct).toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %)`;
     const review = head.reviewEur > 0 ? ` · waarvan ${formatEur(head.reviewEur)} na te kijken` : '';
-    if (head.verschilEur === 0) return `begroot ${formatEur(head.begrootEur)} · geen verschil${review}`;
-    return `${formatEur(Math.abs(head.verschilEur))}${pct} ${head.verschilEur < 0 ? 'goedkoper' : 'duurder'} dan begroot${review}`;
+    if (head.verschilEur === 0) return `afspraak ${formatEur(head.begrootEur)} · geen verschil${review}`;
+    return `${formatEur(Math.abs(head.verschilEur))}${pct} ${head.verschilEur < 0 ? 'goedkoper' : 'duurder'} dan afgesproken${review}`;
   }
 
   unitBasis(n: PurchaseNacalc): string {
@@ -317,12 +317,13 @@ export class PurchaseNacalcOverview {
 
   /**
    * The agreement in one line; the eindkost only when it differs from it (the
-   * trail already carries the verschil). DDP is one word here: the per-stuk
-   * basis in the hero says it and the desk row spells it out.
+   * trail already carries the verschil). A payee paid without an agreement
+   * reads like Bijkomende kosten, never 'afgesproken € 0,00'. DDP is one word
+   * here: the per-stuk basis in the hero says it and the desk row spells it out.
    */
   payeeSub(row: NacalcPayeeRow): string {
-    if (row.agreedEur === null) return `${formatEur(row.paidEur)} · zonder afspraak`;
-    const agreed = `${row.payee === 'SUPPLIER' ? 'afgesproken' : 'begroot'} ${formatEur(row.agreedEur)}`;
+    if (row.agreedEur === null || row.status.kind === 'UNBUDGETED') return `${formatEur(row.paidEur)} · zonder afspraak`;
+    const agreed = `afgesproken ${formatEur(row.agreedEur)}`;
     const eindkost = row.eindkostEur === row.agreedEur ? '' : ` → eindkost ${formatEur(row.eindkostEur)}`;
     return agreed + eindkost + (row.ddpNote ? ' · DDP' : '');
   }
@@ -344,7 +345,7 @@ export class PurchaseNacalcOverview {
       case 'pay': return `${verb} ${todo.label} · ${formatEur(todo.amountEur)}`;
       case 'settle': return read ? 'Afrekenen in bewerken ›' : `${verb} ${PAYEE_LABEL[todo.payee]}…`;
       case 'review': return read ? 'Afrekenen in bewerken ›' : `${verb}: ${formatEur(todo.amountEur)} te veel betaald aan ${PAYEE_LABEL[todo.payee]}`;
-      case 'budget': return read ? 'Afrekenen in bewerken ›' : `${verb}: ${PAYEE_LABEL[todo.payee]} niet begroot`;
+      case 'budget': return read ? 'Afrekenen in bewerken ›' : `${verb}: ${PAYEE_LABEL[todo.payee]} betaald zonder afspraak`;
       case 'incomplete': return `${verb}: betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`;
       default: return todoCopy(todo, this.mode()).title;
     }
