@@ -475,7 +475,7 @@ test('before receipt a residue up to a euro is rounding and more is inconsistent
   const received = nacalcBridge(view, purchaseNacalcSummary(view, ledgerOf(view, payments)));
   assert.equal(received.consistent, true);
   assert.deepEqual(received.rows.find(item => item.key === 'ORDERED'),
-    { key: 'ORDERED', label: 'Correctie naar bestelde stuks', amountEur: 84.86, note: 'de afspraak blijft op 4128 bestelde stuks', op: '+' });
+    { key: 'ORDERED', label: 'Correctie naar bestelde stuks', amountEur: 84.86, note: 'de afspraak blijft op 4.128 bestelde stuks', op: '+' });
   const over = settled();
   const overRows = nacalcBridge(over.view, purchaseNacalcSummary(over.view)).rows;
   assert.deepEqual(overRows.find(item => item.key === 'ORDERED')!.op, '−', 'over-received pieces make the live calculation exceed the budget');

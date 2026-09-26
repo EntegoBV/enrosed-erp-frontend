@@ -571,7 +571,7 @@ export function nacalcBridge(view: PurchaseOrderView, summary: PurchaseNacalcSum
   if (residue !== 0) {
     if (totals.receiptRecorded) {
       rows.push({ key: 'ORDERED', label: 'Correctie naar bestelde stuks', amountEur: euro(Math.abs(residue)),
-        note: `de afspraak blijft op ${totals.orderedQuantity} bestelde stuks`, op: residue < 0 ? '−' : '+' });
+        note: `de afspraak blijft op ${totals.orderedQuantity.toLocaleString('nl-BE')} bestelde stuks`, op: residue < 0 ? '−' : '+' });
     } else if (Math.abs(residue) <= 100) {
       rows.push({ key: 'ROUNDING', label: 'Afronding', amountEur: euro(Math.abs(residue)), note: null, op: residue < 0 ? '−' : '+' });
     } else consistent = false;
