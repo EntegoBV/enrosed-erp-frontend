@@ -1,117 +1,141 @@
-import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { BankBalance } from '../../core/api/models';
 import { DateField } from '../../shared/date-field';
-import { DateNlPipe, EurPipe } from '../../shared/pipes';
+import { EurPipe } from '../../shared/pipes';
+import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
 import { receiptInstant, receiptLocalParts } from '../../shared/received-at';
+import { dayMonthYear } from './finance-format';
 import { blankBalance } from './finance-sections';
 import { FinanceState } from './finance-state';
 
-/** A balance observed at the bank, used as the starting point for later movements. */
+type Moment = 'now' | 'end' | 'moment';
+
+/**
+ * 'Saldo invullen' / 'Saldo corrigeren': the balance the bank app shows, and
+ * when it held. Later movements on the account are counted from there. New
+ * readings are in Brussels time; a corrected one keeps its own zone, and an
+ * unchanged day and time keep the original instant.
+ */
 @Component({
   selector: 'app-bank-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, DateField, DateNlPipe, EurPipe],
-  styles: `
-    .bank-intro { margin: 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.6; }
-    .bank-time-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    .bank-time-option { display: grid; align-content: start; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); text-align: left; color: inherit; font: inherit; cursor: pointer; }
-    .bank-time-option.on { border-color: var(--rose); background: var(--rose-soft); }
-    .bank-time-option strong { font-size: 12px; }
-    .bank-time-option span { color: var(--muted); font-size: 11px; line-height: 1.5; }
-    .bank-preview { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
-    .bank-preview__label { color: var(--muted); font-size: 11px; }
-    .bank-preview__value { font-size: 22px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-    .bank-preview p { margin: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-    .bank-preview small { color: var(--muted); font-size: 11px; line-height: 1.5; }
-    .bank-account-chips { max-height: 120px; overflow-y: auto; }
-    .bank-account-chips .fin-chip { max-width: 100%; overflow-wrap: anywhere; white-space: normal; text-align: left; }
-    @media (max-width: 600px) {
-      .bank-time-options { grid-template-columns: minmax(0, 1fr); }
-      .bank-time-option { min-height: 56px; }
-      .bank-checkpoint-form .input { min-height: 44px; }
-    }
-  `,
+  imports: [Sheet, DateField, EurPipe, Segmented],
   template: `
-    <app-sheet [title]="draft().id ? 'Vastgelegd banksaldo bewerken' : 'Banksaldo vastleggen'" (closed)="state.bankDraft.set(null)">
-      <div body>
-        <p class="bank-intro">Neem het volledige saldo over uit je bankapp of rekeningafschrift, met de datum en het tijdstip waarop dat saldo geldt. Vanaf dit punt volgen we de latere bewegingen op deze rekening.</p>
-        <div class="form-grid bank-checkpoint-form">
-          <div class="field span-2"><label class="req" for="b-account">Rekening</label>
-            <input class="input" id="b-account" list="b-accounts" placeholder="Bijv. KBC zakelijk of BE12 3456 7890 1234" autocomplete="off" [ngModel]="draft().account" (ngModelChange)="patch({ account: $event })" />
-            <datalist id="b-accounts">@for (account of state.accounts(); track account) { <option [value]="account"></option> }</datalist>
-            @if (state.accounts().length) {
-              <span class="hint">Kies een bestaande rekening of geef een nieuwe rekening op.</span>
-              <div class="fin-chips bank-account-chips mt-8" role="group" aria-label="Bestaande rekeningen">
-                @for (account of state.accounts(); track account) { <button type="button" class="fin-chip" [class.on]="draft().account === account" [attr.aria-pressed]="draft().account === account" (click)="patch({ account })">{{ account }}</button> }
+    <app-sheet variant="ios" [title]="draft().id ? 'Saldo corrigeren' : 'Saldo invullen'" (closed)="state.bankDraft.set(null)">
+      <div body class="fin-sheet">
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <div class="fin-field fin-field--stack"><span>Rekening</span>
+            @if (state.accountOptions().length) {
+              <div class="fin-choice" role="group" aria-label="Bestaande rekeningen">
+                @for (option of state.accountOptions(); track option.key) {
+                  <button class="fin-choice__chip" type="button" [attr.aria-pressed]="!newAccount() && draft().account === option.label" (click)="newAccount.set(false); patch({ account: option.label })">{{ option.label }}</button>
+                }
+                <button class="fin-choice__chip" type="button" [attr.aria-pressed]="newAccount() || !known()" (click)="newAccount.set(true); patch({ account: '' })">Nieuwe rekening</button>
               </div>
-            } @else {
-              <span class="hint">Je eerste rekening: kies een herkenbare naam of je IBAN. Gebruik dezelfde rekening bij je bankbewegingen en ontvangsten.</span>
-            }</div>
-          <div class="field span-2"><label>Wanneer geldt dit saldo?</label>
-            <div class="bank-time-options" role="group" aria-label="Nauwkeurigheid van het banksaldo">
-              <button class="bank-time-option" [class.on]="exactTime()" [attr.aria-pressed]="exactTime()" type="button" (click)="exactTime.set(true)"><strong>Op een exact tijdstip</strong><span>Bijvoorbeeld het saldo dat je nu in je bankapp ziet.</span></button>
-              <button class="bank-time-option" [class.on]="!exactTime()" [attr.aria-pressed]="!exactTime()" type="button" (click)="exactTime.set(false)"><strong>Aan het einde van de dag</strong><span>Het eindsaldo op een afschrift, inclusief alle bewegingen van die dag.</span></button>
-            </div>
+            }
+            @if (newAccount() || !known() || !state.accountOptions().length) {
+              <input class="input" maxlength="120" placeholder="Bijv. KBC zakelijk of BE12 3456 7890 1234" autocomplete="off" [value]="draft().account" (input)="newAccount.set(true); patch({ account: $any($event.target).value })" />
+            }
           </div>
-          <div class="field"><label class="req" for="b-date">Datum van het saldo</label>
-            <app-date-field fieldId="b-date" [value]="draft().date" (valueChange)="patch({ date: $event })" /></div>
-          @if (exactTime()) {
-            <div class="field"><label class="req" for="b-time">Tijdstip</label><input id="b-time" class="input" type="time" step="1" [ngModel]="time()" (ngModelChange)="time.set($event)" /></div>
-            <div class="field span-2"><label for="b-zone">Tijdzone</label><input class="input" id="b-zone" list="bank-time-zones" [ngModel]="zone()" (ngModelChange)="zone.set($event)" />
-              <datalist id="bank-time-zones"><option value="Europe/Brussels"></option><option value="Europe/Amsterdam"></option><option value="UTC"></option></datalist>
-              <span class="hint">Gebruik de tijdzone van het ingevoerde tijdstip. Latere bewegingen kunnen ook op dezelfde dag vallen.</span>
+        </div>
+        <label class="fin-amount fin-amount--left">
+          <span class="fin-field__label">Saldo</span><i aria-hidden="true">€</i>
+          <input #amount type="number" step="0.01" inputmode="decimal" [value]="startBalance" (input)="typed(amount)" />
+          <button class="fin-sign" type="button" aria-label="Plus of min" title="Negatief of positief" (click)="flipSign(amount)">±</button>
+        </label>
+        <p class="fin-hint">Een negatief saldo kan ook: tik op ±.</p>
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <div class="fin-field fin-field--stack"><span>Wanneer?</span>
+            <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Wanneer geldt dit saldo?" [options]="moments" [value]="mode()" (changed)="mode.set($any($event))" />
+          </div>
+          @if (mode() !== 'now') {
+            <div class="fin-field-row">
+              <label class="fin-field"><span>Datum</span><app-date-field fieldId="b-date" [value]="draft().date" (valueChange)="patch({ date: $event })" /></label>
+              @if (mode() === 'moment') { <label class="fin-field"><span>Tijdstip</span><input class="input" type="time" step="60" [value]="time()" (input)="time.set($any($event.target).value)" /></label> }
             </div>
           }
-          <div class="field span-2"><label class="req" for="b-amount">Volledig banksaldo op dat moment</label>
-            <span class="fin-money"><i>€</i><input class="input num right" id="b-amount" type="number" step="0.01" inputmode="decimal"
-                   [ngModel]="draft().balanceEur" (ngModelChange)="patch({ balanceEur: +($event || 0) })" /></span>
-            <span class="hint">Een nulsaldo of negatief saldo is ook mogelijk. Losse ontvangsten en uitgaven voer je in bij Bankbewegingen.</span></div>
-          <div class="field span-2"><label for="b-notes">Notities <span class="opt"></span></label>
-            <textarea class="textarea" id="b-notes" rows="2" placeholder="Bijv. overgenomen uit de bankapp of afschrift september" [ngModel]="draft().notes" (ngModelChange)="patch({ notes: $event })"></textarea></div>
-          @if (timeError()) { <p class="field span-2" role="alert">{{ timeError() }}</p> }
-          <div class="bank-preview span-2" aria-label="Controleer het banksaldo">
-            <span class="bank-preview__label">Dit saldo leg je vast</span><strong class="bank-preview__value">{{ draft().balanceEur | eur }}</strong>
-            <p>{{ (draft().account || '').trim() || 'Kies hierboven een rekening' }} · {{ draft().date | dateNl }}{{ exactTime() ? ' om ' + time() : ' aan het einde van de dag' }}</p>
-            <small>Latere bankbewegingen en geregistreerde ontvangsten of terugbetalingen op deze rekening werken het berekende saldo bij.</small>
-          </div>
+          <label class="fin-field fin-field--stack"><span>Notities</span>
+            <textarea class="textarea" rows="2" placeholder="Bijv. overgenomen uit de bankapp" [value]="draft().notes ?? ''" (input)="patch({ notes: $any($event.target).value })"></textarea></label>
+        </div>
+        @if (timeError()) { <p class="fin-error" role="alert">{{ timeError() }}</p> }
+        <div class="fin-preview" aria-live="polite">
+          <strong>{{ finite(draft().balanceEur) ? (draft().balanceEur | eur) : '—' }}</strong>
+          <span>{{ (draft().account || '').trim() || 'Kies een rekening' }} · {{ when() }}</span>
         </div>
       </div>
       <div foot style="display:contents">
         @if (draft().id) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteBank(draft())">Verwijderen</button> }
         <span class="spacer"></span>
-        <button class="btn" type="button" (click)="state.bankDraft.set(null)">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !canSave()" (click)="save()">{{ state.saving() ? 'Bezig…' : draft().id ? 'Wijzigingen bewaren' : 'Saldo vastleggen' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !canSave()" (click)="save()">{{ state.saving() ? 'Bezig…' : 'Bewaren' }}</button>
       </div>
     </app-sheet>
   `,
 })
 export class BankSheet {
   readonly state = inject(FinanceState);
-  readonly draft = linkedSignal<BankBalance>(() => this.state.bankDraft() ?? blankBalance());
-  readonly zone = linkedSignal(() => this.state.bankDraft()?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Brussels');
-  readonly exactTime = linkedSignal(() => !this.state.bankDraft()?.id || !!this.state.bankDraft()?.asOfAt);
-  readonly time = linkedSignal(() => receiptLocalParts(this.state.bankDraft()?.asOfAt || Date.now(), this.state.bankDraft()?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Brussels').time);
+  readonly moments: SegmentOption[] = [{ id: 'now', label: 'Nu' }, { id: 'end', label: 'Einde van een dag' }, { id: 'moment', label: 'Ander moment' }];
+  readonly draft = linkedSignal<BankBalance>(() => this.state.bankDraft() ?? blankBalance(this.state.today()));
+  /**
+   * The amount field is written once and then left to the keyboard: writing
+   * the parsed number back would wipe a '-' being typed (the field reads empty
+   * until a digit follows). A partial entry leaves the balance NaN, so Bewaren waits.
+   */
+  readonly startBalance = String(this.state.bankDraft()?.balanceEur ?? 0);
+  readonly finite = Number.isFinite;
+  /** A reading being corrected keeps its zone; new readings are Brussels time. */
+  readonly zone = computed(() => (this.state.bankDraft()?.id && this.state.bankDraft()?.timeZone) || 'Europe/Brussels');
+  readonly mode = linkedSignal<Moment>(() => {
+    const draft = this.state.bankDraft();
+    return !draft?.id ? 'now' : draft.asOfAt ? 'moment' : 'end';
+  });
+  readonly time = linkedSignal(() => receiptLocalParts(this.state.bankDraft()?.asOfAt || Date.now(), this.zone()).time.slice(0, 5));
+  /** A new account is typed; an existing one is picked from the chips. '+ Rekening toevoegen' starts empty, so typing. */
+  readonly newAccount = linkedSignal(() => !this.state.bankDraft()?.account);
+  readonly known = computed(() => this.state.accountOptions().some((option) => option.label === this.draft().account));
+
   readonly timeError = computed(() => {
-    if (!this.exactTime()) return '';
+    if (this.mode() !== 'moment') return '';
     try { receiptInstant(this.draft().date, this.time(), this.zone()); return ''; }
     catch (error) { return error instanceof Error ? error.message : 'Controleer het tijdstip.'; }
   });
-  readonly canSave = computed(() => !!(this.draft().account ?? '').trim() && !!this.draft().date && Number.isFinite(this.draft().balanceEur) && !this.timeError());
+  readonly canSave = computed(() => !!(this.draft().account ?? '').trim() && (this.mode() === 'now' || !!this.draft().date)
+    && Number.isFinite(this.draft().balanceEur) && !this.timeError());
+  readonly when = computed(() => this.mode() === 'now' ? 'nu' : this.mode() === 'end'
+    ? `${dayMonthYear(this.draft().date)}, einde van de dag` : `${dayMonthYear(this.draft().date)} om ${this.time()}`);
 
   save(): void {
     if (!this.canSave()) return;
     const row = this.draft();
-    let asOfAt: string | null = this.exactTime() ? receiptInstant(row.date, this.time(), this.zone()) : null;
-    if (asOfAt && row.asOfAt && this.zone() === row.timeZone) {
-      const original = receiptLocalParts(row.asOfAt, this.zone());
-      if (original.day === row.date && original.time === this.time()) asOfAt = row.asOfAt;
+    const zone = this.zone();
+    let date = row.date;
+    let asOfAt: string | null = null;
+    if (this.mode() === 'now') {
+      asOfAt = new Date().toISOString();
+      date = receiptLocalParts(asOfAt, zone).day;
+    } else if (this.mode() === 'moment') {
+      asOfAt = receiptInstant(row.date, this.time(), zone);
+      if (row.asOfAt && zone === row.timeZone) {
+        const original = receiptLocalParts(row.asOfAt, zone);
+        if (original.day === row.date && original.time.slice(0, 5) === this.time()) asOfAt = row.asOfAt;
+      }
     }
-    void this.state.saveBank({ ...row, asOfAt, timeZone: asOfAt ? this.zone() : null });
+    void this.state.saveBank({ ...row, date, asOfAt, timeZone: asOfAt ? zone : null });
   }
 
   patch(changes: Partial<BankBalance>): void {
     this.draft.update((draft) => ({ ...draft, ...changes }));
+  }
+
+  typed(input: HTMLInputElement): void {
+    this.patch({ balanceEur: input.value === '' ? Number.NaN : input.valueAsNumber });
+  }
+
+  /** '±': a phone keypad has no minus key. */
+  flipSign(input: HTMLInputElement): void {
+    const value = input.valueAsNumber;
+    if (!Number.isFinite(value) || value === 0) return;
+    input.value = String(-value);
+    this.typed(input);
   }
 }

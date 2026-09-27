@@ -145,6 +145,8 @@ test('sales analysis keeps a clear cohort funnel and current-calculation values'
     marginEur: 450,
     marginPct: 30,
     missingCostLines: 0,
+    creditedEur: 0,
+    creditNoteCount: 0,
   });
   assert.deepEqual(result.topCustomers, [{
     customerId: 1,
@@ -470,4 +472,36 @@ test('the result sets the margin on the goods against the own costs, per channel
   assert.deepEqual(result.byCategory.map((row) => [row.category, row.amountEur]), [['BOEKHOUDER', 300], ['TICA', 250]]);
   assert.deepEqual(result.monthly.map((row) => [row.month, row.revenueEur, row.marginEur, row.costsEur, row.resultEur]),
     [['2026-09', 700, 200, 0, 200], ['2026-10', 1500, 400, 550, -150]]);
+});
+
+test('issued credit notes come off Gefactureerd, the trend and the top lists, and ask for their tegoed instead of a payment', () => {
+  const invoice = salesRow({ id: 30, docType: 'FACTUUR', status: 'UITGEREIKT', date: '2026-04-10', total: 1000, claim: 1210, goods: 1000, margin: 300, pieces: 100, customerId: 1, due: '2026-05-10' });
+  const creditNote = {
+    ...salesRow({ id: 31, docType: 'FACTUUR', status: 'UITGEREIKT', date: '2026-04-20', total: 100, claim: 121, goods: 100, margin: 30, pieces: 10, customerId: 1 }),
+  } as SalesOrderView;
+  creditNote.order = { ...creditNote.order, docType: 'CREDITNOTA', number: 'CN-31', creditedInvoiceId: 30, creditReason: 'SHORT_DELIVERY' } as SalesOrderView['order'];
+  creditNote.paymentSummary = { ...creditNote.paymentSummary!, invoiceTotalEur: -121, remainingEur: 0, creditEur: 121, refundableEur: 121, status: 'CREDIT' };
+  creditNote.accounting = { recognizedRevenueEur: -100, recognizedCostEur: -70, recognizedProfitEur: -30, recognizedQuantity: -10 };
+  const concept = { ...creditNote, order: { ...creditNote.order, id: 32, number: 'CN-32', status: 'CONCEPT' } } as SalesOrderView;
+  const result = salesAnalysis([invoice, creditNote, concept], [{ id: 1, company: 'Bloemen BV' } as Customer], { from: '2026-04-01', to: '2026-04-30', today: '2026-04-25' });
+  assert.equal(result.invoices.issued, 1, 'a credit note is not an invoice');
+  assert.equal(result.invoices.issuedValueEur, 1089, '1210 − 121');
+  assert.equal(result.invoices.creditedEur, 121);
+  assert.equal(result.invoices.creditNoteCount, 1, 'concepts do not count');
+  assert.equal(result.invoices.outstanding, 1, 'outstanding stays FACTUUR-only');
+  assert.equal(result.invoices.outstandingValueEur, 1210);
+  assert.equal(result.invoices.marginEur, 270, 'the server accounting of the credit note reduces the margin');
+  assert.equal(result.monthly.find((point) => point.month === '2026-04')?.invoicedEur, 1089);
+  assert.equal(result.monthly.find((point) => point.month === '2026-04')?.invoicesIssued, 1);
+  assert.equal(result.topCustomers[0].calculatedValueEur, 1089);
+  assert.equal(result.topCustomers[0].pieces, 90);
+  assert.equal(result.topCustomers[0].orderCount, 1);
+  const credit = result.attentionOrders.find((row) => row.orderId === 31);
+  assert.ok(credit, 'an open tegoed asks to be settled');
+  assert.deepEqual(credit!.reasons, ['Tegoed af te handelen']);
+  assert.equal(credit!.severity, 'warning');
+  assert.equal(credit!.calculatedValueEur, 121);
+  assert.ok(!result.attentionOrders.some((row) => row.orderId === 32), 'a concept credit note asks nothing');
+  const fullyCredited = { ...invoice, creditedEur: 1210 } as SalesOrderView;
+  assert.ok(!salesAnalysis([fullyCredited], [], { today: '2026-06-01' }).attentionOrders.some((row) => row.orderId === 30), 'a fully credited invoice is no open payment');
 });

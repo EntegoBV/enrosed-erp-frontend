@@ -63,3 +63,19 @@ test('duplicate fetched IDs count once while genuinely separate unlinked receipt
   assert.equal(result.totalEur, 180);
   assert.equal(result.accounts[0].movements.length, 3);
 });
+
+test('each account reads with the name as typed on its newest reading, else the line, else the receipt', () => {
+  const older = { ...balance('KBC ZAKELIJK', 50, '2026-09-01T10:00:00Z'), id: 1 };
+  const newer = { ...balance('  KBC   Zakelijk ', 100, '2026-09-08T10:00:00Z'), id: 2 };
+  const result = reconciledBank([older, newer], [line(1, 'KBC ZAKELIJK', 10, '2026-09-08T11:00:00Z'), line(2, 'ING ZICHT', 5, '2026-09-08T11:00:00Z')],
+    [payment(1, 'Belfius Pro', 20)]);
+  const byKey = new Map(result.accounts.map((row: any) => [row.account, row]));
+  assert.equal(byKey.get('KBC ZAKELIJK').label, 'KBC Zakelijk', 'the reading beats the upper-case line');
+  assert.equal(byKey.get('ING ZICHT').label, 'ING ZICHT', 'without a reading the line names it');
+  assert.equal(byKey.get('BELFIUS PRO').label, 'Belfius Pro', 'then the receipt');
+  assert.equal(byKey.get('KBC ZAKELIJK').checkedAt, '2026-09-08T10:00:00.000Z');
+  assert.equal(byKey.get('ING ZICHT').checkedAt, null);
+  assert.equal(byKey.get('KBC ZAKELIJK').currentEur, 110, 'totals and linking are unchanged');
+  const endOfDay = reconciledBank([{ ...balance('KBC', 100, ''), asOfAt: null }], [], []);
+  assert.equal(endOfDay.accounts[0].checkedAt, '2026-09-08T21:59:59.999Z');
+});

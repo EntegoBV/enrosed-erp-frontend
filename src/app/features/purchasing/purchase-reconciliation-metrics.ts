@@ -1,19 +1,24 @@
-import type { PurchaseOrderView, PurchaseReconciliation } from '../../core/api/models';
+import type { PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseReconciliation } from '../../core/api/models';
 
 export type ReconciliationStream = PurchaseReconciliation['streams'][number];
 export type ContainerCostFilter = 'active' | 'all' | 'open' | 'finalized' | 'higher' | 'lower';
 
-/** Display vocabulary only: settlement decisions and all cost allocations belong to the server. */
-export function reconciliationStatusLabel(stream: ReconciliationStream): string {
+/**
+ * Display vocabulary only: settlement decisions and all cost allocations belong to the server.
+ * The words match the payee statuses of purchase-payment-ledger, so Betalingen and Analyses agree.
+ * The supplier's terms count too: a term settled on its own makes the paid supplier 'afgerekend',
+ * exactly when the ledger offers to undo that settlement.
+ */
+export function reconciliationStatusLabel(stream: ReconciliationStream, terms?: readonly PurchaseInstalmentReconciliation[]): string {
   switch (stream.status) {
     case 'PLANNED': return 'Gepland';
-    case 'UNPAID': return 'Nog te betalen';
+    case 'UNPAID': return 'Open';
     case 'PARTIAL': return 'Deels betaald';
-    case 'PAID': return 'Volledig betaald';
-    case 'OVERPAID': return stream.finalized ? 'Meer betaald · vereffend' : 'Meer betaald · te beoordelen';
-    case 'SETTLED_LOWER': return 'Minder betaald · vereffend';
-    case 'NOT_APPLICABLE': return 'Niet van toepassing';
-    case 'ADDITIONAL': return 'Extra uitgave';
+    case 'PAID': return stream.explicitlySettled || terms?.some(term => term.explicitlySettled) ? 'Betaald · afgerekend' : 'Betaald';
+    case 'OVERPAID': return stream.finalized ? 'Afgerekend · meer betaald' : 'Te veel betaald · nakijken';
+    case 'SETTLED_LOWER': return 'Afgerekend · minder betaald';
+    case 'NOT_APPLICABLE': return 'Geen kosten';
+    case 'ADDITIONAL': return stream.payee === 'OTHER' ? 'Bijkomend' : 'Betaald zonder afspraak';
   }
 }
 

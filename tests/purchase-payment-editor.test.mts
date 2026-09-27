@@ -34,7 +34,7 @@ const source = await readFile(new URL('../src/app/features/purchasing/purchase-e
 const parsed = ts.createSourceFile('purchase-editor.ts', source, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PurchaseEditor')!;
 const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', 'paymentPlanBusy', 'paymentPlanFailure',
-  'setPaymentAmount', 'paymentDraftEur', 'editPayment', 'closePayment', 'savePaymentPlan', 'confirmPayment', 'proofSlots', 'proofsOf',
+  'setPaymentAmount', 'setPaymentAmountEur', 'paymentDraftEur', 'paymentRateEur', 'editPayment', 'closePayment', 'savePaymentPlan', 'confirmPayment', 'proofSlots', 'proofsOf',
   'firstInstalmentPrompt', 'confirmFirstInstalment', 'setFirstPaymentAmount']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
@@ -109,6 +109,42 @@ test('metadata-only foreign currency edits preserve historical EUR; changed mone
   assert.equal(editor.paymentDraftEur(), 830);
   editor.setPaymentAmount('1100'); assert.equal(editor.paymentDraftEur(), 990);
   editor.setPaymentAmount('1000'); assert.equal(editor.paymentDraftEur(), 830);
+});
+
+test('the bank euro amount of a USD payment travels with the write; euro payments and an empty field send none', async () => {
+  const { editor, writes } = setup();
+  editor.paying.set({ id: null, amount: 21453.49, amountInput: '21453,49', currency: 'USD', paidOn: '2026-07-02', label: 'Aanbetaling 30%', payee: 'SUPPLIER', files: [], settles: false, instalmentDue: null });
+  assert.equal(editor.paymentRateEur(), 19308.14, 'the order-rate estimate feeds the placeholder and the hint');
+  assert.equal(editor.paymentDraftEur(), 19308.14);
+  editor.setPaymentAmountEur('18.300,00');
+  assert.deepEqual([editor.paying().amountEur, editor.paying().amountEurInput, editor.paymentDraftEur()], [18300, '18.300,00', 18300]);
+  await editor.confirmPayment();
+  assert.equal(writes[0].type, 'POST payment');
+  assert.equal(writes[0].body.amountEur, 18300);
+  // Changing the foreign amount clears the bank amount: it belonged to the old figure.
+  editor.paying.set({ id: null, amount: 21453.49, amountInput: '21453,49', currency: 'USD', paidOn: '2026-07-02', label: '', payee: 'SUPPLIER', files: [], settles: false, instalmentDue: null, amountEurInput: '18.300,00', amountEur: 18300 });
+  editor.setPaymentAmount('22000');
+  assert.deepEqual([editor.paying().amountEur, editor.paying().amountEurInput], [null, '']);
+  editor.setPaymentAmount('22000');
+  assert.equal(editor.paying().amountEur, null, 'retyping the same amount changes nothing');
+  await editor.confirmPayment();
+  assert.equal('amountEur' in writes[1].body, false, 'an empty field means the order rate: nothing is sent');
+  editor.paying.set({ id: null, amount: 500, amountInput: '500', currency: 'EUR', paidOn: '2026-07-02', label: '', payee: 'SUPPLIER', files: [], settles: false, instalmentDue: null, amountEurInput: '480', amountEur: 480 });
+  assert.equal(editor.paymentDraftEur(), 500, 'a euro payment ignores a stale bank amount');
+  await editor.confirmPayment();
+  assert.equal('amountEur' in writes[2].body, false, 'never for a euro payment');
+  editor.setPaymentAmountEur('nonsense');
+  assert.deepEqual([editor.paying(), writes.length], [null, 3], 'after a save the sheet is closed and a stray input changes nothing');
+});
+
+test('editing a foreign payment brings its booked euro value into the bank field; a euro payment leaves it empty', () => {
+  const { editor } = setup();
+  const foreign = { ...payment(), amount: 1000, currency: 'USD', amountEur: 830 };
+  editor.payments.set([foreign]); editor.editPayment(foreign);
+  assert.deepEqual([editor.paying().amountEur, editor.paying().amountEurInput], [830, '830']);
+  editor.editPayment(payment());
+  assert.deepEqual([editor.paying().amountEur, editor.paying().amountEurInput], [null, '']);
+  assert.equal(editor.paymentRateEur(), 0, 'no order-rate estimate for euro money');
 });
 
 test('partial proof-upload failure retries remaining files with the saved payment ID', async () => {

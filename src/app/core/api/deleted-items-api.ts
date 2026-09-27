@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 
-export type DeletedItemType = 'INVOICE' | 'QUOTE' | 'PURCHASE_ORDER';
+export type DeletedItemType = 'INVOICE' | 'QUOTE' | 'CREDIT_NOTE' | 'PURCHASE_ORDER';
 export interface DeletedItemSummary {
   id: number;
   type: DeletedItemType;

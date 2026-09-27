@@ -40,7 +40,7 @@ export function isLocallyDeletableSalesDocument(order: {
 
 /**
  * The overview deliberately also offers deletion for sent and handled quotes.
- * Invoices retain the stricter unused-concept guard above.
+ * Invoices and credit notes retain the stricter unused-concept guard above.
  */
 export function isSwipeDeletableSalesDocument(order: {
   docType?: string | null;
@@ -50,10 +50,10 @@ export function isSwipeDeletableSalesDocument(order: {
   viewCount: number;
   decidedAt: string | null;
 }): boolean {
-  return (order.docType ?? 'OFFERTE') !== 'FACTUUR'
+  return (order.docType ?? 'OFFERTE') === 'OFFERTE'
     || isLocallyDeletableSalesDocument(order);
 }
 
-export function salesDocumentLabel(docType: string | null | undefined): 'Offerte' | 'Verkoopfactuur' {
-  return docType === 'FACTUUR' ? 'Verkoopfactuur' : 'Offerte';
+export function salesDocumentLabel(docType: string | null | undefined): 'Offerte' | 'Verkoopfactuur' | 'Creditnota' {
+  return docType === 'FACTUUR' ? 'Verkoopfactuur' : docType === 'CREDITNOTA' ? 'Creditnota' : 'Offerte';
 }

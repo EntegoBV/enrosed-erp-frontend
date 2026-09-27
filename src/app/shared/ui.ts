@@ -28,13 +28,18 @@ import {
  *     <div body>…</div>
  *     <div foot>…</div>
  *   </app-sheet>
+ *
+ * `variant="ios"` gives phone sheets the iOS 26 look of the workspace kit
+ * (grouped background, centred title, round close button, glass foot with
+ * a 50px primary button); desks see no difference.
  */
 @Component({
   selector: 'app-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="overlay" (click)="onBackdrop($event)">
-      <div #dialog class="sheet" [class.sheet--wide]="wide()" role="dialog" aria-modal="true"
+      <div #dialog class="sheet" [class.sheet--wide]="wide()" [class.sheet--ios]="variant() === 'ios'"
+           role="dialog" aria-modal="true"
            [attr.aria-labelledby]="headingId" tabindex="-1">
         <div class="sheet__grab"></div>
         <div class="sheet__head">
@@ -63,6 +68,7 @@ export class Sheet implements AfterViewInit, OnDestroy {
   readonly heading = input('', { alias: 'title' });
   readonly wide = input(false);
   readonly closeLabel = input('Sluiten');
+  readonly variant = input<'default' | 'ios'>('default');
   readonly closed = output<void>();
 
   readonly headingId = `sheet-heading-${++Sheet.nextId}`;
@@ -172,10 +178,17 @@ export class Sheet implements AfterViewInit, OnDestroy {
 
 /* ------------------------------------------------------------- ui service */
 
+/** One button on a toast, e.g. "Ongedaan maken". */
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
 export interface ToastMessage {
   id: number;
   text: string;
   kind: 'ok' | 'err';
+  action?: ToastAction;
 }
 
 export interface ConfirmRequest {
@@ -206,12 +219,20 @@ export class Ui {
   readonly toasts = signal<ToastMessage[]>([]);
   readonly confirmRequest = signal<ConfirmRequest | null>(null);
 
-  toast(text: string, kind: 'ok' | 'err' = 'ok'): void {
+  /**
+   * Shows a short message. An action (typically "Ongedaan maken") keeps the
+   * toast a little longer, so there is time to reach for it. Returns the id
+   * for dismissToast.
+   */
+  toast(text: string, kind: 'ok' | 'err' = 'ok', action?: ToastAction): number {
     const id = ++this.counter;
-    this.toasts.update((list) => [...list, { id, text, kind }]);
-    setTimeout(() => {
-      this.toasts.update((list) => list.filter((t) => t.id !== id));
-    }, kind === 'err' ? 7000 : 3800);
+    this.toasts.update((list) => [...list, action ? { id, text, kind, action } : { id, text, kind }]);
+    setTimeout(() => this.dismissToast(id), kind === 'err' ? 7000 : action ? 6000 : 3800);
+    return id;
+  }
+
+  dismissToast(id: number): void {
+    this.toasts.update((list) => list.filter((t) => t.id !== id));
   }
 
   /**
@@ -285,6 +306,11 @@ export class Ui {
              [attr.role]="toast.kind === 'err' ? 'alert' : 'status'" aria-atomic="true">
           <span class="toast__dot"></span>
           <span>{{ toast.text }}</span>
+          @if (toast.action; as action) {
+            <button class="toast__action" type="button" (click)="runAction(toast.id, action)">
+              {{ action.label }}
+            </button>
+          }
         </div>
       }
     </div>
@@ -294,4 +320,10 @@ export class UiHost {
   constructor(readonly ui: Ui) {}
   readonly toasts = computed(() => this.ui.toasts());
   readonly confirm = computed(() => this.ui.confirmRequest());
+
+  /** The toast goes first, so an action that toasts again is not stacked under it. */
+  runAction(id: number, action: ToastAction): void {
+    this.ui.dismissToast(id);
+    action.run();
+  }
 }

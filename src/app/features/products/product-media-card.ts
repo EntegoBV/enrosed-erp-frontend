@@ -9,12 +9,15 @@ import { PhotoDto } from '../../core/api/models';
 import { fileTypeLabel, formatBytes } from '../../shared/format-bytes';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { Ui } from '../../shared/ui';
+import { isSourceLink } from '../files/files-collections';
 
 /**
  * The files of one product, right on its page: every library asset linked
  * to the product, with upload, enlarge, download and unlink in place. The
- * bytes stay in the central library (Bestanden); this card only links them.
- * The host carries the surrounding card classes of the page it sits on.
+ * bytes stay in the central library (Documenten & media); this card only
+ * links them. Photos the product editor manages (adopted by the library's
+ * indexer) are unlinked there, not here. The host carries the surrounding
+ * card classes of the page it sits on.
  */
 @Component({
   selector: 'app-product-media-card',
@@ -28,7 +31,7 @@ import { Ui } from '../../shared/ui';
           <input type="file" multiple [disabled]="uploading()" (change)="upload($event)" />
           {{ uploading() ? 'Bezig…' : 'Bestand toevoegen' }}
         </label>
-        <a class="btn btn--sm" routerLink="/files">Bestanden ›</a>
+        <a class="btn btn--sm" [routerLink]="['/files']" [queryParams]="filesQuery()">In Documenten &amp; media ›</a>
       </div>
     </div>
     @if (loading()) {
@@ -36,7 +39,7 @@ import { Ui } from '../../shared/ui';
     } @else if (error(); as error) {
       <p class="mc__empty">{{ error }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
     } @else if (!assets().length) {
-      <p class="mc__empty">Nog geen bestanden aan dit product gekoppeld. Voeg hier een foto, tekening of certificaat toe, of koppel een bestaand bestand vanuit <a routerLink="/files">Bestanden</a>.</p>
+      <p class="mc__empty">Nog geen bestanden aan dit product gekoppeld. Voeg hier een foto, tekening of certificaat toe, of koppel een bestaand bestand vanuit <a [routerLink]="['/files']" [queryParams]="filesQuery()">Documenten &amp; media</a>.</p>
     } @else {
       <ul class="mc__grid" [class.mc__grid--compact]="compact()">
         @for (asset of assets(); track asset.id) {
@@ -50,8 +53,12 @@ import { Ui } from '../../shared/ui';
               }
             </button>
             <span class="mc__copy"><b>{{ asset.name }}</b><small>{{ meta(asset) }}</small></span>
-            <button class="mc__unlink" type="button" [disabled]="busyId() === asset.id" (click)="unlink(asset)"
-                    title="Loskoppelen van dit product (het bestand blijft in Bestanden)" aria-label="Loskoppelen">×</button>
+            @if (managedBySource(asset)) {
+              <span class="mc__source" title="Deze foto beheer je in de producteditor">Via bron</span>
+            } @else {
+              <button class="mc__unlink" type="button" [disabled]="busyId() === asset.id" (click)="unlink(asset)"
+                      title="Loskoppelen van dit product (het bestand blijft in Documenten &amp; media)" aria-label="Loskoppelen">×</button>
+            }
           </li>
         }
       </ul>
@@ -86,6 +93,8 @@ import { Ui } from '../../shared/ui';
     .mc__grid--compact .mc__open{aspect-ratio:1;border-radius:10px}
     .mc__grid--compact .mc__ext{font-size:11px}
     .mc__grid--compact .mc__unlink{position:static;opacity:1;background:var(--surface-2);color:var(--muted)}
+    .mc__source{position:absolute;top:6px;right:6px;padding:2px 7px;white-space:nowrap;border-radius:999px;background:rgb(20 14 12 / 62%);color:#fff;font-size:10.5px;font-weight:700}
+    .mc__grid--compact .mc__source{position:static;background:var(--surface-2);color:var(--muted)}
     @media(hover:none){.mc__unlink{opacity:1}}
   `,
 })
@@ -125,8 +134,11 @@ export class ProductMediaCard {
   readonly summary = computed(() => {
     const count = this.assets().length;
     if (!count) return 'Foto’s, tekeningen en certificaten die bij dit product horen';
-    return `${count} bestand${count === 1 ? '' : 'en'} gekoppeld aan dit product · ook te vinden in Bestanden`;
+    return `${count} bestand${count === 1 ? '' : 'en'} gekoppeld aan dit product · ook te vinden in Documenten & media`;
   });
+
+  /** Opens Documenten & media on exactly this product's files. */
+  readonly filesQuery = computed(() => ({ view: 'product', doel: this.productId() }));
 
   private loadVersion = 0;
 
@@ -207,13 +219,19 @@ export class ProductMediaCard {
     }
   }
 
+  /** Product photos the indexer adopted from the product editor can only be removed there. */
+  managedBySource(asset: MediaAssetSummary): boolean {
+    const link = asset.links.find((item) => item.targetType === 'PRODUCT' && item.targetId === this.productId());
+    return !!link && isSourceLink(link);
+  }
+
   async unlink(asset: MediaAssetSummary): Promise<void> {
     const link = asset.links.find((item) => item.targetType === 'PRODUCT' && item.targetId === this.productId());
-    if (!link) return;
+    if (!link || isSourceLink(link)) return;
     this.busyId.set(asset.id);
     try {
       await this.media.removeLink(asset.id, link.id);
-      this.ui.toast('Losgekoppeld · het bestand blijft in Bestanden');
+      this.ui.toast('Losgekoppeld · het bestand blijft in Documenten & media');
       await this.reload();
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Loskoppelen mislukt'), 'err');

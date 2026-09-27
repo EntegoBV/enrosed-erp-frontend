@@ -1,7 +1,11 @@
 /** One canonical library for every reusable file in the ERP. */
 export type MediaKind = 'IMAGE' | 'DOCUMENT';
 
-/** The document context in which a linked file may be used. */
+/**
+ * The document context in which a linked file may be used. Documenten &
+ * media always writes INTERNAL; CATALOGUE comes from the website's reeks
+ * photos, and nothing sets QUOTE or INVOICE.
+ */
 export type MediaRole = 'CATALOGUE' | 'QUOTE' | 'INVOICE' | 'INTERNAL';
 
 /** Business records that can reuse a library asset without copying its bytes. */
@@ -21,9 +25,18 @@ export interface MediaAssetLink {
   role: MediaRole;
   /** Renderers use the one primary link for a target and document role. */
   primary: boolean;
-  /** Optional historical pin; null follows the current asset version. */
+  /**
+   * Optional historical pin; null follows the current asset version.
+   * Stored, but no renderer honours it yet: every consumer shows the current version.
+   */
   pinnedVersionId: number | null;
   createdAt: string;
+  /**
+   * 'system' marks a link the legacy indexer adopted from a source record
+   * (product photos, reeks photos, purchase documents, planner attachments):
+   * manage it at the source, the library cannot remove it. Hand-made links
+   * carry the username.
+   */
   createdBy: string | null;
 }
 

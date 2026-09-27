@@ -14,6 +14,7 @@ import { WebsiteAdminNav } from './features/website-builder/website-admin-nav';
 import { FinanceAdminNav } from './features/finance/finance-admin-nav';
 import { FilesAdminNav } from './features/files/files-admin-nav';
 import { DesktopViewport } from './core/platform/desktop-viewport';
+import { WorkspaceReturn } from './core/platform/workspace-return';
 import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
 import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
@@ -30,7 +31,8 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
   template: `
-    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()">
+    <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()"
+         [class.shell--workspace]="deskWorkspace()" [class.shell--workspace-phone]="phoneWorkspace()">
       @if (websiteWorkspace()) {
         <app-website-admin-nav />
       } @else if (filesWorkspace()) {
@@ -394,6 +396,23 @@ export class App {
   readonly filesWorkspace = computed(() => this.url().startsWith('/files') && this.desktopViewport.active());
   /** Kosten & bank is a workspace of its own as well: costs, recurring costs and the bank side by side. */
   readonly financeWorkspace = computed(() => this.url().startsWith('/costs') && this.desktopViewport.active());
+
+  /**
+   * The shared workspace kit (styles/workspace-kit.scss) hooks onto these.
+   * Both are opt-in: the desk shell only locks page scrolling once the page
+   * renders .wk-page, the phone shell only hides the ERP tab bar once the
+   * page renders .ios-page.
+   */
+  readonly workspaceRoute = computed(() => {
+    const url = this.url();
+    return url.startsWith('/costs') ? 'finance' : url.startsWith('/files') ? 'files' : null;
+  });
+  readonly deskWorkspace = computed(() => this.filesWorkspace() || this.financeWorkspace());
+  readonly phoneWorkspace = computed(() => this.workspaceRoute() !== null && !this.desktopViewport.active());
+
+  /* Every ERP screen is noted, so a workspace knows the way back ("Terug naar inkooporder"). */
+  private readonly workspaceReturn = inject(WorkspaceReturn);
+  private readonly noteReturn = effect(() => this.workspaceReturn.note(this.url()));
 
   readonly salesRoute = computed(() => {
     const url = this.url();

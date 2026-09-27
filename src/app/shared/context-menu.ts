@@ -13,6 +13,7 @@ import {
 } from '@angular/core';
 import { DesktopViewport } from '../core/platform/desktop-viewport';
 import { Sheet } from './ui';
+import { Icon } from './icon';
 import { clampMenuPosition } from './context-menu-position';
 import type { MenuPoint } from './context-menu-position';
 
@@ -20,8 +21,12 @@ export interface ContextMenuItem {
   id: string;
   label: string;
   hint?: string;
-  /** A glyph or emoji in front of the label. */
+  /** A glyph or emoji in front of the label; ignored when iconName is set. */
   icon?: string;
+  /** An app-icon name in front of the label, the workspace way (no emoji). */
+  iconName?: string;
+  /** Shows a tick at the end: the current choice of a sort or view menu. */
+  checked?: boolean;
   danger?: boolean;
   disabled?: boolean;
   /** Draws a hairline above this item. */
@@ -36,7 +41,7 @@ export interface ContextMenuItem {
 @Component({
   selector: 'app-context-menu',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet],
+  imports: [Sheet, Icon],
   template: `
     @if (desktop.active()) {
       <div class="cm__backdrop" (click)="close()" (contextmenu)="$event.preventDefault(); close()"></div>
@@ -45,25 +50,37 @@ export interface ContextMenuItem {
         @if (heading()) { <div class="cm__head">{{ heading() }}</div> }
         @for (item of items(); track item.id) {
           @if (item.divider) { <hr class="cm__divider" /> }
-          <button class="cm__item" type="button" role="menuitem"
+          <button class="cm__item" type="button"
+                  [attr.role]="item.checked !== undefined ? 'menuitemcheckbox' : 'menuitem'"
+                  [attr.aria-checked]="item.checked !== undefined ? !!item.checked : null"
                   [class.cm__item--danger]="item.danger" [disabled]="item.disabled"
                   (click)="choose(item)">
-            @if (item.icon) { <i aria-hidden="true">{{ item.icon }}</i> }
+            @if (item.iconName) { <app-icon class="cm__icon" [name]="item.iconName" [size]="18" /> }
+            @else if (item.icon) { <i aria-hidden="true">{{ item.icon }}</i> }
             <span><b>{{ item.label }}</b>@if (item.hint) { <small>{{ item.hint }}</small> }</span>
+            @if (item.checked) { <app-icon class="cm__tick" name="tick" [size]="16" /> }
           </button>
         }
       </div>
     } @else {
-      <app-sheet [title]="heading() || 'Acties'" (closed)="close()">
+      <app-sheet [title]="heading() || 'Acties'" [variant]="variant()" (closed)="close()">
         <div body class="desk-actions">
           @for (item of items(); track item.id) {
             <button class="desk-action" type="button" [class.desk-action--danger]="item.danger"
+                    [attr.role]="item.checked !== undefined ? 'menuitemcheckbox' : null"
+                    [attr.aria-checked]="item.checked !== undefined ? !!item.checked : null"
                     [disabled]="item.disabled" (click)="choose(item)">
-              @if (item.icon) { <i aria-hidden="true">{{ item.icon }}</i> }
+              @if (item.iconName) { <app-icon class="cm__icon" [name]="item.iconName" [size]="18" /> }
+              @else if (item.icon) { <i aria-hidden="true">{{ item.icon }}</i> }
               <span><b>{{ item.label }}</b>@if (item.hint) { <small>{{ item.hint }}</small> }</span>
+              @if (item.checked) { <app-icon class="cm__tick" name="tick" [size]="16" /> }
             </button>
           }
         </div>
+        <!-- Only projected when set, so a sheet without it keeps an empty foot. -->
+        @if (cancelLabel()) {
+          <button foot class="btn" type="button" (click)="close()">{{ cancelLabel() }}</button>
+        }
       </app-sheet>
     }
   `,
@@ -94,6 +111,9 @@ export interface ContextMenuItem {
     .cm__item small { color: var(--muted); font-size: 11px; }
     .cm__item--danger b { color: var(--danger); }
     .desk-action i { width: 22px; text-align: center; }
+    .cm__icon { flex: none; color: var(--ink-2); }
+    .cm__tick { margin-left: auto; color: var(--rose); }
+    .desk-action .cm__tick { margin-left: auto; }
   `,
 })
 export class ContextMenu {
@@ -103,6 +123,10 @@ export class ContextMenu {
   readonly heading = input('', { alias: 'title' });
   /** Where the pointer was; the popover opens there, clamped to the window. */
   readonly anchor = input<MenuPoint | null>(null);
+  /** 'ios' gives the phone sheet the workspace kit's iOS 26 look; the desk popover is unchanged. */
+  readonly variant = input<'default' | 'ios'>('default');
+  /** When set, the phone sheet ends with this button, e.g. 'Annuleren'. */
+  readonly cancelLabel = input('');
   readonly pick = output<ContextMenuItem>();
   readonly closed = output<void>();
 

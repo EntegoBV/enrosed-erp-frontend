@@ -156,8 +156,8 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
                 </a>
               }
 
-              @if (receivables().count) {
-                <a class="work-row" routerLink="/sales" [queryParams]="{ scope: 'ALL', tab: 'FACTUUR', payment: 'open' }"><span class="work-row__icon"><app-icon name="sales" [size]="18" /></span><span class="work-row__copy"><b>Betalingen opvolgen</b><small>{{ receivables().totalEur | eur }} nog te ontvangen · {{ receivables().partialCount }} deels betaald</small></span><strong class="work-row__number">{{ receivables().count }}</strong><span class="work-row__chev" aria-hidden="true">›</span></a>
+              @if (receivables().count || receivables().creditNoteCount) {
+                <a class="work-row" routerLink="/sales" [queryParams]="{ scope: 'ALL', tab: 'FACTUUR', payment: 'open' }"><span class="work-row__icon"><app-icon name="sales" [size]="18" /></span><span class="work-row__copy"><b>Betalingen opvolgen</b><small>{{ receivables().totalEur | eur }} nog te ontvangen · {{ receivables().partialCount }} deels betaald</small>@if (receivables().creditNoteEur > 0) { <small>{{ receivables().creditNoteEur | eur }} tegoed af te handelen</small> }</span><strong class="work-row__number">{{ receivables().count + receivables().creditNoteCount }}</strong><span class="work-row__chev" aria-hidden="true">›</span></a>
               }
 
               @if (catalogAttention()) {
@@ -289,7 +289,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
             <span class="home-kpi__chev" aria-hidden="true">›</span>
           </a>
 
-          <a class="home-kpi" routerLink="/costs" [queryParams]="{ view: 'bank' }"><span class="home-kpi__icon"><app-icon name="sales" [size]="17" /></span><span class="home-kpi__label">Netto ontvangen deze maand</span><strong>{{ incomingReady() ? (incomingMonth().receivedEur | eur: 0) : '—' }}</strong><small>{{ incomingMonth().grossReceivedEur | eur: 0 }} ontvangen · {{ incomingMonth().refundedEur | eur: 0 }} terugbetaald</small><small>{{ incomingMonth().partnerAdvanceEur | eur: 0 }} netto partnervoorschotten · incl. btw</small><span class="home-kpi__chev">›</span></a>
+          <a class="home-kpi" routerLink="/costs" [queryParams]="{ view: 'incoming', tab: 'received', period: 'month' }"><span class="home-kpi__icon"><app-icon name="sales" [size]="17" /></span><span class="home-kpi__label">Netto ontvangen deze maand</span><strong>{{ incomingReady() ? (incomingMonth().receivedEur | eur: 0) : '—' }}</strong><small>{{ incomingMonth().grossReceivedEur | eur: 0 }} ontvangen · {{ incomingMonth().refundedEur | eur: 0 }} terugbetaald</small><small>{{ incomingMonth().partnerAdvanceEur | eur: 0 }} netto partnervoorschotten · incl. btw</small><span class="home-kpi__chev">›</span></a>
           <a class="home-kpi" routerLink="/analyses/purchasing"><span class="home-kpi__icon"><app-icon name="purchase" [size]="17" /></span><span class="home-kpi__label">Eigen kasinleg</span><strong>{{ partnersReady() ? (financing().ownExposureEur | eur: 0) : '—' }}</strong><small>betaald min ontvangsten · {{ financing().openEur | eur: 0 }} nog te ontvangen</small><span class="home-kpi__chev">›</span></a>
 
           <a class="home-kpi" routerLink="/analyses/result" [class.home-kpi--dark]="yearResult().resultEur < 0">
@@ -535,7 +535,7 @@ export class DashboardHome {
     Number(this.salesActionCount() > 0)
     + Number(this.purchaseAttentionOrders().length > 0)
     + Number(this.financing().unbilledAdvanceCount > 0)
-    + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0)
+    + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0 || this.receivables().creditNoteCount > 0)
     + Number(this.catalogAttention() > 0));
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()
     && this.purchasesReady() && this.catalogReady());

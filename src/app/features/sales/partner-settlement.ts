@@ -71,8 +71,15 @@ export function isSettlementInvoice(order: {
 
 /** What a linked sales document is in the partner's story: the quote, the invoice or the settlement. */
 export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice>[0], finalSettlement?: boolean): string {
+  if (order.docType === 'CREDITNOTA') return creditNoteKindOf(order);
   if (order.docType !== 'FACTUUR') return 'Voorschotofferte';
   return isSettlementInvoice(order) ? finalSettlement === false ? 'Deelfactuur veiling' : 'Slotfactuur' : 'Voorschotfactuur';
+}
+
+/** A credit note is named after what it credits: the advance or the settlement of a partner container, else plainly. */
+function creditNoteKindOf(order: Parameters<typeof isSettlementInvoice>[0]): 'Creditnota' | 'Creditnota · voorschot' | 'Creditnota · afrekening' {
+  const purpose = order.purpose ?? (order.partnerPurchaseOrderId ? (order.partnerSettlement ? 'PARTNER_SETTLEMENT' : 'PARTNER_ADVANCE') : 'STANDARD');
+  return purpose === 'PARTNER_ADVANCE' ? 'Creditnota · voorschot' : purpose === 'PARTNER_SETTLEMENT' ? 'Creditnota · afrekening' : 'Creditnota';
 }
 
 /**
@@ -83,7 +90,8 @@ export function partnerDocumentKind(order: Parameters<typeof isSettlementInvoice
 export function salesDocumentKind(
   order: Parameters<typeof isSettlementInvoice>[0],
   finalSettlement?: boolean,
-): 'Offerte' | 'Verkoopfactuur' | 'Voorschotofferte' | 'Voorschotfactuur' | 'Slotfactuur' | 'Deelfactuur veiling' {
+): 'Offerte' | 'Verkoopfactuur' | 'Voorschotofferte' | 'Voorschotfactuur' | 'Slotfactuur' | 'Deelfactuur veiling' | 'Creditnota' | 'Creditnota · voorschot' | 'Creditnota · afrekening' {
+  if (order.docType === 'CREDITNOTA') return creditNoteKindOf(order);
   if (order.purpose === 'STANDARD' || (!order.partnerPurchaseOrderId && !order.purpose?.startsWith('PARTNER_'))) return order.docType === 'FACTUUR' ? 'Verkoopfactuur' : 'Offerte';
   if (order.docType !== 'FACTUUR') return 'Voorschotofferte';
   return isSettlementInvoice(order) ? finalSettlement === false ? 'Deelfactuur veiling' : 'Slotfactuur' : 'Voorschotfactuur';

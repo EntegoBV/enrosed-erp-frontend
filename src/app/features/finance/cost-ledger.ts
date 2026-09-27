@@ -16,16 +16,20 @@ export interface CostLedgerRow {
   payment: PurchasePaymentRow | null;
 }
 
+/*
+ * Payee wording shared with Inkoop: keep these four in step with PAYEE_LABEL
+ * in purchasing/purchase-payment-ledger.ts (both tests assert the words).
+ */
 export const CONTAINER_PAYMENT_CATEGORIES = [
   { code: 'CONTAINER_SUPPLIER', label: 'Container · leverancier' },
-  { code: 'CONTAINER_LOGISTICS', label: 'Container · logistiek' },
-  { code: 'CONTAINER_SEPARATE', label: 'Container · aparte kosten' },
-  { code: 'CONTAINER_OTHER', label: 'Container · overige' },
+  { code: 'CONTAINER_LOGISTICS', label: 'Container · douane & transport' },
+  { code: 'CONTAINER_SEPARATE', label: 'Container · inspectie & andere kosten' },
+  { code: 'CONTAINER_OTHER', label: 'Container · bijkomende kosten' },
 ] as const;
 
 export function paymentPayeeLabel(payee?: Payee | null): string {
-  return payee === 'LOGISTICS' ? 'Logistiek / douane' : payee === 'SEPARATE' ? 'Aparte kosten'
-    : payee === 'OTHER' ? 'Overige ontvanger' : 'Leverancier';
+  return payee === 'LOGISTICS' ? 'Douane & transport' : payee === 'SEPARATE' ? 'Inspectie & andere kosten'
+    : payee === 'OTHER' ? 'Bijkomende kosten' : 'Leverancier';
 }
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
@@ -54,6 +58,17 @@ export function costLedger(costs: readonly CompanyCost[], payments: readonly Pur
   return rows.sort((left, right) => right.date.localeCompare(left.date) || left.key.localeCompare(right.key));
 }
 
+/**
+ * Whether a company cost still waits for its invoice or receipt: no file on
+ * it, and not booked by a recurring definition (rent or a subscription has
+ * its contract, not a document per period). One rule for the 'Zonder
+ * document' filter, Analyse and the accountant package; the attention queue
+ * (finance-attention.ts, type-only imports) applies the same test to its input.
+ */
+export function missingDocument(cost: Pick<CompanyCost, 'id' | 'recurringCostId'>, documentedIds?: ReadonlySet<number>): boolean {
+  return !cost.recurringCostId && !(cost.id !== null && !!documentedIds?.has(cost.id));
+}
+
 export interface CostLedgerFilter {
   from?: string | null;
   to?: string | null;
@@ -62,6 +77,10 @@ export interface CostLedgerFilter {
   status?: 'all' | 'open' | 'paid';
   source?: 'all' | 'company' | 'container';
   containerId?: number | null;
+  /** 'missing' keeps only company costs that miss their document (see missingDocument; container rows never qualify). */
+  docs?: 'missing' | null;
+  /** The ids of company costs that have at least one document. */
+  documentedIds?: ReadonlySet<number>;
 }
 
 export function containerFilterId(raw: string | null | undefined): number | null {
@@ -79,6 +98,7 @@ export function filterCostLedger(rows: readonly CostLedgerRow[], filter: CostLed
     && (!filter.source || filter.source === 'all' || row.source === filter.source)
     && (!filter.category || row.category.toUpperCase() === filter.category.toUpperCase())
     && (filter.status !== 'paid' || !!row.paidOn) && (filter.status !== 'open' || !row.paidOn)
+    && (filter.docs !== 'missing' || (!!row.cost && missingDocument(row.cost, filter.documentedIds)))
     && (!needle || [row.description, row.party, row.reference, row.cost?.notes, row.cost?.salesChannel,
       categoryLabel(row.category), row.cost?.salesChannel ? channelLabel(row.cost.salesChannel) : null,
       row.source === 'container' ? 'containerbetaling automatisch gekoppeld' : 'bedrijfskost']
@@ -94,14 +114,20 @@ export function costLedgerTotals(rows: readonly CostLedgerRow[]): { containerCou
   };
 }
 
-/** One export with an explicit source; unknown purchase VAT stays empty rather than being reported as 0%. */
-export function costLedgerCsv(rows: readonly CostLedgerRow[], categoryLabel: (code: string) => string): string {
+/**
+ * One export with an explicit source; unknown purchase VAT stays empty rather
+ * than being reported as 0%. With `documents` a Documenten column follows,
+ * holding the file names of each row.
+ */
+export function costLedgerCsv(rows: readonly CostLedgerRow[], categoryLabel: (code: string) => string,
+                              documents?: (row: CostLedgerRow) => string): string {
   const cell = (value: string | number | null | undefined): string => {
     if (value === null || value === undefined) return '';
     const text = typeof value === 'number' ? value.toFixed(2).replace('.', ',') : value;
     return /[;"\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
-  const header = ['Datum', 'Bron', 'Categorie', 'Omschrijving', 'Aan wie / betaalstroom', 'Referentie', 'Bedrag excl. btw', 'Btw %', 'Btw', 'Factuur incl. btw', 'Betaald EUR', 'Betaald op', 'Container-ID', 'Betaling-ID', 'Verkoopkanaal', 'Vaste kost', 'Notities'];
+  const header = ['Datum', 'Bron', 'Categorie', 'Omschrijving', 'Aan wie / betaalstroom', 'Referentie', 'Bedrag excl. btw', 'Btw %', 'Btw', 'Factuur incl. btw', 'Betaald EUR', 'Betaald op', 'Container-ID', 'Betaling-ID', 'Verkoopkanaal', 'Vaste kost', 'Notities',
+    ...(documents ? ['Documenten'] : [])];
   const lines = [...rows].sort((left, right) => left.date.localeCompare(right.date) || left.key.localeCompare(right.key)).map((row) => {
     const cost = row.cost;
     return [row.date, cost ? 'Bedrijfskost' : 'Containerbetaling', categoryLabel(row.category), row.description, row.party, row.reference,
@@ -109,6 +135,7 @@ export function costLedgerCsv(rows: readonly CostLedgerRow[], categoryLabel: (co
       row.paidOn ? row.amountEur : null, row.paidOn, row.payment ? String(row.payment.orderId) : null,
       row.payment ? String(row.payment.id) : null, cost?.salesChannel, cost ? (cost.recurringCostId ? 'ja' : 'nee') : null,
       cost?.notes ?? (row.payment ? 'Automatisch gekoppeld; beheren bij de container. Btw niet uit betaling afgeleid.' : null),
+      ...(documents ? [documents(row)] : []),
     ].map(cell).join(';');
   });
   return [header.join(';'), ...lines].join('\r\n');

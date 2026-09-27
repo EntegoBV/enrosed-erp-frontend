@@ -27,13 +27,14 @@ import {
 } from './quote-status';
 import { messageOf } from '../../core/api/errors';
 import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
+import { creditNoteSettlement, creditReasonLabel, isCreditNote } from './sales-credit-note';
 import { salesDocumentKind } from './partner-settlement';
 import {
   ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
 } from '../../shared/row-actions';
 
-import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-navigation';
+import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } from './sales-document-navigation';
 
 @Component({
   selector: 'app-sales-list',
@@ -88,8 +89,8 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
       }
 
       <app-sales-document-navigation [scope]="businessScope()" [tab]="docTab()"
-        [counts]="documentCounts()" [loading]="loading()" [outstandingOnly]="outstandingOnly()"
-        (scopeChange)="switchScope($event)" (tabChange)="switchTab($event)" (outstandingChange)="filterOutstanding($event)" />
+        [counts]="documentCounts()" [loading]="loading()" [outstandingOnly]="outstandingOnly()" [docs]="docsFilter()" [docsCounts]="docsCounts()"
+        (scopeChange)="switchScope($event)" (tabChange)="switchTab($event)" (outstandingChange)="filterOutstanding($event)" (docsChange)="filterDocs($event)" />
 
       <!-- One quiet row: search grows, two pills open native pickers,
            the count sits at the end - no card, no grid of chips. -->
@@ -197,13 +198,19 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                   @if (row.invoicedAs && row.invoicedAsId) {
                     · factuur <a class="so-link" [routerLink]="['/sales', row.invoicedAsId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.invoicedAs + ' openen'">{{ row.invoicedAs }}</a>
                   }
+                  @if (creditNoteRow(row) && row.creditedInvoiceNumber) {
+                    · op <a class="so-link" [routerLink]="['/sales', row.creditedInvoiceId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.creditedInvoiceNumber + ' openen'">{{ row.creditedInvoiceNumber }}</a>
+                    · {{ creditReason(row) }}
+                  }
                   @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT') { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
-                  @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate) {
+                  @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate && !creditNoteRow(row)) {
                     · vervalt {{ row.order.invoiceDueDate | dateNl }}
                   }
                 </div>
                 <div class="list-item__meta list-item__meta--wrap">
-                  @if (partner(row.order)) {
+                  @if (creditNoteRow(row)) {
+                    {{ row.priced.totals.pieces | num }} st · {{ row.priced.lines.length }} {{ row.priced.lines.length === 1 ? 'regel' : 'regels' }}@if ((row.order.extraLines ?? []).length) { · {{ (row.order.extraLines ?? []).length }} {{ (row.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }
+                  } @else if (partner(row.order)) {
                     {{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}
                   } @else {
                   {{ row.priced.totals.pieces | num }} st ·
@@ -226,9 +233,12 @@ import { SalesDocumentNavigation, SalesScope, SalesTab } from './sales-document-
                 @if (websiteRequest(row.order)) {
                   <span class="so-source-mini">Websiteaanvraag</span>
                 }
-                <div class="strong num">{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
-                @if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
+                <div class="strong num" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
+                @if (creditNoteRow(row) && row.order.status !== 'CONCEPT') {
+                  <small class="so-credit-tegoed">{{ creditLine(row) }}</small>
+                } @else if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
                   <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
+                  @if (row.creditedEur) { <small class="so-credited">{{ row.creditedEur | eur }} gecrediteerd</small> }
                 }
                 <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
                   <i aria-hidden="true"></i>{{ statusOf(row).label }}
@@ -867,8 +877,33 @@ export class SalesList {
   readonly docTab = signal<SalesTab>('OFFERTE');
   readonly businessScope = signal<SalesScope>('ALL');
   readonly outstandingOnly = signal(false);
+  /** Facturen tab: everything, invoices only, or credit notes only (query param docs). */
+  readonly docsFilter = signal<SalesDocsFilter>('all');
   readonly partner = isPartnerDocument;
   readonly receivable = invoiceReceivable;
+  readonly creditNoteRow = (row: SalesOrderView): boolean => isCreditNote(row.order);
+  readonly creditReason = (row: SalesOrderView): string => creditReasonLabel(row.order.creditReason);
+  /** '€ 120,20 verrekend · € 100,00 tegoed' — zero parts left out, 'afgehandeld' when nothing is open. */
+  creditLine(row: SalesOrderView): string {
+    const settlement = creditNoteSettlement(row.paymentSummary, row.order.status);
+    const eur = (value: number) => new EurPipe().transform(value);
+    if (['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status)) return `${eur(settlement.tegoedEur)} vervallen`;
+    const parts: string[] = [];
+    if (settlement.offsetEur > 0) parts.push(`${eur(settlement.offsetEur)} verrekend`);
+    if (settlement.refundedEur > 0) parts.push(`${eur(settlement.refundedEur)} terugbetaald`);
+    parts.push(settlement.openEur > 0 ? `${eur(settlement.openEur)} tegoed` : 'afgehandeld');
+    return parts.join(' · ');
+  }
+  readonly docsCounts = computed(() => {
+    const rows = this.rowsByDocument().FACTUUR;
+    const cn = rows.filter((row) => isCreditNote(row.order)).length;
+    return { f: rows.length - cn, cn };
+  });
+  filterDocs(value: SalesDocsFilter): void {
+    this.docsFilter.set(value);
+    this.openRow.set(null);
+    this.rememberNavigation();
+  }
   readonly newDocType = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
   readonly websiteOnly = signal(false);
 
@@ -903,6 +938,7 @@ export class SalesList {
     this.filter.set('');
     this.websiteOnly.set(false);
     this.outstandingOnly.set(false);
+    this.docsFilter.set('all');
     this.openRow.set(null);
     this.expandedGroups.set(new Set());
     this.rememberNavigation();
@@ -922,7 +958,7 @@ export class SalesList {
   }
 
   private rememberNavigation(): void {
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { scope: this.businessScope(), tab: this.docTab(), payment: this.outstandingOnly() ? 'open' : null }, queryParamsHandling: 'merge', replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { scope: this.businessScope(), tab: this.docTab(), payment: this.outstandingOnly() ? 'open' : null, docs: this.docTab() === 'FACTUUR' && this.docsFilter() !== 'all' ? this.docsFilter() : null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   readonly documentCounts = computed(() => ({ OFFERTE: this.docCount('OFFERTE'), FACTUUR: this.docCount('FACTUUR'), ARCHIEF: this.docCount('ARCHIEF') }));
@@ -935,26 +971,36 @@ export class SalesList {
   private inTab(): SalesOrderView[] {
     if (this.docTab() === 'FACTUUR' && this.outstandingOnly()) {
       const grouped = this.rowsByDocument();
-      return [...grouped.FACTUUR, ...grouped.ARCHIEF.filter((row) => row.order.docType === 'FACTUUR')];
+      return [...grouped.FACTUUR, ...grouped.ARCHIEF.filter((row) => (row.order.docType ?? 'OFFERTE') !== 'OFFERTE')];
     }
     return this.rowsByDocument()[this.docTab()];
   }
 
   readonly visibleFilters = computed(() => this.docTab() === 'FACTUUR'
-    ? this.filters.filter((option) => ['', 'CONCEPT', 'UITGEREIKT', 'VERZONDEN', 'BETAALD'].includes(option.value))
+    ? this.filters.filter((option) => ['', 'CONCEPT', 'UITGEREIKT', 'VERZONDEN', 'BETAALD', 'GEANNULEERD'].includes(option.value))
     : this.docTab() === 'ARCHIEF' ? this.filters
     : this.filters.filter((option) => !['BETAALD', 'UITGEREIKT'].includes(option.value)));
 
   /** The amber under-row line, inkoop-style: everything still waiting on us. */
   attention = (row: SalesOrderView): string[] | null => {
     const items: string[] = [];
-    const task = this.todo(row.order, row.awaitingResend);
+    if (isCreditNote(row.order)) {
+      if (!['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status) && invoiceReceivable(row).creditEur > 0) items.push('Tegoed af te handelen');
+      return items.length ? items : null;
+    }
+    const fullyCredited = this.fullyCredited(row);
+    const task = this.todo(row.order, row.awaitingResend, fullyCredited);
     if (task) items.push(task);
-    /* An overdue invoice already reads "Betaling opvolgen"; no second label. */
-    if (this.overdue(row.order) && !items.includes('Betaling opvolgen')) items.push('Vervallen');
+    /* An overdue invoice already reads "Betaling opvolgen"; no second label. A fully credited one has nothing left to chase. */
+    if (!fullyCredited && this.overdue(row.order) && !items.includes('Betaling opvolgen')) items.push('Vervallen');
     return items.length ? items : null;
   };
 
+  /** The credit notes took the whole claim back: nothing to ship or chase any more. */
+  fullyCredited(row: SalesOrderView): boolean {
+    const total = Math.abs(row.paymentSummary?.invoiceTotalEur ?? row.priced.totals.totalInclVat);
+    return (row.creditedEur ?? 0) > 0 && total > 0 && row.creditedEur! >= total - 0.005;
+  }
   overdue(order: SalesOrder): boolean {
     return (order.docType ?? 'OFFERTE') === 'FACTUUR'
       && (order.status === 'VERZONDEN' || order.status === 'UITGEREIKT')
@@ -980,7 +1026,7 @@ export class SalesList {
       if (this.businessScope() === 'STANDARD' && isPartnerDocument(row.order)) continue;
       if (this.businessScope() === 'PARTNER' && !isPartnerDocument(row.order)) continue;
       if (row.order.archivedAt) archived.push(row);
-      else ((row.order.docType ?? 'OFFERTE') === 'FACTUUR' ? invoices : quotes).push(row);
+      else ((row.order.docType ?? 'OFFERTE') !== 'OFFERTE' ? invoices : quotes).push(row);
     }
     return { OFFERTE: quotes, FACTUUR: invoices, ARCHIEF: archived };
   });
@@ -1006,6 +1052,8 @@ export class SalesList {
     const tab = query.get('tab');
     if (tab === 'OFFERTE' || tab === 'FACTUUR' || tab === 'ARCHIEF') this.docTab.set(tab);
     if (query.get('payment') === 'open') { this.docTab.set('FACTUUR'); this.outstandingOnly.set(true); }
+    const docs = query.get('docs');
+    if (docs === 'f' || docs === 'cn') { this.docTab.set('FACTUUR'); this.docsFilter.set(docs); }
     void this.work.refresh();
     void this.load();
   }
@@ -1086,8 +1134,13 @@ export class SalesList {
       if (purchaseId != null && contents?.purchaseOrderId === purchaseId && contents.purchaseOrderNumber?.trim()
           && !purchaseNames.has(purchaseId)) purchaseNames.set(purchaseId, contents.purchaseOrderNumber);
     }
+    const docs = this.docTab() === 'FACTUUR' ? this.docsFilter() : 'all';
     return documents.filter((row) => {
-      if (this.outstandingOnly() && (['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status) || invoiceReceivable(row).remainingEur <= 0)) return false;
+      const credit = isCreditNote(row.order);
+      if (docs === 'f' && credit) return false;
+      if (docs === 'cn' && !credit) return false;
+      if (this.outstandingOnly() && (['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status)
+          || (credit ? invoiceReceivable(row).creditEur <= 0 : invoiceReceivable(row).remainingEur <= 0))) return false;
       if (status && row.order.status !== status) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
       if (websiteOnly && !isWebsiteQuoteRequest(row.order)) return false;
@@ -1096,7 +1149,7 @@ export class SalesList {
       const container = purchaseId != null
         ? purchaseNames.get(purchaseId) ?? `Inkoop #${purchaseId}`
         : '';
-      return (this.customerName(row) + ' ' + row.order.number + ' ' + container)
+      return (this.customerName(row) + ' ' + row.order.number + ' ' + container + ' ' + (row.creditedInvoiceNumber ?? '') + ' ' + (row.creditNotes ?? []).map((note) => note.number).join(' '))
         .toLowerCase()
         .includes(needle);
     });
@@ -1133,7 +1186,7 @@ export class SalesList {
 
   readonly activeFilterCount = computed(() =>
     (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
-      + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0) + (this.outstandingOnly() ? 1 : 0));
+      + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0) + (this.outstandingOnly() ? 1 : 0) + (this.docTab() === 'FACTUUR' && this.docsFilter() !== 'all' ? 1 : 0));
 
   readonly activeStatusLabel = computed(() =>
     this.filters.find((option) => option.value === this.filter())?.label ?? 'Alle orders');
@@ -1148,6 +1201,7 @@ export class SalesList {
     this.customerFilter.set('');
     this.websiteOnly.set(false);
     this.outstandingOnly.set(false);
+    this.docsFilter.set('all');
     this.rememberNavigation();
   }
 
@@ -1345,7 +1399,7 @@ export class SalesList {
         title: `${label} verwijderen`,
         message: `Weet je zeker dat je ${label.toLowerCase()} <b>${escapeHtml(order.number)}</b> `
           + `van <b>${escapeHtml(customer)}</b> wilt verwijderen?<br><br>`
-          + ((order.docType ?? 'OFFERTE') !== 'FACTUUR'
+          + ((order.docType ?? 'OFFERTE') === 'OFFERTE'
               && (order.status !== 'CONCEPT' || order.sentAt !== null)
             ? 'De gedeelde klantlink werkt daarna niet meer.<br><br>'
             : '')
@@ -1423,9 +1477,10 @@ export class SalesList {
     }
   }
   /** What we still must do with this document, or nothing. */
-  todo = (order: SalesOrder, awaitingResend = false): string | null => {
+  todo = (order: SalesOrder, awaitingResend = false, fullyCredited = false): string | null => {
+    if (order.docType === 'CREDITNOTA') return null;
     if ((order.docType ?? 'OFFERTE') === 'FACTUUR') {
-      if (order.status === 'CONCEPT') return null;
+      if (order.status === 'CONCEPT' || fullyCredited) return null;
       if (this.overdue(order)) return 'Betaling opvolgen';
       if (!isAdvanceDocument(order) && !order.goodsShippedAt) return 'Bestelling nog te verzenden';
       return null;

@@ -70,3 +70,12 @@ test('explicit advances stay advances at 100 percent and on the last production 
   }
   assert.equal(salesDocumentKind({ docType: 'FACTUUR', purpose: 'PARTNER_SETTLEMENT', partnerPurchaseOrderId: 13 }), 'Slotfactuur');
 });
+
+test('a credit note is named after what it credits', () => {
+  assert.equal(salesDocumentKind({ docType: 'CREDITNOTA', purpose: 'STANDARD' }), 'Creditnota');
+  assert.equal(salesDocumentKind({ docType: 'CREDITNOTA', purpose: 'PARTNER_ADVANCE', partnerPurchaseOrderId: 17 }), 'Creditnota · voorschot');
+  assert.equal(salesDocumentKind({ docType: 'CREDITNOTA', purpose: 'PARTNER_SETTLEMENT', partnerPurchaseOrderId: 12 }), 'Creditnota · afrekening');
+  assert.equal(salesDocumentKind({ docType: 'CREDITNOTA', purpose: null, partnerPurchaseOrderId: 12, partnerSettlement: true }), 'Creditnota · afrekening');
+  assert.equal(partnerDocumentKind({ docType: 'CREDITNOTA', purpose: 'PARTNER_ADVANCE', partnerPurchaseOrderId: 17 }), 'Creditnota · voorschot');
+  assert.equal(isSettlementInvoice({ docType: 'CREDITNOTA', purpose: 'PARTNER_SETTLEMENT', partnerPurchaseOrderId: 12 }), false, 'a credit note is never the settlement itself');
+});

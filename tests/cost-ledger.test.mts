@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CompanyCost, PurchasePaymentRow } from '../src/app/core/api/models.ts';
-import { containerFilterId, costLedger, costLedgerCsv, costLedgerTotals, filterCostLedger } from '../src/app/features/finance/cost-ledger.ts';
+import {
+  CONTAINER_PAYMENT_CATEGORIES, containerFilterId, costLedger, costLedgerCsv, costLedgerTotals, filterCostLedger, missingDocument, paymentPayeeLabel,
+} from '../src/app/features/finance/cost-ledger.ts';
 import { costSummary } from '../src/app/features/finance/cost-metrics.ts';
 import { movementsSince } from '../src/app/features/finance/finance-metrics.ts';
 
@@ -23,8 +25,11 @@ test('historical container payments appear alongside company costs with independ
 test('every payment stream is linked, including old supplier rows without payee and extra payments', () => {
   const rows = costLedger([], [payment({ id: 1, payee: null }), payment({ id: 2, payee: 'LOGISTICS' }),
     payment({ id: 3, payee: 'SEPARATE' }), payment({ id: 4, payee: 'OTHER', label: null })]);
-  assert.deepEqual(rows.map((row) => row.party), ['Leverancier', 'Logistiek / douane', 'Aparte kosten', 'Overige ontvanger']);
-  assert.equal(rows[3].description, 'Overige ontvanger · containerbetaling');
+  // The same four words as Inkoop's payments block (purchase-payment-ledger PAYEE_LABEL).
+  assert.deepEqual(rows.map((row) => row.party), ['Leverancier', 'Douane & transport', 'Inspectie & andere kosten', 'Bijkomende kosten']);
+  assert.equal(rows[3].description, 'Bijkomende kosten · containerbetaling');
+  assert.deepEqual(CONTAINER_PAYMENT_CATEGORIES.map((category) => category.label),
+    ['Container · leverancier', 'Container · douane & transport', 'Container · inspectie & andere kosten', 'Container · bijkomende kosten']);
   assert.deepEqual(rows.map((row) => row.payment?.orderId), [10, 10, 10, 10]);
 });
 
@@ -83,4 +88,34 @@ test('combined CSV exports linkage and exact cash while leaving container VAT an
   assert.match(lines[2], /;"Saldo; ""laatste""";/);
   assert.match(lines[2], /;;;;;554,77;2026-09-02;10;1;/);
   assert.match(lines[2], /Btw niet uit betaling afgeleid/);
+  assert.doesNotMatch(lines[0], /Documenten/, 'the documents column only comes on request');
+});
+
+test('the payee labels read as in Inkoop', () => {
+  assert.deepEqual((['SUPPLIER', 'LOGISTICS', 'SEPARATE', 'OTHER', null] as const).map((payee) => paymentPayeeLabel(payee)),
+    ['Leverancier', 'Douane & transport', 'Inspectie & andere kosten', 'Bijkomende kosten', 'Leverancier']);
+});
+
+test('"Zonder document" keeps only company costs without a file, never container payments', () => {
+  const rows = costLedger([cost, { ...cost, id: 2 }, { ...cost, id: 3 }], [payment()]);
+  const missing = filterCostLedger(rows, { docs: 'missing', documentedIds: new Set([2]) });
+  assert.deepEqual(missing.map((row) => row.key), ['cost:1', 'cost:3']);
+  assert.equal(filterCostLedger(rows, { docs: 'missing' }).length, 3, 'without known documents every company cost qualifies');
+  assert.equal(filterCostLedger(rows, { docs: null }).length, 4);
+});
+
+test('a cost booked by a recurring definition never waits for a document', () => {
+  const rows = costLedger([cost, { ...cost, id: 2, recurringCostId: 7 }, { ...cost, id: 3 }], []);
+  assert.deepEqual(filterCostLedger(rows, { docs: 'missing', documentedIds: new Set([3]) }).map((row) => row.key), ['cost:1']);
+  assert.equal(missingDocument({ id: 2, recurringCostId: 7 }), false);
+  assert.equal(missingDocument({ id: 3, recurringCostId: null }, new Set([3])), false);
+  assert.equal(missingDocument({ id: null, recurringCostId: null }, new Set([3])), true, 'an unsaved cost has no file yet');
+});
+
+test('the accountant CSV can append the file names per row', () => {
+  const rows = costLedger([cost], [payment()]);
+  const lines = costLedgerCsv(rows, (code) => code, (row) => row.cost ? 'factuur.pdf, bon; kopie.jpg' : '').split('\r\n');
+  assert.match(lines[0], /;Notities;Documenten$/);
+  assert.match(lines[1], /;"factuur\.pdf, bon; kopie\.jpg"$/);
+  assert.match(lines[2], /;$/);
 });

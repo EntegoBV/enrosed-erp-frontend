@@ -1,0 +1,5 @@
+/* Kosten & bank legacy rules: emptied by the Kosten & bank redesign. The
+   workspace now draws on the workspace kit (workspace-kit.scss) plus its own
+   scoped partials (finance-workspace.scss, finance-phone.scss). The shared
+   .fin-chip rules stay global in styles.scss because purchasing uses them.
+   styles.scss still loads this file; it can go with the next kit step. */

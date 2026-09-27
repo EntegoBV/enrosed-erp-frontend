@@ -7,6 +7,7 @@ export const bankAccountKey = (value: string | null | undefined): string => {
   return /^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{11,34}$/.test(key) ? key.replace(/ /g, '') : key;
 };
 const cents = (value: number): number => Math.round(value * 100) / 100;
+const readable = (value: string | null | undefined): string => (value ?? '').trim().replace(/\s+/g, ' ');
 export function bankCheckpoint(row: BankBalance): number {
   if (row.asOfAt) return Date.parse(row.asOfAt);
   try { return Date.parse(receiptInstant(row.date, '23:59:59', row.timeZone || 'Europe/Brussels')) + 999; }
@@ -30,7 +31,10 @@ export function reconciledBank(balances: readonly BankBalance[], lines: readonly
       ...manual.filter(row => Date.parse(row.receivedAt) > checkpoint).map(row => ({ key: `payment:${row.id}`, at: row.receivedAt, amountEur: row.amountEur })),
     ];
     const deltaEur = cents(movements.reduce((sum, row) => sum + row.amountEur, 0));
-    return { account, reading: reading ?? null, movements, deltaEur,
+    /* Keys are upper case; people read the name as last typed on a reading, else as the line or receipt had it. */
+    const label = readable(reading?.account) || readable(entered[0]?.account) || readable(manual[0]?.bankAccount) || account;
+    const checkedAt = reading && Number.isFinite(checkpoint) ? new Date(checkpoint).toISOString() : null;
+    return { account, label, checkedAt, reading: reading ?? null, movements, deltaEur,
       currentEur: reading && Number.isFinite(checkpoint) ? cents(reading.balanceEur + deltaEur) : null,
       unlinkedBookings: manual.length, unallocatedLines: entered.filter(row => !row.salesPaymentId).length };
   });

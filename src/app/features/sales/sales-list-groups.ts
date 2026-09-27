@@ -67,7 +67,7 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
       continue;
     }
     const purchaseOrderId = row.order.partnerPurchaseOrderId;
-    if (row.order.docType !== 'FACTUUR' || !isPartnerDocument(row.order)
+    if ((row.order.docType ?? 'OFFERTE') === 'OFFERTE' || !isPartnerDocument(row.order)
         || !Number.isInteger(purchaseOrderId) || purchaseOrderId! <= 0) {
       entries.push({ kind: 'DOCUMENT', key: `document-${row.order.id}`, row });
       continue;
@@ -112,10 +112,12 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
         concept: row.order.status === 'CONCEPT', inactive: INACTIVE.has(row.order.status) });
     }
     group.purchaseOrderNumber = contents.find(contents => contents!.purchaseOrderNumber?.trim())?.purchaseOrderNumber ?? null;
+    /* A credit note takes its total back off the container's invoiced sum. */
+    const signed = (row: SalesOrderView): number => (row.order.docType === 'CREDITNOTA' ? -row.priced.totals.total : row.priced.totals.total);
     group.summary = {
       count: group.rows.length,
-      totalEur: sumMoney(active.map(row => row.priced.totals.total)),
-      draftCount: drafts.length, draftEur: sumMoney(drafts.map(row => row.priced.totals.total)),
+      totalEur: sumMoney(active.map(signed)),
+      draftCount: drafts.length, draftEur: sumMoney(drafts.map(signed)),
       issuedCount: issued.length, inactiveCount: group.rows.length - active.length,
       statuses: [...statuses.values()].sort((left, right) => Number(right.concept) - Number(left.concept)),
       receivedEur: sumMoney(payments.map(payment => payment.receivedEur)),

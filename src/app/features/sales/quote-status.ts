@@ -122,18 +122,35 @@ export const STATUS_LABEL: Record<QuoteStatus, string> = {
  * invoice is past its own statuses: it reads "Gefactureerd", whatever the
  * quote status still says.
  */
-export function statusOf(view: { order: Pick<SalesOrder, 'status' | 'docType'>; invoicedAs?: string | null; invoiceStatus?: QuoteStatus | null; paymentSummary?: Pick<SalesPaymentSummary, 'status'> | null }): { label: string; cls: string } {
+export function statusOf(view: { order: Pick<SalesOrder, 'status' | 'docType'>; invoicedAs?: string | null; invoiceStatus?: QuoteStatus | null;
+  paymentSummary?: (Pick<SalesPaymentSummary, 'status'> & Partial<Pick<SalesPaymentSummary, 'creditEur' | 'invoiceTotalEur'>>) | null; creditedEur?: number }): { label: string; cls: string } {
+  if (view.order.docType === 'CREDITNOTA') return creditNoteStatus(view);
   if (view.invoicedAs && view.order.docType !== 'FACTUUR') {
     /* A draft invoice is not an invoice yet: the quote waits for it to go out. */
     return view.invoiceStatus === 'CONCEPT' ? { label: 'Factuur in concept', cls: 'gold' } : { label: 'Gefactureerd', cls: 'ok' };
   }
   // A payment summary also exists for drafts. It never proves that an invoice was issued.
   if (view.order.docType === 'FACTUUR' && ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(view.order.status)) {
+    /* Fully credited: the credit notes took the whole claim back, whatever was paid. */
+    const total = Math.abs(view.paymentSummary?.invoiceTotalEur ?? Number.NaN);
+    if (Number.isFinite(total) && total > 0 && (view.creditedEur ?? 0) >= total - 0.005) return { label: 'Gecrediteerd', cls: 'neutral' };
     if (view.paymentSummary?.status === 'PARTIAL') return { label: 'Deels betaald', cls: 'gold' };
     if (view.paymentSummary?.status === 'PAID' || view.paymentSummary?.status === 'OVERPAID') return { label: 'Betaald', cls: 'ok' };
     if (view.order.status === 'UITGEREIKT') return { label: 'Uitgereikt · niet gemaild', cls: statusClass(view.order.status) };
   }
   return { label: STATUS_LABEL[view.order.status], cls: statusClass(view.order.status) };
+}
+
+/** A credit note's pill: money outranks the mail state (same rules as sales-credit-note.ts, kept here because this module only imports types). */
+function creditNoteStatus(view: { order: Pick<SalesOrder, 'status'>; paymentSummary?: (Pick<SalesPaymentSummary, 'status'> & Partial<Pick<SalesPaymentSummary, 'creditEur'>>) | null }): { label: string; cls: string } {
+  const status = view.order.status;
+  if (status === 'CONCEPT') return { label: 'Concept', cls: 'neutral' };
+  if (status === 'GEANNULEERD' || status === 'VERLOPEN' || status === 'AFGEWEZEN') return { label: STATUS_LABEL[status], cls: statusClass(status) };
+  const summary = view.paymentSummary;
+  if (status === 'BETAALD' || summary?.status === 'PAID' || summary?.status === 'OVERPAID') return { label: 'Afgehandeld', cls: 'ok' };
+  if (summary && (summary.creditEur ?? 0) > 0) return { label: 'Tegoed open', cls: 'gold' };
+  if (status === 'UITGEREIKT') return { label: 'Uitgereikt · niet gemaild', cls: 'rose' };
+  return { label: 'Uitgereikt', cls: 'rose' };
 }
 
 export function statusClass(status: QuoteStatus): string {

@@ -8,6 +8,7 @@ import {
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
   SalesOrderView, SalesPayment, SalesPaymentRequest, IncomingPaymentRow, SalesPurpose, SalesPaymentPlan, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest, FromPurchaseOrderRequest,
   SalesSplitEligibility, SalesSplitRequest, SalesSplitPreview, SalesSplitCommitRequest, SalesSplitResult,
+  CreditNoteProposal, CreditNoteRequest,
 } from './models';
 import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
@@ -179,6 +180,35 @@ export class SalesApi {
   shipGoods(id: number): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/ship-goods`), {}));
+  }
+
+  /* ------------------------------------------------------- creditnota's */
+
+  /** What may still be credited on an issued invoice, with the container's receipt shortage as suggestion. */
+  creditNoteProposal(invoiceId: number): Promise<CreditNoteProposal> {
+    return firstValueFrom(
+      this.http.get<CreditNoteProposal>(api(`/api/sales-orders/${invoiceId}/credit-note-proposal`)));
+  }
+
+  /** Creates a CONCEPT credit note on an issued invoice; the server numbers it CN-{jaar}-{nr}. */
+  createCreditNote(invoiceId: number, body: CreditNoteRequest): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${invoiceId}/credit-note`), body));
+  }
+
+  /**
+   * Verrekent an issued credit note with an open invoice of the same customer;
+   * null takes the maximum. Returns the credit note; the caller refetches the invoice.
+   */
+  applyCredit(creditId: number, invoiceId: number, amountEur: number | null = null): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${creditId}/apply-to/${invoiceId}`), { amountEur }));
+  }
+
+  /** Books the credited pieces back into stock, once; the server refuses partner credit notes. */
+  returnGoods(id: number): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/return-goods`), {}));
   }
 
   /* -------------------------------------------------- verzendorganisaties */
