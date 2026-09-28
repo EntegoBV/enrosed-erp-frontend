@@ -27,12 +27,12 @@ export function parseProspectImport(text: string): ProspectImportFile {
     if (activityCount > 2000) throw new Error('Een contactlog mag maximaal 2000 activiteiten bevatten.');
     for (const activity of entry['activities']) {
       if (!object(activity) || !['EMAIL', 'INSTAGRAM', 'PHONE', 'NOTE'].includes(String(activity['channel']))
-        || !['DRAFT', 'SCHEDULED', 'SENT', 'FAILED', 'RECEIVED', 'COMPLETED', 'CANCELLED'].includes(String(activity['status']))
+        || !['DRAFT', 'RESERVED', 'SCHEDULED', 'SENT', 'FAILED', 'RECEIVED', 'COMPLETED', 'CANCELLED'].includes(String(activity['status']))
         || typeof activity['type'] !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(activity['type'])
         || typeof activity['occurredAt'] !== 'string' || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(activity['occurredAt'])
         || !Number.isFinite(Date.parse(activity['occurredAt']))) throw new Error(`${prefix}: ongeldige activiteit of tijdzone.`);
-      if (activity['status'] === 'SCHEDULED' && (activity['channel'] !== 'EMAIL' || activity['type'] !== 'OUTREACH')) {
-        throw new Error(`${prefix}: alleen EMAIL / OUTREACH kan als SCHEDULED worden geïmporteerd.`);
+      if (['RESERVED', 'SCHEDULED'].includes(String(activity['status'])) && (activity['channel'] !== 'EMAIL' || activity['type'] !== 'OUTREACH')) {
+        throw new Error(`${prefix}: alleen EMAIL / OUTREACH kan als RESERVED of SCHEDULED worden geïmporteerd.`);
       }
       for (const key of ['subject', 'body', 'attachmentName', 'sourceUrl']) {
         if (!optionalText(activity[key])) throw new Error(`${prefix}: activiteitveld ${key} moet tekst zijn.`);
@@ -55,24 +55,25 @@ export function matchesProspectIdentity(existing: Prospect, incoming: ProspectIn
     || (!!instagram && normalize(existing.instagramHandle) === instagram);
 }
 
-/** A verified Gmail schedule consumes a slot before the ledger records it. No message is sent. */
+/** Reserve a future slot or record a verified Gmail schedule. Neither action sends a message. */
 export async function recordImportedActivity(
   api: Pick<ProspectApi, 'reserveEmail' | 'record'>,
   prospectId: number,
   activity: ProspectActivityInput,
   existingExternalIds: ReadonlySet<string | null>,
 ): Promise<void> {
-  if (activity.status === 'SCHEDULED') {
+  if (activity.status === 'RESERVED' || activity.status === 'SCHEDULED') {
     if (activity.channel !== 'EMAIL' || activity.type !== 'OUTREACH' || !activity.externalId) {
-      throw new Error('Een ingeplande e-mail heeft EMAIL / OUTREACH en een vaste referentie nodig.');
+      throw new Error('Een gereserveerde of ingeplande e-mail heeft EMAIL / OUTREACH en een vaste referentie nodig.');
     }
-    if (!existingExternalIds.has(activity.externalId)) {
+    if (activity.status === 'RESERVED' || !existingExternalIds.has(activity.externalId)) {
       await api.reserveEmail(prospectId, {
         externalId: activity.externalId, subject: activity.subject, body: activity.body,
         attachmentName: activity.attachmentName, sourceUrl: activity.sourceUrl,
         scheduledFor: activity.occurredAt,
       });
     }
+    if (activity.status === 'RESERVED') return;
   }
   await api.record(prospectId, activity);
 }

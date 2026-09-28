@@ -90,3 +90,37 @@ test('quota failure prevents scheduled recording; idempotency conflicts remain v
   const conflictApi = { ...api, record: async () => { throw new Error('conflict'); } };
   await assert.rejects(recordImportedActivity(conflictApi, 9, scheduled, new Set([scheduled.externalId])), /conflict/);
 });
+
+test('reservation imports accept only EMAIL OUTREACH and retain the intended time', () => {
+  const data = bundle();
+  const entry = data.prospects[0].activities[0];
+  entry.status = 'RESERVED';
+  assert.throws(() => parseProspectImport(JSON.stringify(data)), /alleen EMAIL/);
+  entry.channel = 'EMAIL';
+  assert.throws(() => parseProspectImport(JSON.stringify(data)), /alleen EMAIL/);
+  entry.type = 'OUTREACH';
+  entry.occurredAt = '2026-10-01T09:00:00Z';
+  assert.equal(parseProspectImport(JSON.stringify(data)).prospects[0].activities[0].occurredAt, entry.occurredAt);
+});
+
+test('reserved import checks the exact future slot without recording a Gmail schedule', async () => {
+  const { recordImportedActivity } = await import('../src/app/features/prospects/prospect-import.ts');
+  const calls: any[] = [];
+  const api = { reserveEmail: async (id: number, input: any) => { calls.push(['reserve', id, input]); return {} as any; }, record: async (id: number, input: any) => { calls.push(['record', id, input]); return {} as any; } };
+  const reserved: any = { ...activity, channel: 'EMAIL', type: 'OUTREACH', status: 'RESERVED', subject: 'Hello', occurredAt: '2026-10-01T09:00:00Z', externalId: 'gmail:future-1', attachmentName: 'catalogue.pdf', sourceUrl: 'https://example.fr/' };
+  for (const known of [new Set<string>(), new Set([reserved.externalId])]) {
+    calls.length = 0;
+    await recordImportedActivity(api, 9, reserved, known);
+    assert.deepEqual(calls, [['reserve', 9, { externalId: reserved.externalId, subject: reserved.subject, body: reserved.body, attachmentName: reserved.attachmentName, sourceUrl: reserved.sourceUrl, scheduledFor: reserved.occurredAt }]]);
+  }
+});
+
+test('reserved imports surface quota or closed-reservation failures without recording', async () => {
+  const { recordImportedActivity } = await import('../src/app/features/prospects/prospect-import.ts');
+  let recorded = false;
+  const reserved: any = { ...activity, channel: 'EMAIL', type: 'OUTREACH', status: 'RESERVED' };
+  const api = { reserveEmail: async () => { throw new Error('quota or closed'); }, record: async () => { recorded = true; return {} as any; } };
+  await assert.rejects(recordImportedActivity(api, 9, reserved, new Set([reserved.externalId])), /quota or closed/);
+  assert.equal(recorded, false);
+  await assert.rejects(recordImportedActivity(api, 9, { ...reserved, channel: 'INSTAGRAM' }, new Set()), /EMAIL \/ OUTREACH/);
+});
