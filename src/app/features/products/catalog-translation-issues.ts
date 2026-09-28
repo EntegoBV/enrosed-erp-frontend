@@ -23,6 +23,8 @@ export interface CatalogTranslationLink {
   kind: CatalogTranslationIssueKind;
   entityLabel: string;
   fieldLabel: string;
+  /** What following the link does, e.g. "Vertaling aanvullen" or "Maat aanpassen". */
+  actionLabel: string;
   route: string | null;
   queryParams: Readonly<Record<string, string>>;
   /** Selected products that can remove this issue from the current export. */
@@ -64,8 +66,13 @@ const PRODUCT_FOCUS: Readonly<Record<string, string>> = {
   description: 'variant-description',
   color: 'variant-colour',
   colour: 'variant-colour',
-  size: 'variant-size',
 };
+
+/**
+ * The Maat is not translated: one value for every language, edited on the
+ * product itself. A size path therefore never opens the translation editor.
+ */
+const LANGUAGE_NEUTRAL_PRODUCT_FIELDS: ReadonlySet<string> = new Set(['size']);
 
 /**
  * Turns the strict backend paths into human-readable links to the one editor
@@ -132,6 +139,7 @@ function linkFor(
   selectedProductIds: ReadonlySet<number>,
 ): CatalogTranslationLink {
   const common = { language, returnTo: '/catalog-export' };
+  const translate = 'Vertaling aanvullen';
 
   if (issue.kind === 'CATALOG_COPY') {
     return {
@@ -139,6 +147,7 @@ function linkFor(
       kind: issue.kind,
       entityLabel: `Catalogustekst · ${humanize(issue.entityKey)}`,
       fieldLabel: 'Tekst invullen',
+      actionLabel: 'Catalogustekst aanvullen',
       route: '/catalog/texts',
       queryParams: { ...common, key: issue.entityKey },
       affectedProductIds: [],
@@ -152,6 +161,7 @@ function linkFor(
       kind: issue.kind,
       entityLabel: `Categorie · ${category?.name || humanize(issue.entityKey)}`,
       fieldLabel: fieldLabel(issue.field),
+      actionLabel: translate,
       route: '/settings',
       queryParams: {
         ...common,
@@ -176,6 +186,7 @@ function linkFor(
       kind: issue.kind,
       entityLabel: `Productreeks · ${product?.name || humanize(issue.entityKey)}`,
       fieldLabel: fieldLabel(issue.field),
+      actionLabel: translate,
       route: product?.id === null || product?.id === undefined
         ? null : `/products/${product.id}/translations`,
       queryParams: { ...common, focus: familyFocus(issue.field) },
@@ -186,13 +197,17 @@ function linkFor(
   if (issue.kind === 'PRODUCT') {
     const productId = Number(issue.entityKey);
     const product = products.find((candidate) => candidate.id === productId);
+    const languageNeutral = LANGUAGE_NEUTRAL_PRODUCT_FIELDS.has(issue.field);
     return {
       path: issue.path,
       kind: issue.kind,
       entityLabel: `Product · ${product?.name || `#${productId}`}`,
       fieldLabel: fieldLabel(issue.field),
-      route: `/products/${productId}/translations`,
-      queryParams: { ...common, focus: productFocus(issue.field) },
+      actionLabel: languageNeutral ? 'Maat aanpassen' : translate,
+      route: languageNeutral ? `/products/${productId}/edit` : `/products/${productId}/translations`,
+      queryParams: languageNeutral
+        ? { returnTo: common.returnTo, tab: 'identity' }
+        : { ...common, focus: productFocus(issue.field) },
       affectedProductIds: affectedProductIdsFor(products, selectedProductIds, (candidate) =>
         candidate.id === productId),
     };
@@ -203,6 +218,7 @@ function linkFor(
     kind: issue.kind,
     entityLabel: 'Onbekende vertaallokatie',
     fieldLabel: issue.path,
+    actionLabel: translate,
     route: null,
     queryParams: common,
     affectedProductIds: [],

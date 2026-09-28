@@ -17,7 +17,6 @@ const PRODUCT_TRANSLATION_FOCUS = new Set([
   'family-highlights',
   'variant-name',
   'variant-colour',
-  'variant-size',
   'variant-description',
 ]);
 
@@ -77,7 +76,7 @@ const PRODUCT_TRANSLATION_FOCUS = new Set([
             <span class="translation-route__letter" aria-hidden="true">A</span>
             <span>
               <b>Productvertalingen</b>
-              <small>Publieke product- en familienaam, variantkleur en -maat, beschrijving, SEO en foto-alt.</small>
+              <small>Publieke product- en familienaam, variantkleur, beschrijving, SEO en foto-alt.</small>
               <strong>U werkt aan {{ product.name }}</strong>
             </span>
           </div>

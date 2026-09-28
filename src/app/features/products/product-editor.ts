@@ -412,8 +412,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   <label for="p-variant-size">Maat <span class="opt"></span></label>
                   <input class="input" id="p-variant-size" maxlength="80"
                          placeholder="Bijv. S, XL of 30 cm"
+                         aria-describedby="p-variant-size-hint"
                          [ngModel]="draft().variantSize"
                          (ngModelChange)="patch({ variantSize: emptyToNull($event) })" />
+                  <span class="hint" id="p-variant-size-hint">Geldt voor alle talen.</span>
                 </div>
             <div class="field identity-category">
               <label for="p-category">Categorie <span class="opt"></span></label>
@@ -1937,10 +1939,8 @@ export class ProductEditor implements OnDestroy {
     /* The backend keys a variant by its canonical key, falling back to
        the product id - mirror that so "mine" is recognised either way. */
     const myKey = draft.canonicalVariantKey || String(draft.id ?? '');
-    const fieldLabel: Record<string, string> = { size: 'Maat', name: 'Naam', color: 'Kleur' };
-    const base: Record<string, string> = {
-      size: draft.variantSize ?? '', name: draft.name ?? '', color: draft.colour ?? '',
-    };
+    const fieldLabel: Record<string, string> = { name: 'Naam', color: 'Kleur' };
+    const base: Record<string, string> = { name: draft.name ?? '', color: draft.colour ?? '' };
     const items = new Map<string, PublishFixItem>();
     const notes: string[] = [];
     let swatch = false;
@@ -1952,6 +1952,9 @@ export class ProductEditor implements OnDestroy {
       const variant = /\.variants\.([^.]+)\.([A-Z]{2}|[a-z]{2})\.(size|name|color)$/i.exec(issue);
       if (variant) {
         const [, key, lang, field] = variant;
+        /* The Maat is one value for every language (the product's own
+           variantSize), so a per-language size is never asked for here. */
+        if (field.toLowerCase() === 'size') continue;
         const code = lang.toUpperCase() as LanguageCode;
         if (key === myKey) {
           const item = items.get(field) ?? { field, label: fieldLabel[field] ?? field,
@@ -2007,6 +2010,8 @@ export class ProductEditor implements OnDestroy {
     try {
       if (plan.items.length) {
         const snapshot = await this.catalog.productPublicTranslations(productId);
+        /* Only the listed name/colour fields change; a stored per-language
+           size goes back untouched (the size-neutral backend ignores it). */
         const texts = [...snapshot.productTexts];
         for (const item of plan.items) {
           for (const lang of item.languages) {
@@ -2017,8 +2022,7 @@ export class ProductEditor implements OnDestroy {
               text = { language: lang, name: null, description: null, colour: null, variantSize: null };
               texts.push(text);
             }
-            if (item.field === 'size') text.variantSize = value;
-            else if (item.field === 'name') text.name = value;
+            if (item.field === 'name') text.name = value;
             else if (item.field === 'color') text.colour = value;
           }
         }
@@ -3946,7 +3950,7 @@ export class ProductEditor implements OnDestroy {
 
 /** One missing text of this product, fillable per language. */
 interface PublishFixItem {
-  field: 'size' | 'name' | 'color' | string;
+  field: 'name' | 'color' | string;
   label: string;
   base: string;
   languages: LanguageCode[];

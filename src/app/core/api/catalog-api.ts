@@ -138,7 +138,12 @@ export class CatalogApi {
     ));
   }
 
-  /** Empty strings explicitly clear optional variant fields on backward-compatible writes. */
+  /**
+   * Empty strings explicitly clear optional variant fields on backward-compatible writes.
+   * texts go back as loaded: the Maat is not translated and no screen edits
+   * texts[].variantSize. The size-neutral backend ignores it; an older backend
+   * keeps its per-language rows instead of losing them on this save.
+   */
   private productWriteBody(product: Product): Product {
     return {
       ...product,

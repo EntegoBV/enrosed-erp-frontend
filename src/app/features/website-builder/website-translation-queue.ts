@@ -10,7 +10,8 @@ import {
   ProductFamily,
 } from '../../core/api/models';
 import { Ui } from '../../shared/ui';
-import { localizedFamilySource, publicFamilyName } from './website-family-label';
+import { localizedFamilySource, publicFamilyName, variantBriefSource } from './website-family-label';
+import { isPerLanguageSizeIssue } from '../products/publication-issues';
 
 type TranslationTaskKind = 'PRODUCT' | 'CATEGORY' | 'WEBSITE';
 
@@ -358,7 +359,7 @@ export class WebsiteTranslationQueue {
         `bron highlights: ${(source?.highlights ?? []).join(' | ')}`,
         `bron SEO-titel: ${source?.seoTitle?.trim() || ''}`,
         `bron SEO-beschrijving: ${source?.seoDescription?.trim() || ''}`,
-        `bron varianten: ${family.members.map((member) => `productId=${member.productId}; naam=${member.name}; kleur=${member.colour ?? ''}; maat=${member.size ?? ''}`).join(' || ')}`,
+        `bron varianten: ${variantBriefSource(family.members)}`,
         '',
       );
     }
@@ -408,8 +409,10 @@ export class WebsiteTranslationQueue {
   }
 
   private detailTranslationLanguages(family: ProductFamily): LanguageCode[] {
+    /* A per-language Maat (older backend) is not a translation task. */
     const detailIssues = family.publicationIssues.filter((issue) =>
-      /\.variants\.|(?:image|photo|foto).*alt|alt(?:text)?/i.test(issue));
+      /\.variants\.|(?:image|photo|foto).*alt|alt(?:text)?/i.test(issue)
+      && !isPerLanguageSizeIssue(issue));
     return LANGUAGES.filter((language) => {
       const code = language.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const pattern = new RegExp(`(^|[._:/-])${code}([._:/-]|$)`, 'i');

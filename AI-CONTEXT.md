@@ -499,9 +499,23 @@ desk and editor style arrays did not grow.
   (NOT_CONFIGURED / QUEUED / TRIGGERED / LIVE / FAILED_OR_STALE) and keeps
   polling while Vercel builds.
 - Products: `product-translation-editor.ts` (+ adapter) edits a product's
-  name/colour/size per language against the strict-language contract;
+  name/colour per language against the strict-language contract;
   the publication editor lists every missing path before a family may go
   READY/PUBLISHED. Exports can be made per locale, strictly.
+- Maat is not translated (owner, 2026-09-28): one `variantSize` for every
+  language, edited only in the product editor (hint "Geldt voor alle
+  talen"). No translation screen, gap, publish-fix row or AI brief asks for
+  it (the website brief gives it as "maat (niet vertalen, ...)"), and a
+  variant reads "Rood · 4.8*4.8cm". `texts[].variantSize` is never shown or
+  edited but goes back as loaded on every write: the size-neutral backend
+  returns null and ignores it, an older one keeps its rows.
+  Deploy order: the backend size-neutral change (with the 2026-09-28
+  migration) goes live first on Railway test and production; an older
+  backend still demands a per-language size that no ERP screen fills in.
+  Against it a `.variants.<v>.<lang>.size` issue reads "Maat van ... geldt
+  voor alle talen ...; een oudere server vraagt die nog in FR" and a stray
+  `products.<id>.size` export path offers "Maat aanpassen" (product editor),
+  never "Vertaling aanvullen".
 - Category saves carry the server `revision`; a stale one is refused
   with "Categorie is intussen gewijzigd" - reload, do not retry blindly.
 - `unsaved-changes.guard.ts` protects the workspace from navigating away

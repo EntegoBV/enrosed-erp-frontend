@@ -51,7 +51,7 @@ import {
         <div>
           <h3 id="product-translations-title">Productvertalingen</h3>
           <p>{{ familyDraft()
-            ? 'Publieke naam, product- en familietekst, tags, variantkleur en -maat, SEO en foto-alt worden samen opgeslagen.'
+            ? 'Publieke naam, product- en familietekst, tags, variantkleur, SEO en foto-alt worden samen opgeslagen.'
             : 'Publieke naam, klantbeschrijving en varianttekst voor dit losse product worden samen opgeslagen.' }}</p>
         </div>
         @if (snapshot()) {
@@ -278,16 +278,6 @@ import {
                          [placeholder]="(productDraft() ?? product()).colour ?? ''"
                          (ngModelChange)="patchVariant({ colour: $event })" />
                   <small class="field__hint">Het woord zoals de klant het leest, bv. Rood → Rouge.</small>
-                </label>
-              }
-              @if (showVariantSize()) {
-                <label class="field">
-                  <span>Maat "{{ (productDraft() ?? product()).variantSize }}" in {{ language() }}</span>
-                  <input class="input" id="product-translation-variant-size"
-                         [ngModel]="variantText().variantSize"
-                         [placeholder]="(productDraft() ?? product()).variantSize ?? ''"
-                         (ngModelChange)="patchVariant({ variantSize: $event })" />
-                  <small class="field__hint">Woorden vertalen (Small → Klein); codes en afmetingen zoals S of 12x25 blijven gelijk.</small>
                 </label>
               }
               <label class="field span-2">
@@ -609,21 +599,17 @@ export class ProductTranslationEditor {
   });
   readonly languageLabel = computed(() =>
     this.languages.find((item) => item.code === this.language())?.label ?? this.language());
+  /** Colour plus the one Maat, e.g. "Rood · 4.8*4.8cm"; the Maat is the same in every language. */
   readonly variantLabel = computed(() => {
     const product = this.productDraft() ?? this.product();
-    return [product.colour || 'zonder kleur', product.variantSize].filter(Boolean).join(' · ');
+    return [product.colour?.trim() || 'zonder kleur', product.variantSize?.trim()]
+      .filter(Boolean).join(' · ');
   });
   readonly showVariantColour = computed(() => {
     const product = this.productDraft() ?? this.product();
     return !!product.colour?.trim()
       || product.texts.some((text) => !!text.colour?.trim())
       || this.focusField() === 'variant-colour';
-  });
-  readonly showVariantSize = computed(() => {
-    const product = this.productDraft() ?? this.product();
-    return !!product.variantSize?.trim()
-      || product.texts.some((text) => !!text.variantSize?.trim())
-      || this.focusField() === 'variant-size';
   });
   readonly images = computed(() => [...(this.familyDraft()?.images ?? [])]
     .sort((left, right) => left.position - right.position));
@@ -805,7 +791,6 @@ export class ProductTranslationEditor {
         `SEO-beschrijving: ${this.promptValue(familyText?.seoDescription)}`,
         `variantnaam documenten: ${this.promptValue(productText?.name)}`,
         `variantkleur: ${this.promptValue(productText?.colour)}`,
-        `variantmaat: ${this.promptValue(productText?.variantSize)}`,
         `variantbeschrijving: ${this.promptValue(productText?.description)}`,
       );
       for (const image of family?.images ?? []) {
@@ -913,6 +898,8 @@ export class ProductTranslationEditor {
     } : null;
     const product: Product = {
       ...structuredClone(snapshot.product),
+      /* Loaded as sent, including a stored per-language size: no screen shows
+         or edits it, and it goes back untouched (see upsertProductText). */
       texts: structuredClone(snapshot.productTexts),
     };
     const productPublicCopy: ProductPublicCopy = snapshot.productPublicCopy

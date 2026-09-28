@@ -25,9 +25,25 @@ export function familyText(family: ProductFamily, language: LanguageCode): Produ
   return family.texts.find((item) => item.language === language) ?? blankFamilyText(language);
 }
 
+/**
+ * A product's texts in one language, as the screens show them. The Maat is
+ * not translated, so a stored per-language size is never shown: every
+ * language uses the product's own variantSize.
+ */
 export function productText(product: Product, language: LanguageCode): ProductText {
   const existing = product.texts.find((item) => item.language === language);
-  return existing ? { ...blankProductText(language), ...existing } : blankProductText(language);
+  return existing
+    ? { ...blankProductText(language), ...existing, variantSize: null }
+    : blankProductText(language);
+}
+
+/**
+ * The variant as one language reads it: its translated colour plus the one
+ * Maat, e.g. "Rouge · 4.8*4.8cm". A stored per-language size is ignored.
+ */
+export function variantLabelIn(product: Product, language: LanguageCode): string {
+  return [productText(product, language).colour?.trim() || product.colour, product.variantSize]
+    .filter(Boolean).join(' · ');
 }
 
 export function upsertFamilyText(
@@ -61,7 +77,14 @@ export function upsertProductText(
   language: LanguageCode,
   changes: Partial<ProductText>,
 ): Product {
-  const text = { ...productText(product, language), ...changes, language };
+  const stored = product.texts.find((item) => item.language === language);
+  /* The Maat is never edited per language. Whatever the server sent is sent
+     back untouched: the size-neutral backend ignores it, an older one keeps
+     its row instead of losing it on the next save. */
+  const text = {
+    ...productText(product, language), ...changes, language,
+    variantSize: stored?.variantSize ?? null,
+  };
   const texts = product.texts.some((item) => item.language === language)
     ? product.texts.map((item) => item.language === language ? text : item)
     : [...product.texts, text];
@@ -124,14 +147,6 @@ export function translationGaps(
 
   required(gaps, 'VARIANT', 'variant-name', 'Variantnaam', productUsesText(product, 'name'), variant.name);
   required(gaps, 'VARIANT', 'variant-colour', 'Kleur', productUsesText(product, 'colour'), variant.colour);
-  required(
-    gaps,
-    'VARIANT',
-    'variant-size',
-    'Maat',
-    productUsesText(product, 'variantSize'),
-    variant.variantSize,
-  );
   required(
     gaps,
     'VARIANT',
@@ -198,7 +213,7 @@ function familyUsesHighlights(family: ProductFamily): boolean {
 
 function productUsesText(
   product: Product,
-  field: 'name' | 'description' | 'colour' | 'variantSize',
+  field: 'name' | 'description' | 'colour',
 ): boolean {
   return present(product[field]) || product.texts.some((text) => present(text[field]));
 }

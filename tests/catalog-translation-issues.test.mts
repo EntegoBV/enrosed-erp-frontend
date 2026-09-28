@@ -28,6 +28,7 @@ test('catalog copy links preserve the exact content key and requested language',
     kind: 'CATALOG_COPY',
     entityLabel: 'Catalogustekst · Catalog cover title',
     fieldLabel: 'Tekst invullen',
+    actionLabel: 'Catalogustekst aanvullen',
     route: '/catalog/texts',
     queryParams: {
       language: 'NL',
@@ -99,21 +100,30 @@ test('every strict family field maps to its shared translation field', () => {
   assert.ok(issues.every((issue) => issue.route === '/products/11/translations'));
 });
 
-test('every strict product field maps to the product translation editor', () => {
+test('every translated product field maps to the product translation editor', () => {
   const issues = catalogTranslationLinks([
     'products.21.name',
     'products.21.description',
     'products.21.color',
-    'products.21.size',
   ], 'NL', products, categories, new Set([21]));
 
   assert.deepEqual(issues.map((issue) => [issue.route, issue.queryParams.focus]), [
     ['/products/21/translations', 'variant-name'],
     ['/products/21/translations', 'variant-description'],
     ['/products/21/translations', 'variant-colour'],
-    ['/products/21/translations', 'variant-size'],
   ]);
   assert.ok(issues.every((issue) => issue.affectedProductIds.join(',') === '21'));
+  assert.ok(issues.every((issue) => issue.actionLabel === 'Vertaling aanvullen'));
+});
+
+test('a size path opens the product itself because the Maat is not translated', () => {
+  const [issue] = catalogTranslationLinks(['products.21.size'], 'NL', products, categories, new Set([21]));
+
+  assert.equal(issue.fieldLabel, 'Maat');
+  assert.equal(issue.actionLabel, 'Maat aanpassen', 'never "Vertaling aanvullen" for the Maat');
+  assert.equal(issue.route, '/products/21/edit');
+  assert.deepEqual(issue.queryParams, { returnTo: '/catalog-export', tab: 'identity' });
+  assert.deepEqual(issue.affectedProductIds, [21]);
 });
 
 test('family fields fall back to a known member and unknown paths remain visible', () => {

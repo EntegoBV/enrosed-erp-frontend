@@ -39,6 +39,7 @@ import {
 import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection } from './catalog-product-order';
 import { deselectProductIds } from './catalog-product-selection-state';
 import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
+import { variantLabelIn } from './product-translation-adapter';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v3';
 const LEGACY_STATE_KEY = 'enrosed.catalogBuilder.v2';
@@ -303,9 +304,9 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                             @if (issue.route) {
                               <a class="translation-issue" [routerLink]="issue.route"
                                  [queryParams]="issue.queryParams"
-                                 [attr.aria-label]="'Vertaling aanvullen: ' + issue.entityLabel + ', ' + issue.fieldLabel">
+                                 [attr.aria-label]="issue.actionLabel + ': ' + issue.entityLabel + ', ' + issue.fieldLabel">
                                 <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
-                                <i aria-hidden="true">Vertaling aanvullen →</i>
+                                <i aria-hidden="true">{{ issue.actionLabel }} →</i>
                               </a>
                             } @else {
                               <div class="translation-issue">
@@ -330,9 +331,9 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                             @if (issue.route) {
                               <a class="translation-issue" [routerLink]="issue.route"
                                  [queryParams]="issue.queryParams"
-                                 [attr.aria-label]="'Catalogustekst aanvullen: ' + issue.entityLabel + ', ' + issue.fieldLabel">
+                                 [attr.aria-label]="issue.actionLabel + ': ' + issue.entityLabel + ', ' + issue.fieldLabel">
                                 <span><b>{{ issue.entityLabel }}</b><small>{{ issue.fieldLabel }}</small></span>
-                                <i aria-hidden="true">Catalogustekst aanvullen →</i>
+                                <i aria-hidden="true">{{ issue.actionLabel }} →</i>
                               </a>
                             } @else {
                               <div class="translation-issue">
@@ -673,7 +674,8 @@ export class CatalogExport {
         id: product.id,
         name: text?.name?.trim() || product.name,
         sku: product.sku,
-        variant: [text?.colour?.trim() || product.colour, text?.variantSize?.trim() || product.variantSize].filter(Boolean).join(' · '),
+        /* The Maat is not translated; every language shows the product's own. */
+        variant: variantLabelIn(product, language),
         dimensions: dimensions.every(value => value !== null && value > 0) ? `${dimensions.join(' × ')} cm` : null,
         photoUrl: photo?.smallUrl || photo?.url || null,
         perBox: product.carton.piecesPerCarton,

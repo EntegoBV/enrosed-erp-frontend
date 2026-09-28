@@ -1,6 +1,7 @@
 import {
   LanguageCode,
   ProductFamily,
+  ProductFamilyMember,
   ProductFamilyText,
 } from '../../core/api/models';
 
@@ -32,6 +33,20 @@ export function localizedFamilySource(
     if (text && familyTextHasSource(text)) return text;
   }
   return texts.find(familyTextHasSource) ?? null;
+}
+
+/**
+ * The variants as source for an AI translation brief. The Maat is one value
+ * for every language and is never translated, so it is given as fixed
+ * context, not as a value to translate.
+ */
+export function variantBriefSource(members: readonly ProductFamilyMember[]): string {
+  return members.map((member) => [
+    `productId=${member.productId}`,
+    `naam=${member.name}`,
+    `kleur=${member.colour ?? ''}`,
+    `maat (niet vertalen, geldt voor alle talen)=${member.size ?? ''}`,
+  ].join('; ')).join(' || ');
 }
 
 function languagePriority(requestedLanguage?: LanguageCode): LanguageCode[] {

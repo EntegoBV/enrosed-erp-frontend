@@ -359,7 +359,11 @@ export interface ProductText {
   name: string | null;
   description: string | null;
   colour: string | null;
-  /** Localized merchandising label such as Small/Medium/Large; dimensions stay universal. */
+  /**
+   * Not translated: the Maat is one value for every language (Product.variantSize).
+   * Kept for the API shape only: no screen shows or edits it, and a loaded value
+   * goes back untouched (the size-neutral backend returns null and ignores it).
+   */
   variantSize: string | null;
 }
 
