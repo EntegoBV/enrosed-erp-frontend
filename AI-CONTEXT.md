@@ -455,7 +455,12 @@ desk and editor style arrays did not grow.
   scheduled, sent, received, failed, completed and cancelled remain distinct.
   The Brussels-day email summary counts sent + reserved + scheduled against
   the server limit. The UI records manual actions; it never sends messages.
-  Native Gmail scheduling is an external workflow. A verified Gmail schedule
+  Native Gmail scheduling is an external workflow. EMAIL / OUTREACH / RESERVED
+  imports call only the reservation endpoint with `occurredAt` as `scheduledFor`,
+  holding the future day's capacity before any Gmail action. Re-imported
+  reservations are rechecked by the server; closed or changed records surface
+  conflicts. The UI explicitly distinguishes these slots from Gmail schedules.
+  A verified Gmail schedule
   can be imported as EMAIL / OUTREACH / SCHEDULED: a new externalId reserves
   the specified future date before recording the scheduled state. Existing
   IDs go directly through the idempotent recording endpoint. An import error

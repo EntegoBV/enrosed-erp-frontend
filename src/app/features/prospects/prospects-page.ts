@@ -182,6 +182,7 @@ const blankActivity = (): ActivityDraft => ({ channel: 'NOTE', type: 'NOTE', sta
           @if (importData(); as data) {
             <p>{{ data.prospects.length }} prospects · {{ importActivityCount() }} activiteiten</p>
             <p class="prospect-log-hint">Bestaande bedrijven worden herkend aan e-mail of Instagram. Hun bedrijfsgegevens en notities blijven behouden. Vastgelegd contact kan de status Nieuw of Geselecteerd bijwerken naar Benaderd. Eerdere activiteiten met dezelfde referentie worden overgeslagen.</p>
+            @if (importHasReserved()) { <p class="prospect-log-hint">Gereserveerde e-mails houden een plek vrij binnen het dagdoel op de opgegeven verzenddatum. Er wordt nog niets in Gmail ingepland of verstuurd. Registreer dezelfde referentie pas als ingepland nadat de Gmail-planning is bevestigd.</p> }
             @if (importHasScheduled()) { <p class="prospect-log-hint">Importeer alleen e-mails die al aantoonbaar in Gmail zijn ingepland. Per e-mail wordt de dagruimte gecontroleerd. Deze import verstuurt of annuleert niets in Gmail; controleer bij fouten de Gmail-planning.</p> }
           }
           @if (importing()) { <p role="status">{{ importProgress() }}</p> }
@@ -252,6 +253,7 @@ export class ProspectsPage {
   readonly importResult = signal('');
   readonly importFailures = signal<string[]>([]);
   readonly importActivityCount = computed(() => this.importData()?.prospects.reduce((sum, row) => sum + row.activities.length, 0) ?? 0);
+  readonly importHasReserved = computed(() => this.importData()?.prospects.some(row => row.activities.some(activity => activity.status === 'RESERVED')) ?? false);
   readonly importHasScheduled = computed(() => this.importData()?.prospects.some(row => row.activities.some(activity => activity.status === 'SCHEDULED')) ?? false);
   private originalDraft = '';
   private originalActivity = '';
