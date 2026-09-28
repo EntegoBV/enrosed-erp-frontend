@@ -80,6 +80,9 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
               <a class="sidebar__link" routerLink="/customers" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="customers" [size]="18" /> Klanten
               </a>
+              <a class="sidebar__link" routerLink="/prospects" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="customers" [size]="18" /> Prospects
+              </a>
               <a class="sidebar__link" routerLink="/countries" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="countries" [size]="18" /> Landen &amp; vracht
               </a>

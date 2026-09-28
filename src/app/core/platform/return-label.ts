@@ -39,6 +39,7 @@ export function returnLabel(url: string): string {
   if (/^\/products\/\d+(?:[/]|$)/.test(path)) return 'product';
   if (under(path, '/products')) return 'Producten';
   if (under(path, '/customers')) return 'Klanten';
+  if (under(path, '/prospects')) return 'Prospects';
   if (under(path, '/suppliers')) return 'Leveranciers';
   if (under(path, '/settings')) return 'Instellingen';
   if (under(path, '/activity')) return 'Logboek';

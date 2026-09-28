@@ -90,7 +90,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="sales" /></span>
           <span class="more-group__copy"><strong>Verkoop</strong>
-            <small>Klanten · Landen &amp; vracht · Kortingen</small></span>
+            <small>Klanten · Prospects · Landen &amp; vracht</small></span>
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
@@ -98,6 +98,12 @@ import { THEMES, Theme } from '../../core/platform/theme';
             <span class="thumb thumb--placeholder"><app-icon name="customers" /></span>
             <div class="list-item__body"><div class="list-item__title">Klanten</div>
               <div class="list-item__meta">Contacten, voorwaarden en nieuwe orders</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
+          <a class="list-item" routerLink="/prospects">
+            <span class="thumb thumb--placeholder"><app-icon name="customers" /></span>
+            <div class="list-item__body"><div class="list-item__title">Prospects &amp; groothandels</div>
+              <div class="list-item__meta">Contactgegevens, outreach en opvolging</div></div>
             <span class="list-item__chev">›</span>
           </a>
           <a class="list-item" routerLink="/countries">

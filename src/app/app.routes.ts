@@ -62,6 +62,18 @@ export const routes: Routes = [
     loadComponent: () => import('./features/sales/revision-list').then((m) => m.RevisionList),
   },
   {
+    path: 'prospects',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () => import('./features/prospects/prospects-page').then((m) => m.ProspectsPage),
+  },
+  {
+    path: 'prospects/:id',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () => import('./features/prospects/prospects-page').then((m) => m.ProspectsPage),
+  },
+  {
     path: 'customers',
     canActivate: [authGuard],
     loadComponent: () =>
