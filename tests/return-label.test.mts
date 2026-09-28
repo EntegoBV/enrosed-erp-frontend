@@ -18,7 +18,6 @@ test('every ERP screen has a name to return to', () => {
     ['/products/57/edit', 'product'],
     ['/products', 'Producten'],
     ['/customers', 'Klanten'],
-    ['/prospects/24', 'Prospects'],
     ['/suppliers', 'Leveranciers'],
     ['/settings', 'Instellingen'],
     ['/activity', 'Logboek'],

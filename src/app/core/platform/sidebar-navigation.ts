@@ -12,7 +12,6 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
     path.startsWith('/sales')
     || path.startsWith('/revisions')
     || path.startsWith('/customers')
-    || path.startsWith('/prospects')
     || path.startsWith('/countries')
     || section === 'discounts'
   ) return 'verkoop';

@@ -445,34 +445,6 @@ handelen' and never 'Betaling open' for a credit note; dashboard, settings
 `so-credit*`, `partner-shortage`, `fin-credit-row`, `fin-offset-row`); the
 desk and editor style arrays did not grow.
 
-### Prospects & outreach (2026-09-28)
-- `/prospects` and `/prospects/:id` are staff-only routes under Verkoop;
-  the phone menu links to "Prospects & groothandels". The page keeps search,
-  status, country and pagination in query parameters, with a responsive
-  company list, details, editor and activity timeline.
-- `core/api/prospect-api.ts` follows `/api/prospects`. Company state uses
-  `DO_NOT_CONTACT` for opt-out. Activity state is separate: drafts, reserved,
-  scheduled, sent, received, failed, completed and cancelled remain distinct.
-  The Brussels-day email summary counts sent + reserved + scheduled against
-  the server limit. The UI records manual actions; it never sends messages.
-  Native Gmail scheduling is an external workflow. A verified Gmail schedule
-  can be imported as EMAIL / OUTREACH / SCHEDULED: a new externalId reserves
-  the specified future date before recording the scheduled state. Existing
-  IDs go directly through the idempotent recording endpoint. An import error
-  does not cancel anything in Gmail and explicitly asks the user to check it.
-- "Importeer contactlog" accepts version-1 JSON with at most 250 prospects,
-  2000 activities and 5 MB. It validates before writing, matches exact email
-  or Instagram identities, refuses ambiguous matches and never updates
-  existing company fields or notes. Recording actual contact can advance
-  NEW/QUALIFIED to CONTACTED through the server timeline rule. Stable
-  `externalId` values use the server's
-  idempotency check; changed duplicate payloads surface a conflict. Connection
-  or authorization errors stop the remaining import safely. Re-importing
-  the same log can finish a partial import without duplicating its history.
-- Pure validation, identity, URL and Brussels-date helpers have focused node
-  tests in `tests/prospect-state.test.mts`. Errors use `messageOf`; pending
-  edits/imports prevent accidental navigation. No prospect data is public.
-
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete.
 - List → **read-only view first** (stepper without Onderweg, products
