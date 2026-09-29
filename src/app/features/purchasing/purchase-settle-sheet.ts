@@ -6,7 +6,7 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
 import { DUE_MOMENT, type Due, type PayeeLedger, type SettleCarrier } from './purchase-payment-ledger';
-import { formatEur } from './purchase-payment-menus';
+import { formatEur, relinkPayment } from './purchase-payment-menus';
 
 /** The editor's settle draft. */
 export interface PurchaseSettleDraft {
@@ -70,7 +70,7 @@ export interface PurchaseSettleDraft {
           <p class="settle-sheet__note">Er wordt geen nieuwe betaling geboekt. De gekozen betaling krijgt de markering ‘rekent af’.</p>
         } @else if (settle.scope === 'TERM') {
           <p class="settle-sheet__note settle-sheet__note--warn">Er is nog geen betaling aan {{ termLabel(settle.due) }} gekoppeld. Kies ‘Alles aan de leverancier’ of koppel eerst een betaling aan deze termijn.</p>
-          @if (item.rows[0]; as row) {
+          @if (relink(); as row) {
             <button class="btn btn--sm" type="button" (click)="editCarrier.emit(row.payment)">Betaling aanpassen…</button>
           }
         } @else {
@@ -111,6 +111,8 @@ export class PurchaseSettleSheet {
   ]);
   readonly choosableTerms = computed(() => this.payee().terms.filter(term => !term.settled || term.due === this.draft().due));
   readonly selected = computed(() => this.carriers().find(option => option.id === this.draft().paymentId) ?? null);
+  /** No payment tied to the term: open the one that lost its term (a whole-supplier settlement strips it), to pick 'Voor termijn' again. */
+  readonly relink = computed(() => relinkPayment(this.payee()));
   /** Agreed and paid of what is being settled, and the difference that becomes final. */
   readonly amounts = computed(() => {
     const draft = this.draft();

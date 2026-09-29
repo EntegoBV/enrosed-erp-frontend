@@ -119,7 +119,15 @@ export interface LedgerTerm {
   finalized: boolean;
   state: PurchaseInstalmentState['state'];
   hasScopedPayment: boolean;
+  /** The supplier payments tied to this term, newest first: 'Betaling aanpassen…' opens the first. */
+  paymentIds: number[];
   canSettle: boolean;
+  /**
+   * Paid to the cent, tied to a payment and not flagged yet: settling only
+   * confirms it ('Betaald · afgerekend'). Kept apart from canSettle, which
+   * also picks the default term of the settle sheet.
+   */
+  canConfirm: boolean;
   canUndo: boolean;
   status: { label: string; tone: LedgerTone };
 }
@@ -497,7 +505,7 @@ function ledgerTerms(
     const lower = cents(server?.settledSavingEur);
     const higher = cents(server?.overpaidEur);
     const finalized = server?.finalized ?? false;
-    const scoped = supplier.filter(payment => payment.instalmentDue === state.due);
+    const scoped = supplier.filter(payment => payment.instalmentDue === state.due).sort(byNewest);
     const moment = DUE_MOMENT[state.due];
     const status: LedgerTerm['status'] = concept ? { label: 'Gepland', tone: 'neutral' }
       : state.settled && lower > 0 ? { label: 'Afgerekend · minder betaald', tone: 'ok' }
@@ -519,7 +527,10 @@ function ledgerTerms(
       finalized,
       state: state.state,
       hasScopedPayment: scoped.length > 0,
+      paymentIds: scoped.map(payment => payment.id),
       canSettle: canonical && scoped.length > 0 && !state.settled && (state.amount > 0 || (higher > 0 && !finalized)),
+      canConfirm: canonical && scoped.length > 0 && !state.settled && !scoped.some(payment => payment.settles)
+        && state.state === 'paid' && lower === 0 && higher === 0,
       canUndo: scoped.some(payment => payment.settles),
       status,
     };

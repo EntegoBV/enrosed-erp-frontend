@@ -14,7 +14,9 @@ import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeRowAction, sortLedgerRows, type Due, type LedgerRow, type LedgerTodo,
   type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
-import { formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, todoCopy } from './purchase-payment-menus';
+import {
+  formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termPayment, todoCopy,
+} from './purchase-payment-menus';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
@@ -212,7 +214,7 @@ type MenuState =
                                 } @else if (term.canSettle) {
                                   <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due })">Afrekenen…</button>
                                 }
-                                @if ((term.openEur > 0 && !term.settled) || term.canSettle || term.canUndo) {
+                                @if (termHasMenu(term)) {
                                   <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + term.label" (click)="openTermMenu(term, $event)"><app-icon name="more" [size]="16" /></button>
                                 }
                               </span>
@@ -509,6 +511,8 @@ export class PurchasePaymentWorkbench {
     });
   }
 
+  readonly termHasMenu = termHasMenu;
+
   label(payee: Payee): string { return PAYEE_LABEL[payee]; }
   tone(payee: Payee): string { return PAYEE_TONE[payee]; }
   pill(tone: 'warn' | 'ok' | 'neutral'): string { return tone === 'warn' ? 'tone-warn' : tone === 'ok' ? 'tone-ok' : ''; }
@@ -669,11 +673,7 @@ export class PurchasePaymentWorkbench {
       case 'payee': return payeeRowMenuItems(open.payee, busy);
       case 'payment': return paymentMenuItems(open.row, { move: true, busy });
       case 'proofs': return (open.row.proofs ?? []).map(proof => ({ id: 'open:' + proof.id, label: proof.originalFilename, iconName: 'document' }));
-      case 'term': return [
-        ...(open.term.openEur > 0 && !open.term.settled ? [{ id: 'add', label: 'Betaling noteren voor deze termijn', iconName: 'plus', disabled: busy }] : []),
-        ...(open.term.canSettle ? [{ id: 'settle', label: 'Termijn afrekenen', iconName: 'tick', disabled: busy }] : []),
-        ...(open.term.canUndo ? [{ id: 'undo', label: 'Afrekening ongedaan maken', iconName: 'restore', disabled: busy }] : []),
-      ];
+      case 'term': return termMenuItems(open.term, busy);
     }
   }
 
@@ -691,7 +691,10 @@ export class PurchasePaymentWorkbench {
       const term = open.term;
       if (item.id === 'add') this.add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due });
       else if (item.id === 'undo') this.undoSettle.emit({ payee: 'SUPPLIER', due: term.due });
-      else this.settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due });
+      else if (item.id === 'edit') {
+        const row = termPayment(term, this.ledger()?.rows ?? []);
+        if (row) this.edit.emit(row.payment);
+      } else this.settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due });
       return;
     }
     if (open.kind === 'payee') {

@@ -675,7 +675,7 @@ type PurchaseWorkspaceSectionId =
                      aria-labelledby="purchase-payments-title">
               <app-purchase-payment-overview mode="read" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentsError()"
                 [planLabel]="planLabel()" [supplierName]="supplierName()" [nacalc]="nacalcSummary()"
-                (add)="recordPayment($event)" (download)="downloadDocument($event)" (refresh)="reloadPayments()"
+                (add)="recordPayment($event)" (download)="downloadDocument($event)" (refresh)="reloadPayments()" (openEditor)="editPayments()"
                 (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
             </section>
 
@@ -1157,6 +1157,13 @@ export class PurchaseView {
     return data ? purchaseNacalc({ view: data, ledger: this.paymentLedger(), summary: this.nacalcSummary(),
       partner: partner === 'loading' || partner === 'error' ? null : partner }) : null;
   });
+
+  /** Correcting or settling a payment happens in the editor: open it on Betalingen. */
+  editPayments(): void {
+    const id = this.view()?.order.id;
+    if (id == null) return;
+    void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'ledger' } });
+  }
 
   /** Settling happens in the editor: open it on the Nacalculatie. */
   settleInEditor(): void {

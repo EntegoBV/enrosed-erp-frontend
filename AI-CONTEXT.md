@@ -226,6 +226,22 @@ cijfers'.
   after a failed request (`documentsFailed`), never "no proof". Rows with
   `appMenuTrigger` and their own `(click)` skip `$event.defaultPrevented`,
   the click that trails a long press.
+- A supplier term is never a dead end (containers round 2026-09-29, F1): a
+  term paid to the cent with a tied payment and no flag has `canConfirm`
+  (kept apart from `canSettle`, which `pickScope` uses for the default term)
+  and every term carries `paymentIds` (tied payments, newest first).
+  `termMenuItems`/`termHasMenu` in purchase-payment-menus.ts build the one
+  term menu for the desk ⋯ and the phone payee sheet (editor only): 'Betaling
+  noteren voor deze termijn' (open), 'Termijn afrekenen' (canSettle or
+  canConfirm), 'Afrekening ongedaan maken' (per term, `undoSettle({ payee:
+  'SUPPLIER', due })`) and 'Betaling aanpassen…' (newest tied payment); paid
+  rows keep no text button. The settle sheet's TERM warning relinks the
+  newest supplier payment WITHOUT a term (`relinkPayment`: a whole-supplier
+  settle strips the term and undo keeps it null); a GROUP settle already
+  prefers a term-less carrier (`settleCarriers`). The phone read view's
+  'Betaling' detail has 'Bewerken' (→ `/purchasing/:id/edit?section=ledger`)
+  and says 'Aanpassen of afrekenen kan in Bewerken.' The server's PUT payment
+  has no settle guard: this was UI only.
 - Nacalculatie (round 2, superseded by round 3 below; `app-purchase-payment-result` and
   `purchase-payment-result-rows.ts` are gone): it always showed the
   equation Enrosed kost + minder betaald − meer betaald − bijkomend = Enrosed

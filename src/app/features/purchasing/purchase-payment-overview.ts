@@ -243,8 +243,12 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               </div>
             } @else { <p class="ios-section__foot">Geen bewijs toegevoegd</p> }
           </section>
+          @if (mode() === 'read') { <p class="ios-section__foot">Aanpassen of afrekenen kan in Bewerken.</p> }
         </div>
-        <div foot style="display:contents"><button class="btn" type="button" (click)="detail.set(null)">Sluiten</button></div>
+        <div foot style="display:contents">
+          <button class="btn" type="button" (click)="detail.set(null)">Sluiten</button>
+          @if (mode() === 'read') { <button class="btn btn--primary" type="button" (click)="detail.set(null); openEditor.emit()">Bewerken</button> }
+        </div>
       </app-sheet>
     }
     @if (payeeMenu()) {
@@ -280,6 +284,8 @@ export class PurchasePaymentOverview {
   readonly save = output<void>();
   readonly refresh = output<void>();
   readonly openCosts = output<void>();
+  /** Read view: 'Bewerken' on a payment's detail opens the editor on Betalingen. */
+  readonly openEditor = output<void>();
 
   readonly openPayee = signal<PayeeLedger['payee'] | null>(null);
   readonly detail = signal<LedgerRow | null>(null);

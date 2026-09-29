@@ -7,7 +7,9 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { DUE_MOMENT, type Due, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest } from './purchase-payment-ledger';
-import { dayOf, monthOf, paymentMenuItems, proofLine, settleWith, toneClass } from './purchase-payment-menus';
+import {
+  dayOf, monthOf, paymentMenuItems, proofLine, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
+} from './purchase-payment-menus';
 
 /**
  * One payee on the phone: its agreement as a receipt, its terms or what the
@@ -45,13 +47,13 @@ import { dayOf, monthOf, paymentMenuItems, proofLine, settleWith, toneClass } fr
             <div class="ios-section__head"><h2>Termijnen</h2></div>
             <div class="ios-group">
               @for (term of item.terms; track term.due) {
-                <button class="ios-cell" type="button" [class.payee-sheet__term--done]="!termActionable(term)" (click)="tapTerm(term, $event)">
+                <button class="ios-cell" type="button" [class.payee-sheet__term--done]="!termTappable(term)" (click)="tapTerm(term, $event)">
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}</span></span>
                   <span class="ios-cell__trail">
                     @if (termActionable(term)) { <span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span> }
                     @else { <span class="ios-cell__meta wk-amount--in"><app-icon name="tick" [size]="12" /> {{ term.status.label }}</span> }
                   </span>
-                  @if (termActionable(term)) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
+                  @if (termTappable(term)) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
                 </button>
               }
             </div>
@@ -158,25 +160,30 @@ export class PurchasePayeeSheet {
 
   moment(due: Due): string { return DUE_MOMENT[due]; }
   finite(value: number): boolean { return Number.isFinite(value); }
-  termActionable(term: LedgerTerm): boolean { return term.openEur > 0 && !term.settled; }
+  termActionable(term: LedgerTerm): boolean { return termOpen(term); }
+  /** The read view only records what is open; the editor also opens a paid term's menu (settle, undo, correct its payment). */
+  termTappable(term: LedgerTerm): boolean { return this.mode() === 'edit' ? termHasMenu(term) : termOpen(term); }
 
   tapTerm(term: LedgerTerm, event: MouseEvent): void {
-    if (!this.termActionable(term) || this.busy()) return;
+    if (!this.termTappable(term) || this.busy()) return;
     if (this.mode() === 'edit') { this.termMenu.set({ term, point: { x: event.clientX, y: event.clientY } }); return; }
     this.close(() => this.add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due }));
   }
 
-  termItems(term: LedgerTerm): ContextMenuItem[] {
-    return [
-      { id: 'add', label: 'Betaling noteren voor deze termijn', iconName: 'plus' },
-      ...(term.canSettle ? [{ id: 'settle', label: 'Termijn afrekenen', iconName: 'tick' }] : []),
-    ];
-  }
+  termItems(term: LedgerTerm): ContextMenuItem[] { return termMenuItems(term, this.busy()); }
 
   pickTerm(term: LedgerTerm, item: ContextMenuItem): void {
     this.termMenu.set(null);
-    if (item.id === 'add') this.close(() => this.add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due }));
-    else this.close(() => this.settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due }));
+    switch (item.id) {
+      case 'add': this.close(() => this.add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due })); break;
+      case 'undo': this.close(() => this.undoSettle.emit({ payee: 'SUPPLIER', due: term.due })); break;
+      case 'edit': {
+        const row = termPayment(term, this.payee().rows);
+        if (row) this.act('edit', row.payment);
+        break;
+      }
+      default: this.close(() => this.settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due }));
+    }
   }
 
   rowItems(row: LedgerRow): ContextMenuItem[] { return paymentMenuItems(row, { move: false, busy: this.busy() }); }
