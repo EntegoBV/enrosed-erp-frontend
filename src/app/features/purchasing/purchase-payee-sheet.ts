@@ -1,14 +1,18 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import type { PurchaseDocument, PurchasePayment } from '../../core/api/models';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
-import { CurPipe, EurPipe } from '../../shared/pipes';
+import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
-import { DUE_MOMENT, type Due, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest } from './purchase-payment-ledger';
 import {
-  dayOf, monthOf, paymentMenuItems, proofLine, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
+  DUE_MOMENT, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  type SupplierCreditAction,
+} from './purchase-payment-ledger';
+import {
+  creditMenuItems, dayOf, monthOf, paymentMenuItems, proofLine, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
 } from './purchase-payment-menus';
 
 /**
@@ -19,7 +23,7 @@ import {
 @Component({
   selector: 'app-purchase-payee-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, ContextMenu, Icon, MenuTrigger, EurPipe, CurPipe],
+  imports: [NgTemplateOutlet, Sheet, ContextMenu, Icon, MenuTrigger, EurPipe, CurPipe, DateNlPipe],
   template: `
     @let item = payee();
     <app-sheet [title]="item.label" variant="ios" (closed)="closed.emit()">
@@ -71,6 +75,32 @@ import {
           </section>
         }
 
+        @if (item.payee === 'SUPPLIER' && item.credits.length) {
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Tegoed leverancier</h2><span class="ios-section__trail">{{ item.creditEur | eur }}</span></div>
+            <div class="ios-group">
+              @for (credit of item.credits; track credit.id) {
+                <ng-template #creditCell>
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ credit.reasonLabel }}</span>
+                    <span class="ios-cell__sub">genoteerd {{ credit.notedOn | dateNl }}@if (credit.note) { · {{ credit.note }} }</span></span>
+                  <span class="ios-cell__trail">
+                    <span class="ios-cell__value ios-cell__value--strong wk-amount--in">− {{ credit.amountEur | eur }}</span>
+                    <span class="ios-cell__meta" [class]="tone(credit.tone)">{{ credit.statusLabel }}</span>
+                  </span>
+                </ng-template>
+                @if (mode() === 'edit' && creditItems(credit).length) {
+                  <button class="ios-cell" type="button" (click)="tapCredit(credit, $event)">
+                    <ng-container [ngTemplateOutlet]="creditCell" /><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                } @else {
+                  <div class="ios-cell"><ng-container [ngTemplateOutlet]="creditCell" /></div>
+                }
+              }
+            </div>
+            <p class="ios-section__foot">@if (item.creditOpenEur > 0) { Nog {{ item.creditOpenEur | eur }} te ontvangen. }Een tegoed verlaagt de eindkost; Betaald en Open blijven gelijk.</p>
+          </section>
+        }
+
         <section class="ios-section">
           <div class="ios-section__head"><h2>Betalingen</h2>@if (item.proof; as proof) { <span class="ios-section__trail">Bewijs: {{ proof.withProof }} van {{ proof.total }}</span> }</div>
           @if (item.rows.length) {
@@ -98,6 +128,7 @@ import {
         @if (mode() === 'edit' && (item.payee === 'SUPPLIER' || item.canUndoSettle)) {
           <div class="payee-sheet__links">
             @if (item.payee === 'SUPPLIER') { <button class="ios-section__link" type="button" [disabled]="busy()" (click)="act('plan')">Betaalplan wijzigen</button> }
+            @if (item.payee === 'SUPPLIER') { <button class="ios-section__link" type="button" [disabled]="busy()" (click)="close(creditAdd)">Tegoed noteren…</button> }
             @if (item.canUndoSettle) { <button class="ios-section__link" type="button" [disabled]="busy()" (click)="act('undo')">Afrekening ongedaan maken</button> }
           </div>
         }
@@ -119,6 +150,10 @@ import {
     @if (termMenu(); as open) {
       <app-context-menu [title]="open.term.label" variant="ios" cancelLabel="Annuleren" [anchor]="open.point"
                         [items]="termItems(open.term)" (pick)="pickTerm(open.term, $event)" (closed)="termMenu.set(null)" />
+    }
+    @if (creditMenu(); as open) {
+      <app-context-menu [title]="'Tegoed · ' + open.credit.reasonLabel" variant="ios" cancelLabel="Annuleren" [anchor]="open.point"
+                        [items]="creditItems(open.credit)" (pick)="pickCredit(open.credit, $event)" (closed)="creditMenu.set(null)" />
     }
     @if (rowMenu(); as open) {
       <app-context-menu [title]="open.row.title" variant="ios" cancelLabel="Annuleren" [anchor]="open.point"
@@ -142,9 +177,13 @@ export class PurchasePayeeSheet {
   readonly planChange = output<void>();
   readonly remove = output<PurchasePayment>();
   readonly closed = output<void>();
+  /** Tegoed leverancier: note one, or act on an existing one (editor only). */
+  readonly credit = output<SupplierCreditAction>();
 
   readonly termMenu = signal<{ term: LedgerTerm; point: MenuPoint } | null>(null);
   readonly rowMenu = signal<{ row: LedgerRow; point: MenuPoint } | null>(null);
+  readonly creditMenu = signal<{ credit: LedgerCredit; point: MenuPoint } | null>(null);
+  readonly creditAdd = () => this.credit.emit({ kind: 'add' });
   readonly tone = toneClass;
   readonly day = dayOf;
   readonly month = monthOf;
@@ -186,6 +225,19 @@ export class PurchasePayeeSheet {
     }
   }
 
+  creditItems(credit: LedgerCredit): ContextMenuItem[] { return creditMenuItems(credit, this.busy()); }
+
+  tapCredit(credit: LedgerCredit, event: MouseEvent): void {
+    if (this.mode() !== 'edit' || this.busy() || !this.creditItems(credit).length) return;
+    this.creditMenu.set({ credit, point: { x: event.clientX, y: event.clientY } });
+  }
+
+  pickCredit(credit: LedgerCredit, item: ContextMenuItem): void {
+    this.creditMenu.set(null);
+    const kind = item.id as 'refund' | 'offset' | 'edit' | 'remove' | 'undo-refund' | 'open-offset';
+    this.close(() => this.credit.emit({ kind, credit: credit.credit }));
+  }
+
   rowItems(row: LedgerRow): ContextMenuItem[] { return paymentMenuItems(row, { move: false, busy: this.busy() }); }
 
   pickRow(row: LedgerRow, item: ContextMenuItem): void {
@@ -220,7 +272,7 @@ export class PurchasePayeeSheet {
    * top of this one. The overview defers the act by a task: outputs of this
    * sheet stop working once it is destroyed, so the delay cannot live here.
    */
-  private close(then: () => void): void {
+  close(then: () => void): void {
     this.closed.emit();
     then();
   }

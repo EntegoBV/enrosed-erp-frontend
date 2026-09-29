@@ -16,6 +16,7 @@ import { PurchaseNacalcWorkbench } from './purchase-nacalc-workbench';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import { PurchasePaymentSheet } from './purchase-payment-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
+import { PurchaseSupplierCreditSheet } from './purchase-supplier-credit-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { keyContext } from '../../shared/key-context';
@@ -64,7 +65,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -192,14 +193,15 @@ type DeskRow =
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
-                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" />
+                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)" />
             } @else if (mainView() === 'nacalc') {
               <app-purchase-nacalc-workbench [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
                 [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [saving]="saving()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [orderId]="data.order.id"
                 (openPayments)="showPayments($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)"
                 (save)="save()" (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()"
-                (openPartner)="openPartner()" (openReports)="showRail('files')" (applyCosts)="showRail('done')" (openCosts)="showCosts()" />
+                (openPartner)="openPartner()" (openReports)="showRail('files')" (applyCosts)="showRail('done')" (openCosts)="showCosts()"
+                (credit)="requestCredit($event)" />
             } @else {
             <div class="desk-table-bar">
               <div>
@@ -1054,9 +1056,13 @@ type DeskRow =
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
-          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
+          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
+      }
+      @if (crediting(); as credit) {
+        <app-purchase-supplier-credit-sheet [action]="credit" [view]="data" [targets]="creditTargets()" [supplierOpenEur]="creditSupplierOpen()"
+          [busy]="payingBusy()" (submit)="submitCredit($event)" (cancel)="closeCredit()" />
       }
       @if (settling(); as settle) {
         @if (settlePayee(); as payee) {

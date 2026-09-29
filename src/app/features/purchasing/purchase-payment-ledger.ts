@@ -1,5 +1,6 @@
 import type {
-  Currency, Instalment, Payee, PurchaseDocument, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchasePayment,
+  Currency, Instalment, Payee, PurchaseCreditOffset, PurchaseDocument, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchasePayment,
+  PurchaseSupplierCredit, SupplierCreditReason, SupplierCreditStatus, SupplierCreditUpdate,
 } from '../../core/api/models';
 import type { PurchaseInstalmentState } from './purchase-instalment-state';
 
@@ -57,6 +58,14 @@ const STATUS_DUE: Readonly<Record<OrderStatus, Due>> = {
   CONCEPT: 'ORDERED', BESTELD: 'ORDERED', ONDERWEG: 'SHIPPED', ONTVANGEN: 'ARRIVED',
 };
 
+/** 'Tegoed leverancier': why the supplier owes money back, and where that credit stands. */
+export const SUPPLIER_CREDIT_REASON_LABEL: Readonly<Record<SupplierCreditReason, string>> = {
+  SHORTAGE: 'Tekort', DAMAGE: 'Schade', PRICE: 'Prijsverschil', OTHER: 'Andere',
+};
+export const SUPPLIER_CREDIT_STATUS_LABEL: Readonly<Record<SupplierCreditStatus, string>> = {
+  OPEN: 'Tegoed open', OFFSET: 'Verrekend', REFUNDED: 'Terugbetaald',
+};
+
 export type LedgerTone = 'warn' | 'ok' | 'neutral';
 export type PayeeStatusKind = 'NONE' | 'ADDITIONAL' | 'INCOMPLETE' | 'UNBUDGETED' | 'OVERPAID' | 'SETTLED_HIGHER'
   | 'SETTLED_LOWER' | 'PAID' | 'PLANNED' | 'DUE' | 'LATER' | 'SMALL_DIFFERENCE' | 'PARTIAL';
@@ -78,6 +87,14 @@ export interface PurchaseSettleRequest {
   due: Due | null;
   paymentId?: number | null;
 }
+
+/**
+ * What a template asks of a supplier credit: note a new one (maybe for a
+ * reason, e.g. from the receipt block), or act on an existing one.
+ */
+export type SupplierCreditAction =
+  | { kind: 'add'; reason?: SupplierCreditReason }
+  | { kind: 'edit' | 'refund' | 'offset' | 'remove' | 'undo-refund' | 'open-offset'; credit: PurchaseSupplierCredit };
 
 export interface LedgerRow {
   id: number;
@@ -104,6 +121,27 @@ export interface LedgerRow {
   hasProof: boolean | null;
   actor: string | null;
   recordedAt: string;
+  /** This payment offsets a credit of another container: its amount belongs to that credit. */
+  creditOffset: PurchaseCreditOffset | null;
+}
+
+/** One credit the supplier owes on this container, as the Tegoed leverancier block lists it. */
+export interface LedgerCredit {
+  id: number;
+  credit: PurchaseSupplierCredit;
+  notedOn: string;
+  amount: number;
+  currency: Currency;
+  foreign: boolean;
+  amountEur: number;
+  reason: SupplierCreditReason;
+  reasonLabel: string;
+  note: string | null;
+  status: SupplierCreditStatus;
+  /** 'Tegoed open', 'Terugbetaald 12/09' or 'Verrekend met INK-2026-015'. */
+  statusLabel: string;
+  tone: LedgerTone;
+  open: boolean;
 }
 
 export interface LedgerTerm {
@@ -184,6 +222,11 @@ export interface PayeeLedger {
   /** The one text action of the payee's row on every screen: payeeRowAction. */
   action: 'add' | 'settle' | null;
   visible: boolean;
+  /** Supplier only: the credits it owes back, newest first; they lower the eindkost, never Betaald or Open. */
+  credits: LedgerCredit[];
+  creditEur: number;
+  /** The part of creditEur neither refunded nor offset yet. */
+  creditOpenEur: number;
 }
 
 export type LedgerHeadlineKind = 'due' | 'later' | 'review' | 'done' | 'concept' | 'empty';
@@ -200,6 +243,10 @@ export interface LedgerSummary {
   /** Paid to the bijkomende kosten, outside every agreement. */
   additionalEur: number;
   paidTotalEur: number;
+  /** Credits of the supplier (any status) and the part still to receive. */
+  creditEur: number;
+  creditOpenEur: number;
+  /** Paid + open − the supplier's credits: the server's forecast. */
   forecastEur: number;
   progress: number;
   /** Widths in percent for the stacked bar: paid, due now, later, and where the agreement ends when paid beyond it. */
@@ -216,6 +263,7 @@ export type LedgerTodo =
   | { kind: 'pay'; key: string; payee: Payee; due: Due | null; label: string; amountEur: number }
   | { kind: 'settle' | 'review' | 'budget'; key: string; payee: Payee; amountEur: number; request: PurchaseSettleRequest }
   | { kind: 'incomplete'; key: string; payee: Payee }
+  | { kind: 'credit'; key: string; payee: 'SUPPLIER'; amountEur: number; count: number }
   | { kind: 'proof'; key: string; count: number };
 
 export interface BridgeRow {
@@ -303,7 +351,7 @@ export function purchasePaymentLedger(input: PaymentLedgerInput): PaymentLedger 
   const instalments = view.reconciliation?.supplierInstalments;
   const canonical = Array.isArray(instalments);
   const concept = view.order.status === 'CONCEPT';
-  const rows = ledgerRows(payments, input.documents, instalments);
+  const rows = ledgerRows(payments, input.documents, instalments, view.creditOffsets ?? []);
   const terms = ledgerTerms(input.terms, instalments, payments, canonical, concept);
   const payees = PAYEE_ORDER.map(payee => payeeLedger(payee, input, rows, payee === 'SUPPLIER' ? terms : [], canonical, concept));
   const summary = ledgerSummary(input, payees, rows, concept);
@@ -379,6 +427,10 @@ function payeeLedger(
     count: rows.length, dueNow, laterDue, concept, tolerance: cents(input.toleranceEur),
   });
   const composition = payeeComposition(payee, view, agreed === null ? null : euro(agreed));
+  const credits = payee === 'SUPPLIER' ? ledgerCredits(view.supplierCredits ?? []) : [];
+  const creditSum = credits.reduce((total, credit) => total + cents(credit.amountEur), 0);
+  const credit = payee === 'SUPPLIER' ? (stream?.creditEur != null ? cents(stream.creditEur) : creditSum) : 0;
+  const creditOpen = credits.filter(item => item.open).reduce((total, item) => total + cents(item.amountEur), 0);
   const openTerms = terms.filter(term => term.openEur > 0);
   const settleDefault: PurchaseSettleRequest = payee === 'SUPPLIER' && canonical && openTerms.length === 1 && openTerms[0].hasScopedPayment
     ? { payee, scope: 'TERM', due: openTerms[0].due } : { payee, scope: 'GROUP', due: null };
@@ -429,7 +481,107 @@ function payeeLedger(
     next,
     action: payeeRowAction({ dueNowEur: euro(dueNow), canSettle, laterEur: euro(later), openEur: euro(open), smallDifference: status.kind === 'SMALL_DIFFERENCE' }),
     visible: payee === 'SUPPLIER' || rows.length > 0 || (!other && (agreed ?? 0) > 0),
+    credits,
+    creditEur: euro(credit),
+    creditOpenEur: euro(creditOpen),
   };
+}
+
+/** The supplier's credits, newest first, each with its reason and where it stands in words. */
+export function ledgerCredits(credits: readonly PurchaseSupplierCredit[]): LedgerCredit[] {
+  return [...credits].sort((left, right) => right.notedOn.localeCompare(left.notedOn) || right.id - left.id).map(credit => {
+    const status = credit.status;
+    const statusLabel = status === 'REFUNDED'
+      ? SUPPLIER_CREDIT_STATUS_LABEL.REFUNDED + (credit.settledOn ? ' ' + dayMonth(credit.settledOn) : '')
+      : status === 'OFFSET'
+        ? SUPPLIER_CREDIT_STATUS_LABEL.OFFSET + (credit.offsetOrderNumber ? ' met ' + credit.offsetOrderNumber : '')
+        : SUPPLIER_CREDIT_STATUS_LABEL.OPEN;
+    return {
+      id: credit.id,
+      credit,
+      notedOn: credit.notedOn,
+      amount: credit.amount,
+      currency: credit.currency,
+      foreign: credit.currency !== 'EUR',
+      amountEur: credit.amountEur,
+      reason: credit.reason,
+      reasonLabel: SUPPLIER_CREDIT_REASON_LABEL[credit.reason] ?? SUPPLIER_CREDIT_REASON_LABEL.OTHER,
+      note: credit.note?.trim() || null,
+      status,
+      statusLabel,
+      tone: status === 'OPEN' ? 'warn' : 'ok',
+      open: status === 'OPEN',
+    };
+  });
+}
+
+/**
+ * The containers a credit can be offset on: another order of the same
+ * supplier that was ordered (not a concept), newest first; the server checks
+ * the same rule.
+ */
+export function creditOffsetTargets(
+  views: readonly PurchaseOrderView[], source: Pick<PurchaseOrderView['order'], 'id' | 'supplierId'>,
+): PurchaseOrderView[] {
+  return views.filter(view => view.order.id !== source.id && view.order.supplierId === source.supplierId && view.order.status !== 'CONCEPT')
+    .sort((left, right) => right.order.orderDate.localeCompare(left.order.orderDate) || right.order.id - left.order.id);
+}
+
+/** '12/09' of an ISO day. */
+function dayMonth(iso: string): string {
+  return iso.slice(8, 10) + '/' + iso.slice(5, 7);
+}
+
+/**
+ * What the Tegoed noteren sheet proposes for a reason, in euro: the value of
+ * the missing pieces for a shortage, of the damaged ones for damage, from the
+ * receipt (server receiptVariance), minus what earlier credits for the same
+ * reason already claim. Null when there is nothing to propose.
+ */
+export function supplierCreditPrefill(view: Pick<PurchaseOrderView, 'receiptVariance' | 'supplierCredits'>, reason: SupplierCreditReason): number | null {
+  const variance = view.receiptVariance;
+  if (!variance || (reason !== 'SHORTAGE' && reason !== 'DAMAGE')) return null;
+  const value = cents(reason === 'SHORTAGE' ? variance.missingValueEur : variance.damagedValueEur);
+  const claimed = (view.supplierCredits ?? []).filter(credit => credit.reason === reason)
+    .reduce((total, credit) => total + cents(credit.amountEur), 0);
+  const rest = value - claimed;
+  return rest > 0 ? euro(rest) : null;
+}
+
+/**
+ * The euro an empty 'Afgeschreven in euro' field keeps when an open credit
+ * is corrected: the stored one while amount and currency stay (the server
+ * keeps it), null once either changes (the server takes the order rate).
+ */
+export function supplierCreditKeptEur(credit: Pick<PurchaseSupplierCredit, 'amount' | 'currency' | 'amountEur'>,
+  amount: number | null, currency: Currency): number | null {
+  return amount !== null && cents(amount) === cents(credit.amount) && currency === credit.currency ? credit.amountEur : null;
+}
+
+/**
+ * The PUT body of 'Aanpassen…' on an open credit. The euro goes along only
+ * when the buyer typed it for a USD/CNY credit, so a new amount or currency
+ * gets a new euro value instead of the old one. The note is always sent: an
+ * emptied one ('') clears it, where null would keep the stored note.
+ */
+export function supplierCreditEditBody(fields: {
+  amount: number; currency: Currency; amountEur: number | null; reason: SupplierCreditReason; note: string;
+}): SupplierCreditUpdate {
+  return { amount: fields.amount, currency: fields.currency, reason: fields.reason, note: fields.note.trim(),
+    ...(fields.currency !== 'EUR' && fields.amountEur !== null ? { amountEur: fields.amountEur } : {}) };
+}
+
+/**
+ * The PUT body of 'Terugbetaald noteren…' on an open credit. A USD/CNY
+ * credit keeps its amount and takes what reached the bank as its euro. A
+ * euro credit's euro is its amount, so a refund of another sum (500 € noted,
+ * 480 € back) changes the amount itself; to the cent it sends neither.
+ */
+export function supplierCreditRefundBody(credit: Pick<PurchaseSupplierCredit, 'amount' | 'currency'>,
+  settledOn: string, refundEur: number): SupplierCreditUpdate {
+  const body: SupplierCreditUpdate = { status: 'REFUNDED', settledOn };
+  if (credit.currency !== 'EUR') return { ...body, amountEur: refundEur };
+  return cents(refundEur) === cents(credit.amount) ? body : { ...body, amount: refundEur, amountEur: refundEur };
 }
 
 /**
@@ -539,12 +691,13 @@ function ledgerTerms(
 
 function ledgerRows(
   payments: readonly PurchasePayment[], documents: readonly PurchaseDocument[] | null,
-  instalments: readonly PurchaseInstalmentReconciliation[] | undefined,
+  instalments: readonly PurchaseInstalmentReconciliation[] | undefined, offsets: readonly PurchaseCreditOffset[],
 ): LedgerRow[] {
   return [...payments].sort(byNewest).map(payment => {
     const payee = payeeOf(payment);
     const due = payment.instalmentDue ?? null;
     const proofs = documents === null ? null : documents.filter(document => document.paymentId === payment.id);
+    const creditOffset = offsets.find(offset => offset.paymentId === payment.id) ?? null;
     return {
       id: payment.id,
       payment,
@@ -552,7 +705,7 @@ function ledgerRows(
       payeeLabel: PAYEE_LABEL[payee],
       payeeShort: PAYEE_SHORT[payee],
       paidOn: payment.paidOn,
-      title: payment.label?.trim() || PAYEE_LABEL[payee],
+      title: payment.label?.trim() || (creditOffset ? ('Verrekend tegoed ' + (creditOffset.sourceOrderNumber ?? '')).trim() : PAYEE_LABEL[payee]),
       label: payment.label?.trim() || null,
       due,
       termLabel: termLabel(due, instalments),
@@ -567,6 +720,7 @@ function ledgerRows(
       hasProof: proofs === null ? null : proofs.length > 0,
       actor: payment.actor,
       recordedAt: payment.recordedAt,
+      creditOffset,
     };
   });
 }
@@ -598,6 +752,9 @@ function ledgerSummary(input: PaymentLedgerInput, payees: readonly PayeeLedger[]
   const dueNow = sum('dueNowEur');
   const later = sum('laterEur');
   const additional = cents(payees.find(payee => payee.payee === 'OTHER')?.paidEur);
+  const supplier = payees.find(payee => payee.payee === 'SUPPLIER');
+  const credit = cents(supplier?.creditEur);
+  const creditOpen = cents(supplier?.creditOpenEur);
   const serverPaid = input.view.reconciliation?.totals.paidEur;
   const paidTotal = serverPaid != null ? cents(serverPaid)
     : rows.reduce((total, row) => total + (Number.isFinite(row.amountEur) ? cents(row.amountEur) : 0), 0);
@@ -622,7 +779,9 @@ function ledgerSummary(input: PaymentLedgerInput, payees: readonly PayeeLedger[]
     laterEur: euro(later),
     additionalEur: euro(additional),
     paidTotalEur: euro(paidTotal),
-    forecastEur: euro(paidTotal + open),
+    creditEur: euro(credit),
+    creditOpenEur: euro(creditOpen),
+    forecastEur: euro(paidTotal + open - credit),
     progress: agreed > 0 ? Math.min(1, paid / agreed) : 0,
     meter: { paidPct: pct(paid), duePct: pct(dueNow), laterPct: pct(later), agreedPct: higher > 0 ? pct(agreed) : null },
     balanced: payees.every(payee => payee.balanced),
@@ -668,6 +827,11 @@ function ledgerTodos(payees: readonly PayeeLedger[], summary: LedgerSummary): Le
   }
   for (const payee of payees) {
     if (payee.status.kind === 'INCOMPLETE') todos.push({ kind: 'incomplete', key: 'incomplete:' + payee.payee, payee: payee.payee });
+  }
+  const supplier = payees.find(payee => payee.payee === 'SUPPLIER');
+  const openCredits = supplier?.credits.filter(credit => credit.open) ?? [];
+  if (supplier && openCredits.length && supplier.creditOpenEur > 0) {
+    todos.push({ kind: 'credit', key: 'credit:SUPPLIER', payee: 'SUPPLIER', amountEur: supplier.creditOpenEur, count: openCredits.length });
   }
   if (summary.missingProofCount) todos.push({ kind: 'proof', key: 'proof', count: summary.missingProofCount });
   return todos;

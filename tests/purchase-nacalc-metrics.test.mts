@@ -324,7 +324,13 @@ test('reason precedence: bijkomend, onvolledig, betaald zonder afspraak, te veel
   assert.equal(reason({ openEur: 0, lowerEur: 20, status: { kind: 'SETTLED_LOWER', label: 'x', tone: 'ok' } }).label, 'minder betaald · afgerekend');
   assert.equal(reason({ openEur: 0, higherEur: 20, status: { kind: 'SETTLED_HIGHER', label: 'x', tone: 'neutral' } }).label, 'meer betaald · afgerekend');
   assert.equal(reason({ openEur: 0, status: { kind: 'PAID', label: 'Betaald', tone: 'ok' } }).label, 'geen verschil');
-  assert.equal(Object.keys(NACALC_REASON_LABEL).length, 10);
+  // A supplier credit (tegoed) is the story of a closed payee before its settled difference; an open remainder still comes first.
+  const credit = reason({ payee: 'SUPPLIER', paymentCount: 1, openEur: 0, lowerEur: 20, creditEur: 500, creditOpenEur: 200,
+    status: { kind: 'SETTLED_LOWER', label: 'x', tone: 'ok' } });
+  assert.deepEqual(plain([credit.reason, credit.label]), ['credit', 'tegoed leverancier − € 500,00 · € 200,00 te ontvangen']);
+  assert.equal(plain(reason({ payee: 'SUPPLIER', paymentCount: 1, openEur: 0, creditEur: 500, creditOpenEur: 0 }).label), 'tegoed leverancier − € 500,00');
+  assert.equal(reason({ payee: 'SUPPLIER', paymentCount: 1, openEur: 100, dueNowEur: 100, creditEur: 500 }).reason, 'open');
+  assert.equal(Object.keys(NACALC_REASON_LABEL).length, 11);
 });
 
 test('the row action mirrors the workbench: Noteer for anything due or open later, Afrekenen for a remainder, Nakijken only for an overpayment', () => {

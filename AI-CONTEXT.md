@@ -242,6 +242,40 @@ cijfers'.
   'Betaling' detail has 'Bewerken' (→ `/purchasing/:id/edit?section=ledger`)
   and says 'Aanpassen of afrekenen kan in Bewerken.' The server's PUT payment
   has no settle guard: this was UI only.
+- Tegoed leverancier (2026-09-29, F3): money the supplier owes back (short
+  delivery, damage, price) lives in its own server entity, never as a
+  negative payment. `view.supplierCredits` (reason SHORTAGE/DAMAGE/PRICE/OTHER
+  = Tekort/Schade/Prijsverschil/Andere, status OPEN/REFUNDED/OFFSET = 'Tegoed
+  open'/'Terugbetaald dd/mm'/'Verrekend met INK-…') feeds `ledgerCredits`;
+  the supplier payee carries `credits`, `creditEur` (server stream.creditEur
+  first) and `creditOpenEur`, the summary's forecast is paid + open − credit
+  (as the server's), Betaald/Open/Afspraak never move, and an open credit is
+  a 'credit' todo. Endpoints (all return the order view; the host just calls
+  `refreshPaymentState`): POST/PUT/DELETE `/purchase-orders/:id/supplier-credits`
+  and POST `…/:creditId/offset` (a normal supplier payment 'Verrekend tegoed
+  INK-…' on another ordered container of the same supplier, `creditOffsetTargets`
+  from the purchase list, optional term). `app-purchase-supplier-credit-sheet`
+  (page level in editor and desk, `crediting`) does add/edit (date, reason
+  segments, amount + currency with the receipt value as proposal via
+  `supplierCreditPrefill`, 'Afgeschreven in euro', note), refund (date +
+  euro) and offset; remove and 'Terugbetaling ongedaan maken' are confirms;
+  every write goes through `requestCredit` (whenSaved). The PUT bodies come
+  from `supplierCreditEditBody` (euro field starts empty and goes along only
+  when typed for USD/CNY, else the server keeps the stored euro or takes the
+  order rate for a new amount/currency; note always sent, '' clears it) and
+  `supplierCreditRefundBody` (a EUR refund of another sum sends it as amount
+  and amountEur, the server requires them equal). An untouched euro proposal
+  empties when the Munt turns USD/CNY. Desk: sub rows under
+  Leverancier in 'Per ontvanger' with a ⋯ (`creditMenuItems`), 'Tegoed
+  noteren…' in the payee ⋯; phone: rows under Leverancier and a section in
+  the payee sheet (menus in the editor only). A target's offset payment
+  (`view.creditOffsets`, `LedgerRow.creditOffset`) locks amount, currency and
+  payee in the payment sheet and cannot be moved; deleting it reopens the
+  credit. Nacalculatie: reason 'credit' after 'open', 'Tegoed leverancier −
+  € x' under the supplier's eindkost, a CREDIT bridge row between Open and
+  the eindkost, the receipt block's credit line and 'Tegoed noteren…' (the
+  read view opens `/purchasing/:id/edit?section=credit`), ' · tegoed € x
+  open' after the state sentence. Kosten & bank does not show credits yet.
 - Nacalculatie (round 2, superseded by round 3 below; `app-purchase-payment-result` and
   `purchase-payment-result-rows.ts` are gone): it always showed the
   equation Enrosed kost + minder betaald − meer betaald − bijkomend = Enrosed

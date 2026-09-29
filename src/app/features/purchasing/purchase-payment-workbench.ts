@@ -11,11 +11,13 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeRowAction, sortLedgerRows, type Due, type LedgerRow, type LedgerTodo,
-  type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeRowAction, sortLedgerRows, type Due, type LedgerCredit, type LedgerRow,
+  type LedgerTodo, type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
-  formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termPayment, todoCopy,
+  creditMenuItems, formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termPayment,
+  todoCopy,
 } from './purchase-payment-menus';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
@@ -27,6 +29,7 @@ type MenuState =
   | { kind: 'term'; point: MenuPoint; term: LedgerTerm }
   | { kind: 'payee'; point: MenuPoint; payee: PayeeLedger }
   | { kind: 'payment'; point: MenuPoint; row: LedgerRow }
+  | { kind: 'credit'; point: MenuPoint; credit: LedgerCredit }
   | { kind: 'proofs'; point: MenuPoint; row: LedgerRow };
 
 /**
@@ -241,6 +244,27 @@ type MenuState =
                           }
                         }
                       }
+                      @if (item.credits.length) {
+                        <!-- Tegoed leverancier: money the supplier owes back; it lowers the eindkost, never Betaald or Open. -->
+                        <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2">
+                          <span class="wk-td" role="gridcell">Tegoed leverancier · {{ item.creditEur | eur }}@if (item.creditOpenEur > 0) { · {{ item.creditOpenEur | eur }} nog te ontvangen }</span>
+                        </div>
+                        @for (credit of item.credits; track credit.id) {
+                          <div class="wk-tr wk-tr--sub pw-credit-row" role="row" aria-level="2"
+                               appMenuTrigger (menuTrigger)="menu.set({ kind: 'credit', point: $event, credit })">
+                            <span class="wk-td pw-credit__label" role="gridcell">
+                              <span class="pw-credit__what">{{ credit.reasonLabel }} · {{ credit.notedOn | dateNl }}@if (credit.note) { <span class="wk-td__sub">{{ credit.note }}</span> }</span>
+                              <span class="wk-pill" [class]="pill(credit.tone)">{{ credit.statusLabel }}</span>
+                            </span>
+                            <span class="wk-td wk-td--num wk-amount pw-credit__amount" role="gridcell">− {{ credit.amountEur | eur }}@if (credit.foreign) { <span class="wk-td__sub">{{ credit.amount | cur: credit.currency }}</span> }</span>
+                            <span class="wk-td wk-td--actions pw-credit__actions" role="gridcell">
+                              @if (creditItems(credit).length) {
+                                <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor tegoed ' + credit.reasonLabel" (click)="$event.stopPropagation(); openCreditMenu(credit, $event)"><app-icon name="more" [size]="16" /></button>
+                              }
+                            </span>
+                          </div>
+                        }
+                      }
                     }
                     <div class="wk-tr wk-tr--total" role="row">
                       <span class="wk-td" role="gridcell"></span>
@@ -439,6 +463,8 @@ export class PurchasePaymentWorkbench {
   /** 'actual' opens the Nacalculatie, 'plan' the calculation in Kosten. */
   readonly openCosts = output<'actual' | 'plan'>();
   readonly openPartner = output<void>();
+  /** Tegoed leverancier: note one, or act on an existing one. */
+  readonly credit = output<SupplierCreditAction>();
 
   readonly selectedPayee = signal<Payee | null>(null);
   readonly filter = signal<LedgerFilter>('ALL');
@@ -635,6 +661,13 @@ export class PurchasePaymentWorkbench {
     else this.menu.set({ kind, point });
   }
 
+  openCreditMenu(credit: LedgerCredit, event: MouseEvent): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menu.set({ kind: 'credit', point: { x: rect.left, y: rect.bottom + 4 }, credit });
+  }
+
+  creditItems(credit: LedgerCredit): ContextMenuItem[] { return creditMenuItems(credit, !this.actionable()); }
+
   openTermMenu(term: LedgerTerm, event: MouseEvent): void {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     this.menu.set({ kind: 'term', point: { x: rect.left, y: rect.bottom + 4 }, term });
@@ -656,6 +689,7 @@ export class PurchasePaymentWorkbench {
       case 'payment': return open.row.title;
       case 'proofs': return 'Bewijzen';
       case 'term': return open.term.label;
+      case 'credit': return 'Tegoed · ' + open.credit.reasonLabel;
     }
   }
 
@@ -674,6 +708,7 @@ export class PurchasePaymentWorkbench {
       case 'payment': return paymentMenuItems(open.row, { move: true, busy });
       case 'proofs': return (open.row.proofs ?? []).map(proof => ({ id: 'open:' + proof.id, label: proof.originalFilename, iconName: 'document' }));
       case 'term': return termMenuItems(open.term, busy);
+      case 'credit': return creditMenuItems(open.credit, busy);
     }
   }
 
@@ -697,8 +732,13 @@ export class PurchasePaymentWorkbench {
       } else this.settle.emit({ payee: 'SUPPLIER', scope: 'TERM', due: term.due });
       return;
     }
+    if (open.kind === 'credit') {
+      this.credit.emit({ kind: item.id as 'refund' | 'offset' | 'edit' | 'remove' | 'undo-refund' | 'open-offset', credit: open.credit.credit });
+      return;
+    }
     if (open.kind === 'payee') {
       const payee = open.payee;
+      if (item.id === 'credit') { this.credit.emit({ kind: 'add' }); return; }
       if (item.id === 'add') this.addFor(payee);
       else if (item.id === 'settle') this.settle.emit(payee.settleDefault);
       else if (item.id === 'undo') this.undoSettle.emit({ payee: payee.payee });
@@ -730,6 +770,7 @@ export class PurchasePaymentWorkbench {
       case 'pay': this.add.emit({ payee: todo.payee, amount: todo.amountEur, label: todo.label, due: todo.due }); break;
       case 'settle': case 'review': case 'budget': this.settle.emit(todo.request); break;
       case 'incomplete': this.setFilter(todo.payee); break;
+      case 'credit': this.focusPayee('SUPPLIER'); break;
       case 'proof': this.setFilter('NO_PROOF'); break;
     }
   }

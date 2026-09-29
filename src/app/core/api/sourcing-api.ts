@@ -7,7 +7,7 @@ import {
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
   PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerSettlementAvailability, SalesOrderView,
-  PartnerCreditProposal, PurchasePaymentWrite,
+  PartnerCreditProposal, PurchasePaymentWrite, SupplierCreditOffsetWrite, SupplierCreditUpdate, SupplierCreditWrite,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -188,6 +188,26 @@ export class SourcingApi {
 
   deletePayment(orderId: number, paymentId: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/purchase-orders/${orderId}/payments/${paymentId}`)));
+  }
+
+  /** Notes a credit the supplier owes ('Tegoed leverancier'); returns the updated order. */
+  addSupplierCredit(orderId: number, credit: SupplierCreditWrite): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${orderId}/supplier-credits`), credit));
+  }
+
+  /** Corrects an open credit, marks it refunded, or undoes the refund (status OPEN). */
+  updateSupplierCredit(orderId: number, creditId: number, changes: SupplierCreditUpdate): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${orderId}/supplier-credits/${creditId}`), changes));
+  }
+
+  /** Removes an open credit. */
+  deleteSupplierCredit(orderId: number, creditId: number): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.delete<PurchaseOrderView>(api(`/api/purchase-orders/${orderId}/supplier-credits/${creditId}`)));
+  }
+
+  /** Offsets an open credit as a supplier payment on another container of the same supplier. */
+  offsetSupplierCredit(orderId: number, creditId: number, offset: SupplierCreditOffsetWrite): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${orderId}/supplier-credits/${creditId}/offset`), offset));
   }
 
   /** Every payment on every container from a day on: what left the bank for purchasing. */

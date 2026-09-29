@@ -36,13 +36,15 @@ import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
 import {
-  PAYEE_LABEL, paymentOptionParts, purchasePaymentLedger, settleCarriers, type Due, type PurchasePaymentAction, type PurchaseSettleRequest,
+  PAYEE_LABEL, SUPPLIER_CREDIT_REASON_LABEL, creditOffsetTargets, paymentOptionParts, purchasePaymentLedger, settleCarriers, type Due,
+  type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
+import { PurchaseSupplierCreditSheet, type SupplierCreditSheetAction, type SupplierCreditSubmit } from './purchase-supplier-credit-sheet';
 import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-menus';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
-  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
+  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
@@ -121,7 +123,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1143,7 +1145,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 (openPayee)="openPayee($event)" (pay)="requestPayment($event)" (settle)="requestSettle($event)"
                 (openPayments)="jumpToSection('purchase-payments-section')" (openPartner)="jumpToSection('purchase-partner-section')"
                 (openReports)="jumpToSection('purchase-files-section')" (applyCosts)="jumpToSection('purchase-actions-section')"
-                (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()" />
+                (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()" (credit)="requestCredit($event)" />
             </section>
 
             <!-- Money out, per payee: the supplier for the goods in its planned
@@ -1158,7 +1160,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 [planLabel]="planLabel(data.order)" [supplierName]="supplierName()"
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
-                (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')" />
+                (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')"
+                (credit)="requestCredit($event)" />
             </section>
 
             <!-- Money in: a partner who co-finances the container. -->
@@ -1453,9 +1456,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
-          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
+          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
+      }
+      @if (crediting(); as credit) {
+        <app-purchase-supplier-credit-sheet [action]="credit" [view]="data" [targets]="creditTargets()" [supplierOpenEur]="creditSupplierOpen()"
+          [busy]="payingBusy()" (submit)="submitCredit($event)" (cancel)="closeCredit()" />
       }
       @if (settling(); as settle) {
         @if (settlePayee(); as payee) {
@@ -2330,7 +2337,9 @@ export class PurchaseEditor {
   removePayment(payment: PurchasePayment): void {
     if (this.payingBusy() || this.paymentStateLoading() || this.view()?.order.id !== payment.orderId) return;
     this.ui.confirm(
-      { title: 'Betaling verwijderen', message: `Betaling van <b>${payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })}</b> verwijderen?`,
+      { title: 'Betaling verwijderen', message: `Betaling van <b>${payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })}</b> verwijderen?`
+          + (this.view()?.creditOffsets?.some(offset => offset.paymentId === payment.id)
+            ? ' Het verrekende tegoed staat daarna weer open op de container waar het genoteerd is.' : ''),
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
         if (this.payingBusy() || this.view()?.order.id !== payment.orderId) return;
@@ -2379,6 +2388,11 @@ export class PurchaseEditor {
   });
 
   /** The stored payment the sheet corrects, to warn when it moves to another payee. */
+  /** The payment being edited offsets a credit of another container: the sheet locks its amount, currency and payee. */
+  readonly payingCreditOffset = computed(() => {
+    const id = this.paying()?.id;
+    return id ? this.view()?.creditOffsets?.find(offset => offset.paymentId === id) ?? null : null;
+  });
   readonly payingOriginal = computed(() => {
     const id = this.paying()?.id;
     const stored = id ? (this.payments() ?? []).find(payment => payment.id === id) : undefined;
@@ -2517,6 +2531,109 @@ export class PurchaseEditor {
         if (failure) { this.ui.toast(messageOf(failure, 'Afrekening ongedaan maken mislukt'), 'err'); return; }
         this.settling.set(null);
         this.ui.toast('Afrekening ongedaan gemaakt', 'ok');
+      } finally {
+        this.payingBusy.set(false);
+      }
+    });
+  }
+
+  /* ---- Tegoed leverancier: what the supplier owes back ----------- */
+  readonly crediting = signal<SupplierCreditSheetAction | null>(null);
+  /** Offset only: the other ordered containers of this supplier; null while they load. */
+  readonly creditTargets = signal<PurchaseOrderView[] | null>(null);
+  readonly creditSupplierOpen = computed(() => this.paymentLedger()?.payees.find(item => item.payee === 'SUPPLIER')?.openEur ?? 0);
+
+  /** Every credit write also rewrites the order's diary on the server: save first, like a payment. */
+  requestCredit(action: SupplierCreditAction): void {
+    if (action.kind === 'open-offset') {
+      if (action.credit.offsetOrderId != null) void this.router.navigate(['/purchasing', action.credit.offsetOrderId], { queryParams: { section: 'ledger' } });
+      return;
+    }
+    this.whenSaved(() => this.openCredit(action));
+  }
+
+  openCredit(action: SupplierCreditAction): void {
+    const data = this.view();
+    if (!data || this.payingBusy() || this.paymentStateLoading() || this.paymentStateError() || this.paymentPlanBusy() || this.dirty()) return;
+    if (action.kind === 'add') { this.crediting.set(action); return; }
+    if (action.kind === 'remove') { this.removeCredit(action.credit); return; }
+    if (action.kind === 'undo-refund') { this.undoRefund(action.credit); return; }
+    if (action.kind === 'open-offset') return;
+    if (action.kind === 'offset') void this.loadCreditTargets(data.order.id, data.order.supplierId);
+    this.crediting.set({ kind: action.kind, credit: action.credit });
+  }
+
+  closeCredit(): void { if (!this.payingBusy()) this.crediting.set(null); }
+
+  private async loadCreditTargets(orderId: number, supplierId: number): Promise<void> {
+    this.creditTargets.set(null);
+    try {
+      const views = await this.sourcing.purchaseOrders();
+      if (this.view()?.order.id === orderId) this.creditTargets.set(creditOffsetTargets(views, { id: orderId, supplierId }));
+    } catch (failure: unknown) {
+      if (this.view()?.order.id !== orderId) return;
+      this.creditTargets.set([]);
+      this.ui.toast(messageOf(failure, 'Containers van deze leverancier laden mislukt'), 'err');
+    }
+  }
+
+  async submitCredit(submission: SupplierCreditSubmit): Promise<void> {
+    const data = this.view();
+    if (!data || this.payingBusy() || this.dirty()) return;
+    const id = data.order.id;
+    this.payingBusy.set(true);
+    try {
+      switch (submission.kind) {
+        case 'add': await this.sourcing.addSupplierCredit(id, submission.body); break;
+        case 'edit': case 'refund': await this.sourcing.updateSupplierCredit(id, submission.creditId, submission.body); break;
+        case 'offset': await this.sourcing.offsetSupplierCredit(id, submission.creditId, submission.body); break;
+      }
+      if (this.view()?.order.id !== id) return;
+      await this.refreshPaymentState(id);
+      if (this.view()?.order.id !== id) return;
+      this.crediting.set(null);
+      this.ui.toast(submission.kind === 'offset' ? `Tegoed verrekend met ${submission.targetNumber}`
+        : submission.kind === 'add' ? 'Tegoed leverancier genoteerd' : submission.kind === 'edit' ? 'Tegoed aangepast' : 'Terugbetaling genoteerd', 'ok');
+    } catch (failure: unknown) {
+      if (this.view()?.order.id === id) this.ui.toast(messageOf(failure, 'Tegoed bewaren mislukt'), 'err');
+    } finally {
+      this.payingBusy.set(false);
+    }
+  }
+
+  private removeCredit(credit: PurchaseSupplierCredit): void {
+    this.creditConfirm(credit, {
+      title: 'Tegoed verwijderen',
+      message: `Tegoed van <b>${formatEur(credit.amountEur)}</b> (${escapeHtml(SUPPLIER_CREDIT_REASON_LABEL[credit.reason] ?? '')}) verwijderen? De eindkost van de leverancier stijgt dan weer.`,
+      confirmLabel: 'Verwijderen', danger: true,
+    }, id => this.sourcing.deleteSupplierCredit(id, credit.id), 'Tegoed verwijderd', 'Verwijderen mislukt');
+  }
+
+  private undoRefund(credit: PurchaseSupplierCredit): void {
+    this.creditConfirm(credit, {
+      title: 'Terugbetaling ongedaan maken',
+      message: `De terugbetaling van <b>${formatEur(credit.amountEur)}</b> ongedaan maken? Het tegoed staat daarna weer open.`,
+      confirmLabel: 'Openzetten',
+    }, id => this.sourcing.updateSupplierCredit(id, credit.id, { status: 'OPEN' }), 'Tegoed staat weer open', 'Ongedaan maken mislukt');
+  }
+
+  private creditConfirm(
+    credit: PurchaseSupplierCredit, options: { title: string; message: string; confirmLabel: string; danger?: boolean },
+    write: (orderId: number) => Promise<unknown>, done: string, failed: string,
+  ): void {
+    const data = this.view();
+    if (!data || !(data.supplierCredits ?? []).some(item => item.id === credit.id)) return;
+    const id = data.order.id;
+    this.ui.confirm(options, async () => {
+      if (this.payingBusy() || this.view()?.order.id !== id) return;
+      this.payingBusy.set(true);
+      try {
+        await write(id);
+        if (this.view()?.order.id !== id) return;
+        await this.refreshPaymentState(id);
+        if (this.view()?.order.id === id) this.ui.toast(done, 'ok');
+      } catch (failure: unknown) {
+        if (this.view()?.order.id === id) this.ui.toast(messageOf(failure, failed), 'err');
       } finally {
         this.payingBusy.set(false);
       }

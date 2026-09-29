@@ -1182,6 +1182,70 @@ export interface PurchasePaymentWrite {
   amountEur?: number | null;
 }
 
+/** Why the supplier owes us money back: short delivery, damage, a price difference or something else. */
+export type SupplierCreditReason = 'SHORTAGE' | 'DAMAGE' | 'PRICE' | 'OTHER';
+/** Tegoed open, verrekend on another container of the same supplier, or terugbetaald by the supplier. */
+export type SupplierCreditStatus = 'OPEN' | 'OFFSET' | 'REFUNDED';
+
+/** A credit the supplier owes on a container ('Tegoed leverancier'); always the Leverancier payee. */
+export interface PurchaseSupplierCredit {
+  id: number;
+  notedOn: string;
+  amount: number;
+  currency: Currency;
+  /** At the order rate, or the actual euro when given (a refund may carry the bank amount). */
+  amountEur: number;
+  reason: SupplierCreditReason;
+  note: string | null;
+  status: SupplierCreditStatus;
+  /** The day it was refunded or offset. */
+  settledOn: string | null;
+  offsetOrderId: number | null;
+  offsetOrderNumber: string | null;
+  /** The supplier payment on the other container that offsets this credit. */
+  offsetPaymentId: number | null;
+  recordedAt: string;
+  actor: string | null;
+}
+
+/** On a target container: which of its payments is a credit offset from another container. */
+export interface PurchaseCreditOffset {
+  creditId: number;
+  sourceOrderId: number;
+  sourceOrderNumber: string | null;
+  paymentId: number;
+  amountEur: number;
+}
+
+/** POST …/supplier-credits. */
+export interface SupplierCreditWrite {
+  notedOn: string;
+  amount: number;
+  currency: Currency;
+  /** The actual euro, for USD/CNY only; omitted: the order rate. */
+  amountEur?: number | null;
+  reason: SupplierCreditReason;
+  note?: string | null;
+}
+
+/** PUT …/supplier-credits/{id}: amount, currency, reason and note only while OPEN; REFUNDED needs settledOn. */
+export interface SupplierCreditUpdate {
+  amount?: number;
+  currency?: Currency;
+  amountEur?: number | null;
+  reason?: SupplierCreditReason;
+  note?: string | null;
+  status?: Exclude<SupplierCreditStatus, 'OFFSET'>;
+  settledOn?: string | null;
+}
+
+/** POST …/supplier-credits/{id}/offset: a supplier payment on another container of the same supplier. */
+export interface SupplierCreditOffsetWrite {
+  targetOrderId: number;
+  paidOn: string;
+  instalmentDue?: Instalment['due'] | null;
+}
+
 /** One payment on a container as the bank saw it, with the container it went to. */
 export interface PurchasePaymentRow {
   id: number;
@@ -1383,6 +1447,10 @@ export interface PurchaseOrderView {
   receiptReports?: ReceiptReport[];
   /** Recorded container outflows against the agreed budget; read-only, never changes product prices. */
   reconciliation?: PurchaseReconciliation | null;
+  /** Credits the supplier owes on this container; optional while the backend rolls out. */
+  supplierCredits?: PurchaseSupplierCredit[];
+  /** Payments on this container that offset a credit of another container. */
+  creditOffsets?: PurchaseCreditOffset[];
 }
 
 export type ReconciliationStatus = 'PLANNED' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID' | 'SETTLED_LOWER' | 'NOT_APPLICABLE' | 'ADDITIONAL';
@@ -1402,6 +1470,8 @@ export interface PurchaseReconciliationStream {
   explicitlySettled: boolean;
   finalized: boolean;
   paymentCount: number;
+  /** SUPPLIER only: every credit of the order, any status; the forecast is paid + remaining − credit. */
+  creditEur?: number;
 }
 
 export interface PurchaseReconciliationTotals {
@@ -1424,6 +1494,9 @@ export interface PurchaseReconciliationTotals {
   forecastPricingUnitEur: number | null;
   receiptRecorded: boolean;
   legacyPaidTotalEur: number | null;
+  /** Credits of the supplier: all of them, and the part still open (neither refunded nor offset). */
+  supplierCreditEur?: number;
+  supplierCreditOpenEur?: number;
 }
 
 export interface PurchaseReconciliationLine {
@@ -1445,6 +1518,8 @@ export interface PurchaseReconciliationLine {
   forecastExternalUnitEur: number | null;
   forecastPricingUnitEur: number | null;
   allocationBasis: string;
+  /** The supplier credit allocated to this line (missing value, damaged value or goods value). */
+  creditEur?: number;
 }
 
 export interface PurchaseReconciliation {

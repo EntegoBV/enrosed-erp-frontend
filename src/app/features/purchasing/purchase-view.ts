@@ -672,7 +672,7 @@ type PurchaseWorkspaceSectionId =
                 (openPartner)="scrollToCard('purchase-partner-section', 'purchase-payments-section')"
                 (openReports)="scrollToCard('purchase-reports-section', 'purchase-files-section')"
                 (applyCosts)="scrollToCard('purchase-actions-section', 'purchase-actions-section')"
-                (refresh)="reloadPayments()" (refreshPartner)="loadPartnerFinancing()" />
+                (refresh)="reloadPayments()" (refreshPartner)="loadPartnerFinancing()" (credit)="noteCreditInEditor()" />
             </section>
 
             <!-- Money out, per payee: supplier, forwarder and customs, inspection,
@@ -1170,6 +1170,13 @@ export class PurchaseView {
     const id = this.view()?.order.id;
     if (id == null) return;
     void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'ledger' } });
+  }
+
+  /** Credits are noted in the editor: it opens on the Tegoed noteren sheet. */
+  noteCreditInEditor(): void {
+    const id = this.view()?.order.id;
+    if (id == null) return;
+    void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'credit' } });
   }
 
   /** Settling happens in the editor: open it on the Nacalculatie. */
