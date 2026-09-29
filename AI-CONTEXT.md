@@ -507,6 +507,16 @@ desk and editor style arrays did not grow.
   landed costs with confirm dialog.
 - Purchase figures are always shown to staff (no privacy mode since
   fd979b4); the PDF sheet picks the internal or supplier variant.
+- Receipt date (2026-09-29, F2): both 'Container ontvangen' sheets open with
+  an 'Ontvangen op' date field (device-local today, `ReceiveDraft.receivedOn`)
+  and send it as `receivedOn`; the server refuses a future date or one before
+  the order date (409, shown as toast) and corrects `receivedOn` through the
+  normal order PUT on a received order, so both edit forms show an editable
+  'Ontvangen op' (a cleared field never patches null). The list puts the date
+  under the 'Ontvangen' pill (`.po-row-date`, not in the ellipsed meta line)
+  and in the row menu; the desk hero meta says 'ontvangen dd/mm/jjjj' instead
+  of 'verwacht …' and the last KPI tile carries it; the phone read view adds
+  it to the hero line and an 'Ontvangen op' fact tile.
 
 ### Products
 - List (search, skeletons) → view first: price and margin (intern) in

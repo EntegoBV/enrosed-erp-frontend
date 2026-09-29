@@ -95,7 +95,7 @@ type DeskRow =
               <h1>{{ supplierName() }}</h1>
               <p>{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}
                 · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</p>
-              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }</p>
+              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (isReceived() && data.order.receivedOn) { · ontvangen {{ data.order.receivedOn | dateNl }} } @else if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }</p>
             </div>
             <div class="desk-status" role="group" aria-label="Voortgang van de inkooporder">
               @for (step of statusSteps; track step.value; let last = $last) {
@@ -156,13 +156,13 @@ type DeskRow =
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="booking()" (click)="bookStock()">
                 <small>Volgende stap</small>
                 <strong>{{ booking() ? 'Bezig…' : 'Voorraad bijboeken ›' }}</strong>
-                <span>de stuks staan nog niet in de voorraad</span>
+                <span>@if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · nog niet in de voorraad } @else { de stuks staan nog niet in de voorraad }</span>
               </button>
             } @else {
               <div class="desk-kpi desk-kpi--total">
                 <small>Status</small>
                 <strong>Afgerond ✓</strong>
-                <span>ontvangen en bijgeboekt</span>
+                <span>@if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · bijgeboekt } @else { ontvangen en bijgeboekt }</span>
               </div>
             }
           </div>
@@ -481,8 +481,11 @@ type DeskRow =
                           <label for="dk-expected">Verwacht op <span class="opt"></span></label>
                           <app-date-field fieldId="dk-expected" [value]="data.order.expectedArrival ?? ''" (valueChange)="patch({ expectedArrival: $event || null })" />
                         </div>
-                      } @else if (data.order.receivedOn) {
-                        <div class="field"><label>Ontvangen op</label><div class="input desk-readonly">{{ data.order.receivedOn | dateNl }}</div></div>
+                      } @else {
+                        <div class="field">
+                          <label for="dk-received">Ontvangen op</label>
+                          <app-date-field fieldId="dk-received" [value]="data.order.receivedOn ?? ''" (valueChange)="$event && patch({ receivedOn: $event })" />
+                        </div>
                       }
                     </div>
                     <div class="field">
@@ -1073,6 +1076,11 @@ type DeskRow =
       @if (receiving(); as draft) {
         <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
           <div body>
+            <div class="field">
+              <label for="dk-rc-date">Ontvangen op</label>
+              <app-date-field fieldId="dk-rc-date" [value]="draft.receivedOn ?? ''" (valueChange)="receiving.set({ ...draft, receivedOn: $event })" />
+              <span class="hint">Standaard vandaag; pas aan als de container eerder binnenkwam.</span>
+            </div>
             <p class="hint">Vul per product in wat er werkelijk in de container zat. Staat alles zoals besteld, dan hoef je niets te wijzigen.</p>
             @if (receiveSummary(); as summary) {
               <div class="receive-preview" aria-label="Voorbeeld van de ontvangstsamenvatting">

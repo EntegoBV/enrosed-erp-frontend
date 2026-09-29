@@ -108,6 +108,7 @@ type PurchaseWorkspaceSectionId =
                 {{ data.order.orderDate | dateNl }}
                 @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
                 <span aria-hidden="true"> · </span>gemaakt door {{ creatorName(data) }}
+                @if (data.order.status === 'ONTVANGEN' && data.order.receivedOn) { <span aria-hidden="true"> · </span>ontvangen {{ data.order.receivedOn | dateNl }} }
               </p>
             </div>
             @if (desktop.active()) {
@@ -192,6 +193,12 @@ type PurchaseWorkspaceSectionId =
               <span>Lossen op</span>
               <strong>{{ receivingLocationName(data.order.receivingLocationId) }}</strong>
             </div>
+            @if (data.order.status === 'ONTVANGEN' && data.order.receivedOn) {
+              <div class="overview-fact">
+                <span>Ontvangen op</span>
+                <strong>{{ data.order.receivedOn | dateNl }}</strong>
+              </div>
+            }
             <div class="overview-fact overview-fact--total">
               <span>Totaal geland</span>
               <strong>{{ data.costing.totals.totalEur | eur }}</strong>

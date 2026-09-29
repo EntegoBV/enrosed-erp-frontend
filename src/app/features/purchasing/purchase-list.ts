@@ -134,6 +134,9 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
               <span class="po-status-mini" [class]="'po-status-mini ' + statusMiniClass(row.order.status)">
                 <i aria-hidden="true"></i>{{ statusLabel(row.order.status) }}
               </span>
+              @if (row.order.status === 'ONTVANGEN' && row.order.receivedOn) {
+                <small class="po-row-date">{{ row.order.receivedOn | dateNl }}</small>
+              }
             </div>
             <span class="list-item__chev">›</span>
             </a>
@@ -178,7 +181,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
       <app-sheet [title]="menuRow.order.alias || menuRow.order.number" (closed)="rowMenu.set(null)">
         <div body>
           <p class="row-menu__who">{{ supplierName(menuRow.order.supplierId) }} · {{ statusLabel(menuRow.order.status) }}
-            · {{ menuRow.costing.totals.totalEur | eur: 0 }}</p>
+            · {{ menuRow.costing.totals.totalEur | eur: 0 }}@if (menuRow.order.status === 'ONTVANGEN' && menuRow.order.receivedOn) { · ontvangen {{ menuRow.order.receivedOn | dateNl }} }</p>
           <div class="desk-actions">
             <a class="desk-action" [routerLink]="['/purchasing', menuRow.order.id]" (click)="rowMenu.set(null)">
               <i aria-hidden="true">›</i>
@@ -315,6 +318,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     .po-status-mini { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
       border-radius: 999px; background: color-mix(in srgb, currentColor 10%, transparent);
       font-size: 10.5px; font-weight: 750; white-space: nowrap; }
+    .po-row-date { color: var(--muted); font-size: 10.5px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .po-status-mini i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
     .po-status-mini--ok { color: var(--ok); }
     .po-status-mini--warn { color: var(--warn); }

@@ -104,6 +104,13 @@ interface ReceiveDraft {
   /** Note the open balance as a final payment while receiving. */
   finalPayment: boolean;
   note: string;
+  /** The day the container came in (ISO); today unless the buyer corrects it. */
+  receivedOn?: string;
+}
+
+/** Today on this device as yyyy-mm-dd: the day the buyer sees, not the UTC one. */
+function localIsoDay(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 /** The container's price basis: DDP when every line says so, EXW otherwise. */
@@ -351,10 +358,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                         (valueChange)="patch({ expectedArrival: $event || null })" />
                         <span class="hint">De producten tonen dit als "te verwachten" tot de container binnen is.</span>
                       </div>
-                    } @else if (data.order.receivedOn) {
+                    } @else {
                       <div class="field">
-                        <label>Ontvangen op</label>
-                        <div class="input" style="background:var(--surface-2)">{{ data.order.receivedOn | dateNl }}</div>
+                        <label for="po-received">Ontvangen op</label>
+                        <app-date-field fieldId="po-received" [value]="data.order.receivedOn ?? ''"
+                                        (valueChange)="$event && patch({ receivedOn: $event })" />
+                        <span class="hint">Corrigeer als de container op een andere dag binnenkwam.</span>
                       </div>
                     }
                     <div class="field">
@@ -1527,6 +1536,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
              what was paid, and decide whether the shelf gets it now. -->
         <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
           <div body>
+            <div class="field">
+              <label for="rc-date">Ontvangen op</label>
+              <app-date-field fieldId="rc-date" [value]="draft.receivedOn ?? ''" (valueChange)="receiving.set({ ...draft, receivedOn: $event })" />
+              <span class="hint">Standaard vandaag; pas aan als de container eerder binnenkwam.</span>
+            </div>
             <p class="hint">Vul per product in wat er werkelijk in de container zat. Staat alles zoals
               besteld, dan hoef je niets te wijzigen.</p>
             @if (receiveSummary(); as summary) {
@@ -2932,6 +2946,7 @@ export class PurchaseEditor {
       bookStock: true,
       finalPayment: false,
       note: '',
+      receivedOn: localIsoDay(),
     });
   }
 
@@ -2991,7 +3006,7 @@ export class PurchaseEditor {
       }
       const result = await this.sourcing.receivePurchaseOrder(data.order.id, {
         lines, bookStock: draft.bookStock, paidTotalEur: (supplierPaidCents / 100) || null,
-        receivedOn: null, note: draft.note || null,
+        receivedOn: draft.receivedOn || null, note: draft.note || null,
       });
       ++this.previewVersion;
       this.view.set(result);
