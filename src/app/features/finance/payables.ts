@@ -9,7 +9,8 @@ import type { UpcomingCost } from './finance-metrics';
  */
 
 export type PayableBucket = 'now' | 'soon' | 'later';
-export type TermDue = 'ORDERED' | 'SHIPPED' | 'ARRIVED';
+/** FREIGHT: a CIF supplier's 'Zeevracht (CIF)' term, due like SHIPPED. */
+export type TermDue = 'ORDERED' | 'SHIPPED' | 'FREIGHT' | 'ARRIVED';
 
 /** One open container amount: a supplier term, or a whole payee stream. Payee codes, never labels. */
 export interface ContainerPayable {
@@ -31,7 +32,7 @@ export interface ContainerPayable {
 
 const SKIPPED = new Set(['PAID', 'SETTLED_LOWER', 'NOT_APPLICABLE']);
 const PAYEE_ORDER: readonly Payee[] = ['SUPPLIER', 'LOGISTICS', 'SEPARATE', 'OTHER'];
-const TERM_ORDER: readonly TermDue[] = ['ORDERED', 'SHIPPED', 'ARRIVED'];
+const TERM_ORDER: readonly TermDue[] = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED'];
 const cents = (value: number | null | undefined): number => Math.round((Number.isFinite(value) ? value as number : 0) * 100);
 
 /**
@@ -40,7 +41,7 @@ const cents = (value: number | null | undefined): number => Math.round((Number.i
  */
 function reached(due: TermDue, status: PurchaseOrder['status']): boolean {
   if (due === 'ORDERED') return status !== 'CONCEPT';
-  if (due === 'SHIPPED') return status === 'ONDERWEG' || status === 'ONTVANGEN';
+  if (due === 'SHIPPED' || due === 'FREIGHT') return status === 'ONDERWEG' || status === 'ONTVANGEN';
   return status === 'ONTVANGEN';
 }
 

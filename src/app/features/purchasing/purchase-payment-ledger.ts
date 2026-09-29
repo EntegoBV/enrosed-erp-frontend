@@ -37,10 +37,33 @@ export const PAYEE_TONE: Readonly<Record<Payee, string>> = {
 };
 /** What the supplier is paid for; the basis line and the composition share the word. */
 export const SUPPLIER_GOODS = 'Goederen';
-export const DUE_ORDER: readonly Due[] = ['ORDERED', 'SHIPPED', 'ARRIVED'];
+/** Under CIF the supplier also invoices the sea freight (and the origin costs). */
+export const SUPPLIER_GOODS_CIF = 'Goederen + zeevracht (CIF)';
+
+/**
+ * CIF: the supplier arranges and invoices the sea freight, so origin costs
+ * and freight sit in its Afspraak (payable.supplierFreightEur) and duty and
+ * destination costs stay with Douane & transport. Never when the container is
+ * DDP, which already includes all transport.
+ */
+export function purchaseCif(view: Pick<PurchaseOrderView, 'order' | 'payable'>): boolean {
+  if (!view.order.freightViaSupplier) return false;
+  const lines = view.order.lines ?? [];
+  const ddp = view.payable?.ddp ?? (lines.length > 0 && lines.every(line => (line.priceBasis ?? 'EXW') === 'DDP'));
+  return !ddp;
+}
+/** FREIGHT is the CIF supplier's 'Zeevracht (CIF)' term: due at departure, placed before any arrival term. */
+export const DUE_ORDER: readonly Due[] = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED'];
 export const DUE_MOMENT: Readonly<Record<Due, string>> = {
-  ORDERED: 'bij bestelling', SHIPPED: 'bij vertrek', ARRIVED: 'bij aankomst',
+  ORDERED: 'bij bestelling', SHIPPED: 'bij vertrek', FREIGHT: 'bij vertrek', ARRIVED: 'bij aankomst',
 };
+/** The CIF term in words; the server names it the same in its instalment labels and PDFs ('zeevracht' in note lines). */
+export const FREIGHT_TERM_LABEL = 'Zeevracht (CIF)';
+
+/** A term's name when the server sent none: 'Termijn bij vertrek', or 'Zeevracht (CIF)'. */
+export function dueFallbackLabel(due: Due): string {
+  return due === 'FREIGHT' ? FREIGHT_TERM_LABEL : 'Termijn ' + DUE_MOMENT[due];
+}
 
 /**
  * From which order status an open amount counts as due now. The server only
@@ -630,9 +653,12 @@ function payeeStatus(values: {
 }
 
 function payeeBasis(payee: Payee, view: PurchaseOrderView, hasPlan: boolean, planLabel: string): string {
+  const cif = purchaseCif(view);
   switch (payee) {
-    case 'SUPPLIER': return SUPPLIER_GOODS + ' · ' + (hasPlan ? planLabel : 'geen betaalplan');
-    case 'LOGISTICS': return view.payable?.ddp ? 'Inbegrepen in de prijs (DDP)' : 'Raming uit Kosten: vracht, lokale kosten en invoerrechten';
+    case 'SUPPLIER': return (cif ? SUPPLIER_GOODS_CIF : SUPPLIER_GOODS) + ' · ' + (hasPlan ? planLabel : 'geen betaalplan');
+    case 'LOGISTICS': return view.payable?.ddp ? 'Inbegrepen in de prijs (DDP)'
+      : cif ? 'Raming uit Kosten: invoerrechten en lokale kosten aankomst · zeevracht via de leverancier (CIF)'
+      : 'Raming uit Kosten: vracht, lokale kosten en invoerrechten';
     case 'SEPARATE': return 'Raming uit Kosten: inspectie en andere kosten';
     default: return 'Bankkosten, koerier, wisselkoers · zonder afspraak';
   }
@@ -727,7 +753,7 @@ function ledgerRows(
 
 function termLabel(due: Due | null, instalments: readonly PurchaseInstalmentReconciliation[] | undefined): string | null {
   if (!due) return null;
-  return instalments?.find(item => item.due === due)?.label ?? 'Termijn ' + DUE_MOMENT[due];
+  return instalments?.find(item => item.due === due)?.label ?? dueFallbackLabel(due);
 }
 
 /** Newest first by date, or largest first by euro amount; ties keep the newest entry on top. */
@@ -848,12 +874,17 @@ export function payeeComposition(payee: Payee, view: PurchaseOrderView, agreedEu
   const line = (label: string, amountEur: number | null | undefined, hint: string | null = null): CompositionLine =>
     ({ label, amountEur: euro(cents(amountEur)), hint, rounding: false });
   let lines: CompositionLine[] = [];
+  const cif = purchaseCif(view);
+  // Under CIF the transport before the EU border moves from Douane & transport to the supplier; duty and arrival costs stay.
+  const transport = () => [
+    line(labels?.originCostsLabel ?? 'Lokale kosten vertrek', totals.originEur),
+    line(labels?.seaFreightLabel ?? 'Zeevracht', totals.freightEur, labels?.seaFreightRoute ?? null),
+  ];
   if (payee === 'SUPPLIER') {
-    lines = [line(SUPPLIER_GOODS, totals.goodsEur)];
+    lines = [line(SUPPLIER_GOODS, totals.goodsEur), ...(cif ? transport() : [])];
   } else if (payee === 'LOGISTICS' && !view.payable?.ddp) {
     lines = [
-      line(labels?.originCostsLabel ?? 'Lokale kosten vertrek', totals.originEur),
-      line(labels?.seaFreightLabel ?? 'Zeevracht', totals.freightEur, labels?.seaFreightRoute ?? null),
+      ...(cif ? [] : transport()),
       line('Invoerrechten', totals.dutyEur),
       line(labels?.destinationCostsLabel ?? 'Lokale kosten aankomst', totals.destinationEur),
     ];
@@ -876,8 +907,10 @@ export function purchaseLandedBridge(view: PurchaseOrderView, totalLabel: string
   const separate = cents(totals.separateCostsEur);
   const enrosed = cents(payable ? payable.enrosedEur : totals.extraRevenueEur);
   const rows: BridgeRow[] = [
-    { key: 'SUPPLIER', label: 'Leverancier · goederen', amountEur: euro(cents(payable ? payable.supplierEur : totals.goodsEur)), note: null },
-    { key: 'LOGISTICS', label: 'Douane & transport', note: payable?.ddp ? 'inbegrepen in de prijs (DDP)' : null,
+    { key: 'SUPPLIER', label: purchaseCif(view) ? 'Leverancier · goederen + zeevracht' : 'Leverancier · goederen',
+      amountEur: euro(cents(payable ? payable.supplierEur : totals.goodsEur)), note: null },
+    { key: 'LOGISTICS', label: 'Douane & transport', note: payable?.ddp ? 'inbegrepen in de prijs (DDP)'
+      : purchaseCif(view) ? 'zeevracht via de leverancier (CIF)' : null,
       amountEur: euro(cents(payable ? payable.logisticsEur : totals.originEur + totals.freightEur + totals.dutyEur + totals.destinationEur)) },
   ];
   const separateRow: BridgeRow = { key: 'SEPARATE', label: 'Inspectie & andere kosten', amountEur: euro(separate),

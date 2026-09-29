@@ -340,7 +340,7 @@ export class PurchaseNacalcOverview {
     if (row.agreedEur === null || row.status.kind === 'UNBUDGETED') return `${formatEur(row.paidEur)} · zonder afspraak`;
     const agreed = `afgesproken ${formatEur(row.agreedEur)}`;
     const eindkost = row.eindkostEur === row.agreedEur ? '' : ` → eindkost ${formatEur(row.eindkostEur)}`;
-    return agreed + eindkost + (row.ddpNote ? ' · DDP' : '');
+    return agreed + eindkost + (row.ddpNote ? ' · DDP' : '') + (row.cifNote ? ' · zeevracht via de leverancier (CIF)' : '');
   }
 
   productSub(row: PurchaseNacalc['products'][number], received: boolean): string {

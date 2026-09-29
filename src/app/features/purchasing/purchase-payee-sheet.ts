@@ -8,7 +8,7 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import {
-  DUE_MOMENT, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  DUE_MOMENT, SUPPLIER_GOODS_CIF, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
   type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
@@ -191,8 +191,10 @@ export class PurchasePayeeSheet {
   readonly basis = computed(() => {
     const payee = this.payee();
     switch (payee.payee) {
-      case 'SUPPLIER': return [this.supplierName(), payee.terms.length ? this.planLabel() : 'geen betaalplan'].filter(Boolean).join(' · ');
+      case 'SUPPLIER': return [this.supplierName(), payee.basis.startsWith(SUPPLIER_GOODS_CIF) ? 'goederen + zeevracht (CIF)' : '',
+        payee.terms.length ? this.planLabel() : 'geen betaalplan'].filter(Boolean).join(' · ');
       case 'OTHER': return 'Bankkosten, koerier, wisselkoers · zonder afspraak';
+      case 'LOGISTICS': return payee.basis.endsWith('(CIF)') ? 'Raming uit Kosten · zeevracht via de leverancier (CIF)' : 'Raming uit Kosten';
       default: return 'Raming uit Kosten';
     }
   });

@@ -465,7 +465,7 @@ type DeskRow =
                       <div><dt>Container</dt><dd>{{ containerLabel(data.order.containerType) }}</dd></div>
                       <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
                       <div><dt>Lossen op</dt><dd>{{ receivingLocationName(data.order.receivingLocationId) }}</dd></div>
-                      <div><dt>Prijsbasis</dt><dd>{{ isDdp() ? 'DDP, geleverd incl. rechten' : 'EXW, af fabriek' }}<small>stukprijzen in {{ orderCurrency() }}</small></dd></div>
+                      <div><dt>Prijsbasis</dt><dd>{{ isDdp() ? 'DDP, geleverd incl. rechten' : isCif() ? 'CIF, zeevracht via de leverancier' : 'EXW, af fabriek' }}<small>stukprijzen in {{ orderCurrency() }}</small></dd></div>
                     </dl>
                   } @else {
                   <div class="desk-form">
@@ -542,14 +542,15 @@ type DeskRow =
                     <div class="field">
                       <span class="label">Prijsbasis en munt van de leverancier</span>
                       <div class="fin-chips po-basis" role="group" aria-label="Prijsbasis en munt">
-                        <button type="button" class="fin-chip" [class.on]="!isDdp()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="!isDdp() && !isCif()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="isCif()" (click)="setOrderBasis('CIF')">CIF</button>
                         <button type="button" class="fin-chip" [class.on]="isDdp()" (click)="setOrderBasis('DDP')">DDP</button>
                         <span class="po-basis__sep" aria-hidden="true"></span>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'USD'" (click)="setOrderCurrency('USD')">$ USD</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'CNY'" (click)="setOrderCurrency('CNY')">¥ CNY</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'EUR'" (click)="setOrderCurrency('EUR')">€ EUR</button>
                       </div>
-                      <span class="hint">{{ isDdp() ? 'Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij.' : 'Af fabriek: wij regelen zeevracht, invoerrechten en transport.' }} De stukprijzen staan in {{ orderCurrency() }}.</span>
+                      <span class="hint">@if (isDdp()) { Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij. } @else if (isCif()) { CIF: de leverancier regelt en factureert zeevracht (en lokale kosten China); invoerrechten en lokale kosten aankomst via Douane &amp; transport. } @else { Af fabriek: wij regelen zeevracht, invoerrechten en transport. } De stukprijzen staan in {{ orderCurrency() }}.</span>
                     </div>
                   </div>
                   }
@@ -564,7 +565,7 @@ type DeskRow =
                     <div class="desk-rates">
                       <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd }}</b>@if (marketReference(); as market) { <i>ECB {{ market.cnyToUsd | num: 4 }}</i> }</div>
                       <div><small>USD → EUR</small><b>{{ usdToEurRate() }}</b>@if (marketReference(); as market) { <i>ECB {{ market.usdToEur | num: 4 }}</i> }</div>
-                      <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : 'EXW' }}</b></div>
+                      <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : isCif() ? 'CIF' : 'EXW' }}</b></div>
                     </div>
                     @if (!isDdp()) {
                       <dl class="desk-facts">
@@ -601,7 +602,7 @@ type DeskRow =
                           <input class="input num right" id="dk-freight" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.freightUsd" (ngModelChange)="patch({ freightUsd: +$event })" />
                           <span class="input-affix__suffix">USD</span>
                         </div>
-                        <span class="hint">{{ costLabels().seaFreightRoute }}@if (latestFreightReference(); as reference) { · laatste notering <b>{{ reference.usdPerContainer | cur: 'USD' }}</b> ({{ reference.quotedOn | dateNl }}) }</span>
+                        <span class="hint">{{ costLabels().seaFreightRoute }}@if (isCif()) { · betaald aan de leverancier (CIF) } @else if (latestFreightReference(); as reference) { · laatste notering <b>{{ reference.usdPerContainer | cur: 'USD' }}</b> ({{ reference.quotedOn | dateNl }}) }</span>
                       </div>
                       <div class="field">
                         <label for="dk-origin">{{ costLabels().originCostsLabel }}</label>
@@ -1049,7 +1050,7 @@ type DeskRow =
 
       @if (paymentPlanOrder(); as agreement) {
         <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
-          [agreedEur]="supplierOwed()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
+          [agreedEur]="planAgreedEur()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
       @if (paying(); as pay) {

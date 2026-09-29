@@ -94,7 +94,7 @@ export class PurchasePaymentScope {
   dueLabel(): string {
     const due = this.instalmentDue();
     return this.options().find(option => option.due === due)?.label
-      ?? (due ? { ORDERED: 'Bij bestelling', SHIPPED: 'Bij vertrek', ARRIVED: 'Bij aankomst' }[due] : 'Termijn');
+      ?? (due ? { ORDERED: 'Bij bestelling', SHIPPED: 'Bij vertrek', FREIGHT: 'Zeevracht (CIF)', ARRIVED: 'Bij aankomst' }[due] : 'Termijn');
   }
 
   chooseDue(raw: string): void {

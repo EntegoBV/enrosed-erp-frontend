@@ -5,7 +5,7 @@ import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { instalmentsOf, paymentPlanError, paymentPlanLabel, planPreview, splitTotal, type PaymentPlanFields } from './payment-plan';
 
-const MOMENT: Record<Instalment['due'], string> = { ORDERED: 'bij bestelling', SHIPPED: 'bij vertrek', ARRIVED: 'bij aankomst' };
+const MOMENT: Record<Instalment['due'], string> = { ORDERED: 'bij bestelling', SHIPPED: 'bij vertrek', FREIGHT: 'bij vertrek', ARRIVED: 'bij aankomst' };
 
 /** Changes stay inside this sheet until the server accepts the new plan. */
 @Component({
@@ -93,8 +93,8 @@ export class PurchasePaymentPlanSheet {
   readonly label = computed(() => paymentPlanLabel(this.draft(), PAYMENT_TERMS));
   private readonly instalments = computed(() => instalmentsOf({ ...this.order(), ...this.draft() }, PAYMENT_TERMS));
   readonly preview = computed(() => planPreview(this.agreedEur(), this.instalments()));
-  /** Mirrors the server's refusal; the server stays the judge. */
-  readonly droppedDue = computed(() => this.scopedDues().find(due => !this.instalments().some(step => step.due === due)) ?? null);
+  /** Mirrors the server's refusal; the server stays the judge. The CIF freight term is never part of a plan, so it never drops. */
+  readonly droppedDue = computed(() => this.scopedDues().find(due => due !== 'FREIGHT' && !this.instalments().some(step => step.due === due)) ?? null);
   close(): void { if (!this.busy()) this.closed.emit(); }
   confirm(): void { if (!this.busy() && !this.validation()) this.saved.emit(this.draft()); }
 }

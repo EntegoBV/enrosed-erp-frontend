@@ -1109,8 +1109,13 @@ export interface ReceiptVarianceFilters {
 export type PaymentTerms = 'THIRDS' | 'THIRD_TWO_THIRDS_SHIPPED' | 'THIRD_TWO_THIRDS_ARRIVED' | 'HALF_HALF' | 'HALF_HALF_ARRIVED'
   | 'DEPOSIT_30_70' | 'DEPOSIT_30_70_ARRIVED' | 'DEPOSIT_30_40_30' | 'FULL_UPFRONT' | 'FULL_ON_ARRIVAL' | 'CUSTOM';
 
-/** One instalment of a payment plan: a share of the goods value and when it falls due. */
-export interface Instalment { label: string; share: number; due: 'ORDERED' | 'SHIPPED' | 'ARRIVED'; }
+/**
+ * One instalment of a payment plan: a share of the goods value and when it
+ * falls due. FREIGHT never comes from a plan: the server adds it as the
+ * supplier term 'Zeevracht (CIF)' when the supplier invoices the sea freight
+ * (freightViaSupplier), due like SHIPPED.
+ */
+export interface Instalment { label: string; share: number; due: 'ORDERED' | 'SHIPPED' | 'FREIGHT' | 'ARRIVED'; }
 
 export const PAYMENT_TERMS: { value: PaymentTerms; label: string; instalments: Instalment[] }[] = [
   { value: 'THIRDS', label: '1/3 · 1/3 · 1/3 (bestelling, vertrek, aankomst)', instalments: [
@@ -1282,6 +1287,8 @@ export interface Payable {
   enrosedEur: number;
   freightInSupplierPrice: boolean;
   ddp: boolean;
+  /** CIF: origin costs + sea freight in the supplier's Afspraak (0 otherwise); optional while the backend rolls out. */
+  supplierFreightEur?: number;
 }
 
 /** Pieces on the water for one product. */
@@ -1362,6 +1369,8 @@ export interface PurchaseOrder {
   shippedOn?: string | null;
   /** Container / bill-of-lading number or a carrier tracking link. */
   trackingReference?: string | null;
+  /** CIF: the supplier arranges and invoices the sea freight (and origin costs); null = no. Ignored when every line is DDP. */
+  freightViaSupplier?: boolean | null;
   notes: string;
   lines: PurchaseOrderLine[];
 }

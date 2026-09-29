@@ -276,6 +276,23 @@ cijfers'.
   the eindkost, the receipt block's credit line and 'Tegoed noteren…' (the
   read view opens `/purchasing/:id/edit?section=credit`), ' · tegoed € x
   open' after the state sentence. Kosten & bank does not show credits yet.
+- CIF (2026-09-29, F4): 'Prijsbasis en munt van de leverancier' has EXW |
+  CIF | DDP chips; CIF = EXW lines + `order.freightViaSupplier = true`, EXW
+  and DDP clear a set flag to null (never write false over null: the server
+  refuses a CIF toggle once Leverancier or Douane & transport is settled).
+  `purchaseCif(view)` (flag and not DDP) drives the words: supplier basis
+  'Goederen + zeevracht (CIF) · plan' and composition Goederen + Lokale kosten
+  China + Zeevracht, Douane & transport 'invoerrechten en lokale kosten
+  aankomst · zeevracht via de leverancier (CIF)' with only duty + arrival, the
+  bridge 'Leverancier · goederen + zeevracht'. The server adds the supplier
+  term FREIGHT 'Zeevracht (CIF)' (payable.supplierFreightEur); it is in every
+  Due union/Record, due 'bij vertrek' like SHIPPED (reached() in
+  purchase-instalment-state.ts and finance/payables.ts), ordered ORDERED,
+  SHIPPED, FREIGHT, ARRIVED, and reaches the payment sheet's term picker and
+  quick-fill chips, the Nacalculatie term rows and Kosten & bank through the
+  server's supplierInstalments. The payment plan sheet splits the goods only
+  (`planAgreedEur` = supplier Afspraak − supplierFreightEur) and never warns
+  about a FREIGHT term dropping out of a plan.
 - Nacalculatie (round 2, superseded by round 3 below; `app-purchase-payment-result` and
   `purchase-payment-result-rows.ts` are gone): it always showed the
   equation Enrosed kost + minder betaald − meer betaald − bijkomend = Enrosed

@@ -5,7 +5,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
-import { DUE_MOMENT, type Due, type PayeeLedger, type SettleCarrier } from './purchase-payment-ledger';
+import { DUE_MOMENT, FREIGHT_TERM_LABEL, type Due, type PayeeLedger, type SettleCarrier } from './purchase-payment-ledger';
 import { formatEur, relinkPayment } from './purchase-payment-menus';
 
 /** The editor's settle draft. */
@@ -132,7 +132,7 @@ export class PurchaseSettleSheet {
 
   termLabel(due: Due | null): string {
     if (!due) return 'deze termijn';
-    return this.payee().terms.find(term => term.due === due)?.label ?? 'de termijn ' + DUE_MOMENT[due];
+    return this.payee().terms.find(term => term.due === due)?.label ?? (due === 'FREIGHT' ? FREIGHT_TERM_LABEL : 'de termijn ' + DUE_MOMENT[due]);
   }
 
   /** Date and amount, then the term for the supplier (only it has terms) or the description for the others. */

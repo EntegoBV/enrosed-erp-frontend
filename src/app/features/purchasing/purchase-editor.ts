@@ -454,14 +454,15 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <div class="field">
                       <span class="label">Prijsbasis en munt van de leverancier</span>
                       <div class="fin-chips po-basis" role="group" aria-label="Prijsbasis en munt">
-                        <button type="button" class="fin-chip" [class.on]="!isDdp()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="!isDdp() && !isCif()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="isCif()" (click)="setOrderBasis('CIF')">CIF</button>
                         <button type="button" class="fin-chip" [class.on]="isDdp()" (click)="setOrderBasis('DDP')">DDP</button>
                         <span class="po-basis__sep" aria-hidden="true"></span>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'USD'" (click)="setOrderCurrency('USD')">$ USD</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'CNY'" (click)="setOrderCurrency('CNY')">¥ CNY</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'EUR'" (click)="setOrderCurrency('EUR')">€ EUR</button>
                       </div>
-                      <span class="hint">{{ isDdp() ? 'Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij.' : 'Af fabriek: wij regelen zeevracht, invoerrechten en transport.' }} De stukprijzen staan in {{ orderCurrency() }}.</span>
+                      <span class="hint">@if (isDdp()) { Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij. } @else if (isCif()) { CIF: de leverancier regelt en factureert zeevracht (en lokale kosten China); invoerrechten en lokale kosten aankomst via Douane &amp; transport. } @else { Af fabriek: wij regelen zeevracht, invoerrechten en transport. } De stukprijzen staan in {{ orderCurrency() }}.</span>
                     </div>
                   </div>
                 </div>
@@ -787,7 +788,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         </div>
                         <span class="hint">
                           {{ costLabels().seaFreightRoute }}
-                          @if (latestFreightReference(); as reference) {
+                          @if (isCif()) {
+                            · betaald aan de leverancier (CIF)
+                          } @else if (latestFreightReference(); as reference) {
                             · laatste eigen notering:
                             <b>{{ reference.usdPerContainer | cur: 'USD' }}</b>
                             · {{ reference.quotedOn | dateNl }}
@@ -1449,7 +1452,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
       @if (paymentPlanOrder(); as agreement) {
         <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
-          [agreedEur]="supplierOwed()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
+          [agreedEur]="planAgreedEur()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
       @if (paying(); as pay) {
@@ -2128,6 +2131,8 @@ export class PurchaseEditor {
 
   /** What the supplier is owed: goods, plus the sea freight when it is in the price. */
   readonly supplierOwed = computed(() => this.reconciliationStream('SUPPLIER')?.plannedEur ?? this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
+  /** What the plan's percentages split: the goods only; a CIF supplier's sea freight is its own term. */
+  readonly planAgreedEur = computed(() => Math.max(0, Math.round((this.supplierOwed() - (this.view()?.payable?.supplierFreightEur ?? 0)) * 100) / 100));
   readonly logisticsOwed = computed(() => this.reconciliationStream('LOGISTICS')?.plannedEur ?? this.view()?.payable?.logisticsEur ?? 0);
   paymentsTo(payee: Payee): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
@@ -3810,9 +3815,18 @@ export class PurchaseEditor {
     }));
   }
 
-  /** EXW or DDP is how the supplier quotes the whole container, never one line. */
-  setOrderBasis(basis: 'EXW' | 'DDP'): void {
-    this.enqueue((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line, priceBasis: basis })) }));
+  /**
+   * EXW, CIF or DDP is how the supplier quotes the whole container, never one
+   * line. CIF keeps the lines EXW and lets the supplier invoice the sea
+   * freight (freightViaSupplier); EXW and DDP clear that flag again.
+   */
+  setOrderBasis(basis: 'EXW' | 'CIF' | 'DDP'): void {
+    const priceBasis = basis === 'DDP' ? 'DDP' : 'EXW';
+    this.enqueue((order) => ({
+      ...order,
+      ...(basis === 'CIF' ? { freightViaSupplier: true } : order.freightViaSupplier ? { freightViaSupplier: null } : {}),
+      lines: order.lines.map((line) => ({ ...line, priceBasis })),
+    }));
   }
 
   /** Current product-card price; this is a master-data reference, not payment history. */
@@ -3885,6 +3899,8 @@ export class PurchaseEditor {
   setPriceBasis(productId: number, basis: 'EXW' | 'DDP'): void {
     this.enqueue((order) => ({
       ...order,
+      // DDP already includes the sea freight: a CIF flag would be ignored, so it goes.
+      ...(basis === 'DDP' && order.freightViaSupplier ? { freightViaSupplier: null } : {}),
       lines: order.lines.map((line) => ({ ...line, priceBasis: basis })),
     }));
   }
@@ -3893,6 +3909,8 @@ export class PurchaseEditor {
     const lines = this.view()?.order.lines ?? [];
     return lines.length > 0 && lines.every((line) => (line.priceBasis ?? 'EXW') === 'DDP');
   });
+  /** CIF: EXW lines, and the supplier invoices the sea freight (and origin costs). */
+  readonly isCif = computed(() => !this.isDdp() && !!this.view()?.order.freightViaSupplier);
 
   private setLine(productId: number, patch: Partial<PurchaseOrderLine>): void {
     this.enqueue((order) => ({

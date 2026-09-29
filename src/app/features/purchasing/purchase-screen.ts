@@ -52,7 +52,7 @@ export class PurchaseScreen {
   private openedPaymentsSection = '';
   private pendingPaymentsFocus: { screen: object; id: string; section: string; fallback: HTMLElement | null } | null = null;
   private readonly paymentPayees = ['SUPPLIER', 'LOGISTICS', 'SEPARATE', 'OTHER'] as const;
-  private readonly paymentDues = ['ORDERED', 'SHIPPED', 'ARRIVED'] as const;
+  private readonly paymentDues = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED'] as const;
   private openedPaymentKey = '';
   /** The editor opened for a quick payment goes back to the read view once its sheet closes. */
   private returnAfterPayment: { editor: PurchaseEditor; id: string } | null = null;

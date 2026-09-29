@@ -80,6 +80,8 @@ export interface NacalcPayeeRow {
   tone: string;
   basis: string;
   ddpNote: boolean;
+  /** Douane & transport of a CIF container: the sea freight is paid to the supplier. */
+  cifNote: boolean;
   legacy: boolean;
   legacyEur: number;
   agreedEur: number | null;
@@ -380,6 +382,7 @@ function payeeRow(
   const fx = sum(rows.map(row => cents(paymentFxEur(row, rates))));
   const reason = nacalcReason(item, stream, totals);
   const ddpNote = item.payee === 'SUPPLIER' && !!view.payable?.ddp;
+  const cifNote = item.payee === 'LOGISTICS' && !!view.order.freightViaSupplier && !view.payable?.ddp;
   const separateApart = cents(view.costing.totals.separateCostsEur) > 0 && !view.costing.totals.separateCostsInPiecePrice;
   let basis = item.basis;
   if (ddpNote) basis = (basis.startsWith('Goederen') ? 'Goederen DDP' + basis.slice('Goederen'.length) : basis) + ' · transport en invoerrechten in de DDP-prijs';
@@ -395,6 +398,7 @@ function payeeRow(
     tone: item.tone,
     basis,
     ddpNote,
+    cifNote,
     legacy,
     legacyEur: legacy ? euro(cents(totals.legacyPaidTotalEur)) : 0,
     agreedEur: item.agreedEur,

@@ -8,7 +8,7 @@ import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
-import { DUE_MOMENT, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, type Due } from './purchase-payment-ledger';
+import { DUE_MOMENT, FREIGHT_TERM_LABEL, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, type Due } from './purchase-payment-ledger';
 import { formatEur } from './purchase-payment-menus';
 import { PurchasePaymentScope } from './purchase-payment-scope';
 
@@ -168,7 +168,7 @@ export class PurchasePaymentSheet {
   readonly scopeSummary = computed(() => {
     const pay = this.draft();
     const due = pay.payee === 'SUPPLIER' ? pay.instalmentDue : null;
-    const term = due ? this.instalmentOptions().find(option => option.due === due)?.label ?? 'termijn ' + DUE_MOMENT[due] : null;
+    const term = due ? this.instalmentOptions().find(option => option.due === due)?.label ?? (due === 'FREIGHT' ? FREIGHT_TERM_LABEL : 'termijn ' + DUE_MOMENT[due]) : null;
     return `${term ? 'Telt voor ' + term : 'Automatisch'} · ${!pay.settles ? 'niet afgerekend' : due ? 'rekent termijn af' : 'rekent alles af'}`;
   });
   /** The order-rate estimate as a typable placeholder, e.g. 18.450,00. */

@@ -547,9 +547,9 @@ export class PurchasePaymentWorkbench {
   actor(value: string): string { return value.replace(/^.*[\\/]/, '').split('@')[0]; }
   expandable(item: PayeeLedger): boolean { return item.payee === 'SUPPLIER' || item.composition.length > 0; }
   isExpanded(payee: Payee): boolean { return this.expanded().has(payee); }
-  /** The supplier's plan is spelled out by its term rows once they are open; the basis then keeps only the goods. */
+  /** The supplier's plan is spelled out by its term rows once they are open; the basis then keeps only what is paid for (goods, + zeevracht under CIF). */
   basis(item: PayeeLedger): string {
-    return item.payee === 'SUPPLIER' && item.terms.length && this.isExpanded('SUPPLIER') ? SUPPLIER_GOODS : item.basis;
+    return item.payee === 'SUPPLIER' && item.terms.length && this.isExpanded('SUPPLIER') ? item.basis.split(' · ')[0] || SUPPLIER_GOODS : item.basis;
   }
   proofNames(row: LedgerRow): string { return (row.proofs ?? []).map(proof => proof.originalFilename).join(', '); }
 
