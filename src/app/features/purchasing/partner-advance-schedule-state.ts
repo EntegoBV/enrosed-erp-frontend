@@ -6,16 +6,33 @@ export interface AdvanceScheduleDraft {
   mode: 'PERCENT' | 'AMOUNT';
   value: number;
   dueDate: string;
+  /** A FIXED term: its invoice was issued, sent, paid or credited. It stays exactly as it is. */
   locked: boolean;
   fixedAmountEur?: number;
+  /** A never-issued concept invoice on an open term: it follows the new split (same number), but the term cannot go. */
+  conceptNumber?: string | null;
 }
 
 export const cents = (value: number): number => Math.round(value * 100) / 100;
 
+/**
+ * A term is FIXED when its invoice exists and is not a never-issued concept.
+ * The server says so in `invoiceFixed`; an older backend does not, and then
+ * any invoice fixes the term, as before.
+ */
+export function scheduleRowFixed(row: Pick<PartnerAdvanceScheduleRow, 'invoiceId' | 'invoiceFixed'>): boolean {
+  if (row.invoiceId == null) return false;
+  return typeof row.invoiceFixed === 'boolean' ? row.invoiceFixed : true;
+}
+
 export function scheduleDraft(rows: readonly PartnerAdvanceScheduleRow[]): AdvanceScheduleDraft[] {
-  return rows.map((row) => ({ id: row.id, label: row.label, mode: row.percentage == null ? 'AMOUNT' : 'PERCENT',
-    value: row.percentage ?? row.amountEur, dueDate: row.dueDate ?? '', locked: row.invoiceId != null,
-    ...(row.invoiceId != null ? { fixedAmountEur: row.amountEur } : {}) }));
+  return rows.map((row) => {
+    const fixed = scheduleRowFixed(row);
+    return { id: row.id, label: row.label, mode: row.percentage == null ? 'AMOUNT' : 'PERCENT',
+      value: row.percentage ?? row.amountEur, dueDate: row.dueDate ?? '', locked: fixed,
+      ...(fixed ? { fixedAmountEur: row.amountEur } : {}),
+      ...(!fixed && row.invoiceId != null ? { conceptNumber: row.invoiceNumber ?? '' } : {}) };
+  });
 }
 
 /** Only recreating an unused legacy plan may adopt the current purchase basis. */
@@ -95,5 +112,88 @@ export function advanceInvoiceScheduleRequest(rows: readonly AdvanceScheduleDraf
   const request = scheduleRequest(rows, agreedEur);
   const allocated = cents(scheduleRowAmounts(rows, agreedEur).reduce((sum, amount) => sum + amount, 0));
   if (allocated !== cents(agreedEur)) throw new Error('Verdeel de afgesproken bijdrage volledig over de betaaltermijnen voordat je de conceptfacturen maakt.');
+  return request;
+}
+
+const SHARE_LABEL = /^\s*(\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?\s*%)\s*/;
+
+/**
+ * The label a re-split term keeps. A share-like label ('2/3 na productie',
+ * '70% na productie') would lie about the new amount: it takes the given
+ * label, else loses its share ('Na productie'). Own words stay.
+ */
+function resplitLabel(existing: string | undefined, given: string | undefined, position: number): string {
+  const label = (existing ?? '').trim();
+  if (label && !SHARE_LABEL.test(label)) return label;
+  if (given?.trim()) return given.trim();
+  const rest = label.replace(SHARE_LABEL, '').trim();
+  return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : `Termijn ${position}`;
+}
+
+/**
+ * Re-split what is not fixed yet. Fixed terms keep id and amount; the rest of
+ * the agreed amount (minus reservations outside the plan) is split into
+ * `parts` AMOUNT terms in cents, the last one taking the residual cent. The
+ * open terms are reused in order (id, label, due date), so a concept invoice
+ * follows its term with the same number; a term that carries a concept is
+ * never dropped, so there are at least as many parts as such terms.
+ */
+export function resplitRemainder(rows: readonly AdvanceScheduleDraft[], agreedEur: number, reservedOutsideEur: number,
+  parts: number, labels: readonly string[] = []): AdvanceScheduleDraft[] {
+  const fixed = rows.filter((row) => row.locked);
+  const open = rows.filter((row) => !row.locked);
+  const withConcept = open.filter((row) => row.conceptNumber != null).length;
+  const count = Math.max(Math.floor(Number.isFinite(parts) ? parts : 0), withConcept, 1);
+  const fixedEur = fixed.reduce((sum, row) => sum + scheduleRowAmount(row, agreedEur), 0);
+  const rest = cents(agreedEur - (Number.isFinite(reservedOutsideEur) ? reservedOutsideEur : 0) - fixedEur);
+  const each = cents(rest / count);
+  // Terms with a concept come first, then the others in their order, so a shorter plan drops only plain terms.
+  const reusable = [...open.filter((row) => row.conceptNumber != null), ...open.filter((row) => row.conceptNumber == null)]
+    .slice(0, count).sort((left, right) => open.indexOf(left) - open.indexOf(right));
+  const split: AdvanceScheduleDraft[] = Array.from({ length: count }, (_, index) => {
+    const previous = reusable[index];
+    const value = index === count - 1 ? cents(rest - each * (count - 1)) : each;
+    return {
+      ...(previous?.id != null ? { id: previous.id } : {}),
+      label: resplitLabel(previous?.label, labels[index], fixed.length + index + 1),
+      mode: 'AMOUNT', value, dueDate: previous?.dueDate ?? '', locked: false,
+      ...(previous?.conceptNumber != null ? { conceptNumber: previous.conceptNumber } : {}),
+    };
+  });
+  return [...fixed, ...split];
+}
+
+const euroText = (value: number): string =>
+  `€ ${Math.abs(value).toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** What is left to spread once the fixed terms and the reservations outside the plan are counted. */
+export function scheduleRemainder(rows: readonly AdvanceScheduleDraft[], agreedEur: number, reservedOutsideEur = 0): { fixedEur: number; openEur: number; restEur: number; leftEur: number } {
+  const amounts = scheduleRowAmounts(rows, agreedEur);
+  const fixedEur = cents(rows.reduce((sum, row, index) => sum + (row.locked ? amounts[index] : 0), 0));
+  const openEur = cents(rows.reduce((sum, row, index) => sum + (row.locked ? 0 : amounts[index]), 0));
+  const restEur = cents(agreedEur - reservedOutsideEur - fixedEur);
+  return { fixedEur, openEur, restEur, leftEur: cents(restEur - openEur) };
+}
+
+/**
+ * Whether a draft adds or changes terms against the saved plan. Only then
+ * does a plan with a fixed term have to spread the whole agreed amount;
+ * merely dropping unused open terms (before a settlement) may leave part of
+ * it unplanned, as the server allows.
+ */
+export function scheduleDraftChanges(draft: readonly AdvanceScheduleDraft[], saved: readonly PartnerAdvanceScheduleRow[]): boolean {
+  const before = new Map(scheduleDraft(saved).map((row) => [row.id, row] as const));
+  return draft.some((row) => {
+    const previous = row.id == null ? undefined : before.get(row.id);
+    return !previous || previous.label.trim() !== row.label.trim() || previous.mode !== row.mode
+      || Math.abs(previous.value - row.value) > 1e-9 || (previous.dueDate || '') !== (row.dueDate || '');
+  });
+}
+
+/** Once a term is fixed, the new split must spread the whole agreed amount: nothing may stay unplanned. */
+export function remainderRequest(rows: readonly AdvanceScheduleDraft[], agreedEur: number, reservedOutsideEur = 0): PartnerAdvanceScheduleRequest {
+  const request = scheduleRequest(rows, agreedEur, reservedOutsideEur);
+  const { leftEur } = scheduleRemainder(rows, agreedEur, reservedOutsideEur);
+  if (Math.abs(leftEur) >= .005) throw new Error(`Verdeel het resterende voorschot volledig: nog ${euroText(leftEur)} te verdelen.`);
   return request;
 }

@@ -12,7 +12,7 @@ import { AdvanceScheduleDraft, cents, schedulePreset, scheduleRowAmounts } from 
       <header><span class="eyebrow">Per conceptfactuur</span><h3 id="quote-terms-title">Betaalafspraken</h3>
         <p>Elke termijn is een voorschot. De slotfactuur volgt na de veiling, met verrekening van de voorschotten, de werkelijke kosten en het afgesproken aandeel in het resultaat.</p>
       </header>
-      @if (locked()) { <p class="terms-note">Deze termijnen zijn al in gebruik. De bewaarde facturen worden opnieuw geopend; er komen geen dubbele facturen bij. Bekijk ze bij Betalingen op de inkooporder.</p> }
+      @if (locked()) { <p class="terms-note">Deze termijnen zijn al in gebruik. De bewaarde facturen worden opnieuw geopend; er komen geen dubbele facturen bij. Bekijk ze bij Betalingen op de inkooporder. Het nog niet gefactureerde deel kun je opnieuw verdelen bij Betalingen op de inkooporder › Voorschotfacturen › Termijnen aanpassen.</p> }
       @else {
         <div class="presets" role="group" aria-label="Betaalregeling kiezen">
           <button class="btn btn--sm" type="button" [disabled]="disabled()" (click)="preset('30_70')">30% / 70%</button>

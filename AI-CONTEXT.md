@@ -536,6 +536,33 @@ screens pass `containerName(order)` too), the phone view hero ('· <naam>' or
 name; no invented `PO-<id>`). Inkoop keeps its own alias || number display.
 Stored lines and notes of issued documents are never rewritten.
 
+### Partner advance plan: re-split the rest (sales round 2026-09-30, G2)
+A term is FIXED when its invoice was issued, sent, paid or credited: the
+server sends `invoiceFixed` on PartnerAdvanceScheduleRow;
+`scheduleRowFixed(row)` falls back to 'has an invoiceId' for an older
+backend. Only fixed terms are `locked` in `scheduleDraft`; a term with a
+never-issued concept is editable (label, amount, due date: the server revises
+that concept in place, same number) but never removable (`conceptNumber`).
+Pure helpers in partner-advance-schedule-state.ts: `resplitRemainder(rows,
+agreed, outside, parts, labels?)` keeps fixed terms (id, amount), splits the
+rest into `parts` AMOUNT terms in cents (last takes the residual cent),
+reuses the open terms' ids/labels/due dates in order, never drops a concept
+term and replaces share-like labels ('2/3 na productie') with the given ones
+or strips the share; `scheduleRemainder` gives fixed / re-split / left;
+`remainderRequest` requires Σ = agreed ('Verdeel het resterende voorschot
+volledig: nog € X te verdelen.'). `app-partner-advance-schedule`: header
+'Termijnen aanpassen'; with a fixed term (or a reservation outside the plan)
+the presets become 'Resterend bedrag opnieuw verdelen' (Rest in 2 / 3
+termijnen, + Eigen termijn, and '1/3 · 1/3 · 1/3' when exactly one fixed term
+is a third), rows read 'Gefactureerd · staat vast' / 'Nog te factureren'
+('· concept … · volgt de nieuwe verdeling'), the intro names the fixed terms,
+the total line reads '€ A gefactureerd · € B opnieuw verdeeld · € C nog te
+verdelen', save 'Nieuwe verdeling bewaren' + toast. `remainderRequest` is used
+only when a term is fixed AND the draft adds or changes terms
+(`scheduleDraftChanges`, the server's rule too); without a fixed term, or when
+only unused terms are dropped (before a settlement), the old ≤ agreed rule
+stays. The quote sheet's locked note points to Termijnen aanpassen.
+
 ### Prospects & outreach (2026-09-28)
 - `/prospects` and `/prospects/:id` are staff-only routes under Verkoop;
   the phone menu links to "Prospects & groothandels". The page keeps search,

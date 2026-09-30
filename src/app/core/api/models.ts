@@ -1831,6 +1831,8 @@ export interface PartnerAdvanceScheduleRow {
   invoiceId: number | null;
   invoiceNumber: string | null;
   invoiceStatus: QuoteStatus | null;
+  /** True when the invoice is issued, sent, paid or credited: the term stays as it is. A never-issued concept is not fixed and follows a new split. Absent on an older backend. */
+  invoiceFixed?: boolean;
   receivedEur: number;
   remainingEur: number;
 }
